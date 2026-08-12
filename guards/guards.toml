@@ -2362,7 +2362,9 @@ red = [
 # was told "Deleted" over mail still sitting in the folder.
 #
 # Neither result was used for anything. Both are sent as plain command lines
-# now, which is the only form in this library that reads the answer.
+# now, and so is every read, so the break written down here is the old defect
+# rebuilt by hand: send the line, read to the answer, and never look at what the
+# answer said.
 
 [[guard]]
 name = "a flag the mail server refused is not reported as set"
@@ -2376,18 +2378,16 @@ before = """        with_timeout(
         .await?
         .map_err(protocol_error("Could not change the message"))
     }"""
-after = """        let stream = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session
-                .uid_store(uid.to_string(), format!("{operation} ({flag})")),
-            "changing a message flag",
-        )
-        .await?
-        .map_err(protocol_error("Could not change the message"))?;
-        let _: Vec<Fetch> = stream
-            .try_collect()
+after = """        let tag = self
+            .session
+            .run_command(format!("UID STORE {uid} {operation} ({flag})"))
             .await
             .map_err(protocol_error("Could not change the message"))?;
+        while let Ok(Some(response)) = self.session.read_response().await {
+            if response.request_id() == Some(&tag) {
+                break;
+            }
+        }
         Ok(())
     }"""
 red = [
@@ -2407,17 +2407,16 @@ before = """        with_timeout(
         .await?
         .map_err(protocol_error("Could not delete the message"))
     }"""
-after = """        let stream = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.uid_expunge(uid.to_string()),
-            "deleting the message",
-        )
-        .await?
-        .map_err(protocol_error("Could not delete the message"))?;
-        let _: Vec<u32> = stream
-            .try_collect()
+after = """        let tag = self
+            .session
+            .run_command(format!("UID EXPUNGE {uid}"))
             .await
             .map_err(protocol_error("Could not delete the message"))?;
+        while let Ok(Some(response)) = self.session.read_response().await {
+            if response.request_id() == Some(&tag) {
+                break;
+            }
+        }
         Ok(())
     }"""
 red = [
@@ -2714,4 +2713,84 @@ after = """                let _ = &moved;
                 say(UIUpdate::StatusUpdated(format!("Moved to {into}: {subject}")));"""
 red = [
     "test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do",
+]
+
+# ── A read the mail server refused, reported as a folder with nothing in it ──
+#
+# The same swallowing as the pair above, on the side that deletes. Every helper
+# in this library that hands a result back as a stream ends that stream at the
+# server's last line without reading it, so a server refusing to list a folder
+# produced no messages, and no messages is exactly what an empty folder
+# produces. The sync believed it and deleted every message it had stored for
+# that folder, and the copy of each message kept for reading offline with it.
+#
+# Every read is now sent as a plain command line and read to its own answer in
+# one place. Break that one place and every read goes back to swallowing at
+# once, which is the point of it being one place.
+
+[[guard]]
+name = "a read the mail server refused is not a folder with nothing in it"
+file = "src/service/protocols/imap.rs"
+before = """                        return match status {
+                            Status::Ok => Ok(collected),
+                            _ => Err(server_refused(doing, status, information.as_deref())),
+                        };"""
+after = """                        let _ = (status, information);
+                        return Ok(collected);"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_flag_read_the_server_refuses_does_not_read_as_nothing_having_changed",
+    "service::protocols::imap::against_a_server_that_answers::test_a_folder_list_the_server_refuses_is_not_an_account_with_no_folders",
+    "service::protocols::imap::against_a_server_that_answers::test_a_header_fetch_the_server_refuses_is_not_a_folder_with_no_mail",
+    "service::protocols::imap::against_a_server_that_answers::test_a_message_the_server_refuses_to_send_is_told_apart_from_one_that_is_not_there",
+    "service::protocols::imap::against_a_server_that_answers::test_a_search_the_server_refuses_is_not_a_folder_with_no_messages",
+    "service::protocols::imap::against_a_server_that_answers::test_a_server_that_will_not_say_what_it_supports_is_not_a_server_that_supports_nothing",
+]
+
+# ── A connection that went away, reported as an answer that arrived ──────────
+#
+# The other way a read used to come back empty without being empty. A server
+# that closes the socket after its data and before its final line ended the
+# stream just as cleanly as a finished command, so a short answer read as a
+# whole one and, on the search, as a mailbox holding nothing.
+
+[[guard]]
+name = "a connection that closed mid answer is not an answer that finished"
+file = "src/service/protocols/imap.rs"
+before = """                    let Some(response) = arrived else {
+                        return Err(Error::Network(format!(
+                            "The mail server closed the connection while {doing}"
+                        )));
+                    };"""
+after = """                    let Some(response) = arrived else {
+                        return Ok(collected);
+                    };"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_server_that_hangs_up_in_the_middle_of_a_search_is_not_an_empty_folder",
+]
+
+# ── A mailbox counted full and then listed empty ─────────────────────────────
+#
+# Two commands ask about one mailbox in every sync and only one of them was
+# believed. Counting it reads the server's answer properly; listing it went
+# over the helper above. So a refused listing arrived as an empty mailbox
+# beside a count saying it held forty thousand messages, and nothing anywhere
+# noticed the two disagreeing before the rows were deleted.
+#
+# The read side is fixed. This is the belt that does not depend on it.
+
+[[guard]]
+name = "a mailbox the server counted and then would not list is not one that emptied"
+file = "src/application/mail_sync.rs"
+before = """    if listing_contradicts_the_count(on_server.len(), counts.total) {
+        let counted = crate::service::caldav::how_many(counts.total as usize, "message");
+        let name = &folder.name;
+        return Err(Error::Protocol(format!(
+            "The mail server says {name} holds {counted}, then listed none of them. Nothing has been removed from this computer."
+        )));
+    }
+
+    let forgotten = uids_to_forget(&on_server, &stored);"""
+after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
+red = [
+    "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
 ]

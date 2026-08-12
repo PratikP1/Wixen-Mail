@@ -12,7 +12,7 @@
 
 use crate::application::mail_controller::MailController;
 use crate::application::summing_up::SummingUp;
-use crate::common::{Result, types::FolderType};
+use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{CachedFolder, CachedMessage, IncomingMessage, MessageCache};
 use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
@@ -187,6 +187,25 @@ fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
         .collect();
     gone.sort_unstable();
     gone
+}
+
+/// Whether the two answers about one mailbox disagree with each other.
+///
+/// Two commands ask about the same mailbox in every sync, and only one of them
+/// used to be believed. Counting it reads the server's answer properly and
+/// fails when the server refuses; listing what is in it goes over a library
+/// whose stream ends at the server's answer without reading it, so a refusal
+/// arrives as an empty list. The read side is fixed, and this is the belt: a
+/// server that says a mailbox holds messages and then lists none of them is
+/// contradicting itself, and nothing here is sure enough of that to delete
+/// somebody's mail on the strength of it.
+///
+/// The cost is one round of tidying. A mailbox genuinely emptied by another
+/// client between the two commands reads as a disagreement, so the rows it left
+/// behind are cleaned up on the next sync instead of this one. That is a
+/// delayed tidy against wiping a mailbox that was never empty.
+const fn listing_contradicts_the_count(listed: usize, counted: u32) -> bool {
+    listed == 0 && counted > 0
 }
 
 /// Which held messages still need their flags read back.
@@ -513,6 +532,14 @@ pub(crate) async fn sync_folder<M: Mailbox>(
 
     let on_server = controller.list_uids(&folder.path).await?;
     let stored = cache.stored_uids(folder_id)?;
+
+    if listing_contradicts_the_count(on_server.len(), counts.total) {
+        let counted = crate::service::caldav::how_many(counts.total as usize, "message");
+        let name = &folder.name;
+        return Err(Error::Protocol(format!(
+            "The mail server says {name} holds {counted}, then listed none of them. Nothing has been removed from this computer."
+        )));
+    }
 
     let forgotten = uids_to_forget(&on_server, &stored);
     for uid in &forgotten {
@@ -1064,6 +1091,8 @@ mod tests {
         /// a sync asked for the right ones rather than only that it ended up
         /// with the right rows.
         asked_for: std::cell::RefCell<Vec<u32>>,
+        /// A server that will not say which messages a mailbox holds.
+        refuse_list_uids: bool,
     }
 
     impl Default for Scripted {
@@ -1079,6 +1108,7 @@ mod tests {
                 uid_validity: Some(1),
                 highest_modseq: None,
                 asked_for: std::cell::RefCell::new(Vec::new()),
+                refuse_list_uids: false,
             }
         }
     }
@@ -1102,6 +1132,11 @@ mod tests {
         }
 
         async fn list_uids(&self, _folder: &str) -> Result<Vec<u32>> {
+            if self.refuse_list_uids {
+                return Err(crate::common::Error::Protocol(
+                    "The mail server refused while searching the folder.".to_string(),
+                ));
+            }
             Ok(self.on_server.clone())
         }
 
@@ -1182,11 +1217,25 @@ mod tests {
         folder: &ImapFolder,
         limit: usize,
     ) -> FolderSync {
+        attempt(server, cache, id, folder, limit).expect("the sync runs")
+    }
+
+    /// The same sync, handing back whatever it answered rather than unwrapping.
+    ///
+    /// What a test about a sync that should fail needs, and there was no way to
+    /// write one before: every helper here unwrapped, so a sync that refused
+    /// could only be asserted by a panic.
+    fn attempt<M: Mailbox>(
+        server: &M,
+        cache: &MessageCache,
+        id: i64,
+        folder: &ImapFolder,
+        limit: usize,
+    ) -> Result<FolderSync> {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
             .block_on(sync_folder(server, cache, folder, id, limit, None))
-            .expect("the sync runs")
     }
 
     #[test]
@@ -1904,6 +1953,117 @@ mod tests {
     #[test]
     fn test_an_empty_mailbox_forgets_everything_that_was_in_it() {
         assert_eq!(uids_to_forget(&[], &[1, 2]), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_two_answers_about_one_mailbox_that_disagree_are_not_believed() {
+        // The server counted messages and then listed none of them.
+        assert!(listing_contradicts_the_count(0, 1));
+        assert!(listing_contradicts_the_count(0, 40_000));
+    }
+
+    #[test]
+    fn test_two_answers_about_one_mailbox_that_agree_are_believed() {
+        // A mailbox that really is empty, and any mailbox that listed
+        // something. Both are ordinary and neither may be turned into an error.
+        assert!(!listing_contradicts_the_count(0, 0));
+        assert!(!listing_contradicts_the_count(1, 1));
+        assert!(!listing_contradicts_the_count(2, 0));
+    }
+
+    /// A folder holding two messages, bodies and all.
+    fn a_folder_holding_two() -> (TempHome<MessageCache>, i64, ImapFolder, Vec<i64>) {
+        let (cache, id, folder) = a_cache();
+        let rows: Vec<i64> = [1_u32, 2]
+            .iter()
+            .map(|uid| {
+                let row = cache
+                    .upsert_message(&to_incoming(&message(*uid), id, false))
+                    .expect("a stored message");
+                cache
+                    .save_message_body(row, Some("the whole message"), None)
+                    .expect("a stored body");
+                row
+            })
+            .collect();
+        (cache, id, folder, rows)
+    }
+
+    #[test]
+    fn test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing() {
+        // The shape of the whole defect, one layer up from the protocol. A
+        // server that refuses to list a mailbox answers with nothing, and
+        // nothing used to mean "this mailbox is empty", so every message
+        // downloaded from it was deleted here to match.
+        let (cache, id, folder, rows) = a_folder_holding_two();
+        let server = Scripted {
+            on_server: vec![],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 2,
+                unread: 0,
+            },
+            ..Default::default()
+        };
+
+        let refused = attempt(&server, &cache, id, &folder, INITIAL_FETCH_LIMIT)
+            .expect_err("two answers that disagree were believed");
+
+        let said = refused.to_string();
+        assert!(said.contains("Inbox"), "{said}");
+        assert!(said.contains("2 messages"), "{said}");
+        assert!(said.contains("Nothing has been removed"), "{said}");
+        assert_eq!(cache.stored_uids(id).expect("held"), vec![1, 2]);
+        for row in rows {
+            assert!(
+                cache.get_message_body(row).expect("read back").is_some(),
+                "a stored message body was deleted anyway"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_mailbox_that_really_emptied_still_has_its_rows_removed() {
+        // The other direction, and what stops the check above turning into
+        // "never delete anything". A mailbox somebody really emptied still has
+        // to stop being listed here, or every row is a message that opens on an
+        // error.
+        let (cache, id, folder, _) = a_folder_holding_two();
+        let server = Scripted {
+            on_server: vec![],
+            ..Default::default()
+        };
+
+        let done = run(&server, &cache, id, &folder);
+
+        assert_eq!(done.forgotten, 2);
+        assert!(cache.stored_uids(id).expect("held").is_empty());
+    }
+
+    #[test]
+    fn test_a_folder_the_server_would_not_list_the_messages_of_keeps_the_mail_already_here() {
+        // A refusal that arrives as a refusal, which is what the protocol layer
+        // now does. The sync must carry it up rather than treating a folder it
+        // knows nothing about as a folder with nothing in it.
+        let (cache, id, folder, rows) = a_folder_holding_two();
+        let server = Scripted {
+            refuse_list_uids: true,
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 2,
+                unread: 0,
+            },
+            ..Default::default()
+        };
+
+        attempt(&server, &cache, id, &folder, INITIAL_FETCH_LIMIT)
+            .expect_err("a refusal was reported as a successful sync");
+
+        assert_eq!(cache.stored_uids(id).expect("held"), vec![1, 2]);
+        for row in rows {
+            assert!(
+                cache.get_message_body(row).expect("read back").is_some(),
+                "a stored message body was deleted anyway"
+            );
+        }
     }
 
     #[test]

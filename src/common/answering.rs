@@ -276,6 +276,12 @@ pub enum Turn {
     /// them, records those bytes as one entry of their own, then answers
     /// `done`.
     TakingALiteral { done: String },
+    /// Close the connection without answering the line at all.
+    ///
+    /// What a server does when it falls over mid-command, and the case a client
+    /// is most likely to read as "there was nothing there". Nothing is written
+    /// back and the socket is dropped.
+    HangUp,
     /// Take a message body, which ends at a line holding a single dot.
     ///
     /// How a message reaches a sending server. Answers `354`, reads until the
@@ -393,6 +399,9 @@ async fn hold_one(
 
         let reply = match answer(&said) {
             Turn::Say(reply) => reply,
+            // Returning drops both halves of the socket, so the client sees the
+            // connection go away with the command unanswered.
+            Turn::HangUp => return,
             Turn::TakingALiteral { done } => {
                 if writing.write_all(b"+ go ahead\r\n").await.is_err() {
                     return;

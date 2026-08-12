@@ -9,6 +9,43 @@
 //! header fetch asks for named fields rather than whole headers. And every call
 //! is bounded by a timeout, because a stalled connection with no timeout is a
 //! folder that never finishes loading and never says why.
+//!
+//! # The library hides a server saying no, so every command is sent by hand
+//!
+//! Read this before adding any command here. In `async-imap` 0.11.3 the helpers
+//! that hand a result back as a stream stop that stream at the server's final
+//! answer without ever looking at what the answer was. The decision is in that
+//! crate's own `parse` module: the filter every one of those streams is built on
+//! returns "stop" for the tagged line whether it said OK, NO or BAD. So a server
+//! that refuses a command produces a stream that ends immediately, and a refusal
+//! arrives looking exactly like a mailbox with nothing in it.
+//!
+//! On the read side that was worse than a wrong answer. A refused search told
+//! the sync the mailbox held no messages, and the sync deleted every message it
+//! had stored for that folder to match. Two write commands hit the same defect
+//! and were fixed the same way earlier.
+//!
+//! So every command here is sent as a plain command line and read to its tagged
+//! answer by [`ImapSession::read_command`], which is the only thing in this file
+//! that reads a server's answer. Two commands are left with the library, because
+//! its parsers for those two do read the tagged line and do return an error:
+//! STATUS, behind [`ImapSession::folder_counts`], and SELECT, behind
+//! [`ImapSession::select_folder`]. Adding a second reader beside a correct one
+//! would buy nothing.
+//!
+//! The type the library hands back for one response is crate-private, so it
+//! cannot be named in a signature or put in a collection. That is why
+//! `read_command` takes a callback and turns each response into an owned value
+//! inside its own loop. If a later version makes that type public the callback
+//! can go and nothing else changes.
+//!
+//! Two more defects in the same crate cannot be fixed from here, both in its
+//! IDLE support. Starting a watch checks only for BAD, so a server answering NO
+//! comes back as a connection error with an empty reason;
+//! [`ImapSession::watch`] supplies a sentence of its own so nobody is told the
+//! watch failed with nothing after the colon. And the same code unwraps the
+//! text beside that BAD, so a server answering BAD with no text at all panics
+//! inside the library. None of this has been reported upstream yet.
 
 pub mod abilities;
 pub mod flag;
@@ -22,9 +59,11 @@ use crate::common::{Error, Result, error::redact_provider_message};
 use crate::service::mime;
 use crate::service::protocols::MailAuth;
 use abilities::Abilities;
-use async_imap::imap_proto::NameAttribute;
-use async_imap::types::{Capability, Fetch, Flag};
-use futures::TryStreamExt;
+use async_imap::imap_proto::{
+    AttributeValue, Capability, MailboxDatum, MessageSection, NameAttribute, Response, SectionPath,
+    Status,
+};
+use async_imap::types::Flag;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -62,13 +101,13 @@ const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPL
 /// message in every folder rather than a missing field.
 ///
 /// `X-GM-THRID`, Gmail's own conversation identifier, is deliberately not asked
-/// for. `async-imap` parses it and offers no way to read it back: `Fetch`
-/// exposes `gmail_msg_id` and `gmail_labels` and keeps the response private, so
-/// the thread id would arrive, cost bandwidth on every message, and be
-/// unreachable. Threading falls back to the References and In-Reply-To headers,
-/// which is what it does on every other server. Worth revisiting if the library
-/// grows the accessor; `application::threading` already prefers a server thread
-/// id over anything it computes.
+/// for. It was unreachable while the library's own reader was in the way; now
+/// that the answer is read here it could be had, and asking for it is still a
+/// separate decision with a cost on every message in every folder. Threading
+/// falls back to the References and In-Reply-To headers, which is what it does
+/// on every other server. Worth revisiting on its own:
+/// `application::threading` already prefers a server thread id over anything it
+/// computes.
 const GMAIL_FIELDS: &str = "X-GM-MSGID X-GM-LABELS";
 
 /// What this client calls itself when a server asks, as RFC 2971 pairs.
@@ -643,34 +682,106 @@ fn permitted(may_change: bool, doing: &str) -> Result<()> {
 }
 
 impl ImapSession {
+    /// Send one command and read the whole of the server's answer.
+    ///
+    /// The one place in this file that reads a server's answer to a read
+    /// command, and the reason the module note above exists: the library's own
+    /// helpers end their stream at the tagged line without reading it, so a
+    /// refusal came back as no data rather than as a failure.
+    ///
+    /// `doing` names the act as it would be said out loud, "searching the
+    /// folder", and every way this can go wrong ends in a sentence built around
+    /// it. `take` turns each response the server sends into whatever the caller
+    /// wanted from it, or into nothing. It hands back owned values because the
+    /// type carrying one response is crate-private in the library and cannot be
+    /// held.
+    ///
+    /// Four endings, and none of them is an empty list: the server answers OK
+    /// and the collected values come back, it answers anything else and that is
+    /// a refusal, the connection closes first, or the whole exchange runs out of
+    /// time.
+    async fn read_command<T>(
+        &mut self,
+        command: String,
+        doing: &'static str,
+        mut take: impl FnMut(&Response<'_>) -> Option<T>,
+    ) -> Result<Vec<T>> {
+        one_command_only(&command, doing)?;
+        let session = &mut self.session;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            async move {
+                let tag = session
+                    .run_command(&command)
+                    .await
+                    .map_err(|e| connection_failed(doing, &e))?;
+                let mut collected = Vec::new();
+                loop {
+                    let arrived = session
+                        .read_response()
+                        .await
+                        .map_err(|e| connection_failed(doing, &e))?;
+                    let Some(response) = arrived else {
+                        return Err(Error::Network(format!(
+                            "The mail server closed the connection while {doing}"
+                        )));
+                    };
+                    if let Response::Done {
+                        tag: answering,
+                        status,
+                        information,
+                        ..
+                    } = response.parsed()
+                        && answering == &tag
+                    {
+                        return match status {
+                            Status::Ok => Ok(collected),
+                            _ => Err(server_refused(doing, status, information.as_deref())),
+                        };
+                    }
+                    if let Some(wanted) = take(response.parsed()) {
+                        collected.push(wanted);
+                    }
+                }
+            },
+            doing,
+        )
+        .await?
+    }
+
     /// List every mailbox on the server.
     ///
     /// Returned in the order the tree should show them: the inbox first, then
     /// the other named roles, then everything else by name. Alphabetical order
     /// puts Archive above the inbox, which means arrowing past it every time.
     pub async fn list_folders(&mut self) -> Result<Vec<ImapFolder>> {
-        let names = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.list(Some(""), Some("*")),
-            "listing folders",
-        )
-        .await?
-        .map_err(protocol_error("Could not list the folders"))?;
-
-        let names: Vec<async_imap::types::Name> = names
-            .try_collect()
-            .await
-            .map_err(protocol_error("Could not read the folder list"))?;
+        let names = self
+            .read_command(
+                "LIST \"\" \"*\"".to_string(),
+                "listing the folders",
+                |response| match response {
+                    Response::MailboxData(MailboxDatum::List {
+                        name_attributes,
+                        delimiter,
+                        name,
+                    }) => Some((
+                        name_attributes
+                            .iter()
+                            .map(attribute_name)
+                            .collect::<Vec<String>>(),
+                        delimiter.as_ref().map(std::string::ToString::to_string),
+                        name.to_string(),
+                    )),
+                    _ => None,
+                },
+            )
+            .await?;
 
         let subscribed = self.subscribed_paths().await;
 
         let mut folders: Vec<ImapFolder> = names
-            .iter()
-            .map(|name| {
-                let attributes: Vec<String> =
-                    name.attributes().iter().map(attribute_name).collect();
-                let path = name.name().to_string();
-                let delimiter = name.delimiter().map(str::to_string);
+            .into_iter()
+            .map(|(attributes, delimiter, path)| {
                 let display_path = mailbox_name::decode(&path);
                 // The delimiter is read here to find the last segment and to
                 // classify the folder. It is not carried on the struct: the
@@ -716,26 +827,27 @@ impl ImapSession {
     /// folders over it would be refusing the account. The empty answer says
     /// "nothing is subscribed", and the caller treats that as "subscription is
     /// not the deciding fact here".
+    ///
+    /// So this is the one read here where a refusal and a server with no
+    /// subscriptions deliberately come to the same answer, and the difference
+    /// between them is in the log. Everywhere else a refusal is a failure. If
+    /// this is ever changed to fail instead, an account on a server without a
+    /// subscription list stops syncing altogether.
     async fn subscribed_paths(&mut self) -> std::collections::HashSet<String> {
-        let listed = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.lsub(Some(""), Some("*")),
-            "listing subscriptions",
-        )
-        .await;
-        let stream = match listed {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(e)) => {
-                tracing::warn!("Could not read the folder subscriptions: {e}");
-                return std::collections::HashSet::new();
-            }
-            Err(e) => {
-                tracing::warn!("{e}");
-                return std::collections::HashSet::new();
-            }
-        };
-        match stream.try_collect::<Vec<async_imap::types::Name>>().await {
-            Ok(names) => names.iter().map(|name| name.name().to_string()).collect(),
+        let listed = self
+            .read_command(
+                "LSUB \"\" \"*\"".to_string(),
+                "reading the folder subscriptions",
+                |response| match response {
+                    Response::MailboxData(MailboxDatum::List { name, .. }) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
+                },
+            )
+            .await;
+        match listed {
+            Ok(names) => names.into_iter().collect(),
             Err(e) => {
                 tracing::warn!("Could not read the folder subscriptions: {e}");
                 std::collections::HashSet::new()
@@ -827,15 +939,18 @@ impl ImapSession {
     /// Search the selected mailbox, returning UIDs oldest first.
     pub async fn search_uids(&mut self, criteria: &str) -> Result<Vec<u32>> {
         self.require_selected()?;
-        let found = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.uid_search(criteria),
-            "searching the folder",
-        )
-        .await?
-        .map_err(protocol_error("Could not search the folder"))?;
+        let found = self
+            .read_command(
+                format!("UID SEARCH {criteria}"),
+                "searching the folder",
+                |response| match response {
+                    Response::MailboxData(MailboxDatum::Search(uids)) => Some(uids.clone()),
+                    _ => None,
+                },
+            )
+            .await?;
 
-        let mut uids: Vec<u32> = found.into_iter().collect();
+        let mut uids: Vec<u32> = found.into_iter().flatten().collect();
         uids.sort_unstable();
         Ok(uids)
     }
@@ -855,20 +970,21 @@ impl ImapSession {
 
         let mut messages = Vec::with_capacity(uids.len());
         for set in sequence_set::chunks(uids, sequence_set::MAX_SET_LENGTH) {
-            let stream = with_timeout(
-                COMMAND_TIMEOUT,
-                self.session.uid_fetch(&set, &query),
-                "fetching messages",
-            )
-            .await?
-            .map_err(protocol_error("Could not fetch the messages"))?;
-
-            let fetched: Vec<Fetch> = stream
-                .try_collect()
-                .await
-                .map_err(protocol_error("Could not read the messages"))?;
-
-            messages.extend(fetched.iter().filter_map(message_from_fetch));
+            // One timeout per batch rather than one for the whole mailbox: a
+            // first sync of a hundred thousand messages is hundreds of round
+            // trips, and a single budget across all of them would fail every
+            // large mailbox on a slow link.
+            let fetched = self
+                .read_command(
+                    format!("UID FETCH {set} {query}"),
+                    "fetching the messages",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => message_from_attributes(attributes),
+                        _ => None,
+                    },
+                )
+                .await?;
+            messages.extend(fetched);
         }
         Ok(messages)
     }
@@ -880,25 +996,27 @@ impl ImapSession {
     /// application makes on purpose, not a side effect of looking.
     pub async fn fetch_body(&mut self, uid: u32) -> Result<Vec<u8>> {
         self.require_selected()?;
-        let stream = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.uid_fetch(uid.to_string(), "BODY.PEEK[]"),
-            "fetching the message",
-        )
-        .await?
-        .map_err(protocol_error("Could not fetch the message"))?;
+        let fetched = self
+            .read_command(
+                format!("UID FETCH {uid} BODY.PEEK[]"),
+                "fetching the message",
+                |response| match response {
+                    Response::Fetch(_, attributes) => {
+                        attributes.iter().find_map(body_bytes).map(<[u8]>::to_vec)
+                    }
+                    _ => None,
+                },
+            )
+            .await?;
 
-        let fetched: Vec<Fetch> = stream
-            .try_collect()
-            .await
-            .map_err(protocol_error("Could not read the message"))?;
-
-        fetched
-            .iter()
-            .find_map(|fetch| fetch.body().map(<[u8]>::to_vec))
-            .ok_or_else(|| {
-                Error::Protocol(format!("The mail server returned no message for UID {uid}"))
-            })
+        // Reached only when the server said OK and sent nothing, which is a
+        // message that is not there any more. A server that refused has already
+        // come back as a refusal above, and telling somebody their message is
+        // gone when the server simply would not hand it over sends them looking
+        // for the wrong thing.
+        fetched.into_iter().next().ok_or_else(|| {
+            Error::Protocol(format!("The mail server returned no message for UID {uid}"))
+        })
     }
 
     /// Read the flags of messages already held, so state set elsewhere arrives.
@@ -921,37 +1039,31 @@ impl ImapSession {
         self.require_selected()?;
 
         if let Some(modseq) = changed_since.filter(|_| self.abilities.condstore) {
-            let stream = with_timeout(
-                COMMAND_TIMEOUT,
-                self.session
-                    .uid_fetch("1:*", format!("(UID FLAGS) (CHANGEDSINCE {modseq})")),
-                "reading what changed",
-            )
-            .await?
-            .map_err(protocol_error("Could not read what changed"))?;
-
-            let fetched: Vec<Fetch> = stream
-                .try_collect()
-                .await
-                .map_err(protocol_error("Could not read what changed"))?;
-            return Ok(fetched.iter().filter_map(flags_from_fetch).collect());
+            return self
+                .read_command(
+                    format!("UID FETCH 1:* (UID FLAGS) (CHANGEDSINCE {modseq})"),
+                    "reading what changed",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => flags_from_attributes(attributes),
+                        _ => None,
+                    },
+                )
+                .await;
         }
 
         let mut flags = Vec::with_capacity(held.len());
         for set in sequence_set::chunks(held, sequence_set::MAX_SET_LENGTH) {
-            let stream = with_timeout(
-                COMMAND_TIMEOUT,
-                self.session.uid_fetch(&set, "(UID FLAGS)"),
-                "reading message flags",
-            )
-            .await?
-            .map_err(protocol_error("Could not read the message flags"))?;
-
-            let fetched: Vec<Fetch> = stream
-                .try_collect()
-                .await
-                .map_err(protocol_error("Could not read the message flags"))?;
-            flags.extend(fetched.iter().filter_map(flags_from_fetch));
+            let fetched = self
+                .read_command(
+                    format!("UID FETCH {set} (UID FLAGS)"),
+                    "reading the message flags",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => flags_from_attributes(attributes),
+                        _ => None,
+                    },
+                )
+                .await?;
+            flags.extend(fetched);
         }
         Ok(flags)
     }
@@ -1228,24 +1340,32 @@ impl ImapSession {
 
     /// Ask the server what it supports.
     async fn read_abilities(&mut self) -> Result<Abilities> {
-        let capabilities = with_timeout(
-            COMMAND_TIMEOUT,
-            self.session.capabilities(),
-            "asking what the server supports",
-        )
-        .await?
-        .map_err(protocol_error("Could not ask what the server supports"))?;
+        let advertised = self
+            .read_command(
+                "CAPABILITY".to_string(),
+                "asking what the server supports",
+                |response| match response {
+                    Response::Capabilities(capabilities) => Some(
+                        capabilities
+                            .iter()
+                            .filter_map(|capability| match capability {
+                                Capability::Atom(name) => Some(name.to_string()),
+                                // IMAP4rev1 is the floor and AUTH= mechanisms
+                                // were settled before this point, so neither
+                                // changes anything downstream.
+                                Capability::Imap4rev1 | Capability::Auth(_) => None,
+                            })
+                            .collect::<Vec<String>>(),
+                    ),
+                    _ => None,
+                },
+            )
+            .await?;
 
-        let names: Vec<&str> = capabilities
-            .iter()
-            .filter_map(|capability| match capability {
-                Capability::Atom(name) => Some(name.as_str()),
-                // IMAP4rev1 is the floor and AUTH= mechanisms were settled
-                // before this point, so neither changes anything downstream.
-                Capability::Imap4rev1 | Capability::Auth(_) => None,
-            })
-            .collect();
-        Ok(Abilities::from_capabilities(names))
+        let names: Vec<String> = advertised.into_iter().flatten().collect();
+        Ok(Abilities::from_capabilities(
+            names.iter().map(String::as_str),
+        ))
     }
 
     /// Tell the server who is calling, where it asked.
@@ -1361,7 +1481,16 @@ impl ImapSession {
                 };
                 let mut idle = ready.idle();
                 if let Err(e) = idle.init().await {
-                    break format!("the mail server would not start watching: {e}");
+                    // Never an empty reason. The library checks a start-watching
+                    // answer only for BAD, so a server answering NO reaches here
+                    // as a connection error carrying no text at all, and
+                    // somebody was told the watch failed with nothing after the
+                    // colon.
+                    break match e.to_string().trim() {
+                        "" => "the mail server would not start watching, and gave no reason"
+                            .to_string(),
+                        said => format!("the mail server would not start watching: {said}"),
+                    };
                 }
 
                 enum Woke {
@@ -1450,12 +1579,7 @@ fn interpret(
 /// Separate from the wire type so it can be tested: a server sends plenty
 /// during IDLE that does not mean new mail, and treating each one as an arrival
 /// would re-sync the folder for nothing and signal new mail that is not there.
-fn event_for(
-    response: &async_imap::imap_proto::Response<'_>,
-    folder: &str,
-) -> Option<ImapIdleEvent> {
-    use async_imap::imap_proto::{MailboxDatum, Response};
-
+fn event_for(response: &Response<'_>, folder: &str) -> Option<ImapIdleEvent> {
     match response {
         // EXISTS is the arrival, and carries a count rather than the UIDs.
         Response::MailboxData(MailboxDatum::Exists(messages)) => Some(ImapIdleEvent::Changed {
@@ -1479,9 +1603,9 @@ fn event_for(
 /// dropped. Everything else missing is survivable: a message with no subject,
 /// no date or no sender is ordinary mail, and hiding it would hide the message
 /// rather than the defect.
-fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
-    let uid = fetch.uid?;
-    let headers = fetch.header().unwrap_or_default();
+fn message_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<ImapMessage> {
+    let uid = uid_of(attributes)?;
+    let headers = attributes.iter().find_map(header_bytes).unwrap_or_default();
     let parsed = mime::parse(headers).unwrap_or_default();
 
     Some(ImapMessage {
@@ -1492,23 +1616,111 @@ fn message_from_fetch(fetch: &Fetch) -> Option<ImapMessage> {
         cc: parsed.cc,
         reply_to: parsed.reply_to,
         date: parsed.date,
-        internal_date: fetch.internal_date().map(|date| date.to_rfc3339()),
-        size: fetch.size.unwrap_or(0),
-        flags: fetch.flags().map(|flag| flag_name(&flag)).collect(),
+        internal_date: internal_date(attributes),
+        size: attributes
+            .iter()
+            .find_map(|attribute| match attribute {
+                AttributeValue::Rfc822Size(size) => Some(*size),
+                _ => None,
+            })
+            .unwrap_or(0),
+        flags: flag_names(attributes),
         message_id: parsed.message_id,
         in_reply_to: parsed.in_reply_to,
         references: parsed.references,
-        has_attachments: fetch
-            .bodystructure()
-            .is_some_and(structure::has_attachments),
+        has_attachments: attributes.iter().any(|attribute| {
+            matches!(attribute, AttributeValue::BodyStructure(shape)
+                if structure::has_attachments(shape))
+        }),
         safety: crate::service::safety::from_headers(&String::from_utf8_lossy(headers)),
-        gmail_message_id: fetch.gmail_msg_id().copied(),
+        gmail_message_id: attributes.iter().find_map(|attribute| match attribute {
+            AttributeValue::GmailMsgId(id) => Some(*id),
+            _ => None,
+        }),
         receipt_to: parsed.receipt_to,
-        labels: fetch
-            .gmail_labels()
-            .map(|labels| labels.iter().map(|label| label.to_string()).collect())
+        labels: attributes
+            .iter()
+            .find_map(|attribute| match attribute {
+                AttributeValue::GmailLabels(labels) => Some(
+                    labels
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
+                ),
+                _ => None,
+            })
             .unwrap_or_default(),
     })
+}
+
+/// The UID out of one FETCH, when it carries one.
+fn uid_of(attributes: &[AttributeValue<'_>]) -> Option<u32> {
+    attributes.iter().find_map(|attribute| match attribute {
+        AttributeValue::Uid(uid) => Some(*uid),
+        _ => None,
+    })
+}
+
+/// The header block out of one FETCH, however the server labelled it.
+///
+/// A server may answer a request for named header fields either as the section
+/// that was asked for or as the whole header, and both mean the same thing.
+fn header_bytes<'a>(attribute: &'a AttributeValue<'_>) -> Option<&'a [u8]> {
+    match attribute {
+        AttributeValue::BodySection {
+            section: Some(SectionPath::Full(MessageSection::Header)),
+            data: Some(bytes),
+            ..
+        }
+        | AttributeValue::Rfc822Header(Some(bytes)) => Some(bytes.as_ref()),
+        _ => None,
+    }
+}
+
+/// The whole message out of one FETCH, however the server labelled it.
+fn body_bytes<'a>(attribute: &'a AttributeValue<'_>) -> Option<&'a [u8]> {
+    match attribute {
+        AttributeValue::BodySection {
+            section: None,
+            data: Some(bytes),
+            ..
+        }
+        | AttributeValue::Rfc822(Some(bytes)) => Some(bytes.as_ref()),
+        _ => None,
+    }
+}
+
+/// How RFC 3501 writes the date a server filed a message on.
+const INTERNAL_DATE_FORMAT: &str = "%d-%b-%Y %H:%M:%S %z";
+
+/// When the server filed the message, if it said and the date reads.
+fn internal_date(attributes: &[AttributeValue<'_>]) -> Option<String> {
+    attributes
+        .iter()
+        .find_map(|attribute| match attribute {
+            AttributeValue::InternalDate(when) => {
+                chrono::DateTime::parse_from_str(when.as_ref(), INTERNAL_DATE_FORMAT).ok()
+            }
+            _ => None,
+        })
+        .map(|when| when.to_rfc3339())
+}
+
+/// Every flag on one FETCH, spelled the one way this program spells them.
+///
+/// The one spelling matters: flags arrive here twice, once beside a message's
+/// headers and once from the flag sync, and two spellings would make a message
+/// read on another device flip state on alternate syncs.
+fn flag_names(attributes: &[AttributeValue<'_>]) -> Vec<String> {
+    attributes
+        .iter()
+        .filter_map(|attribute| match attribute {
+            AttributeValue::Flags(flags) => Some(flags),
+            _ => None,
+        })
+        .flatten()
+        .map(|raw| flag_name(&Flag::from(raw.as_ref())))
+        .collect()
 }
 
 /// One value, as an IMAP quoted string.
@@ -1544,11 +1756,8 @@ fn header_query(gmail: bool) -> String {
 }
 
 /// The UID and flags out of one FETCH, when it carries a UID.
-fn flags_from_fetch(fetch: &Fetch) -> Option<(u32, Vec<String>)> {
-    Some((
-        fetch.uid?,
-        fetch.flags().map(|flag| flag_name(&flag)).collect(),
-    ))
+fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
 }
 
 /// A flag as IMAP spells it.
@@ -1587,6 +1796,51 @@ fn attribute_name(attribute: &NameAttribute<'_>) -> String {
         // on, so it contributes nothing rather than being guessed at.
         _ => String::new(),
     }
+}
+
+/// What to say when the server turned a command down.
+///
+/// A refusal and a mailbox with nothing in it used to reach a person as the
+/// same thing. This is the sentence that tells them apart, so it names the act
+/// and repeats whatever the server said about it. The server's own words go
+/// through the same redaction as every other provider message, because a
+/// refusal can quote the address or the mailbox it was about.
+fn server_refused(doing: &str, status: &Status, said: Option<&str>) -> Error {
+    let words = said
+        .map(|text| format!(" It said: {}", redact_provider_message(text)))
+        .unwrap_or_default();
+    match status {
+        Status::Bad => Error::Protocol(format!(
+            "The mail server did not understand the request while {doing}, and refused it.{words}"
+        )),
+        _ => Error::Protocol(format!("The mail server refused while {doing}.{words}")),
+    }
+}
+
+/// What to say when the connection itself gave out part way through.
+fn connection_failed(doing: &str, error: &impl std::fmt::Display) -> Error {
+    Error::Network(format!(
+        "The connection to the mail server failed while {doing}: {}",
+        redact_provider_message(&error.to_string())
+    ))
+}
+
+/// Refuse to send a command line that holds a line break.
+///
+/// A command reaches the server as one line, so a value spliced into one that
+/// carried a carriage return or a line feed would end that line early and put
+/// whatever came after it on the wire as a command of its own. Nothing
+/// untrusted reaches these builders today: the only value from outside is an
+/// identifier this program generated itself. This shuts the door before
+/// something does, because the shape of the mistake is the shape of every
+/// injection there has ever been.
+fn one_command_only(command: &str, doing: &'static str) -> Result<()> {
+    if command.contains(['\r', '\n']) {
+        return Err(Error::Protocol(format!(
+            "Part of the request held a line break, so nothing was sent while {doing}"
+        )));
+    }
+    Ok(())
 }
 
 /// Map an IMAP library error into ours, saying what we were doing.
@@ -1785,6 +2039,49 @@ mod tests {
         assert_eq!(ImapSecurity::choose(993, false), ImapSecurity::Plaintext);
         // An unusual port with encryption asked for is TLS, not plaintext.
         assert_eq!(ImapSecurity::choose(1993, true), ImapSecurity::Tls);
+    }
+
+    #[test]
+    fn test_a_command_line_cannot_carry_a_second_command() {
+        // Quoting a search value escapes a backslash and a quotation mark and
+        // nothing else, because those are the two RFC 3501 names. A line ending
+        // is not escapable at all: it ends the command, and whatever follows
+        // goes to the server as a command of its own. Nothing untrusted reaches
+        // that builder today, so this is a door being shut rather than a hole
+        // being filled.
+        assert!(one_command_only("UID SEARCH ALL", "searching the folder").is_ok());
+
+        for nasty in [
+            "UID SEARCH ALL\r\nx LOGOUT",
+            "UID SEARCH ALL\nx LOGOUT",
+            "UID SEARCH HEADER MESSAGE-ID \"<a\rb>\"",
+        ] {
+            let Err(refused) = one_command_only(nasty, "searching the folder") else {
+                panic!("a second command went out on one line: {nasty}");
+            };
+            assert!(refused.to_string().contains("line break"), "{refused}");
+        }
+    }
+
+    #[test]
+    fn test_the_server_s_answer_is_read_in_exactly_one_place() {
+        // The defect this file was rewritten for comes back the moment somebody
+        // reaches for the library's own stream helpers again, and it comes back
+        // silently: the code compiles, the tests pass, and a refused read reads
+        // as an empty mailbox. A lenient reader beside a strict one is the most
+        // frequent defect in this repository, so the production half of this
+        // file is read back to prove there is only the strict one.
+        let production = include_str!("imap.rs")
+            .split_once("#[cfg(test)]")
+            .expect("the tests to be marked")
+            .0;
+
+        for banned in ["try_collect", "types::Fetch"] {
+            assert!(
+                !production.contains(banned),
+                "a second reader of the server's answer grew back: {banned}"
+            );
+        }
     }
 
     #[test]
@@ -2719,6 +3016,284 @@ pub(crate) mod against_a_server_that_answers {
                 !server.was_told(command).await,
                 "a change reached the server with the gate closed: {transcript:?}"
             );
+        }
+    }
+
+    // ── A refusal to read must never read as nothing being there ────────────
+
+    /// A server built for one test, answering only what that test needs.
+    ///
+    /// Preferred over widening the shared script above: the shared one answers
+    /// a search with one message found, so a test about a folder that really
+    /// holds nothing cannot use it.
+    async fn a_server_answering(
+        answer: impl Fn(&str, &str) -> Option<Turn> + Send + Sync + 'static,
+    ) -> Conversation {
+        conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            if let Some(turn) = answer(&said, &tag) {
+                return turn;
+            }
+            match said.split_whitespace().nth(1).unwrap_or_default() {
+                "CAPABILITY" => Turn::Say(format!("* CAPABILITY IMAP4rev1\r\n{tag} OK done\r\n")),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "SELECT" | "EXAMINE" => Turn::Say(format!(
+                    "* 0 EXISTS\r\n* OK [UIDVALIDITY 1] valid\r\n{tag} OK [READ-WRITE] open\r\n"
+                )),
+                _ => Turn::Say(format!("{tag} OK done\r\n")),
+            }
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_a_search_the_server_refuses_is_not_a_folder_with_no_messages() {
+        // The defect the whole read side was rewritten for. The library ends
+        // its stream at the server's answer without reading what the answer
+        // was, so a refused search came back as an empty list of messages, the
+        // sync read that as "this mailbox is empty", and every message held
+        // here was deleted to match.
+        let server = a_server_that_refuses("UIDPLUS", "UID SEARCH").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.all_uids(), "the search").await);
+
+        assert!(said.contains("searching the folder"), "{said}");
+        assert!(said.contains("refused"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_folder_that_really_holds_nothing_still_comes_back_empty() {
+        // The other direction, and the one that stops the fix turning into
+        // "every empty folder is now an error". A server with nothing to
+        // report answers the tagged line and sends no search results at all.
+        let server = a_server_answering(|said, tag| {
+            said.contains("SEARCH")
+                .then(|| Turn::Say(format!("{tag} OK done\r\n")))
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let found = waiting_for(session.all_uids(), "the search")
+            .await
+            .expect("an empty folder is not a failure");
+
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_hangs_up_in_the_middle_of_a_search_is_not_an_empty_folder() {
+        // A connection that goes away before the server answers used to end
+        // the stream just as cleanly as a finished command, so a mailbox whose
+        // answer never arrived read as a mailbox with nothing in it.
+        let server =
+            a_server_answering(|said, _| said.contains("SEARCH").then_some(Turn::HangUp)).await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.all_uids(), "the search").await);
+
+        assert!(said.contains("closed the connection"), "{said}");
+        assert!(said.contains("searching the folder"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_folder_list_the_server_refuses_is_not_an_account_with_no_folders() {
+        let server = a_server_that_refuses("", "LIST").await;
+        let mut session = reading_only_on(&server).await;
+
+        let said = the_failure(waiting_for(session.list_folders(), "the folder list").await);
+
+        assert!(said.contains("listing the folders"), "{said}");
+        assert!(said.contains("refused"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_the_folders_a_server_lists_come_back_with_their_names_and_roles() {
+        // What proves the folder list is read rather than merely not refused.
+        // The sent folder is named in German on purpose: the only thing that
+        // can classify it is the role the server declared, so a reader that
+        // dropped the declared roles and fell back to matching English names
+        // fails here instead of passing by accident.
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("LIST").then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"Notizen\"\r\n\
+                     * LIST (\\HasNoChildren \\Sent) \"/\" \"Postausgang\"\r\n\
+                     * LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the folder list")
+            .await
+            .expect("the folders to arrive");
+
+        let paths: Vec<&str> = folders.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths.len(), 3, "{folders:?}");
+        assert_eq!(
+            paths[0], "INBOX",
+            "the inbox did not sort first: {folders:?}"
+        );
+        let sent = folders
+            .iter()
+            .find(|f| f.path == "Postausgang")
+            .expect("the folder the server called sent");
+        assert_eq!(sent.folder_type, FolderType::Sent, "{folders:?}");
+        assert!(sent.selectable, "{folders:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_subscription_list_the_server_refuses_still_lists_the_folders() {
+        // Deliberately lenient, and the only read that is. A server with no
+        // subscription list is a server where subscription cannot decide
+        // anything, and failing here would refuse the whole account.
+        let server = a_server_answering(|said, tag| {
+            if said.starts_with_command("LSUB") {
+                return Some(Turn::Say(format!("{tag} NO not here\r\n")));
+            }
+            said.starts_with_command("LIST").then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the folder list")
+            .await
+            .expect("a refused subscription list is not a refused account");
+
+        assert_eq!(folders.len(), 1, "{folders:?}");
+        assert!(!folders[0].subscribed, "{folders:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_header_fetch_the_server_refuses_is_not_a_folder_with_no_mail() {
+        let server = a_server_that_refuses("", "UID FETCH").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let said = the_failure(waiting_for(session.fetch_headers(&[1, 2]), "the headers").await);
+
+        assert!(said.contains("fetching the messages"), "{said}");
+        assert!(said.contains("refused"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_the_headers_a_server_sends_become_messages() {
+        // The riskiest part of reading the answer ourselves: eight fields come
+        // out of one response, and getting any of them wrong is a wrong
+        // message list rather than a build error.
+        const HEADERS: &str = "Subject: Lunch\r\nFrom: Ada <ada@example.com>\r\n\r\n";
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("UID FETCH").then(|| {
+                Turn::Say(format!(
+                    "* 1 FETCH (UID 4 FLAGS (\\Seen) RFC822.SIZE 120 \
+                     INTERNALDATE \"01-Aug-2026 10:00:00 +0000\" \
+                     BODY[HEADER.FIELDS (SUBJECT FROM)] {{{}}}\r\n{HEADERS})\r\n{tag} OK done\r\n",
+                    HEADERS.len()
+                ))
+            })
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let messages = waiting_for(session.fetch_headers(&[4]), "the headers")
+            .await
+            .expect("the headers to arrive");
+
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let message = &messages[0];
+        assert_eq!(message.uid, 4, "{message:?}");
+        assert_eq!(message.size, 120, "{message:?}");
+        assert!(message.seen(), "{message:?}");
+        assert_eq!(message.subject, "Lunch", "{message:?}");
+        assert!(
+            message
+                .from
+                .iter()
+                .any(|who| who.address == "ada@example.com"),
+            "{message:?}"
+        );
+        assert!(
+            message
+                .internal_date
+                .as_deref()
+                .is_some_and(|when| when.starts_with("2026-08-01")),
+            "{message:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_flag_read_the_server_refuses_does_not_read_as_nothing_having_changed() {
+        // Both routes, because a server that can answer "what changed since"
+        // takes a different one and a refusal on either used to mean the same
+        // thing as "nothing changed anywhere".
+        let server = a_server_that_refuses("CONDSTORE", "UID FETCH").await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let batched = the_failure(waiting_for(session.fetch_flags(&[1], None), "the flags").await);
+        let since = the_failure(waiting_for(session.fetch_flags(&[], Some(7)), "the flags").await);
+
+        assert!(batched.contains("refused"), "{batched}");
+        assert!(batched.contains("reading the message flags"), "{batched}");
+        assert!(since.contains("refused"), "{since}");
+        assert!(since.contains("reading what changed"), "{since}");
+    }
+
+    #[tokio::test]
+    async fn test_a_message_the_server_refuses_to_send_is_told_apart_from_one_that_is_not_there() {
+        // One sentence used to cover both, so somebody looking for mail the
+        // server would not hand over was told the message was gone.
+        let refusing = a_server_that_refuses("", "UID FETCH").await;
+        let mut refused_at = with_the_inbox_open(&refusing).await;
+        let empty = a_server_answering(|said, tag| {
+            said.starts_with_command("UID FETCH")
+                .then(|| Turn::Say(format!("{tag} OK done\r\n")))
+        })
+        .await;
+        let mut nothing_there = with_the_inbox_open(&empty).await;
+
+        let refusal = the_failure(waiting_for(refused_at.fetch_body(9), "the message").await);
+        let missing = the_failure(waiting_for(nothing_there.fetch_body(9), "the message").await);
+
+        assert!(refusal.contains("refused"), "{refusal}");
+        assert_ne!(
+            refusal, missing,
+            "a refusal and a missing message read alike"
+        );
+        assert!(missing.contains("no message for UID 9"), "{missing}");
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_will_not_say_what_it_supports_is_not_a_server_that_supports_nothing()
+     {
+        // An empty capability list reads as "no MOVE, no UIDPLUS", which sends
+        // every move and every delete down the weaker path and tells somebody
+        // their message was left flagged on a server that would have removed
+        // it. Signing in still falls back to the floor on purpose; this is the
+        // read itself.
+        let server = a_server_that_refuses("", "CAPABILITY").await;
+        let mut session = reading_only_on(&server).await;
+
+        let said = the_failure(waiting_for(session.read_abilities(), "the capabilities").await);
+
+        assert!(said.contains("asking what the server supports"), "{said}");
+        assert!(said.contains("refused"), "{said}");
+    }
+
+    /// Whether an upper-cased line is this command, tag and all.
+    trait Commanded {
+        fn starts_with_command(&self, command: &str) -> bool;
+    }
+
+    impl Commanded for str {
+        fn starts_with_command(&self, command: &str) -> bool {
+            self.split_once(' ')
+                .is_some_and(|(_, rest)| rest.starts_with(command))
         }
     }
 }

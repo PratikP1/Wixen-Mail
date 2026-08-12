@@ -248,6 +248,13 @@ Comprehensive solutions for common issues with Wixen Mail.
    - Check webmail to see actual folder structure
    - Non-standard folders may appear different
 
+4. **The server refused to list them**
+   - The message says the mail server refused while listing the folders, and
+     repeats what the server said
+   - Nothing has been removed from this computer
+   - Usually a server under load or an account with a limit reached: wait and
+     press F5 again
+
 ### Messages Not Loading
 
 **Solutions:**
@@ -268,6 +275,14 @@ Comprehensive solutions for common issues with Wixen Mail.
    - Very large folders may take time to load
    - Be patient for initial load
    - Subsequent loads will be faster
+
+5. **The server refused the folder**
+   - The message names the folder and says the mail server refused, or that the
+     server counted messages in it and then listed none of them
+   - Either way nothing has been removed from this computer: the messages
+     already downloaded are still here
+   - The rest of the folders are still checked, so only the named one stopped
+   - Press F5 to try that folder again
 
 ### Message Preview Not Showing
 

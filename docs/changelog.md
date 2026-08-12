@@ -8,6 +8,50 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a mail server that refused to list a folder was read as a folder
+  with no mail in it, and the messages already downloaded were deleted to
+  match.** Asking a server which messages a folder holds and being turned down
+  came back as the same answer as asking and being told "none". The sync
+  believed it, and every message it had stored for that folder went, along with
+  the copy of each message kept for reading offline. Mail written on this
+  computer, sent copies, drafts and anything collected from a POP account, was
+  never touched. Folders themselves were never removed.
+
+  Every way of reading from a mail server now tells a refusal apart from an
+  empty answer: listing folders, listing subscriptions, searching a folder,
+  fetching messages, fetching one message, reading which messages changed, and
+  asking what the server can do. A refusal stops that folder, says which folder
+  and repeats what the server said about it, and nothing is removed from this
+  computer. A folder that really is empty still empties here, as it always did.
+
+  There is a second check behind that one. If a server says a folder holds
+  messages and then lists none of them, the two answers disagree and nothing is
+  deleted on the strength of it. The cost is one round of tidying: a folder
+  somebody emptied from another program while this one was reading it has its
+  rows cleared on the next mail check instead of that one.
+
+  A connection that goes away in the middle of an answer is also no longer read
+  as a complete answer.
+
+  Two things are worse than they were, and both are on purpose. A folder whose
+  messages the server will not hand over now fails that folder outright instead
+  of quietly syncing less of it, and the same for a folder whose flags it will
+  not read. A loud incomplete answer is better than a quiet wrong one.
+
+  Known limitations: the library this program uses to speak to mail servers,
+  async-imap 0.11.3, is where this comes from. Its own helpers stop reading a
+  server's answer at the last line without looking at whether that line said yes
+  or no, so a refusal arrives as no data. Two of its parsers do check, and those
+  two are still used. The rest of the commands are now sent and read here
+  instead. The same library has two faults in the part that watches a folder for
+  new mail that cannot be worked around from here: a server that refuses to
+  start a watch comes back with no reason given, and a server that rejects the
+  request with no explanation at all crashes inside the library. The first now
+  gets a sentence of its own so nobody is told a watch failed with nothing after
+  the colon; the second is still a crash. None of this has been reported to that
+  library's authors yet, and none of it has run against a real mail account.
+
+
 - **Changing a day of a repeating event asks which days you mean, and can now
   change just the one.** Opening a day of a repeating event, or deleting one,
   puts the question first: every day in the series, or just this one day. Every
