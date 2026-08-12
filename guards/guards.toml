@@ -3994,3 +3994,51 @@ after = """    if true {
 red = [
     "test_the_machinery_check_can_tell_the_two_apart",
 ]
+
+# ── A meeting that repeats, on its way to Google ────────────────────────────
+#
+# A create that says nothing about the repeat files a weekly meeting as one
+# appointment, and the read that follows brings that one appointment back and
+# takes the repeat off the copy here as well. Both ends lose it and nothing is
+# said, which is why these are measured rather than remembered.
+
+[[guard]]
+name = "a new meeting tells Google how it repeats"
+file = "src/application/calendar.rs"
+before = """            TheBodyIsFor::MakingIt => how_the_series_repeats(event),"""
+after = """            TheBodyIsFor::MakingIt => Vec::new(),"""
+red = [
+    "application::calendar::tests::test_a_repeating_event_made_here_reaches_google_carrying_its_repeat_rule",
+    "application::calendar::tests::test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create",
+    "application::calendar::tests::test_a_rule_google_already_named_goes_back_without_being_named_twice",
+    "application::calendar::tests::test_a_series_created_here_carries_the_days_it_has_already_called_off",
+]
+
+[[guard]]
+name = "the days a new series has already called off go up with its rule"
+file = "src/application/calendar.rs"
+before = """    if let Some(called_off) = said(event.exception_dates.as_deref()) {"""
+after = """    if let Some(called_off) = said(None) {"""
+red = [
+    "application::calendar::tests::test_a_series_created_here_carries_the_days_it_has_already_called_off",
+]
+
+[[guard]]
+name = "a Google calendar is asked for the series rather than for its days"
+file = "src/service/google_api.rs"
+before = """        "{}?singleEvents=false&maxResults=2500","""
+after = """        "{}?singleEvents=true&maxResults=2500","""
+red = [
+    "application::calendar::tests::test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create",
+    "service::google_api::tests::test_the_calendar_is_asked_for_the_series_rather_than_for_its_days",
+]
+
+[[guard]]
+name = "a rule that already carries its property name does not get a second one"
+file = "src/service/caldav.rs"
+before = """    format!("RRULE:{}", without_the_property_name(rule))"""
+after = """    format!("RRULE:{rule}")"""
+red = [
+    "application::calendar::tests::test_a_rule_google_already_named_goes_back_without_being_named_twice",
+    "service::caldav::tests::test_a_rule_that_arrived_with_its_property_name_is_not_sent_with_two",
+]

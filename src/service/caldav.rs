@@ -1540,7 +1540,7 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
     // birthday, which is a whole-day event that happens every year, went out
     // as one day in 2026 and never again.
     if let Some(rule) = worth_sending(event.recurrence_rule.as_deref()) {
-        lines.push(format!("RRULE:{}", without_the_property_name(rule)));
+        lines.push(a_rule_line(rule));
     }
     if let Some(called_off) = worth_sending(event.exception_dates.as_deref()) {
         lines.extend(cancelled_day_lines(
@@ -2425,15 +2425,28 @@ fn worth_sending(value: Option<&str>) -> Option<&str> {
 ///
 /// Google keeps the name on the rule and a calendar server's reader takes it
 /// off, so both shapes reach the one column this is built from, and writing
-/// `RRULE:` in front of a value that already says `RRULE:` is not a rule. The
-/// application layer keeps its own copy of this for its own reader rather than
-/// reaching across into the service layer for four lines.
-fn without_the_property_name(rule: &str) -> &str {
+/// `RRULE:` in front of a value that already says `RRULE:` is not a rule.
+///
+/// The one answer to that question in the program. There were two, this and a
+/// copy in the code that works out which days a series falls on, kept apart on
+/// the grounds that four lines are cheaper than reaching across a layer. Three
+/// callers later that reasoning does not hold: the stored column has one
+/// meaning and one reading of it, or two readings drift.
+pub(crate) fn without_the_property_name(rule: &str) -> &str {
     let start = rule
         .get(..6)
         .filter(|head| head.eq_ignore_ascii_case("RRULE:"))
         .map_or(0, str::len);
     rule[start..].trim()
+}
+
+/// A stored rule written as the property line every calendar format wants.
+///
+/// The one writer of that line, so a rule that already carries its name cannot
+/// end up carrying two. Google takes an array of whole property lines, an
+/// `.ics` document is made of them, and both come through here.
+pub(crate) fn a_rule_line(rule: &str) -> String {
+    format!("RRULE:{}", without_the_property_name(rule))
 }
 
 #[cfg(test)]

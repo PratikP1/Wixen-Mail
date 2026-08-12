@@ -105,6 +105,41 @@ pub async fn answering_several(
     std::net::SocketAddr,
     tokio::sync::oneshot::Receiver<Vec<String>>,
 ) {
+    answering_as_asked(
+        status,
+        content_type,
+        replies
+            .into_iter()
+            .map(|reply| -> Reply { Box::new(move |_| reply.clone()) })
+            .collect(),
+    )
+    .await
+}
+
+/// One answer, worked out from everything that has been asked so far.
+///
+/// The requests are handed over in the order they arrived, the one being
+/// answered last.
+pub type Reply = Box<dyn Fn(&[String]) -> String + Send>;
+
+/// Answer several requests, each with a reply worked out from what was asked.
+///
+/// Otherwise exactly [`answering_several`]: one connection per reply, nothing
+/// handed back until the last has been served.
+///
+/// This exists so a fake provider can behave the way a real one does, which is
+/// the only way a round trip can be tested honestly. A create followed by a
+/// read has to hand back on the read what it was told on the create, or the
+/// test is arguing with a reply the real server would never have sent and
+/// would stay green while the thing it is about stopped working.
+pub async fn answering_as_asked(
+    status: &'static str,
+    content_type: &'static str,
+    replies: Vec<Reply>,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Receiver<Vec<String>>,
+) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("a loopback port");
@@ -118,10 +153,11 @@ pub async fn answering_several(
                 return;
             };
             requests.push(read_request(&mut stream).await);
+            let body = reply(&requests);
             let _ = stream
-                .write_all(head(status, content_type, None, reply.len()).as_bytes())
+                .write_all(head(status, content_type, None, body.len()).as_bytes())
                 .await;
-            let _ = stream.write_all(reply.as_bytes()).await;
+            let _ = stream.write_all(body.as_bytes()).await;
             let _ = stream.shutdown().await;
         }
         let _ = asked.send(requests);

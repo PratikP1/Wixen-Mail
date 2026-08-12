@@ -389,6 +389,13 @@ fn calendar_events_url(base: &str, calendar_id: &str) -> String {
 /// A sync marker and a time window are alternatives, not companions: Google
 /// refuses a request carrying both, and a marker already stands for the window
 /// the first sync asked about.
+///
+/// The series itself is asked for, never its days. This program draws a series
+/// from its rule, the same way it does for a calendar server, and a calendar
+/// that answered with the days instead would hand back one row per occurrence
+/// with an identity the series' own row never matches. No ordering is asked
+/// for either: Google offers ordering by start time only over expanded days
+/// and refuses a request that asks for both.
 fn events_url(
     base: &str,
     calendar_id: &str,
@@ -398,7 +405,7 @@ fn events_url(
     page_token: Option<&str>,
 ) -> String {
     let mut url = format!(
-        "{}?singleEvents=true&orderBy=startTime&maxResults=2500",
+        "{}?singleEvents=false&maxResults=2500",
         calendar_events_url(base, calendar_id)
     );
     if let Some(sync_token) = sync_token {
@@ -819,14 +826,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_the_calendar_is_asked_to_expand_a_series_before_it_sends_it() {
-        // Nothing checked this string, and the whole shape of how repeating
-        // events are handled rests on it. Asking for single events means Google
-        // sends the days themselves rather than the series, so a Google event
-        // arrives carrying no repeat rule and the days are already there.
-        // Dropping this parameter would turn every Google series into one row
-        // holding a rule that nothing on this side asked the server to expand,
-        // and no test anywhere would notice.
+    fn test_the_calendar_is_asked_for_the_series_rather_than_for_its_days() {
+        // One answer to one question, and the calendar-server read already gave
+        // it: this program works out the days of a series from its rule, and
+        // asking a server to send the days instead is a second answer.
+        //
+        // Asking for the days is what made a repeating event made here come
+        // back as one row per occurrence, none of which matches the row it was
+        // made from, so the diary filled with a duplicate of every day while
+        // the series went on drawing itself underneath. It also meant the rule
+        // Google sends could never arrive, so the reading of it had never once
+        // run on a real read.
+        //
+        // Sorting by start time goes with it rather than being lost by
+        // accident: Google only offers that ordering over expanded days and
+        // refuses the request outright when it is asked for beside a series.
         let url = events_url(
             "https://example.test/calendars",
             "primary",
@@ -836,7 +850,8 @@ mod tests {
             None,
         );
 
-        assert!(url.contains("singleEvents=true"), "{url}");
+        assert!(url.contains("singleEvents=false"), "{url}");
+        assert!(!url.contains("orderBy="), "{url}");
     }
 
     #[test]

@@ -13,12 +13,20 @@
 //! `for_account` and refuses a change before the network when the setting is
 //! off. A test in this file reads the source and fails if that stops being true.
 //!
-//! Two fields are never built into a change, and that is what keeps a change to
-//! one thing from destroying two others. `recurrence` is never sent, so moving
-//! a weekly meeting cannot flatten the series into one appointment. `attendees`
-//! is never sent, so changing the room cannot uninvite everybody. Google's
-//! update is a merge rather than a replace, which is the other half of the same
-//! guarantee.
+//! How a meeting repeats is sent when the meeting is made and never when one is
+//! changed, and both halves of that matter. Sent on the way up the first time,
+//! because a weekly meeting filed as a single appointment is silent data loss
+//! at both ends: the provider holds one day, and the next read brings that one
+//! day back and takes the repeat off the copy here as well. Left out of a
+//! change, because a provider reads that field as the whole truth about the
+//! series, so a change to the room would replace the series with whatever this
+//! program happened to be able to say about it, and it cannot say all of it.
+//! What that costs is written in the changelog: turning a repeat on or off on a
+//! meeting the provider already holds does not reach the provider.
+//!
+//! The guest list is never sent at all, so changing the room cannot uninvite
+//! everybody. Google's update is a merge rather than a replace, which is the
+//! other half of the same guarantee.
 //!
 //! What that costs, said plainly: a field somebody empties here is sent as
 //! empty, and clears at the provider. That is deliberate, because after a sync
@@ -867,7 +875,7 @@ pub async fn create_google_event(
 ) -> Result<CalendarEventEntry> {
     let filed_under = where_to_file(cache, event, GOOGLE, GOOGLE_CALENDAR_NAME)?;
     let at_google = calendar_at_google(cache, &filed_under)?;
-    let google_event = local_to_google_event(event)?;
+    let google_event = local_to_google_event(event, TheBodyIsFor::MakingIt)?;
     let created = google
         .create_event(token, &at_google, &google_event)
         .await?;
@@ -887,7 +895,7 @@ pub async fn update_google_event(
         .ok_or_else(|| crate::common::Error::Other("No provider event ID".to_string()))?;
     let filed_under = where_to_file(cache, event, GOOGLE, GOOGLE_CALENDAR_NAME)?;
     let at_google = calendar_at_google(cache, &filed_under)?;
-    let google_event = local_to_google_event(event)?;
+    let google_event = local_to_google_event(event, TheBodyIsFor::ChangingIt)?;
     let updated = google
         .update_event(token, &at_google, provider_id, &google_event)
         .await?;
@@ -2111,11 +2119,59 @@ fn moment_for_google(stored: &str, zone: Option<&str>) -> Option<GoogleEventDate
     })
 }
 
+/// Whether a body is making an event the provider has never seen or changing
+/// one it already holds.
+///
+/// A name rather than a flag, because the two bodies differ in the one field
+/// where getting it wrong destroys a series. A create must carry the repeat
+/// rule or the provider files a weekly meeting as a single appointment. A
+/// change must not carry it, because both providers read that field as the
+/// whole truth about the series and this program has no column for half of
+/// what the field can hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheBodyIsFor {
+    /// An event the provider has never been told about.
+    MakingIt,
+    /// One the provider already holds under an identity of its own.
+    ChangingIt,
+}
+
+/// The lines that say a new event repeats, and the days it has called off.
+///
+/// Both together or neither. Google reads this list as the whole truth about
+/// the series, so a rule sent without the days somebody has already cancelled
+/// puts every one of those days back on their calendar.
+///
+/// Written through the one place that writes a rule line, so a rule stored
+/// with its property name already on it, which is the shape the Google reader
+/// stores, cannot go back out carrying two.
+fn how_the_series_repeats(event: &CalendarEventEntry) -> Vec<String> {
+    let Some(rule) = said(event.recurrence_rule.as_deref()) else {
+        return Vec::new();
+    };
+    let mut lines = vec![crate::service::caldav::a_rule_line(rule)];
+    if let Some(called_off) = said(event.exception_dates.as_deref()) {
+        lines.extend(crate::service::caldav::cancelled_day_lines(
+            called_off,
+            crate::common::moment::the_zone_named(event.time_zone.as_deref()),
+        ));
+    }
+    lines
+}
+
+/// A stored value that says something, rather than one that is there and blank.
+fn said(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 /// What a stored event becomes on its way to Google.
 ///
 /// Fails rather than sending a time nobody could read, for the same reason the
 /// Graph converter does.
-pub fn local_to_google_event(event: &CalendarEventEntry) -> Result<GoogleEvent> {
+pub fn local_to_google_event(
+    event: &CalendarEventEntry,
+    for_what: TheBodyIsFor,
+) -> Result<GoogleEvent> {
     let zone = event.time_zone.as_deref();
     let unreadable = |what: &str, value: &str| {
         crate::common::Error::Other(format!(
@@ -2208,6 +2264,15 @@ pub fn local_to_google_event(event: &CalendarEventEntry) -> Result<GoogleEvent> 
             .to_string(),
         ),
         reminders,
+        recurrence: match for_what {
+            TheBodyIsFor::MakingIt => how_the_series_repeats(event),
+            // Left out of a change on purpose, and that is what keeps a change
+            // to one thing from destroying another. Google replaces this list
+            // whole, and this program has no column for the extra days a
+            // series can name, so any list it could build for a change would
+            // drop them.
+            TheBodyIsFor::ChangingIt => Vec::new(),
+        },
         ..Default::default()
     })
 }
@@ -3725,7 +3790,8 @@ mod tests {
             cut_from_event_id: None,
         };
 
-        let google = local_to_google_event(&local).expect("a time Google could read");
+        let google = local_to_google_event(&local, TheBodyIsFor::ChangingIt)
+            .expect("a time Google could read");
         assert_eq!(google.summary.as_deref(), Some("Lunch"));
         assert_eq!(google.description.as_deref(), Some("With team"));
         assert_eq!(google.location.as_deref(), Some("Cafe"));
@@ -4647,7 +4713,7 @@ mod tests {
         timed.end_datetime = "2026-03-05T13:00:00Z".to_string();
         timed.time_zone = Some("America/New_York".to_string());
 
-        let ends = local_to_google_event(&timed)
+        let ends = local_to_google_event(&timed, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .end
             .expect("an appointment without an end is one Google refuses");
@@ -4664,7 +4730,7 @@ mod tests {
         whole_day.start_date = Some("2026-03-06".to_string());
         whole_day.end_date = Some("2026-03-07".to_string());
 
-        let ends = local_to_google_event(&whole_day)
+        let ends = local_to_google_event(&whole_day, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .end
             .expect("a whole-day event needs an end too");
@@ -4681,7 +4747,7 @@ mod tests {
             event.status = status.to_string();
 
             assert_eq!(
-                local_to_google_event(&event)
+                local_to_google_event(&event, TheBodyIsFor::ChangingIt)
                     .expect("a time Google could read")
                     .status
                     .as_deref(),
@@ -4706,7 +4772,7 @@ mod tests {
             event.show_as = blocks_time.to_string();
 
             assert_eq!(
-                local_to_google_event(&event)
+                local_to_google_event(&event, TheBodyIsFor::ChangingIt)
                     .expect("a time Google could read")
                     .transparency
                     .as_deref(),
@@ -4721,7 +4787,7 @@ mod tests {
         let mut with_alert = make_event("e1", "Review", None);
         with_alert.reminders_json = Some("[{\"method\":\"popup\",\"minutes\":15}]".to_string());
 
-        let reminders = local_to_google_event(&with_alert)
+        let reminders = local_to_google_event(&with_alert, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .reminders
             .expect("the alert somebody set has to reach Google");
@@ -4735,7 +4801,7 @@ mod tests {
 
         let silent = make_event("e2", "Quiet", None);
         assert!(
-            local_to_google_event(&silent)
+            local_to_google_event(&silent, TheBodyIsFor::ChangingIt)
                 .expect("a time Google could read")
                 .reminders
                 .is_none(),
@@ -4752,7 +4818,7 @@ mod tests {
         unreadable.reminders_json = Some("[{\"method\":\"popup\"}]".to_string());
 
         assert!(
-            local_to_google_event(&unreadable)
+            local_to_google_event(&unreadable, TheBodyIsFor::ChangingIt)
                 .expect("a time Google could read")
                 .reminders
                 .is_none(),
@@ -5416,7 +5482,7 @@ mod tests {
         // The editor here writes "2026-03-06 09:00": a space instead of a T, no
         // seconds and no zone. Sent verbatim that is not RFC 3339, so Google
         // either refuses the event or puts it at an hour nobody meant.
-        let sent = local_to_google_event(&an_event_stored_here())
+        let sent = local_to_google_event(&an_event_stored_here(), TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .start
             .expect("an event with no start is one Google refuses");
@@ -5442,7 +5508,7 @@ mod tests {
             ..an_event_stored_here()
         };
 
-        let start = local_to_google_event(&event)
+        let start = local_to_google_event(&event, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .start
             .expect("a start");
@@ -5462,7 +5528,7 @@ mod tests {
             ..an_event_stored_here()
         };
 
-        let start = local_to_google_event(&event)
+        let start = local_to_google_event(&event, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .start
             .expect("a start");
@@ -5498,7 +5564,7 @@ mod tests {
             "a Graph clock face with no zone beside it is an hour nobody named"
         );
 
-        let google = local_to_google_event(&event)
+        let google = local_to_google_event(&event, TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .start
             .expect("a start");
@@ -5544,7 +5610,7 @@ mod tests {
                 .expect("a time Graph could read")
                 .start
                 .expect("a start");
-            let google = local_to_google_event(&event)
+            let google = local_to_google_event(&event, TheBodyIsFor::ChangingIt)
                 .expect("a time Google could read")
                 .start
                 .expect("a start");
@@ -5583,7 +5649,7 @@ mod tests {
             birthday.end_date = Some("2026-03-07".to_string());
             birthday.time_zone = Some(naming_nothing.to_string());
 
-            let start = local_to_google_event(&birthday)
+            let start = local_to_google_event(&birthday, TheBodyIsFor::ChangingIt)
                 .expect("a date Google could read")
                 .start
                 .expect("a start");
@@ -5615,8 +5681,11 @@ mod tests {
 
     /// What one converter would put on the wire.
     fn what_google_is_sent(event: &CalendarEventEntry) -> serde_json::Value {
-        serde_json::to_value(local_to_google_event(event).expect("a time Google could read"))
-            .expect("an event to serialize")
+        serde_json::to_value(
+            local_to_google_event(event, TheBodyIsFor::ChangingIt)
+                .expect("a time Google could read"),
+        )
+        .expect("an event to serialize")
     }
 
     /// The same for Graph.
@@ -5684,7 +5753,7 @@ mod tests {
         birthday.end_datetime = "2026-03-06".to_string();
 
         assert_eq!(
-            local_to_google_event(&birthday)
+            local_to_google_event(&birthday, TheBodyIsFor::ChangingIt)
                 .expect("a time Google could read")
                 .end
                 .expect("an end")
@@ -5707,7 +5776,7 @@ mod tests {
         fortnight.end_date = Some("2026-03-20".to_string());
         fortnight.end_datetime = "2026-03-20".to_string();
         assert_eq!(
-            local_to_google_event(&fortnight)
+            local_to_google_event(&fortnight, TheBodyIsFor::ChangingIt)
                 .expect("a time Google could read")
                 .end
                 .expect("an end")
@@ -5725,7 +5794,7 @@ mod tests {
         // the converter dropped every entry that named none. So an alert set on
         // this computer went to Google as no alert at all, which is the same
         // family of defect as the birthday that never reached Outlook.
-        let reminders = local_to_google_event(&an_event_stored_here())
+        let reminders = local_to_google_event(&an_event_stored_here(), TheBodyIsFor::ChangingIt)
             .expect("a time Google could read")
             .reminders
             .expect("the alert somebody set has to reach Google");
@@ -5741,7 +5810,7 @@ mod tests {
 
     // ── Sending what is waiting here ─────────────────────────────────────
 
-    use crate::common::answering::answering_several;
+    use crate::common::answering::{answering_as_asked, answering_several};
 
     /// Ensure a provider's calendar and put one waiting change in it.
     fn a_pending_event_in(
@@ -6089,6 +6158,222 @@ mod tests {
         assert!(
             !stored.pending,
             "an event the provider has taken is not still waiting to be sent"
+        );
+    }
+
+    /// Make a repeating event nobody has sent yet, and capture the create.
+    ///
+    /// The body of the request, not a promise about it: every assertion about
+    /// what a provider is told about a repeat is argued from the bytes that
+    /// left, because the whole reason this was invisible for so long is that
+    /// the tests here stopped at the request line.
+    async fn what_a_new_series_sends(
+        provider: &str,
+        name: &str,
+        rule: &str,
+        called_off: Option<&str>,
+    ) -> (String, serde_json::Value) {
+        let cache = temp_cache(&format!("new_series_{provider}_{}", rule.len()));
+        let mut series = a_pending_event_in(&cache, provider, name, None);
+        series.recurrence_rule = Some(rule.to_string());
+        series.exception_dates = called_off.map(str::to_string);
+        cache.save_calendar_event(&series).expect("the series");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"made-there\"}".to_string(), "{}".to_string()],
+        )
+        .await;
+        let at = format!("http://{address}");
+
+        if provider == GOOGLE {
+            sync_google_calendar(
+                &cache,
+                &GoogleApiClient::allowed_to_change_things_at(&at),
+                "a-token",
+                "acct",
+            )
+            .await
+            .expect("the sync to finish");
+        } else {
+            sync_microsoft_calendar(
+                &cache,
+                &MsGraphClient::allowed_to_change_things_at(&at),
+                "a-token",
+                "acct",
+            )
+            .await
+            .expect("the sync to finish");
+        }
+
+        let requests = heard(listening, "a new series")
+            .await
+            .expect("two requests");
+        (asked_for(&requests[0]).to_string(), body_of(&requests[0]))
+    }
+
+    #[tokio::test]
+    async fn test_a_repeating_event_made_here_reaches_google_carrying_its_repeat_rule() {
+        // The silent data loss this is all about. A weekly meeting made here
+        // was filed at Google as one appointment on one day, and the next read
+        // brought that single appointment back and took the rule off the copy
+        // here as well, so both ends lost it and nothing said anything.
+        let (line, sent) =
+            what_a_new_series_sends(GOOGLE, GOOGLE_CALENDAR_NAME, "FREQ=WEEKLY;BYDAY=TU", None)
+                .await;
+
+        assert_eq!(line, "POST /calendars/primary/events");
+        assert_eq!(
+            sent["recurrence"],
+            serde_json::json!(["RRULE:FREQ=WEEKLY;BYDAY=TU"]),
+            "{sent}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_rule_google_already_named_goes_back_without_being_named_twice() {
+        // The shape the Google reader stores: whole property lines, name and
+        // all. Writing another name on the front of that produces something
+        // that is not a rule at all, and the same mistake has already been made
+        // and caught once on the calendar-server side.
+        let (_, sent) = what_a_new_series_sends(
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "RRULE:FREQ=WEEKLY;BYDAY=TU",
+            None,
+        )
+        .await;
+
+        assert_eq!(
+            sent["recurrence"],
+            serde_json::json!(["RRULE:FREQ=WEEKLY;BYDAY=TU"]),
+            "{sent}"
+        );
+    }
+
+    /// The body of one captured request, as the provider's own reply would
+    /// carry it back.
+    ///
+    /// A real calendar answers a create with its own copy of what it was just
+    /// told, so this is what a fake has to do for a round trip to prove
+    /// anything. Given the identity the provider would have chosen.
+    fn echoed_with_the_identity(request: &str, identity: &str, stamped: &str) -> String {
+        let mut said = body_of(request);
+        let object = said.as_object_mut().expect("an object");
+        object.insert("id".to_string(), serde_json::json!(identity));
+        object.insert("updated".to_string(), serde_json::json!(stamped));
+        object.insert(
+            "lastModifiedDateTime".to_string(),
+            serde_json::json!(stamped),
+        );
+        said.to_string()
+    }
+
+    /// What Google sends back when it is asked to expand a series: the days
+    /// themselves, each under its own identity and none of them repeating.
+    fn the_days_of_a_series(master: &str) -> String {
+        let day = |on: &str| {
+            serde_json::json!({
+                "id": format!("{master}_{on}T090000Z"),
+                "summary": "Sprint planning",
+                "start": { "dateTime": format!("{on}T09:00:00Z") },
+                "end": { "dateTime": format!("{on}T10:00:00Z") },
+                "updated": "2026-03-06T09:00:00Z",
+            })
+        };
+        serde_json::json!({ "items": [day("20260310"), day("20260317")] }).to_string()
+    }
+
+    #[tokio::test]
+    async fn test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create() {
+        // The data loss end to end rather than asserted about. The create said
+        // nothing about the repeat, so Google filed a weekly meeting as one
+        // appointment, answered the next read with that single appointment, and
+        // the read wrote the emptiness back over the copy here. Both ends lost
+        // it and nothing said a word.
+        //
+        // The fake answers with what it was told rather than with something
+        // written by hand, so this cannot stay green while the create stops
+        // carrying the rule.
+        let cache = temp_cache("google_series_round_trip");
+        let mut series = a_pending_event_in(&cache, GOOGLE, GOOGLE_CALENDAR_NAME, None);
+        series.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=TU".to_string());
+        cache.save_calendar_event(&series).expect("the series");
+
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "application/json",
+            vec![
+                Box::new(|asked: &[String]| {
+                    echoed_with_the_identity(&asked[0], "made-at-google", "2026-03-06T09:00:00Z")
+                }),
+                Box::new(|asked: &[String]| {
+                    // What Google would really answer, which depends on what
+                    // it was asked. Told to expand a series it sends the days
+                    // and never the series, each under an identity of its own
+                    // and none of them carrying a rule. So this stays honest
+                    // if the read ever goes back to asking for the days: the
+                    // diary fills with a duplicate of every day and this test
+                    // counts them.
+                    if asked[1].contains("singleEvents=true") {
+                        return the_days_of_a_series("made-at-google");
+                    }
+                    let held = echoed_with_the_identity(
+                        &asked[0],
+                        "made-at-google",
+                        "2026-03-06T09:00:00Z",
+                    );
+                    format!("{{\"items\":[{held}]}}")
+                }),
+            ],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "a create and a read")
+            .await
+            .expect("two requests");
+
+        let held = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            held.len(),
+            1,
+            "one meeting was made, so one row is what the diary holds: {held:#?}"
+        );
+        assert_eq!(held[0].provider_event_id.as_deref(), Some("made-at-google"));
+        assert_eq!(
+            held[0].recurrence_rule.as_deref(),
+            Some("RRULE:FREQ=WEEKLY;BYDAY=TU"),
+            "the meeting still repeats after the read that followed making it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_series_created_here_carries_the_days_it_has_already_called_off() {
+        // Google reads the list it is sent as the whole truth about the series,
+        // so a rule sent without the days somebody has already called off puts
+        // every one of those days back on their calendar.
+        let (_, sent) = what_a_new_series_sends(
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "FREQ=WEEKLY;BYDAY=TU",
+            Some("20260312T090000Z"),
+        )
+        .await;
+
+        assert_eq!(
+            sent["recurrence"],
+            serde_json::json!(["RRULE:FREQ=WEEKLY;BYDAY=TU", "EXDATE:20260312T090000Z"]),
+            "{sent}"
         );
     }
 

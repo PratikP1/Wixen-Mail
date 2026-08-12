@@ -77,7 +77,7 @@ pub fn falls_on(
         .recurrence_rule
         .as_deref()
         .map(str::trim)
-        .map(without_the_property_name)
+        .map(crate::service::caldav::without_the_property_name)
     else {
         return once();
     };
@@ -110,19 +110,6 @@ pub fn falls_on(
         days,
         how_often: rule.spoken(written, &start),
     }
-}
-
-/// A stored rule without the property name some sources keep on the front.
-///
-/// Two shapes reach the one column: a calendar server's reader takes the name
-/// off, and Google sends whole property lines and the converter keeps one. Both
-/// mean the same rule, so both are read the same way.
-fn without_the_property_name(written: &str) -> &str {
-    let start = written
-        .get(..6)
-        .filter(|head| head.eq_ignore_ascii_case("RRULE:"))
-        .map_or(0, str::len);
-    written[start..].trim()
 }
 
 /// The date part of a stored when, whatever shape it was stored in.

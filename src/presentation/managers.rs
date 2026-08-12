@@ -3302,8 +3302,11 @@ mod tests {
     fn the_instant_google_is_told(
         entry: &crate::data::message_cache::CalendarEventEntry,
     ) -> chrono::DateTime<chrono::Utc> {
-        let sent = crate::application::calendar::local_to_google_event(entry)
-            .expect("an event Google can be told about");
+        let sent = crate::application::calendar::local_to_google_event(
+            entry,
+            crate::application::calendar::TheBodyIsFor::ChangingIt,
+        )
+        .expect("an event Google can be told about");
         let start = sent.start.expect("a start").date_time.expect("a time");
         chrono::DateTime::parse_from_rfc3339(&start)
             .expect("a moment in time")
@@ -3622,7 +3625,11 @@ mod tests {
         assert_eq!(edited.start_datetime, "2026-12-15T09:00:00");
         assert_eq!(edited.time_zone.as_deref(), Some("America/New_York"));
 
-        let sent = crate::application::calendar::local_to_google_event(&edited).expect("an event");
+        let sent = crate::application::calendar::local_to_google_event(
+            &edited,
+            crate::application::calendar::TheBodyIsFor::ChangingIt,
+        )
+        .expect("an event");
         let start = sent.start.expect("a start");
         assert_eq!(start.date_time.as_deref(), Some("2026-12-15T09:00:00"));
         assert_eq!(start.time_zone.as_deref(), Some("America/New_York"));

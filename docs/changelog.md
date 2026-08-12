@@ -8,6 +8,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a meeting that repeats, made here in a Google calendar, arrived there
+  as a single appointment and then stopped repeating here as well.** Make a
+  weekly meeting in a Google calendar in this program and it was filed at Google
+  as one appointment on one day. Nothing said so. The next read of that calendar
+  then brought the single appointment back and took the repeat off the copy on
+  this computer too, so the meeting was gone from every week but the first at
+  both ends, with no way to tell and nothing to undo.
+
+  Making a meeting now says how it repeats, and any days of it you had already
+  cancelled go up with it, so cancelling a day is not undone by the meeting being
+  created. Changing a meeting Google already holds still says nothing about how
+  it repeats, which is deliberate: Google reads that as the whole truth about the
+  series, and this program cannot say all of what a series can hold.
+
+  A Google calendar is now read as the series itself rather than as a list of the
+  days it falls on, which is how calendar servers were already read. A meeting
+  that repeats is one entry in your diary and the days are drawn from its rule.
+
+  Known limitations. Turning a repeat on or off on a meeting Google already holds
+  does not reach Google; you have to delete the meeting and make it again. If
+  your diary already holds a separate entry for each day of a Google series from
+  an earlier version, those entries stay where they are until you delete them,
+  because Google will not name them again. None of the Google calendar syncing
+  has run against a real account.
+
 - **Changed: sending a queue of mail now signs in to your mail server once
   instead of once per message.** Every message sent put a copy in your Sent
   folder, and each copy opened its own connection and closed it again. A queue of
