@@ -2699,3 +2699,19 @@ after = """        tracing::warn!("{}", filed.what_happened());"""
 red = [
     "test_a_draft_the_server_would_not_take_reaches_the_person",
 ]
+
+[[guard]]
+name = "the move handler asks one place what to say and what to do with the row"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                let next = crate::application::server_delete::after_a_move(&moved, &into, &subject);
+                if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
+                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                }
+                say(UIUpdate::StatusUpdated(next.said));"""
+after = """                let _ = &moved;
+                say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                say(UIUpdate::StatusUpdated(format!("Moved to {into}: {subject}")));"""
+red = [
+    "test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do",
+]
