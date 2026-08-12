@@ -6375,12 +6375,50 @@ mod changing_one_day_of_a_series {
         );
     }
 
+    /// The block a marker opens, counted brace by brace to the one that closes
+    /// it.
+    ///
+    /// `the_body_of` below stops at a brace in the first column, which is right
+    /// for a whole routine and wrong for a block nested inside one: it would
+    /// run past the end of the block and find whatever came after. Counting
+    /// works for both, and it is proved on made-up text rather than trusted.
+    ///
+    /// It does not read Rust. A brace inside a string or a comment in the block
+    /// would be counted, and there is none in the block this reads.
+    fn the_block_opened_after(source: &str, marker: &str) -> String {
+        let after = source
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("{marker} was not found, so this guard is measuring nothing"))
+            .1;
+        let opens = after
+            .find('{')
+            .unwrap_or_else(|| panic!("{marker} opens no block, so the reading is broken"));
+        let mut depth = 0usize;
+        for (offset, letter) in after[opens..].char_indices() {
+            match letter {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return after[opens..=opens + offset].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("{marker} opens a block that is never closed, so the reading is broken")
+    }
+
     #[test]
     fn test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes() {
         // The window this runs in needs a real frame, so the wiring cannot be
         // driven from a test. It is read instead. A gate that exists and is
         // never called is the failure this project keeps hitting, and here it
         // would let a day leave somebody's calendar server for good.
+        //
+        // What this cannot see: whether anything reaches this answer at all.
+        // The calendar window could stop sending it and every assertion below
+        // would still hold.
         let source = std::fs::read_to_string("src/presentation/managers.rs")
             .expect("this file to be readable");
         let body = source
@@ -6395,7 +6433,60 @@ mod changing_one_day_of_a_series {
             .expect("the day to be written");
         assert!(
             asked < written,
-            "the two halves are written before anything asks whether the              calendar server can take them, so a refusal comes after the day              has already been taken off the series"
+            "the two halves are written before anything asks whether the calendar \
+             server can take them, so a refusal comes after the day has already \
+             been taken off the series"
+        );
+
+        // Asking is not the behaviour. Stopping is. Reading only the order of
+        // those two calls left the refusal free to be said with the write
+        // running straight afterwards, which is the same day gone with a
+        // sentence over it.
+        let refusal =
+            the_block_opened_after(body, "if let Some(refused) = why_that_day_cannot_be_kept(");
+        assert!(
+            refusal.len() > 40,
+            "only {} characters of the refusal were read, so the reading is broken",
+            refusal.len()
+        );
+        assert!(
+            refusal.contains("continue;"),
+            "the day is refused out loud and then taken off the series anyway, \
+             and the calendar server keeps the removal"
+        );
+    }
+
+    #[test]
+    fn test_the_one_day_refusal_check_can_tell_the_two_apart() {
+        // Proving the measurement, on made-up text only. This never reads the
+        // tree: records in `guards/guards.toml` break this file, and a proving
+        // test that read it would go red under every one of them.
+        let sound = "\
+if let Some(refused) = why_that_day_cannot_be_kept(
+    the_calendar_it_is_in(&cache, &opened),
+    &that_day,
+) {
+    send_refusal(tx, rt, &refused);
+    continue;
+}
+one_day_of_a_series_changed(&cache, &series, &opened, that_day)
+";
+        let marker = "if let Some(refused) = why_that_day_cannot_be_kept(";
+        let block = the_block_opened_after(sound, marker);
+        assert!(
+            block.contains("continue;"),
+            "a refusal that stops was read as one that carries on"
+        );
+        assert!(
+            !block.contains("one_day_of_a_series_changed("),
+            "the reading ran past the brace that closes the block, so it would \
+             find a stop anywhere below and call the refusal sound"
+        );
+
+        let carries_on = sound.replace("    continue;\n", "");
+        assert!(
+            !the_block_opened_after(&carries_on, marker).contains("continue;"),
+            "a refusal that carries on was read as one that stops"
         );
     }
 

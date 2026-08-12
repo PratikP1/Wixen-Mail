@@ -3464,3 +3464,25 @@ after = """                        one_day_of_a_series_changed(&cache, &series, 
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
+
+# The narrower edit, which the record above could not see. Asking is not the
+# behaviour: stopping is. This leaves the question asked and the refusal said,
+# and takes away the stop after it, so the day is refused out loud and then
+# taken off the series anyway and the calendar server keeps the removal. The
+# guard read the order of two calls and stayed green through it.
+
+[[guard]]
+name = "the refusal about a day that cannot be kept stops the write"
+file = "src/presentation/managers.rs"
+before = """                            &that_day,
+                        ) {
+                            send_refusal(tx, rt, &refused);
+                            continue;
+                        }"""
+after = """                            &that_day,
+                        ) {
+                            send_refusal(tx, rt, &refused);
+                        }"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
+]
