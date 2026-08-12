@@ -3054,3 +3054,31 @@ after = """    if false {"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_is_not_reported_as_a_deletion",
 ]
+
+[[guard]]
+name = "the calendar window asks whether an answer can be carried out before it queues it"
+file = "src/presentation/wx_calendar.rs"
+before = """                            if let Err(refused) = can_be_honoured(means, goes) {
+                                status.set_label(&refused);
+                            } else {
+                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));"""
+after = """                            {
+                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));"""
+red = [
+    "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
+]
+
+[[guard]]
+name = "the calendar window says what is waiting rather than what is done"
+file = "src/presentation/wx_calendar.rs"
+before = """                                status.set_label(what_is_waiting(match means {
+                                    EditMeans::OneDay => WrittenDown::OneDayTakenOff,
+                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
+                                }));"""
+after = """                                status.set_label(match means {
+                                    EditMeans::OneDay => "That one day is taken off.",
+                                    EditMeans::WholeSeries => "Event deleted.",
+                                });"""
+red = [
+    "presentation::wx_calendar::tests::test_the_calendar_window_asks_before_it_says_anything",
+]

@@ -25,6 +25,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   that worked, so the next press landed on whichever row had moved up. It now
   says the event is no longer there and that nothing has been changed.
 
+- **Fixed: the Calendar window said an event had been changed or deleted the
+  moment you asked for it.** Nothing that window is asked for happens until it
+  closes, and on a Google calendar, an Outlook calendar, or a calendar this
+  program can only read, changing or deleting one day of a repeating event is
+  not carried out at all. So "That one day is taken off" was said, the window
+  closed, and a refusal followed saying nothing had been changed. The window now
+  says what it is waiting to do and when it will happen, and a calendar that
+  will refuse the answer refuses it straight away, while you are still standing
+  there. For an edit that refusal now comes before the editor opens rather than
+  after the whole form has been filled in.
+
+  Known limitation, unchanged: that line of status text still has no accessible
+  name and nothing announces it, so a screen reader reads it only if you go
+  looking for it. What it says is now true. Making it heard is separate work.
+
 - **Fixed: taking one day off a repeating event from the Calendar window
   reported it as a deletion.** The event is still there, with that one day taken
   out of it. The status line said it had been deleted.

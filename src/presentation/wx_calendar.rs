@@ -1,11 +1,19 @@
 //! Calendar agenda-style UI dialog with event editor.
 //!
-//! Accessibility-first: keyboard-navigable list, accelerator keys on all buttons,
-//! screen reader announces status changes.
+//! Keyboard-navigable list, accelerator keys on all buttons, and a line of
+//! status text under the title.
+//!
+//! That status line is not announced. It has no accessible name and nothing
+//! raises a notification when it changes, so a screen reader reads it only if
+//! somebody goes looking for it. This file used to claim otherwise. What the
+//! line says is now true of what has happened, which is a different thing from
+//! being heard, and making it heard is its own change.
 
 use wxdragon::prelude::*;
 
-use crate::application::calendar::{EditMeans, WhereAChangeGoes};
+use crate::application::calendar::{
+    EditMeans, WhereAChangeGoes, WrittenDown, can_be_honoured, what_is_waiting,
+};
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::ui_types::CalendarEventItem;
 use crate::presentation::wx_which_days::which_days_are_meant;
@@ -259,7 +267,7 @@ pub fn show_calendar_dialog(
             r if r == ID_CAL_NEW => {
                 if let Some(data) = show_event_editor(&dialog, None) {
                     actions.push(CalendarAction::CreateEvent(data));
-                    status.set_label("Event created. Sync to push to provider.");
+                    status.set_label(what_is_waiting(WrittenDown::Created));
                 }
             }
             r if r == ID_CAL_EDIT => {
@@ -268,18 +276,29 @@ pub fn show_calendar_dialog(
                     let idx = sel as usize;
                     if let Some(item) = events_data.get(idx) {
                         let prefill = CalendarEventData::as_shown(item);
-                        // Asked before the editor opens, so somebody who meant
-                        // one day is not made to fill a form first and then
-                        // told it cannot be done.
-                        if let Some(means) = which_days_are_meant(
-                            &dialog,
-                            &item.summary,
-                            &item.repeats,
-                            where_changes_go(item),
-                        ) && let Some(data) = show_event_editor(&dialog, Some(&prefill))
+                        let goes = where_changes_go(item);
+                        // Both asked before the editor opens, so somebody who
+                        // meant one day is not made to fill a form in first and
+                        // then told it cannot be done. The refusal is the same
+                        // sentence the manager would give afterwards, from the
+                        // same place, because two spellings of that rule is how
+                        // this window comes to offer what the manager refuses.
+                        if let Some(means) =
+                            which_days_are_meant(&dialog, &item.summary, &item.repeats, goes)
                         {
-                            actions.push(CalendarAction::UpdateEvent(item.clone(), means, data));
-                            status.set_label("Event updated.");
+                            if let Err(refused) = can_be_honoured(means, goes) {
+                                status.set_label(&refused);
+                            } else if let Some(data) = show_event_editor(&dialog, Some(&prefill)) {
+                                actions.push(CalendarAction::UpdateEvent(
+                                    item.clone(),
+                                    means,
+                                    data,
+                                ));
+                                status.set_label(what_is_waiting(match means {
+                                    EditMeans::OneDay => WrittenDown::OneDayChanged,
+                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesChanged,
+                                }));
+                            }
                         }
                     }
                 } else {
@@ -327,22 +346,30 @@ pub fn show_calendar_dialog(
                             }
                         });
 
+                        let goes = where_changes_go(item);
                         if confirm.show_modal() == ID_OK
-                            && let Some(means) = which_days_are_meant(
-                                &dialog,
-                                &item.summary,
-                                &item.repeats,
-                                where_changes_go(item),
-                            )
+                            && let Some(means) =
+                                which_days_are_meant(&dialog, &item.summary, &item.repeats, goes)
                         {
-                            actions.push(CalendarAction::DeleteEvent(item.clone(), means));
-                            // Said as what really happens. Taking one day off a
-                            // series is not a deletion: the event stays and the
-                            // other days keep their own values.
-                            status.set_label(match means {
-                                EditMeans::OneDay => "That one day is taken off.",
-                                EditMeans::WholeSeries => "Event deleted.",
-                            });
+                            // Asked here, where the person is standing, rather
+                            // than after this window closes. A calendar that
+                            // will refuse the answer refuses it now, instead of
+                            // saying the day is off and then saying nothing was
+                            // changed a moment later.
+                            if let Err(refused) = can_be_honoured(means, goes) {
+                                status.set_label(&refused);
+                            } else {
+                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));
+                                // Said as what is waiting to happen. Nothing on
+                                // this list has happened yet, and taking one day
+                                // off a series is not a deletion either: the
+                                // event stays and the other days keep their own
+                                // values.
+                                status.set_label(what_is_waiting(match means {
+                                    EditMeans::OneDay => WrittenDown::OneDayTakenOff,
+                                    EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
+                                }));
+                            }
                         }
                         confirm.destroy();
                     }
@@ -609,6 +636,163 @@ mod tests {
     // here rather than from inside itself, because a test that names
     // `set_value` in an assertion would be counted as a second place the tick
     // is put on.
+
+    // ── The calendar window's own sentences ─────────────────────────────
+    //
+    // Read as text for the same reason: reaching these arms needs a window, a
+    // list with a row selected, and somebody clicking through two dialogs.
+    // What can be read from here is the order things happen in, and the order
+    // is the whole fault: the window announced what it had written down at the
+    // moment it wrote it down, so on a Google calendar, an Outlook calendar or
+    // one this program can only read, "That one day is taken off" was followed
+    // a moment later by a refusal saying nothing had been changed.
+
+    /// This window, read as text, without the tests underneath it.
+    ///
+    /// The tests are cut off because they quote the sentences they are looking
+    /// for. Read whole, the file always holds every one of them and the check
+    /// can never pass.
+    fn the_calendar_window() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_calendar.rs")
+            .expect("the calendar window to be readable")
+            .replace("\r\n", "\n");
+        whole
+            .split_once("\n#[cfg(test)]")
+            .map_or(whole.clone(), |(window, _)| window.to_string())
+    }
+
+    /// One arm of the window's loop, from its label to the start of the next.
+    fn the_arm_for(source: &str, id: &str) -> String {
+        let marker = format!("r if r == {id}");
+        let after = source
+            .split_once(marker.as_str())
+            .unwrap_or_else(|| panic!("no arm for {id}"))
+            .1;
+        let end = ["\n            r if r ==", "\n            _ =>"]
+            .iter()
+            .filter_map(|next| after.find(next))
+            .min()
+            .unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    /// What one arm gets wrong about the order it does things in.
+    fn what_the_arm_gets_wrong(arm: &str, before: &[&str]) -> Vec<String> {
+        let Some(asked) = arm.find("can_be_honoured(") else {
+            return vec![
+                "the arm never asks whether the answer can be carried out, so the \
+                 window offers what the calendar will refuse"
+                    .to_string(),
+            ];
+        };
+        before
+            .iter()
+            .filter_map(|later| {
+                arm.find(later)
+                    .filter(|at| *at < asked)
+                    .map(|_| format!("{later} happens before the answer is asked about"))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_the_calendar_window_asks_before_it_says_anything() {
+        let source = the_calendar_window();
+
+        let delete = the_arm_for(&source, "ID_CAL_DELETE");
+        let edit = the_arm_for(&source, "ID_CAL_EDIT");
+        assert!(
+            delete.len() > 200 && edit.len() > 200,
+            "the arms read as {} and {} characters, so the reading is broken",
+            delete.len(),
+            edit.len()
+        );
+
+        let mut wrong = what_the_arm_gets_wrong(&delete, &["actions.push(", "set_label("]);
+        // The editor is a form somebody fills in. Asking after it opens means
+        // filling the whole thing in and then being told it cannot be done,
+        // which is what the comment in that arm has always promised it does
+        // not do.
+        wrong.extend(what_the_arm_gets_wrong(&edit, &["show_event_editor("]));
+        for said in [
+            "That one day is taken off.",
+            "Event deleted.",
+            "Event updated.",
+            "Event created.",
+        ] {
+            if source.contains(said) {
+                wrong.push(format!(
+                    "{said} is still said here, in the past tense, about something \
+                     that has not happened yet"
+                ));
+            }
+        }
+        if !source.contains("what_is_waiting(") {
+            wrong.push(
+                "the window words what it is waiting to do itself, so its words and \
+                 the ones said afterwards can drift apart"
+                    .to_string(),
+            );
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_calendar_window_check_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything.
+        let sound = "                let goes = where_changes_go(item);\n\
+            \x20               if let Err(refused) = can_be_honoured(means, goes) {\n\
+            \x20                   status.set_label(&refused);\n\
+            \x20               } else {\n\
+            \x20                   actions.push(CalendarAction::DeleteEvent(item.clone(), means));\n\
+            \x20               }\n";
+        assert!(
+            what_the_arm_gets_wrong(sound, &["actions.push(", "set_label("]).is_empty(),
+            "a sound arm was reported as broken"
+        );
+
+        let said_first = "                status.set_label(\"That one day is taken off.\");\n\
+            \x20               if let Err(refused) = can_be_honoured(means, goes) {}\n";
+        let wrong = what_the_arm_gets_wrong(said_first, &["actions.push(", "set_label("]);
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].contains("set_label("), "{wrong:?}");
+
+        let never_asks =
+            "                actions.push(CalendarAction::DeleteEvent(item, means));\n";
+        assert!(
+            what_the_arm_gets_wrong(never_asks, &["actions.push("])[0].contains("never asks"),
+            "an arm that never asks was not reported"
+        );
+
+        // And the tests underneath are really cut off, because they quote every
+        // sentence the check looks for.
+        let window = the_calendar_window();
+        assert!(
+            window.len() > 5000,
+            "only {} characters of the window were read, so the reading is broken",
+            window.len()
+        );
+        assert!(
+            !window.contains("fn the_calendar_window("),
+            "the tests were not cut off, so the check is reading its own words"
+        );
+
+        // And the cutter stops at the next arm rather than running on.
+        let loop_source = "            r if r == ID_CAL_EDIT => {\n\
+            \x20               edit_only();\n\
+            \x20           }\n\
+            \x20           r if r == ID_CAL_DELETE => {\n\
+            \x20               delete_only();\n\
+            \x20           }\n\
+            \x20           _ => break,\n";
+        assert!(the_arm_for(loop_source, "ID_CAL_EDIT").contains("edit_only"));
+        assert!(
+            !the_arm_for(loop_source, "ID_CAL_EDIT").contains("delete_only"),
+            "the cutter ran on into the next arm"
+        );
+    }
 
     /// The window that asks the question, read as text.
     fn the_window_that_asks() -> String {
