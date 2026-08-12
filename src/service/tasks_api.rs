@@ -29,7 +29,7 @@
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{TaskEntry, TaskListEntry};
-use crate::service::outward::in_a_query;
+use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
 /// Where Google keeps tasks.
@@ -450,6 +450,16 @@ pub fn strip_prefix(id: &str, prefix: &str) -> String {
     id.strip_prefix(prefix).unwrap_or(id).to_string()
 }
 
+/// The provider's own id, ready to be one segment of an address.
+///
+/// The prefix comes off first and the escaping happens second, and that order
+/// is the whole reason this is one function rather than two calls at each site.
+/// Escaping first turns the colon into `%3A`, so the prefix no longer matches
+/// itself and every request goes to a list named after the prefix.
+fn in_an_address(id: &str, prefix: &str) -> String {
+    in_a_path(&strip_prefix(id, prefix))
+}
+
 // ── The calls ───────────────────────────────────────────────────────────────
 
 /// What a status the provider refused a write with means here.
@@ -496,9 +506,16 @@ fn google_lists_url(base: &str, page: Option<&str>) -> String {
 /// as `updatedMin` would delete everything Google had not touched since the
 /// last one. Neither would fail anywhere but on somebody's real account, which
 /// is why the query is pinned by a test.
+///
+/// The list's own name is escaped for the same reason a task's is on the way
+/// out, and it costs more here: a hash in a list name truncates the address at
+/// the fragment, and everything dropped with it includes the three parameters
+/// above. A read narrowed that way comes back short, and short is what this
+/// sync reads as deleted.
 fn google_tasks_url(base: &str, list_id: &str, page: Option<&str>) -> String {
+    let list = in_a_path(list_id);
     let mut url = format!(
-        "{base}/lists/{list_id}/tasks\
+        "{base}/lists/{list}/tasks\
          ?maxResults=100&showCompleted=true&showHidden=true&showDeleted=true"
     );
     if let Some(page) = page {
@@ -730,7 +747,7 @@ impl TasksClient {
         task: &GoogleTask,
     ) -> Result<GoogleTask> {
         let base = &self.google_base;
-        let list = strip_prefix(list_id, "google:");
+        let list = in_an_address(list_id, "google:");
         let body = GoogleTask {
             id: String::new(),
             ..task.clone()
@@ -752,8 +769,8 @@ impl TasksClient {
         task: &GoogleTask,
     ) -> Result<GoogleTask> {
         let base = &self.google_base;
-        let list = strip_prefix(list_id, "google:");
-        let id = strip_prefix(&task.id, "google:");
+        let list = in_an_address(list_id, "google:");
+        let id = in_an_address(&task.id, "google:");
         self.send(
             reqwest::Method::PATCH,
             &format!("{base}/lists/{list}/tasks/{id}"),
@@ -771,8 +788,8 @@ impl TasksClient {
         task_id: &str,
     ) -> Result<()> {
         let base = &self.google_base;
-        let list = strip_prefix(list_id, "google:");
-        let id = strip_prefix(task_id, "google:");
+        let list = in_an_address(list_id, "google:");
+        let id = in_an_address(task_id, "google:");
         self.delete(&format!("{base}/lists/{list}/tasks/{id}"), token)
             .await
     }
@@ -785,7 +802,7 @@ impl TasksClient {
         task: &MsTodoTask,
     ) -> Result<MsTodoTask> {
         let base = &self.microsoft_base;
-        let list = strip_prefix(list_id, "ms:");
+        let list = in_an_address(list_id, "ms:");
         let body = MsTodoTask {
             id: String::new(),
             ..task.clone()
@@ -807,8 +824,8 @@ impl TasksClient {
         task: &MsTodoTask,
     ) -> Result<MsTodoTask> {
         let base = &self.microsoft_base;
-        let list = strip_prefix(list_id, "ms:");
-        let id = strip_prefix(&task.id, "ms:");
+        let list = in_an_address(list_id, "ms:");
+        let id = in_an_address(&task.id, "ms:");
         self.send(
             reqwest::Method::PATCH,
             &format!("{base}/me/todo/lists/{list}/tasks/{id}"),
@@ -821,17 +838,21 @@ impl TasksClient {
     /// Remove a task from a Microsoft list.
     pub async fn ms_delete_task(&self, token: &str, list_id: &str, task_id: &str) -> Result<()> {
         let base = &self.microsoft_base;
-        let list = strip_prefix(list_id, "ms:");
-        let id = strip_prefix(task_id, "ms:");
+        let list = in_an_address(list_id, "ms:");
+        let id = in_an_address(task_id, "ms:");
         self.delete(&format!("{base}/me/todo/lists/{list}/tasks/{id}"), token)
             .await
     }
 
     /// Every task in one Microsoft list.
+    ///
+    /// Only the first address is built here. A next link is a whole address
+    /// Graph handed back, and it is followed as it came.
     pub async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<PagedRead<MsTodoTask>> {
         let mut all = Vec::new();
         let base = &self.microsoft_base;
-        let mut url = format!("{base}/me/todo/lists/{list_id}/tasks");
+        let list = in_a_path(list_id);
+        let mut url = format!("{base}/me/todo/lists/{list}/tasks");
         loop {
             let response: MsTasksResponse = self.get(&url, token).await?;
             all.extend(response.value);
@@ -1636,6 +1657,109 @@ mod tests {
         assert_eq!(
             asked_for(&request),
             "DELETE /me/todo/lists/list-1/tasks/t-9",
+            "{request}"
+        );
+    }
+
+    // ── How an identifier the provider chose becomes part of an address ─────
+    //
+    // This file answered that question differently from every other file that
+    // asks it. The contacts and calendar sides of both these same accounts
+    // escape an identifier before dropping it into a path; all eight addresses
+    // built here interpolated it raw.
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_identifier_goes_into_the_address_the_way_a_contact_one_does() {
+        // Graph's identifiers are base64-ish and carry characters that end a
+        // path or start a query. Dropped in raw, a change is addressed at some
+        // other task or at none, and a deletion sent to the wrong task cannot
+        // be taken back. The contacts side of this same account already answers
+        // this question, and until now this file answered it the other way.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .ms_delete_task("a-token", "ms:AAMk/AGI2+3?x", "ms:BBB/CC+D?e")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "a Microsoft task deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /me/todo/lists/AAMk%2FAGI2%2B3%3Fx/tasks/BBB%2FCC%2BD%3Fe",
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_identifier_goes_into_the_address_the_way_a_calendar_one_does() {
+        // A hash truncates an address at the fragment, and a fragment never
+        // leaves this machine. Sent raw, the deletion below asks Google to
+        // remove a task called "t", which is either somebody else's task or
+        // none at all.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+
+        client
+            .google_delete_task("a-token", "google:my list", "google:t#9")
+            .await
+            .expect("the deletion to be sent");
+
+        let request = heard(listening, "a Google task deletion")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /lists/my%20list/tasks/t%239",
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_task_read_names_its_list_as_carefully_as_a_write_does() {
+        // The reads build addresses of their own, so escaping only the writes
+        // would leave one file answering one question two ways. Here a hash
+        // costs more than in a write: everything after it is dropped, and what
+        // is dropped includes the three parameters that make this a full read
+        // of the list. A narrowed read is how the sync comes to remove tasks it
+        // merely did not see.
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"items":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_tasks("a-token", "my#list")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        let asked = asked_for(&request);
+        assert!(
+            asked.starts_with("GET /lists/my%23list/tasks?"),
+            "{request}"
+        );
+        assert!(asked.contains("showDeleted=true"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_read_names_its_list_as_carefully_as_a_write_does() {
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"value":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_tasks("a-token", "AAMk/2?x")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "GET /me/todo/lists/AAMk%2F2%3Fx/tasks",
             "{request}"
         );
     }

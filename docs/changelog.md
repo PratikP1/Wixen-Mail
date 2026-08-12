@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a change or a deletion for a task could reach the wrong task, or
+  nothing at all.** A task and the list holding it are named by identifiers the
+  service picked, and those identifiers were put into the web address exactly as
+  they came. One holding a slash, a plus, a question mark, a hash or a space
+  breaks the address in two, so the request arrives pointing somewhere else, and
+  a deletion sent to the wrong task cannot be taken back. The reading side was
+  worse: a hash cut the address short, and what was cut off with it included the
+  parts that ask for completed, hidden and deleted tasks. A read cut short comes
+  back with less than the list holds, and less is what this program reads as
+  "these were deleted somewhere else", so it would have taken tasks off this
+  computer that nobody had deleted anywhere. Identifiers now go into a task
+  address the same careful way contact and calendar identifiers already did.
+
+  Known limitation, unchanged: none of the task syncing has run against a real
+  account.
+
 - **Fixed: the Calendar window answered out loud and then stopped.** Everything
   that window says back, a refusal, a note that nothing is selected, and what it
   is waiting to do when you close it, went onto a line of text under the title
