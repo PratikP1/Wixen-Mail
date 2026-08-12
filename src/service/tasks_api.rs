@@ -452,8 +452,16 @@ pub fn strip_prefix(id: &str, prefix: &str) -> String {
 
 /// The provider's own id, ready to be one segment of an address.
 ///
-/// The prefix comes off first and the escaping happens second, and that order
-/// is the whole reason this is one function rather than two calls at each site.
+/// Every address built in this file goes through here, the two reads as well as
+/// the six writes, because they used to answer the same question two ways. The
+/// writes took an id with the prefix on or off; the reads took only one without.
+/// Nothing kept those apart but which caller happened to call which, and the
+/// cost fell on the read: asked for a list under the name this computer files it
+/// under, the provider has never heard of it and answers with nothing, and
+/// nothing coming back is what the task sync reads as a list somebody emptied.
+///
+/// The prefix comes off first and the escaping happens second, and that order is
+/// the whole reason this is one function rather than two calls at each site.
 /// Escaping first turns the colon into `%3A`, so the prefix no longer matches
 /// itself and every request goes to a list named after the prefix.
 fn in_an_address(id: &str, prefix: &str) -> String {
@@ -513,7 +521,7 @@ fn google_lists_url(base: &str, page: Option<&str>) -> String {
 /// above. A read narrowed that way comes back short, and short is what this
 /// sync reads as deleted.
 fn google_tasks_url(base: &str, list_id: &str, page: Option<&str>) -> String {
-    let list = in_a_path(list_id);
+    let list = in_an_address(list_id, "google:");
     let mut url = format!(
         "{base}/lists/{list}/tasks\
          ?maxResults=100&showCompleted=true&showHidden=true&showDeleted=true"
@@ -851,7 +859,7 @@ impl TasksClient {
     pub async fn ms_tasks(&self, token: &str, list_id: &str) -> Result<PagedRead<MsTodoTask>> {
         let mut all = Vec::new();
         let base = &self.microsoft_base;
-        let list = in_a_path(list_id);
+        let list = in_an_address(list_id, "ms:");
         let mut url = format!("{base}/me/todo/lists/{list}/tasks");
         loop {
             let response: MsTasksResponse = self.get(&url, token).await?;
@@ -1760,6 +1768,59 @@ mod tests {
         assert_eq!(
             asked_for(&request),
             "GET /me/todo/lists/AAMk%2F2%3Fx/tasks",
+            "{request}"
+        );
+    }
+
+    // ── Whether an id arrives with this application's prefix on it ──────────
+    //
+    // The writes said "either way" and the reads said "never", and the only
+    // thing holding those apart was which call site happened to call which. A
+    // lenient writer over a strict reader is the shape every data-losing defect
+    // found here has had.
+
+    #[tokio::test]
+    async fn test_a_google_task_read_asks_for_the_list_under_the_name_google_gave_it() {
+        // The cost of the two halves disagreeing lands entirely on the read.
+        // Asked for a list under the name this computer files it under, Google
+        // has never heard of it and answers with nothing, and nothing coming
+        // back is what the task sync reads as "every task in this list was
+        // deleted somewhere else".
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"items":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_tasks("a-token", "google:list-1")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        assert!(
+            asked_for(&request).starts_with("GET /lists/list-1/tasks?"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_task_read_asks_for_the_list_under_the_name_graph_gave_it() {
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"value":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_tasks("a-token", "ms:list-1")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "GET /me/todo/lists/list-1/tasks",
             "{request}"
         );
     }

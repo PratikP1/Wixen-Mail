@@ -3593,3 +3593,53 @@ after = """                            &that_day,
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
+
+# ── How a task identifier becomes part of an address ────────────────────────
+#
+# Two rules, one function, because every address built for tasks goes through
+# it: the six writes and both reads. They did not before. The writes escaped
+# nothing and took the prefix off either way; the reads escaped nothing and
+# took nothing off. What that cost is not hypothetical: measured against the
+# identifiers the two services really hand out, a deletion aimed at one task
+# arrived asking to remove another, and a read of a list went out with the
+# three parameters that make it a whole read dropped, which the sync reads as
+# a list somebody emptied.
+
+[[guard]]
+name = "a task identifier is escaped before it becomes part of an address"
+file = "src/service/tasks_api.rs"
+before = """fn in_an_address(id: &str, prefix: &str) -> String {
+    in_a_path(&strip_prefix(id, prefix))
+}"""
+after = """fn in_an_address(id: &str, prefix: &str) -> String {
+    strip_prefix(id, prefix)
+}"""
+red = [
+    "service::tasks_api::tests::test_a_google_task_identifier_goes_into_the_address_the_way_a_calendar_one_does",
+    "service::tasks_api::tests::test_a_google_task_read_names_its_list_as_carefully_as_a_write_does",
+    "service::tasks_api::tests::test_a_microsoft_task_identifier_goes_into_the_address_the_way_a_contact_one_does",
+    "service::tasks_api::tests::test_a_microsoft_task_read_names_its_list_as_carefully_as_a_write_does",
+]
+
+[[guard]]
+name = "a task identifier loses this application's prefix before it becomes part of an address"
+file = "src/service/tasks_api.rs"
+before = """fn in_an_address(id: &str, prefix: &str) -> String {
+    in_a_path(&strip_prefix(id, prefix))
+}"""
+after = """fn in_an_address(id: &str, prefix: &str) -> String {
+    in_a_path(id)
+}"""
+red = [
+    "application::tasks_sync::tests::test_the_six_task_writes_a_sync_uses_each_reach_the_provider_rather_than_the_forwarder",
+    "service::tasks_api::tests::test_a_change_to_a_google_task_names_the_task_in_the_address_and_carries_what_changed",
+    "service::tasks_api::tests::test_a_change_to_a_microsoft_task_names_the_task_in_the_address_and_says_which_day",
+    "service::tasks_api::tests::test_a_google_task_deletion_names_the_list_and_the_task_and_sends_no_body",
+    "service::tasks_api::tests::test_a_google_task_identifier_goes_into_the_address_the_way_a_calendar_one_does",
+    "service::tasks_api::tests::test_a_google_task_read_asks_for_the_list_under_the_name_google_gave_it",
+    "service::tasks_api::tests::test_a_microsoft_task_deletion_names_the_list_and_the_task",
+    "service::tasks_api::tests::test_a_microsoft_task_identifier_goes_into_the_address_the_way_a_contact_one_does",
+    "service::tasks_api::tests::test_a_microsoft_task_read_asks_for_the_list_under_the_name_graph_gave_it",
+    "service::tasks_api::tests::test_a_new_google_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
+    "service::tasks_api::tests::test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
+]
