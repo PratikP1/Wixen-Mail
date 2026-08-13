@@ -1805,6 +1805,163 @@ mod completeness {
         }
     }
 
+    /// Every call that actually leaves a mail server changed, by the literal
+    /// text it is written with, per file.
+    ///
+    /// The census above answers "was a write measured"; this answers "did a
+    /// write ask the gate before it happened", and it does not depend on
+    /// anybody remembering to call [`super::permitted`]. Most IMAP writes go
+    /// through the library's own helpers (`self.session.subscribe`,
+    /// `.uid_copy`, `.uid_mv`, `.append`), so the protocol keyword the census
+    /// above reads is inside `async_imap` and not in this tree at all: a
+    /// check that looked for `"UID COPY"` in imap.rs would find nothing and
+    /// pass. What is bounded and checkable instead is the call into the
+    /// session, because a command cannot reach an IMAP server without
+    /// touching `self.session`, cannot reach a POP server without
+    /// `self.command("DELE"`, and cannot reach an SMTP server without the
+    /// lettre transport.
+    const A_CALL_THAT_CHANGES_A_MAILBOX: [(&str, &[&str]); 3] = [
+        (
+            "src/service/protocols/imap.rs",
+            &[
+                "self.session.subscribe(",
+                "self.session.unsubscribe(",
+                "self.session.uid_copy(",
+                "self.session.uid_mv(",
+                "self.session.append(",
+                "\"UID STORE",
+                "\"UID EXPUNGE",
+            ],
+        ),
+        ("src/service/protocols/pop3.rs", &["\"DELE\""]),
+        (
+            "src/service/protocols/smtp.rs",
+            &["AsyncSmtpTransport", ".send(message)", ".send_raw("],
+        ),
+    ];
+
+    /// A private helper that sends, and every method in the same file that
+    /// calls it.
+    ///
+    /// [`test_nothing_sends_a_changing_command_without_asking_the_gate`]
+    /// cannot see a write behind one more level of indirection on its own: a
+    /// private helper's own chunk holds the marker, not its caller's, so the
+    /// helper is named here with every real caller, and the check below holds
+    /// each of those callers to being gated in its own right rather than
+    /// trusting the exception blindly.
+    ///
+    /// Both entries were verified by reading every call site rather than
+    /// assumed: `expunge_one` is reached from three places, not the two an
+    /// earlier reading of this file named, because `remove_these` calls it as
+    /// well as `move_message` and `delete_message`. All three ask the gate
+    /// before they reach it. `transport` builds a connection and sends
+    /// nothing itself; it is reached only from the two gated public methods
+    /// that send.
+    const NOT_GATED_AND_DOES_NOT_NEED_TO_BE: [(&str, &str, &[&str]); 2] = [
+        (
+            "src/service/protocols/imap.rs",
+            "expunge_one",
+            &["move_message", "remove_these", "delete_message"],
+        ),
+        (
+            "src/service/protocols/smtp.rs",
+            "transport",
+            &["send_email", "send_raw"],
+        ),
+    ];
+
+    /// Every method in `production`, in the order it appears, paired with its
+    /// whole body as text.
+    ///
+    /// Every method rather than only the public ones that [`writes_in`]
+    /// keeps: a private helper that sends has to be seen on its own, not
+    /// merged into whichever public method happens to sit above it in the
+    /// file, because [`NOT_GATED_AND_DOES_NOT_NEED_TO_BE`] has to be able to
+    /// read that helper's chunk apart from its callers'.
+    fn method_chunks(production: &str) -> Vec<(&str, String)> {
+        let mut chunks = Vec::new();
+        let mut inside: Option<&str> = None;
+        let mut body = String::new();
+        for line in production.lines() {
+            if let Some((name, _)) = method_named(line) {
+                if let Some(name) = inside.replace(name) {
+                    chunks.push((name, std::mem::take(&mut body)));
+                }
+            }
+            if inside.is_some() {
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+        if let Some(name) = inside {
+            chunks.push((name, body));
+        }
+        chunks
+    }
+
+    #[test]
+    fn test_nothing_sends_a_changing_command_without_asking_the_gate() {
+        // The guard that does not depend on anybody remembering to ask the
+        // gate: it reads where a write actually leaves rather than where a
+        // method happens to be named, which is the shape of hole POP3 shipped
+        // in for the life of this project.
+        for (path, markers) in A_CALL_THAT_CHANGES_A_MAILBOX {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let production = the_production_half(&source);
+            let chunks = method_chunks(production);
+            assert!(
+                !chunks.is_empty(),
+                "{path}: no methods were found, so the way a method is recognised has moved \
+                 and this is looking at the wrong thing"
+            );
+            for (name, body) in &chunks {
+                let sends = markers.iter().any(|marker| body.contains(marker));
+                if !sends {
+                    continue;
+                }
+                let gated = SENDS_A_MAIL_CHANGE
+                    .iter()
+                    .any(|marker| body.contains(marker));
+                if gated {
+                    continue;
+                }
+                let Some((_, _, callers)) = NOT_GATED_AND_DOES_NOT_NEED_TO_BE
+                    .iter()
+                    .find(|(file, method, _)| *file == path && method == name)
+                else {
+                    panic!(
+                        "{path}: {name} sends a change to a mail server and asks nothing \
+                         before it does, and it is not the named caller of anything gated \
+                         either"
+                    );
+                };
+                for caller in *callers {
+                    let (_, caller_body) = chunks
+                        .iter()
+                        .find(|(chunk_name, _)| chunk_name == caller)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "{path}: {name} is excepted as called by {caller}, and {caller} \
+                                 is not a method in this file any more"
+                            )
+                        });
+                    assert!(
+                        caller_body.contains(&format!(".{name}(")),
+                        "{path}: {name} is excepted as called by {caller}, and {caller} does \
+                         not call it"
+                    );
+                    assert!(
+                        SENDS_A_MAIL_CHANGE
+                            .iter()
+                            .any(|marker| caller_body.contains(marker)),
+                        "{path}: {name} is excepted because {caller} calls it and is gated, \
+                         and {caller} does not ask the gate"
+                    );
+                }
+            }
+        }
+    }
+
     /// Every Rust file under `src`, however deep.
     fn every_source_file() -> Vec<std::path::PathBuf> {
         let mut found = Vec::new();
