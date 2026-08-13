@@ -469,6 +469,35 @@ impl Filled {
         self.text(name).parse().unwrap_or(if_missing)
     }
 
+    /// Which of a field's offered choices was made, lowercased.
+    ///
+    /// A form that never asked a question must not be read as somebody having
+    /// answered it with nothing. Nothing is a value both calendar providers and
+    /// the task provider refuse, and a refused change is sent again on every
+    /// sync for as long as the row exists, so the empty answer used to be a
+    /// task or an event that could never leave this computer and never said so.
+    /// Copying a message into a task or an event is exactly that case: there is
+    /// no form, so only a title and a body are filled in.
+    ///
+    /// Falls back to the first choice, which is the one the form shows before
+    /// anybody touches it, so a value stored without asking is the value
+    /// somebody would have got by not answering.
+    pub fn chosen(&self, kind: ItemKind, name: FieldName) -> String {
+        let offered = fields_for(kind)
+            .iter()
+            .find(|field| field.name == name)
+            .and_then(|field| match field.entry {
+                Entry::Pick(options) => Some(options),
+                _ => None,
+            })
+            .unwrap_or(&[]);
+        let answered = self.text(name).to_lowercase();
+        if offered.iter().any(|o| o.to_lowercase() == answered) {
+            return answered;
+        }
+        offered.first().unwrap_or(&"").to_lowercase()
+    }
+
     /// What is missing, of the fields that were required.
     ///
     /// Named rather than counted, so the message can say which one and focus
@@ -635,6 +664,70 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_every_priority_the_form_offers_is_one_the_task_service_knows() {
+        // Green the day it was written, and that is what it is for. The words
+        // this form offers and the words a task can be sent to a provider with
+        // are two lists of the same three, and nothing else joins them. Adding
+        // a fourth word here would otherwise compile, pass, store fine, look
+        // right on screen, and be refused by the provider on every sync of that
+        // task for as long as it existed.
+        use crate::service::tasks_api::TaskPriority;
+        for word in PRIORITY {
+            assert!(
+                TaskPriority::stored(&word.to_lowercase()).is_some(),
+                "the form offers {word:?} and a task carrying it cannot be sent anywhere"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_choice_the_form_never_asked_for_falls_back_to_the_one_it_would_have_offered() {
+        // The empty answer is what a form that was never shown gives back for
+        // every choice on it, and it is the one answer no provider takes.
+        let never_asked = Filled::default();
+        assert_eq!(
+            never_asked.chosen(ItemKind::Task, FieldName::Priority),
+            "normal"
+        );
+        assert_eq!(
+            never_asked.chosen(ItemKind::Event, FieldName::Status),
+            "confirmed"
+        );
+        assert_eq!(
+            never_asked.chosen(ItemKind::Event, FieldName::ShowAs),
+            "busy"
+        );
+        assert_eq!(
+            never_asked.chosen(ItemKind::Reminder, FieldName::Priority),
+            "normal"
+        );
+
+        // What somebody did choose comes back, and comes back lowercased,
+        // because the words are offered with a capital and stored without one.
+        let mut answered = Filled::default();
+        answered.put(FieldName::Priority, "High");
+        answered.put(FieldName::Status, "Tentative");
+        answered.put(FieldName::ShowAs, "Free");
+        assert_eq!(answered.chosen(ItemKind::Task, FieldName::Priority), "high");
+        assert_eq!(
+            answered.chosen(ItemKind::Event, FieldName::Status),
+            "tentative"
+        );
+        assert_eq!(answered.chosen(ItemKind::Event, FieldName::ShowAs), "free");
+
+        // Something the form never offered is not an answer either. It can only
+        // arrive from a caller building the form's values by hand, and letting
+        // it through would put the same unsendable value in the database by a
+        // longer road.
+        let mut invented = Filled::default();
+        invented.put(FieldName::Priority, "Urgent");
+        assert_eq!(
+            invented.chosen(ItemKind::Task, FieldName::Priority),
+            "normal"
+        );
     }
 
     #[test]

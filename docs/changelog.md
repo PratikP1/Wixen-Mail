@@ -8,6 +8,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: copying a message into a task or an event made something that could
+  never be sent anywhere.** Copying a message fills in a title and a body and
+  asks nothing else, and the questions nobody was asked were stored as answered
+  with nothing. A task like that was refused by Microsoft To Do on every sync,
+  for as long as the task existed, and you were told only that a sync had a
+  problem. Those questions now take the answer the form would have shown you if
+  it had opened: a task is normal priority, an event is confirmed and busy.
+
+  A priority that is not one of the three the task services understand is now
+  stopped here, in a line naming the value and the words that would work,
+  rather than being sent and refused. Nothing has been run against a real
+  account: what is tested is what leaves this machine.
+
 - **Fixed: opening Tasks or Notes did not say what had loaded.** Opening the
   calendar says how many calendars and how many reminders arrived. Opening
   Tasks said how many tasks but never how many lists, and opening Notes filled

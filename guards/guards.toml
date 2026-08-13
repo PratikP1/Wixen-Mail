@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 40 records have arrived since and have not been through it.
+# 42 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4488,4 +4488,59 @@ before = """        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.re
 after = """        MailSortOption::UnreadFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
+]
+
+# ── A priority no task service understands stops before the wire ────────────
+#
+# Microsoft To Do takes three words for a priority and refuses the whole change
+# for anything else. The reader folded anything unrecognised into "normal" and
+# the writer sent the stored value exactly as it was, which is two answers to
+# one question, and the copy-a-message-into-a-task path really produced a
+# fourth value. A task like that was refused on every sync, never got an
+# identifier from the provider so never became a change that could heal, and
+# the person heard only that a sync had a problem.
+#
+# The break puts the fold back on the writing side: an unrecognised priority
+# leaves as "normal" instead of stopping here. That is the plausible regression,
+# because it compiles, keeps every task syncing, and quietly rewrites somebody's
+# priority to something they did not choose.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py: this break reddens
+# exactly the three below and nothing else in the library.
+
+[[guard]]
+name = "a task priority nothing understands is refused rather than quietly changed"
+file = "src/service/tasks_api.rs"
+before = """    let importance = TaskPriority::stored(&task.priority)
+        .ok_or_else(|| TaskPriority::nothing_understands(&task.priority))?;"""
+after = """    let importance = TaskPriority::stored(&task.priority).unwrap_or(TaskPriority::Normal);"""
+red = [
+    "application::tasks_sync::tests::test_a_task_whose_priority_nothing_understands_is_named_rather_than_left_to_the_provider",
+    "service::tasks_api::tests::test_a_task_priority_microsoft_does_not_know_reaches_no_listener_that_could_have_seen_it",
+    "service::tasks_api::tests::test_the_only_words_that_can_leave_here_as_an_importance_are_the_three_microsoft_takes",
+]
+
+# ── A choice the form never asked for is not an answer of nothing ───────────
+#
+# Copying a message into a task or an event fills in a title and a body and asks
+# nothing else. The questions nobody was asked used to be stored as answered
+# with nothing, and nothing is the one value both calendar providers and the
+# task provider refuse.
+#
+# The break gives back the empty answer instead of the choice the form would
+# have shown, which is exactly what the column held before.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py: this break reddens
+# exactly the four below and nothing else in the library.
+
+[[guard]]
+name = "a choice the form never asked for falls back to the one it would have offered"
+file = "src/application/item_fields.rs"
+before = """        offered.first().unwrap_or(&"").to_lowercase()"""
+after = """        answered"""
+red = [
+    "application::item_fields::tests::test_a_choice_the_form_never_asked_for_falls_back_to_the_one_it_would_have_offered",
+    "presentation::managers::tests::test_a_task_copied_from_a_message_is_stored_with_a_priority_the_task_service_knows",
+    "presentation::managers::tests::test_an_event_copied_from_a_message_is_stored_with_a_status_and_a_show_as_the_calendars_know",
+    "presentation::managers::tests::test_an_event_stored_without_being_asked_still_reaches_both_calendars_with_words_they_take",
 ]

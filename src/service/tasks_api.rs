@@ -17,9 +17,12 @@
 //! date and a named time zone, and a task due on the 3rd in Sydney is the 2nd
 //! in London. Both are reduced to the date the person who set it meant.
 //!
-//! **Priority.** Google has none at all. Microsoft has four levels. A task
-//! coming from Google gets the middle one rather than the lowest, because
-//! "normal" is what its absence means and "low" is a claim nobody made.
+//! **Priority.** Google has none at all. Microsoft has three: low, normal and
+//! high, and refuses a change carrying anything else. A task coming from Google
+//! gets the middle one rather than the lowest, because "normal" is what its
+//! absence means and "low" is a claim nobody made. Both halves of the Microsoft
+//! conversion ask one place what a priority is, so they cannot drift apart
+//! again.
 //!
 //! # Not run against either service
 //!
@@ -343,6 +346,61 @@ pub fn entry_to_google_task(task: &TaskEntry) -> GoogleTask {
     }
 }
 
+/// How important a task is, in the only three words either side understands.
+///
+/// The stored column holds one of these three lowercase words and nothing else.
+/// Both halves of the Microsoft conversion ask this type rather than each
+/// deciding for itself, because they used to disagree: reading a task, anything
+/// unrecognised became "normal"; writing one, whatever was in the column left as
+/// Microsoft's importance, and Microsoft takes only these three. A fourth value
+/// had the whole change refused, on every sync, for as long as that task
+/// existed, and the person was told a sync had a problem without being told
+/// which task or why.
+///
+/// Strict on purpose: no trimming, no folding of capitals. Every screen that
+/// writes the column lowercases what it stores, and a value that has drifted
+/// from that is a value worth stopping on rather than guessing at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskPriority {
+    High,
+    Normal,
+    Low,
+}
+
+impl TaskPriority {
+    /// The stored word as a priority, or nothing when it is not one of them.
+    pub fn stored(value: &str) -> Option<Self> {
+        match value {
+            "high" => Some(Self::High),
+            "normal" => Some(Self::Normal),
+            "low" => Some(Self::Low),
+            _ => None,
+        }
+    }
+
+    /// The word again, for the column and for Microsoft, which use the same
+    /// three.
+    pub const fn as_word(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Normal => "normal",
+            Self::Low => "low",
+        }
+    }
+
+    /// What to say when a stored priority is not one of the three.
+    ///
+    /// Names the value and the words that would work, because a line saying
+    /// only that a change was refused leaves somebody with nowhere to look. No
+    /// screen here can edit a task's priority yet, so it does not tell anybody
+    /// to go and change it.
+    pub fn nothing_understands(value: &str) -> Error {
+        Error::Other(format!(
+            "the priority {value:?} is not one this can send, which takes high, normal or low"
+        ))
+    }
+}
+
 /// One of Microsoft's lists as this application stores it.
 pub fn ms_list_to_entry(list: &MsTodoList, account_id: &str, order: i32) -> TaskListEntry {
     TaskListEntry {
@@ -392,11 +450,13 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
             .completed_date_time
             .as_ref()
             .map(|done| done.date_time.clone()),
-        priority: match task.importance.as_str() {
-            "high" => "high".to_string(),
-            "low" => "low".to_string(),
-            _ => "normal".to_string(),
-        },
+        // Microsoft's own three words, and the middle one for anything else,
+        // because a priority nobody here recognises is not a claim to store.
+        // The same place the writer asks, so the two cannot answer differently.
+        priority: TaskPriority::stored(&task.importance)
+            .unwrap_or(TaskPriority::Normal)
+            .as_word()
+            .to_string(),
         display_order: 0,
         // Microsoft To Do has no sub-tasks in Graph, only checklist items on a
         // task, which are not tasks and do not map to one.
@@ -411,24 +471,26 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
 
 /// One of this application's tasks as Microsoft wants it.
 ///
-/// # The priority goes out exactly as it was stored
+/// # A priority nobody understands stops here
 ///
-/// The two halves of this file do not agree about what a priority is. Reading a
-/// task, anything that is not "high" or "low" is taken as "normal". Writing one,
-/// whatever is in the stored row leaves as Microsoft's importance, and Microsoft
-/// takes only those three words: anything else has the whole change refused, on
-/// every sync, for that task, and the person is told a sync had a problem
-/// without being told which task or why.
+/// This used to send whatever was in the stored row, while the reader above
+/// folded anything unrecognised into "normal". Two answers to one question. It
+/// was written down as harmless on the grounds that nothing produced a fourth
+/// value, and that was not true: copying a message into a task asks nobody for
+/// a priority, and the empty answer was stored as if somebody had given it. A
+/// task like that was refused by Microsoft on every sync, never got an
+/// identifier from the provider so never became a change that could heal, and
+/// the person heard only that a sync had a problem.
 ///
-/// Nothing produces a fourth value today. The screen that asks offers exactly
-/// those three and lowercases the answer, and a task arriving from either
-/// service is put into one of the three on the way in. So this is written down
-/// rather than guarded: a guard needs a case where a bad value really reaches
-/// here and there is not one to point at. The value is read straight out of a
-/// database column, so if this ever does bite, what wrote that row is the thing
-/// to look at and not this function.
-pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
-    MsTodoTask {
+/// Now both halves ask [`TaskPriority`], every screen that writes the column
+/// takes its value from the words the form offers, and a fourth value can only
+/// arrive from a database edited outside this program. That case is refused
+/// here, in a sentence naming the value, rather than by Microsoft with a status
+/// nobody sees.
+pub fn entry_to_ms_task(task: &TaskEntry) -> Result<MsTodoTask> {
+    let importance = TaskPriority::stored(&task.priority)
+        .ok_or_else(|| TaskPriority::nothing_understands(&task.priority))?;
+    Ok(MsTodoTask {
         id: strip_prefix(&task.id, "ms:"),
         title: task.title.clone(),
         body: task.description.as_ref().map(|content| MsItemBody {
@@ -442,7 +504,7 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
         } else {
             "notStarted".to_string()
         },
-        importance: task.priority.clone(),
+        importance: importance.as_word().to_string(),
         // UTC, because the alternative is guessing at the reader's zone and
         // being wrong by a day for anybody who has travelled.
         due_date_time: task.due_date.as_ref().map(|date| MsDateTimeZone {
@@ -455,7 +517,7 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> MsTodoTask {
         }),
         // The server sets this. Nothing here has an opinion about it.
         last_modified_date_time: None,
-    }
+    })
 }
 
 /// The provider's own id, without the prefix this application adds.
@@ -1083,7 +1145,12 @@ mod tests {
         assert!(google_entry.id.starts_with("google:"));
         assert!(ms_entry.id.starts_with("ms:"));
         assert_eq!(entry_to_google_task(&google_entry).id, "abc123");
-        assert_eq!(entry_to_ms_task(&ms_entry).id, "abc123");
+        assert_eq!(
+            entry_to_ms_task(&ms_entry)
+                .expect("a task Microsoft understands")
+                .id,
+            "abc123"
+        );
     }
 
     #[test]
@@ -1137,6 +1204,62 @@ mod tests {
         }
     }
 
+    /// A stored task with the priority a test wants to see leave, or not.
+    fn a_stored_task_whose_priority_is(priority: &str) -> TaskEntry {
+        TaskEntry {
+            id: "ms:1".to_string(),
+            account_id: "acc-1".to_string(),
+            task_list_id: Some("ms:l".to_string()),
+            title: "Ring the surgery".to_string(),
+            description: None,
+            due_date: None,
+            is_completed: false,
+            completed_at: None,
+            priority: priority.to_string(),
+            display_order: 0,
+            parent_task_id: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            remote_updated: None,
+            pending: true,
+        }
+    }
+
+    #[test]
+    fn test_the_only_words_that_can_leave_here_as_an_importance_are_the_three_microsoft_takes() {
+        // The three go out as themselves. Nothing else goes out at all: it used
+        // to, and Microsoft refused the whole change every time it did.
+        for word in ["high", "normal", "low"] {
+            let sent = entry_to_ms_task(&a_stored_task_whose_priority_is(word))
+                .expect("a priority Microsoft takes");
+            assert_eq!(sent.importance, word);
+        }
+
+        // The empty one is the value copying a message into a task used to
+        // store. The rest are the shapes a row edited outside this program can
+        // hold: a word nobody offers, and the offered words with their capitals
+        // still on, which the column is never written with.
+        for refused in ["", "urgent", "HIGH", "Normal", " low "] {
+            let said = match entry_to_ms_task(&a_stored_task_whose_priority_is(refused)) {
+                Ok(sent) => panic!(
+                    "the priority {refused:?} left here as {:?}, and Microsoft refuses it",
+                    sent.importance
+                ),
+                Err(e) => e.to_string(),
+            };
+            assert!(
+                said.contains(refused),
+                "the refusal does not say which value: {said}"
+            );
+            for would_work in ["high", "normal", "low"] {
+                assert!(
+                    said.contains(would_work),
+                    "the refusal does not say what would work: {said}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_a_description_goes_back_to_microsoft_as_text_not_html() {
         // Sending html would put whatever is in the description into a
@@ -1160,7 +1283,10 @@ mod tests {
             pending: false,
         };
 
-        let sent = entry_to_ms_task(&entry).body.expect("a body");
+        let sent = entry_to_ms_task(&entry)
+            .expect("a task Microsoft understands")
+            .body
+            .expect("a body");
 
         assert_eq!(sent.content_type, "text");
     }
@@ -1663,6 +1789,43 @@ mod tests {
         assert!(request.contains(r#""timeZone":"UTC""#), "{request}");
         assert!(
             request.contains(r#""dateTime":"2026-01-31T00:00:00.0000000""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_priority_microsoft_does_not_know_reaches_no_listener_that_could_have_seen_it()
+     {
+        // Two halves, because a listener that heard nothing proves nothing on
+        // its own: the same helper, the same call, and the only difference is
+        // the stored priority. If the second half heard a request the first
+        // half was really listening.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let refused = entry_to_ms_task(&a_stored_task_whose_priority_is(""));
+        assert!(
+            refused.is_err(),
+            "a priority Microsoft refuses was turned into a change to send"
+        );
+        assert!(
+            heard(listening, "nothing at all").await.is_err(),
+            "something reached the wire for a task that was never converted"
+        );
+        drop(client);
+
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let body = entry_to_ms_task(&a_stored_task_whose_priority_is("high"))
+            .expect("a priority Microsoft takes");
+        client
+            .ms_update_task("a-token", "ms:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Microsoft task")
+            .await
+            .expect("a request");
+        assert!(request.contains(r#""importance":"high""#), "{request}");
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
             "{request}"
         );
     }

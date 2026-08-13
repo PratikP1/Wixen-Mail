@@ -773,7 +773,11 @@ async fn push_one<S: TaskService>(
             settle(cache, task, entry, new_here)
         }
         Provider::Microsoft => {
-            let body = entry_to_ms_task(task);
+            // Refused here rather than at Microsoft when the stored priority is
+            // not one of the three it takes. The caller puts the task's
+            // identifier in front of this and leaves the change waiting, so it
+            // is still here to send once the row is right.
+            let body = entry_to_ms_task(task)?;
             let stored = if new_here {
                 service.ms_create_task(token, list_id, &body).await?
             } else {
@@ -4742,6 +4746,68 @@ mod tests {
                 .expect("the pending tasks")
                 .is_empty(),
             "the change went and is still marked as waiting to go"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_whose_priority_nothing_understands_is_named_rather_than_left_to_the_provider()
+     {
+        // Microsoft takes three words for a priority and refuses the whole
+        // change for anything else. Sent anyway, the create is refused, the
+        // task never gets an identifier from the provider, so it never becomes
+        // a change that could heal, and the same create is refused on every
+        // sync for as long as the task exists. The person hears that a sync had
+        // a problem and nothing about which task.
+        //
+        // Stopped here instead, with the task's identifier in the line so
+        // somebody can find the row. The provider that would have taken it is
+        // scripted to accept everything, so a run that reaches the wire counts
+        // a send and this fails.
+        let cache = a_cache("ms_priority_nothing_understands");
+        a_list(&cache, "ms:list");
+        cache
+            .save_task(&TaskEntry {
+                id: "local-9".to_string(),
+                task_list_id: Some("ms:list".to_string()),
+                priority: "urgent".to_string(),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task nothing understands the priority of");
+
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            &cache,
+            &a_provider_that_accepts(),
+            "token",
+            "acc-1",
+            Provider::Microsoft,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.sent, 0,
+            "a priority no provider takes was sent to one anyway"
+        );
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a change that could never land was not reported: {:?}",
+            result.errors
+        );
+        assert!(
+            result.errors[0].contains("local-9"),
+            "the report does not say which task: {}",
+            result.errors[0]
+        );
+        assert!(
+            cache
+                .pending_tasks("acc-1")
+                .expect("the pending tasks")
+                .iter()
+                .any(|t| t.id == "local-9"),
+            "a change that never left was marked as sent"
         );
     }
 

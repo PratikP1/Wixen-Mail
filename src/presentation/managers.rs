@@ -1906,6 +1906,12 @@ fn module_for(
 /// is edited afterwards in the panel, because a create dialog that demands a
 /// start time, an end time, a priority and a folder before it will accept
 /// anything is a dialog people stop using.
+///
+/// Every choice comes through `chosen` rather than being read as text, because
+/// a form that never asked a question hands back nothing, and nothing is the
+/// one answer no provider takes. Copying a message into a task or an event is
+/// exactly that case, and it used to store a row that could never be sent
+/// anywhere and never said so.
 fn store_new_item(
     cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
@@ -1977,7 +1983,7 @@ fn store_new_item(
                 end_date: all_day.then(|| filled.text(FieldName::EndDate).to_string()),
                 is_all_day: all_day,
                 time_zone: None,
-                status: filled.text(FieldName::Status).to_lowercase(),
+                status: filled.chosen(kind, FieldName::Status),
                 recurrence_rule: repeat(
                     FieldName::Repeat,
                     &when(FieldName::StartDate, FieldName::StartTime, true),
@@ -1988,7 +1994,7 @@ fn store_new_item(
                 source_provider: Some("local".to_string()),
                 etag: None,
                 web_link: None,
-                show_as: filled.text(FieldName::ShowAs).to_lowercase(),
+                show_as: filled.chosen(kind, FieldName::ShowAs),
                 last_modified_remote: None,
                 last_synced_at: None,
                 attendees_json: None,
@@ -2013,7 +2019,7 @@ fn store_new_item(
             due_datetime: Some(when(FieldName::DueDate, FieldName::DueTime, false))
                 .filter(|w| !w.trim().is_empty()),
             is_completed: false,
-            priority: filled.text(FieldName::Priority).to_lowercase(),
+            priority: filled.chosen(kind, FieldName::Priority),
             repeat_rule: repeat(
                 FieldName::Repeat,
                 &when(FieldName::DueDate, FieldName::DueTime, true),
@@ -2043,7 +2049,7 @@ fn store_new_item(
             due_date: filled.filled_in(FieldName::DueDate),
             is_completed: false,
             completed_at: None,
-            priority: filled.text(FieldName::Priority).to_lowercase(),
+            priority: filled.chosen(kind, FieldName::Priority),
             display_order: 0,
             parent_task_id: None,
             created_at: stamp.clone(),
@@ -2267,6 +2273,128 @@ mod tests {
         assert!(
             description.contains("Can you send them by Friday?"),
             "{description}"
+        );
+    }
+
+    #[test]
+    fn test_a_task_copied_from_a_message_is_stored_with_a_priority_the_task_service_knows() {
+        // Copying a message to a task fills in a title and a body and nothing
+        // else, because there is no form. A question nobody was asked used to
+        // be stored as an answer of nothing, and nothing is not one of the
+        // three words Microsoft takes: the task was refused on every sync from
+        // then on, never got an identifier from the provider, so never became a
+        // change that could heal, and the person was told a sync had a problem
+        // without being told which task.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Quarterly figures");
+        filled.put(FieldName::Notes, "Can you send them by Friday?");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Task,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the task to be stored");
+
+        let waiting = cache.pending_tasks("account-1").expect("the task back");
+        let task = waiting.first().expect("the task");
+        assert_eq!(
+            task.priority, "normal",
+            "a task copied from a message was stored with a priority no provider takes"
+        );
+    }
+
+    #[test]
+    fn test_an_event_copied_from_a_message_is_stored_with_a_status_and_a_show_as_the_calendars_know()
+     {
+        // The same hole as the task priority above, in the two fields an event
+        // has that a provider checks. Both writers send the stored value as it
+        // is, and both providers refuse a create carrying nothing.
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Quarterly review");
+        filled.put(FieldName::Notes, "Can you come?");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the event to be stored");
+
+        let stored = cache
+            .get_all_events_for_account("account-1")
+            .expect("the event back");
+        let event = stored.first().expect("the event");
+        assert_eq!(
+            event.status, "confirmed",
+            "an event copied from a message was stored with a status no calendar takes"
+        );
+        assert_eq!(
+            event.show_as, "busy",
+            "an event copied from a message was stored with a free or busy no calendar takes"
+        );
+    }
+
+    #[test]
+    fn test_an_event_stored_without_being_asked_still_reaches_both_calendars_with_words_they_take()
+    {
+        // The producer and the two writers as one piece, because the stored
+        // column between them is where the empty answer used to sit and neither
+        // end could see it alone. The writers send the stored status and free
+        // or busy as they are, so a value the form never asked for arrives at
+        // the provider exactly as it was stored.
+        //
+        // Dates are filled in here and the two choices are not. That is not a
+        // form anybody sees: it is the nearest thing to the copy path that
+        // still gets past the check on the start time, which an event copied
+        // from a message fails first. So this pins the choices, and says
+        // plainly that it is not a whole journey a person can take today.
+        use crate::application::calendar::{
+            TheBodyIsFor, local_to_google_event, local_to_ms_event,
+        };
+        use crate::application::item_fields::{FieldName, Filled};
+        let cache = test_cache();
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Quarterly review");
+        filled.put(FieldName::StartDate, "2026-09-01");
+        filled.put(FieldName::StartTime, "14:30");
+        filled.put(FieldName::EndDate, "2026-09-01");
+        filled.put(FieldName::EndTime, "15:30");
+
+        store_new_item(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            "account-1",
+            &filled,
+            None,
+        )
+        .expect("the event to be stored");
+        let stored = cache
+            .get_all_events_for_account("account-1")
+            .expect("the event back");
+        let event = stored.first().expect("the event");
+
+        let google =
+            local_to_google_event(event, TheBodyIsFor::MakingIt).expect("a time Google could read");
+        assert_eq!(
+            google.status.as_deref(),
+            Some("confirmed"),
+            "Google refuses a status of nothing, and refuses it again on every sync"
+        );
+        let outlook =
+            local_to_ms_event(event, TheBodyIsFor::MakingIt).expect("a time Outlook could read");
+        assert_eq!(
+            outlook.show_as.as_deref(),
+            Some("busy"),
+            "Outlook refuses a free or busy of nothing, and refuses it again on every sync"
         );
     }
 
