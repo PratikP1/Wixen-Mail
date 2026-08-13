@@ -4487,3 +4487,157 @@ fn test_the_guard_record_check_can_tell_the_two_apart() {
         "a record pointing at a file that ends its lines the other way was reported as moved"
     );
 }
+
+/// The count written immediately before whichever of these endings the text
+/// uses.
+///
+/// Two endings rather than one because a count of one takes a singular verb,
+/// and this project keeps a rule that a count and the thing it counts agree in
+/// number. A reading that knew only the plural would turn a correctly worded
+/// header into a parse failure the first time a sweep was followed by a single
+/// new record, and the obvious way out of that would be to word the header
+/// wrongly.
+fn the_count_before(text: &str, endings: [&str; 2]) -> Option<usize> {
+    endings.iter().find_map(|ending| {
+        let before = text.split_once(ending)?.0;
+        before
+            .chars()
+            .rev()
+            .take_while(char::is_ascii_digit)
+            .collect::<Vec<char>>()
+            .iter()
+            .rev()
+            .collect::<String>()
+            .parse()
+            .ok()
+    })
+}
+
+/// How many guard records the sweep at the top of `guards/guards.toml` says it
+/// went through, and how many have arrived since.
+fn what_the_sweep_says_it_covers(record: &str) -> Option<(usize, usize)> {
+    let swept = the_count_before(
+        record,
+        [
+            " records were swept that day.",
+            " record was swept that day.",
+        ],
+    )?;
+    let since = the_count_before(
+        record,
+        [
+            " records have arrived since and have not been through it.",
+            " record has arrived since and has not been through it.",
+        ],
+    )?;
+    Some((swept, since))
+}
+
+/// What the sweep at the top of the guard records gets wrong about the file it
+/// sits at the top of, if anything.
+fn what_the_sweep_header_gets_wrong(record: &str) -> Option<String> {
+    let held = record
+        .lines()
+        .filter(|line| line.trim_end() == "[[guard]]")
+        .count();
+    let Some((swept, since)) = what_the_sweep_says_it_covers(record) else {
+        return Some(format!(
+            "the sweep at the top does not say how many records went through it and how \
+             many have arrived since, so nobody reading it can tell how much of the file \
+             it is about. There are {held} records."
+        ));
+    };
+    if swept + since != held {
+        return Some(format!(
+            "the sweep at the top accounts for {swept} records swept and {since} arrived \
+             since, which is {}, and the file holds {held}. Raise the count of records \
+             that have arrived since, or sweep again and write down what that covered.",
+            swept + since
+        ));
+    }
+    None
+}
+
+/// The sweep written at the top of the guard records covers every record in it.
+///
+/// It did not. A sweep of 2026-08-12 was written up as the state of the file
+/// under a heading that gave no sign of being a photograph, and eighteen
+/// records had arrived by the time anybody read it again. Every sentence in
+/// that section was about a smaller file than the one it was at the top of, and
+/// nothing said so.
+///
+/// The two numbers add up to the records in the file, so adding a record and
+/// leaving the header alone fails here. That is the cost of the header staying
+/// true, and it is one line in the same edit.
+///
+/// What this cannot see: whether a record the sweep counted was really swept.
+/// Only `scripts/guards.sh` can say that, at a build and a run per record.
+#[test]
+fn test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it() {
+    let record = fs::read_to_string("guards/guards.toml").expect("the record of guards");
+    let held = record
+        .lines()
+        .filter(|line| line.trim_end() == "[[guard]]")
+        .count();
+    // Proving the measurement: a reading that counted no records at all would
+    // have nothing to disagree with the header about.
+    assert!(
+        held > 150,
+        "only {held} guard records were counted, so the counting is broken"
+    );
+
+    assert!(
+        what_the_sweep_header_gets_wrong(&record).is_none(),
+        "{}",
+        what_the_sweep_header_gets_wrong(&record).unwrap_or_default()
+    );
+}
+
+#[test]
+fn test_the_sweep_header_check_can_tell_the_two_apart() {
+    // Made-up text only, and deliberately not the numbers the real file
+    // carries, so nobody reads this as a second copy of a fact that file
+    // already states.
+    let sound = "# 3 records were swept that day.\n\
+                 # 1 record has arrived since and has not been through it.\n\
+                 [[guard]]\n[[guard]]\n[[guard]]\n[[guard]]\n";
+    assert_eq!(what_the_sweep_says_it_covers(sound), Some((3, 1)));
+    assert!(
+        what_the_sweep_header_gets_wrong(sound).is_none(),
+        "a header that adds up was reported as wrong"
+    );
+
+    // A count of one on the other sentence, worded the way this project words
+    // one. Neither sentence may be readable only in the plural.
+    let one_swept = "# 1 record was swept that day.\n\
+                     # 2 records have arrived since and have not been through it.\n\
+                     [[guard]]\n[[guard]]\n[[guard]]\n";
+    assert_eq!(what_the_sweep_says_it_covers(one_swept), Some((1, 2)));
+    assert!(
+        what_the_sweep_header_gets_wrong(one_swept).is_none(),
+        "a header worded for a count of one was reported as wrong"
+    );
+
+    // A header that says nothing about what it covers, which is the state the
+    // real one was in.
+    let says_nothing = "# Where this file stood on some day.\n\
+                        # 3 records. All 3 checked.\n\
+                        [[guard]]\n[[guard]]\n[[guard]]\n";
+    assert_eq!(what_the_sweep_says_it_covers(says_nothing), None);
+    assert!(
+        what_the_sweep_header_gets_wrong(says_nothing)
+            .expect("a header that does not say what it covers to be reported")
+            .contains("There are 3 records"),
+        "a header that does not say what it covers was not reported, or did not say how \
+         many records it is at the top of"
+    );
+
+    // And the drift itself: three plus one is four, and five are here.
+    let stale = format!("{sound}[[guard]]\n");
+    assert!(
+        what_the_sweep_header_gets_wrong(&stale)
+            .expect("a header that no longer adds up to be reported")
+            .contains("which is 4, and the file holds 5"),
+        "a header that no longer adds up was not reported with both numbers"
+    );
+}

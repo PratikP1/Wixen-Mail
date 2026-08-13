@@ -41,14 +41,35 @@
 # one. It says a record still points at one place. It cannot say the list of
 # tests beside that record is still true; only a run says that.
 #
-# ── Where this file stood on 2026-08-12 ─────────────────────────────────────
+# ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
-# 192 records. All 192 checked for pointing at exactly one place: none was
-# ambiguous and none had moved. Every test named in a `red` list resolves to a
-# test that is still in the tree.
+# 192 records were swept that day.
+# 37 records have arrived since and have not been through it.
 #
-# 24 of the 192 are defended only by tests that read the tree as text. Every one
-# of those was read and judged against one question: would it go red if the
+# Those two numbers add up to the records in this file, and
+# `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
+# in tests/house_style.rs says so on every commit. Add a record and the second
+# number goes up in the same edit. That is the whole reason it is written as
+# two numbers: this section used to say "192 records, all 192 checked" under a
+# heading that gave no sign of being a photograph, and by the time anybody read
+# it again the file held 210. Eighteen records had never been near the sweep
+# the heading described, and nothing said so.
+#
+# Everything below this line is about the file as it stood that day. It is not
+# a description of the file now.
+#
+# All 192 were checked for pointing at exactly one place: none was ambiguous
+# and none had moved. Every test named in a `red` list resolved to a test that
+# was in the tree.
+#
+# That one property is the only thing here that cannot go stale, because it is
+# checked on every commit for every record by
+# `test_every_guard_record_still_names_one_place_in_the_tree`, as the paragraph
+# above the heading says. Everything else in this section needs a sweep to be
+# true again.
+#
+# 24 of the 192 were defended only by tests that read the tree as text. Every
+# one of those was read and judged against one question: would it go red if the
 # behaviour went while the source text stayed? Three could not. All three had
 # one shape, a refusal that is said and then not acted on:
 #
@@ -59,14 +80,15 @@
 #   - the calendar window's own refusal, which was changed to say no and queue
 #     the change in the same breath
 #
-# All three are guarded now, each by a record whose break is that narrower edit,
-# and each was measured against the old guard first and seen to stay green. The
-# other 21 read wiring facts with no runtime path in a test, and each of their
-# tests now says in its own words what stays green while the behaviour goes.
+# All three were guarded by the end of it, each by a record whose break is that
+# narrower edit, and each was measured against the old guard first and seen to
+# stay green. The other 21 read wiring facts with no runtime path in a test, and
+# each of their tests says in its own words what stays green while the behaviour
+# goes.
 #
-# 18 records were measured with the runner as part of that sweep. The rest were
-# not: a full run is one build and one suite each and takes hours, and it needs
-# a quiet machine.
+# 18 of the 192 were measured with the runner as part of that sweep. The rest
+# were not: a full run is one build and one suite each and takes hours, and it
+# needs a quiet machine.
 
 # ── The two questions the contacts sync must not confuse ────────────────────
 #
@@ -4274,3 +4296,54 @@ after = """            if false {"""
 red = [
     "application::repeating::tests::test_a_shape_outlook_sends_that_means_other_days_is_refused_rather_than_read",
 ]
+
+# ── The census that says every way out of this program has been classified ──
+#
+# The reading looks for the names of crates that exist here only to reach a
+# server, and, for the two crates whose names are everywhere for other reasons,
+# for the names of the sockets themselves. Take the second half away and a
+# module that writes `use tokio::{io::AsyncWriteExt, net::TcpStream};` names
+# nothing the reading knows, which is how a module with a real connect and a
+# real write walked past this census twice.
+#
+# Measured on 2026-08-12: the break reddens exactly one test, and that is worth
+# being clear about. The sweep over the tree stays green, because no file in the
+# tree today reaches a server that way. The only thing that notices is the test
+# that hands the reading source text directly. So this record measures a
+# reading, not a state of the tree, and the day some file does bring a socket in
+# that way the sweep would go red too and this record would be short.
+
+[[guard]]
+name = "the outbound census sees a socket brought in beside something else"
+file = "src/service/outward.rs"
+before = """            .chain(A_SOCKET_UNDER_ITS_OWN_NAME.iter())
+            .find(|name| names_it_as_a_whole_word(&code, name))"""
+after = """            .find(|name| names_it_as_a_whole_word(&code, name))"""
+red = [
+    "service::outward::completeness::test_the_census_sees_a_socket_brought_in_beside_something_else",
+]
+
+# The sweep written at the top of this file says how many records went through
+# it and how many have arrived since, and a check adds them up against the
+# records really here. That check is only worth having while it can still find
+# those two sentences: reword one and the reading finds nothing, and a reading
+# that finds nothing has no opinion about anything.
+#
+# The break rewords one of the sentence endings the reading looks for. It runs
+# against the house style suite rather than the library, because a rule about
+# what a page says lives where the pages are read.
+#
+# Measured on 2026-08-12: it reddens the check itself, which can no longer read
+# the header, and the proving test beside it, which hands it made-up headers and
+# expects both numbers back.
+
+[[guard]]
+name = "the check on the guard sweep header can still read the header"
+file = "tests/house_style.rs"
+before = """            " records were swept that day.","""
+after = """            " records were swept on some day.","""
+red = [
+    "test_the_sweep_header_check_can_tell_the_two_apart",
+    "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
+]
+suite = "house_style"
