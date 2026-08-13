@@ -63,16 +63,20 @@ pub struct GooglePersonMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleName {
-    /// What Google works out to call this person, which Google documents as
-    /// something it writes and nothing else may set.
+    /// What Google works out to call this person: read, and never written.
     ///
-    /// It goes out all the same, on every create and every change: nothing here
-    /// leaves it behind, and a test now reads it off the wire. This line used to
-    /// say it was ignored on the way out, which reads as though nothing sends
-    /// it, and that is a different claim from the true one. Google throws it
-    /// away at the far end. Whether it should be sent at all is its own
-    /// question, because `names` is a field a change replaces wholesale.
-    #[serde(default)]
+    /// Read, because it is the only whole name Google sends, so it is what a
+    /// contact is called here. Never written, and that is the answer to a
+    /// question this comment used to leave open. Google computes it from the
+    /// parts and throws away anything sent in it, so sending one is a second
+    /// answer to a question Google already answers. It is harmless while Google
+    /// keeps ignoring it, and `names` is a field a change replaces wholesale,
+    /// so the day Google starts honouring it is the day this copy quietly beats
+    /// the parts sent beside it.
+    ///
+    /// `skip_serializing` and not `skip`: the latter would stop it arriving as
+    /// well, and a contact read without a name is a row nobody can find again.
+    #[serde(default, skip_serializing)]
     pub display_name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub given_name: String,
@@ -1024,11 +1028,54 @@ mod tests {
                 "a create claimed {the_servers_own}, which is Google's to set: {request}"
             );
         }
-        // And one that does go out, which the note beside the field used to
-        // deny. Asserted as present rather than absent, because it is the wire
-        // fact: `names` is a field a change replaces wholesale, so whether this
-        // should go is a question of its own and not one to answer in passing.
-        assert!(request.contains(r#""displayName""#), "{request}");
+        // A fourth, and the reason it is in this list now rather than asserted
+        // as present. Google works this name out from the parts and throws away
+        // whatever is sent, so sending one is a second answer to a question
+        // Google already answers. `names` is replaced wholesale by a change, so
+        // the day Google starts honouring it is the day our copy beats the
+        // parts beside it, silently.
+        assert!(
+            !request.contains(r#""displayName""#),
+            "a create sent the name Google works out for itself: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_contact_reaches_google_without_the_name_google_works_out_for_itself()
+     {
+        // The change path matters more than the create: `names` is one of the
+        // fields a change replaces wholesale, so everything in it is the whole
+        // truth about somebody's name afterwards.
+        let (google, listening) = a_google_client_allowed_to_change_things().await;
+        let grace = GooglePerson {
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                given_name: "Grace".to_string(),
+                family_name: "van der Berg".to_string(),
+                unstructured_name: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        google
+            .update_contact("a-token", "people/c1", &grace)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "the contact change")
+            .await
+            .expect("a request");
+        assert!(
+            !request.contains(r#""displayName""#),
+            "a change sent the name Google works out for itself: {request}"
+        );
+        // The parts still go, which is the half that would otherwise pass
+        // against a change carrying no name at all.
+        assert!(request.contains(r#""givenName":"Grace""#), "{request}");
+        assert!(
+            request.contains(r#""familyName":"van der Berg""#),
+            "{request}"
+        );
     }
 
     #[tokio::test]
@@ -1575,6 +1622,8 @@ mod tests {
     fn test_serialize_person_for_create() {
         let person = GooglePerson {
             names: vec![GoogleName {
+                // Set here and expected not to appear below. Google works this
+                // one out from the parts and throws away what it is sent.
                 display_name: "Test User".to_string(),
                 given_name: "Test".to_string(),
                 family_name: "User".to_string(),
@@ -1588,8 +1637,10 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_string(&person).unwrap();
-        assert!(json.contains("Test User"));
-        assert!(json.contains("test@example.com"));
+        assert!(json.contains(r#""givenName":"Test""#), "{json}");
+        assert!(json.contains(r#""familyName":"User""#), "{json}");
+        assert!(json.contains("test@example.com"), "{json}");
+        assert!(!json.contains("displayName"), "{json}");
     }
 
     #[test]

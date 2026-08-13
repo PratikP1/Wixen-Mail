@@ -8,6 +8,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A contact sent to Google no longer carries the name Google works out for
+  itself.** Google builds a person's full name from the parts and throws away
+  whatever is sent in that field, so sending one was a second answer to a
+  question Google already answers. Nothing changes today. It stops changing
+  later: a change replaces a contact's whole name, so the day Google started
+  honouring what was sent, our copy would quietly have beaten the first and
+  last names sent beside it.
+
+  A contact whose whole name was only ever recorded on one line is now read
+  back under that name instead of showing as Unknown.
+
 - **Fixed: ticking off a Google task could put back a task deleted on another
   device.** Every change sent to Google Tasks carried a claim that the task had
   not been deleted, whether or not that is what your copy meant. Changes go up

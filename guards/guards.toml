@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 44 records have arrived since and have not been through it.
+# 48 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4586,4 +4586,67 @@ after = """    #[serde(default, skip)]
     pub deleted: bool,"""
 red = [
     "service::tasks_api::tests::test_a_deleted_google_task_is_marked_as_one",
+]
+
+# ── The name Google works out for itself is read and never sent back ────────
+#
+# Google computes this name from the parts and throws away whatever is sent in
+# it, so sending one was a second answer to a question Google already answers.
+# It costs nothing while Google keeps ignoring it. `names` is a field a change
+# replaces wholesale, so the day Google starts honouring it is the day this
+# copy quietly beats the parts sent beside it.
+#
+# Four breaks, because the fix has two halves and each half has a wrong version
+# that looks right. The attribute stops it going out; the converter stops
+# filling it in. `skip` in place of `skip_serializing` would stop it arriving as
+# well, and it is the only whole name Google sends, so every contact would read
+# as nameless. The reader's fall back to the one-line name is what stops a
+# contact this program sent coming back without one.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "a contact sent to Google carries no name Google works out for itself"
+file = "src/service/google_api.rs"
+before = """    #[serde(default, skip_serializing)]
+    pub display_name: String,"""
+after = """    #[serde(default)]
+    pub display_name: String,"""
+red = [
+    "service::google_api::tests::test_a_change_to_a_contact_reaches_google_without_the_name_google_works_out_for_itself",
+    "service::google_api::tests::test_a_new_contact_reaches_google_carrying_what_somebody_typed_and_no_server_fields",
+    "service::google_api::tests::test_serialize_person_for_create",
+]
+
+[[guard]]
+name = "the name Google works out still arrives after it stopped being sent"
+file = "src/service/google_api.rs"
+before = """    #[serde(default, skip_serializing)]
+    pub display_name: String,"""
+after = """    #[serde(default, skip)]
+    pub display_name: String,"""
+red = [
+    "service::google_api::tests::test_deserialize_connections_response",
+]
+
+[[guard]]
+name = "nothing fills in the name Google computes on the way out"
+file = "src/application/contacts_sync.rs"
+before = """        vec![GoogleName {
+            display_name: String::new(),"""
+after = """        vec![GoogleName {
+            display_name: contact.name.clone(),"""
+red = [
+    "application::contacts_sync::tests::test_contact_to_google_person",
+    "application::contacts_sync::tests::test_the_name_google_computes_is_read_and_never_sent_back",
+]
+
+[[guard]]
+name = "a contact whose whole name is on one line is not read as nameless"
+file = "src/application/contacts_sync.rs"
+before = """                n.unstructured_name.clone()"""
+after = """                n.display_name.clone()"""
+red = [
+    "application::contacts_sync::tests::test_roundtrip_google",
+    "application::contacts_sync::tests::test_the_name_google_computes_is_read_and_never_sent_back",
 ]

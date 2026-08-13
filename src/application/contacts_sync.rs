@@ -2448,10 +2448,22 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
 
 fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactEntry {
+    // The name Google worked out, and the whole name on one line when there is
+    // no worked-out one. Both, because the second is the field this program
+    // writes a whole name into, and reading only the first meant a contact sent
+    // with a one-line name came back nameless. Google fills in the worked-out
+    // one on every read, so the second branch is the round trip rather than
+    // anything a real account has shown.
     let name = person
         .names
         .first()
-        .map(|n| n.display_name.clone())
+        .map(|n| {
+            if n.display_name.trim().is_empty() {
+                n.unstructured_name.clone()
+            } else {
+                n.display_name.clone()
+            }
+        })
         .unwrap_or_default();
     let primary_email = person
         .email_addresses
@@ -2560,14 +2572,15 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
 fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     // Either the parts an address book recorded, or the whole name on one
     // line, and never both: two answers to one question is how a name gets
-    // corrupted. displayName is sent because it always was and Google ignores
-    // it; unstructuredName is the field Google will actually write.
+    // corrupted. The display name is left empty and never sent: Google works
+    // that one out from what is here and discards anything given for it.
+    // unstructuredName is the field Google will actually write.
     let names = if contact.name.is_empty() {
         vec![]
     } else {
         let recorded_parts = contact.given_name.is_some() || contact.family_name.is_some();
         vec![GoogleName {
-            display_name: contact.name.clone(),
+            display_name: String::new(),
             given_name: contact.given_name.clone().unwrap_or_default(),
             family_name: contact.family_name.clone().unwrap_or_default(),
             unstructured_name: if recorded_parts {
@@ -2976,7 +2989,10 @@ mod tests {
         };
 
         let person = contact_to_google_person(&contact);
-        assert_eq!(person.names[0].display_name, "Bob Jones");
+        // Google works this one out from the parts and throws away what it is
+        // sent, so nothing here fills it in. This line used to assert the
+        // opposite.
+        assert!(person.names[0].display_name.is_empty());
         // No part of this name was ever recorded separately, so the whole name
         // goes out in the one whole-name field Google will write, and neither
         // part is guessed. This used to assert the guess.
@@ -2987,6 +3003,66 @@ mod tests {
         assert_eq!(person.phone_numbers[0].value, "+1-555-0202");
         assert_eq!(person.organizations[0].name, "Corp");
         assert_eq!(person.nicknames[0].value, "Bobby");
+    }
+
+    #[test]
+    fn test_the_name_google_computes_is_read_and_never_sent_back() {
+        // Two halves, because taking the field out of what is sent is one line
+        // away from taking it out of what is read, and a contact read without
+        // a name is a row nobody can find again.
+        //
+        // Reading: Google works this name out and it is the only whole name it
+        // sends, so it is what a contact is called here.
+        let from_google = GooglePerson {
+            resource_name: "people/c9".to_string(),
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            google_person_to_contact(&from_google, AN_ACCOUNT).name,
+            "Grace van der Berg"
+        );
+
+        // And the field the writer uses instead, which the reader has to know
+        // about or a contact sent with a whole name on one line comes back
+        // nameless. Google fills in the display name on every read, so this is
+        // the round trip rather than anything a real account has shown, and it
+        // is the disagreement the change above would otherwise have opened.
+        let one_line = GooglePerson {
+            resource_name: "people/c8".to_string(),
+            names: vec![GoogleName {
+                unstructured_name: "Prince".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            google_person_to_contact(&one_line, AN_ACCOUNT).name,
+            "Prince"
+        );
+
+        // Sending: nothing fills it in, and the name goes where Google will
+        // really write it. Parts when parts were recorded, the whole name on
+        // one line when they were not.
+        let no_parts = a_local_contact("Prince", "prince@example.com");
+        let sent = contact_to_google_person(&no_parts);
+        assert!(sent.names[0].display_name.is_empty());
+        assert_eq!(sent.names[0].unstructured_name, "Prince");
+
+        let mut with_parts = a_local_contact("Grace van der Berg", "grace@example.com");
+        with_parts.given_name = Some("Grace".to_string());
+        with_parts.family_name = Some("van der Berg".to_string());
+        let sent = contact_to_google_person(&with_parts);
+        assert!(sent.names[0].display_name.is_empty());
+        assert_eq!(sent.names[0].given_name, "Grace");
+        assert_eq!(sent.names[0].family_name, "van der Berg");
+        assert!(
+            sent.names[0].unstructured_name.is_empty(),
+            "the parts and the whole name together are two answers to one question"
+        );
     }
 
     #[test]
@@ -6013,8 +6089,13 @@ mod tests {
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         let sent = google.sent.borrow();
         assert_eq!(sent.len(), 1);
+        // The guard this test was written for: a contact typed here reaches
+        // Google carrying the name somebody typed. Read off the whole-name
+        // field rather than the display name, which is Google's own to work out
+        // and which this no longer fills in. No part of this name was recorded
+        // separately, so the whole name goes on one line.
         assert_eq!(
-            sent[0].names.first().map(|n| n.display_name.as_str()),
+            sent[0].names.first().map(|n| n.unstructured_name.as_str()),
             Some("Grace Hopper")
         );
     }
