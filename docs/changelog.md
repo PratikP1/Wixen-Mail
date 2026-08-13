@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a repeating meeting added to an Outlook calendar late at night or
+  early in the morning told Outlook two different days.** The meeting itself
+  went out on one day and how often it comes round went out counted from
+  another. That happened whenever the hour you set was on one side of midnight
+  where you are and the other side in Greenwich time, which is what Outlook is
+  given.
+
+  A weekly meeting made this way repeated on the wrong weekday: set for two in
+  the morning on a Wednesday in India, it went to Outlook as a Tuesday meeting
+  that then repeated every Wednesday. A monthly meeting was sent as the tenth
+  of the month with a repeat on the eleventh, and a yearly one the same. Both
+  halves now come from the one start Outlook is actually given.
+
+  This has not been checked against a real Outlook account. Microsoft documents
+  that the two have to agree, so a meeting made this way may have been refused
+  outright rather than filed on a day nobody chose. What has been checked is
+  what leaves this computer, and it used to leave saying both days.
+
 - **Fixed: a day you cancelled in Google Calendar came back on your diary, and
   a meeting you moved to another time was shown twice.** Reading a Google
   calendar as the repeating meeting itself, rather than as a list of the days it

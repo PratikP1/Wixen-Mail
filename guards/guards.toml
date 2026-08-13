@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 69 records have arrived since and have not been through it.
+# 70 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4445,13 +4445,48 @@ red = [
 [[guard]]
 name = "a new meeting tells Outlook how it repeats"
 file = "src/application/calendar.rs"
-before = """            TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event),"""
-after = """            TheBodyIsFor::MakingIt => None,"""
+before = """        TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event, &start),"""
+after = """        TheBodyIsFor::MakingIt => None,"""
 red = [
+    "application::calendar::tests::test_a_new_series_near_midnight_tells_outlook_one_day_for_the_rule_and_for_the_meeting",
+    "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
     "application::calendar::tests::test_a_repeating_event_made_here_reaches_outlook_carrying_its_repeat_rule",
     "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
     "application::calendar::tests::test_every_field_the_event_form_can_set_is_answered_for_at_both_providers",
+    "application::calendar::tests::test_the_date_of_the_month_outlook_is_told_is_the_date_the_meeting_lands_on",
+    "application::calendar::tests::test_the_day_outlook_is_told_a_series_starts_is_the_day_it_is_told_the_meeting_starts",
+    "application::repeating::tests::test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back",
 ]
+
+# The sentence about a repeat that could not be sent is on this list because it
+# is now asked of the body that really goes out rather than of a second call
+# beside it. The trip out to Outlook and back is on it because that check now
+# takes the day the series begins out of the body as well, instead of writing
+# one down and handing it to both directions, where it agreed with itself
+# whatever the two sides did.
+
+[[guard]]
+name = "the day a new meeting repeats from is the day it is sent on"
+file = "src/application/calendar.rs"
+before = """    let starts_on = crate::application::repeating::the_day_a_graph_start_names(start)?;"""
+after = """    let _ = start;
+    let stored = MsDateTimeTimeZone {
+        date_time: event.start_datetime.clone(),
+        time_zone: String::new(),
+    };
+    let starts_on = crate::application::repeating::the_day_a_graph_start_names(&stored)?;"""
+red = [
+    "application::calendar::tests::test_a_new_series_near_midnight_tells_outlook_one_day_for_the_rule_and_for_the_meeting",
+    "application::calendar::tests::test_the_date_of_the_month_outlook_is_told_is_the_date_the_meeting_lands_on",
+    "application::calendar::tests::test_the_day_outlook_is_told_a_series_starts_is_the_day_it_is_told_the_meeting_starts",
+    "application::repeating::tests::test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back",
+]
+
+# The break puts back the exact defect this fixes: the day taken off the stored
+# column instead of off the start going into the same body. The two are the same
+# day for most meetings and different days for one near midnight where the clock
+# is hours from Greenwich, so a record that only tried a meeting in the middle
+# of the day would never go red.
 
 [[guard]]
 name = "a repeat Outlook cannot say is refused rather than rounded to a near one"
@@ -4459,8 +4494,15 @@ file = "src/application/repeating.rs"
 before = """                index: Some(outlook_calls_the_week(nth)?.to_string()),"""
 after = """                index: Some(outlook_calls_the_week(nth).unwrap_or("first").to_string()),"""
 red = [
+    "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
     "application::repeating::tests::test_a_repeat_outlook_cannot_say_is_refused_rather_than_rounded",
 ]
+
+# The second name was missing before this and had been for as long as both
+# existed. That test sends a series repeating on the second Tuesday from the end
+# of the month and looks at the bytes that leave for a repeat that is not there;
+# rounded to the first Tuesday instead of refused, one is, and the test has
+# always said so. Measured, not guessed.
 
 [[guard]]
 name = "a repeat Outlook sends is stored as a rule and not as its own shape"

@@ -756,13 +756,18 @@ async fn push_to_microsoft(
 
 /// Whether the repeat on a new meeting cannot go to Outlook at all.
 ///
-/// Asked through the very function that builds what is sent, so the sentence
-/// and the body cannot come to differ about which repeats Outlook can say.
-/// Asking it a second way would be two answers to one question, which is how
-/// this program has lost things before.
+/// Asked of the body that is really sent, so the sentence and the body cannot
+/// come to differ about which repeats Outlook can say. Asking it a second way
+/// would be two answers to one question, which is how this program has lost
+/// things before, and the repeat now depends on the start the body carries, so
+/// asking anything less than the whole body would be asking about something
+/// else.
 fn this_repeat_cannot_reach_outlook(event: &CalendarEventEntry) -> bool {
     worth_sending(event.recurrence_rule.as_deref()).is_some()
-        && how_outlook_is_told_it_repeats(event).is_none()
+        && local_to_ms_event(event, TheBodyIsFor::MakingIt)
+            .ok()
+            .and_then(|body| body.recurrence)
+            .is_none()
 }
 
 /// What is said about meetings that reached Outlook without their repeat.
@@ -2787,7 +2792,10 @@ pub fn ms_event_to_local(
         // read. That never fired only because a calendar view answers with the
         // days of a series and never with the series itself.
         recurrence_rule: event.recurrence.as_ref().and_then(|repeats| {
-            crate::application::repeating::what_outlook_said(repeats, the_day_it_starts(event)?)
+            crate::application::repeating::what_outlook_said(
+                repeats,
+                crate::application::repeating::the_day_a_graph_start_names(event.start.as_ref()?)?,
+            )
         }),
         // Nothing to fill it from. Graph names the days it left out inside the
         // series itself, and the calendar view this asks for hands back the
@@ -2811,16 +2819,6 @@ pub fn ms_event_to_local(
         pending: false,
         cut_from_event_id: None,
     }
-}
-
-/// The day a Graph event starts on, when its start can be read as one.
-///
-/// A rule leaves the date it lands on to the day the series starts, and Graph
-/// writes that date out, so the two have to be read together or the rule stored
-/// here would mean days the series is not on.
-fn the_day_it_starts(event: &MsGraphEvent) -> Option<chrono::NaiveDate> {
-    let start = event.start.as_ref()?;
-    chrono::NaiveDate::parse_from_str(start.date_time.get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// How Graph writes a moment in time: a clock face, and no offset on the end.
@@ -2928,14 +2926,21 @@ pub fn local_to_ms_event(
     } else {
         (event.start_datetime.clone(), event.end_datetime.clone())
     };
-    let start = Some(
-        wall_clock_for_graph(&starts_at, zone)
-            .ok_or_else(|| unreadable("start", &event.start_datetime))?,
-    );
-    let end = Some(
-        wall_clock_for_graph(&ends_at, zone)
-            .ok_or_else(|| unreadable("end", &event.end_datetime))?,
-    );
+    let start = wall_clock_for_graph(&starts_at, zone)
+        .ok_or_else(|| unreadable("start", &event.start_datetime))?;
+    let end = wall_clock_for_graph(&ends_at, zone)
+        .ok_or_else(|| unreadable("end", &event.end_datetime))?;
+
+    // Built from the start that is going out, not from the stored column it
+    // came from. Those are different days for a meeting near midnight in a
+    // place hours from Greenwich, and the body used to carry both of them.
+    let repeats = match for_what {
+        // Left out of a change for the same reason as at Google: Graph
+        // rebuilds the whole series from it, which throws away every day of
+        // it that had been moved or cancelled on its own.
+        TheBodyIsFor::ChangingIt => None,
+        TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event, &start),
+    };
 
     // Always sent, and empty means clear, for the same reason as on the Google
     // side. Returned as `None` when the local value was `None`, these left the
@@ -2954,21 +2959,15 @@ pub fn local_to_ms_event(
     Ok(MsGraphEvent {
         subject: Some(event.summary.clone()),
         body,
-        start,
-        end,
+        start: Some(start),
+        end: Some(end),
         location,
         is_all_day: Some(event.is_all_day),
         show_as: Some(event.show_as.clone()),
         is_reminder_on: Some(lead.is_some()),
         reminder_minutes_before_start: Some(lead.unwrap_or(0)),
         categories: categories_for_outlook(&event.categories),
-        recurrence: match for_what {
-            // Left out of a change for the same reason as at Google: Graph
-            // rebuilds the whole series from it, which throws away every day of
-            // it that had been moved or cancelled on its own.
-            TheBodyIsFor::ChangingIt => None,
-            TheBodyIsFor::MakingIt => how_outlook_is_told_it_repeats(event),
-        },
+        recurrence: repeats,
         ..Default::default()
     })
 }
@@ -2976,26 +2975,26 @@ pub fn local_to_ms_event(
 /// The shape Outlook needs to make this series, or nothing when it has no
 /// repeat or Outlook has no way to say the one it has.
 ///
+/// Takes the start that is going into the same body, because a rule leaves the
+/// day the series begins to the day the meeting begins and those have to be one
+/// day. Read off the stored column instead, they were two: the stored value is
+/// a clock face in whatever zone the row carries and the start in the body has
+/// already been worked out from it, so a meeting at two in the morning in India
+/// went out on the Tuesday and its repeat went out counted from the Wednesday.
+/// The reading of a series coming the other way asks the same question of the
+/// same value.
+///
 /// Nothing here invents the days a series has already called off. Outlook takes
 /// those one at a time on a series it already holds and has no way to be told
 /// them while the series is being made, so a new series carries none and the
 /// changelog says so rather than the code pretending otherwise.
 fn how_outlook_is_told_it_repeats(
     event: &CalendarEventEntry,
+    start: &MsDateTimeTimeZone,
 ) -> Option<crate::service::microsoft_graph::MsPatternedRecurrence> {
     let rule = worth_sending(event.recurrence_rule.as_deref())?;
-    let starts_on = the_day_a_stored_event_starts(event)?;
+    let starts_on = crate::application::repeating::the_day_a_graph_start_names(start)?;
     crate::application::repeating::as_outlook_says_it(rule, starts_on)
-}
-
-/// The day a stored event starts on, whichever shape its start was written in.
-fn the_day_a_stored_event_starts(event: &CalendarEventEntry) -> Option<chrono::NaiveDate> {
-    let written = event
-        .start_date
-        .as_deref()
-        .filter(|day| !day.is_empty())
-        .unwrap_or(&event.start_datetime);
-    chrono::NaiveDate::parse_from_str(written.get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// What an event is filed under, as Outlook wants to be told it.
@@ -5553,6 +5552,125 @@ mod tests {
         }
     }
 
+    /// Two starts an hour or two either side of midnight, each carrying its own
+    /// offset so the answer is the same on every machine.
+    ///
+    /// A start with no offset would be read as a time on whichever computer is
+    /// running the test, and on a computer at Greenwich it converts to itself,
+    /// so an assertion about its day holds whether this is fixed or broken.
+    /// These two do not: one is the day before in universal time and the other
+    /// is the day after, so a fix that only ever moved the day one way is
+    /// caught as well.
+    const AN_EVENING_IN_INDIA: (&str, &str) =
+        ("2026-03-11T02:00:00+05:30", "2026-03-11T03:00:00+05:30");
+    const A_NIGHT_IN_NEW_YORK: (&str, &str) =
+        ("2026-03-10T21:00:00-05:00", "2026-03-10T22:00:00-05:00");
+
+    #[test]
+    fn test_the_day_outlook_is_told_a_series_starts_is_the_day_it_is_told_the_meeting_starts() {
+        // One body, two answers to one question. The meeting's start is worked
+        // out into universal time; the day the rule says the series begins was
+        // read off the stored clock face instead. For a meeting near midnight
+        // in a place hours from Greenwich the two are different days, so the
+        // meeting sits on one day and the repeat is filed from another.
+        for (start, end, all_day, zone, wall_clock, named, weekday) in [
+            (
+                AN_EVENING_IN_INDIA.0,
+                AN_EVENING_IN_INDIA.1,
+                false,
+                None,
+                "2026-03-10T20:30:00",
+                "UTC",
+                "tuesday",
+            ),
+            (
+                "2026-03-10 09:00",
+                "2026-03-10 10:00",
+                false,
+                Some("Eastern Standard Time"),
+                "2026-03-10T09:00:00",
+                "Eastern Standard Time",
+                "tuesday",
+            ),
+            (
+                "2026-03-10",
+                "2026-03-11",
+                true,
+                None,
+                "2026-03-10T00:00:00",
+                "UTC",
+                "tuesday",
+            ),
+            (
+                A_NIGHT_IN_NEW_YORK.0,
+                A_NIGHT_IN_NEW_YORK.1,
+                false,
+                None,
+                "2026-03-11T02:00:00",
+                "UTC",
+                "wednesday",
+            ),
+        ] {
+            let mut event = make_event("e1", "Standup", None);
+            event.start_datetime = start.to_string();
+            event.end_datetime = end.to_string();
+            event.is_all_day = all_day;
+            if all_day {
+                event.start_date = Some(start.to_string());
+                event.end_date = Some(end.to_string());
+            }
+            event.time_zone = zone.map(str::to_string);
+            event.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+
+            let body = local_to_ms_event(&event, TheBodyIsFor::MakingIt)
+                .unwrap_or_else(|e| panic!("{start:?} was refused: {e}"));
+            let starts = body.start.expect("a start");
+            let repeats = body.recurrence.expect("a new series carries its repeat");
+
+            assert_eq!(starts.date_time, wall_clock, "a meeting starting {start:?}");
+            assert_eq!(starts.time_zone, named, "a meeting starting {start:?}");
+            assert_eq!(
+                repeats.pattern.days_of_week,
+                [weekday],
+                "a meeting starting {start:?} repeats on another weekday than the one it is on"
+            );
+            // The whole point, said as itself: the two halves of one body have
+            // to name one day.
+            assert_eq!(
+                repeats.range.start_date,
+                starts.date_time.get(..10).expect("a day on the front"),
+                "a meeting starting {start:?} tells Outlook one day for the meeting and \
+                 another for the rule"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_date_of_the_month_outlook_is_told_is_the_date_the_meeting_lands_on() {
+        // The same two answers, in the two shapes that keep a date rather than
+        // a weekday. Worse here than for a weekly meeting: the reader refuses a
+        // monthly or yearly shape whose date is not the date the series starts,
+        // so a series made from here comes back on the next read unreadable and
+        // the repeat is dropped from the copy here with nothing said.
+        for (rule, day_of_month, month) in [
+            ("FREQ=MONTHLY", Some(10), None),
+            ("FREQ=YEARLY", Some(10), Some(3)),
+        ] {
+            let mut event = make_event("e1", "Payday", None);
+            event.start_datetime = AN_EVENING_IN_INDIA.0.to_string();
+            event.end_datetime = AN_EVENING_IN_INDIA.1.to_string();
+            event.recurrence_rule = Some(rule.to_string());
+
+            let repeats = local_to_ms_event(&event, TheBodyIsFor::MakingIt)
+                .expect("a time Graph could read")
+                .recurrence
+                .expect("a new series carries its repeat");
+
+            assert_eq!(repeats.pattern.day_of_month, day_of_month, "{rule}");
+            assert_eq!(repeats.pattern.month, month, "{rule}");
+        }
+    }
+
     #[test]
     fn test_a_time_microsoft_could_not_read_is_refused_rather_than_sent() {
         // Sending a time nobody can read is either a rejection somebody has to
@@ -7153,11 +7271,15 @@ mod tests {
         name: &str,
         rule: &str,
         called_off: Option<&str>,
+        starts_at: &str,
+        ends_at: &str,
     ) -> (String, serde_json::Value) {
         let cache = temp_cache(&format!("new_series_{provider}_{}", rule.len()));
         let mut series = a_pending_event_in(&cache, provider, name, None);
         series.recurrence_rule = Some(rule.to_string());
         series.exception_dates = called_off.map(str::to_string);
+        series.start_datetime = starts_at.to_string();
+        series.end_datetime = ends_at.to_string();
         cache.save_calendar_event(&series).expect("the series");
         let (address, listening) = answering_several(
             "200 OK",
@@ -7199,9 +7321,15 @@ mod tests {
         // was filed at Google as one appointment on one day, and the next read
         // brought that single appointment back and took the rule off the copy
         // here as well, so both ends lost it and nothing said anything.
-        let (line, sent) =
-            what_a_new_series_sends(GOOGLE, GOOGLE_CALENDAR_NAME, "FREQ=WEEKLY;BYDAY=TU", None)
-                .await;
+        let (line, sent) = what_a_new_series_sends(
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "FREQ=WEEKLY;BYDAY=TU",
+            None,
+            "2026-03-06 09:00",
+            "2026-03-06 10:00",
+        )
+        .await;
 
         assert_eq!(line, "POST /calendars/primary/events");
         assert_eq!(
@@ -7222,6 +7350,8 @@ mod tests {
             GOOGLE_CALENDAR_NAME,
             "RRULE:FREQ=WEEKLY;BYDAY=TU",
             None,
+            "2026-03-06 09:00",
+            "2026-03-06 10:00",
         )
         .await;
 
@@ -7344,11 +7474,19 @@ mod tests {
         // rather than a rule, and every part of the shape is asserted: a
         // pattern that lost its days, its interval or its start date files the
         // meeting on days nobody chose.
+        //
+        // The start carries its own offset so the day named here is the day on
+        // every machine. Stored as a clock face with no zone it would be read
+        // as a time on whichever computer runs this, and nine in the morning
+        // far enough east is the day before in universal time, so this would
+        // pass here and fail in the Pacific.
         let (line, sent) = what_a_new_series_sends(
             MICROSOFT,
             MICROSOFT_CALENDAR_NAME,
             "FREQ=WEEKLY;BYDAY=TU",
             None,
+            "2026-03-06T09:00:00Z",
+            "2026-03-06T10:00:00Z",
         )
         .await;
 
@@ -7363,6 +7501,45 @@ mod tests {
                     "firstDayOfWeek": "monday",
                 },
                 "range": { "type": "noEnd", "startDate": "2026-03-06" },
+            }),
+            "{sent}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_new_series_near_midnight_tells_outlook_one_day_for_the_rule_and_for_the_meeting()
+     {
+        // On the wire, because a converter that agrees with itself in a unit
+        // test and disagrees in the bytes that leave is the failure this
+        // project keeps having. A meeting at two in the morning in India is the
+        // evening before in universal time: the meeting goes out on Tuesday and
+        // the repeat used to go out saying the series begins on Wednesday.
+        let (line, sent) = what_a_new_series_sends(
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "FREQ=WEEKLY",
+            None,
+            AN_EVENING_IN_INDIA.0,
+            AN_EVENING_IN_INDIA.1,
+        )
+        .await;
+
+        assert_eq!(line, "POST /me/events");
+        assert_eq!(
+            sent["start"],
+            serde_json::json!({ "dateTime": "2026-03-10T20:30:00", "timeZone": "UTC" }),
+            "{sent}"
+        );
+        assert_eq!(
+            sent["recurrence"],
+            serde_json::json!({
+                "pattern": {
+                    "type": "weekly",
+                    "interval": 1,
+                    "daysOfWeek": ["tuesday"],
+                    "firstDayOfWeek": "monday",
+                },
+                "range": { "type": "noEnd", "startDate": "2026-03-10" },
             }),
             "{sent}"
         );
@@ -7600,6 +7777,8 @@ mod tests {
             GOOGLE_CALENDAR_NAME,
             "FREQ=WEEKLY;BYDAY=TU",
             Some("20260312T090000Z"),
+            "2026-03-06 09:00",
+            "2026-03-06 10:00",
         )
         .await;
 

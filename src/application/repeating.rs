@@ -271,8 +271,25 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 // That is the failure this project has had more often than any other.
 
 use crate::service::microsoft_graph::{
-    MsPatternedRecurrence, MsRecurrencePattern, MsRecurrenceRange,
+    MsDateTimeTimeZone, MsPatternedRecurrence, MsRecurrencePattern, MsRecurrenceRange,
 };
+
+/// The day Outlook is told a meeting begins.
+///
+/// Read off the start in the body rather than off the stored column, and both
+/// directions of this conversion ask it. The stored column is a clock face in
+/// whatever zone the row happens to carry, and the start in the body has
+/// already been worked out from that into the hour Outlook is given, so the two
+/// are not the same day for a meeting near midnight in a place hours from
+/// Greenwich. Asked once here, the rule and the meeting cannot say different
+/// days.
+///
+/// The shapes and the day itself both come from the one reader of a stored
+/// moment this program has. A fourth hand-cut date off the front of a string is
+/// how this kept coming back.
+pub fn the_day_a_graph_start_names(start: &MsDateTimeTimeZone) -> Option<chrono::NaiveDate> {
+    crate::common::moment::read(&start.date_time).map(crate::common::moment::Moment::the_day)
+}
 
 /// The seven weekdays, spelled both ways.
 ///
@@ -755,13 +772,47 @@ mod tests {
     /// Tuesday of its month, in a month with a thirty-first.
     const A_TUESDAY: &str = "2026-03-10";
 
+    /// A meeting on the Wednesday after that Tuesday, two hours into the
+    /// morning, in a place five and a half hours ahead of Greenwich.
+    ///
+    /// Stored, it reads as the Wednesday. In the body that goes to Outlook it
+    /// is half past eight on the Tuesday evening. The offset is written into
+    /// the value so it means the same moment wherever this runs; a clock face
+    /// with no zone would be read as a time on the computer running the test
+    /// and would convert to itself at Greenwich, which is where the checks run.
+    const A_LATE_EVENING_IN_INDIA: (&str, &str) =
+        ("2026-03-11T02:00:00+05:30", "2026-03-11T03:00:00+05:30");
+
     /// The day this program draws a series on, from the rule alone.
     ///
     /// The production reader, not a second one written for the test. Comparing
     /// the days two rules fall on is the only comparison that would notice a
     /// conversion that kept the words and changed the meaning.
     fn the_days_it_falls_on(rule: &str) -> Vec<String> {
-        let event = crate::data::message_cache::CalendarEventEntry {
+        let event = a_stored_event(
+            &format!("{A_TUESDAY} 09:00"),
+            &format!("{A_TUESDAY} 10:00"),
+            rule,
+        );
+        let from = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a Tuesday");
+        crate::application::occurrences::falls_on(&event, from, from + chrono::Duration::days(900))
+            .days
+            .into_iter()
+            .map(|day| day.start)
+            .collect()
+    }
+
+    /// A repeating meeting in the diary, starting when it is told to.
+    ///
+    /// One fixture for both the days a rule falls on and the trip out to
+    /// Outlook and back, so the round trip runs on a row the rest of this
+    /// program would recognise rather than on a start invented beside it.
+    fn a_stored_event(
+        start_datetime: &str,
+        end_datetime: &str,
+        rule: &str,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
             id: "e1".to_string(),
             account_id: "a1".to_string(),
             provider_event_id: None,
@@ -769,8 +820,8 @@ mod tests {
             summary: "Standup".to_string(),
             description: None,
             location: None,
-            start_datetime: format!("{A_TUESDAY} 09:00"),
-            end_datetime: format!("{A_TUESDAY} 10:00"),
+            start_datetime: start_datetime.to_string(),
+            end_datetime: end_datetime.to_string(),
             start_date: None,
             end_date: None,
             is_all_day: false,
@@ -791,13 +842,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
-        };
-        let from = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a Tuesday");
-        crate::application::occurrences::falls_on(&event, from, from + chrono::Duration::days(900))
-            .days
-            .into_iter()
-            .map(|day| day.start)
-            .collect()
+        }
     }
 
     #[test]
@@ -813,7 +858,15 @@ mod tests {
         // has to be told a weekday a rule can leave to the start date, so the
         // rule that comes back says more than the one that went out and means
         // exactly the same thing.
-        let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
+        //
+        // The day the series begins is taken out of the body that goes to
+        // Outlook, not written here and handed to both directions. Handed to
+        // both, it agreed with itself whatever the two sides did, so it could
+        // not see them differ, which is exactly what they were doing. The start
+        // used here is two in the morning in India, which is the evening of the
+        // day before once it is in the body, so the two answers are different
+        // days and a test that cannot tell them apart goes green while the
+        // meeting and its repeat are filed on separate days.
         let mut checked = 0;
         for repeat in Repeat::ALL {
             for ending in [
@@ -826,8 +879,26 @@ mod tests {
                     assert_eq!(repeat, Repeat::Never, "{repeat:?} has no rule");
                     continue;
                 };
-                let said = as_outlook_says_it(&written, starts_on)
-                    .unwrap_or_else(|| panic!("Outlook can say {written}"));
+                let event = a_stored_event(
+                    A_LATE_EVENING_IN_INDIA.0,
+                    A_LATE_EVENING_IN_INDIA.1,
+                    &written,
+                );
+                let body = crate::application::calendar::local_to_ms_event(
+                    &event,
+                    crate::application::calendar::TheBodyIsFor::MakingIt,
+                )
+                .expect("an Outlook body");
+                let said = body.recurrence.expect("a new series carries its repeat");
+                let starts_on = the_day_a_graph_start_names(body.start.as_ref().expect("a start"))
+                    .expect("a day");
+                assert_eq!(
+                    starts_on.to_string(),
+                    A_TUESDAY,
+                    "the stored clock face reads as the Wednesday after, and the body says the \
+                     Tuesday before; the Tuesday is what Outlook is told the meeting is on, so \
+                     it is what the repeat has to be counted from"
+                );
                 let back = what_outlook_said(&said, starts_on)
                     .unwrap_or_else(|| panic!("{written} came back from Outlook unreadable"));
 
