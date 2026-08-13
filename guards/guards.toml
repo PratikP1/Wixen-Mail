@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 58 records have arrived since and have not been through it.
+# 68 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -1392,10 +1392,18 @@ before = """        exception_dates: Some(all),"""
 after = """        exception_dates: series.exception_dates.clone(),"""
 red = [
     "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
+    "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
+    "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
+    "application::calendar::tests::test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind",
+    "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
+    "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
+    "application::calendar::tests::test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off",
     "application::calendar::tests::test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it",
     "application::calendar::tests::test_calling_off_a_day_already_called_off_does_not_name_it_twice",
     "application::calendar::tests::test_calling_off_one_day_keeps_the_days_the_series_had_already_called_off",
     "application::calendar::tests::test_calling_off_one_day_takes_that_day_off_the_series_and_leaves_the_others",
+    "application::calendar::tests::test_who_took_the_day_out_decides_whether_the_series_is_still_waiting_to_be_sent",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone",
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_a_series_is_no_longer_shown_and_the_others_still_are",
     "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
 ]
@@ -3420,6 +3428,8 @@ before = """        title => format!("{title}: that one day is taken off. The ot
 after = """        title => format!("{title} deleted"),"""
 red = [
     "application::calendar::tests::test_the_words_for_a_day_taken_off_say_the_others_are_unchanged",
+    "application::calendar::tests::test_what_the_calendar_window_did_is_said_in_words_a_person_can_tell_apart",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
 ]
 
 [[guard]]
@@ -4874,4 +4884,139 @@ before = """    crate::application::categories::on(stored)"""
 after = """    vec![stored.trim().to_string()].into_iter().filter(|c| !c.is_empty()).collect()"""
 red = [
     "application::calendar::tests::test_an_event_filed_under_several_categories_in_outlook_keeps_all_of_them",
+]
+
+# ── One day of a Google series that is no longer like the rest ──────────────
+#
+# Google is asked for the series itself rather than for its days. Asked that
+# way it goes on naming separately every day of a series somebody has called
+# off or moved, and nothing here read those, so a day cancelled in Google
+# Calendar went on being drawn and a day moved to another time was drawn twice.
+# The seven records below hold the reading of them.
+
+[[guard]]
+name = "a Google series is read before the days of it that changed"
+file = "src/application/calendar.rs"
+before = """            .partition(|event| event.the_series_it_is_one_day_of().is_none());"""
+after = """            .partition(|event| event.the_series_it_is_one_day_of().is_some());"""
+red = [
+    "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
+    "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
+    "application::calendar::tests::test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind",
+    "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
+    "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
+    "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
+    "application::calendar::tests::test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create",
+    "application::calendar::tests::test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off",
+    "application::calendar::tests::test_an_event_google_calls_cancelled_is_taken_off_and_the_others_are_kept",
+]
+
+[[guard]]
+name = "the days a Google series already calls off survive a read naming only the series"
+file = "src/application/calendar.rs"
+before = """                let merged = everything_both_copies_call_off(merged, &ex);
+                cache.save_calendar_event(&merged)?;"""
+after = """                cache.save_calendar_event(&merged)?;"""
+red = [
+    "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
+]
+
+[[guard]]
+name = "a day of a Google series this computer deleted is not written back"
+file = "src/application/calendar.rs"
+before = """    if deleted_here.holds(&event.id) || deleted_here.holds(at_google) {"""
+after = """    if deleted_here.holds(&event.id) {"""
+red = [
+    "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
+]
+
+[[guard]]
+name = "a Google day moved and then cancelled loses its appointment as well as its place"
+file = "src/application/calendar.rs"
+before = """        if existing.is_some() {
+            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            the_day_went = true;
+        }"""
+after = """        if false && existing.is_some() {
+            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            the_day_went = true;
+        }"""
+red = [
+    "application::calendar::tests::test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind",
+]
+
+[[guard]]
+name = "a Google read that calls a day off leaves a change waiting here still waiting"
+file = "src/application/calendar.rs"
+before = """            cache.save_calendar_event(&CalendarEventEntry {
+                pending: series.pending,
+                ..after
+            })?;"""
+after = """            cache.save_calendar_event(&CalendarEventEntry {
+                pending: false,
+                ..after
+            })?;"""
+red = [
+    "application::calendar::tests::test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off",
+]
+
+[[guard]]
+name = "a day of a Google series whose series is not held here is kept as the meeting it is"
+file = "src/application/calendar.rs"
+before = """    let Some(series) = series else {
+        return cache.save_calendar_event(&that_day);
+    };"""
+after = """    let Some(series) = series else {
+        return Ok(());
+    };"""
+red = [
+    "application::calendar::tests::test_a_day_of_a_series_this_calendar_does_not_hold_is_kept_as_the_meeting_it_is",
+]
+
+[[guard]]
+name = "what Google says about one day of a series is never sent back"
+file = "src/service/google_api.rs"
+before = """    #[serde(default, skip_serializing)]
+    pub recurring_event_id: Option<String>,"""
+after = """    #[serde(default)]
+    pub recurring_event_id: Option<String>,"""
+red = [
+    "application::calendar::tests::test_a_change_waiting_here_is_sent_to_google_before_the_calendar_is_read",
+    "application::calendar::tests::test_a_repeating_event_changed_here_is_not_sent_in_a_way_that_flattens_it",
+    "service::google_api::tests::test_an_event_with_nothing_set_is_sent_to_google_as_nothing",
+    "service::google_api::tests::test_changing_one_thing_about_a_google_event_names_only_that_thing",
+    "service::google_api::tests::test_nothing_google_says_about_a_series_instance_is_sent_back",
+]
+
+[[guard]]
+name = "who took the day out decides whether the series is still waiting to be sent"
+file = "src/application/calendar.rs"
+before = """        pending: series.pending || who == WhoTookTheDayOut::SomebodyHere,"""
+after = """        pending: series.pending,"""
+red = [
+    "application::calendar::tests::test_who_took_the_day_out_decides_whether_the_series_is_still_waiting_to_be_sent",
+    "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
+]
+
+[[guard]]
+name = "a day changed on this computer leaves the series waiting to be sent"
+file = "src/presentation/managers.rs"
+before = """        crate::application::calendar::WhoTookTheDayOut::SomebodyHere,"""
+after = """        crate::application::calendar::WhoTookTheDayOut::TheProviderItself,"""
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
+]
+
+[[guard]]
+name = "a day changed at Google leaves the series owing Google nothing"
+file = "src/application/calendar.rs"
+before = """        WhoTookTheDayOut::TheProviderItself,
+    )
+}"""
+after = """        WhoTookTheDayOut::SomebodyHere,
+    )
+}"""
+red = [
+    "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
+    "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
 ]

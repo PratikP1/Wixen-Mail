@@ -621,21 +621,23 @@ fn the_zone_that_stops_keeping_the_day(
 
 /// Store the one day somebody changed, and take that day off the series.
 ///
-/// The changed day is written first, on purpose. If the second write fails, the
-/// day is on the calendar twice, which somebody can see and put right. The
-/// other order leaves the day missing, which nothing says and nobody can get
-/// back.
+/// The pair of writes, and the order they go in, live with the read that does
+/// the same thing when a provider moves one day of a series. One answer to one
+/// question, so a change made here and a change made at a calendar leave the
+/// same two rows behind.
 fn one_day_of_a_series_changed(
     cache: &MessageCache,
     series: &crate::data::message_cache::CalendarEventEntry,
     opened: &CalendarEventItem,
     that_day: crate::data::message_cache::CalendarEventEntry,
 ) -> crate::common::Result<()> {
-    cache.save_calendar_event(&that_day)?;
-    cache.save_calendar_event(&crate::application::calendar::one_day_called_off(
+    crate::application::calendar::one_day_kept_out_of_the_series(
+        cache,
         series,
+        &that_day,
         &opened.start,
-    ))
+        crate::application::calendar::WhoTookTheDayOut::SomebodyHere,
+    )
 }
 
 /// Which of the two a Delete answer really carried out, said in words.
@@ -6727,35 +6729,6 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
         assert!(
             !the_block_opened_after(&carries_on, marker).contains("continue;"),
             "a refusal that carries on was read as one that stops"
-        );
-    }
-
-    #[test]
-    fn test_the_changed_day_is_written_before_the_day_is_taken_off_the_series() {
-        // What this cannot see: whether either write happens. It compares where
-        // two calls sit in this file's own text. Reaching them needs a calendar
-        // server, so a branch that is never taken keeps the order it is asked
-        // about and changes nothing.
-        // Ordering is the whole of the failure plan. If the second write fails,
-        // the day is on the calendar twice, which somebody can see and put
-        // right. The other order leaves the day missing, which nothing says and
-        // nobody can get back.
-        let source = std::fs::read_to_string("src/presentation/managers.rs")
-            .expect("this file to be readable");
-        let body = source
-            .split_once("fn one_day_of_a_series_changed(")
-            .expect("the routine that carries one day out")
-            .1;
-        let day_first = body
-            .find("cache.save_calendar_event(&that_day)")
-            .expect("the changed day to be written");
-        let series_after = body
-            .find("one_day_called_off(")
-            .expect("the day to be taken off the series");
-        assert!(
-            day_first < series_after,
-            "the day is taken off the series before it is kept anywhere, so a \
-             failure in the second write loses it with nothing said"
         );
     }
 

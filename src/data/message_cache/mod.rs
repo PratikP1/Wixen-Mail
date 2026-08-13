@@ -780,6 +780,13 @@ pub struct CalendarEventEntry {
     /// series. The second one takes a day away, so it must not reach a server
     /// before the first one has landed there. After the program is closed and
     /// opened again this is the only thing that still knows the two are a pair.
+    ///
+    /// A day a provider itself moved carries this too, and is not waiting to be
+    /// sent anywhere. Both readers of the pairing ask only about rows that are
+    /// waiting, which is what keeps those out of it. That filter is load
+    /// bearing: without it a day read from a provider would be taken for a day
+    /// owing a pair of writes to a calendar server, and the write that takes
+    /// the day off the series would be held back for ever.
     pub cut_from_event_id: Option<String>,
 }
 

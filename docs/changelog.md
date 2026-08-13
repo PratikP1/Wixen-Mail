@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a day you cancelled in Google Calendar came back on your diary, and
+  a meeting you moved to another time was shown twice.** Reading a Google
+  calendar as the repeating meeting itself, rather than as a list of the days it
+  falls on, is new in this release. Read that way, Google sends a day you
+  cancelled and a day you moved as separate entries of their own, and nothing
+  here read them. So the cancelled day went on being drawn from the repeat, and
+  the moved meeting was drawn twice that day, once at the old time from the
+  repeat and once at the time you moved it to.
+
+  A day cancelled in Google Calendar is now taken off the repeating meeting
+  here, the same way a day cancelled on this computer or on a calendar server
+  is. A day moved to another time is now one appointment at its new time, saying
+  which repeating meeting it came out of, with that day taken off the meeting.
+  That is the same pair of entries this program already keeps when you change
+  one day of a repeating meeting yourself.
+
+  Known limitations. Moving one day of a Google repeating meeting on this
+  computer still cannot be sent to Google, unchanged from earlier in this
+  release. An Outlook calendar still shows a day you moved at the time the
+  repeat says rather than the time you moved it to, and a day you cancelled in
+  Outlook is still drawn. None of the Google calendar syncing has run against a
+  real account.
+
 - **Fixed: an event filed under two categories in Outlook came back filed
   under one.** The two were sent back as a single category with a comma in the
   middle of its name, and Outlook reads the categories it is given as the whole

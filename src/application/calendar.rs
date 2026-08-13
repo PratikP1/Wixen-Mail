@@ -831,7 +831,20 @@ pub async fn sync_google_calendar(
         }
     };
 
-    for event in &remote_events {
+    // Whole series and single meetings first, their changed days afterwards.
+    // Google is asked for the series rather than for its days, and asked that
+    // way it names separately every day of a series somebody has called off or
+    // moved. It promises no order and none is asked for, so a day met before
+    // the series it belongs to would find nothing to be taken off and be
+    // written down as a second meeting, and the same appointment would be drawn
+    // twice. Told apart in one place rather than by a question in each loop, so
+    // the two cannot come to disagree about which is which.
+    let (whole_series, the_days_of_them_that_changed): (Vec<&GoogleEvent>, Vec<&GoogleEvent>) =
+        remote_events
+            .iter()
+            .partition(|event| event.the_series_it_is_one_day_of().is_none());
+
+    for event in whole_series {
         if event.id.is_empty() {
             continue;
         }
@@ -878,6 +891,7 @@ pub async fn sync_google_calendar(
                     TheCategory::OnlyHere,
                     TheStatus::AlsoAtTheProvider,
                 );
+                let merged = everything_both_copies_call_off(merged, &ex);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -886,6 +900,21 @@ pub async fn sync_google_calendar(
                 result.created += 1;
             }
         }
+    }
+
+    for event in the_days_of_them_that_changed {
+        let Some(at_google) = event.the_series_it_is_one_day_of() else {
+            continue;
+        };
+        one_day_of_a_google_series(
+            cache,
+            account_id,
+            &filed_under.id,
+            event,
+            at_google,
+            &deleted_here,
+            &mut result,
+        )?;
     }
 
     // Save sync state
@@ -910,6 +939,159 @@ pub async fn sync_google_calendar(
     cache.save_sync_state(&new_state)?;
 
     Ok(result)
+}
+
+/// Every day either copy of a series calls off, on the copy just read.
+///
+/// Google answers about a called-off day in two places. The series carries the
+/// days it calls off, and each of those days is also named separately as an
+/// item of its own. Only the second says anything on a read that names the
+/// series without renaming its days, which is what an ordinary read of what has
+/// changed is, so writing the list built from the series alone straight over
+/// the stored one erases every day learned the other way and the cancelled day
+/// comes back on the diary a sync later.
+///
+/// The stored days go back on as stored values. They are already written the
+/// way this column is written, and the routine that builds a value from a start
+/// keeps only the digits of what it is handed, so feeding a stored value
+/// through it would take a zone name apart. The pair used here are exact
+/// inverses of each other, which is what makes the round trip say the same
+/// thing it started with.
+///
+/// Whether the series is waiting to be sent is carried through untouched. This
+/// is a read, and a read never makes a change owe anything to a provider.
+fn everything_both_copies_call_off(
+    merged: CalendarEventEntry,
+    held: &CalendarEventEntry,
+) -> CalendarEventEntry {
+    let mut folded = merged;
+    for day in crate::service::caldav::the_cancelled_days_in(
+        held.exception_dates.as_deref().unwrap_or_default(),
+    ) {
+        let called_off =
+            crate::service::caldav::a_cancelled_day_stored(day.its_own_zone, day.clock_face);
+        folded = with_one_more_day_called_off(&folded, &called_off).0;
+    }
+    folded
+}
+
+/// One day of a Google series that is no longer like the rest of them, read the
+/// way this program already writes such a day down.
+///
+/// There are two of those and this program has one answer for each, shared with
+/// the calendar-server side. A day somebody called off is a day named in the
+/// series' own list of called-off days. A day somebody moved is an appointment
+/// of its own naming the series it came out of, with that day called off the
+/// series, which is exactly the pair of rows changing one day of a repeat
+/// leaves behind when it is done here.
+///
+/// The series is read from the calendar rather than looked for in the answer.
+/// An answer that names only what has changed names the changed day and not the
+/// series it belongs to, and reading it back for every day also keeps two
+/// cancelled days of one series from writing over each other.
+///
+/// A day whose series is not held here is stored as the meeting it says it is.
+/// Nothing here draws that day from a rule, so there is nothing to take it off
+/// and nothing is drawn twice.
+fn one_day_of_a_google_series(
+    cache: &MessageCache,
+    account_id: &str,
+    filed_under: &str,
+    event: &GoogleEvent,
+    at_google: &str,
+    deleted_here: &crate::application::deletions::DeletedHere,
+    result: &mut CalendarSyncResult,
+) -> Result<()> {
+    if event.id.is_empty() {
+        return Ok(());
+    }
+    // Asked about the series as well as about the day. A series somebody
+    // deleted here would otherwise come back one day at a time.
+    if deleted_here.holds(&event.id) || deleted_here.holds(at_google) {
+        return Ok(());
+    }
+
+    let series = cache.get_event_by_provider_id(account_id, at_google)?;
+    let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+
+    if event.status.as_deref() == Some("cancelled") {
+        let mut the_day_went = false;
+        // A day that had been moved and has now been called off. Both halves
+        // are needed: the appointment it became has to go, and the day has to
+        // come off the series so the rule stops drawing it.
+        if existing.is_some() {
+            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            the_day_went = true;
+        }
+        if let (Some(series), Some(the_day_it_was)) =
+            (series, the_day_a_google_instance_replaces(event))
+        {
+            let called_off = crate::service::caldav::the_called_off_value_for(
+                &the_day_it_was,
+                series.is_all_day,
+            );
+            let (after, went) = with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&CalendarEventEntry {
+                pending: series.pending,
+                ..after
+            })?;
+            the_day_went |= went == ADayWent::OffTheSeries;
+        }
+        // Counted once, and only when something really went. Google names
+        // every called-off day of a series in every full answer, so counting
+        // them as they arrive would report the same deletions for ever to
+        // somebody who is listening to the count.
+        if the_day_went {
+            result.deleted += 1;
+        }
+        return Ok(());
+    }
+
+    if a_change_here_is_still_waiting(existing.as_ref()) {
+        return Ok(());
+    }
+    let mut that_day = google_event_to_local(event, account_id, filed_under);
+    match &existing {
+        Some(held) => {
+            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::OnlyHere,
+                TheStatus::AlsoAtTheProvider,
+            );
+            result.updated += 1;
+        }
+        None => result.created += 1,
+    }
+
+    let Some(series) = series else {
+        return cache.save_calendar_event(&that_day);
+    };
+    // Set here because carrying the local-only fields over does not carry it,
+    // so a second read would otherwise store the day with nothing left saying
+    // which series it came out of.
+    that_day.cut_from_event_id = Some(series.id.clone());
+
+    let Some(the_day_it_was) = the_day_a_google_instance_replaces(event) else {
+        // Google should not send one. Said out loud rather than swallowed,
+        // because there is no day to take off the series and the meeting would
+        // otherwise be drawn twice with nothing anywhere saying why.
+        tracing::warn!(
+            "A day of a repeating event in a Google calendar does not say which \
+             day of it it stands in for, so that day cannot be taken off the \
+             series and the meeting may be shown twice. The event is {} and the \
+             series is {at_google}.",
+            event.id
+        );
+        return cache.save_calendar_event(&that_day);
+    };
+    one_day_kept_out_of_the_series(
+        cache,
+        &series,
+        &that_day,
+        &the_day_it_was,
+        WhoTookTheDayOut::TheProviderItself,
+    )
 }
 
 /// Create a calendar event on Google and save locally.
@@ -1901,13 +2083,48 @@ pub const fn a_repeat_kept_here_only(goes: WhereAChangeGoes) -> Option<&'static 
 /// end up in that column, so anything that parses it has to answer for both,
 /// and this does not need to.
 pub fn one_day_called_off(series: &CalendarEventEntry, the_day_opened: &str) -> CalendarEventEntry {
+    let called_off =
+        crate::service::caldav::the_called_off_value_for(the_day_opened, series.is_all_day);
+    let (after, _) = with_one_more_day_called_off(series, &called_off);
+    CalendarEventEntry {
+        // The series is a change nobody has told the calendar about yet.
+        pending: true,
+        ..after
+    }
+}
+
+/// Whether that day really came off the series, or was already off it.
+///
+/// Asked because the answer is counted and read out. A provider asked for a
+/// series rather than for its days sends every day of it somebody has called
+/// off, every time, so a sync that counted each of them as a deletion would
+/// announce the same number of deletions for ever.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ADayWent {
+    /// It was on the series and now it is not.
+    OffTheSeries,
+    /// The series already called that day off, so nothing changed.
+    ItWasAlreadyOff,
+}
+
+/// The series with one more day called off, told what value to call off.
+///
+/// Split out from [`one_day_called_off`] so that a day named the way a provider
+/// names it and a day named the way the screen names it reach one routine. Both
+/// arrive here as a value built by the one routine that builds one, so nothing
+/// here has to know which of them it is looking at.
+///
+/// Whether the change is waiting to be sent is left exactly as the series had
+/// it. Who took the day out decides that, and only the callers know who.
+pub(crate) fn with_one_more_day_called_off(
+    series: &CalendarEventEntry,
+    called_off: &str,
+) -> (CalendarEventEntry, ADayWent) {
     use crate::service::caldav::{
-        a_cancelled_day_stored, a_cancelled_day_taken_apart, the_called_off_value_for,
-        the_cancelled_days_in,
+        a_cancelled_day_stored, a_cancelled_day_taken_apart, the_cancelled_days_in,
     };
 
-    let called_off = the_called_off_value_for(the_day_opened, series.is_all_day);
-    let new_day = a_cancelled_day_taken_apart(&called_off);
+    let new_day = a_cancelled_day_taken_apart(called_off);
     let its_zone = series.time_zone.as_deref();
     let mut named_already = false;
     let mut all: Vec<String> = Vec::new();
@@ -1923,12 +2140,59 @@ pub fn one_day_called_off(series: &CalendarEventEntry, the_day_opened: &str) -> 
         ));
     }
     let all = all.join(",");
-    CalendarEventEntry {
-        exception_dates: Some(all),
-        // The series is a change nobody has told the calendar about yet.
-        pending: true,
-        ..series.clone()
-    }
+    (
+        CalendarEventEntry {
+            exception_dates: Some(all),
+            ..series.clone()
+        },
+        if named_already {
+            ADayWent::ItWasAlreadyOff
+        } else {
+            ADayWent::OffTheSeries
+        },
+    )
+}
+
+/// Who took one day out of a series.
+///
+/// The one thing it decides is whether the series is left waiting to be sent.
+/// A change made here has to be sent, and a change the provider made is already
+/// there, so sending it back would hand the provider its own value as though it
+/// were news.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhoTookTheDayOut {
+    /// Somebody working on this computer.
+    SomebodyHere,
+    /// The calendar this account is synced with.
+    TheProviderItself,
+}
+
+/// Store the one day that is no longer part of the series, and take that day
+/// off the series.
+///
+/// The changed day is written first, on purpose. If the second write fails, the
+/// day is on the calendar twice, which somebody can see and put right. The
+/// other order leaves the day missing, which nothing says and nobody can get
+/// back.
+///
+/// A change already waiting on the series keeps waiting whoever took the day
+/// out. Clearing it would drop an edit somebody typed with nothing left to try
+/// again, which is the loss the whole read path is built to avoid.
+pub fn one_day_kept_out_of_the_series(
+    cache: &MessageCache,
+    series: &CalendarEventEntry,
+    that_day: &CalendarEventEntry,
+    the_day_it_was: &str,
+    who: WhoTookTheDayOut,
+) -> Result<()> {
+    cache.save_calendar_event(that_day)?;
+    let called_off =
+        crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+    let (after, _) = with_one_more_day_called_off(series, &called_off);
+    cache.save_calendar_event(&CalendarEventEntry {
+        pending: series.pending || who == WhoTookTheDayOut::SomebodyHere,
+        ..after
+    })
 }
 
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
@@ -1964,6 +2228,61 @@ fn only_the_line_naming(lines: &[String], property: &str) -> Option<String> {
         .cloned()
 }
 
+/// One of Google's moments, read the one way this program reads them.
+///
+/// Google writes a moment as either a whole day or a date and a time, and both
+/// the start of an event, its end, and the day one of its days stands in for
+/// arrive in that shape. Read three ways they could disagree, and the one that
+/// costs something is the day an exception replaces landing on the wrong side
+/// of midnight, which calls off a day nobody cancelled and leaves the cancelled
+/// one on the diary.
+struct AGoogleMoment {
+    /// The moment written the way this program stores one.
+    stored: String,
+    /// The day on its own, when the moment is a whole day.
+    whole_day: Option<String>,
+    /// Whether it is a whole day rather than a time.
+    is_all_day: bool,
+    /// The zone the moment named, when it named one.
+    zone: Option<String>,
+}
+
+/// What Google means by one of its moments, or an empty one when it named none.
+fn what_google_means_by(when: Option<&GoogleEventDateTime>) -> AGoogleMoment {
+    let Some(when) = when else {
+        return AGoogleMoment {
+            stored: String::new(),
+            whole_day: None,
+            is_all_day: false,
+            zone: None,
+        };
+    };
+    match when.date.as_deref() {
+        Some(day) => AGoogleMoment {
+            stored: format!("{day}T00:00:00Z"),
+            whole_day: Some(day.to_string()),
+            is_all_day: true,
+            zone: when.time_zone.clone(),
+        },
+        None => AGoogleMoment {
+            stored: when.date_time.clone().unwrap_or_default(),
+            whole_day: None,
+            is_all_day: false,
+            zone: when.time_zone.clone(),
+        },
+    }
+}
+
+/// Which day of its series a Google item stands in for, when it says.
+///
+/// Read through the same routine the event's own start goes through, so the day
+/// being taken off the series and the day the series draws are named the same
+/// way.
+fn the_day_a_google_instance_replaces(event: &GoogleEvent) -> Option<String> {
+    let was = what_google_means_by(event.original_start_time.as_ref());
+    Some(was.stored).filter(|stored| !stored.is_empty())
+}
+
 /// What a Google event becomes here, filed under a calendar somebody can open.
 ///
 /// The calendar is an argument rather than something the caller sets afterwards.
@@ -1975,38 +2294,14 @@ pub fn google_event_to_local(
     account_id: &str,
     calendar_id: &str,
 ) -> CalendarEventEntry {
-    let (start_datetime, start_date, is_all_day, time_zone) = match &event.start {
-        Some(dt) => {
-            if let Some(ref d) = dt.date {
-                // All-day event
-                (
-                    format!("{}T00:00:00Z", d),
-                    Some(d.clone()),
-                    true,
-                    dt.time_zone.clone(),
-                )
-            } else {
-                (
-                    dt.date_time.clone().unwrap_or_default(),
-                    None,
-                    false,
-                    dt.time_zone.clone(),
-                )
-            }
-        }
-        None => (String::new(), None, false, None),
-    };
-
-    let (end_datetime, end_date) = match &event.end {
-        Some(dt) => {
-            if let Some(ref d) = dt.date {
-                (format!("{}T00:00:00Z", d), Some(d.clone()))
-            } else {
-                (dt.date_time.clone().unwrap_or_default(), None)
-            }
-        }
-        None => (String::new(), None),
-    };
+    // The zone and the whole-day-ness of the event come from the start only,
+    // which is what they have always come from. The end is read by the same
+    // routine so the two cannot come to disagree about what a whole day is.
+    let opens = what_google_means_by(event.start.as_ref());
+    let closes = what_google_means_by(event.end.as_ref());
+    let (start_datetime, start_date, is_all_day, time_zone) =
+        (opens.stored, opens.whole_day, opens.is_all_day, opens.zone);
+    let (end_datetime, end_date) = (closes.stored, closes.whole_day);
 
     let attendees_json = if event.attendees.is_empty() {
         None
@@ -3634,6 +3929,78 @@ mod tests {
                     .iter()
                     .any(|line| line.ends_with(written)),
                 "the writer put the value nowhere for {start}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_changed_day_is_written_before_the_day_is_taken_off_the_series() {
+        // What this cannot see: whether either write happens. It compares where
+        // two calls sit in this file's own text. It is kept because the order
+        // it protects has no other witness, and it reads the file the pair of
+        // writes really lives in, because a test still reading the file they
+        // used to live in would go on passing while describing nothing.
+        // Ordering is the whole of the failure plan. If the second write fails,
+        // the day is on the calendar twice, which somebody can see and put
+        // right. The other order leaves the day missing, which nothing says and
+        // nobody can get back.
+        let source = std::fs::read_to_string("src/application/calendar.rs")
+            .expect("this file to be readable");
+        let body = source
+            .split_once("pub fn one_day_kept_out_of_the_series(")
+            .expect("the routine that carries one day out")
+            .1;
+        let day_first = body
+            .find("cache.save_calendar_event(that_day)")
+            .expect("the changed day to be written");
+        let series_after = body
+            .find("with_one_more_day_called_off(")
+            .expect("the day to be taken off the series");
+        assert!(
+            day_first < series_after,
+            "the day is taken off the series before it is kept anywhere, so a \
+             failure in the second write loses it with nothing said"
+        );
+    }
+
+    #[test]
+    fn test_who_took_the_day_out_decides_whether_the_series_is_still_waiting_to_be_sent() {
+        // Both directions cost something. Forced to not waiting, a day somebody
+        // moved here never leaves this computer and nothing tries again.
+        // Forced to waiting, a day the provider itself moved is sent straight
+        // back to the provider as though it were news.
+        for (who, still_waiting) in [
+            (WhoTookTheDayOut::SomebodyHere, true),
+            (WhoTookTheDayOut::TheProviderItself, false),
+        ] {
+            let cache = temp_cache(&format!("who_took_the_day_out_{still_waiting}"));
+            let series = a_weekly_series("2026-08-03T09:00:00Z", "2026-08-03T09:15:00Z", false);
+            cache
+                .save_calendar_event(&series)
+                .expect("the series to be stored");
+            let that_day = CalendarEventEntry {
+                id: "that-day".to_string(),
+                provider_event_id: Some("uid-1-on-the-third".to_string()),
+                recurrence_rule: None,
+                cut_from_event_id: Some(series.id.clone()),
+                ..series.clone()
+            };
+
+            one_day_kept_out_of_the_series(&cache, &series, &that_day, "2026-08-03T09:00:00Z", who)
+                .expect("the day and the series to be stored");
+
+            let stored = cache
+                .get_event_by_id(&series.id)
+                .expect("the calendar to be readable")
+                .expect("the series to still be there");
+            assert_eq!(
+                stored.pending, still_waiting,
+                "a day taken out by {who:?} left the series waiting: {}",
+                stored.pending
+            );
+            assert!(
+                stored.exception_dates.is_some(),
+                "the day was not taken off the series for {who:?}"
             );
         }
     }
@@ -7912,6 +8279,549 @@ mod tests {
                \"end\":{{\"dateTime\":\"2026-03-06T09:15:00Z\"}}}}\
              ],\"nextSyncToken\":\"marker-1\"}}"
         )
+    }
+
+    // ── One day of a Google series ───────────────────────────────────────
+    //
+    // Google is asked for the series itself rather than for its days. Asked
+    // that way it still names separately every day of a series somebody has
+    // called off or moved, each carrying the series it belongs to and the day
+    // of that series it stands in for. The fixtures below are that answer, so
+    // the tests drive the real sync against the shape a real calendar sends.
+
+    /// A weekly series at Google, nine o'clock every Thursday from 5 March.
+    ///
+    /// The summary is asked for rather than fixed, so a test driving two syncs
+    /// can tell whether the second read really reached the stored row.
+    fn the_weekly_series_at_google(summary: &str) -> String {
+        format!(
+            "{{\"id\":\"series-at-google\",\"status\":\"confirmed\",\"summary\":\"{summary}\",\
+               \"etag\":\"\\\"e1\\\"\",\"recurrence\":[\"RRULE:FREQ=WEEKLY\"],\
+               \"start\":{{\"dateTime\":\"2026-03-05T09:00:00Z\"}},\
+               \"end\":{{\"dateTime\":\"2026-03-05T09:15:00Z\"}}}}"
+        )
+    }
+
+    /// The weekly stand-up already stored here, in the Google calendar, under
+    /// the name Google knows it by.
+    fn the_series_already_stored(cache: &MessageCache, waiting: bool) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("the Google calendar");
+        let series = CalendarEventEntry {
+            id: "series-here".to_string(),
+            provider_event_id: Some("series-at-google".to_string()),
+            calendar_id: Some(container.id),
+            summary: "Stand-up, in the small room".to_string(),
+            time_zone: None,
+            source_provider: Some("gmail".to_string()),
+            pending: waiting,
+            ..a_weekly_series("2026-03-05T09:00:00Z", "2026-03-05T09:15:00Z", false)
+        };
+        cache
+            .save_calendar_event(&series)
+            .expect("the series to be stored");
+        series
+    }
+
+    /// The 12 March day of that series, as Google names it once somebody has
+    /// touched that day on its own.
+    ///
+    /// It always says which series it came out of and which day of that series
+    /// it stands in for. A day that was moved says where it went as well; a day
+    /// that was called off has nowhere to be.
+    fn that_thursday_of_it(status: &str, moved_to: Option<(&str, &str)>) -> String {
+        let where_it_went = match moved_to {
+            Some((opens, closes)) => format!(
+                ",\"start\":{{\"dateTime\":\"{opens}\"}},\"end\":{{\"dateTime\":\"{closes}\"}}"
+            ),
+            None => String::new(),
+        };
+        format!(
+            "{{\"id\":\"series-at-google_20260312T090000Z\",\"status\":\"{status}\",\
+               \"summary\":\"Stand-up\",\"etag\":\"\\\"e2\\\"\",\
+               \"recurringEventId\":\"series-at-google\",\
+               \"originalStartTime\":{{\"dateTime\":\"2026-03-12T09:00:00Z\"}}\
+               {where_it_went}}}"
+        )
+    }
+
+    /// One whole answer from Google, holding the items named.
+    fn a_google_answer(items: &[String]) -> String {
+        format!(
+            "{{\"items\":[{}],\"nextSyncToken\":\"marker-1\"}}",
+            items.join(",")
+        )
+    }
+
+    /// 12 March 2026, the Thursday these tests move and call off.
+    fn that_thursday() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 12).expect("a date")
+    }
+
+    /// Every meeting the whole calendar draws on one day, from every row it
+    /// holds.
+    ///
+    /// Asked of the diary rather than of a column, because a day taken off in a
+    /// shape the drawing side cannot read is a day still on somebody's calendar,
+    /// and a test reading only the column would call that fixed.
+    ///
+    /// The day is checked on the way out as well as asked for on the way in. An
+    /// event with no repeat on it is handed back whatever window is asked for,
+    /// so without that a row on another day would be counted as drawn on this
+    /// one.
+    fn everything_drawn_on(cache: &MessageCache, day: chrono::NaiveDate) -> Vec<String> {
+        cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable")
+            .iter()
+            .flat_map(|row| occurrences::falls_on(row, day, day).days)
+            .map(|drawn| drawn.start)
+            .filter(|drawn| drawn.starts_with(&day.to_string()))
+            .collect()
+    }
+
+    /// A Google client that may read but may not change anything, aimed at a
+    /// server of the test's own.
+    fn google_reading_from(address: &std::net::SocketAddr) -> GoogleApiClient {
+        GoogleApiClient::new().pointed_at(&format!("http://{address}"))
+    }
+
+    #[tokio::test]
+    async fn test_a_day_cancelled_at_google_is_taken_off_the_series_here() {
+        // Somebody cancels one Thursday of a weekly stand-up in Google
+        // Calendar. Google names the series once and names that Thursday
+        // separately as cancelled. Nothing here read the second item, so it was
+        // looked for under an identifier this calendar has never held, found
+        // nothing, and moved on, leaving the Thursday being drawn from the rule
+        // as though the meeting were still happening.
+        let cache = temp_cache("google_a_day_cancelled_at_google");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                the_weekly_series_at_google("Stand-up"),
+                that_thursday_of_it("cancelled", None),
+            ])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "the cancelled day was written down as a meeting of its own"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day was not taken off the series: {:?}",
+            stored[0].exception_dates
+        );
+        assert!(
+            !stored[0].pending,
+            "the series is waiting to be sent to Google over a day Google \
+             itself called off, so the next push hands Google back its own value"
+        );
+        assert!(
+            everything_drawn_on(&cache, that_thursday()).is_empty(),
+            "a meeting cancelled in Google Calendar is still on the diary: {:?}",
+            everything_drawn_on(&cache, that_thursday())
+        );
+    }
+
+    /// The two rows one moved day should leave behind, out of everything stored.
+    ///
+    /// Found by the name Google knows each of them by, so a test cannot be
+    /// satisfied by whichever row happened to be written first.
+    fn the_series_and_the_day_moved(
+        cache: &MessageCache,
+    ) -> (CalendarEventEntry, CalendarEventEntry) {
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        let named = |wanted: &str| {
+            stored
+                .iter()
+                .find(|row| row.provider_event_id.as_deref() == Some(wanted))
+                .unwrap_or_else(|| panic!("no row for {wanted} among {stored:?}"))
+                .clone()
+        };
+        assert_eq!(
+            stored.len(),
+            2,
+            "a moved day should leave the series and that one day, not {}: {stored:?}",
+            stored.len()
+        );
+        (
+            named("series-at-google"),
+            named("series-at-google_20260312T090000Z"),
+        )
+    }
+
+    /// What a moved day has to leave behind, whichever order Google named it in.
+    fn the_moved_day_reads_as_one_meeting_at_two_o_clock(cache: &MessageCache) {
+        let (series, that_day) = the_series_and_the_day_moved(cache);
+        assert_eq!(
+            that_day.cut_from_event_id.as_deref(),
+            Some(series.id.as_str()),
+            "the moved day does not say which series it came out of"
+        );
+        assert!(
+            series
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day was not taken off the series: {:?}",
+            series.exception_dates
+        );
+        assert!(
+            !series.pending,
+            "the series is waiting to be sent to Google over a day Google \
+             itself moved, so the next push hands Google back its own value"
+        );
+        let drawn = everything_drawn_on(cache, that_thursday());
+        assert_eq!(
+            drawn.len(),
+            1,
+            "the meeting is on the diary {} times that day: {drawn:?}",
+            drawn.len()
+        );
+        assert!(
+            drawn[0].starts_with("2026-03-12T14:00"),
+            "the meeting is drawn at the time the rule says rather than the time \
+             it was moved to: {drawn:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_moved_at_google_is_one_meeting_at_its_new_time() {
+        // Somebody drags one Thursday of a weekly stand-up to two o'clock in
+        // Google Calendar. Google names the series once and names that Thursday
+        // separately at its new time. Read as an ordinary meeting it becomes a
+        // second row while the rule goes on drawing the old one, so the same
+        // stand-up is on the diary twice that day, at nine and at two.
+        let cache = temp_cache("google_a_day_moved_at_google");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                the_weekly_series_at_google("Stand-up"),
+                that_thursday_of_it(
+                    "confirmed",
+                    Some(("2026-03-12T14:00:00Z", "2026-03-12T14:30:00Z")),
+                ),
+            ])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        the_moved_day_reads_as_one_meeting_at_two_o_clock(&cache);
+    }
+
+    #[tokio::test]
+    async fn test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first() {
+        // The same answer with the two items the other way round. Google was
+        // asked for the series rather than for its days, and asked that way it
+        // promises no order and nothing here asks for one, so a first sync can
+        // meet the moved day before the series it belongs to. Read in one pass
+        // there is nothing yet for the day to be taken off, and it is written
+        // down unlinked and drawn twice.
+        let cache = temp_cache("google_a_day_named_before_its_series");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                that_thursday_of_it(
+                    "confirmed",
+                    Some(("2026-03-12T14:00:00Z", "2026-03-12T14:30:00Z")),
+                ),
+                the_weekly_series_at_google("Stand-up"),
+            ])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        the_moved_day_reads_as_one_meeting_at_two_o_clock(&cache);
+    }
+
+    #[tokio::test]
+    async fn test_a_day_of_a_series_this_calendar_does_not_hold_is_kept_as_the_meeting_it_is() {
+        // A read of what has changed names the changed day and not the series
+        // it belongs to, and a series that began outside the stretch of time
+        // this calendar first asked for may never have arrived at all. Nothing
+        // here draws that day from a rule, so there is nothing for it to be
+        // taken off and passing it over would lose a meeting somebody has.
+        let cache = temp_cache("google_a_day_whose_series_is_not_here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[that_thursday_of_it(
+                "confirmed",
+                Some(("2026-03-12T14:00:00Z", "2026-03-12T14:30:00Z")),
+            )])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        assert_eq!(
+            everything_drawn_on(&cache, that_thursday()),
+            vec!["2026-03-12T14:00:00Z".to_string()],
+            "the meeting was lost because the series it came out of is not held here"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind() {
+        // Somebody moves one Thursday and then calls it off altogether. Two
+        // things have to happen and only one of them is obvious: the
+        // appointment the moved day became has to go, and the Thursday has to
+        // stay off the series so the rule does not start drawing it again.
+        //
+        // What this cannot see on its own: the half that takes the day off the
+        // series was already done by the first sync, so a read that only took
+        // the day off and never removed the appointment is what this catches.
+        let cache = temp_cache("google_a_day_moved_then_cancelled");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                a_google_answer(&[
+                    the_weekly_series_at_google("Stand-up"),
+                    that_thursday_of_it(
+                        "confirmed",
+                        Some(("2026-03-12T14:00:00Z", "2026-03-12T14:30:00Z")),
+                    ),
+                ]),
+                a_google_answer(&[
+                    the_weekly_series_at_google("Stand-up"),
+                    that_thursday_of_it("cancelled", None),
+                ]),
+            ],
+        )
+        .await;
+        let google = google_reading_from(&address);
+
+        sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "two reads").await.expect("two requests");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "the day that was moved and then called off is still an \
+             appointment: {stored:?}"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day came back onto the series: {:?}",
+            stored[0].exception_dates
+        );
+        assert!(
+            everything_drawn_on(&cache, that_thursday()).is_empty(),
+            "a meeting moved and then cancelled in Google Calendar is still on \
+             the diary: {:?}",
+            everything_drawn_on(&cache, that_thursday())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_of_a_series_this_computer_deleted_is_not_written_back() {
+        // The series was deleted here and Google is still naming it, days and
+        // all. Asked only about the day's own name, nothing recognises it as
+        // part of something somebody deleted, and the series comes back one day
+        // at a time with nothing left saying it was ever deleted.
+        let cache = temp_cache("google_a_deleted_series_comes_back_a_day_at_a_time");
+        let going = a_pending_event_in(
+            &cache,
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            Some("series-at-google"),
+        );
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the series to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                a_google_answer(&[
+                    the_weekly_series_at_google("Stand-up"),
+                    that_thursday_of_it(
+                        "confirmed",
+                        Some(("2026-03-12T14:00:00Z", "2026-03-12T14:30:00Z")),
+                    ),
+                ]),
+            ],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "a deletion and a read")
+            .await
+            .expect("two requests");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert!(
+            stored.is_empty(),
+            "a series deleted on this computer came back a day at a time: {stored:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off() {
+        // Two things are true at once and both have to survive: somebody typed
+        // a change to the series here that has not reached Google, and Google
+        // has called one day of it off. Writing the series back with the change
+        // no longer waiting drops the words somebody typed with nothing left to
+        // try again, which is the loss the whole read path is built to avoid.
+        let cache = temp_cache("google_cancelled_day_keeps_the_change_waiting");
+        let waiting = the_series_already_stored(&cache, true);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                the_weekly_series_at_google("Google's own words"),
+                that_thursday_of_it("cancelled", None),
+            ])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the series to still be there");
+        assert!(
+            stored.pending,
+            "the change somebody typed stopped waiting without ever reaching \
+             Google, so nothing will try again"
+        );
+        assert_eq!(
+            stored.summary, waiting.summary,
+            "Google's copy was written over the words somebody typed"
+        );
+        assert!(
+            stored
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day Google called off was not taken off the series: {:?}",
+            stored.exception_dates
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series() {
+        // The defect one sync later, and the only test that can see it. Google
+        // says which days a series calls off in two places: on the series
+        // itself, and by naming the day separately. A read that rebuilds the
+        // list from the series alone and writes it straight over the stored row
+        // erases every day learned the other way, so the cancelled Thursday
+        // comes back on the next sync that names the series without renaming
+        // its cancelled day, which is what an ordinary read of what has changed
+        // does.
+        let cache = temp_cache("google_cancelled_day_survives_the_next_read");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                a_google_answer(&[
+                    the_weekly_series_at_google("Stand-up"),
+                    that_thursday_of_it("cancelled", None),
+                ]),
+                a_google_answer(&[the_weekly_series_at_google("Stand-up, in the small room")]),
+            ],
+        )
+        .await;
+        let google = google_reading_from(&address);
+
+        sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "two reads").await.expect("two requests");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "more than the series was stored: {stored:?}"
+        );
+        // Proof the second read really reached the row. Without this the test
+        // could pass because nothing happened at all.
+        assert_eq!(
+            stored[0].summary, "Stand-up, in the small room",
+            "the second read never reached the stored series, so this test \
+             cannot see whether it would have erased anything"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the second read erased the day the first one took off: {:?}",
+            stored[0].exception_dates
+        );
+        assert!(
+            everything_drawn_on(&cache, that_thursday()).is_empty(),
+            "a meeting cancelled in Google Calendar came back a sync later: {:?}",
+            everything_drawn_on(&cache, that_thursday())
+        );
     }
 
     #[tokio::test]

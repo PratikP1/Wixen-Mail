@@ -280,6 +280,38 @@ pub struct GoogleEvent {
     pub updated: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transparency: Option<String>,
+    /// The series this item is one day of, when it is one day of a series.
+    ///
+    /// Asking Google for the series rather than for its days does not stop it
+    /// sending the days somebody has called off or moved. Those arrive as items
+    /// of their own, each naming the series it came out of here. The server's
+    /// to set: naming a series in a create asks Google to file the new meeting
+    /// as one day of it, which is never what a create here means.
+    #[serde(default, skip_serializing)]
+    pub recurring_event_id: Option<String>,
+    /// Which day of that series this item stands in for.
+    ///
+    /// The day the rule says, not the day the meeting was moved to, so a moved
+    /// day says both where it came from and where it went. The server's to set,
+    /// and Google refuses a change that names it.
+    #[serde(default, skip_serializing)]
+    pub original_start_time: Option<GoogleEventDateTime>,
+}
+
+impl GoogleEvent {
+    /// The series this item is one day of, or nothing when it is a meeting in
+    /// its own right.
+    ///
+    /// One question asked in one place, so the pass that reads whole series and
+    /// the pass that reads their changed days cannot come to disagree about
+    /// which items belong to which. An empty name is read as no name, because
+    /// an identifier nothing can look anything up under is not one.
+    pub fn the_series_it_is_one_day_of(&self) -> Option<&str> {
+        self.recurring_event_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|named| !named.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -865,6 +897,77 @@ mod tests {
 
         assert!(url.contains("singleEvents=false"), "{url}");
         assert!(!url.contains("orderBy="), "{url}");
+    }
+
+    #[test]
+    fn test_a_day_of_a_series_google_sends_names_the_series_and_the_day_it_replaces() {
+        // The other half of asking for the series rather than its days. Asked
+        // that way, Google still sends the days of a series somebody has called
+        // off or moved, as items of their own, and each one says which series
+        // it belongs to and which day of it it stands in for. Without both of
+        // those read, nothing can tell one of those items from an ordinary
+        // meeting: the cancelled day is looked for under an identifier nothing
+        // here holds and goes on being drawn, and the moved day is stored as a
+        // second meeting so the same appointment is drawn twice.
+        let answered = r#"{"items":[
+            {"id":"series-at-google_20260312T090000Z","status":"cancelled",
+             "recurringEventId":"series-at-google",
+             "originalStartTime":{"dateTime":"2026-03-12T09:00:00Z"}}
+        ]}"#;
+
+        let read: GoogleEventsResponse =
+            serde_json::from_str(answered).expect("Google's answer to be readable");
+
+        let one_day = &read.items[0];
+        assert_eq!(
+            one_day.the_series_it_is_one_day_of(),
+            Some("series-at-google"),
+            "the series this day belongs to did not arrive"
+        );
+        assert_eq!(
+            one_day
+                .original_start_time
+                .as_ref()
+                .and_then(|when| when.date_time.as_deref()),
+            Some("2026-03-12T09:00:00Z"),
+            "the day this item stands in for did not arrive"
+        );
+    }
+
+    #[test]
+    fn test_nothing_google_says_about_a_series_instance_is_sent_back() {
+        // One type is read and written here, so a field added for reading goes
+        // out on every change unless it says not to. Naming a series in a
+        // create asks Google to file the new meeting as one day of somebody
+        // else's series, and naming an original start in a change is refused
+        // outright, so a whole edit would fail with only the server's word for
+        // why.
+        let one_day = GoogleEvent {
+            id: "series-at-google_20260312T090000Z".to_string(),
+            recurring_event_id: Some("series-at-google".to_string()),
+            original_start_time: Some(GoogleEventDateTime {
+                date_time: Some("2026-03-12T09:00:00Z".to_string()),
+                ..GoogleEventDateTime::default()
+            }),
+            ..GoogleEvent::default()
+        };
+
+        let going_out = serde_json::to_value(&one_day).expect("a body");
+
+        let named: Vec<&str> = going_out
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            !named.contains(&"recurringEventId"),
+            "a change would ask Google to file this under another series: {named:?}"
+        );
+        assert!(
+            !named.contains(&"originalStartTime"),
+            "a change would name a day it stands in for, which Google refuses: {named:?}"
+        );
     }
 
     #[test]
