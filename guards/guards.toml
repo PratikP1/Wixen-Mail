@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 37 records have arrived since and have not been through it.
+# 38 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4347,3 +4347,40 @@ red = [
     "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
 ]
 suite = "house_style"
+
+# ── The order the folder tree is read in ────────────────────────────────────
+#
+# The rows come back from the database in the order they were written, and the
+# tree order is decided afterwards in one place. Three of the four tests about
+# that order were arranged in the order they expected back, so the whole sort
+# could be deleted and only one of them noticed. Each fixture is now stored in
+# an order that differs from the answer it asserts, so handing the rows back
+# untouched is a different list from the one every test names.
+#
+# Measured by hand on 2026-08-12, by deleting the sort and running the library:
+# before the fixtures were rearranged one test went red, and after it four did.
+# The one that always saw it is the one about the inbox coming first, which was
+# already stored out of order.
+#
+# The record about the padded folder kind is deliberately not written here as a
+# second entry: the same test also reddens when the trim goes, which was checked
+# by hand the same day, and that break belongs to the reader of the column
+# rather than to this sort.
+
+[[guard]]
+name = "the folder tree is put in order after it is read rather than left as it was written"
+file = "src/data/message_cache/folders.rs"
+before = """        let mut folders = folders;
+        folders.sort_by_key(|folder| {
+            crate::common::types::tree_position(
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+                &folder.name,
+            )
+        });"""
+after = """        let folders = folders;"""
+red = [
+    "data::message_cache::folders::tests::test_a_folder_type_stored_with_spaces_round_it_sorts_as_what_it_is",
+    "data::message_cache::folders::tests::test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone",
+    "data::message_cache::folders::tests::test_the_tree_lists_the_inbox_first_and_ordinary_folders_last",
+    "data::message_cache::folders::tests::test_the_tree_reads_folders_in_the_order_the_folder_type_gives",
+]

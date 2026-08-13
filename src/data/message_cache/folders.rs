@@ -560,20 +560,23 @@ mod tests {
         // Mail that has not gone anywhere yet is the one folder somebody has to
         // act on, and a reader arrowing down the tree used to meet it last,
         // after everything they had already dealt with.
+        //
+        // Stored back to front, so the answer below is one nothing could give
+        // by handing the rows back the way they went in.
         let (_dir, cache) = a_cache();
 
         let order = tree_of(
             &cache,
             &[
-                ("INBOX", "Inbox"),
-                ("Drafts", "Drafts"),
-                ("Outbox", "Outbox"),
-                ("Sent", "Sent"),
-                ("Archive", "Archive"),
-                ("Junk", "Spam"),
-                ("Deleted Items", "Trash"),
-                ("Apple project", "Custom"),
                 ("Zebra project", "Custom"),
+                ("Apple project", "Custom"),
+                ("Deleted Items", "Trash"),
+                ("Junk", "Spam"),
+                ("Archive", "Archive"),
+                ("Sent", "Sent"),
+                ("Outbox", "Outbox"),
+                ("Drafts", "Drafts"),
+                ("INBOX", "Inbox"),
             ],
         );
 
@@ -599,19 +602,23 @@ mod tests {
         // purpose, so a tree that fell back to sorting by name would come back
         // exactly reversed. This is also what would notice a ninth kind of
         // folder added later with no place of its own in a sort.
+        //
+        // Stored in an order that is neither the one expected back nor the one
+        // the names alone would give, so neither handing the rows back
+        // untouched nor sorting them by name can pass this.
         let (_dir, cache) = a_cache();
 
         let order = tree_of(
             &cache,
             &[
-                ("h", "Inbox"),
-                ("g", "Drafts"),
-                ("f", "Outbox"),
-                ("e", "Sent"),
                 ("d", "Archive"),
-                ("c", "Spam"),
-                ("b", "Trash"),
                 ("a", "Custom"),
+                ("h", "Inbox"),
+                ("f", "Outbox"),
+                ("b", "Trash"),
+                ("g", "Drafts"),
+                ("c", "Spam"),
+                ("e", "Sent"),
             ],
         );
 
@@ -643,9 +650,14 @@ mod tests {
         // Every other reader of this column trims before it decides what the
         // folder is, so a row written with spaces round it read as Sent
         // everywhere in the tree and sorted among somebody's own folders.
+        //
+        // The padded one is stored second and expected first, so this fails
+        // two ways: nothing sorting at all leaves them as they went in, and a
+        // reader that keeps the spaces takes the folder for one of somebody's
+        // own and puts it behind a name beginning with A.
         let (_dir, cache) = a_cache();
 
-        let order = tree_of(&cache, &[("Sent", " Sent "), ("Aaa", "Custom")]);
+        let order = tree_of(&cache, &[("Aaa", "Custom"), ("Sent", " Sent ")]);
 
         assert_eq!(order, vec!["Sent", "Aaa"]);
     }
