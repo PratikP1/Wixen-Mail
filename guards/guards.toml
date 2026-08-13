@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 50 records have arrived since and have not been through it.
+# 51 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4712,4 +4712,25 @@ after = """        emails_json,
             address_book: AddressBook::Microsoft,"""
 red = [
     "application::contacts_sync::tests::test_every_number_outlook_holds_is_kept_here_and_sent_back",
+]
+
+# ── An event filed under two categories at Outlook goes back under two ──────
+#
+# The column holds an event's categories with commas between them, and every
+# other reader of it splits on the comma. The Outlook writer sent the whole
+# column as a single category, so an event filed under two came back filed under
+# one called "Health,Personal", and Graph reads the list it is given as the
+# whole truth, so that one replaced both.
+#
+# The break puts the whole column back in one entry.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "an event filed under two categories at Outlook goes back under two"
+file = "src/application/calendar.rs"
+before = """    crate::application::categories::on(stored)"""
+after = """    vec![stored.trim().to_string()].into_iter().filter(|c| !c.is_empty()).collect()"""
+red = [
+    "application::calendar::tests::test_an_event_filed_under_several_categories_in_outlook_keeps_all_of_them",
 ]

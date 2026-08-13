@@ -8,6 +8,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: an event filed under two categories in Outlook came back filed
+  under one.** The two were sent back as a single category with a comma in the
+  middle of its name, and Outlook reads the categories it is given as the whole
+  truth, so that one replaced both. Each category now goes back on its own.
+
 - **Fixed: editing an Outlook contact dropped all but one of their phone
   numbers.** Only one number was kept when a contact came down from Outlook,
   and Outlook replaces a contact's numbers with whatever it is next sent. So

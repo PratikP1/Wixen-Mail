@@ -2691,16 +2691,16 @@ fn the_day_a_stored_event_starts(event: &CalendarEventEntry) -> Option<chrono::N
 
 /// What an event is filed under, as Outlook wants to be told it.
 ///
-/// This program stores one category per event as a string; Graph takes a list.
+/// The column holds the categories with commas between them and Graph takes a
+/// list, so the same routine that splits the column everywhere else splits it
+/// here. It used to send the whole column as one category: an event filed under
+/// two at Outlook came back filed under one called "Health,Personal", and Graph
+/// reads the list it is given as the whole truth, so that one replaced both.
+///
 /// An event filed under nothing sends no list at all rather than an empty one,
-/// because Graph reads a list that is present as the whole truth and an empty
-/// one takes away every category the event already had.
+/// for the same reason: an empty list takes away every category the event had.
 fn categories_for_outlook(stored: &str) -> Vec<String> {
-    let filed = stored.trim();
-    if filed.is_empty() {
-        return Vec::new();
-    }
-    vec![filed.to_string()]
+    crate::application::categories::on(stored)
 }
 
 /// How long before an event its alert goes off, or nothing when it has none.
@@ -5155,13 +5155,43 @@ mod tests {
         let filed = MsGraphEvent {
             id: "ms-3".to_string(),
             categories: vec!["Health".to_string(), "Personal".to_string()],
+            // Times Graph could read, so the way back below gets as far as the
+            // categories rather than stopping on the clock.
+            start: Some(MsDateTimeTimeZone {
+                date_time: "2026-09-01T14:30:00".to_string(),
+                time_zone: "UTC".to_string(),
+            }),
+            end: Some(MsDateTimeTimeZone {
+                date_time: "2026-09-01T15:30:00".to_string(),
+                time_zone: "UTC".to_string(),
+            }),
             ..Default::default()
         };
 
-        let stored = ms_event_to_local(&filed, "acct", "cal-outlook").categories;
+        let read_back = ms_event_to_local(&filed, "acct", "cal-outlook");
 
-        assert!(stored.contains("Health"), "{stored}");
-        assert!(stored.contains("Personal"), "{stored}");
+        assert!(
+            read_back.categories.contains("Health"),
+            "{}",
+            read_back.categories
+        );
+        assert!(
+            read_back.categories.contains("Personal"),
+            "{}",
+            read_back.categories
+        );
+
+        // And the way back, which is where they were lost. The reader joins
+        // them into one column with commas between; the writer used to send
+        // that whole column as a single category, so two categories at Outlook
+        // came back as one called "Health,Personal" and replaced both.
+        let sent = local_to_ms_event(&read_back, TheBodyIsFor::ChangingIt)
+            .expect("a time Graph could read");
+        assert_eq!(
+            sent.categories,
+            ["Health", "Personal"],
+            "a change filed the event under one category with a comma in its name"
+        );
     }
 
     #[test]
