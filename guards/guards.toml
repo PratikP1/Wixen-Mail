@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 53 records have arrived since and have not been through it.
+# 55 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -3981,6 +3981,45 @@ after = """        cut_from_event_id: Some(series.id.clone()),
         ..entry"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_day_a_refusal_is_asked_about_names_only_the_events_own_time_zone",
+]
+
+# -- One owner for what a delete did ----------------------------------------
+#
+# A delete at the server ends five ways and only one of them is the message
+# really gone. The place that knows all five words the sentence. This window
+# had a second, blunter one on a match arm of the type it is handed, saying
+# "Deleted" flat, and it was out of reach only because the arm that could have
+# taken it always wrapped its answer.
+#
+# The type that words its own outcome no longer holds a delete, so a second
+# spelling cannot be written back onto it. What is left to guard is that
+# nothing this window does word for itself is a delete sentence, and that the
+# delete path still says what the owner gave it.
+
+[[guard]]
+name = "nothing this window words for itself is a delete sentence"
+file = "src/presentation/wx_app.rs"
+before = """            FlagChange::Read(true) => format!("Marked read: {subject}"),"""
+after = """            FlagChange::Read(true) => format!("Deleted: {subject}"),"""
+red = [
+    "presentation::wx_app::one_owner_for_what_a_delete_did::test_nothing_that_words_its_own_outcome_here_says_what_a_delete_said",
+    "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_delete_owner_words_what_a_delete_did",
+]
+
+[[guard]]
+name = "the delete path says what the one owner of that sentence gave it"
+file = "src/presentation/wx_app.rs"
+before = """                        say(UIUpdate::StatusUpdated(next.said));
+                    }
+                }
+                return;"""
+after = """                        let _ = next.said;
+                        say(UIUpdate::StatusUpdated(format!("Deleted: {subject}")));
+                    }
+                }
+                return;"""
+red = [
+    "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_delete_owner_words_what_a_delete_did",
 ]
 
 [[guard]]

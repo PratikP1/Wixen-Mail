@@ -564,6 +564,14 @@ fn test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent() {
 /// whether what it gives back is used. It asks that the handler calls it and
 /// words no outcome itself. A handler that calls it, ignores the answer and
 /// takes the row out every time keeps this green.
+///
+/// Nor can it see a delete sentence written anywhere else in that file. It
+/// reads one handler body, and a second spelling of "Deleted" sat a few dozen
+/// lines above the one it reads, on a method of the type the handler is handed.
+/// `test_only_the_delete_owner_words_what_a_delete_did`, beside that code,
+/// reads the whole of the file with only its tests taken out, and
+/// `test_nothing_that_words_its_own_outcome_here_says_what_a_delete_said` asks
+/// the same question of the values rather than of the text.
 #[test]
 fn test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");

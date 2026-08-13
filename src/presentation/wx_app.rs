@@ -2359,7 +2359,7 @@ impl WxMailApp {
                                         cache_id,
                                         uid,
                                         subject,
-                                        ServerChange::Flagged(starred),
+                                        ServerChange::Flag(FlagChange::Flagged(starred)),
                                     );
                                 }
                                 None => {
@@ -3118,7 +3118,7 @@ impl WxMailApp {
                                     cache_id,
                                     uid,
                                     subject,
-                                    ServerChange::Read(new_read),
+                                    ServerChange::Flag(FlagChange::Read(new_read)),
                                 );
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected");
@@ -4253,7 +4253,15 @@ fn mark_the_open_one_read(
     rt.spawn(async move {
         let _ = sent.send(UIUpdate::MessageReadToggled(row, true)).await;
     });
-    spawn_server_change(state, tx, rt, row, uid, subject, ServerChange::Read(true));
+    spawn_server_change(
+        state,
+        tx,
+        rt,
+        row,
+        uid,
+        subject,
+        ServerChange::Flag(FlagChange::Read(true)),
+    );
 }
 
 /// How often the reminders are looked at.
@@ -4368,11 +4376,11 @@ fn label_the_message(
                         message_id,
                         uid,
                         subject.clone(),
-                        ServerChange::Labelled {
+                        ServerChange::Flag(FlagChange::Labelled {
                             keyword,
                             on: false,
                             name: tag.name.clone(),
-                        },
+                        }),
                     );
                 }
             }
@@ -4403,11 +4411,11 @@ fn label_the_message(
                     message_id,
                     uid,
                     subject,
-                    ServerChange::Labelled {
+                    ServerChange::Flag(FlagChange::Labelled {
                         keyword,
                         on: turning_on,
                         name: label.name.clone(),
-                    },
+                    }),
                 ),
                 None => tracing::info!(
                     "The label {} has no keyword, so it stays on this computer",
@@ -8210,9 +8218,23 @@ fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt:
 /// once, which is what every caller does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ServerChange {
+    /// Something that changes how the message is marked and moves it nowhere.
+    Flag(FlagChange),
+    Deleted(Deleting),
+}
+
+/// A mark going on or coming off a message.
+///
+/// Split out from a delete so that this window cannot word what a delete did.
+/// A flag ends one of two ways, it worked or it did not, and this window knows
+/// both. A delete ends five ways and only one of them is the message really
+/// gone; the place that knows all five is asked instead. While the two shared a
+/// type there was a second, blunter delete sentence on a match arm here, saying
+/// "Deleted" over every one of the five.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FlagChange {
     Read(bool),
     Flagged(bool),
-    Deleted(Deleting),
     /// A label going on or coming off, as the keyword it travels as.
     ///
     /// The keyword rather than the name, because the name is what somebody
@@ -8230,27 +8252,32 @@ enum ServerChange {
 /// Deleting is the odd one out and has to be, because the row only leaves the
 /// list once the server has agreed. Nothing was undone, so saying it was tells
 /// somebody a message came back that never went anywhere.
+///
+/// Named arm by arm rather than with a wildcard. A variant added to the change
+/// stops the build here instead of falling quietly into the sentence saying
+/// something was put back.
 fn change_was_refused(change: &ServerChange, reason: &str) -> String {
     match change {
         ServerChange::Deleted(_) => crate::application::server_delete::nothing_changed(reason),
-        _ => format!("The change did not reach the server, so it has been undone here: {reason}"),
+        ServerChange::Flag(_) => {
+            format!("The change did not reach the server, so it has been undone here: {reason}")
+        }
     }
 }
 
-impl ServerChange {
+impl FlagChange {
     /// What to say when it worked.
     fn done(&self, subject: &str) -> String {
         match self {
-            ServerChange::Read(true) => format!("Marked read: {subject}"),
-            ServerChange::Read(false) => format!("Marked unread: {subject}"),
-            ServerChange::Flagged(true) => format!("Flagged: {subject}"),
-            ServerChange::Flagged(false) => format!("Unflagged: {subject}"),
-            ServerChange::Deleted(_) => format!("Deleted: {subject}"),
+            FlagChange::Read(true) => format!("Marked read: {subject}"),
+            FlagChange::Read(false) => format!("Marked unread: {subject}"),
+            FlagChange::Flagged(true) => format!("Flagged: {subject}"),
+            FlagChange::Flagged(false) => format!("Unflagged: {subject}"),
             // Named by the label rather than by the message. The message is
             // the row somebody is already on; which label went on is the part
             // they cannot see.
-            ServerChange::Labelled { name, on: true, .. } => format!("{name} added: {subject}"),
-            ServerChange::Labelled {
+            FlagChange::Labelled { name, on: true, .. } => format!("{name} added: {subject}"),
+            FlagChange::Labelled {
                 name, on: false, ..
             } => {
                 format!("{name} removed: {subject}")
@@ -8317,10 +8344,10 @@ fn spawn_server_change(
         // this path, because nothing was undone yet.
         let refuse = |reason: String| {
             match change {
-                ServerChange::Read(applied) => {
+                ServerChange::Flag(FlagChange::Read(applied)) => {
                     say(UIUpdate::MessageReadToggled(message_row_id, !applied));
                 }
-                ServerChange::Flagged(applied) => {
+                ServerChange::Flag(FlagChange::Flagged(applied)) => {
                     say(UIUpdate::MessageStarredToggled(message_row_id, !applied));
                 }
                 ServerChange::Deleted(_) => {}
@@ -8329,7 +8356,9 @@ fn spawn_server_change(
                 // server is worse than one that took a moment: an
                 // announcement that turned out to be wrong has to be
                 // corrected rather than left standing.
-                ServerChange::Labelled { .. } => say(UIUpdate::LabelsChanged(message_row_id)),
+                ServerChange::Flag(FlagChange::Labelled { .. }) => {
+                    say(UIUpdate::LabelsChanged(message_row_id));
+                }
             }
             say(UIUpdate::ErrorOccurred(change_was_refused(
                 &change, &reason,
@@ -8376,46 +8405,59 @@ fn spawn_server_change(
         //
         // Flagging and marking read move nothing, so an account whose trash is
         // not recognised can still be flagged, and those carry on below.
-        if let ServerChange::Deleted(asked) = &change {
-            use crate::application::deleting_at_the_server::{
-                Deleted, TheAccountsServer, delete_a_message,
-            };
+        //
+        // One match, with the delete answered and returned from and the flag
+        // handed on. The two used to be an early return and a leftover arm
+        // further down that had to be written as a refusal in case a delete
+        // reached it. Nothing can now, because what is left after this line is
+        // a flag by its type.
+        let flag = match &change {
+            ServerChange::Deleted(asked) => {
+                use crate::application::deleting_at_the_server::{
+                    Deleted, TheAccountsServer, delete_a_message,
+                };
 
-            let folders = cache
-                .get_folders_for_account(&account.id)
-                .unwrap_or_default();
-            let outcome = handle.block_on(delete_a_message(
-                &TheAccountsServer { account: &account },
-                folders.iter().map(|folder| {
-                    (
-                        folder.path.as_str(),
-                        crate::common::types::FolderType::from_stored(&folder.folder_type),
-                    )
-                }),
-                &folder_path,
-                uid,
-                *asked,
-            ));
-            match outcome {
-                Deleted::NothingWasSent(said) => say(UIUpdate::CommandRefused(said.to_string())),
-                Deleted::TheServerWouldNot(reason) => refuse(reason),
-                // What happens to the row and what is said are one decision,
-                // because they have to agree. Announcing "deleted" over a
-                // message that moved to the trash, or one still sitting in the
-                // folder flagged, and taking the row out for a message the
-                // server never touched, are the same mistake seen from two
-                // sides.
-                Deleted::TheServerDidThis(deletion) => {
-                    let next =
-                        crate::application::server_delete::after_a_delete(&deletion, &subject);
-                    if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
-                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                let folders = cache
+                    .get_folders_for_account(&account.id)
+                    .unwrap_or_default();
+                let outcome = handle.block_on(delete_a_message(
+                    &TheAccountsServer { account: &account },
+                    folders.iter().map(|folder| {
+                        (
+                            folder.path.as_str(),
+                            crate::common::types::FolderType::from_stored(&folder.folder_type),
+                        )
+                    }),
+                    &folder_path,
+                    uid,
+                    *asked,
+                ));
+                match outcome {
+                    Deleted::NothingWasSent(said) => {
+                        say(UIUpdate::CommandRefused(said.to_string()));
                     }
-                    say(UIUpdate::StatusUpdated(next.said));
+                    Deleted::TheServerWouldNot(reason) => refuse(reason),
+                    // What happens to the row and what is said are one decision,
+                    // because they have to agree. Announcing "deleted" over a
+                    // message that moved to the trash, or one still sitting in
+                    // the folder flagged, and taking the row out for a message
+                    // the server never touched, are the same mistake seen from
+                    // two sides.
+                    Deleted::TheServerDidThis(deletion) => {
+                        let next =
+                            crate::application::server_delete::after_a_delete(&deletion, &subject);
+                        if next.then
+                            == crate::application::server_delete::ThenWhat::MarkItDeletedHere
+                        {
+                            say(UIUpdate::MessageDeletedFromCache(message_row_id));
+                        }
+                        say(UIUpdate::StatusUpdated(next.said));
+                    }
                 }
+                return;
             }
-            return;
-        }
+            ServerChange::Flag(flag) => flag,
+        };
 
         let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
             Ok(auth) => auth,
@@ -8438,31 +8480,24 @@ fn spawn_server_change(
             return;
         }
 
-        let outcome = match &change {
-            ServerChange::Read(read) => handle.block_on(controller.set_flag(
+        let outcome = match flag {
+            FlagChange::Read(read) => handle.block_on(controller.set_flag(
                 &folder_path,
                 uid,
                 crate::service::protocols::imap::flag::SEEN,
                 *read,
             )),
-            ServerChange::Flagged(flagged) => {
+            FlagChange::Flagged(flagged) => {
                 handle.block_on(controller.set_starred(&folder_path, uid, *flagged))
             }
-            ServerChange::Labelled { keyword, on, .. } => {
+            FlagChange::Labelled { keyword, on, .. } => {
                 handle.block_on(controller.set_flag(&folder_path, uid, keyword, *on))
             }
-            // Answered above, before this connection was opened. Written as a
-            // refusal rather than a success so that a delete which somehow
-            // reached this far is never announced as one: nothing has been sent
-            // here, and "nothing changed" is the only true thing to say.
-            ServerChange::Deleted(_) => Err(crate::common::Error::Other(
-                "nothing was sent to the server".to_string(),
-            )),
         };
         let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
-            Ok(()) => say(UIUpdate::StatusUpdated(change.done(&subject))),
+            Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),
             // A failure now means nothing on the server changed, so the one
             // sentence for that covers a delete as well. There used to be a
             // second one here saying it differently.
@@ -10198,7 +10233,10 @@ mod tests {
         // The other half. Marking read and flagging both change the row before
         // the server has agreed, so when the server refuses, something really
         // has been put back and somebody has to be told.
-        for change in [ServerChange::Read(true), ServerChange::Flagged(true)] {
+        for change in [
+            ServerChange::Flag(FlagChange::Read(true)),
+            ServerChange::Flag(FlagChange::Flagged(true)),
+        ] {
             let said = super::change_was_refused(&change, "the server said no");
 
             assert!(
@@ -11871,5 +11909,193 @@ fn ask_about_the_alpha_once(frame: &Frame) {
         // Said rather than swallowed. Somebody who chose read-only and had it
         // silently not stick would be trusting a setting that is not there.
         tracing::error!("Could not save what you chose: {e}");
+    }
+}
+
+#[cfg(test)]
+mod one_owner_for_what_a_delete_did {
+    use super::FlagChange;
+    use crate::service::protocols::imap::{Deletion, StillHere};
+    use std::collections::BTreeSet;
+
+    /// Every way a delete at the server can end.
+    ///
+    /// One of each shape rather than every payload, because what is being
+    /// compared here is the opening of the sentence and the payload never
+    /// reaches it.
+    fn every_ending_a_delete_has() -> Vec<Deletion> {
+        vec![
+            Deletion::MovedToTrash,
+            Deletion::Removed,
+            Deletion::CopiedToTrashAndFlagged(StillHere::TheServerCannotRemoveOneMessage),
+            Deletion::CopiedToTrashAndNotFlagged("over quota".to_string()),
+            Deletion::MarkedOnly(StillHere::TheServerCannotRemoveOneMessage),
+        ]
+    }
+
+    /// Every change this window words the outcome of for itself.
+    ///
+    /// A delete cannot be written into this list any more, which is the fix
+    /// rather than an omission: the type that words its own outcome no longer
+    /// holds one. While it did, the list held two, and both of them said
+    /// "Deleted".
+    fn every_change_that_words_its_own_outcome() -> Vec<FlagChange> {
+        vec![
+            FlagChange::Read(true),
+            FlagChange::Read(false),
+            FlagChange::Flagged(true),
+            FlagChange::Flagged(false),
+            FlagChange::Labelled {
+                keyword: "\\Important".to_string(),
+                on: true,
+                name: "Important".to_string(),
+            },
+            FlagChange::Labelled {
+                keyword: "\\Important".to_string(),
+                on: false,
+                name: "Important".to_string(),
+            },
+        ]
+    }
+
+    #[test]
+    fn test_nothing_that_words_its_own_outcome_here_says_what_a_delete_said() {
+        // A delete ends five ways and only one of them is the message really
+        // gone. The place that knows all five is asked on the delete path; this
+        // window words its own outcome for a change, and its sentence for a
+        // delete was the one ending out of five that happens to be a real
+        // deletion. Two sentences for one outcome, and the blunter one wins the
+        // day anything hands back nothing.
+        let owned: BTreeSet<String> = every_ending_a_delete_has()
+            .iter()
+            .map(|ending| crate::application::server_delete::after_a_delete(ending, "Invoice").said)
+            .collect();
+        let worded_here: BTreeSet<String> = every_change_that_words_its_own_outcome()
+            .iter()
+            .map(|change| change.done("Invoice"))
+            .collect();
+
+        let both: Vec<&String> = worded_here.intersection(&owned).collect();
+        assert!(
+            both.is_empty(),
+            "this window words a sentence the delete owner also words: {both:?}"
+        );
+    }
+
+    /// Everything in this file that is not inside a test module, with its line
+    /// comments blanked.
+    ///
+    /// Cut module by module rather than at the first `#[cfg(test)]`, because
+    /// the test modules here sit between stretches of code and cutting at the
+    /// first one leaves the last thirty lines of the window unread. Reading the
+    /// whole file is no use either: it holds every sentence the check looks
+    /// for, in the check itself.
+    ///
+    /// Every test module in this file opens on a line that is exactly
+    /// `#[cfg(test)]` in the first column and closes on a line that is exactly
+    /// `}` in the first column, which is what makes the cut this simple. The
+    /// test below is what says the cut really worked.
+    fn the_window_without_its_tests() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n");
+        let mut kept = String::new();
+        let mut inside_a_test_module = false;
+        for line in whole.lines() {
+            if line == "#[cfg(test)]" {
+                inside_a_test_module = true;
+                continue;
+            }
+            if inside_a_test_module {
+                inside_a_test_module = line != "}";
+                continue;
+            }
+            // Blanked rather than dropped, so a comment quoting a sentence is
+            // not read as the code saying it.
+            if !line.trim_start().starts_with("//") {
+                kept.push_str(line);
+            }
+            kept.push('\n');
+        }
+        kept
+    }
+
+    /// How each ending of a delete opens, before the clause saying why.
+    fn how_each_delete_outcome_opens() -> Vec<String> {
+        every_ending_a_delete_has()
+            .iter()
+            .map(|ending| {
+                let said = ending.spoken();
+                let opening = said.find([',', ':']).unwrap_or(said.len());
+                said[..opening].to_string()
+            })
+            .collect()
+    }
+
+    /// Every sentence in a piece of source that opens the way a delete outcome
+    /// opens.
+    fn delete_outcomes_worded_in(source: &str) -> Vec<String> {
+        how_each_delete_outcome_opens()
+            .into_iter()
+            .filter(|opening| source.contains(&format!("\"{opening}")))
+            .collect()
+    }
+
+    #[test]
+    fn test_only_the_delete_owner_words_what_a_delete_did() {
+        // The other half of the check above, which can only ask about the
+        // sentences a type is able to hold. This one asks about the file.
+        //
+        // What it cannot see: whether the delete path speaks at all. It reads
+        // text, so it would stay green over a window that had gone silent, and
+        // silence is the worse fault of the two for anybody working by ear.
+        // The runtime half above is what covers that.
+        let worded_here = delete_outcomes_worded_in(&the_window_without_its_tests());
+
+        assert!(
+            worded_here.is_empty(),
+            "this file words a delete outcome for itself: {worded_here:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_delete_wording_check_can_tell_the_two_apart() {
+        // Proving the measurement. A cut that came back with nothing, or with
+        // the tests still in it, would make the check above pass for ever
+        // without reading a line of the window.
+        let body = the_window_without_its_tests();
+        assert!(
+            body.len() > 100_000,
+            "the window read as {} characters, so the cut is broken",
+            body.len()
+        );
+        assert!(
+            !body.contains("fn test_"),
+            "the tests were not cut off, so the check is reading its own words"
+        );
+        assert!(
+            body.contains("fn spawn_server_change"),
+            "the code before the first test module was cut off with them"
+        );
+        assert!(
+            body.contains("fn ask_about_the_alpha_once"),
+            "the code after the last test module was cut off with them, which is what \
+             cutting at the first test module used to do"
+        );
+        assert!(
+            !body.contains("The account the message is in"),
+            "line comments were not blanked, so a comment quoting a sentence reads as \
+             the code saying it"
+        );
+
+        assert!(
+            delete_outcomes_worded_in("let said = format!(\"Marked read: {subject}\");").is_empty(),
+            "a sentence about something other than a delete was reported"
+        );
+        assert_eq!(
+            delete_outcomes_worded_in("let said = format!(\"Deleted: {subject}\");"),
+            vec!["Deleted".to_string()],
+            "a second spelling of a delete outcome went unnoticed"
+        );
     }
 }
