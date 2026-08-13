@@ -3384,6 +3384,14 @@ red = [
 # recorded until the round that found the Calendar window had gone quiet the
 # same way.
 #
+# Each of these now reddens a second test as well, and this is the run that
+# found it. The round that made three silent screens speak added a check over
+# every arm of that handler at once: an arm may write to the status bar and say
+# nothing only if somebody has registered it as quiet with a reason. These two
+# arms are not registered, so taking either announcement away is now caught
+# twice, by the check about those two doors and by the check about all the
+# arms. The records said one test each until the run below said otherwise.
+#
 # What these records cannot see. Both tests are source reads, because reaching
 # these arms needs a window, a frame and a running event loop. They can tell
 # that the arm announces what it shows and at what priority. They cannot tell
@@ -3396,6 +3404,7 @@ file = "src/presentation/wx_app.rs"
 before = """            let _ = a11y.announce_topic(status, Priority::Low, "status");"""
 after = """            let _ = status;"""
 red = [
+    "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
     "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
 ]
 
@@ -3405,6 +3414,7 @@ file = "src/presentation/wx_app.rs"
 before = """            let _ = a11y.announce_topic(why, Priority::High, "refusal");"""
 after = """            let _ = why;"""
 red = [
+    "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
     "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
 ]
 
