@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 48 records have arrived since and have not been through it.
+# 49 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4649,4 +4649,34 @@ after = """                n.display_name.clone()"""
 red = [
     "application::contacts_sync::tests::test_roundtrip_google",
     "application::contacts_sync::tests::test_the_name_google_computes_is_read_and_never_sent_back",
+]
+
+# ── A postal address Google holds is kept here, so a change does not clear it ─
+#
+# The Google reader set both address columns to nothing, so an address held at
+# Google was read into nothing at all. `addresses` is one of the fields a change
+# to a contact names, Google clears every named field the body leaves out, and
+# the body is built from the list the reader never filled. So editing a Google
+# contact here for any reason, a nickname, a phone number, anything, took that
+# person's postal address off their Google contact and said nothing about it.
+#
+# The break puts the reader back where it was. It is one line, and that is the
+# point: the writer was already right and had been for a long time, and the
+# whole loss sat in the half nobody read.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "a postal address Google holds is kept here rather than dropped"
+file = "src/application/contacts_sync.rs"
+before = """        phones_json,
+        addresses_json,
+        custom_fields_json: None,
+        // Google's copy of the contact, as Google has it."""
+after = """        phones_json,
+        addresses_json: None,
+        custom_fields_json: None,
+        // Google's copy of the contact, as Google has it."""
+red = [
+    "application::contacts_sync::tests::test_a_postal_address_google_holds_is_kept_here_and_sent_back",
 ]

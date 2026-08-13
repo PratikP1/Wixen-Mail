@@ -8,6 +8,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: editing a Google contact took that person's postal address off
+  their Google contact.** An address held at Google was read into nothing here,
+  so it was missing from every change sent back, and Google treats a missing
+  address list as an instruction to clear the one it holds. Changing anything
+  at all about a Google contact, a nickname, a phone number, a note, wiped
+  their address, and nothing said so. Addresses now come down with the rest of
+  the contact and go back up with it.
+
 - **A contact sent to Google no longer carries the name Google works out for
   itself.** Google builds a person's full name from the parts and throws away
   whatever is sent in that field, so sending one was a second answer to a

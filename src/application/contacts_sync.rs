@@ -2475,6 +2475,33 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     let company = org.map(|o| o.name.clone()).filter(|s| !s.is_empty());
     let job_title = org.map(|o| o.title.clone()).filter(|s| !s.is_empty());
     let department = org.map(|o| o.department.clone()).filter(|s| !s.is_empty());
+    // Google's addresses, under the labels this application knows them by.
+    // Read at all, which they were not: `addresses` is one of the fields a
+    // change to a contact names, Google clears every named field the body
+    // leaves out, and the body is built from this list. So editing a Google
+    // contact here for any reason took that person's postal address off their
+    // Google contact and said nothing about it.
+    //
+    // Not folded over a stored contact's list on a sync, for the same reason
+    // the Microsoft reader does not: that list is one list for every address
+    // book, and each book can only speak for its own addresses.
+    let addresses: Vec<AddressEntry> = person
+        .addresses
+        .iter()
+        .map(|address| AddressEntry {
+            label: label_for_provider_type(&address.address_type),
+            street: address.street_address.clone(),
+            city: address.city.clone(),
+            state: address.region.clone(),
+            zip: address.postal_code.clone(),
+            country: address.country.clone(),
+        })
+        .collect();
+    let addresses_json = if addresses.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&addresses).ok()
+    };
     let nickname = person.nicknames.first().map(|n| n.value.clone());
     let website = person.urls.first().map(|u| u.value.clone());
     let notes = person.biographies.first().map(|b| b.value.clone());
@@ -2540,7 +2567,11 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         company,
         job_title,
         website,
-        address: None,
+        // The one-line copy of the primary address, the way the contact panel
+        // shows it. Composed here from the parts rather than taken from
+        // Google's own formatted line, so that this and the list below cannot
+        // give two answers about the same address.
+        address: addresses.first().map(AddressEntry::on_one_line),
         birthday,
         avatar_url,
         avatar_data_base64: None,
@@ -2555,7 +2586,7 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
         relationship: None,
         emails_json,
         phones_json,
-        addresses_json: None,
+        addresses_json,
         custom_fields_json: None,
         // Google's copy of the contact, as Google has it. Nothing here has
         // been changed against it.
@@ -3003,6 +3034,57 @@ mod tests {
         assert_eq!(person.phone_numbers[0].value, "+1-555-0202");
         assert_eq!(person.organizations[0].name, "Corp");
         assert_eq!(person.nicknames[0].value, "Bobby");
+    }
+
+    #[test]
+    fn test_a_postal_address_google_holds_is_kept_here_and_sent_back() {
+        // The reader dropped Google's addresses on the floor, and `addresses`
+        // is one of the fields a change to a contact names. Google clears every
+        // named field the body leaves out, and the body could only be built
+        // from the list the reader never filled. So editing a Google contact
+        // here for any reason at all, a nickname, a phone number, anything,
+        // took that person's postal address off their Google contact and said
+        // nothing about it.
+        //
+        // Read, then written, in one test. Reading it and dropping it on the
+        // way back out would be the same loss by a different road.
+        let from_google = GooglePerson {
+            resource_name: "people/c7".to_string(),
+            names: vec![GoogleName {
+                display_name: "Grace van der Berg".to_string(),
+                ..Default::default()
+            }],
+            addresses: vec![GoogleAddress {
+                address_type: "home".to_string(),
+                street_address: "12 Elm Row".to_string(),
+                city: "Leeds".to_string(),
+                region: "West Yorkshire".to_string(),
+                postal_code: "LS1 2AB".to_string(),
+                country: "United Kingdom".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let here = google_person_to_contact(&from_google, AN_ACCOUNT);
+        let kept: Vec<AddressEntry> = stored_list(here.addresses_json.as_ref());
+        assert_eq!(kept.len(), 1, "Google's address was dropped: {here:?}");
+        assert_eq!(kept[0].label, "Home");
+        assert_eq!(kept[0].street, "12 Elm Row");
+        assert_eq!(kept[0].city, "Leeds");
+        assert_eq!(kept[0].state, "West Yorkshire");
+        assert_eq!(kept[0].zip, "LS1 2AB");
+        assert_eq!(kept[0].country, "United Kingdom");
+
+        let back = contact_to_google_person(&here);
+        assert_eq!(
+            back.addresses.len(),
+            1,
+            "a change would have cleared the address at Google"
+        );
+        assert_eq!(back.addresses[0].street_address, "12 Elm Row");
+        assert_eq!(back.addresses[0].postal_code, "LS1 2AB");
+        assert_eq!(back.addresses[0].address_type, "home");
     }
 
     #[test]
