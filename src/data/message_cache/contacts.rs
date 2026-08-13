@@ -679,6 +679,7 @@ impl MessageCache {
                 serde_json::to_string(&[super::EmailEntry {
                     label: Self::NO_LABEL.to_string(),
                     address: contact.email.clone(),
+                    name: String::new(),
                 }])
                 .ok()
             }),
@@ -1286,6 +1287,9 @@ impl MessageCache {
                 emails.push(super::EmailEntry {
                     label,
                     address: addr.clone(),
+                    // The vCard standard has no field for a name kept beside
+                    // one address among several; FN and N name the contact.
+                    name: String::new(),
                 });
                 if primary_email.is_empty() {
                     primary_email = addr;
@@ -2607,10 +2611,12 @@ mod tests {
                 // label carrying one is a label that arrives cut short.
                 label: "Work, main".to_string(),
                 address: "grace@example.com".to_string(),
+                name: String::new(),
             },
             super::super::EmailEntry {
                 label: "Home".to_string(),
                 address: "grace@home.example.com".to_string(),
+                name: String::new(),
             },
         ];
         let phones = vec![

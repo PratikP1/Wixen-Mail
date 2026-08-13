@@ -568,6 +568,7 @@ fn chosen_emails(contact: &ContactEntry) -> Vec<EmailEntry> {
     vec![EmailEntry {
         label: String::new(),
         address: contact.email.clone(),
+        name: String::new(),
     }]
 }
 
@@ -1224,10 +1225,11 @@ fn a_setting_stopped_this_sync_sending(contact_id: &str, result: &SyncResult) ->
 /// Every field Google holds is named here, and Google's value wins for each of
 /// them. Everything else falls through from the stored contact. A saved photo,
 /// the card a contact was imported from, a relationship and custom fields
-/// exist only here, so falling through is the whole answer for them. A postal
-/// address is different: Google holds one and this application does not read
-/// it yet, so the stored one is the only one there is to keep. A field added
-/// to a contact later is kept unless somebody adds it to this list.
+/// exist only here, so falling through is the whole answer for them. Postal
+/// addresses and the email and phone lists are read in, but not folded over
+/// what is stored: each is one list for every address book a contact is known
+/// to, and Google can only speak for its own. A field added to a contact later
+/// is kept unless somebody adds it to this list.
 ///
 /// The address books that know the contact are deliberately not named here.
 /// Google can only speak for itself, so naming the list would take the contact
@@ -1235,6 +1237,15 @@ fn a_setting_stopped_this_sync_sending(contact_id: &str, result: &SyncResult) ->
 /// was built to stop. The syncing address book adds itself afterwards, through
 /// `also_known_to`, where the call site can be seen.
 fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> ContactEntry {
+    // Google says nothing about the name kept beside one address among
+    // several; only Outlook does. Folding Google's list in wholesale would
+    // erase a name Outlook gave for an address Google also lists, for a
+    // contact both address books know, on every Google sync.
+    let emails_json = remote.emails_json.as_ref().map(|_| {
+        let fresh = stored_list::<EmailEntry>(remote.emails_json.as_ref());
+        let recorded = stored_list::<EmailEntry>(local.emails_json.as_ref());
+        EmailEntry::with_the_names_already_recorded(fresh, &recorded)
+    });
     ContactEntry {
         name: remote.name.clone(),
         given_name: remote.given_name.clone(),
@@ -1251,7 +1262,7 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
         notes: remote.notes.clone(),
         nickname: remote.nickname.clone(),
         department: remote.department.clone(),
-        emails_json: remote.emails_json.clone(),
+        emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
         phones_json: remote.phones_json.clone(),
         ..local.clone()
     }
@@ -1259,10 +1270,13 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
 
 /// The stored contact with Microsoft's copy of it folded in.
 ///
-/// Same rule as the Google side, over a shorter list. Microsoft holds more
-/// phone numbers than one, but only the first is read in, so there is no
-/// second number arriving here to fold and the stored list is left alone.
-/// Reading the rest of them is work not done.
+/// Every field Microsoft holds is named here and Microsoft's value wins, the
+/// same rule as the Google side. `phones_json` is not one of them: the reader
+/// beside this builds every number Graph gives into it on every read, but
+/// that fresh copy is not folded in by this function, so a phone number
+/// changed at Outlook is not picked up through this merge. Noted rather than
+/// fixed here, since changing what a Microsoft sync does to the stored phone
+/// list is a change of its own.
 ///
 /// The address books that know the contact are deliberately not named here,
 /// for the same reason as on the Google side: Microsoft can only speak for
@@ -2576,6 +2590,9 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             .map(|e| EmailEntry {
                 label: label_for_provider_type(&e.email_type),
                 address: e.value.clone(),
+                // Google's People API carries no name of its own beside an
+                // email address, only the label.
+                name: String::new(),
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -2820,6 +2837,13 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
             .map(|e| EmailEntry {
                 label: UNLABELLED.to_string(),
                 address: e.address.clone(),
+                // The name Graph keeps beside this one address, separately
+                // from the contact's own name. Read and kept rather than
+                // dropped: the writer beside this reader stamped the
+                // contact's own name onto every address on every push, which
+                // overwrote this the first time anything else about the
+                // contact was changed here.
+                name: e.name.clone(),
             })
             .collect();
         serde_json::to_string(&entries).ok()
@@ -2933,7 +2957,18 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
     let email_addresses = chosen_emails(contact)
         .into_iter()
         .map(|entry| MsEmailAddress {
-            name: contact.name.clone(),
+            // The name recorded for this one address when Outlook gave one,
+            // the contact's own name otherwise. A name typed here for a
+            // contact with no address-specific name recorded still needs to
+            // reach Outlook, which is what the fallback is for; what it
+            // cannot do is tell "Outlook gave no name for this address" apart
+            // from "Outlook gave an empty one", so a name deliberately left
+            // blank at Outlook would come back as the contact's own name.
+            name: if entry.name.trim().is_empty() {
+                contact.name.clone()
+            } else {
+                entry.name
+            },
             address: entry.address,
         })
         .collect();
@@ -4147,10 +4182,12 @@ mod tests {
             EmailEntry {
                 label: "Home".to_string(),
                 address: "carol@outlook.com".to_string(),
+                name: String::new(),
             },
             EmailEntry {
                 label: "Work".to_string(),
                 address: "carol@contoso.com".to_string(),
+                name: String::new(),
             },
         ])
         .ok();
@@ -4163,6 +4200,36 @@ mod tests {
             .map(|e| e.address.as_str())
             .collect();
         assert_eq!(sent, vec!["carol@outlook.com", "carol@contoso.com"]);
+    }
+
+    #[test]
+    fn test_the_name_outlook_keeps_beside_an_address_is_kept_here_and_sent_back() {
+        // Graph lets a name be recorded beside each address a contact has
+        // there, separately from the contact's own name: a maiden name kept
+        // on an old address is the ordinary case. The reader ignored that
+        // field, and the writer stamped the contact's own name onto every
+        // address on every push, so the first change made to a contact here
+        // overwrote a name Outlook had recorded for one of her addresses.
+        let mut ms = a_microsoft_contact("AAMk9", "Carol White", "carol@contoso.com");
+        ms.email_addresses = vec![MsEmailAddress {
+            name: "Carol at Contoso".to_string(),
+            address: "carol@contoso.com".to_string(),
+        }];
+
+        let here = ms_contact_to_contact(&ms, AN_ACCOUNT);
+        let kept: Vec<EmailEntry> = stored_list(here.emails_json.as_ref());
+        assert_eq!(
+            kept.first().map(|e| e.name.as_str()),
+            Some("Carol at Contoso"),
+            "the name Outlook keeps beside this address was not read"
+        );
+
+        let back = contact_to_ms_contact(&here);
+        assert_eq!(
+            back.email_addresses.first().map(|e| e.name.as_str()),
+            Some("Carol at Contoso"),
+            "the contact's own name overwrote the one Outlook keeps for this address"
+        );
     }
 
     #[test]
@@ -4354,6 +4421,33 @@ mod tests {
     }
 
     #[test]
+    fn test_a_google_sync_keeps_the_name_outlook_keeps_beside_an_address() {
+        // A contact both address books know. Outlook has recorded a name
+        // beside her address, held only in the stored list because Google's
+        // own copy of her email addresses says nothing about it. A Google
+        // sync replaces that whole list with Google's fresh copy, and
+        // without this, that copy carries no name for any address, so the
+        // merge would erase what Outlook gave and the next push to Outlook
+        // would send the contact's own name over it.
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.emails_json = serde_json::to_string(&vec![EmailEntry {
+            label: "Personal".to_string(),
+            address: "alice@example.com".to_string(),
+            name: "Alice at Home".to_string(),
+        }])
+        .ok();
+
+        let merged = google_fields_over_local(&local, &alice_from_google());
+
+        let kept: Vec<EmailEntry> = stored_list(merged.emails_json.as_ref());
+        assert_eq!(
+            kept.first().map(|e| e.name.as_str()),
+            Some("Alice at Home"),
+            "the name Outlook keeps for this address was lost on a Google sync"
+        );
+    }
+
+    #[test]
     fn test_a_google_sync_keeps_the_custom_fields_a_person_typed_here() {
         let mut local = a_local_contact("Alice Smith", "alice@example.com");
         local.custom_fields_json = Some(r#"[{"label":"Blood type","value":"O"}]"#.to_string());
@@ -4462,7 +4556,7 @@ mod tests {
         remote.company = Some("Acme".to_string());
         remote.website = Some("https://acme.example".to_string());
         remote.emails_json =
-            Some(r#"[{"label":"work","address":"alice@acme.example"}]"#.to_string());
+            Some(r#"[{"label":"work","address":"alice@acme.example","name":""}]"#.to_string());
 
         let merged = google_fields_over_local(&local, &remote);
 
@@ -4687,7 +4781,10 @@ mod tests {
         let remote = alice_from_microsoft();
         assert_eq!(
             remote.emails_json.as_deref(),
-            Some(r#"[{"label":"Other","address":"alice@example.com"}]"#),
+            // Graph gives this test's contact name, "Alice Smith", as the
+            // name beside her one address: the fixture names nobody else, so
+            // that is what Graph would actually send for it.
+            Some(r#"[{"label":"Other","address":"alice@example.com","name":"Alice Smith"}]"#),
             "Microsoft holds one address now"
         );
 
@@ -4715,6 +4812,19 @@ mod tests {
     /// true on the copy stored here and false on the address book's.
     fn every_field_filled(whose: &str, flags: bool) -> ContactEntry {
         let value = |field: &str| format!("{whose} {field}");
+        // Real JSON rather than a tag, and one distinct address per caller.
+        // The Google merge does not just take this value, it decodes it,
+        // fills in any name recorded locally for a matching address, and
+        // writes it back out, so a placeholder that is not valid JSON could
+        // never come back out unchanged, and an address shared with the
+        // other side would let a name cross from one caller's fixture into
+        // the other's answer.
+        let one_email = serde_json::to_string(&vec![EmailEntry {
+            label: value("email label"),
+            address: format!("{}@example.invalid", whose.to_lowercase().replace(' ', "-")),
+            name: String::new(),
+        }])
+        .expect("a one-entry list to serialize");
         ContactEntry {
             id: value("id"),
             account_id: value("account"),
@@ -4739,7 +4849,7 @@ mod tests {
             nickname: Some(value("nickname")),
             department: Some(value("department")),
             relationship: Some(value("relationship")),
-            emails_json: Some(value("emails")),
+            emails_json: Some(one_email),
             phones_json: Some(value("phones")),
             addresses_json: Some(value("addresses")),
             custom_fields_json: Some(value("own fields")),

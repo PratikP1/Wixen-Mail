@@ -216,15 +216,28 @@ pub fn to_stored(
     replacing: Option<&StoredContact>,
 ) -> StoredContact {
     let now = chrono::Utc::now().to_rfc3339();
-    let emails: Vec<EmailEntry> = editor
-        .emails
-        .iter()
-        .filter(|e| !e.address.trim().is_empty())
-        .map(|e| EmailEntry {
-            label: e.label.clone(),
-            address: e.address.clone(),
-        })
-        .collect();
+    let emails: Vec<EmailEntry> = {
+        let fresh: Vec<EmailEntry> = editor
+            .emails
+            .iter()
+            .filter(|e| !e.address.trim().is_empty())
+            .map(|e| EmailEntry {
+                label: e.label.clone(),
+                address: e.address.clone(),
+                // No box in the editor holds this, so an edit cannot have
+                // changed it. Put back below from the record being replaced,
+                // the same way the saved photo and the imported card are:
+                // written flat as nothing here, correcting a phone number
+                // would have sent a name recorded at Outlook over the one
+                // Outlook already keeps for that address.
+                name: String::new(),
+            })
+            .collect();
+        let recorded: Vec<EmailEntry> = replacing
+            .map(|existing| parse_list(existing.emails_json.as_ref()))
+            .unwrap_or_default();
+        EmailEntry::with_the_names_already_recorded(fresh, &recorded)
+    };
     let phones: Vec<PhoneEntry> = editor
         .phones
         .iter()
@@ -743,6 +756,45 @@ mod tests {
 
         assert_eq!(after.avatar_data_base64, before.avatar_data_base64);
         assert_eq!(after.vcard_raw, before.vcard_raw);
+    }
+
+    #[test]
+    fn test_an_edit_keeps_the_name_outlook_keeps_beside_an_address() {
+        // Outlook can hold a name beside one of a contact's addresses,
+        // separately from the contact's own name, and there is no box for it
+        // in the editor. Left out of the record being replaced the way the
+        // photo and the card are, an edit to any other field would have sent
+        // the contact's own name over Outlook's on the next push.
+        let mut before = a_contact_with_a_photo_and_a_card();
+        before.emails_json = Some(
+            serde_json::to_string(&[
+                crate::data::message_cache::EmailEntry {
+                    label: "Work".to_string(),
+                    address: "grace@navy.example".to_string(),
+                    name: "Grace at the Navy".to_string(),
+                },
+                crate::data::message_cache::EmailEntry {
+                    label: "Personal".to_string(),
+                    address: "grace@example.com".to_string(),
+                    name: String::new(),
+                },
+            ])
+            .expect("a list to serialize"),
+        );
+        let mut editing = to_editor(&before);
+        editing.name = "Grace Brewster Hopper".to_string();
+
+        let after = to_stored(&editing, "acct", Some(&before));
+
+        let kept: Vec<crate::data::message_cache::EmailEntry> =
+            parse_list(after.emails_json.as_ref());
+        assert_eq!(
+            kept.iter()
+                .find(|e| e.address == "grace@navy.example")
+                .map(|e| e.name.as_str()),
+            Some("Grace at the Navy"),
+            "the name Outlook keeps for this address was lost on an edit made here"
+        );
     }
 
     #[test]

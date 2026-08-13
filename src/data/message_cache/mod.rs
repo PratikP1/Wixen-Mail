@@ -201,6 +201,47 @@ pub struct EmailEntry {
     /// Label: "Personal", "Work", "Other"
     pub label: String,
     pub address: String,
+    /// The name an address book keeps beside this one address, empty when
+    /// none was given. Not the contact's own name: Outlook can hold a
+    /// different name for each address a person has there, such as a
+    /// maiden name kept on an old address, and this is the only place that
+    /// distinction survives a read.
+    pub name: String,
+}
+
+impl EmailEntry {
+    /// This list, with a name already recorded for the same address put back
+    /// wherever this list itself gives none.
+    ///
+    /// A per-address name is something only Outlook holds; Google says
+    /// nothing about it, and neither does the contact editor. Replacing the
+    /// stored list wholesale, on a Google sync or on an edit made here, would
+    /// erase a name Outlook gave for an address it still holds, just because
+    /// the list being written over it says nothing about that address.
+    ///
+    /// Matched the way [`ContactEntry::is_written_to_at`] matches: trimmed
+    /// and folded to ASCII case, because an address means the same address
+    /// however it is written.
+    pub fn with_the_names_already_recorded(
+        fresh: Vec<EmailEntry>,
+        recorded: &[EmailEntry],
+    ) -> Vec<EmailEntry> {
+        fresh
+            .into_iter()
+            .map(|mut entry| {
+                if entry.name.trim().is_empty() {
+                    let looking_for = entry.address.trim();
+                    if let Some(already_named) = recorded.iter().find(|held| {
+                        !held.name.trim().is_empty()
+                            && held.address.trim().eq_ignore_ascii_case(looking_for)
+                    }) {
+                        entry.name = already_named.name.clone();
+                    }
+                }
+                entry
+            })
+            .collect()
+    }
 }
 
 /// Structured physical address entry (stored as JSON array)

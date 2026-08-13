@@ -114,6 +114,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   fallback. It does now, for both address books, and a blank address row left
   behind by the editor is no longer sent either.
 
+- **Fixed: correcting anything about a contact synced from Outlook, a phone
+  number, a note, anything, sent that contact's own name over a name Outlook
+  keeps beside one of their addresses.** Outlook can hold a name beside each
+  address a contact has there, separately from the contact's own name, a
+  maiden name kept on an old address being the ordinary case. That name was
+  never read in here, and every push to Outlook stamped the contact's own
+  name onto every address, which overwrote it on the first change made to the
+  contact after it synced. The name is now read in, kept through a Google
+  sync and through an edit made in the contact editor, neither of which can
+  otherwise see it, and sent back to Outlook unless nothing was ever recorded
+  for that address, in which case the contact's own name is still sent so an
+  address typed here reaches Outlook with some name on it.
+
 - **Fixed: ticking off a Google task could put back a task deleted on another
   device.** Every change sent to Google Tasks carried a claim that the task had
   not been deleted, whether or not that is what your copy meant. Changes go up

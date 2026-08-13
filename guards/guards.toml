@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 75 records have arrived since and have not been through it.
+# 79 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -1824,6 +1824,7 @@ before = """            emails_json: contact.emails_json.clone().or_else(|| {
                 serde_json::to_string(&[super::EmailEntry {
                     label: Self::NO_LABEL.to_string(),
                     address: contact.email.clone(),
+                    name: String::new(),
                 }])
                 .ok()
             }),"""
@@ -5185,4 +5186,83 @@ after = """    let stored_addresses = stored_list::<AddressEntry>(contact.addres
 red = [
     "application::contacts_sync::tests::test_a_postal_address_stored_before_the_lists_existed_still_goes_to_microsoft",
     "application::contacts_sync::tests::test_an_empty_address_row_is_not_sent_to_microsoft",
+]
+
+# ── The name Outlook keeps beside one address is read in and sent back ──────
+#
+# Graph lets a name be recorded beside each address a contact has there,
+# separately from the contact's own name; a maiden name kept on an old
+# address is the ordinary case. The reader ignored that field, and the writer
+# stamped the contact's own name onto every address on every push, so the
+# first change made to a contact here overwrote a name Outlook had recorded
+# for one of her addresses. Two records: the reader and the writer are
+# separate call sites, and a break inside one half only proves itself there.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "the name Outlook keeps beside an address is read in rather than left blank"
+file = "src/application/contacts_sync.rs"
+before = """                name: e.name.clone(),"""
+after = """                name: String::new(),"""
+red = [
+    "application::contacts_sync::tests::test_a_second_address_no_longer_held_at_microsoft_is_no_longer_held_here",
+    "application::contacts_sync::tests::test_the_name_outlook_keeps_beside_an_address_is_kept_here_and_sent_back",
+]
+
+[[guard]]
+name = "the name recorded for an address is sent back rather than the contact's own name"
+file = "src/application/contacts_sync.rs"
+before = """            name: if entry.name.trim().is_empty() {
+                contact.name.clone()
+            } else {
+                entry.name
+            },
+            address: entry.address,"""
+after = """            name: contact.name.clone(),
+            address: entry.address,"""
+red = [
+    "application::contacts_sync::tests::test_the_name_outlook_keeps_beside_an_address_is_kept_here_and_sent_back",
+]
+
+# ── A name Outlook gave survives a Google sync and an edit made here ────────
+#
+# Google says nothing about a name kept beside one address among several;
+# only Outlook does. Replacing the stored email list wholesale, on a Google
+# sync or on an edit made in the contact editor, would erase a name Outlook
+# gave for an address either still lists, because neither source can tell the
+# merge or the editor what that name was. Two records: the merge and the
+# editor round trip are separate call sites of
+# `EmailEntry::with_the_names_already_recorded`.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "a Google sync keeps the name Outlook gave for an address Google also lists"
+file = "src/application/contacts_sync.rs"
+before = """    let emails_json = remote.emails_json.as_ref().map(|_| {
+        let fresh = stored_list::<EmailEntry>(remote.emails_json.as_ref());
+        let recorded = stored_list::<EmailEntry>(local.emails_json.as_ref());
+        EmailEntry::with_the_names_already_recorded(fresh, &recorded)
+    });"""
+after = """    let emails_json = remote.emails_json.as_ref().map(|_| {
+        let fresh = stored_list::<EmailEntry>(remote.emails_json.as_ref());
+        fresh
+    });"""
+red = [
+    "application::contacts_sync::tests::test_a_google_sync_keeps_the_name_outlook_keeps_beside_an_address",
+]
+
+[[guard]]
+name = "an edit made here keeps the name Outlook gave for an address it does not show"
+file = "src/presentation/contact_convert.rs"
+before = """        let recorded: Vec<EmailEntry> = replacing
+            .map(|existing| parse_list(existing.emails_json.as_ref()))
+            .unwrap_or_default();
+        EmailEntry::with_the_names_already_recorded(fresh, &recorded)
+    };"""
+after = """        fresh
+    };"""
+red = [
+    "presentation::contact_convert::tests::test_an_edit_keeps_the_name_outlook_keeps_beside_an_address",
 ]
