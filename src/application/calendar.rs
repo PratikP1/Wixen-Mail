@@ -2722,8 +2722,10 @@ pub fn ms_event_to_local(
         .filter(|b| !b.content.is_empty())
         .map(|b| {
             if b.content_type.eq_ignore_ascii_case("html") {
-                // Strip HTML for local storage (simple approach)
-                ammonia::clean(&b.content)
+                // Sanitizing is the security half; turning what survives into
+                // this program's own long-field markdown is the
+                // accessibility half. Neither excuses dropping the other.
+                crate::application::long_text::from_markup(&b.content)
             } else {
                 b.content.clone()
             }
@@ -2825,10 +2827,10 @@ pub fn ms_event_to_local(
 ///
 /// The offset is not optional decoration to Graph. A `dateTime` carrying one is
 /// contradicted by the `timeZone` sent beside it.
-const GRAPH_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
+pub(crate) const GRAPH_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
 
 /// What the zone is called when a time already said which moment it meant.
-const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
+pub(crate) const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
 
 /// A stored time, written the way Graph reads one.
 ///
@@ -2850,7 +2852,7 @@ const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
 ///
 /// Nothing is returned for a value that is none of these shapes, so an unreadable
 /// time is refused rather than sent as an hour nobody meant.
-fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTimeZone> {
+pub(crate) fn wall_clock_for_graph(stored: &str, zone: Option<&str>) -> Option<MsDateTimeTimeZone> {
     use crate::common::moment::Moment;
     use chrono::TimeZone;
 
@@ -5294,6 +5296,32 @@ mod tests {
             !stored.contains("steal"),
             "a script in an event body does not survive into the calendar: {stored}"
         );
+    }
+
+    #[test]
+    fn test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries() {
+        // Sanitizing is the security half. Keeping the heading and the list as
+        // markup this program's own long-field reader understands is the
+        // accessibility half, and dropping tags without it just flattens an
+        // agenda into one run of words.
+        let event = MsGraphEvent {
+            id: "ms-4".to_string(),
+            body: Some(MsEventBody {
+                content_type: "html".to_string(),
+                content: "<h2>Agenda</h2><ul><li>Budget</li><li>Papers</li></ul>".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let stored = ms_event_to_local(&event, "acct", "cal-outlook")
+            .description
+            .unwrap_or_default();
+
+        assert!(!stored.contains('<'), "{stored}");
+        let said = crate::application::long_text::spoken(&stored);
+        assert!(said.contains("heading level 2, Agenda"), "{said}");
+        assert!(said.contains("bullet, Budget"), "{said}");
+        assert!(said.contains("bullet, Papers"), "{said}");
     }
 
     #[test]
