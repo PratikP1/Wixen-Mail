@@ -276,11 +276,7 @@ impl SmtpClient {
     /// be called: it would put the addresses back on the wire for every
     /// recipient to read.
     pub async fn send_email(&self, email: Email, auth: &MailAuth) -> Result<Vec<u8>> {
-        if !self.may_send {
-            return Err(Error::Security(crate::service::outward::refusal(
-                "send a message",
-            )));
-        }
+        crate::service::outward::permitted(self.may_send, "send a message")?;
         tracing::info!(
             "Sending email from {} to {:?}",
             crate::common::logging::mask_email(&email.from),
@@ -368,11 +364,7 @@ impl SmtpClient {
     /// Behind the same gate as everything else that sends: a receipt is mail
     /// leaving this machine with somebody's address on it.
     pub async fn send_raw(&self, from: &str, to: &str, raw: &[u8], auth: &MailAuth) -> Result<()> {
-        if !self.may_send {
-            return Err(Error::Security(crate::service::outward::refusal(
-                "send a read receipt",
-            )));
-        }
+        crate::service::outward::permitted(self.may_send, "send a read receipt")?;
         let envelope = Envelope::new(
             Some(
                 from.parse()
@@ -741,6 +733,39 @@ mod gate_tests {
         let said = said.to_string();
         assert!(said.contains("send a message"), "{said}");
         assert!(said.contains("Allow Changes"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_send_says_exactly_what_every_other_refusal_says() {
+        // IMAP and POP3 both ask crate::service::outward::permitted, which is
+        // the one place the refusal sentence is written. SMTP used to answer
+        // the same question inline instead of asking it, which is how a
+        // second copy of the sentence could have drifted from the first
+        // without anybody noticing. This does not go red on its own: the
+        // inline copy already called the shared `refusal` function, so this
+        // passes both before and after that was replaced with `permitted`.
+        // It is worth keeping anyway, because it is what would catch the
+        // sentence drifting apart in future.
+        let client = SmtpClient::new(config()).expect("a client");
+        let Err(said) = client
+            .send_email(
+                Email::simple(
+                    "me@example.com".to_string(),
+                    "them@example.com".to_string(),
+                    "Hello".to_string(),
+                    "Body".to_string(),
+                ),
+                &MailAuth::Password("hunter2".to_string()),
+            )
+            .await
+        else {
+            panic!("it sent");
+        };
+
+        assert_eq!(
+            said.to_string(),
+            Error::Security(crate::service::outward::refusal("send a message")).to_string()
+        );
     }
 
     #[tokio::test]

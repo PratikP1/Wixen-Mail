@@ -455,11 +455,19 @@ const TALKS_BUT_ONLY_READS: [&str; 3] = [
 /// Every client that can change something at a provider with an HTTP request:
 /// Google, Microsoft, the task lists behind both, and a calendar server.
 ///
+/// The HTTP half only. IMAP, SMTP and POP3 write to a mail server over their
+/// own line protocols rather than HTTP, so nothing here reads their requests
+/// at all; [`MAIL_TRANSPORTS`] below is the census for those three, and reads
+/// a different shape of line for the same reason.
+///
 /// The two lists below account for every write in these files between them,
 /// and nothing outside them. The calendar server client was missing from here
 /// for as long as this list existed, so its three writes were on neither list
 /// and outside every count, which is the same shape of hole this file was
-/// written to close.
+/// written to close. Mail was the same hole again, wider: it was missing not
+/// from a list but from this census's whole idea of what a write is, so a new
+/// IMAP, SMTP or POP3 write could arrive with nothing reading its request and
+/// nothing failing.
 #[cfg(test)]
 const CLIENTS: [&str; 4] = [
     "src/service/google_api.rs",
@@ -468,7 +476,12 @@ const CLIENTS: [&str; 4] = [
     "src/service/caldav.rs",
 ];
 
-/// Every provider write whose request has been read off a socket by a test.
+/// Every HTTP provider write whose request has been read off a socket by a
+/// test.
+///
+/// Every write these four HTTP clients make, not every write this
+/// application makes: [`MAIL_MEASURED_ON_THE_WIRE`] is the same record for
+/// IMAP, SMTP and POP3.
 ///
 /// The gate above answers whether a change may go out. It says nothing about
 /// what goes out, and that is where this project has found its worst faults: a
@@ -642,6 +655,143 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
     ),
 ];
 
+/// Every file that writes to a mail server over its own line protocol, and
+/// the fewest gated writes it must have.
+///
+/// [`CLIENTS`] above is the HTTP half of this application; this is the other
+/// half, and for as long as this file existed it was not written down at
+/// all. IMAP, SMTP and POP3 do not build a `reqwest::Request`, so nothing
+/// that reads a request line ever looked at them, and a new write to any of
+/// the three could arrive with nothing reading what it sent and nothing
+/// failing. Mail is the surface where that matters most.
+///
+/// The number is the floor [`writes_in`] must find in that file, the same job
+/// the `>= 3` floor plays in [`test_every_provider_write_is_on_one_of_the_two_wire_lists`]:
+/// a reading that has gone blind reports a short answer instead of a true one,
+/// and the floor is what turns that into a failure rather than a quiet count.
+#[cfg(test)]
+const MAIL_TRANSPORTS: [(&str, usize); 3] = [
+    ("src/service/protocols/imap.rs", 8),
+    ("src/service/protocols/smtp.rs", 2),
+    ("src/service/protocols/pop3.rs", 1),
+];
+
+/// Every mail write whose command has been read off a socket by a test.
+///
+/// The mail analogue of [`MEASURED_ON_THE_WIRE`], and it reads the same way:
+/// the file, the method, the file whose tests read the command off a socket,
+/// and the command line those tests assert. What it cannot see is the same
+/// list, unchanged: whether the assertion is any good, and whether it is
+/// really about this method.
+///
+/// Two pairs here are told apart only by an argument and nothing else, the
+/// same shape [`MEASURED_ON_THE_WIRE`]'s doc already names for the calendar
+/// server's create and replace. `remove_these` and `delete_message` both
+/// expunge and differ only by which UID is in the command, 4 against 7;
+/// `send_email` and `send_raw` both open an SMTP conversation and differ only
+/// by which address the row names.
+#[cfg(test)]
+const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 10] = [
+    (
+        "src/service/protocols/imap.rs",
+        "set_subscribed",
+        "src/service/protocols/imap.rs",
+        "SUBSCRIBE \"Work\"",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "set_flag",
+        "src/service/protocols/imap.rs",
+        "UID STORE 7 +FLAGS (\\Seen)",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "copy_message",
+        "src/service/protocols/imap.rs",
+        "UID COPY 7 \"Archive\"",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "move_message",
+        "src/service/protocols/imap.rs",
+        "UID MOVE 7 \"Archive\"",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "remove_these",
+        "src/service/protocols/imap.rs",
+        "UID EXPUNGE 4",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "append_message",
+        "src/service/protocols/imap.rs",
+        "APPEND \"Sent\" (\\Seen)",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "delete_message",
+        "src/service/protocols/imap.rs",
+        "UID EXPUNGE 7",
+    ),
+    (
+        "src/service/protocols/pop3.rs",
+        "delete",
+        "src/service/protocols/pop3.rs",
+        "DELE 3",
+    ),
+    (
+        "src/service/protocols/smtp.rs",
+        "send_email",
+        "src/service/protocols/smtp.rs",
+        "RCPT TO:<quiet@example.com>",
+    ),
+    (
+        "src/service/protocols/smtp.rs",
+        "send_raw",
+        "src/service/protocols/smtp.rs",
+        "MAIL FROM:<me@example.com>",
+    ),
+];
+
+/// Every mail method that asks the gate and changes nothing on a server.
+///
+/// Without this the mail census would demand a changing command for a method
+/// whose whole job is to send a read. `uids_with_message_id` asks the gate
+/// because it is half of replacing a saved draft, the half that has to run
+/// even on an account open for reading only would refuse the half that
+/// follows it, but what it sends is `UID SEARCH`, which asks a server what it
+/// has and changes nothing there.
+#[cfg(test)]
+const ASKS_THE_GATE_AND_CHANGES_NOTHING: [(&str, &str, &str); 1] = [(
+    "src/service/protocols/imap.rs",
+    "uids_with_message_id",
+    "gated as half of replacing a saved draft; sends UID SEARCH and changes nothing, so it \
+     has no request to measure",
+)];
+
+/// Every command a mail write is allowed to start with.
+///
+/// The mail analogue of the POST/PUT/PATCH/DELETE list further down: what
+/// stops a row in [`MAIL_MEASURED_ON_THE_WIRE`] being satisfied by a test that
+/// only asserts `FETCH`, `SEARCH`, `LIST` or `STAT`, none of which changes
+/// anything at a mail server.
+#[cfg(test)]
+const MAIL_COMMAND_THAT_CHANGES_SOMETHING: [&str; 12] = [
+    "UID STORE",
+    "UID COPY",
+    "UID MOVE",
+    "UID EXPUNGE",
+    "APPEND",
+    "SUBSCRIBE",
+    "UNSUBSCRIBE",
+    "CREATE",
+    "RENAME",
+    "DELE",
+    "MAIL FROM",
+    "RCPT TO",
+];
+
 /// Every provider write whose request nobody has read yet.
 ///
 /// Empty today. Every write in every client above has had its verb and its
@@ -709,8 +859,10 @@ const ONLY_A_TEST_BUILD_COMPILES_THIS: [(&str, &str, &str); 1] =
 #[cfg(test)]
 mod completeness {
     use super::{
-        CLIENTS, GATED, MEASURED_ON_THE_WIRE, NAMES_A_WAY_OUT_AND_CANNOT_CONNECT,
-        NOT_MEASURED_ON_THE_WIRE, ONLY_A_TEST_BUILD_COMPILES_THIS, TALKS_BUT_ONLY_READS, THE_GATE,
+        ASKS_THE_GATE_AND_CHANGES_NOTHING, CLIENTS, GATED, MAIL_COMMAND_THAT_CHANGES_SOMETHING,
+        MAIL_MEASURED_ON_THE_WIRE, MAIL_TRANSPORTS, MEASURED_ON_THE_WIRE,
+        NAMES_A_WAY_OUT_AND_CANNOT_CONNECT, NOT_MEASURED_ON_THE_WIRE,
+        ONLY_A_TEST_BUILD_COMPILES_THIS, TALKS_BUT_ONLY_READS, THE_GATE,
     };
     use crate::common::what_ships::what_ships;
 
@@ -1370,6 +1522,30 @@ mod completeness {
         ".changing(",
     ];
 
+    /// How a method in a mail transport asks whether it may send.
+    ///
+    /// A marker list of its own rather than folded into [`SENDS_A_CHANGE`],
+    /// even though both are read by the same [`writes_in`]. The four HTTP
+    /// clients never call [`super::permitted`] today, so sharing one list
+    /// would happen to be quiet, but the day one of them did, the HTTP census
+    /// would start reading a mail marker and the mail census would start
+    /// reading an HTTP one, and neither would be reading its own question.
+    const SENDS_A_MAIL_CHANGE: [&str; 2] = ["self.may_i(", "outward::permitted("];
+
+    /// A test's source text read as the bytes it puts on the wire.
+    ///
+    /// A row in [`MAIL_MEASURED_ON_THE_WIRE`] names a command as a server
+    /// sees it. The test that asserts it is Rust source, so `\Seen` is
+    /// written `\\Seen` and `"Work"` is written `\"Work\"`. Collapsing those
+    /// is what lets a row be written the way it goes out rather than the way
+    /// it is escaped in the file that asserts it.
+    ///
+    /// Order matters: the double backslash first, then the escaped quote, or
+    /// a line escaping a quoted backslash would collapse wrong.
+    fn as_it_goes_on_the_wire(tests: &str) -> String {
+        tests.replace("\\\\", "\\").replace("\\\"", "\"")
+    }
+
     /// Everything in a source file before its tests begin.
     fn the_production_half(source: &str) -> &str {
         source.split("mod tests {").next().unwrap_or_default()
@@ -1414,17 +1590,21 @@ mod completeness {
         ))
     }
 
-    /// Every public method in one client whose body sends a change.
+    /// Every public method in one client whose body holds one of `markers`.
     ///
     /// Read off the tree rather than listed, so a write added next year has to
-    /// be accounted for instead of remembered.
+    /// be accounted for instead of remembered. Takes its markers as an
+    /// argument rather than reading [`SENDS_A_CHANGE`] itself, so the HTTP
+    /// census and the mail census below can each hand it the question that is
+    /// really theirs instead of sharing one list between two different
+    /// protocols.
     ///
     /// A chunk runs from one method's own line to the next method's, so a
     /// marker is counted against the method it is really in. The signature
     /// line counts too, which catches a method written on one line and costs
     /// nothing else: no public method in these clients is named after one of
     /// the markers.
-    fn writes_in(production: &str) -> Vec<String> {
+    fn writes_in(production: &str, markers: &[&str]) -> Vec<String> {
         let keep = |inside: Option<(&str, bool)>, sends: bool, writes: &mut Vec<String>| {
             if let Some((name, public)) = inside
                 && public
@@ -1442,7 +1622,7 @@ mod completeness {
                 inside = Some(started);
                 sends = false;
             }
-            sends |= SENDS_A_CHANGE.iter().any(|how| line.contains(how));
+            sends |= markers.iter().any(|how| line.contains(how));
         }
         keep(inside, sends, &mut writes);
         writes
@@ -1460,7 +1640,7 @@ mod completeness {
         for path in CLIENTS {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
             let production = the_production_half(&source);
-            let writes = writes_in(production);
+            let writes = writes_in(production, &SENDS_A_CHANGE);
             // Before believing a short answer, the reading has to be able to
             // find anything at all. A file this read as empty, or one whose
             // methods it no longer recognises, would pass by looking at
@@ -1545,6 +1725,82 @@ mod completeness {
                 tests.contains(request),
                 "{client}: {method} is called measured on the wire by {measured_in}, and no \
                  test there asserts {request}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_mailbox_write_is_on_the_mail_wire_list() {
+        // The check the census never had. Four HTTP clients were covered and
+        // no mail protocol was, so a new IMAP, SMTP or POP3 write could
+        // arrive with nothing reading its request and nothing failing. POP3
+        // shipped its one write ungated for the whole life of this project
+        // behind exactly that gap.
+        let mut on_neither_list: Vec<String> = Vec::new();
+        for (path, floor) in MAIL_TRANSPORTS {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let production = the_production_half(&source);
+            let writes = writes_in(production, &SENDS_A_MAIL_CHANGE);
+            assert!(
+                writes.len() >= floor,
+                "{path}: only {} writes ask the gate, so the way a write is recognised has \
+                 moved and this is looking at the wrong thing",
+                writes.len()
+            );
+            for write in writes {
+                let accounted_for = MAIL_MEASURED_ON_THE_WIRE
+                    .iter()
+                    .map(|(file, method, _, _)| (*file, *method))
+                    .any(|(file, method)| file == path && method == write)
+                    || ASKS_THE_GATE_AND_CHANGES_NOTHING
+                        .iter()
+                        .any(|(file, method, _)| *file == path && *method == write);
+                if !accounted_for {
+                    on_neither_list.push(format!("{path}: {write}"));
+                }
+            }
+        }
+
+        assert!(
+            on_neither_list.is_empty(),
+            "these change something at a mail server and are on neither list, so nobody has \
+             said whether what they send has ever been read off a socket: {on_neither_list:?}"
+        );
+    }
+
+    #[test]
+    fn test_every_mailbox_write_called_measured_had_its_command_read_off_a_socket() {
+        // The other half, for mail: the list above only says a write is
+        // accounted for; this says the account is true.
+        for (client, method, measured_in, request) in MAIL_MEASURED_ON_THE_WIRE {
+            let source =
+                std::fs::read_to_string(client).unwrap_or_else(|e| panic!("{client}: {e}"));
+            assert!(
+                the_production_half(&source).contains(&format!("fn {method}")),
+                "{client}: {method} is called measured on the wire and is not in that file \
+                 any more, so this row is about nothing"
+            );
+
+            assert!(
+                MAIL_COMMAND_THAT_CHANGES_SOMETHING
+                    .iter()
+                    .any(|opens| request.starts_with(opens)),
+                "{client}: {method} is called measured by a command that does not open with \
+                 something that changes a mailbox: {request}"
+            );
+
+            let holding = std::fs::read_to_string(measured_in)
+                .unwrap_or_else(|e| panic!("{measured_in}: {e}"));
+            let tests = as_it_goes_on_the_wire(the_test_half(&holding));
+            assert!(
+                tests.contains("answering"),
+                "{measured_in}: nothing in its tests stands up a server, so no command can \
+                 have been read off one there"
+            );
+            assert!(
+                tests.contains(request),
+                "{client}: {method} is called measured on the wire by {measured_in}, and no \
+                 test there asserts {request} as it goes on the wire"
             );
         }
     }
