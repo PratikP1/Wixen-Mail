@@ -578,18 +578,20 @@ mod completeness {
     /// after the module was removed.
     ///
     /// Crate names rather than call sites, because an item from another crate
-    /// cannot be used without that crate's name appearing in the file, in a
-    /// `use` or in an inline path. No arrangement of imports, no alias at the
-    /// use site and no short name can hide it.
+    /// cannot be used without a name that crate owns appearing in the file:
+    /// either the crate's own name in a path, or the item's name in a `use`.
+    /// Renaming at the use site does not help, because `as` is written after
+    /// the original name.
     ///
     /// `std::net` and `tokio::net` are roots with two segments because their
-    /// crates carry far more than sockets.
-    ///
-    /// Two things still walk past, and neither is closed by matching harder.
-    /// A file that re-exports one of these under a name of its own hides the
-    /// module importing it from there, which is what the refusal below covers.
-    /// A new networking crate nobody has classified is invisible, which is
-    /// what the sweep of the dependency list covers.
+    /// crates carry far more than sockets, and that is why the second list
+    /// below exists. A grouped import writes neither of those two segments
+    /// together: `use tokio::{io::AsyncWriteExt, net::TcpStream};` names
+    /// `tokio`, and this list can no more treat that as a way out than it can
+    /// treat `use std::{collections::HashMap, mem};` as one. Ordinary style,
+    /// already written that way in this tree, and a module written that way
+    /// with a real connect and a real write walked past this census twice. So
+    /// where the crate name cannot answer, the socket's own name does.
     const A_WAY_OUT_OF_THIS_PROGRAM: [&str; 9] = [
         "reqwest",
         "lettre",
@@ -602,11 +604,56 @@ mod completeness {
         "std::net",
     ];
 
+    /// Every name a socket is written under when the crate's own name is not
+    /// enough to tell one apart from anything else that crate carries.
+    ///
+    /// One of these in a file means either a `use` that brought it in or a
+    /// path that named it, and either way something in that file is holding
+    /// the end of a connection.
+    ///
+    /// An address is not a connection, so `SocketAddr` is not here: a module
+    /// that parses one and hands it to a gated client is not a way out, and
+    /// the two test halves in this tree that build one would be read as
+    /// though they were.
+    const A_SOCKET_UNDER_ITS_OWN_NAME: [&str; 8] = [
+        "TcpStream",
+        "TcpListener",
+        "TcpSocket",
+        "UdpSocket",
+        "UnixStream",
+        "UnixListener",
+        "ToSocketAddrs",
+        "lookup_host",
+    ];
+
     /// Which way out the shipped half of `source` names, if any.
     ///
     /// Whole words only, and that is load-bearing rather than tidy: without
     /// it `pub mod xoauth2;` reads as the authorisation crate and every
     /// mention of `tokio_native_tls` reads as `native_tls` as well.
+    ///
+    /// What this cannot see. Written as a list rather than a sentence about
+    /// how hard it tries, because the two rounds before this one each closed
+    /// one hole and left a doc claiming there were none:
+    ///
+    /// - A module handed a live connection, or a built client, by another
+    ///   module. Where the handing on is a re-export, a type alias or a public
+    ///   signature on one line, the check below refuses it outright. A
+    ///   signature broken across several lines, or a value that travels some
+    ///   other way, is invisible here.
+    /// - A macro that writes the path. Nothing looks inside one.
+    /// - A crate nobody has classified. That is the manifest sweep further
+    ///   down, not this.
+    /// - A call straight into a networking library through the foreign
+    ///   function interface. Nothing in this tree makes one today: every
+    ///   linked library named in it is a Windows user interface or
+    ///   accessibility library.
+    /// - Anything outside `src`. The build script and the scripts beside it
+    ///   are not read at all.
+    /// - This reads names and not the program, so a name in a string, or in a
+    ///   comment that trails code on the same line, counts as a way out. That
+    ///   direction is the safe one: it asks somebody to classify a file
+    ///   rather than passing one over in silence.
     fn how_it_reaches_a_server(source: &str) -> Option<&'static str> {
         let ships = what_ships(source);
         let code: String = ships
@@ -616,7 +663,8 @@ mod completeness {
             .join("\n");
         A_WAY_OUT_OF_THIS_PROGRAM
             .iter()
-            .find(|root| names_it_as_a_whole_word(&code, root))
+            .chain(A_SOCKET_UNDER_ITS_OWN_NAME.iter())
+            .find(|name| names_it_as_a_whole_word(&code, name))
             .copied()
     }
 
@@ -716,6 +764,55 @@ mod completeness {
         assert_eq!(
             reaches("use tokio_native_tls::TlsConnector;"),
             Some("tokio_native_tls")
+        );
+    }
+
+    #[test]
+    fn test_the_census_sees_a_socket_brought_in_beside_something_else() {
+        // The idiom that walked past this census twice. A module that brings a
+        // socket in alongside something else from the same crate writes
+        // neither `tokio::net` nor `std::net`, so a reading of path roots
+        // alone finds nothing in it. This tree already writes its imports that
+        // way in several places, so it is ordinary style rather than an
+        // evasion somebody would have to think of.
+        //
+        // No fixture here says `#[cfg(test)]`. The guard record on the reading
+        // of which half of a file ships names one test, and a fixture with
+        // that text in it would redden this one under the same break and leave
+        // the record short.
+        let reaches = |source: &str| how_it_reaches_a_server(source);
+
+        assert_eq!(
+            reaches(
+                "use tokio::{io::AsyncWriteExt, net::TcpStream};\n\
+                 async fn go(a: &str) { let _ = TcpStream::connect(a).await; }"
+            ),
+            Some("TcpStream")
+        );
+        assert_eq!(
+            reaches(
+                "use std::{io::Write, net::TcpStream};\n\
+                 fn go(a: &str) { let _ = TcpStream::connect(a); }"
+            ),
+            Some("TcpStream")
+        );
+        // The inline path still answers with the root, so nothing that was
+        // seen before has moved.
+        assert_eq!(
+            reaches("use tokio::net::TcpStream;\nasync fn go() {}"),
+            Some("tokio::net")
+        );
+        // The crates whose names are everywhere for other reasons stay quiet
+        // when they are there for another reason.
+        assert_eq!(
+            reaches(
+                "use tokio::{time::sleep, sync::oneshot};\nasync fn go(d: u64) { sleep(d).await; }"
+            ),
+            None
+        );
+        assert_eq!(
+            reaches("use std::{collections::HashMap, fmt::Write, mem};"),
+            None
         );
     }
 
@@ -916,24 +1013,59 @@ mod completeness {
 
     #[test]
     fn test_no_module_hands_a_way_out_on_under_another_name() {
-        // The door the crate-name reading leaves open. One listed file could
-        // re-export a client, and a second file would then reach a server
-        // naming nothing this can see. Refused outright, rather than chased.
+        // The door the name reading leaves open. One listed file could pass a
+        // client or a live socket outward, and a second file would then reach
+        // a server naming nothing this can see. Refused outright, rather than
+        // chased.
+        //
+        // Both lists, because a re-exported socket type hides a module exactly
+        // as well as a re-exported client does.
+        //
+        // What this cannot see: it reads one line at a time, so a public
+        // signature broken across several lines hands a way out on and walks
+        // past. That is the blind spot written on the reading itself, and it
+        // is here rather than closed because a check that joined lines would
+        // have to decide where a signature ends, and every reading of source
+        // text that has had to decide that in this file has been wrong at
+        // least once.
+        //
+        // The gate is skipped because handing out a request builder is what it
+        // is for, and the test-only helpers are skipped because a release
+        // build never compiles them.
+        let skipped: Vec<&str> = THE_GATE
+            .iter()
+            .copied()
+            .chain(
+                ONLY_A_TEST_BUILD_COMPILES_THIS
+                    .iter()
+                    .map(|(path, _, _)| *path),
+            )
+            .collect();
         for file in every_source_file() {
             let path = file.to_string_lossy().replace('\\', "/");
-            if THE_GATE.contains(&path.as_str()) {
+            if skipped.contains(&path.as_str()) {
                 continue;
             }
             let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
             for line in what_ships(&source).lines() {
-                let handing_on = line.contains("pub use") || line.trim_start().starts_with("type ");
+                let trimmed = line.trim_start();
+                let handing_on = line.contains("pub use")
+                    || trimmed.starts_with("type ")
+                    || line.contains("pub type ")
+                    || line.contains("pub fn ")
+                    || line.contains("pub async fn ")
+                    || line.contains("pub const fn ")
+                    || (trimmed.starts_with("pub ") && line.contains(':'));
                 if !handing_on {
                     continue;
                 }
-                for root in A_WAY_OUT_OF_THIS_PROGRAM {
+                for name in A_WAY_OUT_OF_THIS_PROGRAM
+                    .iter()
+                    .chain(A_SOCKET_UNDER_ITS_OWN_NAME.iter())
+                {
                     assert!(
-                        !names_it_as_a_whole_word(line, root),
-                        "{path} hands {root} on under another name, so a file that names \
+                        !names_it_as_a_whole_word(line, name),
+                        "{path} hands {name} on under another name, so a file that names \
                          nothing can reach a server through it: {}",
                         line.trim()
                     );
