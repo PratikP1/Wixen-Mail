@@ -5517,6 +5517,57 @@ mod tests {
     }
 
     #[test]
+    fn test_a_change_to_a_contact_does_not_ask_google_to_clear_the_line_it_composes() {
+        // The struct-level check above cannot see this: `formatted_value` was
+        // an empty `String` with no `skip_serializing_if`, so it went out on
+        // the wire as `"formattedValue":""` on every request even though the
+        // struct field was empty all along. `addresses` is a field a change
+        // replaces wholesale, so an explicit empty value there is read as an
+        // instruction, not as silence.
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.addresses_json = serde_json::to_string(&vec![AddressEntry {
+            label: "Home".to_string(),
+            street: "1 Navy Yard".to_string(),
+            city: "Arlington".to_string(),
+            state: "VA".to_string(),
+            zip: "22202".to_string(),
+            country: "USA".to_string(),
+        }])
+        .ok();
+
+        let person = contact_to_google_person(&contact);
+        let sent = serde_json::to_value(&person).expect("a body Google would receive");
+
+        let address_on_the_wire = &sent["addresses"][0];
+        assert!(
+            address_on_the_wire.get("formattedValue").is_none(),
+            "a structured address should not carry an empty formattedValue key: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_an_address_with_no_label_asks_google_for_no_label_rather_than_an_empty_one() {
+        // A hazard fix, not a live-loss fix: no writer in this program produces
+        // an address whose stored label is empty today. But `address_type` had
+        // no `skip_serializing_if` while its siblings on `GoogleEmail` and
+        // `GoogleUrl` both do, so an address that does reach here unlabelled
+        // (stored JSON that omits the key deserializes to an empty label,
+        // because `AddressEntry` carries `#[serde(default)]`) would send
+        // `"type":""` instead of leaving the key out.
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.addresses_json = Some(r#"[{"street":"1 Navy Yard"}]"#.to_string());
+
+        let person = contact_to_google_person(&contact);
+        let sent = serde_json::to_value(&person).expect("a body Google would receive");
+
+        let address_on_the_wire = &sent["addresses"][0];
+        assert!(
+            address_on_the_wire.get("type").is_none(),
+            "an address with no recorded label should carry no type key: {sent}"
+        );
+    }
+
+    #[test]
     fn test_a_contact_with_no_postal_address_sends_no_addresses_to_google() {
         let contact = a_local_contact("Grace Hopper", "grace@example.com");
 

@@ -81,6 +81,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   A contact whose whole name was only ever recorded on one line is now read
   back under that name instead of showing as Unknown.
 
+- **Fixed: every address sent to Google carried an explicit empty description
+  line, even though nothing here ever sets one.** Google composes the address
+  line it shows from the street, city and other parts already in the request,
+  and this program always left that line blank so Google could keep doing
+  that. It went out as an explicit empty value rather than being left off the
+  request entirely. Google's documentation does not say whether an address
+  update reads an explicit empty value as "work it out yourself" or as "clear
+  the line", so rather than resting on that answer, the value is now left off
+  the request whenever there is nothing to put in it. Closed at the same time:
+  an address with no chosen label could have gone out with an empty label
+  instead of none at all, though no address made or synced by this program
+  currently produces one.
+
 - **Fixed: ticking off a Google task could put back a task deleted on another
   device.** Every change sent to Google Tasks carried a claim that the task had
   not been deleted, whether or not that is what your copy meant. Changes go up

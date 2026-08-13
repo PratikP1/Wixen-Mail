@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 70 records have arrived since and have not been through it.
+# 72 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5070,4 +5070,49 @@ before = """            the_day_went |= went == ADayWent::OffTheSeries;"""
 after = """            the_day_went |= went != ADayWent::OffTheSeries;"""
 red = [
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
+]
+
+# ── A structured address pushed to Google never carries an empty formattedValue ─
+#
+# `formatted_value` had no `skip_serializing_if`, so every address sent to
+# Google carried `"formattedValue":""` even when nothing in the struct held
+# anything but an empty string. `addresses` is one of the fields a change
+# replaces wholesale, so an explicit empty value in it is an instruction, not
+# silence. The existing struct-level test asserted `formatted_value.is_empty()`
+# on the Rust value and could never see this: the field was empty before and
+# after, only the wire body changed.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "a structured address sent to Google carries no empty formattedValue key"
+file = "src/service/google_api.rs"
+before = """    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub formatted_value: String,"""
+after = """    #[serde(default)]
+    pub formatted_value: String,"""
+red = [
+    "application::contacts_sync::tests::test_a_change_to_a_contact_does_not_ask_google_to_clear_the_line_it_composes",
+]
+
+# ── An address with no recorded label sends no type key to Google ───────────
+#
+# `address_type` had no `skip_serializing_if` while its siblings on
+# `GoogleEmail` and `GoogleUrl` both do. No writer in this program produces an
+# address with an empty label today, so this was a hazard rather than a live
+# loss, but a label read back from stored JSON that omits the key (the struct
+# carries `#[serde(default)]`) would have gone out as `"type":""` instead of
+# being left off the wire.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "an address with no recorded label carries no type key to Google"
+file = "src/service/google_api.rs"
+before = """    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
+    pub address_type: String,"""
+after = """    #[serde(default, rename = "type")]
+    pub address_type: String,"""
+red = [
+    "application::contacts_sync::tests::test_an_address_with_no_label_asks_google_for_no_label_rather_than_an_empty_one",
 ]

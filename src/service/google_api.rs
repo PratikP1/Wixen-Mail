@@ -133,9 +133,17 @@ pub struct GoogleOrganization {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleAddress {
-    #[serde(default)]
+    /// The whole address on one line, the way Google shows it. Read always.
+    /// Sent only when there are no structured parts for Google to compose it
+    /// from: `addresses` is one of the fields a change replaces wholesale, so
+    /// an explicit empty value here is an instruction, not a silence, and
+    /// sending it on every request risked clearing an address Google holds
+    /// only as this line.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub formatted_value: String,
-    #[serde(default, rename = "type")]
+    /// The label, as Google writes its own: "home", "work". Left out when
+    /// nobody chose one, rather than sent as a guess.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
     pub address_type: String,
     #[serde(default)]
     pub street_address: String,
