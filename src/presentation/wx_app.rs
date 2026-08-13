@@ -10252,6 +10252,117 @@ mod tests {
         }
     }
 
+    /// Four messages, stored in an order none of the seven sorts gives back.
+    ///
+    /// Deliberately not in date, sender, subject or read order. A fixture laid
+    /// out in the order a test expects back cannot tell a sort that ran from a
+    /// sort that was deleted, because leaving the list alone is the right
+    /// answer for both.
+    fn four_messages_in_no_particular_order() -> Vec<MessageItem> {
+        let mut messages = Vec::new();
+        for (uid, subject, from, date, read) in [
+            (
+                1,
+                "Roof repair",
+                "Mabel Chen <mabel@example.com>",
+                "2026-03-02",
+                true,
+            ),
+            (
+                2,
+                "Allotment",
+                "Zubair Khan <zubair@example.com>",
+                "2026-01-09",
+                false,
+            ),
+            (
+                3,
+                "Water bill",
+                "Ada Lovelace <ada@example.com>",
+                "2026-05-21",
+                true,
+            ),
+            (
+                4,
+                "Bee swarm",
+                "Grace Hopper <grace@example.com>",
+                "2026-02-14",
+                false,
+            ),
+        ] {
+            messages.push(MessageItem {
+                uid,
+                subject: subject.to_string(),
+                from: from.to_string(),
+                date: date.to_string(),
+                read,
+                ..a_message()
+            });
+        }
+        messages
+    }
+
+    /// The subjects the list reads out, top to bottom.
+    fn subjects_of(messages: &[MessageItem]) -> Vec<&str> {
+        messages.iter().map(|m| m.subject.as_str()).collect()
+    }
+
+    #[test]
+    fn test_each_way_of_sorting_the_list_puts_it_in_that_order() {
+        // Seven orders somebody can pick from a menu or by clicking a column
+        // heading, and until now not one of them was asserted anywhere. For
+        // anybody working down a list by ear the order is the whole of how the
+        // list is read, and a heading that announces "sorted by sender" over a
+        // list that did not move is worse than one that does nothing.
+        for (order, expected) in [
+            (
+                MailSortOption::DateNewestFirst,
+                vec!["Water bill", "Roof repair", "Bee swarm", "Allotment"],
+            ),
+            (
+                MailSortOption::DateOldestFirst,
+                vec!["Allotment", "Bee swarm", "Roof repair", "Water bill"],
+            ),
+            (
+                MailSortOption::SenderAZ,
+                vec!["Water bill", "Bee swarm", "Roof repair", "Allotment"],
+            ),
+            (
+                MailSortOption::SenderZA,
+                vec!["Allotment", "Roof repair", "Bee swarm", "Water bill"],
+            ),
+            (
+                MailSortOption::SubjectAZ,
+                vec!["Allotment", "Bee swarm", "Roof repair", "Water bill"],
+            ),
+            (
+                MailSortOption::SubjectZA,
+                vec!["Water bill", "Roof repair", "Bee swarm", "Allotment"],
+            ),
+        ] {
+            let mut messages = four_messages_in_no_particular_order();
+            sort_messages(&mut messages, order);
+            assert_eq!(subjects_of(&messages), expected, "sorted by {order:?}");
+        }
+    }
+
+    #[test]
+    fn test_sorting_by_unread_brings_the_unread_ones_to_the_top() {
+        // Its own test because it is the one sort that groups rather than
+        // orders, and the only thing it promises is which group comes first.
+        let mut messages = four_messages_in_no_particular_order();
+
+        sort_messages(&mut messages, MailSortOption::UnreadFirst);
+
+        let read: Vec<bool> = messages.iter().map(|m| m.read).collect();
+        assert_eq!(
+            read,
+            vec![false, false, true, true],
+            "the ones still to be read are not at the top: {:?}",
+            subjects_of(&messages)
+        );
+    }
+
     /// Fixed rather than read from the machine, so these read the same
     /// wherever they run.
     fn aloud() -> crate::presentation::read_aloud::Reading {

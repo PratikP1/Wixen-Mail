@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 38 records have arrived since and have not been through it.
+# 40 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -104,6 +104,36 @@
 # than 24 as against the file of that day, and one more record has since been
 # added for the order the folder tree is read in, which is measured against a
 # database rather than read.
+#
+# ── Every sort in the program, asked whether anything guards it ─────────────
+#
+# Taken on 2026-08-13 by making each sort leave its collection in the order it
+# arrived in, one at a time, and running the library. A stable sort told every
+# pair is equal does exactly that, which is also the defect being hunted: a
+# test whose fixture is already in the order it expects back cannot tell that
+# apart from a sort that ran.
+#
+# 25 sorts in code that is not a test. 13 have something that goes red when
+# they stop sorting. 12 have nothing.
+#
+# The twelve nothing guards, so the next person does not have to find them
+# again: the agenda's own ordering in the calendar; the list of messages the
+# server no longer has; the note list; the days a repeat falls on; the task
+# list; the three that put the modules of the main window in their settled
+# order; two of the seven ways of sorting the mail list; the identifiers a
+# folder search hands back; and the spelling suggestions.
+#
+# Two of those twelve were closed the same day, which is why the count of
+# sorts and the count without a guard do not move together: the seven ways of
+# sorting the mail list now have two records of their own, further down. The
+# folder tree was closed the day before. The other ten are written down here
+# and not fixed, and each is a place where a fixture in the order it expects
+# back would prove nothing.
+#
+# One thing this run got wrong first and is worth not repeating. It read
+# cargo's "error: test failed" as a build that never compiled, so every sort
+# that really was guarded came back as unmeasurable, which is the opposite
+# answer. Ask whether the run printed a test result at all.
 
 # ── The two questions the contacts sync must not confuse ────────────────────
 #
@@ -4422,4 +4452,40 @@ red = [
     "data::message_cache::folders::tests::test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone",
     "data::message_cache::folders::tests::test_the_tree_lists_the_inbox_first_and_ordinary_folders_last",
     "data::message_cache::folders::tests::test_the_tree_reads_folders_in_the_order_the_folder_type_gives",
+]
+
+# ── The order somebody asked the message list to be in ──────────────────────
+#
+# Seven ways of sorting the mail list, reachable from a menu and from clicking
+# a column heading, and until now not one of them was asserted anywhere. For
+# anybody working down a list by ear the order is the whole of how the list is
+# read, and a heading that announces a new order over a list that did not move
+# is worse than one that does nothing at all.
+#
+# The break makes every one of the seven leave the list as it arrived, which is
+# what a stable sort does when told every pair is equal. It is written as a
+# catch-all so that no arm survives it.
+#
+# Measured by hand on 2026-08-13: before the two tests below existed the whole
+# library stayed green under this break. With them it reddens exactly these two
+# and nothing else. The fixture is stored in an order that is not date, sender,
+# subject or read order, so leaving the list alone is the wrong answer for
+# every one of the seven.
+
+[[guard]]
+name = "each way of sorting the message list really puts it in that order"
+file = "src/presentation/wx_app.rs"
+before = """        MailSortOption::DateNewestFirst => messages.sort_by(|a, b| b.date.cmp(&a.date)),"""
+after = """        MailSortOption::DateNewestFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
+red = [
+    "presentation::wx_app::tests::test_each_way_of_sorting_the_list_puts_it_in_that_order",
+]
+
+[[guard]]
+name = "sorting by unread brings the unread ones to the top"
+file = "src/presentation/wx_app.rs"
+before = """        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),"""
+after = """        MailSortOption::UnreadFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
+red = [
+    "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
 ]
