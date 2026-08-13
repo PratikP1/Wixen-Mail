@@ -2498,6 +2498,27 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
 
 // ── Conversion: Google ↔ Local ──────────────────────────────────────────────
 
+/// Google's values, with the one Google calls the main one moved to the
+/// front.
+///
+/// This program has one rule for which of a contact's several addresses or
+/// emails is the main one, everywhere except here: the first one in the
+/// list. Google decides it differently, with a flag on the value itself, and
+/// this program has nowhere else to honour that flag; a change here can
+/// never write it back, since Google refuses a request that names
+/// `metadata`. Rather than add a second "which one is main" rule beside the
+/// one everything downstream already uses, Google's answer is folded into
+/// the first by ordering: the value Google calls primary is moved to the
+/// front, so the reader downstream, the contact panel and the two writers
+/// never have to know there were two rules to reconcile.
+///
+/// A stable partition: values that are not the main one keep the order
+/// Google gave them in.
+fn with_the_main_one_first<T>(values: &[T], is_main: impl Fn(&T) -> bool) -> Vec<&T> {
+    let (main, rest): (Vec<&T>, Vec<&T>) = values.iter().partition(|value| is_main(value));
+    main.into_iter().chain(rest).collect()
+}
+
 fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactEntry {
     // The name Google worked out, and the whole name on one line when there is
     // no worked-out one. Both, because the second is the field this program
@@ -2516,8 +2537,12 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             }
         })
         .unwrap_or_default();
-    let primary_email = person
-        .email_addresses
+    // Google's own answer to which email address is the main one, honoured
+    // by ordering rather than by a second rule: see `with_the_main_one_first`.
+    let emails_in_order = with_the_main_one_first(&person.email_addresses, |e| {
+        e.metadata.as_ref().is_some_and(|m| m.primary)
+    });
+    let primary_email = emails_in_order
         .first()
         .map(|e| e.value.clone())
         .unwrap_or_default();
@@ -2536,9 +2561,13 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     // Not folded over a stored contact's list on a sync, for the same reason
     // the Microsoft reader does not: that list is one list for every address
     // book, and each book can only speak for its own addresses.
-    let addresses: Vec<AddressEntry> = person
-        .addresses
-        .iter()
+    // Google's own answer to which address is the main one, honoured the same
+    // way as the email address above.
+    let addresses_in_order = with_the_main_one_first(&person.addresses, |a| {
+        a.metadata.as_ref().is_some_and(|m| m.primary)
+    });
+    let addresses: Vec<AddressEntry> = addresses_in_order
+        .into_iter()
         .map(|address| {
             let mut entry = AddressEntry {
                 label: label_for_provider_type(&address.address_type),
@@ -2583,10 +2612,11 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     // this list, so writing it only for a contact with two threw away the word
     // "Work" from everybody who has one number and one address, and the merge
     // below then copied that nothing back over a label typed here.
-    let emails_json = if !person.email_addresses.is_empty() {
-        let entries: Vec<EmailEntry> = person
-            .email_addresses
-            .iter()
+    let emails_json = if emails_in_order.is_empty() {
+        None
+    } else {
+        let entries: Vec<EmailEntry> = emails_in_order
+            .into_iter()
             .map(|e| EmailEntry {
                 label: label_for_provider_type(&e.email_type),
                 address: e.value.clone(),
@@ -2596,8 +2626,6 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
             })
             .collect();
         serde_json::to_string(&entries).ok()
-    } else {
-        None
     };
 
     // Every number, even when there is one. Same rule and same reason as the
@@ -2762,6 +2790,8 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
             region: entry.state,
             postal_code: entry.zip,
             country: entry.country,
+            // The server's to set; never this program's to claim.
+            metadata: None,
         })
         .collect();
 
@@ -3304,6 +3334,78 @@ mod tests {
         assert!(
             sent["addresses"][0].get("formattedValue").is_none(),
             "this program never asks Google to compose from a line it already gave: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one() {
+        // Built by deserializing a JSON literal rather than a struct literal,
+        // the way `test_deserialize_person_with_metadata_deleted` in
+        // google_api.rs does, because a struct literal compiles today and
+        // would stay compiling even if `metadata` were dropped from
+        // `GoogleAddress` again: only a real deserialize can go red for that.
+        //
+        // This program decides "which one is the main one" by list order
+        // everywhere: the contact panel, the editor, and the Microsoft
+        // writer all take the first address. Google decides it with a flag
+        // on the value instead, and it put the second address in the list
+        // here, not the first.
+        let answered = r#"{
+            "resourceName": "people/c10",
+            "names": [{"displayName": "Devon Blake"}],
+            "addresses": [
+                {"formattedValue": "1 First Row, Leeds", "type": "home"},
+                {"formattedValue": "2 Second Row, Leeds", "type": "work",
+                 "metadata": {"primary": true}}
+            ]
+        }"#;
+        let from_google: GooglePerson =
+            serde_json::from_str(answered).expect("Google's answer to be readable");
+
+        let here = google_person_to_contact(&from_google, AN_ACCOUNT);
+        let kept: Vec<AddressEntry> = stored_list(here.addresses_json.as_ref());
+        assert_eq!(
+            kept.first().map(AddressEntry::on_one_line),
+            Some("2 Second Row, Leeds".to_string()),
+            "the address Google calls primary was not put first"
+        );
+        assert_eq!(
+            here.address.as_deref(),
+            Some("2 Second Row, Leeds"),
+            "the contact panel would read out the wrong address"
+        );
+
+        let back = contact_to_google_person(&here);
+        assert_eq!(
+            back.addresses.first().map(|a| a.street_address.as_str()),
+            Some("2 Second Row, Leeds"),
+            "a change to any other field would have sent the two addresses back in the wrong order"
+        );
+    }
+
+    #[test]
+    fn test_the_email_google_calls_the_main_one_is_the_one_this_program_shows_first() {
+        let answered = r#"{
+            "resourceName": "people/c11",
+            "names": [{"displayName": "Devon Blake"}],
+            "emailAddresses": [
+                {"value": "devon@old.example", "type": "home"},
+                {"value": "devon@new.example", "type": "work",
+                 "metadata": {"primary": true}}
+            ]
+        }"#;
+        let from_google: GooglePerson =
+            serde_json::from_str(answered).expect("Google's answer to be readable");
+
+        let here = google_person_to_contact(&from_google, AN_ACCOUNT);
+        assert_eq!(
+            here.email, "devon@new.example",
+            "the address Google calls primary was not shown first"
+        );
+        let kept: Vec<EmailEntry> = stored_list(here.emails_json.as_ref());
+        assert_eq!(
+            kept.first().map(|e| e.address.as_str()),
+            Some("devon@new.example")
         );
     }
 

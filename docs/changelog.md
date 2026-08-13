@@ -127,6 +127,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   for that address, in which case the contact's own name is still sent so an
   address typed here reaches Outlook with some name on it.
 
+- **Fixed: which of a Google contact's several addresses or email addresses
+  showed as the main one was decided by the order Google happened to list
+  them in, not by which one Google actually calls primary.** This program
+  always shows a contact's first address or email as the main one, in the
+  contact list, in the editor, and when a change is sent to Outlook. Google
+  says which one it considers primary through a flag of its own, and that
+  flag was read and thrown away. The one Google calls primary is now put
+  first, so this program's own "first is main" rule agrees with Google's
+  answer instead of contradicting it whenever Google's list happened to put
+  a different one first. This program still cannot write that flag back:
+  Google refuses a change that names it, so which address or email Google
+  treats as primary can only be read here, never set.
+
 - **Fixed: ticking off a Google task could put back a task deleted on another
   device.** Every change sent to Google Tasks carried a claim that the task had
   not been deleted, whether or not that is what your copy meant. Changes go up

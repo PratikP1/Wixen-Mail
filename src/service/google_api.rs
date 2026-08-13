@@ -155,6 +155,10 @@ pub struct GoogleAddress {
     pub postal_code: String,
     #[serde(default)]
     pub country: String,
+    /// Which of a contact's addresses Google treats as the main one. The
+    /// server's to set, the same as on [`GoogleEmail::metadata`].
+    #[serde(default, skip_serializing)]
+    pub metadata: Option<GoogleFieldMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

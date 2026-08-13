@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 79 records have arrived since and have not been through it.
+# 81 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5265,4 +5265,39 @@ after = """        fresh
     };"""
 red = [
     "presentation::contact_convert::tests::test_an_edit_keeps_the_name_outlook_keeps_beside_an_address",
+]
+
+# ── The address and the email Google calls primary come first here too ──────
+#
+# This program decides which of a contact's several addresses or emails is
+# the main one by list order everywhere: the contact panel, the editor, and
+# the Microsoft writer all take the first. Google decides it with a flag on
+# the value itself instead, and until now this program took Google's list in
+# whatever order Google sent it, so which address or email showed as the
+# contact's main one was decided by Google's list order rather than by what
+# Google actually calls primary. Two records: the address and the email are
+# separate calls to `with_the_main_one_first`.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "the address Google calls primary is put first here, not read in whatever order Google listed it"
+file = "src/application/contacts_sync.rs"
+before = """    let addresses_in_order = with_the_main_one_first(&person.addresses, |a| {
+        a.metadata.as_ref().is_some_and(|m| m.primary)
+    });"""
+after = """    let addresses_in_order: Vec<&GoogleAddress> = person.addresses.iter().collect();"""
+red = [
+    "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
+]
+
+[[guard]]
+name = "the email Google calls primary is shown first here, not read in whatever order Google listed it"
+file = "src/application/contacts_sync.rs"
+before = """    let emails_in_order = with_the_main_one_first(&person.email_addresses, |e| {
+        e.metadata.as_ref().is_some_and(|m| m.primary)
+    });"""
+after = """    let emails_in_order: Vec<&GoogleEmail> = person.email_addresses.iter().collect();"""
+red = [
+    "application::contacts_sync::tests::test_the_email_google_calls_the_main_one_is_the_one_this_program_shows_first",
 ]
