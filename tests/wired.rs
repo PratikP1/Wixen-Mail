@@ -502,234 +502,42 @@ fn body_of(source: &str, signature: &str) -> String {
     rest[..ends].to_string()
 }
 
-/// One match arm's block, from the pattern that opens it to the brace that
-/// closes it.
+/// The window asks about a delete rather than deciding one for itself.
 ///
-/// Counting braces rather than looking for the next closing one. `body_of`
-/// above stops at a brace in the first column, and the presentation layer holds
-/// two more answers to "the text of one routine" with two more stop rules. A
-/// fourth heuristic invented here is how a family like that drifts apart, so
-/// this one counts and is proved on made-up input below.
+/// Whether a delete is sent at all is now decided and carried out in one place
+/// away from this window, where a test can hold a server and find that it was
+/// told nothing. What is left here is the wiring: this window has to ask that
+/// code, and it must not word either refusal itself, because a sentence written
+/// twice is two answers to one question and they drift.
 ///
-/// It panics two ways and both of them are the point. A pattern that has gone
-/// means the guard no longer knows where to look. A pattern followed by
-/// anything but a block means the arm now hands a value back where it used to
-/// stop, which is the edit this guard exists to catch.
-///
-/// It does not understand Rust. A brace inside a string or a comment in the arm
-/// would be counted, and there is none in the arms it reads.
-fn arm_of(source: &str, pattern: &str) -> String {
-    let at = source.find(pattern).unwrap_or_else(|| {
-        panic!("{pattern} is no longer in this file, so this guard is measuring nothing")
-    });
-    let rest = &source[at + pattern.len()..];
-    assert!(
-        rest.trim_start().starts_with("=> {"),
-        "{pattern} no longer opens a block, so the arm hands a value back instead \
-         of stopping and the delete is sent after the refusal has been said"
-    );
-    let opens = rest.find('{').expect("the block just asserted to be there");
-    let mut depth = 0usize;
-    for (offset, letter) in rest[opens..].char_indices() {
-        match letter {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return rest[opens..=opens + offset].to_string();
-                }
-            }
-            _ => {}
-        }
-    }
-    panic!("{pattern} opens a block that is never closed, so the reading is broken")
-}
-
-/// What a refusal arm gets wrong, read off its own text.
-///
-/// Four rules. Saying the refusal is one of them and it was the only one this
-/// guard used to ask about, so an arm that said why it was refusing and then
-/// went on and deleted the message read as sound. Stopping is the rule that
-/// keeps the only copy of that message on the server, and saying it before
-/// stopping is what keeps the refusal reachable.
-fn what_a_refusal_arm_gets_wrong(arm: &str, names: &str) -> Vec<String> {
-    let mut wrong = Vec::new();
-    let said = arm.find("say(UIUpdate::CommandRefused(");
-    let stopped = arm.find("return;");
-    if said.is_none() {
-        wrong.push(
-            "the refusal reaches the status bar and nowhere else, which from the \
-             keyboard is indistinguishable from a key that was never wired up"
-                .to_string(),
-        );
-    }
-    if !arm.contains(names) {
-        wrong.push(format!(
-            "the arm no longer names {names}, so nothing tells the person why \
-             their message was left alone"
-        ));
-    }
-    if stopped.is_none() {
-        wrong.push(
-            "the arm says why it did nothing and then deletes the message anyway, \
-             which takes the only copy off the server"
-                .to_string(),
-        );
-    }
-    if let (Some(said), Some(stopped)) = (said, stopped)
-        && stopped < said
-    {
-        wrong.push(
-            "the arm stops before it says anything, so the refusal is unreachable \
-             and the delete is refused in silence"
-                .to_string(),
-        );
-    }
-    wrong
-}
-
-/// Proving the measurement: the refusal reading can tell a sound arm from each
-/// of the four ways one has been broken.
-///
-/// Made-up text only, and it never reads the tree. Three records in
-/// `guards/guards.toml` break the main window against this suite, so a proving
-/// test that read that file would go red under every one of them and three red
-/// lists would have to grow to keep the run clean.
-#[test]
-fn test_the_refusal_arm_check_can_tell_the_two_apart() {
-    let sound = "\
-DeletedGoesTo::NoTrashFolderFound => {
-    say(UIUpdate::CommandRefused(
-        NO_TRASH_FOLDER_FOUND.to_string(),
-    ));
-    return;
-}
-";
-    let arm = arm_of(sound, "DeletedGoesTo::NoTrashFolderFound");
-    assert!(
-        what_a_refusal_arm_gets_wrong(&arm, "NO_TRASH_FOLDER_FOUND").is_empty(),
-        "a sound arm was reported as broken"
-    );
-
-    for (broken, expected) in [
-        (
-            arm.replace("    return;\n", "    None\n"),
-            "deletes the message anyway",
-        ),
-        (
-            arm.replace("say(UIUpdate::CommandRefused(", "tracing::warn!("),
-            "indistinguishable from a key",
-        ),
-        (
-            arm.replace("NO_TRASH_FOLDER_FOUND", "NO_FOLDERS_KNOWN_YET"),
-            "no longer names",
-        ),
-        (
-            arm.replace(
-                "    say(UIUpdate::CommandRefused(",
-                "    return;\n    say(UIUpdate::CommandRefused(",
-            ),
-            "refused in silence",
-        ),
-    ] {
-        let wrong = what_a_refusal_arm_gets_wrong(&broken, "NO_TRASH_FOLDER_FOUND");
-        assert!(
-            wrong.iter().any(|said| said.contains(expected)),
-            "a break this reading exists for was not reported: {wrong:?}"
-        );
-    }
-
-    // And the reading itself, which has to fail loudly rather than measure an
-    // arm that is no longer a block.
-    let yields_a_value = "DeletedGoesTo::NoTrashFolderFound => None,";
-    assert!(
-        std::panic::catch_unwind(|| arm_of(yields_a_value, "DeletedGoesTo::NoTrashFolderFound"))
-            .is_err(),
-        "an arm that hands a value back was read as though it still had a body"
-    );
-}
-
-/// Nothing asks a server to delete a message before asking where it should go.
-///
-/// The order is the whole of the fix. On an account whose trash this program
-/// does not recognise, the ordinary Delete used to flag the message and remove
-/// it from the server with no copy kept anywhere, and announce that as a
-/// deletion. Two of the four answers to "where does this go" are refusals, and
-/// a refusal that has already opened a session is a refusal decided too late.
-///
-/// Read from the source because reaching this handler needs a window, an
-/// account with stored credentials and a mail server.
-///
-/// What this cannot see: whether the answer is acted on. It compares where two
-/// calls sit and nothing else, so a handler that asks first, throws the answer
-/// away and connects regardless keeps this green. The arms are read for that
-/// separately below, which is the half this one used to be trusted for.
-#[test]
-fn test_nothing_asks_a_server_to_delete_before_asking_where_it_goes() {
-    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let handler = body_of(&app, "fn spawn_server_change(");
-
-    let decided = handler
-        .find("where_a_deleted_message_goes")
-        .expect("the delete handler never asks where a deleted message goes");
-    let connected = handler
-        .find("connect_imap")
-        .expect("the delete handler never connects, so this guard measures nothing");
-
-    assert!(
-        decided < connected,
-        "the server is connected to before anything has asked where the message \
-         should go, so an account with no recognised trash gets as far as the wire"
-    );
-}
-
-/// A delete with no recognised trash is refused out loud, not sent anyway.
-///
-/// The two refusals are sentences kept beside the decision so they can be
-/// tested. What no test there can say is whether the handler says them: an arm
-/// that falls through to "there is nowhere to move it to" reads as a tidy
-/// simplification and puts the destructive delete straight back.
-///
-/// What this cannot see, and nothing here can: whether the handler is ever
-/// reached at all. It reads the text of two arms and says they say a refusal
-/// and stop. Delete could be unbound, the window could send some other command,
-/// the whole branch could become unreachable, and this stays green. Reaching it
-/// for real needs a window, an account with stored credentials and a mail
-/// server.
+/// What this cannot see: whether the handler is ever reached. Delete could be
+/// unbound, the window could send some other command, the whole branch could
+/// become unreachable, and this stays green. The behaviour is measured against
+/// a server in `application::deleting_at_the_server` and in
+/// `application::mail_controller::against_a_server_that_answers`; this only
+/// says the window asks that code rather than deciding for itself.
 #[test]
 fn test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let handler = body_of(&app, "fn spawn_server_change(");
 
-    for refusal in ["NO_TRASH_FOLDER_FOUND", "NO_FOLDERS_KNOWN_YET"] {
-        assert!(
-            handler.contains(refusal),
-            "the delete handler no longer says why it did nothing, so a message \
-             whose account has no recognised trash is removed from the server \
-             again and announced as deleted"
-        );
-    }
+    assert!(
+        handler.contains("delete_a_message"),
+        "the delete handler works out for itself whether to send a delete, so \
+         nothing that runs can say whether a message on an account with no \
+         recognised trash reaches the server"
+    );
     assert!(
         handler.contains("UIUpdate::CommandRefused"),
         "the refusal goes to the status bar and nowhere else, which from the \
          keyboard is indistinguishable from a key that was never wired up"
     );
-
-    // Saying it is half of it. The arm has to stop, and asking only whether the
-    // sentence is written left the other half unguarded: both arms were changed
-    // to say the refusal and carry on deleting, and this test stayed green.
-    for (pattern, names) in [
-        ("DeletedGoesTo::NoTrashFolderFound", "NO_TRASH_FOLDER_FOUND"),
-        ("DeletedGoesTo::NoFoldersKnownYet", "NO_FOLDERS_KNOWN_YET"),
-    ] {
-        let arm = arm_of(&handler, pattern);
+    for refusal in ["NO_TRASH_FOLDER_FOUND", "NO_FOLDERS_KNOWN_YET"] {
         assert!(
-            arm.len() > 80,
-            "only {} characters of {pattern} were read, so the reading is broken",
-            arm.len()
+            !handler.contains(refusal),
+            "the window words {refusal} itself again, so the sentence somebody \
+             hears and the sentence beside the decision can drift apart"
         );
-        let wrong = what_a_refusal_arm_gets_wrong(&arm, names);
-        assert!(wrong.is_empty(), "{pattern}: {}", wrong.join("\n  "));
     }
 }
 

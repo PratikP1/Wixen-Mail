@@ -1258,6 +1258,140 @@ mod against_a_server_that_answers {
         assert!(copied < flagged, "{transcript:?}");
     }
 
+    /// The delete step, run through the controller that really speaks IMAP.
+    ///
+    /// The production adapter signs in for itself, and a real sign-in cannot be
+    /// used here: whether an account may change anything at its server is read
+    /// at sign-in from the settings of whoever is running the suite, and the
+    /// command line half of that answer is set once per process. An assertion
+    /// about a write succeeding through one would pass on one machine and fail
+    /// on another. So the session is opened by the test, allowed in its own
+    /// words, and this carries the one step.
+    struct TheServerUnderTest<'a> {
+        controller: &'a MailController,
+    }
+
+    impl crate::application::deleting_at_the_server::DeletesAMessage for TheServerUnderTest<'_> {
+        async fn delete_it(
+            &self,
+            folder: &str,
+            uid: u32,
+            trash: Option<&str>,
+        ) -> std::result::Result<Deletion, String> {
+            self.controller
+                .delete_message(folder, uid, trash)
+                .await
+                .map_err(|e| e.to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_with_no_recognised_trash_reaches_no_server() {
+        // The message loss, measured where it happens rather than read out of
+        // a file. A server naming its trash in a language this program does not
+        // recognise is enough to get here, and every command below would take
+        // the only copy of somebody's message off it.
+        use crate::application::deleting_at_the_server::{Deleted, delete_a_message};
+        use crate::application::destinations::Deleting;
+        use crate::common::types::FolderType;
+
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let outcome = delete_a_message(
+            &TheServerUnderTest {
+                controller: &controller,
+            },
+            [
+                ("INBOX", FolderType::Inbox),
+                ("Archive", FolderType::Archive),
+            ],
+            "INBOX",
+            7,
+            Deleting::ToTrash,
+        )
+        .await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            matches!(outcome, Deleted::NothingWasSent(_)),
+            "{outcome:?}: {transcript:?}"
+        );
+        for command in ["UID MOVE", "UID COPY", "UID STORE", "EXPUNGE"] {
+            assert!(
+                !server.was_told(command).await,
+                "a message was deleted on an account with no trash we recognise: {transcript:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_on_an_account_whose_folders_are_not_known_yet_reaches_no_server() {
+        // A new account that has never checked for mail knows nothing about its
+        // folders, and reading that as "it has no trash" is the worst possible
+        // reading of not knowing yet.
+        use crate::application::deleting_at_the_server::{Deleted, delete_a_message};
+        use crate::application::destinations::Deleting;
+        use crate::common::types::FolderType;
+
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let outcome = delete_a_message(
+            &TheServerUnderTest {
+                controller: &controller,
+            },
+            std::iter::empty::<(&str, FolderType)>(),
+            "INBOX",
+            7,
+            Deleting::ToTrash,
+        )
+        .await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            matches!(outcome, Deleted::NothingWasSent(_)),
+            "{outcome:?}: {transcript:?}"
+        );
+        for command in ["UID MOVE", "UID COPY", "UID STORE", "EXPUNGE"] {
+            assert!(
+                !server.was_told(command).await,
+                "a message was deleted before this account had read its folders: {transcript:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_delete_with_a_trash_folder_really_moves_the_message_there() {
+        // Not optional. "Nothing reached the server" reads the same from
+        // outside whether the refusal held or the harness never reached a
+        // server at all, and this is what tells those two apart.
+        use crate::application::deleting_at_the_server::{Deleted, delete_a_message};
+        use crate::application::destinations::Deleting;
+        use crate::common::types::FolderType;
+
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let controller = allowed_on(&server).await;
+
+        let outcome = delete_a_message(
+            &TheServerUnderTest {
+                controller: &controller,
+            },
+            [("INBOX", FolderType::Inbox), ("Trash", FolderType::Trash)],
+            "INBOX",
+            7,
+            Deleting::ToTrash,
+        )
+        .await;
+
+        let transcript = server.transcript().await;
+        assert_eq!(outcome, Deleted::TheServerDidThis(Deletion::MovedToTrash));
+        assert!(
+            server.when_told("UID MOVE 7 \"Trash\"").await.is_some(),
+            "the message never reached the trash: {transcript:?}"
+        );
+    }
+
     #[tokio::test]
     async fn test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told() {
         // No folder is opened on purpose. The caller of this is usually in the

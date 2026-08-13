@@ -8363,54 +8363,59 @@ fn spawn_server_change(
             }
         };
 
-        // Where deleted mail goes for this account, worked out before anything
-        // is connected to. Two of the four answers are refusals, and a refusal
-        // that has already opened a session is a session opened for nothing.
+        // Deleting is answered here and goes no further. Where a deleted
+        // message goes is worked out before anything is dialled, two of the
+        // four answers are refusals, and a refusal that has already opened a
+        // session is a session opened for nothing.
         //
-        // Only asked for a delete. Flagging and marking read move nothing, so
-        // an account whose trash is not recognised can still be flagged.
-        let trash = match &change {
-            ServerChange::Deleted(asked) => {
-                use crate::application::destinations::{
-                    DeletedGoesTo, where_a_deleted_message_goes,
-                };
+        // The deciding and the sending sit together in one place away from this
+        // window, so that a test can hold a server, ask it what it was told and
+        // find that it was told nothing. While they lived here as two early
+        // returns, the only thing watching them read this file as text, and
+        // text that still says the refusal is no evidence the arm stopped.
+        //
+        // Flagging and marking read move nothing, so an account whose trash is
+        // not recognised can still be flagged, and those carry on below.
+        if let ServerChange::Deleted(asked) = &change {
+            use crate::application::deleting_at_the_server::{
+                Deleted, TheAccountsServer, delete_a_message,
+            };
 
-                let folders = cache
-                    .get_folders_for_account(&account.id)
-                    .unwrap_or_default();
-                let goes_to = where_a_deleted_message_goes(
-                    folders.iter().map(|folder| {
-                        (
-                            folder.path.as_str(),
-                            crate::common::types::FolderType::from_stored(&folder.folder_type),
-                        )
-                    }),
-                    &folder_path,
-                    *asked,
-                );
-                match goes_to {
-                    DeletedGoesTo::TheTrash(path) => Some(path.to_string()),
-                    DeletedGoesTo::OffTheServer => None,
-                    // Nothing is sent. Flagging and removing a message whose
-                    // trash this program does not recognise destroys the only
-                    // copy of it, and it used to be announced as a deletion,
-                    // which it was.
-                    DeletedGoesTo::NoTrashFolderFound => {
-                        say(UIUpdate::CommandRefused(
-                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
-                        ));
-                        return;
+            let folders = cache
+                .get_folders_for_account(&account.id)
+                .unwrap_or_default();
+            let outcome = handle.block_on(delete_a_message(
+                &TheAccountsServer { account: &account },
+                folders.iter().map(|folder| {
+                    (
+                        folder.path.as_str(),
+                        crate::common::types::FolderType::from_stored(&folder.folder_type),
+                    )
+                }),
+                &folder_path,
+                uid,
+                *asked,
+            ));
+            match outcome {
+                Deleted::NothingWasSent(said) => say(UIUpdate::CommandRefused(said.to_string())),
+                Deleted::TheServerWouldNot(reason) => refuse(reason),
+                // What happens to the row and what is said are one decision,
+                // because they have to agree. Announcing "deleted" over a
+                // message that moved to the trash, or one still sitting in the
+                // folder flagged, and taking the row out for a message the
+                // server never touched, are the same mistake seen from two
+                // sides.
+                Deleted::TheServerDidThis(deletion) => {
+                    let next =
+                        crate::application::server_delete::after_a_delete(&deletion, &subject);
+                    if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
+                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
                     }
-                    DeletedGoesTo::NoFoldersKnownYet => {
-                        say(UIUpdate::CommandRefused(
-                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
-                        ));
-                        return;
-                    }
+                    say(UIUpdate::StatusUpdated(next.said));
                 }
             }
-            _ => None,
-        };
+            return;
+        }
 
         let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
             Ok(auth) => auth,
@@ -8434,45 +8439,30 @@ fn spawn_server_change(
         }
 
         let outcome = match &change {
-            ServerChange::Read(read) => handle
-                .block_on(controller.set_flag(
-                    &folder_path,
-                    uid,
-                    crate::service::protocols::imap::flag::SEEN,
-                    *read,
-                ))
-                .map(|()| None),
-            ServerChange::Flagged(flagged) => handle
-                .block_on(controller.set_starred(&folder_path, uid, *flagged))
-                .map(|()| None),
-            ServerChange::Deleted(_) => handle
-                .block_on(controller.delete_message(&folder_path, uid, trash.as_deref()))
-                .map(Some),
-            ServerChange::Labelled { keyword, on, .. } => handle
-                .block_on(controller.set_flag(&folder_path, uid, keyword, *on))
-                .map(|()| None),
+            ServerChange::Read(read) => handle.block_on(controller.set_flag(
+                &folder_path,
+                uid,
+                crate::service::protocols::imap::flag::SEEN,
+                *read,
+            )),
+            ServerChange::Flagged(flagged) => {
+                handle.block_on(controller.set_starred(&folder_path, uid, *flagged))
+            }
+            ServerChange::Labelled { keyword, on, .. } => {
+                handle.block_on(controller.set_flag(&folder_path, uid, keyword, *on))
+            }
+            // Answered above, before this connection was opened. Written as a
+            // refusal rather than a success so that a delete which somehow
+            // reached this far is never announced as one: nothing has been sent
+            // here, and "nothing changed" is the only true thing to say.
+            ServerChange::Deleted(_) => Err(crate::common::Error::Other(
+                "nothing was sent to the server".to_string(),
+            )),
         };
         let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
-            Ok(deletion) => {
-                if let Some(deletion) = deletion {
-                    // What happens to the row and what is said are one
-                    // decision, because they have to agree. Announcing
-                    // "deleted" over a message that moved to the trash, or one
-                    // still sitting in the folder flagged, and taking the row
-                    // out for a message the server never touched, are the same
-                    // mistake seen from two sides.
-                    let next =
-                        crate::application::server_delete::after_a_delete(&deletion, &subject);
-                    if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
-                        say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                    }
-                    say(UIUpdate::StatusUpdated(next.said));
-                    return;
-                }
-                say(UIUpdate::StatusUpdated(change.done(&subject)));
-            }
+            Ok(()) => say(UIUpdate::StatusUpdated(change.done(&subject))),
             // A failure now means nothing on the server changed, so the one
             // sentence for that covers a delete as well. There used to be a
             // second one here saying it differently.

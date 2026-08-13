@@ -89,6 +89,21 @@
 # 18 of the 192 were measured with the runner as part of that sweep. The rest
 # were not: a full run is one build and one suite each and takes hours, and it
 # needs a quiet machine.
+#
+# ── What changed on 2026-08-12, after that sweep ────────────────────────────
+#
+# The first of the three above is no longer a source read. Deciding whether to
+# send a delete and sending it were moved into one function, so the three
+# records about the two refusals are now defended by tests that hold a server
+# and ask what it was told. All three were measured again with the runner and
+# each reddens two such tests. That leaves two of the three, the two about the
+# calendar, still standing on a reading of a file, and the records for both now
+# say in their own words what stays green while the behaviour goes.
+#
+# The count of records defended only by a source read is therefore 21 rather
+# than 24 as against the file of that day, and one more record has since been
+# added for the order the folder tree is read in, which is measured against a
+# database rather than read.
 
 # ── The two questions the contacts sync must not confuse ────────────────────
 #
@@ -2928,13 +2943,27 @@ red = [
 #
 # The four breaks below are the two halves of the fix and the two narrower
 # edits that used to go unseen. The halves are the decision that names the
-# refusal and the handler that says it instead of sending the delete. The
-# narrower edits leave the refusal being said and take away the stop after it,
-# which reads as tidying and is the message loss itself: the arm's value
-# becomes the same "nowhere to move it to" the delete-off-the-server answer
-# gives, so the sentence is spoken and the only copy is removed anyway. The
-# guard could not see that shape, because it asked whether the refusal was
-# written and never whether the arm stopped.
+# refusal and the step that refuses instead of sending the delete. The narrower
+# edits leave the refusal being said and take away the stop after it, which
+# reads as tidying and is the message loss itself: the arm's value becomes the
+# same "nowhere to move it to" the delete-off-the-server answer gives, so the
+# sentence is spoken and the only copy is removed anyway.
+#
+# These three records are no longer defended by a reading of a file. Deciding
+# whether to send a delete and sending it now sit in one function, so the tests
+# named below hold a server, run the delete against it and ask what it was
+# told. On the two refusals the answer has to be nothing at all.
+#
+# Measured by hand on 2026-08-12, each break applied on its own and the whole
+# library run. The second and third records are the say-it-and-carry-on edit,
+# and the transcript under the first of them is the loss itself: SELECT INBOX,
+# UID STORE 7 +FLAGS (\Deleted), UID EXPUNGE 7. Every one of the three reddens
+# two tests, one over a server that records what it was told and one over a
+# server that really speaks IMAP.
+#
+# What these records still cannot see: whether the window ever reaches this
+# code. That is read as text in tests/wired.rs, and that reading says so in its
+# own words.
 
 [[guard]]
 name = "not knowing where the trash is does not read as having nowhere to put it"
@@ -2950,50 +2979,37 @@ red = [
 ]
 
 [[guard]]
-name = "the delete handler says why it did nothing rather than deleting anyway"
-file = "src/presentation/wx_app.rs"
-suite = "wired"
-before = """                    DeletedGoesTo::NoTrashFolderFound => {
-                        say(UIUpdate::CommandRefused(
-                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
-                        ));
-                        return;
-                    }"""
-after = """                    DeletedGoesTo::NoTrashFolderFound => None,"""
+name = "the delete step says why it did nothing rather than deleting anyway"
+file = "src/application/deleting_at_the_server.rs"
+before = """        DeletedGoesTo::NoTrashFolderFound => {
+            return Deleted::NothingWasSent(NO_TRASH_FOLDER_FOUND);
+        }"""
+after = """        DeletedGoesTo::NoTrashFolderFound => None,"""
 red = [
-    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+    "application::deleting_at_the_server::tests::test_a_delete_on_an_account_with_no_recognised_trash_asks_no_server_anything",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
 ]
 
 [[guard]]
 name = "the arm that found no trash stops rather than carrying on"
-file = "src/presentation/wx_app.rs"
-suite = "wired"
-before = """                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
-                        ));
-                        return;
-                    }"""
-after = """                            crate::application::destinations::NO_TRASH_FOLDER_FOUND.to_string(),
-                        ));
-                        None
-                    }"""
+file = "src/application/deleting_at_the_server.rs"
+before = """            return Deleted::NothingWasSent(NO_TRASH_FOLDER_FOUND);"""
+after = """            let _ = Deleted::NothingWasSent(NO_TRASH_FOLDER_FOUND);
+            None"""
 red = [
-    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+    "application::deleting_at_the_server::tests::test_a_delete_on_an_account_with_no_recognised_trash_asks_no_server_anything",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
 ]
 
 [[guard]]
 name = "the arm that knows no folders yet stops rather than carrying on"
-file = "src/presentation/wx_app.rs"
-suite = "wired"
-before = """                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
-                        ));
-                        return;
-                    }"""
-after = """                            crate::application::destinations::NO_FOLDERS_KNOWN_YET.to_string(),
-                        ));
-                        None
-                    }"""
+file = "src/application/deleting_at_the_server.rs"
+before = """            return Deleted::NothingWasSent(NO_FOLDERS_KNOWN_YET);"""
+after = """            let _ = Deleted::NothingWasSent(NO_FOLDERS_KNOWN_YET);
+            None"""
 red = [
-    "test_a_delete_with_no_recognised_trash_is_refused_rather_than_sent",
+    "application::deleting_at_the_server::tests::test_a_delete_on_an_account_whose_folders_are_not_known_yet_asks_no_server_anything",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_on_an_account_whose_folders_are_not_known_yet_reaches_no_server",
 ]
 
 # ── A half-finished move announced as one that never happened ───────────────
