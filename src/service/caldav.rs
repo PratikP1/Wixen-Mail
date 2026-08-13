@@ -298,7 +298,7 @@ impl CalDavClient {
 
         let response = self
             .http
-            .reading_with(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), base_url)
+            .reading_with(crate::service::outward::AskWith::Propfind, base_url)?
             .header("Depth", "1")
             .header("Content-Type", "application/xml; charset=utf-8")
             .basic_auth(username, Some(password))
@@ -366,10 +366,7 @@ impl CalDavClient {
 
         let response = self
             .http
-            .reading_with(
-                reqwest::Method::from_bytes(b"REPORT").unwrap(),
-                calendar_url,
-            )
+            .reading_with(crate::service::outward::AskWith::Report, calendar_url)?
             .header("Depth", "1")
             .header("Content-Type", "application/xml; charset=utf-8")
             .basic_auth(username, Some(password))

@@ -44,6 +44,44 @@ impl Default for Outward {
     }
 }
 
+/// A read whose verb is not `GET`.
+///
+/// WebDAV asks with `PROPFIND` and `REPORT`. Both only ever ask a calendar
+/// server what it has. A closed set of verbs rather than a bare [`Method`],
+/// because [`Outward::reading_with`] used to take any method with nothing
+/// stopping a caller handing it one that changes something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskWith {
+    Propfind,
+    Report,
+}
+
+impl AskWith {
+    /// Every variant, for tests that have to check them all.
+    ///
+    /// Adding a variant does not add it here on its own: the compiler forces
+    /// [`Self::verb`] to say what the new variant asks for, because that
+    /// match is exhaustive, but nothing forces the variant onto this array as
+    /// well. A verb left off it is a verb this reading has stopped checking.
+    #[cfg(test)]
+    const EVERY: [Self; 2] = [Self::Propfind, Self::Report];
+
+    /// The word this asks with, as a request method.
+    ///
+    /// Parsed from the word rather than built the way these two verbs used to
+    /// be, with an inherent constructor and an `unwrap` on the end of it.
+    /// Both words are fixed and known to parse, so the error path is never
+    /// really taken; it exists so nothing here unwraps.
+    fn verb(self) -> Result<Method> {
+        let word = match self {
+            Self::Propfind => "PROPFIND",
+            Self::Report => "REPORT",
+        };
+        word.parse()
+            .map_err(|e| Error::Protocol(format!("{word} is not a request verb: {e}")))
+    }
+}
+
 impl Outward {
     /// A client that can read and cannot change anything.
     ///
@@ -86,11 +124,12 @@ impl Outward {
     ///
     /// WebDAV asks for things with `PROPFIND` and `REPORT`, which look like
     /// writes from the method alone and are not: both only ever ask a calendar
-    /// server what it has. Named separately rather than letting the gate guess
-    /// from the verb, so the judgement is written down at the one place it
-    /// applies instead of being a rule somebody has to know.
-    pub fn reading_with(&self, method: Method, url: &str) -> RequestBuilder {
-        self.http.request(method, url)
+    /// server what it has. Takes [`AskWith`] rather than a bare [`Method`] so
+    /// that a changing verb cannot be passed here at all: this used to take
+    /// any method with nothing gating it, which is a read gate a caller could
+    /// send `DELETE` through.
+    pub fn reading_with(&self, ask: AskWith, url: &str) -> Result<RequestBuilder> {
+        Ok(self.http.request(ask.verb()?, url))
     }
 
     /// A request that changes something at the other end.
@@ -328,6 +367,49 @@ mod tests {
         let refused = reading_only().changing(Method::PUT, "https://example.invalid/x", "write");
 
         assert!(refused.is_err());
+    }
+
+    #[test]
+    fn test_a_read_that_is_not_a_get_can_only_ask_for_something() {
+        // Ties this type's verbs to the HTTP changing list at :1430 rather
+        // than restating "these are safe" a second time in a second place: if
+        // a verb here were ever a changing one, the two statements of "which
+        // verbs change something" would disagree.
+        //
+        // What this cannot see: a variant left off `EVERY`. The compiler
+        // forces a new variant to be given a verb, because `verb` is an
+        // exhaustive match, but nothing forces the variant onto `EVERY`
+        // itself, so a third verb added and forgotten here would pass.
+        const CHANGES_SOMETHING: [&str; 4] = ["POST", "PUT", "PATCH", "DELETE"];
+        for ask in AskWith::EVERY {
+            let verb = ask.verb().expect("a fixed verb name to parse");
+            assert!(
+                verb == Method::from_bytes(b"PROPFIND").expect("PROPFIND parses")
+                    || verb == Method::from_bytes(b"REPORT").expect("REPORT parses"),
+                "{verb} is not one of the two verbs this type is for"
+            );
+            assert!(
+                !CHANGES_SOMETHING.contains(&verb.as_str()),
+                "{verb} changes something, and a read must never be able to carry it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_read_that_is_not_a_get_builds_its_verb_without_unwrapping() {
+        // Proof the verb name really turns into a request, alongside the
+        // source check that nothing here reaches for `Method::from_bytes`
+        // with an `unwrap` on the end of it.
+        assert!(
+            reading_only()
+                .reading_with(AskWith::Propfind, "https://example.com/cal")
+                .is_ok()
+        );
+        assert!(
+            reading_only()
+                .reading_with(AskWith::Report, "https://example.com/cal")
+                .is_ok()
+        );
     }
 }
 
@@ -1248,6 +1330,25 @@ mod completeness {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_nothing_builds_a_request_verb_out_of_bytes() {
+        // `Method::from_bytes` is the only way a caller could hand
+        // `reading_with` a verb of its own rather than one of the two
+        // [`super::AskWith`] allows, and it is also where the `unwrap` used
+        // to live that CLAUDE.md forbids outside tests. Banning the idiom
+        // here is what keeps a second custom verb from being built the same
+        // unchecked way somewhere else in the tree.
+        for file in every_source_file() {
+            let path = file.to_string_lossy().replace('\\', "/");
+            let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
+            assert!(
+                !what_ships(&source).contains("Method::from_bytes"),
+                "{path} builds a request verb out of bytes, which is how the ungated \
+                 unwrap this file exists to close got there in the first place"
+            );
         }
     }
 
