@@ -827,6 +827,29 @@ mod completeness {
         })
     }
 
+    /// A declaration with its visibility taken off, and whether that
+    /// visibility lets another module reach it.
+    ///
+    /// `pub(crate)` and `pub(super)` count as reaching another module, because
+    /// that is the only question either reading below is asking: can a file
+    /// that names no way out get one from here. This tree writes a restricted
+    /// visibility in over a hundred places, so a reading that knew only the
+    /// word `pub` was blind to ordinary style, and it was: a plain
+    /// `pub(crate) fn` handing a socket out walked past the refusal below, and
+    /// in the reading of writes it was not recognised as a method at all, so
+    /// its body was counted against whichever method sat above it.
+    fn past_the_visibility(declaration: &str) -> (&str, bool) {
+        if let Some(rest) = declaration.strip_prefix("pub ") {
+            return (rest, true);
+        }
+        if let Some(restricted) = declaration.strip_prefix("pub(")
+            && let Some((_, rest)) = restricted.split_once(") ")
+        {
+            return (rest, true);
+        }
+        (declaration, false)
+    }
+
     #[test]
     fn test_every_module_that_talks_to_a_server_is_on_one_of_these_lists() {
         // The check that would have caught the POP hole. The gate list was
@@ -1191,14 +1214,19 @@ mod completeness {
             }
             let source = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{path}: {e}"));
             for line in what_ships(&source).lines() {
-                let trimmed = line.trim_start();
-                let handing_on = line.contains("pub use")
-                    || trimmed.starts_with("type ")
-                    || line.contains("pub type ")
-                    || line.contains("pub fn ")
-                    || line.contains("pub async fn ")
-                    || line.contains("pub const fn ")
-                    || (trimmed.starts_with("pub ") && line.contains(':'));
+                let (declared, reaches_another_module) = past_the_visibility(line.trim_start());
+                // A type alias counts whatever its visibility, because the
+                // point of one is that the name it gives is used instead of
+                // the name it stands for.
+                let handing_on = declared.starts_with("type ")
+                    || (reaches_another_module
+                        && (declared.starts_with("use ")
+                            || declared.starts_with("fn ")
+                            || declared.starts_with("async fn ")
+                            || declared.starts_with("const fn ")
+                            // A field, which hands the thing itself on rather
+                            // than a way of getting it.
+                            || line.contains(':')));
                 if !handing_on {
                     continue;
                 }
@@ -1258,18 +1286,15 @@ mod completeness {
     /// call became one: one client keeps its two sending helpers directly
     /// under a public read, and that read would have been reported as a write.
     ///
-    /// What it does not recognise: a method whose visibility is narrowed, as
-    /// `pub(crate)`, which reads here as private. Nothing in these four
-    /// clients is written that way.
+    /// A method another module can reach counts as public here, whether it
+    /// says `pub` or narrows that to the crate. What a write is called from is
+    /// not the question; whether anything outside this file can call it is.
     fn method_named(line: &str) -> Option<(&str, bool)> {
         let at_the_top_of_an_impl = line.strip_prefix("    ")?;
         if at_the_top_of_an_impl.starts_with(' ') {
             return None;
         }
-        let public = at_the_top_of_an_impl.starts_with("pub ");
-        let declaration = at_the_top_of_an_impl
-            .strip_prefix("pub ")
-            .unwrap_or(at_the_top_of_an_impl);
+        let (declaration, public) = past_the_visibility(at_the_top_of_an_impl);
         let declaration = declaration.strip_prefix("const ").unwrap_or(declaration);
         let declaration = declaration.strip_prefix("async ").unwrap_or(declaration);
         let named = declaration.strip_prefix("fn ")?;
