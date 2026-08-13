@@ -753,8 +753,8 @@ mod completeness {
     ///
     /// An address is not a connection, so `SocketAddr` is not here: a module
     /// that parses one and hands it to a gated client is not a way out, and
-    /// the two test halves in this tree that build one would be read as
-    /// though they were.
+    /// the test halves in this tree that build one would be read as though
+    /// they were.
     const A_SOCKET_UNDER_ITS_OWN_NAME: [&str; 8] = [
         "TcpStream",
         "TcpListener",
@@ -774,7 +774,8 @@ mod completeness {
     ///
     /// What this cannot see. Written as a list rather than a sentence about
     /// how hard it tries, because the two rounds before this one each closed
-    /// one hole and left a doc claiming there were none:
+    /// one hole and left a doc saying no arrangement of imports could hide
+    /// anything, which was not true either time:
     ///
     /// - A module handed a live connection, or a built client, by another
     ///   module. Where the handing on is a re-export, a type alias or a public
@@ -785,9 +786,11 @@ mod completeness {
     /// - A crate nobody has classified. That is the manifest sweep further
     ///   down, not this.
     /// - A call straight into a networking library through the foreign
-    ///   function interface. Nothing in this tree makes one today: every
-    ///   linked library named in it is a Windows user interface or
-    ///   accessibility library.
+    ///   function interface. Nothing in this tree makes one today: the
+    ///   libraries its foreign blocks name are the Windows user interface,
+    ///   system, automation and accessibility ones, and none of them carries a
+    ///   socket. Nothing checks that, so it is a reading of the tree on the day
+    ///   this was written rather than a rule.
     /// - Anything outside `src`. The build script and the scripts beside it
     ///   are not read at all.
     /// - This reads names and not the program, so a name in a string, or in a
