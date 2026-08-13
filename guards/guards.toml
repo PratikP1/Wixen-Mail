@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 86 records have arrived since and have not been through it.
+# 88 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5430,4 +5430,69 @@ after = """            Self::Propfind => "DELETE","""
 red = [
     "service::caldav::discovery_tests::test_what_is_asked_of_a_calendar_server_is_the_four_things_the_screen_needs",
     "service::outward::tests::test_a_read_that_is_not_a_get_can_only_ask_for_something",
+]
+
+# ── The category and status choice at a calendar merge's call site ──────────
+#
+# `carry_over_local_only` decides whose copy of a category and a status
+# survives a sync, and the two providers want opposite answers for the two
+# fields. The only guard watching that decision called the helper directly
+# ("a status typed here survives a read from Outlook", above), so the two
+# production call sites that actually pass the choice, inside
+# `sync_google_calendar` and inside `sync_microsoft_calendar`, were never
+# reached by a test that could see either one get it wrong. Flipping the pair
+# of arguments at either call site changed no test's answer.
+#
+# Measured by hand on 2026-08-13, against the whole library, one build and run
+# per break.
+
+[[guard]]
+name = "a Google merge keeps the category typed here and takes Google's status"
+file = "src/application/calendar.rs"
+before = """                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::OnlyHere,
+                    TheStatus::AlsoAtTheProvider,
+                );
+                let merged = everything_both_copies_call_off(merged, &ex);"""
+after = """                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::AlsoAtTheProvider,
+                    TheStatus::OnlyHere,
+                );
+                let merged = everything_both_copies_call_off(merged, &ex);"""
+red = [
+    "application::calendar::tests::test_a_google_read_keeps_the_category_typed_here_and_takes_googles_status",
+]
+
+# Measured by hand on 2026-08-13. The Outlook mirror of the guard above.
+# Reddens a second, older test as well as the new one: an existing test
+# already drove this call site through the real sync and watched the category
+# half of the choice, so it goes red alongside the new test that watches both
+# halves together. Written down rather than pruned, because that is what
+# "measured, not guessed" looks like when an existing fixture already covered
+# part of a claim.
+
+[[guard]]
+name = "an Outlook merge takes Outlook's category and keeps the status set here"
+file = "src/application/calendar.rs"
+before = """                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::AlsoAtTheProvider,
+                    TheStatus::OnlyHere,
+                );
+                cache.save_calendar_event(&merged)?;"""
+after = """                carry_over_local_only(
+                    &mut merged,
+                    &ex,
+                    TheCategory::OnlyHere,
+                    TheStatus::AlsoAtTheProvider,
+                );
+                cache.save_calendar_event(&merged)?;"""
+red = [
+    "application::calendar::tests::test_a_category_changed_in_outlook_reaches_this_computer",
+    "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
 ]

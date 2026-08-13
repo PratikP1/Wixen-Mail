@@ -6051,6 +6051,17 @@ mod tests {
         })
     }
 
+    /// The same event, naming the categories Outlook holds for it.
+    fn graph_event_with_categories(
+        id: &str,
+        subject: &str,
+        categories: &[&str],
+    ) -> serde_json::Value {
+        let mut event = graph_event(id, subject);
+        event["categories"] = serde_json::json!(categories);
+        event
+    }
+
     fn graph_removal(id: &str) -> serde_json::Value {
         serde_json::json!({ "id": id, "@removed": {"reason": "deleted"} })
     }
@@ -6695,6 +6706,142 @@ mod tests {
         event.pending = true;
         cache.save_calendar_event(&event).expect("the change");
         event
+    }
+
+    /// An event a provider already knows about, holding a category and a
+    /// status typed here so a test can see whether a read that follows keeps
+    /// them or loses them.
+    ///
+    /// Not pending, unlike [`a_pending_event_in`]. A pending row is skipped
+    /// before either argument to `carry_over_local_only` is ever reached, so a
+    /// pending fixture would pass this test whether the call site's choice was
+    /// right or backwards.
+    fn an_event_already_synced_in(
+        cache: &MessageCache,
+        provider: &str,
+        name: &str,
+        provider_event_id: &str,
+        categories: &str,
+        status: &str,
+    ) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", provider, name)
+            .expect("the provider's calendar");
+        let mut event = an_event_stored_here();
+        event.calendar_id = Some(container.id);
+        event.provider_event_id = Some(provider_event_id.to_string());
+        event.categories = categories.to_string();
+        event.status = status.to_string();
+        event.pending = false;
+        cache.save_calendar_event(&event).expect("the change");
+        event
+    }
+
+    /// Whose copy of a category and a status survives a Google read, driven
+    /// through the real sync rather than through `carry_over_local_only`
+    /// directly.
+    ///
+    /// The two arguments the call site inside `sync_google_calendar` passes to
+    /// `carry_over_local_only` were unobserved: every other test exercising
+    /// that choice calls the helper itself, so a flip of either argument at
+    /// the call site changed nothing any test could see. This one drives the
+    /// merge branch of the real sync, so both flips are visible here.
+    #[tokio::test]
+    async fn test_a_google_read_keeps_the_category_typed_here_and_takes_googles_status() {
+        let cache = temp_cache("google_read_whose_copy_survives");
+        an_event_already_synced_in(
+            &cache,
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "evt1",
+            "Personal",
+            "tentative",
+        );
+        // Not pending, so push_to_google has nothing waiting to send: one
+        // request only, the read.
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![what_google_answers_with("evt1", "Standup")],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "one read").await.expect("one request");
+
+        let stored = cache
+            .get_event_by_provider_id("acct", "evt1")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.categories, "Personal",
+            "Google Calendar has no field for this, so the category typed here \
+             has to survive the read"
+        );
+        assert_eq!(
+            stored.status, "confirmed",
+            "Google's answer says confirmed, and Google holds this field too, \
+             so its answer is the one that has to win"
+        );
+    }
+
+    /// The mirror of the test above, for Outlook, where the two fields swap
+    /// which provider owns them.
+    #[tokio::test]
+    async fn test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here() {
+        let cache = temp_cache("outlook_read_whose_copy_survives");
+        an_event_already_synced_in(
+            &cache,
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "evt1",
+            "Personal",
+            "tentative",
+        );
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![delta_reply(&[graph_event_with_categories(
+                "evt1",
+                "Standup",
+                &["Work"],
+            )])],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "one read").await.expect("one request");
+
+        let stored = cache
+            .get_event_by_provider_id("acct", "evt1")
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored.categories, "Work",
+            "Outlook holds this field too now, so its answer is the one that \
+             has to arrive"
+        );
+        assert_eq!(
+            stored.status, "tentative",
+            "Graph has no field for this, so the status set here has to \
+             survive the read"
+        );
     }
 
     /// The keys a captured request's body carries, in a settled order.
