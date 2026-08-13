@@ -11139,6 +11139,7 @@ mod tests {
                 updated_at: "2026-01-01".into(),
                 remote_updated: None,
                 pending: false,
+                remote_status: None,
             })
             .unwrap();
 

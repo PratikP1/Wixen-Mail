@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a task Outlook held as in progress, waiting on somebody else, or
+  deferred was reset to not started the first time it was touched here.**
+  Microsoft To Do tracks five states for a task; this program only ever read
+  two of them, done and not done, and sent that boolean straight back out.
+  Ticking off one task, renaming another, or moving a third to a different
+  list used to carry every task like it back to "not started" on the next
+  sync, destroying whatever state Outlook actually held it in. The word
+  Outlook gave a task is now kept and sent back unchanged unless the task is
+  marked done here.
+
+- **Fixed: a note or a task description written with headings or a list in
+  Outlook or Microsoft To Do was read aloud as raw HTML tags.** The
+  formatting is now turned into the same structure this program's own notes
+  and events understand, so a heading is announced as a heading and a list as
+  a list rather than as punctuation. Only the structure survives the trip:
+  fonts and colours do not, and the first change made to a task or event
+  description here replaces Outlook's original formatting with plain text
+  carrying that structure.
+
+- **Fixed: a priority set on a task in Google Tasks was silently cleared.**
+  Google Tasks has no priority field at all, so reading a task back from
+  Google always answered "normal" for it, and that answer used to be written
+  down over whatever priority had been set here. The priority chosen here is
+  now kept when Google's own copy of the task changes; a priority changed in
+  Outlook still replaces the one held here, because Microsoft does track it.
+
+- **Fixed: ticking off a task here could send Outlook the wrong hour it was
+  completed at.** The completion time is now sent in the shape Outlook's own
+  service expects, a clock face with no time zone offset attached, matching
+  the way this program already sends every other date to Outlook.
+
 - **Fixed: a repeating meeting added to an Outlook calendar late at night or
   early in the morning told Outlook two different days.** The meeting itself
   went out on one day and how often it comes round went out counted from

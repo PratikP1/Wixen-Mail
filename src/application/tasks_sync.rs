@@ -411,6 +411,15 @@ impl Provider {
     fn belongs_to_another(self, id: &str) -> bool {
         self.is_local(id) && !Self::made_here(id)
     }
+
+    /// Whether this provider holds a task's priority as well as this
+    /// computer, the one place that says so.
+    const fn the_priority(self) -> ThePriority {
+        match self {
+            Self::Google => ThePriority::OnlyHere,
+            Self::Microsoft => ThePriority::AlsoAtTheProvider,
+        }
+    }
 }
 
 /// Whether a provider holds the task with this identifier.
@@ -798,7 +807,11 @@ fn settle(cache: &MessageCache, was: &TaskEntry, stored: TaskEntry, new_here: bo
         cache.rename_task(&was.id, &stored)?;
         return Ok(());
     }
-    cache.mark_task_sent(&was.id, stored.remote_updated.as_deref())
+    cache.mark_task_sent(
+        &was.id,
+        stored.remote_updated.as_deref(),
+        stored.remote_status.as_deref(),
+    )
 }
 
 /// Bring Google's task lists and their tasks into the cache.
@@ -897,7 +910,14 @@ pub(crate) async fn sync_google_tasks<S: TaskService>(
                 continue;
             }
             arrived_everywhere.push(stored.id.clone());
-            take_or_skip(cache, &held, &deleted_here, stored, &mut result);
+            take_or_skip(
+                cache,
+                &held,
+                &deleted_here,
+                Provider::Google,
+                stored,
+                &mut result,
+            );
         }
     }
 
@@ -938,7 +958,8 @@ fn take_or_skip(
     cache: &MessageCache,
     held: &[TaskEntry],
     deleted_here: &DeletedHere,
-    stored: TaskEntry,
+    provider: Provider,
+    mut stored: TaskEntry,
     result: &mut TaskSyncResult,
 ) {
     // A task somebody deleted on this computer. The provider is still naming
@@ -947,12 +968,16 @@ fn take_or_skip(
     if deleted_here.holds(&stored.id) {
         return;
     }
-    match resolution_for(held, &stored) {
+    let existing = held.iter().find(|task| task.id == stored.id);
+    match resolution_for(existing, &stored) {
         Resolution::Nothing => result.unchanged += 1,
         Resolution::Push => result.unchanged += 1,
         answer => {
             if answer == Resolution::TakeRemoteOverLocal {
                 result.replaced += 1;
+            }
+            if let Some(held_task) = existing {
+                carry_over_local_only(&mut stored, held_task, provider.the_priority());
             }
             match cache.save_task(&stored) {
                 Ok(()) => result.stored += 1,
@@ -960,6 +985,43 @@ fn take_or_skip(
             }
         }
     }
+}
+
+/// The parts of a task Google does not carry, kept from the copy already
+/// held.
+///
+/// The calendar's `carry_over_local_only` decided the identical question for
+/// a category Google Calendar does not hold; this is that answer applied
+/// here. Shorter than the calendar's version because there is only the one
+/// field: a task has no identity or container question to settle, since
+/// [`take_or_skip`] already looked the held row up by id and the container is
+/// the list the provider just said the task is in.
+fn carry_over_local_only(merged: &mut TaskEntry, held: &TaskEntry, priority: ThePriority) {
+    if priority == ThePriority::OnlyHere {
+        merged.priority = held.priority.clone();
+    }
+}
+
+/// Whether the provider a task arrived from also holds its priority.
+///
+/// A name rather than a bool, the same choice the calendar's `TheCategory`
+/// makes and for the same reason: this decides whose copy of one field
+/// survives a sync, and getting it backwards either erases a priority
+/// somebody typed here or ignores one they changed at the provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThePriority {
+    /// Only this computer has it. Google Tasks has no priority at all, so its
+    /// reader always answers "normal" for the field it does not carry, and
+    /// writing that back over a real value would wipe it the moment anything
+    /// else about the task changed at Google.
+    OnlyHere,
+    /// Microsoft has it as well, and sends a change to it, so there are two
+    /// copies of one field and the provider's is the one that wins, the way
+    /// it does for every other field on the task. Keeping the local copy
+    /// instead would mean a priority changed in Outlook never arrived, and
+    /// the next change made here would put the old one back with nobody
+    /// asked.
+    AlsoAtTheProvider,
 }
 
 /// Remove a task the provider says is gone, and say so.
@@ -1124,12 +1186,12 @@ fn forget_the_deletions_for(
 
 /// What to do with a task the provider just sent.
 ///
-fn resolution_for(held: &[TaskEntry], arriving: &TaskEntry) -> Resolution {
+fn resolution_for(held: Option<&TaskEntry>, arriving: &TaskEntry) -> Resolution {
     // A task we do not hold is always taken, whatever the stamps say. Both
     // being absent compares equal, so without this a provider that omits its
     // modification time would have every one of its tasks skipped on the first
     // sync and never stored at all.
-    let Some(existing) = held.iter().find(|task| task.id == arriving.id) else {
+    let Some(existing) = held else {
         return Resolution::TakeRemote;
     };
     resolve(
@@ -1230,7 +1292,14 @@ pub(crate) async fn sync_microsoft_tasks<S: TaskService>(
             }
             let stored = ms_task_to_entry(task, account_id, &entry.id);
             arrived_everywhere.push(stored.id.clone());
-            take_or_skip(cache, &held, &deleted_here, stored, &mut result);
+            take_or_skip(
+                cache,
+                &held,
+                &deleted_here,
+                Provider::Microsoft,
+                stored,
+                &mut result,
+            );
         }
     }
 
@@ -1524,6 +1593,7 @@ mod tests {
             updated_at: String::new(),
             remote_updated: None,
             pending: false,
+            remote_status: None,
         }
     }
 
@@ -1537,14 +1607,11 @@ mod tests {
         let mut arriving = task("ms:a");
         arriving.remote_updated = Some("2026-07-01T10:00:00Z".to_string());
 
-        assert_eq!(
-            resolution_for(&[held.clone()], &arriving),
-            Resolution::Nothing
-        );
+        assert_eq!(resolution_for(Some(&held), &arriving), Resolution::Nothing);
 
         arriving.remote_updated = Some("2026-07-02T09:00:00Z".to_string());
         assert_eq!(
-            resolution_for(&[held], &arriving),
+            resolution_for(Some(&held), &arriving),
             Resolution::TakeRemote,
             "a real change was skipped"
         );
@@ -1555,7 +1622,7 @@ mod tests {
         // Nothing held, so there is no stamp to match and it has to be written.
         let arriving = task("ms:new");
 
-        assert_eq!(resolution_for(&[], &arriving), Resolution::TakeRemote);
+        assert_eq!(resolution_for(None, &arriving), Resolution::TakeRemote);
     }
 
     #[test]
@@ -1569,7 +1636,7 @@ mod tests {
         let mut arriving = task("ms:a");
         arriving.remote_updated = Some("2026-07-01T10:00:00Z".to_string());
 
-        assert_eq!(resolution_for(&[held], &arriving), Resolution::Push);
+        assert_eq!(resolution_for(Some(&held), &arriving), Resolution::Push);
     }
 
     #[test]
@@ -1581,7 +1648,7 @@ mod tests {
         arriving.remote_updated = Some("2026-07-02T09:00:00Z".to_string());
 
         assert_eq!(
-            resolution_for(&[held], &arriving),
+            resolution_for(Some(&held), &arriving),
             Resolution::TakeRemoteOverLocal
         );
     }
@@ -3839,6 +3906,37 @@ mod tests {
     }
 
     #[test]
+    fn test_a_change_the_provider_took_records_the_progress_it_now_holds() {
+        // Without this the stored word goes stale the moment a change is
+        // pushed, and the next local edit sends a word the provider has
+        // already moved past.
+        let cache = a_cache("settle_progress");
+        a_list(&cache, "ms:list");
+        let was = TaskEntry {
+            id: "ms:t1".to_string(),
+            task_list_id: Some("ms:list".to_string()),
+            pending: true,
+            remote_status: Some("notStarted".to_string()),
+            ..task("x")
+        };
+        cache.save_task(&was).expect("a task");
+        let stored = TaskEntry {
+            remote_updated: Some("2026-07-02T09:00:00Z".to_string()),
+            remote_status: Some("completed".to_string()),
+            pending: false,
+            ..was.clone()
+        };
+
+        settle(&cache, &was, stored, false).expect("the row to be brought into line");
+
+        let now = cache
+            .find_task("ms:t1")
+            .expect("a lookup")
+            .expect("the row");
+        assert_eq!(now.remote_status.as_deref(), Some("completed"));
+    }
+
+    #[test]
     fn test_a_task_the_provider_has_that_we_have_never_seen_is_stored() {
         // The first sync of an account. If this writes nothing the list is
         // empty and the summary still says the sync went fine.
@@ -3854,6 +3952,7 @@ mod tests {
             &cache,
             &[],
             &nobody_deleted_anything(),
+            Provider::Microsoft,
             arriving,
             &mut result,
         );
@@ -3865,6 +3964,134 @@ mod tests {
         assert!(
             cache.find_task("ms:a").expect("a lookup").is_some(),
             "the task the provider sent was never written down"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_progress_a_provider_holds_survives_being_written_down_and_read_back() {
+        // End to end through the real sync, rather than through `take_or_skip`
+        // directly, so a column missing from `save_task` or `map_task_row`
+        // would be seen here as well as in the message-cache tests.
+        let cache = a_cache("progress_round_trip");
+        let service = Scripted {
+            ms_lists: vec![MsTodoList {
+                id: "list".to_string(),
+                display_name: "Home".to_string(),
+            }],
+            ms_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![MsTodoTask {
+                    id: "a1".to_string(),
+                    title: "Chase the invoice".to_string(),
+                    status: "inProgress".to_string(),
+                    importance: "normal".to_string(),
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        sync_microsoft_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        let row = cache
+            .find_task("ms:a1")
+            .expect("a lookup")
+            .expect("the task was written down");
+        assert_eq!(row.remote_status.as_deref(), Some("inProgress"));
+    }
+
+    #[tokio::test]
+    async fn test_a_priority_set_here_survives_googles_copy_winning() {
+        // Google Tasks has no priority at all, so its reader always answers
+        // "normal" for the field it does not carry. Written back without a
+        // carry-over, a priority set here is wiped the moment Google's own
+        // copy of anything else about the task changes.
+        let cache = a_cache("priority_google_wins");
+        a_list_named(&cache, "google:list", "My Tasks");
+        let held = TaskEntry {
+            task_list_id: Some("google:list".to_string()),
+            priority: "high".to_string(),
+            remote_updated: Some("A".to_string()),
+            pending: false,
+            ..task("google:t1")
+        };
+        cache.save_task(&held).expect("a task");
+        let service = Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "list".to_string(),
+                title: "My Tasks".to_string(),
+            }],
+            google_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![GoogleTask {
+                    id: "t1".to_string(),
+                    title: "A".to_string(),
+                    status: "needsAction".to_string(),
+                    updated: Some("B".to_string()),
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        sync_google_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        let row = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("still here");
+        assert_eq!(row.priority, "high", "a priority set here was wiped");
+    }
+
+    #[tokio::test]
+    async fn test_a_priority_changed_in_outlook_replaces_the_one_here() {
+        // The wrong-way-round version of the fix, and the mistake the
+        // calendar's `TheCategory` doc comment was written to prevent:
+        // applied to Microsoft as well, a priority changed in Outlook would
+        // never arrive.
+        let cache = a_cache("priority_outlook_wins");
+        a_list(&cache, "ms:list");
+        let held = TaskEntry {
+            priority: "low".to_string(),
+            remote_updated: Some("A".to_string()),
+            pending: false,
+            ..task("ms:t1")
+        };
+        cache.save_task(&held).expect("a task");
+        let service = Scripted {
+            ms_lists: vec![MsTodoList {
+                id: "list".to_string(),
+                display_name: "My Tasks".to_string(),
+            }],
+            ms_tasks: std::collections::HashMap::from([(
+                "list".to_string(),
+                vec![MsTodoTask {
+                    id: "t1".to_string(),
+                    title: "A".to_string(),
+                    status: "notStarted".to_string(),
+                    importance: "high".to_string(),
+                    last_modified_date_time: Some("B".to_string()),
+                    ..Default::default()
+                }],
+            )]),
+            ..Default::default()
+        };
+
+        sync_microsoft_tasks(&cache, &service, "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        let row = cache
+            .find_task("ms:t1")
+            .expect("a lookup")
+            .expect("still here");
+        assert_eq!(
+            row.priority, "high",
+            "a priority changed in Outlook never arrived"
         );
     }
 
@@ -3891,6 +4118,7 @@ mod tests {
             &cache,
             std::slice::from_ref(&held),
             &nobody_deleted_anything(),
+            Provider::Microsoft,
             arriving,
             &mut result,
         );
@@ -3938,6 +4166,7 @@ mod tests {
             &cache,
             std::slice::from_ref(&held),
             &nobody_deleted_anything(),
+            Provider::Microsoft,
             arriving,
             &mut result,
         );
@@ -3970,6 +4199,7 @@ mod tests {
             &cache,
             std::slice::from_ref(&held),
             &nobody_deleted_anything(),
+            Provider::Microsoft,
             arriving,
             &mut result,
         );
@@ -4003,6 +4233,7 @@ mod tests {
             &cache,
             std::slice::from_ref(&held),
             &nobody_deleted_anything(),
+            Provider::Microsoft,
             arriving,
             &mut result,
         );

@@ -834,6 +834,7 @@ fn test_task_manager_full_lifecycle() {
         updated_at: "2026-01-01T00:00:00Z".to_string(),
         remote_updated: None,
         pending: false,
+        remote_status: None,
     });
     mgr.add_task(TaskEntry {
         id: "t2".to_string(),
@@ -851,6 +852,7 @@ fn test_task_manager_full_lifecycle() {
         updated_at: "2026-01-01T00:00:00Z".to_string(),
         remote_updated: None,
         pending: false,
+        remote_status: None,
     });
 
     // Overdue

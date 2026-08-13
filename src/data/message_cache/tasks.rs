@@ -119,8 +119,9 @@ impl MessageCache {
                 "INSERT INTO tasks (
                     id, account_id, task_list_id, title, description, due_date,
                     is_completed, completed_at, priority, display_order,
-                    parent_task_id, created_at, updated_at, remote_updated, pending
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                    parent_task_id, created_at, updated_at, remote_updated, pending,
+                    remote_status
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                 ON CONFLICT(id) DO UPDATE SET
                     task_list_id = excluded.task_list_id,
                     title = excluded.title,
@@ -133,7 +134,8 @@ impl MessageCache {
                     parent_task_id = excluded.parent_task_id,
                     updated_at = excluded.updated_at,
                     remote_updated = excluded.remote_updated,
-                    pending = excluded.pending",
+                    pending = excluded.pending,
+                    remote_status = excluded.remote_status",
                 rusqlite::params![
                     t.id,
                     t.account_id,
@@ -150,6 +152,7 @@ impl MessageCache {
                     t.updated_at,
                     t.remote_updated,
                     t.pending,
+                    t.remote_status,
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save task: {}", e)))?;
@@ -163,7 +166,8 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at, remote_updated, pending
+                        parent_task_id, created_at, updated_at, remote_updated, pending,
+                        remote_status
                  FROM tasks WHERE task_list_id = ?1
                  ORDER BY is_completed, display_order, due_date",
             )
@@ -187,7 +191,8 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at, remote_updated, pending
+                        parent_task_id, created_at, updated_at, remote_updated, pending,
+                        remote_status
                  FROM tasks WHERE account_id = ?1
                  ORDER BY is_completed, display_order, due_date",
             )
@@ -238,7 +243,8 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at, remote_updated, pending
+                        parent_task_id, created_at, updated_at, remote_updated, pending,
+                        remote_status
                  FROM tasks WHERE id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare task query: {}", e)))?;
@@ -260,7 +266,8 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at, remote_updated, pending
+                        parent_task_id, created_at, updated_at, remote_updated, pending,
+                        remote_status
                  FROM tasks WHERE account_id = ?1 AND pending = 1
                  ORDER BY updated_at",
             )
@@ -371,14 +378,22 @@ impl MessageCache {
 
     /// This copy now agrees with the provider.
     ///
-    /// Called after a successful push, with the stamp the provider gave back,
-    /// so the next sync compares against what the provider now holds rather
-    /// than against what it held before this change went up.
-    pub fn mark_task_sent(&self, task_id: &str, remote_updated: Option<&str>) -> Result<()> {
+    /// Called after a successful push, with the stamp and the progress word
+    /// the provider's answer carried, so the next sync compares against what
+    /// the provider now holds rather than against what it held before this
+    /// change went up. Without recording the progress word here too, it goes
+    /// stale the moment a change is pushed: the next local edit would echo
+    /// back a word the provider has already moved past.
+    pub fn mark_task_sent(
+        &self,
+        task_id: &str,
+        remote_updated: Option<&str>,
+        remote_status: Option<&str>,
+    ) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE tasks SET pending = 0, remote_updated = ?1 WHERE id = ?2",
-                rusqlite::params![remote_updated, task_id],
+                "UPDATE tasks SET pending = 0, remote_updated = ?1, remote_status = ?2 WHERE id = ?3",
+                rusqlite::params![remote_updated, remote_status, task_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear the pending flag: {}", e)))?;
         Ok(())
@@ -460,7 +475,8 @@ impl MessageCache {
             .prepare(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
-                        parent_task_id, created_at, updated_at, remote_updated, pending
+                        parent_task_id, created_at, updated_at, remote_updated, pending,
+                        remote_status
                  FROM tasks WHERE account_id = ?1 AND title LIKE ?2 ESCAPE '!'
                  ORDER BY is_completed, due_date",
             )
@@ -495,6 +511,7 @@ impl MessageCache {
             updated_at: row.get(12)?,
             remote_updated: row.get(13)?,
             pending: row.get(14)?,
+            remote_status: row.get(15)?,
         })
     }
 
@@ -556,6 +573,7 @@ mod tests {
             updated_at: String::new(),
             remote_updated: None,
             pending: false,
+            remote_status: None,
         }
     }
 
@@ -697,6 +715,7 @@ mod tests {
             updated_at: now,
             remote_updated: None,
             pending: false,
+            remote_status: None,
         };
         cache.save_task(&t).unwrap();
 
@@ -732,6 +751,7 @@ mod tests {
             updated_at: now,
             remote_updated: Some("2026-07-01T00:00:00Z".to_string()),
             pending: false,
+            remote_status: None,
         };
         cache.save_task(&task).unwrap();
         task
@@ -917,7 +937,7 @@ mod tests {
         cache.toggle_task_complete("google:t1").unwrap();
 
         cache
-            .mark_task_sent("google:t1", Some("2026-07-29T10:00:00Z"))
+            .mark_task_sent("google:t1", Some("2026-07-29T10:00:00Z"), None)
             .unwrap();
 
         assert!(cache.pending_tasks("acct-1").unwrap().is_empty());
@@ -1037,11 +1057,69 @@ mod tests {
                     updated_at: now.clone(),
                     remote_updated: None,
                     pending: false,
+                    remote_status: None,
                 })
                 .unwrap();
         }
 
         let results = cache.search_tasks("acct-1", "Fix").unwrap();
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_every_way_of_reading_a_task_brings_back_the_progress_the_provider_holds() {
+        // Six copies of the column list, one column list in six copies, and
+        // this project has been bitten before by a column written and never
+        // read, or read through one query and not another. Testing one
+        // reader would not see that; this reads the same row back through all
+        // five.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let task = TaskEntry {
+            account_id: "acct-1".to_string(),
+            task_list_id: Some(list.id.clone()),
+            remote_status: Some("inProgress".to_string()),
+            ..shared_task("ms:t1")
+        };
+        cache.save_task(&task).unwrap();
+
+        let by_list = cache.get_tasks_for_list(&list.id).unwrap();
+        let by_account = cache.get_all_tasks_for_account("acct-1").unwrap();
+        let by_id = cache.find_task("ms:t1").unwrap();
+        let pending = {
+            cache.toggle_task_complete("ms:t1").unwrap();
+            let pending = cache.pending_tasks("acct-1").unwrap();
+            // Toggled straight back so the row this test reads elsewhere is
+            // unaffected by the act of reading it.
+            cache.toggle_task_complete("ms:t1").unwrap();
+            pending
+        };
+        let by_search = cache.search_tasks("acct-1", "Book").unwrap();
+
+        assert_eq!(
+            by_list.first().and_then(|t| t.remote_status.as_deref()),
+            Some("inProgress"),
+            "get_tasks_for_list"
+        );
+        assert_eq!(
+            by_account.first().and_then(|t| t.remote_status.as_deref()),
+            Some("inProgress"),
+            "get_all_tasks_for_account"
+        );
+        assert_eq!(
+            by_id.and_then(|t| t.remote_status),
+            Some("inProgress".to_string()),
+            "find_task"
+        );
+        assert_eq!(
+            pending.first().and_then(|t| t.remote_status.as_deref()),
+            Some("inProgress"),
+            "pending_tasks"
+        );
+        assert_eq!(
+            by_search.first().and_then(|t| t.remote_status.as_deref()),
+            Some("inProgress"),
+            "search_tasks"
+        );
     }
 }

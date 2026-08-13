@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 81 records have arrived since and have not been through it.
+# 83 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5300,4 +5300,55 @@ before = """    let emails_in_order = with_the_main_one_first(&person.email_addr
 after = """    let emails_in_order: Vec<&GoogleEmail> = person.email_addresses.iter().collect();"""
 red = [
     "application::contacts_sync::tests::test_the_email_google_calls_the_main_one_is_the_one_this_program_shows_first",
+]
+
+# ── Tasks: a provider's markup and a provider's progress word ───────────────
+#
+# Two of the fixes in this round are the ones most likely to be quietly
+# undone by a change that looks like a simplification. Measured by hand on
+# 2026-08-13 with scripts/guards.py: each break reddens exactly the tests
+# named below and nothing else in the library.
+
+[[guard]]
+name = "a task or event body written as html is read as the structure it carries, not sanitized and flattened"
+file = "src/application/long_text.rs"
+before = """pub fn from_markup(html: &str) -> String {
+    let cleaned = ammonia::clean(html);
+    let fragment = scraper::Html::parse_fragment(&cleaned);
+    let mut out = String::new();
+    markup::blocks(*fragment.root_element().deref(), &mut out);
+    collapse_blank_lines(&out)
+}"""
+after = """pub fn from_markup(html: &str) -> String {
+    ammonia::clean(html)
+}"""
+red = [
+    "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
+    "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    "application::long_text::tests::test_link_text_and_image_alt_text_survive_markup_being_read",
+    "service::tasks_api::tests::test_a_microsoft_task_arrives_from_json_with_its_progress_and_its_markup_read",
+    "service::tasks_api::tests::test_a_microsoft_task_body_written_as_html_is_read_as_words_not_tags",
+]
+
+[[guard]]
+name = "the progress word Outlook holds a task under is kept, not folded to completed or not started"
+file = "src/service/tasks_api.rs"
+before = """        status: if task.is_completed {
+            TaskProgress::Completed.as_word().to_string()
+        } else {
+            task.remote_status
+                .as_deref()
+                .and_then(TaskProgress::stored)
+                .filter(|progress| *progress != TaskProgress::Completed)
+                .unwrap_or(TaskProgress::NotStarted)
+                .as_word()
+                .to_string()
+        },"""
+after = """        status: if task.is_completed {
+            "completed".to_string()
+        } else {
+            "notStarted".to_string()
+        },"""
+red = [
+    "service::tasks_api::tests::test_the_progress_microsoft_holds_is_kept_when_a_change_goes_back",
 ]

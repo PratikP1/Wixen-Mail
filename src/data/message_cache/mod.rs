@@ -885,6 +885,20 @@ pub struct TaskEntry {
     /// is a change that silently never leaves, and nothing about it looks
     /// wrong from the inside.
     pub pending: bool,
+    /// The provider's own progress word, as at the last sync: Microsoft's
+    /// `notStarted`, `inProgress`, `waitingOnOthers` or `deferred`, or
+    /// nothing for a task Google holds, which only ever has the two states
+    /// [`Self::is_completed`] already carries.
+    ///
+    /// Kept so that ticking a task off here and sending it back does not
+    /// destroy a provider's own word for "in progress" or "waiting on
+    /// somebody else": read back as [`Self::is_completed`], those five words
+    /// fold to a single boolean, and writing that boolean straight back out
+    /// would turn every one of them into "not started". A field rather than
+    /// something the cache infers, for the same reason [`Self::pending`] is
+    /// one: no screen in this program writes this column, so the only source
+    /// of a value in it is a provider's own answer, echoed back unchanged.
+    pub remote_status: Option<String>,
 }
 
 /// A task that was deleted here and whose provider has not been told.
@@ -1739,6 +1753,14 @@ impl MessageCache {
         // treated as agreeing with the provider. That is the right assumption:
         // until this shipped, nothing here could disagree.
         self.ensure_column_exists("tasks", "pending", "INTEGER NOT NULL DEFAULT 0")?;
+        // The provider's own progress word, as at the last sync: Microsoft's
+        // five states folded to a boolean for `is_completed` would otherwise
+        // be written straight back out as a boolean, turning "in progress" or
+        // "waiting on somebody else" into "not started" the moment a change
+        // made here reaches the next sync. NULL on an existing database
+        // reads as nothing held, which is the right answer for a task this
+        // program has never seen a progress word for.
+        self.ensure_column_exists("tasks", "remote_status", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.

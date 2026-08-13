@@ -2064,6 +2064,10 @@ fn store_new_item(
             remote_updated: None,
             // Made here, so it has to go up at the next sync.
             pending: true,
+            // No provider has ever held this task, so there is no progress
+            // word to keep. The push sends "not started" for a task without
+            // one.
+            remote_status: None,
         }),
         ItemKind::Note => cache.save_note(&NoteEntry {
             id: new_id("note"),
@@ -2699,6 +2703,7 @@ mod tests {
             updated_at: now_stamp(),
             remote_updated: None,
             pending: false,
+            remote_status: None,
         }
     }
 

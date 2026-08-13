@@ -278,7 +278,7 @@ pub struct MsRecurrenceRange {
     pub number_of_occurrences: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MsDateTimeTimeZone {
     #[serde(default)]

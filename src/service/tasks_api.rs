@@ -9,7 +9,12 @@
 //! **Completion.** Google has a status of `needsAction` or `completed` and a
 //! separate completion timestamp. Microsoft has a status with five values, two
 //! of which are neither started nor finished. Both collapse to one boolean
-//! here, and the timestamp is kept where there is one.
+//! here, [`TaskEntry::is_completed`], because that is the only question either
+//! this application or Google can answer. Microsoft's own word survives
+//! alongside it in [`TaskEntry::remote_status`], and it is that word, not the
+//! boolean, that goes back out: writing the boolean straight back would turn
+//! every task Outlook held as in progress, waiting on somebody else, or
+//! deferred into "not started" on the first sync that touched it.
 //!
 //! **Due dates.** Google sends an RFC 3339 timestamp and documents that only
 //! the date part is meaningful, so a task due on the 3rd arrives as the 3rd at
@@ -22,7 +27,18 @@
 //! gets the middle one rather than the lowest, because "normal" is what its
 //! absence means and "low" is a claim nobody made. Both halves of the Microsoft
 //! conversion ask one place what a priority is, so they cannot drift apart
-//! again.
+//! again. The middle one is what the reader answers, but not what gets stored
+//! back over a real priority: [`crate::application::tasks_sync`] keeps the
+//! priority already held here whenever a Google task's own copy changes,
+//! because Google never held an opinion about it to begin with.
+//!
+//! **Markup.** Both services can hand back a task description written as
+//! html, To Do's own editor writes it. Taken as `body.content` with nothing
+//! done to it first, a screen reader reads the tags aloud one by one.
+//! [`crate::application::long_text::from_markup`] sanitizes it and turns what
+//! survives into the same structure this application's other long fields
+//! already understand, so a heading is read as a heading and a list as a
+//! list.
 //!
 //! # Not run against either service
 //!
@@ -32,6 +48,7 @@
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{TaskEntry, TaskListEntry};
+use crate::service::microsoft_graph::MsDateTimeTimeZone;
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
@@ -202,13 +219,13 @@ pub struct MsTodoTask {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub due_date_time: Option<MsDateTimeZone>,
+    pub due_date_time: Option<MsDateTimeTimeZone>,
     #[serde(
         rename = "completedDateTime",
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub completed_date_time: Option<MsDateTimeZone>,
+    pub completed_date_time: Option<MsDateTimeTimeZone>,
     /// When Graph last changed it. A plain timestamp, not the zoned shape the
     /// date fields use.
     #[serde(rename = "lastModifiedDateTime", default, skip_serializing)]
@@ -222,14 +239,6 @@ pub struct MsItemBody {
     /// `text` or `html`.
     #[serde(rename = "contentType", default)]
     pub content_type: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MsDateTimeZone {
-    #[serde(rename = "dateTime", default)]
-    pub date_time: String,
-    #[serde(rename = "timeZone", default)]
-    pub time_zone: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -327,6 +336,10 @@ pub fn google_task_to_entry(task: &GoogleTask, account_id: &str, list_id: &str) 
         remote_updated: task.updated.clone(),
         // Arrived from the provider, so the two agree by definition.
         pending: false,
+        // Google's two statuses already fold to `is_completed` with nothing
+        // lost, so there is no fifth word to keep here the way there is for
+        // Microsoft.
+        remote_status: None,
     }
 }
 
@@ -416,6 +429,59 @@ impl TaskPriority {
     }
 }
 
+/// How far along a task is, in the five words Microsoft's own status carries.
+///
+/// Modelled directly on [`TaskPriority`], which already solved this shape for
+/// importance in this same file: one type that both the reader and the writer
+/// ask, so they cannot answer the question differently. Before this existed
+/// they did. The reader folded all five words into the one boolean
+/// [`crate::data::message_cache::TaskEntry::is_completed`] and stopped there;
+/// the writer had no fifth word to send and invented one of two, "completed"
+/// or "notStarted". So a task Outlook held as in progress, waiting on
+/// somebody else, or deferred came back from a sync here as "not started",
+/// and the person's own state at the provider was gone.
+///
+/// The fix keeps the provider's own word, not just the boolean it folds to,
+/// in [`crate::data::message_cache::TaskEntry::remote_status`], and sends that
+/// word back unless the task is now completed. Strict on the way in, the same
+/// as `TaskPriority`, for the same reason: [`Self::stored`] only recognises
+/// Graph's own five words, so anything else is treated as unset instead of
+/// invented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskProgress {
+    NotStarted,
+    InProgress,
+    Completed,
+    WaitingOnOthers,
+    Deferred,
+}
+
+impl TaskProgress {
+    /// Graph's own word as a progress state, or nothing when it is not one of
+    /// the five.
+    pub fn stored(value: &str) -> Option<Self> {
+        match value {
+            "notStarted" => Some(Self::NotStarted),
+            "inProgress" => Some(Self::InProgress),
+            "completed" => Some(Self::Completed),
+            "waitingOnOthers" => Some(Self::WaitingOnOthers),
+            "deferred" => Some(Self::Deferred),
+            _ => None,
+        }
+    }
+
+    /// The word again, in the shape Graph sends and takes.
+    pub const fn as_word(self) -> &'static str {
+        match self {
+            Self::NotStarted => "notStarted",
+            Self::InProgress => "inProgress",
+            Self::Completed => "completed",
+            Self::WaitingOnOthers => "waitingOnOthers",
+            Self::Deferred => "deferred",
+        }
+    }
+}
+
 /// One of Microsoft's lists as this application stores it.
 pub fn ms_list_to_entry(list: &MsTodoList, account_id: &str, order: i32) -> TaskListEntry {
     TaskListEntry {
@@ -447,12 +513,22 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         } else {
             task.title.trim().to_string()
         },
-        description: task
-            .body
-            .as_ref()
-            .map(|body| body.content.trim())
-            .filter(|content| !content.is_empty())
-            .map(str::to_string),
+        // `body.content` arrives as html whenever `content_type` says so, and
+        // To Do's own editor writes html. Read with nothing done to it first,
+        // the tags themselves are what a screen reader says. Converted only
+        // when the provider declared it as html, never by sniffing the text
+        // for angle brackets: this program already got that wrong once, and a
+        // plain-text body mentioning an email address in angle brackets had
+        // the "tag" quietly deleted.
+        description: task.body.as_ref().and_then(|body| {
+            let content = if body.content_type.eq_ignore_ascii_case("html") {
+                crate::application::long_text::from_markup(&body.content)
+            } else {
+                body.content.clone()
+            };
+            let trimmed = content.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }),
         due_date: task
             .due_date_time
             .as_ref()
@@ -460,7 +536,10 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         // Five statuses, one boolean. Only "completed" is finished; the two
         // that are neither started nor finished are still outstanding, and
         // treating "deferred" as done would hide a task somebody put off.
-        is_completed: task.status == "completed",
+        // Asked through `TaskProgress` rather than compared by hand, the same
+        // way the priority below asks `TaskPriority`, so this reads exactly
+        // as it always has for the five words and for anything unrecognised.
+        is_completed: TaskProgress::stored(&task.status) == Some(TaskProgress::Completed),
         completed_at: task
             .completed_date_time
             .as_ref()
@@ -481,6 +560,15 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         remote_updated: task.last_modified_date_time.clone(),
         // Arrived from the provider, so the two agree by definition.
         pending: false,
+        // The word Graph sent, trimmed and kept whatever it is, including a
+        // sixth word Graph might add later. Echoing back a word the provider
+        // itself sent is safe in a way that inventing one is not: no screen
+        // in this program writes this column, so nothing here can offer a
+        // value Microsoft never said.
+        remote_status: {
+            let trimmed = task.status.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        },
     }
 }
 
@@ -514,21 +602,55 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> Result<MsTodoTask> {
             // description into a document Microsoft renders.
             content_type: "text".to_string(),
         }),
+        // Completed always wins over whatever word was stored, because
+        // ticking a task off here is a real change and has to say so.
+        // Otherwise the word Outlook itself gave this task on the last sync
+        // is sent back unchanged, so a task there marked in progress, waiting
+        // on somebody else or deferred stays that way after an edit made here
+        // that has nothing to do with its progress.
+        //
+        // The stored word is filtered to drop "completed" on its own way
+        // through: `is_completed` and `remote_status` are read together and
+        // start out agreeing, but ticking a task back off here flips
+        // `is_completed` alone, and a stored "completed" would otherwise be
+        // echoed straight back out over a task somebody had just marked not
+        // done. A task with no usable stored word has never been held by any
+        // provider, or was left not done after being un-ticked, and starts as
+        // not started, which is the only one of the five that fits either
+        // case.
         status: if task.is_completed {
-            "completed".to_string()
+            TaskProgress::Completed.as_word().to_string()
         } else {
-            "notStarted".to_string()
+            task.remote_status
+                .as_deref()
+                .and_then(TaskProgress::stored)
+                .filter(|progress| *progress != TaskProgress::Completed)
+                .unwrap_or(TaskProgress::NotStarted)
+                .as_word()
+                .to_string()
         },
         importance: importance.as_word().to_string(),
         // UTC, because the alternative is guessing at the reader's zone and
         // being wrong by a day for anybody who has travelled.
-        due_date_time: task.due_date.as_ref().map(|date| MsDateTimeZone {
+        due_date_time: task.due_date.as_ref().map(|date| MsDateTimeTimeZone {
             date_time: format!("{date}T00:00:00.0000000"),
             time_zone: "UTC".to_string(),
         }),
-        completed_date_time: task.completed_at.as_ref().map(|done| MsDateTimeZone {
-            date_time: done.clone(),
-            time_zone: "UTC".to_string(),
+        // The same conversion the calendar already uses for every date it
+        // sends to Graph, rather than a second one written here by hand. A
+        // stored stamp that carries its own offset is converted to universal
+        // time and named as such; a bare clock face is one Graph itself gave
+        // us, since this client never asks for another zone, and is kept as
+        // the hour it named. Passing the zone name rather than `None` is what
+        // makes that second case work: `None` would read a bare clock face as
+        // an hour on this computer and shift it. A stamp neither shape can
+        // read is left out rather than sent as an hour nobody meant, and
+        // Graph dates the completion itself.
+        completed_date_time: task.completed_at.as_ref().and_then(|stamp| {
+            crate::application::calendar::wall_clock_for_graph(
+                stamp,
+                Some(crate::application::calendar::COORDINATED_UNIVERSAL_TIME),
+            )
         }),
         // The server sets this. Nothing here has an opinion about it.
         last_modified_date_time: None,
@@ -1195,6 +1317,67 @@ mod tests {
         }
     }
 
+    /// A stored task carrying a provider progress word, otherwise settled.
+    fn a_stored_task_whose_progress_is(remote_status: &str, is_completed: bool) -> TaskEntry {
+        TaskEntry {
+            remote_status: Some(remote_status.to_string()),
+            is_completed,
+            ..a_stored_task_whose_priority_is("normal")
+        }
+    }
+
+    #[test]
+    fn test_the_progress_microsoft_holds_is_kept_when_a_change_goes_back() {
+        // Read, then sent straight back out: the word Outlook holds a task
+        // under has to survive a change made here that has nothing to do with
+        // its progress, such as renaming it.
+        for word in ["notStarted", "inProgress", "waitingOnOthers", "deferred"] {
+            let sent = entry_to_ms_task(&a_stored_task_whose_progress_is(word, false))
+                .expect("a task Microsoft understands");
+            assert_eq!(sent.status, word, "for a stored progress of {word:?}");
+        }
+
+        let sent = entry_to_ms_task(&a_stored_task_whose_progress_is("inProgress", true))
+            .expect("a task Microsoft understands");
+        assert_eq!(sent.status, "completed");
+    }
+
+    #[test]
+    fn test_ticking_off_a_task_microsoft_holds_as_in_progress_sends_completed() {
+        // The counterweight to the test above: without it, echoing the stored
+        // word back unconditionally would still pass that one.
+        let mut task = a_stored_task_whose_progress_is("inProgress", false);
+        task.is_completed = true;
+
+        let sent = entry_to_ms_task(&task).expect("a task Microsoft understands");
+
+        assert_eq!(sent.status, "completed");
+    }
+
+    #[test]
+    fn test_a_task_made_here_starts_as_not_started() {
+        // No provider has ever held this task, so there is no word to echo.
+        let mut task = a_stored_task_whose_priority_is("normal");
+        task.remote_status = None;
+
+        let sent = entry_to_ms_task(&task).expect("a task Microsoft understands");
+
+        assert_eq!(sent.status, "notStarted");
+    }
+
+    #[test]
+    fn test_un_ticking_a_task_the_last_sync_read_as_completed_does_not_send_completed_again() {
+        // `is_completed` and `remote_status` are read together and start out
+        // agreeing, but ticking a task back off here flips `is_completed`
+        // alone. Echoing the stale "completed" straight back out would send
+        // Outlook the opposite of what somebody just did.
+        let task = a_stored_task_whose_progress_is("completed", false);
+
+        let sent = entry_to_ms_task(&task).expect("a task Microsoft understands");
+
+        assert_eq!(sent.status, "notStarted");
+    }
+
     #[test]
     fn test_microsofts_importance_maps_to_a_priority_we_know() {
         for (importance, priority) in [
@@ -1219,6 +1402,51 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_a_microsoft_task_body_written_as_html_is_read_as_words_not_tags() {
+        // To Do's own editor writes html, and read as `body.content` with
+        // nothing done to it first, a screen reader says the tags aloud.
+        let task = MsTodoTask {
+            id: "1".to_string(),
+            title: "A".to_string(),
+            body: Some(MsItemBody {
+                content: "<h2>Agenda</h2><p>Bring the papers</p>".to_string(),
+                content_type: "html".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let description = ms_task_to_entry(&task, "acc-1", "l")
+            .description
+            .expect("a description");
+
+        assert!(!description.contains('<'), "{description}");
+        assert!(
+            crate::application::long_text::spoken(&description).contains("heading level 2, Agenda"),
+            "{description}"
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_task_body_written_as_text_keeps_the_lines_somebody_typed() {
+        // Parsing plain text as markup would collapse its newlines. This is
+        // the test that stops the over-eager version of the html fix.
+        let task = MsTodoTask {
+            id: "1".to_string(),
+            title: "A".to_string(),
+            body: Some(MsItemBody {
+                content: "Line one\nLine two".to_string(),
+                content_type: "text".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ms_task_to_entry(&task, "acc-1", "l").description.as_deref(),
+            Some("Line one\nLine two")
+        );
+    }
+
     /// A stored task with the priority a test wants to see leave, or not.
     fn a_stored_task_whose_priority_is(priority: &str) -> TaskEntry {
         TaskEntry {
@@ -1237,6 +1465,7 @@ mod tests {
             updated_at: String::new(),
             remote_updated: None,
             pending: true,
+            remote_status: None,
         }
     }
 
@@ -1296,6 +1525,7 @@ mod tests {
             updated_at: String::new(),
             remote_updated: None,
             pending: false,
+            remote_status: None,
         };
 
         let sent = entry_to_ms_task(&entry)
@@ -1349,6 +1579,35 @@ mod tests {
                 .due_date
                 .as_deref(),
             Some("2026-01-31")
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_task_arrives_from_json_with_its_progress_and_its_markup_read() {
+        // Every other test in this file builds `MsTodoTask` in Rust with the
+        // fields already set, so none of them can see a field that never
+        // arrives off the wire. Parsed from JSON is the only way to prove
+        // this reads what Graph really sends rather than what a Rust literal
+        // happens to carry.
+        let ms: MsTasksResponse = serde_json::from_str(
+            r#"{"value":[
+                {"id":"c3","title":"Chase the invoice","status":"inProgress",
+                 "importance":"normal",
+                 "body":{"content":"<h2>Agenda</h2><p>Chase Acme</p>",
+                         "contentType":"html"}}
+            ]}"#,
+        )
+        .expect("Microsoft's shape");
+
+        let entry = ms_task_to_entry(&ms.value[0], "acc-1", "l");
+
+        assert_eq!(entry.remote_status.as_deref(), Some("inProgress"));
+        assert!(!entry.is_completed);
+        let description = entry.description.expect("a description");
+        assert!(!description.contains('<'), "{description}");
+        assert!(
+            crate::application::long_text::spoken(&description).contains("heading level 2, Agenda"),
+            "{description}"
         );
     }
 
@@ -1842,7 +2101,7 @@ mod tests {
                     title: "Ring the surgery".to_string(),
                     status: "notStarted".to_string(),
                     importance: "normal".to_string(),
-                    due_date_time: Some(MsDateTimeZone {
+                    due_date_time: Some(MsDateTimeTimeZone {
                         date_time: "2026-01-31T00:00:00.0000000".to_string(),
                         time_zone: "UTC".to_string(),
                     }),
@@ -1865,6 +2124,92 @@ mod tests {
         assert!(request.contains(r#""timeZone":"UTC""#), "{request}");
         assert!(
             request.contains(r#""dateTime":"2026-01-31T00:00:00.0000000""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_completion_time_reaches_graph_as_a_clock_face_with_no_offset_on_it() {
+        // Graph's `dateTime` is a clock face with no offset, and a stamp that
+        // carries its own offset already says which instant it means, so it
+        // is converted to universal time and named as such rather than sent
+        // as it was stored.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "ms:t-9".to_string();
+        stored.is_completed = true;
+        stored.completed_at = Some("2026-01-30T09:00:00.123456789+00:00".to_string());
+        let body = entry_to_ms_task(&stored).expect("a task Microsoft understands");
+
+        client
+            .ms_update_task("a-token", "ms:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Microsoft task")
+            .await
+            .expect("a request");
+        assert!(
+            request.contains(r#""dateTime":"2026-01-30T09:00:00""#),
+            "{request}"
+        );
+        assert!(request.contains(r#""timeZone":"UTC""#), "{request}");
+        assert!(
+            !request.contains("+00:00"),
+            "the offset was sent beside a zone name that contradicts it: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_completion_time_microsoft_gave_us_goes_back_as_the_same_hour() {
+        // Graph's own shape: a clock face with no offset, seven digits of
+        // fraction. Honest limit: this assertion cannot tell the fix apart
+        // from the break on a machine whose local offset from UTC happens to
+        // be zero, because the wrong answer (reading the clock face as an
+        // hour on this computer) coincides with the right one there. It was
+        // taken red by hand on a machine with a non-zero local offset before
+        // this was trusted.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "ms:t-9".to_string();
+        stored.is_completed = true;
+        stored.completed_at = Some("2026-01-30T09:00:00.0000000".to_string());
+        let body = entry_to_ms_task(&stored).expect("a task Microsoft understands");
+
+        client
+            .ms_update_task("a-token", "ms:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Microsoft task")
+            .await
+            .expect("a request");
+        assert!(
+            request.contains(r#""dateTime":"2026-01-30T09:00:00""#),
+            "the hour changed on the way back to Graph: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_microsoft_task_read_asks_for_no_particular_time_zone() {
+        // Honest note: this one was never red. Reading a completion stamp
+        // back as universal time is only right because this client never asks
+        // Graph for another zone; this is what turns that assumption into a
+        // checked fact.
+        let (address, listening) =
+            answering("200 OK", "application/json", r#"{"value":[]}"#.to_string()).await;
+
+        TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .ms_tasks("a-token", "a-list")
+            .await
+            .expect("the tasks in a list to be read");
+
+        let request = heard(listening, "the tasks in a list")
+            .await
+            .expect("a request");
+        assert!(
+            !request.to_ascii_lowercase().contains("prefer"),
             "{request}"
         );
     }
