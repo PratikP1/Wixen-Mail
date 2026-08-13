@@ -4659,3 +4659,150 @@ fn test_the_sweep_header_check_can_tell_the_two_apart() {
         "a header that no longer adds up was not reported with both numbers"
     );
 }
+
+/// Every sentence the presentation layer writes for itself, with its tests and
+/// its comments taken out.
+///
+/// A test module here can be nested, and the tests inside one hold snippets of
+/// Rust as text, complete with braces in the first column. So neither counting
+/// braces nor looking for a closing brace where the module opened is enough on
+/// its own, and each of those on its own left several files' tests in the
+/// reading. Both together: the module ends at the line that closes it where it
+/// opened, and only once the braces have come back to where they started.
+///
+/// Comments go too, because a comment quoting a sentence is not the code
+/// saying it.
+fn what_the_windows_say() -> Vec<(PathBuf, String, String)> {
+    let mut found = Vec::new();
+    let mut files = Vec::new();
+    collect(Path::new("src/presentation"), &["rs"], &mut files);
+    for path in files {
+        let text = fs::read_to_string(&path).expect("a source file to be readable");
+        let mut inside = false;
+        let mut opening = false;
+        let mut depth = 0_i32;
+        let mut indent = String::new();
+        for line in text.replace("\r\n", "\n").lines() {
+            let braces = |c: char| i32::try_from(line.matches(c).count()).unwrap_or(i32::MAX);
+            if !inside && !opening && line.trim() == "#[cfg(test)]" {
+                opening = true;
+                indent = line[..line.len() - line.trim_start().len()].to_string();
+                continue;
+            }
+            if opening {
+                if braces('{') > 0 {
+                    opening = false;
+                    inside = true;
+                    depth = braces('{') - braces('}');
+                }
+                continue;
+            }
+            if inside {
+                depth += braces('{') - braces('}');
+                if depth <= 0 && line == format!("{indent}}}") {
+                    inside = false;
+                }
+                continue;
+            }
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            for literal in literals_in(line) {
+                found.push((path.clone(), line.to_string(), literal));
+            }
+        }
+    }
+    found
+}
+
+/// Every double-quoted literal on one line, as it is written.
+fn literals_in(line: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('"') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('"') else {
+            break;
+        };
+        found.push(after[..close].to_string());
+        rest = &after[close + 1..];
+    }
+    found
+}
+
+/// One place words a row that has gone, and one words a command that failed.
+///
+/// `pim_command::no_longer_there` already owned the first of those and already
+/// added the half the copies left off, that nothing has been changed. Six other
+/// places wrote their own shorter version, so somebody heard a different
+/// sentence depending on which panel they were in and two of the six left them
+/// unsure whether anything had happened. The second was one sentence for every
+/// personal information command there is, "That did not work", naming neither
+/// the row nor what had been attempted.
+///
+/// What this cannot see: whether either sentence is ever spoken, whether it is
+/// true where it is reached, or whether the owner says the right thing. It
+/// reads text. The tests beside `pim_command` are what ask the sentences
+/// themselves, and nothing here would notice a panel that had gone silent.
+#[test]
+fn test_only_one_place_words_a_row_that_has_gone() {
+    let mut written_again = Vec::new();
+    for (path, line, literal) in what_the_windows_say() {
+        for spelling in [
+            "is no longer there",
+            "no longer exists",
+            "That did not work",
+        ] {
+            if literal.contains(spelling) {
+                written_again.push(format!("{}: {}", path.display(), line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        written_again.is_empty(),
+        "these places word a sentence the personal information commands already own:\n{}",
+        written_again.join("\n")
+    );
+}
+
+/// Proving the reading above, which would pass on an empty list for ever.
+#[test]
+fn test_the_reading_of_what_the_windows_say_can_tell_the_two_apart() {
+    let said = what_the_windows_say();
+    assert!(
+        said.len() > 500,
+        "only {} sentences were read, so the reading is broken",
+        said.len()
+    );
+    assert!(
+        said.iter()
+            .any(|(_, _, literal)| literal == "No storage is open"),
+        "a sentence the windows really do say was not read"
+    );
+    assert!(
+        !said
+            .iter()
+            .any(|(_, _, literal)| literal.contains("the reading is broken")),
+        "the tests were not cut off, so the reading is looking at its own words"
+    );
+    // Test modules in these files sit between stretches of code rather than
+    // after all of them, so a cut that stopped at the first one would leave the
+    // last few hundred lines of the main window unread. This sentence is
+    // written past the last test module in that file.
+    assert!(
+        said.iter()
+            .any(|(_, _, literal)| literal.contains("Could not save what you chose")),
+        "the code after the last test module was cut off with them"
+    );
+
+    assert_eq!(
+        literals_in(r#"send_status(tx, rt, "That row is no longer there");"#),
+        vec!["That row is no longer there".to_string()],
+        "a literal on an ordinary line was not read"
+    );
+    assert!(
+        literals_in("let count = rows.len();").is_empty(),
+        "a line with no literal on it was read as having one"
+    );
+}

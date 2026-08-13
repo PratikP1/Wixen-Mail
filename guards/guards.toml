@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 55 records have arrived since and have not been through it.
+# 57 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4020,6 +4020,42 @@ after = """                        let _ = next.said;
                 return;"""
 red = [
     "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_delete_owner_words_what_a_delete_did",
+]
+
+# -- One owner for what a failed command says --------------------------------
+#
+# Eight places in the windows wrote their own version of the sentence for a row
+# that has gone, while the personal information commands already owned it and
+# already added the half those copies left off, that nothing has been changed.
+# Which sentence somebody heard depended on which panel they were in.
+#
+# Every one of those commands also failed into one sentence, "That did not
+# work", followed by whatever the storage layer said. Read aloud that names
+# nothing: a failed delete and a failed move are the same words, the row is not
+# named, and there is nothing in it to act on.
+
+[[guard]]
+name = "one place words a row that has gone"
+file = "src/presentation/managers.rs"
+before = """        return send_status(tx, rt, &no_longer_there(kind, ""));"""
+after = """        return send_status(tx, rt, "That row is no longer there");"""
+suite = "house_style"
+red = [
+    "test_only_one_place_words_a_row_that_has_gone",
+]
+
+[[guard]]
+name = "a command that failed says what it was and what to try"
+file = "src/application/pim_command.rs"
+before = """    format!(
+        "{tried} did not work: {}. Nothing has been changed. Try it again, and if it \\
+         keeps happening, close Wixen Mail and open it again.",
+        reason.trim().trim_end_matches('.')
+    )"""
+after = """    let _ = tried;
+    format!("That did not work: {reason}")"""
+red = [
+    "application::pim_command::tests::test_a_command_that_failed_says_what_it_was_and_what_to_try",
 ]
 
 [[guard]]

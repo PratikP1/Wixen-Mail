@@ -1802,7 +1802,10 @@ impl WxMailApp {
                     let existing = cache.get_note(&note_id).ok().flatten();
                     let Some(mut note) = existing else {
                         let _ = a11y.announce(
-                            "That note no longer exists",
+                            &crate::application::pim_command::no_longer_there(
+                                crate::application::new_item::ItemKind::Note,
+                                "",
+                            ),
                             crate::presentation::accessibility::announcements::Priority::High,
                         );
                         return;
@@ -4331,7 +4334,14 @@ fn label_the_message(
             return send_status(tx, rt, "Choose a message first");
         };
         let Some(message) = s.messages.get(index) else {
-            return send_status(tx, rt, "That row is no longer there");
+            return send_status(
+                tx,
+                rt,
+                &crate::application::pim_command::no_longer_there(
+                    crate::application::new_item::ItemKind::Mail,
+                    "",
+                ),
+            );
         };
         (
             message.message_id,
@@ -4547,7 +4557,10 @@ fn raise_what_is_due(
             // nowhere otherwise looks exactly like one that worked.
             Ok(0) => {
                 let _ = a11y.announce(
-                    "That reminder is no longer there, so nothing was changed",
+                    &crate::application::pim_command::no_longer_there(
+                        crate::application::new_item::ItemKind::Reminder,
+                        &item.title,
+                    ),
                     crate::presentation::accessibility::announcements::Priority::High,
                 );
                 continue;

@@ -787,6 +787,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **When a row had gone, or a command went wrong, you were told almost
+  nothing.** Eight places said "That row is no longer there", which does not
+  say what row or whether anything happened, and half of them left out the
+  part saying nothing had been changed. All of them now name what has gone
+  and say the rest is untouched, in the same words wherever you are.
+
+  Separately, every command in Contacts, the calendar, Tasks, Notes and
+  Reminders failed with one sentence, "That did not work", followed by
+  whatever the storage said. By ear a failed delete and a failed move were
+  the same words, the row was never named, and there was nothing in it to
+  act on. It now says what was being done, to which row, why it did not
+  happen, that nothing has been changed, and what to try.
+
 - **The message saying one day of a repeating event could not be kept on its
   own described something that had never happened.** It opened "That one day
   was not kept", which reads as though the change had gone to your calendar

@@ -1536,7 +1536,7 @@ pub fn pim_command(
 ) {
     use crate::application::new_item::ItemKind;
     use crate::application::pim_command::{
-        PimCommand, confirm_delete, deleted, no_longer_there, toggled,
+        PimCommand, confirm_delete, deleted, did_not_happen, no_longer_there, toggled,
     };
 
     let crate::application::pim_command::PimAction { command, kind, row } = action;
@@ -1551,7 +1551,7 @@ pub fn pim_command(
         return send_status(tx, rt, &format!("Choose a {} first", kind.label()));
     };
     let Some((id, name, was_set)) = selected_item(state, kind, row) else {
-        return send_status(tx, rt, "That row is no longer there");
+        return send_status(tx, rt, &no_longer_there(kind, ""));
     };
     // The cache toggles report nothing back, so the new state is the opposite
     // of what the panel is showing, and the panel was filled from the cache.
@@ -1669,7 +1669,12 @@ pub fn pim_command(
             );
         }
         Err(e) => {
-            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("That did not work: {e}")));
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(did_not_happen(
+                command,
+                kind,
+                &name,
+                &e.to_string(),
+            )));
         }
     }
 }
@@ -4408,7 +4413,12 @@ fn file_under(
                 .get_all_events_for_account(account_id)?
                 .into_iter()
                 .find(|e| e.id == id)
-                .ok_or_else(|| Error::Other("That event is no longer there".into()))?;
+                .ok_or_else(|| {
+                    Error::Other(crate::application::pim_command::no_longer_there(
+                        ItemKind::Event,
+                        "",
+                    ))
+                })?;
             event.calendar_id = Some(into.to_string());
             event.pending = true;
             cache.save_calendar_event(&event)
@@ -4418,15 +4428,23 @@ fn file_under(
                 .get_all_tasks_for_account(account_id)?
                 .into_iter()
                 .find(|t| t.id == id)
-                .ok_or_else(|| Error::Other("That task is no longer there".into()))?;
+                .ok_or_else(|| {
+                    Error::Other(crate::application::pim_command::no_longer_there(
+                        ItemKind::Task,
+                        "",
+                    ))
+                })?;
             task.task_list_id = Some(into.to_string());
             task.pending = true;
             cache.save_task(&task)
         }
         ItemKind::Note => {
-            let mut note = cache
-                .get_note(id)?
-                .ok_or_else(|| Error::Other("That note is no longer there".into()))?;
+            let mut note = cache.get_note(id)?.ok_or_else(|| {
+                Error::Other(crate::application::pim_command::no_longer_there(
+                    ItemKind::Note,
+                    "",
+                ))
+            })?;
             note.folder_id = Some(into.to_string());
             cache.save_note(&note)
         }
@@ -4637,7 +4655,11 @@ pub fn change_the_group_a_contact_is_in(
         return send_refusal(tx, rt, "Choose a contact first");
     };
     let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
-        return send_refusal(tx, rt, "That row is no longer there");
+        return send_refusal(
+            tx,
+            rt,
+            &crate::application::pim_command::no_longer_there(ItemKind::Contact, ""),
+        );
     };
     let account_id = active_or_local(state);
 
@@ -4779,8 +4801,11 @@ fn writing_to_a_group(
 ) -> crate::common::Result<crate::application::contact_groups::Writing> {
     use crate::common::Error;
 
-    let group = a_group_here(cache, account_id, group_id)
-        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let group = a_group_here(cache, account_id, group_id).ok_or_else(|| {
+        Error::Other(crate::application::pim_command::something_no_longer_there(
+            "group", "",
+        ))
+    })?;
     let addresses = cache.resolve_group_emails(group_id)?;
     Ok(crate::application::contact_groups::writing_to(
         &group.name,
@@ -4815,8 +4840,11 @@ fn change_membership(
     use crate::application::contact_groups;
     use crate::common::Error;
 
-    let group = a_group_here(cache, account_id, group_id)
-        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let group = a_group_here(cache, account_id, group_id).ok_or_else(|| {
+        Error::Other(crate::application::pim_command::something_no_longer_there(
+            "group", "",
+        ))
+    })?;
     let person = cache
         .get_contacts_for_account(&group.account_id)
         .ok()
@@ -4878,8 +4906,11 @@ fn store_the_new_name(
 ) -> crate::common::Result<String> {
     use crate::common::Error;
 
-    let mut group = a_group_here(cache, account_id, group_id)
-        .ok_or_else(|| Error::Other("That group is no longer there".into()))?;
+    let mut group = a_group_here(cache, account_id, group_id).ok_or_else(|| {
+        Error::Other(crate::application::pim_command::something_no_longer_there(
+            "group", "",
+        ))
+    })?;
     let taken = cache
         .load_contact_groups(&group.account_id)?
         .into_iter()

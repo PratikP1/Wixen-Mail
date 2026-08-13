@@ -206,13 +206,60 @@ pub fn cannot_be_moved_into(kind: ItemKind, holder: ContainerKind, container_nam
 /// It does not say deleted, because nothing was. It says the row has gone and
 /// that nothing was changed, which are the two facts worth having.
 pub fn no_longer_there(kind: ItemKind, name: &str) -> String {
+    something_no_longer_there(thing(kind), name)
+}
+
+/// The same sentence for something [`ItemKind`] has no word for.
+///
+/// A contact group is the case today. No command here acts on one, so there is
+/// no kind for it, and adding one so that a sentence could name it would put a
+/// variant into every match that switches on a kind. The words are the same
+/// words either way; only what is being named differs, and that is the only
+/// thing this takes.
+///
+/// Eight places wrote a shorter version of this for themselves, so which
+/// sentence somebody heard depended on which panel they were in, and half of
+/// those left off the part saying nothing had happened.
+pub fn something_no_longer_there(what: &str, name: &str) -> String {
     let named = match name.trim() {
         // A row whose title never loaded, the same case the question itself
         // copes with. "That event is no longer there" is still a sentence.
-        "" => format!("That {}", thing(kind)),
+        "" => format!("That {what}"),
         title => format!("\"{title}\""),
     };
     format!("{named} is no longer there. Nothing has been changed.")
+}
+
+/// What to say when a command was carried out and the storage refused it.
+///
+/// The whole family used to share one sentence, "That did not work", with
+/// whatever the storage layer said appended. Read aloud, that names nothing: a
+/// failed delete and a failed move are the same words, the row is not named,
+/// and there is nothing in it to act on. So this says what was being done, to
+/// which row, why it did not happen, that the row is as it was, and what to try.
+///
+/// The reason arrives as it comes, with a full stop or without one, so the stop
+/// is put on here. Two in a row is heard as a stumble rather than seen as a
+/// typo.
+pub fn did_not_happen(command: PimCommand, kind: ItemKind, name: &str, reason: &str) -> String {
+    let named = match name.trim() {
+        "" => format!("that {}", thing(kind)),
+        title => format!("\"{title}\""),
+    };
+    // Worded so that it is true whichever way a toggle was going. Nothing here
+    // knows which way it went, and "Ticking off" over an untick would be a
+    // sentence saying the opposite of what was asked for.
+    let tried = match command {
+        PimCommand::Delete => format!("Deleting {named}"),
+        PimCommand::ToggleComplete => format!("Changing whether {named} is done"),
+        PimCommand::TogglePin => format!("Changing whether {named} is pinned"),
+        PimCommand::Move => format!("Moving {named}"),
+    };
+    format!(
+        "{tried} did not work: {}. Nothing has been changed. Try it again, and if it \
+         keeps happening, close Wixen Mail and open it again.",
+        reason.trim().trim_end_matches('.')
+    )
 }
 
 /// What to say after a toggle, which has to name the new state.
@@ -404,6 +451,81 @@ mod tests {
             untitled, "That event is no longer there. Nothing has been changed.",
             "a row whose title never loaded left the sentence unfinished"
         );
+
+        // A contact group and an attachment are the same fact about a different
+        // thing, and there is no kind for either. Same sentence, so nobody has
+        // to learn two.
+        assert_eq!(
+            something_no_longer_there("group", ""),
+            "That group is no longer there. Nothing has been changed."
+        );
+        assert_eq!(
+            something_no_longer_there("attachment", "Invoice.pdf"),
+            "\"Invoice.pdf\" is no longer there. Nothing has been changed."
+        );
+        assert_eq!(
+            no_longer_there(ItemKind::Task, "Buy milk"),
+            something_no_longer_there("task", "Buy milk"),
+            "the kind that has a word for itself gets a different sentence"
+        );
+    }
+
+    #[test]
+    fn test_a_command_that_failed_says_what_it_was_and_what_to_try() {
+        // Every one of these commands used to fail into one sentence, "That did
+        // not work", followed by whatever the storage layer had said. It named
+        // neither the row nor what had been attempted, so somebody working by
+        // ear could not tell a failed delete from a failed move, and it left
+        // them with nothing to do about it.
+        let said = did_not_happen(
+            PimCommand::Delete,
+            ItemKind::Task,
+            "Buy milk",
+            "the file is in use",
+        );
+
+        assert!(said.contains("Buy milk"), "the row is not named: {said}");
+        assert!(
+            said.contains("Deleting"),
+            "what was tried is not named: {said}"
+        );
+        assert!(
+            said.contains("the file is in use"),
+            "the reason was dropped: {said}"
+        );
+        assert!(
+            said.contains("Nothing has been changed"),
+            "it does not say the row is untouched: {said}"
+        );
+        assert!(said.contains("Try it again"), "nothing to do next: {said}");
+
+        // Each command names itself, so a failed toggle does not read as a
+        // failed delete.
+        let every: std::collections::BTreeSet<String> = [
+            PimCommand::Delete,
+            PimCommand::ToggleComplete,
+            PimCommand::TogglePin,
+            PimCommand::Move,
+        ]
+        .into_iter()
+        .map(|command| did_not_happen(command, ItemKind::Task, "Buy milk", "the file is in use"))
+        .collect();
+        assert_eq!(
+            every.len(),
+            4,
+            "two commands fail in the same words: {every:?}"
+        );
+
+        // A row whose title never loaded, the case every sentence here copes
+        // with.
+        let untitled = did_not_happen(PimCommand::Delete, ItemKind::Note, "   ", "no room left");
+        assert!(untitled.contains("that note"), "{untitled}");
+        assert!(!untitled.contains("\"\""), "{untitled}");
+
+        // The reason arrives with or without a full stop on the end, and two in
+        // a row is heard as a stumble.
+        let stopped = did_not_happen(PimCommand::Move, ItemKind::Event, "Dentist", "it broke.");
+        assert!(!stopped.contains(".."), "{stopped}");
     }
 
     #[test]

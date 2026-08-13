@@ -117,7 +117,10 @@ fn save_chosen(
     // one meant. A list with a selection is asking about that row.
     let index = chosen.unwrap_or(0) as usize;
     let Some(attachment) = document.attachments.get(index) else {
-        let _ = a11y.announce("That attachment is no longer there", Priority::Normal);
+        let _ = a11y.announce(
+            &crate::application::pim_command::something_no_longer_there("attachment", ""),
+            Priority::Normal,
+        );
         return;
     };
     if what == Doing::Reading && !can_be_read_here(attachment) {
