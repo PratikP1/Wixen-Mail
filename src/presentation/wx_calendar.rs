@@ -893,6 +893,22 @@ mod tests {
 
     #[test]
     fn test_the_calendar_window_asks_before_it_says_anything() {
+        // What this cannot see. Reaching these arms takes a window on the
+        // screen, a list with a row picked out and somebody clicking through
+        // two dialogs, so nothing here runs a line of the code it is about. It
+        // reads the arms as text.
+        //
+        // That means the arm could stop being reachable, the menu line could
+        // lose its binding, the whole branch could go dead, and this stays
+        // green. It cannot say whether the refusal is a true one, whether the
+        // sentence is the right sentence for what was refused, or whether an
+        // announcement raised from inside a modal dialog is heard at all. Only
+        // a screen reader run answers the last of those.
+        //
+        // What it does hold is the order: that the question is asked before
+        // anything is queued, and that the refusal and the thing it refuses sit
+        // on opposite branches. That is the shape this project has got wrong
+        // three times.
         let source = the_calendar_window();
 
         let delete = the_arm_for(&source, "ID_CAL_DELETE");

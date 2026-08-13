@@ -3522,6 +3522,29 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_sync_button_in_the_calendar_window_really_starts_a_sync",
 ]
 
+# ── The order the calendar window does two things in ────────────────────────
+#
+# The three records below are all defended by one test, and that test reads the
+# window as text. This note is what none of them said until now.
+#
+# What these records cannot see. Reaching the arms they break takes a window on
+# the screen, a list with a row picked out and somebody clicking through two
+# dialogs, so the test behind them never runs a line of the code they change.
+# The arm could stop being reachable, the menu line could lose its binding, the
+# whole branch could go dead, and all three records stay green while every one
+# of them is applied.
+#
+# They also cannot say whether the refusal is a true one, whether the sentence
+# fits what was refused, or whether an announcement raised from inside a modal
+# dialog is heard. Only a screen reader run answers the last, and that has not
+# been done for these arms.
+#
+# What they do hold is the order: the question asked before anything is queued,
+# the refusal and the thing it refuses on opposite branches, and the sentence in
+# the tense of something that has not happened yet. The middle one of the three
+# is the narrow edit that leaves the order intact and the behaviour gone, which
+# is the shape this project has now got wrong three times.
+
 [[guard]]
 name = "the calendar window asks whether an answer can be carried out before it queues it"
 file = "src/presentation/wx_calendar.rs"
