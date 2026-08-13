@@ -94,6 +94,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   instead of none at all, though no address made or synced by this program
   currently produces one.
 
+- **Fixed: a contact whose address at Google was recorded as a single line
+  rather than a street, city and so on came back with no address at all, and
+  the next change sent cleared it.** Google fills in a composed line for every
+  address it holds, whether or not it also holds the separate parts, so an
+  address given to Google as one line reads back with only that line set. It
+  was read here into six empty boxes, stored as an address of nothing, and
+  sent back that way, taking the address off the Google contact. The line is
+  now kept, in the same place a one-line address from a card import or the
+  contact editor is already kept, and sent back as a street address rather
+  than left to Google to compose again, so it survives even without settling
+  what Google does with an address update that carries no line of its own.
+
+- **Fixed: a contact whose only postal address was recorded before this
+  program kept a list of addresses sent no address to Google or Outlook, and
+  the next change cleared whatever either held.** The email address and the
+  phone number both already fell back to the single column recorded for a
+  contact from before the list existed; the postal address had no such
+  fallback. It does now, for both address books, and a blank address row left
+  behind by the editor is no longer sent either.
+
 - **Fixed: ticking off a Google task could put back a task deleted on another
   device.** Every change sent to Google Tasks carried a claim that the task had
   not been deleted, whether or not that is what your copy meant. Changes go up

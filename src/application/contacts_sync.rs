@@ -571,6 +571,38 @@ fn chosen_emails(contact: &ContactEntry) -> Vec<EmailEntry> {
     }]
 }
 
+/// Every postal address recorded for a contact. Same rule as the phone
+/// numbers and the email addresses.
+///
+/// Before there was a list to hold them, only the one line in the primary
+/// column was recorded, the same column [`crate::presentation::contact_convert::to_editor`]
+/// and the card exporter already fall back to. A contact stored that way is
+/// not addressless, and both address-book writers need its one address or
+/// the next change sent clears whatever the address book holds, because
+/// `addresses` is a field a change replaces wholesale.
+fn chosen_addresses(contact: &ContactEntry) -> Vec<AddressEntry> {
+    let recorded: Vec<AddressEntry> = stored_list(contact.addresses_json.as_ref())
+        .into_iter()
+        .filter(|entry: &AddressEntry| !entry.on_one_line().trim().is_empty())
+        .collect();
+    if !recorded.is_empty() {
+        return recorded;
+    }
+    contact
+        .address
+        .as_ref()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            vec![AddressEntry {
+                label: String::new(),
+                street: line.to_string(),
+                ..Default::default()
+            }]
+        })
+        .unwrap_or_default()
+}
+
 // ── The three places Microsoft keeps a number ───────────────────────────────
 
 /// Which of Microsoft's three phone fields a number belongs in.
@@ -2493,13 +2525,29 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     let addresses: Vec<AddressEntry> = person
         .addresses
         .iter()
-        .map(|address| AddressEntry {
-            label: label_for_provider_type(&address.address_type),
-            street: address.street_address.clone(),
-            city: address.city.clone(),
-            state: address.region.clone(),
-            zip: address.postal_code.clone(),
-            country: address.country.clone(),
+        .map(|address| {
+            let mut entry = AddressEntry {
+                label: label_for_provider_type(&address.address_type),
+                street: address.street_address.clone(),
+                city: address.city.clone(),
+                state: address.region.clone(),
+                zip: address.postal_code.clone(),
+                country: address.country.clone(),
+            };
+            // An address Google holds only as a composed line, with none of
+            // the structured parts filled in, would otherwise read in here as
+            // six empty strings and go back out as an address of nothing.
+            // The line goes in the street field instead, the same place a
+            // one-line address from a card import or the contact editor is
+            // kept: one answer to "what does this address say", reused
+            // rather than a second one invented beside it.
+            if entry.on_one_line().trim().is_empty() {
+                let line = address.formatted_value.trim();
+                if !line.is_empty() {
+                    entry.street = line.to_string();
+                }
+            }
+            entry
         })
         .collect();
     let addresses_json = if addresses.is_empty() {
@@ -2687,7 +2735,7 @@ fn contact_to_google_person(contact: &ContactEntry) -> GooglePerson {
     // The whole address written out on one line is left empty on purpose. It
     // is Google's to compose from the parts, and sending a hand-joined copy
     // beside them gives two answers to one question.
-    let addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref())
+    let addresses = chosen_addresses(contact)
         .into_iter()
         .map(|entry| GoogleAddress {
             formatted_value: String::new(),
@@ -2903,7 +2951,7 @@ fn contact_to_ms_contact(contact: &ContactEntry) -> MsGraphContact {
         }
     }
 
-    let stored_addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref());
+    let stored_addresses = chosen_addresses(contact);
     let home_address = stored_addresses
         .iter()
         .find(|entry| !microsoft_calls_this_a_work_address(&entry.label))
@@ -3165,6 +3213,63 @@ mod tests {
         assert_eq!(back.addresses[0].street_address, "12 Elm Row");
         assert_eq!(back.addresses[0].postal_code, "LS1 2AB");
         assert_eq!(back.addresses[0].address_type, "home");
+    }
+
+    #[test]
+    fn test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back() {
+        // The test above is blind to this: its source has every structured
+        // part filled in, so it cannot see what happens to an address Google
+        // holds with none of them set, only the composed line. Google fills
+        // `formattedValue` in on every address it returns, whether or not
+        // anybody gave it separate parts, so this is not a corner case: it is
+        // what an address typed as a single line at Google looks like.
+        //
+        // Read into six empty strings, that address was stored as nothing and
+        // sent back to Google as an address of nothing, clearing whatever
+        // Google actually held.
+        let from_google = GooglePerson {
+            resource_name: "people/c8".to_string(),
+            names: vec![GoogleName {
+                display_name: "Priya Sharma".to_string(),
+                ..Default::default()
+            }],
+            addresses: vec![GoogleAddress {
+                formatted_value: "12 Elm Row, Leeds LS1 2AB".to_string(),
+                address_type: "home".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let here = google_person_to_contact(&from_google, AN_ACCOUNT);
+        let kept: Vec<AddressEntry> = stored_list(here.addresses_json.as_ref());
+        assert_eq!(kept.len(), 1, "the address was dropped: {here:?}");
+        assert_eq!(
+            kept[0].on_one_line(),
+            "12 Elm Row, Leeds LS1 2AB",
+            "the line Google gave was not kept"
+        );
+        assert_eq!(
+            here.address.as_deref(),
+            Some("12 Elm Row, Leeds LS1 2AB"),
+            "the contact panel would read this address out as nothing"
+        );
+
+        let back = contact_to_google_person(&here);
+        assert_eq!(
+            back.addresses.len(),
+            1,
+            "a change would have cleared the address at Google"
+        );
+        assert_eq!(
+            back.addresses[0].street_address, "12 Elm Row, Leeds LS1 2AB",
+            "the line was not sent back"
+        );
+        let sent = serde_json::to_value(&back).expect("a body Google would receive");
+        assert!(
+            sent["addresses"][0].get("formattedValue").is_none(),
+            "this program never asks Google to compose from a line it already gave: {sent}"
+        );
     }
 
     #[test]
@@ -4136,6 +4241,20 @@ mod tests {
         let work = ms.business_address.expect("the work address to be sent");
         assert_eq!(work.street, "2 Contoso Way");
         assert_eq!(work.city, "Redmond");
+    }
+
+    #[test]
+    fn test_an_empty_address_row_is_not_sent_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.addresses_json = serde_json::to_string(&vec![AddressEntry::default()]).ok();
+
+        let ms = contact_to_ms_contact(&contact);
+
+        assert!(
+            ms.home_address.is_none(),
+            "a blank address row should not reach Outlook: {:?}",
+            ms.home_address
+        );
     }
 
     #[test]
@@ -5574,6 +5693,52 @@ mod tests {
         let person = contact_to_google_person(&contact);
 
         assert!(person.addresses.is_empty());
+    }
+
+    #[test]
+    fn test_a_postal_address_stored_before_the_lists_existed_still_goes_to_google() {
+        // `chosen_emails` and `chosen_phones` both fall back to the single
+        // column when the JSON list is empty; the address writer called
+        // `stored_list` directly and had no such fallback. A contact whose
+        // address lives only in that column went to Google with an empty
+        // `addresses` list, which is a replaced field: Google would have
+        // cleared whatever it held for a contact this program had never even
+        // read an address for.
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.address = Some("12 High Street, London".to_string());
+
+        let person = contact_to_google_person(&contact);
+
+        let sent = person.addresses.first().expect("the address to be sent");
+        assert_eq!(sent.street_address, "12 High Street, London");
+    }
+
+    #[test]
+    fn test_a_postal_address_stored_before_the_lists_existed_still_goes_to_microsoft() {
+        let mut contact = a_local_contact("Carol White", "carol@outlook.com");
+        contact.address = Some("12 High Street, London".to_string());
+
+        let ms = contact_to_ms_contact(&contact);
+
+        let sent = ms.home_address.expect("the address to be sent");
+        assert_eq!(sent.street, "12 High Street, London");
+    }
+
+    #[test]
+    fn test_an_empty_address_row_is_not_sent_to_google() {
+        // The editor adds a blank row when somebody clicks Add and changes
+        // their mind; `chosen_phones` and `chosen_emails` already drop such a
+        // row before it reaches a provider. The address writer did not.
+        let mut contact = a_local_contact("Grace Hopper", "grace@example.com");
+        contact.addresses_json = serde_json::to_string(&vec![AddressEntry::default()]).ok();
+
+        let person = contact_to_google_person(&contact);
+
+        assert!(
+            person.addresses.is_empty(),
+            "a blank address row should not reach Google: {:?}",
+            person.addresses
+        );
     }
 
     #[test]

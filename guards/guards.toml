@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 72 records have arrived since and have not been through it.
+# 75 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5115,4 +5115,74 @@ after = """    #[serde(default, rename = "type")]
     pub address_type: String,"""
 red = [
     "application::contacts_sync::tests::test_an_address_with_no_label_asks_google_for_no_label_rather_than_an_empty_one",
+]
+
+# ── An address Google holds only as a composed line is kept, not read as nothing ─
+#
+# Google fills in `formattedValue` on every address it returns, whether or not
+# it was given separate parts. An address with none of the structured parts
+# set was read into six empty strings here and sent back as an address of
+# nothing, which cleared whatever Google held, because `addresses` is a field
+# a change replaces wholesale. The existing round-trip test could not see
+# this: its source has every structured part filled in.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "an address Google holds only as a composed line is kept rather than read as nothing"
+file = "src/application/contacts_sync.rs"
+before = """            if entry.on_one_line().trim().is_empty() {
+                let line = address.formatted_value.trim();
+                if !line.is_empty() {
+                    entry.street = line.to_string();
+                }
+            }
+            entry
+        })
+        .collect();"""
+after = """            entry
+        })
+        .collect();"""
+red = [
+    "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
+]
+
+# ── A postal address stored before the lists existed still reaches an address book ─
+#
+# `chosen_emails` and `chosen_phones` fall back to the single column when the
+# JSON list is empty, and drop a blank row. The two address writers called
+# `stored_list` on the JSON column directly: no fallback, no blank-row filter.
+# A contact whose address lived only in the single column went out with an
+# empty `addresses` list, which is a field a change replaces wholesale, so a
+# provider holding an address for that contact from any other route would
+# have had it cleared. Two records, because each writer is its own call site
+# and a break inside a shared helper only proves itself at the site it is
+# measured from.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "a postal address stored before the lists existed still reaches Google, and a blank row does not"
+file = "src/application/contacts_sync.rs"
+before = """    let addresses = chosen_addresses(contact)
+        .into_iter()
+        .map(|entry| GoogleAddress {"""
+after = """    let addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref())
+        .into_iter()
+        .map(|entry| GoogleAddress {"""
+red = [
+    "application::contacts_sync::tests::test_a_postal_address_stored_before_the_lists_existed_still_goes_to_google",
+    "application::contacts_sync::tests::test_an_empty_address_row_is_not_sent_to_google",
+]
+
+[[guard]]
+name = "a postal address stored before the lists existed still reaches Microsoft, and a blank row does not"
+file = "src/application/contacts_sync.rs"
+before = """    let stored_addresses = chosen_addresses(contact);
+    let home_address = stored_addresses"""
+after = """    let stored_addresses = stored_list::<AddressEntry>(contact.addresses_json.as_ref());
+    let home_address = stored_addresses"""
+red = [
+    "application::contacts_sync::tests::test_a_postal_address_stored_before_the_lists_existed_still_goes_to_microsoft",
+    "application::contacts_sync::tests::test_an_empty_address_row_is_not_sent_to_microsoft",
 ]
