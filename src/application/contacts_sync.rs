@@ -452,6 +452,17 @@ const UNLABELLED: &str = "Other";
 /// arrives and has to be read back out as words. This and its opposite have to
 /// stay exact opposites, or a label drifts a little on every sync and a number
 /// is read out differently each time.
+///
+/// Open question, not settled here: an untyped value from a provider and a
+/// value somebody deliberately labelled "Other" both read in as [`UNLABELLED`],
+/// and both then write back out as the explicit type `"other"`, not as no
+/// type at all: `provider_type_for_label("Other")` lower-cases the word
+/// rather than recognising it as the absence of a choice. So an address,
+/// email or phone number a provider held with no type of its own is sent
+/// back carrying a type it never had. Telling the two apart means the stored
+/// label needs a third state, "no label was ever given", which is a change
+/// to what every address, email and phone entry stores, not to this pair of
+/// functions. Left as a question rather than a guess.
 fn label_for_provider_type(provider_type: &str) -> String {
     let words = words_in_provider_type(provider_type);
     if words.is_empty() {
