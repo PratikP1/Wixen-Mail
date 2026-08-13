@@ -787,6 +787,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The message saying one day of a repeating event could not be kept on its
+  own described something that had never happened.** It opened "That one day
+  was not kept", which reads as though the change had gone to your calendar
+  server and been turned down. Nothing had been sent: the answer is worked out
+  before the editor even opens, and again before anything is written. It now
+  says the day cannot be kept, and it ends by telling you what to do about it,
+  which is to change the event's time zone to one this program knows and then
+  open the day again.
+
 - **A draft your mail server would not take could leave no copy on the server
   at all, and nothing said so.** Saving a draft again replaced the copy in the
   server's Drafts folder, and it did that by taking the old copy away first and

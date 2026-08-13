@@ -6348,6 +6348,56 @@ mod changing_one_day_of_a_series {
         );
     }
 
+    /// Every time zone the document built for a day names on a line of its own.
+    fn the_zones_named_in(day: &CalendarEventEntry) -> std::collections::BTreeSet<String> {
+        crate::application::caldav_sync::local_to_caldav_event(day)
+            .ical_data
+            .lines()
+            .filter_map(|line| line.split_once("TZID="))
+            .map(|(_, after)| {
+                after
+                    .split([':', ';'])
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_the_day_a_refusal_is_asked_about_names_only_the_events_own_time_zone() {
+        // The refusal tells somebody to change the event's time zone, with none
+        // of the hedging the sync's sentence carries about whose zone it is.
+        // That is true only while the day being asked about names one zone and
+        // it is the event's own. A series can call a day off in a zone spelt
+        // its own way, so if the day cut out of the series ever carried those,
+        // somebody would be sent to change a zone that was perfectly fine while
+        // the one that really stopped the write sat on a line they never see.
+        let cache = a_cache("one_day_zone_named_once");
+        a_calendar_on_a_server(&cache);
+        let mut series = a_weekly_series(&cache);
+        series.exception_dates = Some("TZID=Eastern Standard Time:20260312T090000".to_string());
+        cache.save_calendar_event(&series).expect("the series");
+        let day = the_day_opened(&series);
+
+        let that_day = the_day_kept_on_its_own(&series, &only_the_summary_retyped(&day));
+
+        assert_eq!(
+            the_zones_named_in(&that_day),
+            ["Asia/Kolkata".to_string()].into_iter().collect(),
+            "the day carries a time zone that is not the event's own"
+        );
+        assert_eq!(
+            why_that_day_cannot_be_kept(
+                crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+                &that_day
+            ),
+            None,
+            "the day was refused over a zone that arrived on a day the series calls off"
+        );
+    }
+
     #[test]
     fn test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written() {
         // A zone spelt the way Outlook and Exchange spell it cannot be

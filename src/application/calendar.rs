@@ -1496,12 +1496,26 @@ pub fn the_zone_that_cannot_be_written(day: &CalendarEventEntry) -> Option<Strin
 /// One owner for these words, because the window says them before the editor
 /// opens and the write says them before either half is stored. Two spellings of
 /// one refusal is how one of them becomes false without anybody editing it.
+///
+/// Said before anything is written, on every path that reaches it, so it says
+/// what cannot be done and not what was tried. It used to open "That one day was
+/// not kept", which describes a write that went to a server and came back
+/// refused. Nothing had been sent, and somebody who went looking for what that
+/// attempt left behind found a calendar nothing had touched.
+///
+/// The way out it offers names the event's own time zone with no hedge, which
+/// the sync's sentence deliberately does not. That holds because the day this is
+/// asked about is cut from the series and carries neither the repeat nor the
+/// days the series calls off, so its own zone is the only one its document can
+/// name. Pinned where that day is built rather than assumed here.
 pub fn one_day_cannot_be_kept(clause: &str) -> String {
     format!(
-        "That one day was not kept as a separate appointment: {clause} \
+        "That one day cannot be kept as a separate appointment: {clause} \
          Nothing has been changed and the day is still part of the series. \
          Time zones written this way come from Outlook and Exchange, and \
-         this program cannot yet describe one to a calendar server."
+         this program cannot yet describe one to a calendar server. Change \
+         the event's time zone to one this program knows, then open the day \
+         again."
     )
 }
 
@@ -3097,6 +3111,141 @@ mod tests {
             why_that_day_cannot_be_kept_on_its_own(&day).expect("the write to refuse it");
 
         assert_eq!(from_the_window, from_the_write);
+    }
+
+    /// What a refusal decided before anything is written gets wrong, rule by
+    /// rule.
+    ///
+    /// One complaint per rule broken rather than a bare pass or fail, so a test
+    /// naming a sentence says which rules it fell over and a second fault is not
+    /// hidden behind the first.
+    ///
+    /// These are the rules for the refusals answered before a single write goes
+    /// out. The sentence read under an answer nobody has chosen yet is a
+    /// different thing and is not asked them: nothing is being done to the
+    /// calendar at that point, so it has nothing to say about the calendar being
+    /// untouched.
+    fn what_a_refusal_said_before_the_write_gets_wrong(said: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        // The fault these rules were written for. A refusal decided before
+        // anything is attempted must not be worded as an attempt that failed:
+        // somebody who hears that a day "was not kept" has been told a write
+        // went out and came back, and goes looking for what it left behind.
+        for tried in ["was not", "were not", "has been undone", "has not been"] {
+            if said.contains(tried) {
+                wrong.push(format!("describes a write that was never tried: {tried}"));
+                break;
+            }
+        }
+        // Both spellings of a flat no that this file uses. A third one is a
+        // deliberate addition here rather than something to work around, because
+        // a refusal that reads as a maybe is how the question describing an
+        // answer and the refusal of that same answer came to disagree about
+        // whether the thing was possible at all.
+        if !["cannot", "Cannot", "is not something this can do"]
+            .iter()
+            .any(|flat_no| said.contains(flat_no))
+        {
+            wrong.push("does not say plainly that it cannot be done".to_string());
+        }
+        if !said.contains("Nothing has been changed") {
+            wrong.push("does not say the calendar is untouched".to_string());
+        }
+        if !["Change ", "Choose ", "Try ", "Use ", "Check "]
+            .iter()
+            .any(|next| said.contains(next))
+        {
+            wrong.push("tells nobody what to do next".to_string());
+        }
+        if said.contains("  ") {
+            wrong.push("a wrapped literal lost a space".to_string());
+        }
+        for machine in ["RRULE", "EXDATE", "RECURRENCE-ID", "provider", "API"] {
+            if said.contains(machine) {
+                wrong.push(format!("names machinery: {machine}"));
+            }
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_no_refusal_said_before_anything_is_written_describes_a_write_that_was_tried() {
+        // Every refusal here is decided before either half of a change is
+        // stored: the window asks before the editor opens, and the write asks
+        // again before anything is written. One of them said a day "was not
+        // kept", which describes a write that went to a server and came back
+        // refused. None of that happened.
+        let clause = the_zone_that_cannot_be_written(&a_day_in_a_zone_no_server_can_be_told())
+            .expect("a zone no server can be told");
+        let mut complaints = Vec::new();
+        let mut check = |about: &str, said: &str| {
+            for wrong in what_a_refusal_said_before_the_write_gets_wrong(said) {
+                complaints.push(format!("{about}: {wrong}\n    said: {said}"));
+            }
+        };
+
+        check(
+            "the day that cannot be kept",
+            &one_day_cannot_be_kept(&clause),
+        );
+        for goes in EVERY_CALENDAR {
+            for keeping_the_day_apart in [None, Some(clause.clone())] {
+                let allows = WhatTheCalendarAllows {
+                    goes,
+                    keeping_the_day_apart,
+                };
+                for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
+                    for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
+                        if let Err(said) = can_be_honoured(done, means, &allows) {
+                            check(&format!("{done:?} {means:?} on {goes:?}"), &said);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(complaints.is_empty(), "\n{}", complaints.join("\n"));
+    }
+
+    #[test]
+    fn test_the_refusal_check_can_tell_a_good_sentence_from_a_bad_one() {
+        // Proving the measurement. A check that came back with an empty list
+        // whatever it was handed would pass the test above for ever and guard
+        // nothing at all, and this file has shipped that shape of test before.
+        let as_it_was = "That one day was not kept as a separate appointment: it names the \
+                         time zone \"Eastern Standard Time\", which is not in the list of \
+                         time zones this program knows. Nothing has been changed and the day \
+                         is still part of the series. This program cannot yet describe such \
+                         a zone to a calendar server.";
+        let complaints = what_a_refusal_said_before_the_write_gets_wrong(as_it_was);
+        assert!(
+            complaints.iter().any(|wrong| wrong.contains("never tried")),
+            "the wording of a failed attempt went unnoticed: {complaints:?}"
+        );
+        assert!(
+            complaints
+                .iter()
+                .any(|wrong| wrong.contains("what to do next")),
+            "a refusal with no way out of it went unnoticed: {complaints:?}"
+        );
+        assert_eq!(complaints.len(), 2, "{complaints:?}");
+
+        let clause = the_zone_that_cannot_be_written(&a_day_in_a_zone_no_server_can_be_told())
+            .expect("a zone no server can be told");
+        let now = one_day_cannot_be_kept(&clause);
+        assert_eq!(
+            what_a_refusal_said_before_the_write_gets_wrong(&now),
+            Vec::<String>::new(),
+            "the sentence this file actually says: {now}"
+        );
+
+        // Doubled somewhere that breaks no other rule, so the one complaint
+        // that comes back is the one this leg is about.
+        let doubled = now.replace("Change the", "Change  the");
+        assert_eq!(
+            what_a_refusal_said_before_the_write_gets_wrong(&doubled),
+            vec!["a wrapped literal lost a space".to_string()],
+        );
     }
 
     #[test]
