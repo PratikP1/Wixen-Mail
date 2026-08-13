@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 68 records have arrived since and have not been through it.
+# 69 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5019,4 +5019,13 @@ after = """        WhoTookTheDayOut::SomebodyHere,
 red = [
     "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
     "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
+]
+
+[[guard]]
+name = "a day of a Google series already called off is not counted as a deletion again"
+file = "src/application/calendar.rs"
+before = """            the_day_went |= went == ADayWent::OffTheSeries;"""
+after = """            the_day_went |= went != ADayWent::OffTheSeries;"""
+red = [
+    "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]

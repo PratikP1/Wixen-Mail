@@ -8331,6 +8331,27 @@ mod tests {
     /// it stands in for. A day that was moved says where it went as well; a day
     /// that was called off has nowhere to be.
     fn that_thursday_of_it(status: &str, moved_to: Option<(&str, &str)>) -> String {
+        a_google_day_of_the_series(
+            "series-at-google_20260312T090000Z",
+            "2026-03-12T09:00:00Z",
+            moved_to,
+        )
+        .replace(
+            "\"status\":\"confirmed\"",
+            &format!("\"status\":\"{status}\""),
+        )
+    }
+
+    /// Any one day of that series, named the way Google names one.
+    ///
+    /// Which day of the series it stands in for is asked for rather than fixed,
+    /// so a test needing two changed days of one series cannot get one day
+    /// twice and mistake that for two.
+    fn a_google_day_of_the_series(
+        id: &str,
+        the_day_it_was: &str,
+        moved_to: Option<(&str, &str)>,
+    ) -> String {
         let where_it_went = match moved_to {
             Some((opens, closes)) => format!(
                 ",\"start\":{{\"dateTime\":\"{opens}\"}},\"end\":{{\"dateTime\":\"{closes}\"}}"
@@ -8338,10 +8359,10 @@ mod tests {
             None => String::new(),
         };
         format!(
-            "{{\"id\":\"series-at-google_20260312T090000Z\",\"status\":\"{status}\",\
+            "{{\"id\":\"{id}\",\"status\":\"confirmed\",\
                \"summary\":\"Stand-up\",\"etag\":\"\\\"e2\\\"\",\
                \"recurringEventId\":\"series-at-google\",\
-               \"originalStartTime\":{{\"dateTime\":\"2026-03-12T09:00:00Z\"}}\
+               \"originalStartTime\":{{\"dateTime\":\"{the_day_it_was}\"}}\
                {where_it_went}}}"
         )
     }
@@ -8657,6 +8678,65 @@ mod tests {
              the diary: {:?}",
             everything_drawn_on(&cache, that_thursday())
         );
+    }
+
+    #[tokio::test]
+    async fn test_the_changed_days_of_a_google_series_are_counted_once_and_not_again() {
+        // The count is read out, so it is behaviour and not bookkeeping. Google
+        // was asked for the series rather than for its days, and asked that way
+        // it names every called-off day of every series in every full answer.
+        // Counting those as they arrive tells somebody the same meetings were
+        // deleted again on every sync for ever.
+        //
+        // Three reads of one unchanging answer. The first meets everything for
+        // the first time; the two after it must find nothing new, and the third
+        // is there because a rule that only held for the sync after the first
+        // would be a rule that ran out.
+        let cache = temp_cache("google_the_changed_days_are_counted_once");
+        let answer = a_google_answer(&[
+            the_weekly_series_at_google("Stand-up"),
+            that_thursday_of_it("cancelled", None),
+            a_google_day_of_the_series(
+                "series-at-google_20260319T090000Z",
+                "2026-03-19T09:00:00Z",
+                Some(("2026-03-19T14:00:00Z", "2026-03-19T14:30:00Z")),
+            ),
+        ]);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![answer.clone(), answer.clone(), answer],
+        )
+        .await;
+        let google = google_reading_from(&address);
+
+        let first = sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        let second = sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+        let third = sync_google_calendar(&cache, &google, "a-token", "acct")
+            .await
+            .expect("the third sync to finish");
+
+        heard(listening, "three reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            (first.created, first.updated, first.deleted),
+            (2, 0, 1),
+            "the first read should make the series and the day moved out of it, \
+             and take one day off: {first:?}"
+        );
+        for (which, sync) in [("second", &second), ("third", &third)] {
+            assert_eq!(
+                (sync.created, sync.updated, sync.deleted),
+                (0, 2, 0),
+                "the {which} read was told nothing new and counted it as \
+                 something: {sync:?}"
+            );
+        }
     }
 
     #[tokio::test]
