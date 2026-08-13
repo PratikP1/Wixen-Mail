@@ -129,8 +129,21 @@ pub struct GoogleTask {
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<String>,
-    /// Google's tombstone. A deleted task still comes back in a sync.
-    #[serde(default)]
+    /// Google's tombstone, read and never written.
+    ///
+    /// Read, because a deleted task still comes back in a sync and this is the
+    /// only thing that says it went. Never written, because Google will take a
+    /// change to this field and every change this program sends used to carry
+    /// it as false. Tick off a task here that somebody deleted on their phone
+    /// and the change goes up before the read comes down, so the claim arrives
+    /// while the tombstone is still unread, Google puts the task back, and the
+    /// read that follows finds it alive and keeps it. Somebody's deletion is
+    /// undone with nothing said about it.
+    ///
+    /// `skip_serializing` and not `skip`: the latter would stop the tombstone
+    /// arriving as well, and a task sync that cannot see a deletion is a list
+    /// that only ever grows.
+    #[serde(default, skip_serializing)]
     pub deleted: bool,
     /// When Google last changed it, RFC 3339.
     ///
@@ -340,6 +353,8 @@ pub fn entry_to_google_task(task: &TaskEntry) -> GoogleTask {
             .as_ref()
             .map(|id| strip_prefix(id, "google:")),
         position: None,
+        // Never sent, so this value means nothing. Deleting a task is its own
+        // call, and it says which task in the address.
         deleted: false,
         // The server sets this. Nothing here has an opinion about it.
         updated: None,
@@ -1682,6 +1697,67 @@ mod tests {
         assert!(request.contains(r#""status":"completed""#), "{request}");
         assert!(
             request.contains(r#""due":"2026-01-31T00:00:00Z""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_to_a_google_task_says_nothing_about_whether_it_was_deleted() {
+        // Google treats this field as one it will take a change to. Sent as
+        // false on every change, it un-deletes a task somebody deleted on
+        // another device: the change goes up before the read comes down, so
+        // this claim arrives while the tombstone is still unread here, and the
+        // read that follows finds a live task and keeps it. The deletion is
+        // undone with nothing said.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "google:t-9".to_string();
+        let body = entry_to_google_task(&stored);
+
+        client
+            .google_update_task("a-token", "google:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Google task")
+            .await
+            .expect("a request");
+        assert!(
+            !request.contains("deleted"),
+            "a change told Google whether the task was deleted: {request}"
+        );
+        // The body is still a body. Without this the test would pass against a
+        // change that carried nothing at all.
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_new_google_task_says_nothing_about_whether_it_was_deleted() {
+        // A task Google has never heard of cannot be deleted at Google, so
+        // saying it is not is a claim about nothing. The same field, and one
+        // attribute governs both calls, so both are read off the wire.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "local-9".to_string();
+        let body = entry_to_google_task(&stored);
+
+        client
+            .google_create_task("a-token", "google:list-1", &body)
+            .await
+            .expect("the new task to be sent");
+
+        let request = heard(listening, "a new Google task")
+            .await
+            .expect("a request");
+        assert!(
+            !request.contains("deleted"),
+            "a create told Google whether the task was deleted: {request}"
+        );
+        assert!(
+            request.contains(r#""title":"Ring the surgery""#),
             "{request}"
         );
     }

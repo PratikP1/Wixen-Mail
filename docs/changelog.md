@@ -8,6 +8,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: ticking off a Google task could put back a task deleted on another
+  device.** Every change sent to Google Tasks carried a claim that the task had
+  not been deleted, whether or not that is what your copy meant. Changes go up
+  before the new ones come down, so the claim arrived while word of the
+  deletion was still unread here, Google put the task back, and the read that
+  followed found it alive and kept it. Your deletion was undone and nothing was
+  said about it. Nothing this program sends now says anything about whether a
+  Google task was deleted; deleting one is still its own separate request.
+
 - **Fixed: copying a message into a task or an event made something that could
   never be sent anywhere.** Copying a message fills in a title and a body and
   asks nothing else, and the questions nobody was asked were stored as answered

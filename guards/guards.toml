@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 42 records have arrived since and have not been through it.
+# 44 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4543,4 +4543,47 @@ red = [
     "presentation::managers::tests::test_a_task_copied_from_a_message_is_stored_with_a_priority_the_task_service_knows",
     "presentation::managers::tests::test_an_event_copied_from_a_message_is_stored_with_a_status_and_a_show_as_the_calendars_know",
     "presentation::managers::tests::test_an_event_stored_without_being_asked_still_reaches_both_calendars_with_words_they_take",
+]
+
+# ── Nothing this program sends says a Google task is not deleted ────────────
+#
+# Google will take a change to this field, and every change this program sent
+# carried it as false. Tick off a task here that somebody deleted on their
+# phone: the change goes up before the read comes down, so the claim lands while
+# the tombstone is still unread, Google puts the task back, and the read that
+# follows finds it alive and keeps it. The deletion is undone and nothing is
+# said.
+#
+# Two breaks, because the field has two halves and the wrong fix for one kills
+# the other. The first sends it again. The second is the mistake that looks like
+# the fix: `skip` rather than `skip_serializing`, which stops the tombstone
+# arriving as well and turns the task sync into a list that only ever grows.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py. The second break
+# reddens exactly one test in the whole library, and it is a test that parses
+# the field out of real JSON. Every other test that exercises a Google
+# tombstone builds the struct in Rust with the field already set, so none of
+# them can see a field that never arrives.
+
+[[guard]]
+name = "a change to a Google task carries no claim about whether it was deleted"
+file = "src/service/tasks_api.rs"
+before = """    #[serde(default, skip_serializing)]
+    pub deleted: bool,"""
+after = """    #[serde(default)]
+    pub deleted: bool,"""
+red = [
+    "service::tasks_api::tests::test_a_change_to_a_google_task_says_nothing_about_whether_it_was_deleted",
+    "service::tasks_api::tests::test_a_new_google_task_says_nothing_about_whether_it_was_deleted",
+]
+
+[[guard]]
+name = "a Google task tombstone still arrives after the claim stopped being sent"
+file = "src/service/tasks_api.rs"
+before = """    #[serde(default, skip_serializing)]
+    pub deleted: bool,"""
+after = """    #[serde(default, skip)]
+    pub deleted: bool,"""
+red = [
+    "service::tasks_api::tests::test_a_deleted_google_task_is_marked_as_one",
 ]
