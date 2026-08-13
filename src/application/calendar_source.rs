@@ -998,6 +998,9 @@ mod tests {
 
     #[test]
     fn test_the_words_written_here_are_the_words_the_sync_and_the_uninstall_look_for() {
+        // The text is the thing being checked, not a stand-in for it: these
+        // are two places that have to spell one word the same way.
+        // What this cannot see is whether either place is ever reached.
         // The whole point of this unit. Both filters were unreachable because
         // nothing in the application ever wrote either word, and renaming one
         // here without the other would put them back that way in silence.

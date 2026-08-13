@@ -70,6 +70,9 @@ mod tests {
 
     #[test]
     fn test_the_one_place_that_shows_a_sentence_says_it_too() {
+        // What this cannot see: whether the announcement is heard. It reads this
+        // one routine's text for the call that speaks. Whether a sentence raised
+        // from inside a modal dialog reaches a screen reader is a real run.
         // Four windows call this and nothing else in any of them writes to
         // their line of text, so emptying this one routine turns all four
         // silent at once.

@@ -235,6 +235,10 @@ mod tests {
 
     #[test]
     fn test_what_f6_says_is_what_the_control_is_called() {
+        // What this cannot see: whether either name is spoken. It reads two
+        // sources and asks that they agree. Both could be wrong together, and a
+        // name set by a call that never reaches the accessibility tree reads the
+        // same here as one that does.
         // Two places have to agree: the name given to the control with
         // set_accessible_name, and the name announced on arriving. If they
         // drift, F6 says "Tasks" and the screen reader then says something

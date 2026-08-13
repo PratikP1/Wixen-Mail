@@ -894,6 +894,8 @@ mod completeness {
 
     #[test]
     fn test_the_census_sees_a_client_built_by_its_short_name() {
+        // Proving the measurement, over text written here rather than the tree.
+        // What it cannot see is whether the census is pointed at the right files.
         // The experiment, kept after the module it was run against was
         // removed. Each of these was a real reading of the tree at the time
         // the census was replaced.
@@ -935,6 +937,8 @@ mod completeness {
 
     #[test]
     fn test_the_census_sees_a_socket_brought_in_beside_something_else() {
+        // Proving the measurement, over text written here rather than the tree.
+        // What it cannot see is whether the census is pointed at the right files.
         // The idiom that walked past this census twice. A module that brings a
         // socket in alongside something else from the same crate writes
         // neither `tokio::net` nor `std::net`, so a reading of path roots
@@ -1145,6 +1149,8 @@ mod completeness {
 
     #[test]
     fn test_neither_list_of_crates_has_gone_stale() {
+        // The two lists are the artefact. What this cannot see is whether the
+        // census built from them finds everything that reaches the network.
         // The other direction. A list naming a dependency that has gone is a
         // list nobody is reading, and it would let the check above pass by
         // classifying nothing.

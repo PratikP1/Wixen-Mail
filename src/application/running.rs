@@ -219,6 +219,9 @@ mod tests {
 
     #[test]
     fn test_the_installer_looks_for_the_same_name() {
+        // The installer script is the artefact, and it cannot be run from here.
+        // What this cannot see is whether the installer works, only whether it
+        // spells the same name this code holds.
         // The failure this prevents is silent. Rename the mutex here alone and
         // the uninstaller checks for something nobody holds, finds it free,
         // and deletes the data folder under a running program.

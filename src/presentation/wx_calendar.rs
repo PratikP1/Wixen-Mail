@@ -1030,6 +1030,8 @@ mod tests {
 
     #[test]
     fn test_the_window_ticks_the_answer_that_is_preselected() {
+        // What this cannot see: whether the window opens, or whether the tick is
+        // announced. It reads the window's text for the call that preselects.
         let window = the_window_that_asks();
 
         assert!(
@@ -1084,6 +1086,9 @@ mod tests {
 
     #[test]
     fn test_the_window_gives_each_answer_a_description_and_puts_it_on_the_screen_too() {
+        // What this cannot see: whether the description reaches anybody. It
+        // reads the window's text for both calls. A description set on a control
+        // that is never shown reads the same here as one that is.
         // A description is what a screen reader working through Microsoft
         // Active Accessibility reads when the button takes focus. The words on
         // screen are the only copy a sighted reader gets, and the only copy a
@@ -1138,6 +1143,8 @@ mod tests {
 
     #[test]
     fn test_the_window_reads_its_answer_back_from_the_buttons() {
+        // What this cannot see: whether the answer read back is acted on. It
+        // reads the window's text for where the answer comes from.
         // What is ticked and what happens have to be one answer rather than
         // two, and only Continue is an answer at all.
         let window = the_window_that_asks();

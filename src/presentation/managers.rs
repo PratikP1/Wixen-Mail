@@ -4896,6 +4896,9 @@ mod deletion_wiring {
 
     #[test]
     fn test_every_container_can_actually_be_deleted() {
+        // What this cannot see: whether any of these deletes runs. It reads the
+        // window's source for the command each kind raises. A command raised by
+        // a menu item nothing builds keeps this green.
         let source =
             std::fs::read_to_string("src/presentation/wx_app.rs").expect("the window layer");
 
@@ -4925,6 +4928,9 @@ mod deletion_wiring {
 
     #[test]
     fn test_the_command_they_raise_exists() {
+        // What this cannot see: whether the command does what its name says. It
+        // reads the source for the routine and the four kinds of storage it
+        // names. A routine that returns early for one of them passes this.
         let source = the_code_these_checks_are_about();
 
         assert!(source.contains("pub fn delete_container"));
@@ -5175,6 +5181,9 @@ mod group_wiring {
 
     #[test]
     fn test_every_group_command_is_raised_by_something() {
+        // What this cannot see: whether anything raises these from the keyboard.
+        // It reads the window's source for each command's name. A context menu
+        // line that is never shown keeps this green.
         let window = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the frame");
 
         for raised in [
@@ -5199,6 +5208,8 @@ mod group_wiring {
 
     #[test]
     fn test_the_tree_reads_a_group_as_a_group_with_its_people() {
+        // What this cannot see: whether the tree is built, or heard. It reads
+        // the words out of the window's source, as the comment above says.
         // "Team A (3)" is read out as "Team A three" or "Team A bracket
         // three", depending on punctuation settings, and neither says what
         // the three are. This only pins that the code asks for the right
@@ -6512,6 +6523,10 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_the_changed_day_is_written_before_the_day_is_taken_off_the_series() {
+        // What this cannot see: whether either write happens. It compares where
+        // two calls sit in this file's own text. Reaching them needs a calendar
+        // server, so a branch that is never taken keeps the order it is asked
+        // about and changes nothing.
         // Ordering is the whole of the failure plan. If the second write fails,
         // the day is on the calendar twice, which somebody can see and put
         // right. The other order leaves the day missing, which nothing says and
@@ -6683,6 +6698,9 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_no_sentence_the_calendar_window_gives_back_names_a_row_by_its_identifier() {
+        // This one runs the code it is about rather than reading it. What it
+        // cannot see is whether some other sentence, worded somewhere this does
+        // not look, still says an identifier out loud.
         // The identifier a row is stored under is a machine's word for it. It
         // went to the status bar on every create, every change and every day
         // taken off, and nothing announced any of them, so what a braille
@@ -6728,6 +6746,9 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_a_calendar_window_that_did_nothing_says_nothing_was_done() {
+        // This one runs the code it is about rather than reading it. What it
+        // cannot see is whether the window reaches this routine at all, and
+        // whether a sentence it gives back is heard.
         // Open the Calendar window, press Close, and a screen reader said
         // "calendar events saved". Every other manager returns without a word
         // when nothing was done.
@@ -6788,6 +6809,9 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_the_sync_button_in_the_calendar_window_really_starts_a_sync() {
+        // What this cannot see: whether the sync reaches a server. It reads this
+        // file for the arm calling the routine that starts one, and nothing here
+        // has ever run against a real account.
         // It said "Calendar sync requested" and did nothing else. The menu
         // entry beside it really syncs. An announced sentence about something
         // that did not happen is worse than silence, because the next one is

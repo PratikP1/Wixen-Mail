@@ -361,6 +361,9 @@ mod tests {
 
     #[test]
     fn test_the_warning_is_in_the_product_and_not_only_in_the_changelog() {
+        // What this cannot see: whether anybody is shown the warning. It reads
+        // the window's source for the sentence. The sentence could sit in a
+        // branch nothing reaches and this would not know.
         // A warning that lives only in release notes is a warning nobody
         // gets. Somebody who keeps groups in Gmail has to be told where these
         // ones live at the moment they make one.

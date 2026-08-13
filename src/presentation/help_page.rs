@@ -412,6 +412,9 @@ mod tests {
 
     #[test]
     fn test_the_real_testing_page_converts() {
+        // The document here is input to code that really runs, not a stand-in
+        // for it. What it cannot see is whether the converted page is readable
+        // in a browser or by a screen reader.
         // The one the first-run screen offers, converted for real rather than
         // from a snippet written to suit the parser.
         let markdown =

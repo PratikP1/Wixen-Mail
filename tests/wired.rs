@@ -317,6 +317,10 @@ fn test_the_check_found_the_commands_at_all() {
 
 #[test]
 fn test_no_two_menu_items_claim_the_same_shortcut() {
+    // What this cannot see: whether any of these menus is ever built. It
+    // reads labels out of the source, so a menu never added to the bar, or
+    // one the operating system takes the key from first, keeps this green.
+    // Whether a key works is a keyboard on a running window.
     // wxWidgets builds the accelerator table from the menu labels, and when
     // two items claim one key only the first gets it. The other looks bound,
     // reads as bound to a screen reader announcing the menu, and does
@@ -407,6 +411,9 @@ fn test_every_context_menu_line_has_a_handler() {
 
 #[test]
 fn test_the_menu_key_is_bound_with_the_numbers_wxwidgets_uses() {
+    // What this cannot see: whether the handler runs. It reads the numbers
+    // out of the source and checks them against what wxWidgets uses. Bound
+    // to a control that never takes focus, this still passes.
     // Both bugs this had, written down as the test that would have found
     // them.
     //
@@ -446,6 +453,9 @@ fn test_the_menu_key_is_bound_with_the_numbers_wxwidgets_uses() {
 
 #[test]
 fn test_the_menu_key_is_given_to_every_list_and_tree() {
+    // What this cannot see: whether the key reaches any of these controls.
+    // It counts bindings in the source. A control that never takes focus,
+    // or a binding shadowed by another, keeps this green.
     // Eleven controls hold focus in the main window, and a menu key that
     // works on some of them is worse than one that works on none: it teaches
     // that the key works, and then it does not.
@@ -770,6 +780,9 @@ fn test_the_composer_asks_whether_a_signature_was_wanted() {
 /// what happens rather than naming a header.
 #[test]
 fn test_the_account_dialog_asks_for_the_name_recipients_see() {
+    // What this cannot see: whether the dialog is ever opened, and whether
+    // the label is heard. It reads the source for the field and its label.
+    // Only a run with a screen reader says the second.
     let dialog =
         fs::read_to_string("src/presentation/wx_account_manager.rs").expect("the account dialog");
 
@@ -785,6 +798,9 @@ fn test_the_account_dialog_asks_for_the_name_recipients_see() {
 
 #[test]
 fn test_the_key_that_replies_to_the_author_alone_is_bound_to_a_menu_item() {
+    // What this cannot see: whether pressing the key replies to anybody. It
+    // reads the accelerator off the menu item in the source. The handler
+    // could be gone, or reply to everybody, and this stays green.
     // Replying to one person on a mailing list is the command that stops a
     // private answer reaching two thousand strangers, and it had a handler, a
     // toolbar button and three lines in the shortcuts document while the key
@@ -805,6 +821,9 @@ fn test_the_key_that_replies_to_the_author_alone_is_bound_to_a_menu_item() {
 
 #[test]
 fn test_f6_and_shift_f6_reach_the_pane_handler() {
+    // What this cannot see: whether focus moves. It reads the binding out of
+    // the source. The handler could move focus nowhere, or somewhere that is
+    // never announced, and this passes either way.
     // The specific one. Named separately from the sweep above because it is
     // the shortcut somebody uses to get out of a pane they are stuck in, and
     // "it is in the general test" is how it went unnoticed the first time.
@@ -870,6 +889,10 @@ fn test_the_shortcuts_document_and_the_menus_agree() {
 /// mnemonic in a label, and this should not have to know which.
 #[test]
 fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
+    // What this cannot see: whether any key in the document works. The
+    // document is the thing being checked, against the source rather than
+    // against a running window, so a key both places name and neither binds
+    // is agreement about nothing.
     let doc = fs::read_to_string("docs/KEYBOARD_SHORTCUTS.md").expect("the shortcuts document");
     let code: String = sources()
         .iter()

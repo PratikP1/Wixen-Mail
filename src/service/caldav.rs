@@ -4806,6 +4806,9 @@ mod sign_in_tests {
 
     #[test]
     fn test_nothing_outside_the_sign_in_service_opens_a_calendar_credential() {
+        // What this cannot see: whether the one place that may open a credential
+        // does it correctly. It reads the tree for anybody else doing it, in the
+        // spellings it knows about.
         // One owner for the service name. The window that syncs used to build
         // its own keyring entries, so a change to the naming here would have
         // left it reading entries nobody writes.

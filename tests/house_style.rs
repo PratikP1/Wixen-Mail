@@ -2076,6 +2076,8 @@ fn quoted_text(line: &str) -> Vec<String> {
 
 #[test]
 fn test_no_page_a_person_reads_names_the_machinery() {
+    // The written pages are the artefact. What this cannot see is whether a
+    // page is clear, only that it does not name the machinery.
     // Round seventeen shipped a crate name and a version into the changelog,
     // and the round after that found it still there. Nobody using this needs
     // to know which library speaks to a mail server, and a name like that read
@@ -2124,6 +2126,10 @@ fn test_no_page_a_person_reads_names_the_machinery() {
 
 #[test]
 fn test_the_machinery_check_can_tell_the_two_apart() {
+    // Proving the measurement. What this cannot see is whether the reading is
+    // pointed at the pages people really read; it says only that it can tell a
+    // line naming the machinery from one that does not.
+    //
     // Every line here was copied out of this tree rather than invented, so a
     // reading that stops working on real pages fails here first.
     let names = every_dependency();
@@ -2895,6 +2901,8 @@ const A_CLAIM_THE_LIST_ALREADY_MAKES: [&str; 6] = [
 
 #[test]
 fn test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it() {
+    // The changelog is the artefact, not a stand-in for behaviour. What this
+    // cannot see is whether anything the list names is true.
     let changelog = fs::read_to_string("docs/changelog.md").expect("the changelog to be readable");
     let lists = lists_with_their_introductions(&changelog);
 
@@ -2930,6 +2938,8 @@ fn test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it() {
 
 #[test]
 fn test_the_changelog_does_not_claim_in_prose_that_a_list_is_everything() {
+    // The changelog is the artefact, not a stand-in for behaviour. What this
+    // cannot see is whether the list really is everything.
     let changelog = fs::read_to_string("docs/changelog.md").expect("the changelog to be readable");
 
     let claiming: Vec<String> = changelog
@@ -3291,6 +3301,8 @@ fn which_button_takes_focus(where_the_tick_is: usize) -> usize {
 
 #[test]
 fn test_the_first_run_screen_is_not_described_as_starting_where_it_does_not() {
+    // The written page is the artefact. What this cannot see is where the
+    // first-run screen really starts, only what the page says about it.
     // Where the screen starts is two values in the code and no sentence
     // written down here, so if either moves this follows it.
     let selected = wixen_mail::presentation::first_run::Choice::ALL
@@ -3970,6 +3982,8 @@ const LISTS_WRITTEN_FOR_PEOPLE: &[&str] =
 
 #[test]
 fn test_no_mutation_result_is_read_from_the_lists_written_for_people() {
+    // The script is the artefact. What this cannot see is whether a mutation
+    // run reports the truth, only where the script reads its answer from.
     let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
     let named: Vec<&str> = LISTS_WRITTEN_FOR_PEOPLE
         .iter()
@@ -3998,6 +4012,8 @@ fn test_no_mutation_result_is_read_from_the_lists_written_for_people() {
 
 #[test]
 fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
+    // The two scripts are the artefact. What this cannot see is whether
+    // either gives the right answer, only that they ask the same question.
     // Drops every file sitting directly in `src/`, which is how a change to
     // one of them went unchecked. Built from two pieces so this line is not
     // itself a match.
@@ -4231,6 +4247,8 @@ fn test_the_mutation_report_still_obeys_its_own_examples() {
 
 #[test]
 fn test_no_mutation_run_has_its_failure_swallowed() {
+    // The script is the artefact. What this cannot see is whether a failing
+    // run really stops the check that called it.
     let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
 
     assert!(

@@ -10497,6 +10497,8 @@ mod tests {
 
     #[test]
     fn test_no_two_menu_ids_are_the_same() {
+        // What this cannot see: whether any of these identifiers is used. It
+        // reads them out of the source and asks that none repeats.
         // wxWidgets resolves a duplicate id by acting on the first item that
         // carries it. Two of these once shared an offset, so the mute toggle
         // checked the Columns item, which is not checkable, and the
@@ -11280,6 +11282,9 @@ mod what_the_status_line_says {
 
     #[test]
     fn test_every_arm_that_shows_something_says_it_or_is_named_as_quiet() {
+        // What this cannot see: whether any arm runs. It reads the window's own
+        // text. An arm that is unreachable is counted as sound, and a sentence
+        // that is said out loud may still be the wrong sentence.
         // The status bar is a line at the bottom of a window, which is not
         // somewhere anybody navigating by ear goes. Four arms wrote there and
         // said nothing, and one of them, the task lists loading, sat between
@@ -11301,6 +11306,8 @@ mod what_the_status_line_says {
 
     #[test]
     fn test_the_quiet_arms_are_each_said_somewhere_else() {
+        // What this cannot see: whether the other place really says it. It reads
+        // text in both places and asks that the second names the first.
         // Every registered silence rests on a fact somewhere else in this
         // file. This is the test that notices when one of those facts stops
         // being true, which nothing else would.

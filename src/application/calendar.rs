@@ -8040,6 +8040,9 @@ mod tests {
 
     #[test]
     fn test_nothing_in_the_calendar_write_path_builds_its_own_client() {
+        // What this cannot see: whether the gate itself works. It reads two
+        // files for a client built outside the one place that is allowed to.
+        // A path that goes round it in a way this does not spell stays green.
         // The gate is only worth having if nothing goes round it. A module
         // that builds its own client can send whatever it likes, and no test
         // of what goes out would notice.

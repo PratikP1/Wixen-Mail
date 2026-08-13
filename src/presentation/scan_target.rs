@@ -145,6 +145,9 @@ mod tests {
 
     #[test]
     fn test_the_command_line_and_the_workflow_use_the_same_flag() {
+        // The workflow file is the artefact, and it cannot be run from here.
+        // What this cannot see is whether the workflow passes, only whether the
+        // two places spell one flag the same way.
         // The bug this was written for was silent and total: the parser knew
         // --scan-target, this module was reading --scan-window, so every
         // dialog scan quietly became a second scan of the main window and the
@@ -167,6 +170,8 @@ mod tests {
 
     #[test]
     fn test_the_workflow_asks_for_every_target() {
+        // The workflow file is the artefact, and it cannot be run from here.
+        // What this cannot see is whether a scan of any target really happens.
         // Adding a window to the list and forgetting the workflow means it is
         // never scanned, and nothing says so.
         let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")

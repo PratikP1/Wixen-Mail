@@ -1065,6 +1065,9 @@ mod tests {
 
     #[test]
     fn test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run() {
+        // What this cannot see: whether either failure ever happens on this
+        // screen, or whether the higher priority is honoured. It reads the
+        // window's text for the two calls and the level each is given.
         // Signing in failing, and the browser not opening on the page that
         // hands out app passwords. Both leave somebody stuck with an account
         // that cannot fetch mail, and both are the answer to the button just

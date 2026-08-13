@@ -374,6 +374,9 @@ mod tests {
 
     #[test]
     fn test_the_installer_ships_the_page_beside_the_program() {
+        // The installer script is the artefact, and it cannot be run from here.
+        // What this cannot see is whether the file lands beside the program on a
+        // real install, only whether the script says to ship it.
         // The other half, and the half a Rust test cannot check by running:
         // the page has to be in the installer or the button opens nothing on
         // every machine except this one. The wildcard is what puts it there.
