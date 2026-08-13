@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 57 records have arrived since and have not been through it.
+# 58 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -3145,14 +3145,16 @@ red = [
 name = "the move handler asks one place what to say and what to do with the row"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
-before = """                let next = crate::application::server_delete::after_a_move(&moved, &into, &subject);
-                if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
-                    say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                }
-                say(UIUpdate::StatusUpdated(next.said));"""
-after = """                let _ = &moved;
-                say(UIUpdate::MessageDeletedFromCache(message_row_id));
-                say(UIUpdate::StatusUpdated(format!("Moved to {into}: {subject}")));"""
+before = """                .map(|moved| {
+                    crate::application::server_delete::after_a_move(&moved, &into, &subject)
+                })"""
+after = """                .map(|moved| {
+                    let _ = &moved;
+                    crate::application::server_delete::WhatToDoNext {
+                        then: crate::application::server_delete::ThenWhat::MarkItDeletedHere,
+                        said: format!("Moved to {into}: {subject}"),
+                    }
+                })"""
 red = [
     "test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do",
 ]
@@ -3995,6 +3997,18 @@ red = [
 # spelling cannot be written back onto it. What is left to guard is that
 # nothing this window does word for itself is a delete sentence, and that the
 # delete path still says what the owner gave it.
+
+[[guard]]
+name = "one place words what a move or a copy did"
+file = "src/presentation/wx_app.rs"
+before = """                .map(|()| crate::application::server_delete::after_a_copy(&into, &subject))"""
+after = """                .map(|()| crate::application::server_delete::WhatToDoNext {
+                    then: crate::application::server_delete::ThenWhat::LeaveTheRow,
+                    said: format!("Copied to {into}: {subject}"),
+                })"""
+red = [
+    "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_owner_words_what_a_move_or_a_copy_did",
+]
 
 [[guard]]
 name = "nothing this window words for itself is a delete sentence"

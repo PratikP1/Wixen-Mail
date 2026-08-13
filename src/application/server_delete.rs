@@ -68,6 +68,24 @@ pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
     }
 }
 
+/// What to do and what to say after the server copied a message somebody asked
+/// to have copied.
+///
+/// A copy is not a move that half worked, and the two must not read alike. This
+/// one leaves the original where it is because that is what was asked for, and
+/// the row stays for the same reason.
+///
+/// Here rather than in the window that asks for it, so that what the folder
+/// path says about a message leaving a folder has one owner. It was worded in
+/// the window, and which of two questions the answer had come back to was
+/// carried by nothing but the branch a few lines above it.
+pub fn after_a_copy(into: &str, subject: &str) -> WhatToDoNext {
+    WhatToDoNext {
+        then: ThenWhat::LeaveTheRow,
+        said: format!("Copied to {into}: {subject}"),
+    }
+}
+
 /// What to say when the server would not take the change at all.
 ///
 /// Nothing reached the server, so nothing was deleted and nothing was put back.
@@ -262,6 +280,10 @@ mod tests {
                 .iter()
                 .map(|m| after_a_move(m, "Archive", "Invoice").said),
         );
+        // A copy somebody asked for is a fourth thing that can happen to a
+        // message on the folder path, and it must not read like a move that
+        // half worked.
+        said.push(after_a_copy("Archive", "Invoice").said);
 
         for sentence in &said {
             assert!(!sentence.trim().is_empty());

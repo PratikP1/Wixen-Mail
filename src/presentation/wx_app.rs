@@ -7367,28 +7367,32 @@ fn spawn_folder_move(
             return fail(e.to_string());
         }
 
+        // What happens to the row and what is said are one decision, made in
+        // one place, because they have to agree. A move whose copy landed and
+        // whose original was left untouched keeps its row: taking it out would
+        // be the list saying the message left a folder it is still sitting in.
+        //
+        // Both branches answer in that one shape. They used to answer with an
+        // Option, and whether it was full said which of two different questions
+        // had been answered: a copy came back empty and a move came back full.
+        // Nothing but the branch above held those apart, so a move that ever
+        // came back empty would have been announced as a copy that went
+        // perfectly.
         let outcome = if copying {
             handle
                 .block_on(controller.copy_message(&from, uid, &into))
-                .map(|()| None)
+                .map(|()| crate::application::server_delete::after_a_copy(&into, &subject))
         } else {
             handle
                 .block_on(controller.move_message(&from, uid, &into))
-                .map(Some)
+                .map(|moved| {
+                    crate::application::server_delete::after_a_move(&moved, &into, &subject)
+                })
         };
         let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
-            Ok(None) => say(UIUpdate::StatusUpdated(format!(
-                "Copied to {into}: {subject}"
-            ))),
-            Ok(Some(moved)) => {
-                // What happens to the row and what is said are one decision,
-                // made in one place, because they have to agree. A move whose
-                // copy landed and whose original was left untouched keeps its
-                // row: taking it out would be the list saying the message left
-                // a folder it is still sitting in.
-                let next = crate::application::server_delete::after_a_move(&moved, &into, &subject);
+            Ok(next) => {
                 if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
                     say(UIUpdate::MessageDeletedFromCache(message_row_id));
                 }
@@ -11928,7 +11932,7 @@ fn ask_about_the_alpha_once(frame: &Frame) {
 #[cfg(test)]
 mod one_owner_for_what_a_delete_did {
     use super::FlagChange;
-    use crate::service::protocols::imap::{Deletion, StillHere};
+    use crate::service::protocols::imap::{Deletion, Moved, StillHere};
     use std::collections::BTreeSet;
 
     /// Every way a delete at the server can end.
@@ -12068,6 +12072,50 @@ mod one_owner_for_what_a_delete_did {
         assert!(
             worded_here.is_empty(),
             "this file words a delete outcome for itself: {worded_here:?}"
+        );
+    }
+
+    /// How a sentence about a message leaving a folder opens, before the
+    /// destination.
+    ///
+    /// Cut before the destination rather than at the first comma, because the
+    /// destination is a folder somebody picked and no sentence in the tree
+    /// spells it out. What is left is the two openings, and they are what a
+    /// second spelling would have to start with.
+    fn how_each_move_outcome_opens() -> Vec<String> {
+        [Moved::Moved, Moved::CopiedAndNotFlagged(String::new())]
+            .iter()
+            .map(|ending| {
+                let said = ending.spoken("Archive");
+                let opening = said.find("Archive").unwrap_or(said.len());
+                said[..opening].to_string()
+            })
+            .collect()
+    }
+
+    /// Every sentence in a piece of source that opens the way a move or a copy
+    /// outcome opens.
+    fn move_outcomes_worded_in(source: &str) -> Vec<String> {
+        how_each_move_outcome_opens()
+            .into_iter()
+            .filter(|opening| source.contains(&format!("\"{opening}")))
+            .collect()
+    }
+
+    #[test]
+    fn test_only_the_owner_words_what_a_move_or_a_copy_did() {
+        // The same rule on the folder path. A move ends three ways and the
+        // place that knows all three words them; the window worded a copy for
+        // itself, and which of the two questions the answer had come back to
+        // was carried by an Option that only the branch a few lines above held
+        // apart. A copy that ever came back wrapped would have been announced
+        // as a move that half worked, and a move that came back bare as a copy
+        // that went perfectly.
+        let worded_here = move_outcomes_worded_in(&the_window_without_its_tests());
+
+        assert!(
+            worded_here.is_empty(),
+            "this file words what a move or a copy did for itself: {worded_here:?}"
         );
     }
 
