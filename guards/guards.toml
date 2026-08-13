@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 83 records have arrived since and have not been through it.
+# 86 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5351,4 +5351,83 @@ after = """        status: if task.is_completed {
         },"""
 red = [
     "service::tasks_api::tests::test_the_progress_microsoft_holds_is_kept_when_a_change_goes_back",
+]
+
+# ── Mail joins the write census, and a read that cannot carry a changing verb ─
+#
+# Four rounds running, a planted module reached a server through a pattern the
+# text census had not been taught, and the census itself covered four HTTP
+# clients and no mail protocol at all: a new IMAP, SMTP or POP3 write could
+# arrive with nothing reading its request and nothing failing. POP3 shipped
+# ungated for the life of this project behind exactly that gap. This adds a
+# wire census for the three mail transports, a guard at the point a write
+# actually reaches the session or the transport rather than at a name the
+# census recognises, and a type that makes a WebDAV read unable to carry a
+# changing verb at all.
+#
+# Measured by hand on 2026-08-13. The break removes the gate call a mailbox
+# write asks before it reaches the session: it reddens the mail wire census,
+# because the write no longer shows up as a write for `writes_in` to count;
+# the guard at the write itself, because the same call is what it looks for;
+# and the functional test that already existed for this method, because the
+# account really would send a command to the server with changes turned off.
+# Three different checks, three different reasons, over the one line.
+
+[[guard]]
+name = "a mailbox write asks the gate before it reaches the session"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn copy_message(&mut self, uid: u32, into: &str) -> Result<()> {
+        self.may_i("copy a message")?;
+        self.require_selected()?;"""
+after = """    pub async fn copy_message(&mut self, uid: u32, into: &str) -> Result<()> {
+        self.require_selected()?;"""
+red = [
+    "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::outward::completeness::test_nothing_sends_a_changing_command_without_asking_the_gate",
+    "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
+]
+
+# Measured by hand on 2026-08-13. This is the other direction from the guard
+# above: the write still asks the gate, so it is still counted and nothing
+# about reaching the server changes, but the row that is supposed to prove a
+# test read its command off a socket now names a command nothing sends. Only
+# the test that checks the account is true notices; the test that checks the
+# write is accounted for at all does not, because the method and the file are
+# still right, and that is worth being honest about rather than assumed.
+#
+# A row deleted outright, the shape this guard first tried, does not compile:
+# the list carries an explicit length and Rust will not shrink it to match a
+# shorter literal. The corrupted row is the break this file can actually
+# apply and re-measure.
+
+[[guard]]
+name = "every mailbox write named measured is really on the mail wire list"
+file = "src/service/outward.rs"
+before = """        \"UID COPY 7 \\\"Archive\\\"\","""
+after = """        \"UID COPY 7 \\\"Nowhere\\\"\","""
+red = [
+    "service::outward::completeness::test_every_mailbox_write_called_measured_had_its_command_read_off_a_socket",
+]
+
+# Measured by hand on 2026-08-13. `reading_with` used to take any
+# `reqwest::Method` with nothing gating it, so a caller could hand it a
+# changing verb and it would go out as though it were the read it was built
+# for. `AskWith` closes that at the type level, so the only way left to break
+# it is to point one of its two variants at the wrong word, which is what this
+# does.
+#
+# The break also reaches a real caller: `CalDavClient::discover_calendars`
+# asks with `AskWith::Propfind`, and the calendar test server this reddens
+# only answers a `PROPFIND`, so the discovery test that reads what it offers
+# goes red as well as the type-level test. That is the guard proving it is not
+# only checking itself.
+
+[[guard]]
+name = "a WebDAV read cannot carry a changing verb"
+file = "src/service/outward.rs"
+before = """            Self::Propfind => "PROPFIND","""
+after = """            Self::Propfind => "DELETE","""
+red = [
+    "service::caldav::discovery_tests::test_what_is_asked_of_a_calendar_server_is_the_four_things_the_screen_needs",
+    "service::outward::tests::test_a_read_that_is_not_a_get_can_only_ask_for_something",
 ]

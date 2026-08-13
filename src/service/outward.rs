@@ -20,6 +20,42 @@
 //!
 //! That is the whole point. A checkbox somebody has to honour is a checkbox
 //! somebody forgets on the method they add at half past five.
+//!
+//! # What the tests in this file can and cannot see
+//!
+//! `mod completeness` reads source text and asks whether every module that
+//! *names* a way out of this program has been written down. Four rounds
+//! running, a planted module reached a server through an idiom that reading
+//! had not been taught and walked past it: a generic import, a trait bound,
+//! a crate-local re-export split across two lines. Each round closed the
+//! pattern it found; the next round found another. That is not a bug to fix
+//! once. A value can travel under a name that is not its own, and no amount
+//! of reading harder closes that, because `std::net` is available to every
+//! Rust file in this crate and no manifest split removes it.
+//!
+//! So this file does three separate, narrower things instead of one thing
+//! that claims to be complete, and no combination of the three enumerates
+//! "every module that can reach a server":
+//!
+//! - The text census finds files that *name* a networking crate or a socket
+//!   type. Wide and cheap, and blind to a value handed on under another name.
+//! - The write census (`test_every_provider_write_is_on_one_of_the_two_wire_lists`
+//!   for the four HTTP clients, `test_every_mailbox_write_is_on_the_mail_wire_list`
+//!   for the three mail transports) asks whether a write that was found has
+//!   been read off a socket by a test.
+//! - `test_nothing_sends_a_changing_command_without_asking_the_gate` asks,
+//!   for the three mail transports, whether a command that touches the
+//!   session or the transport called [`permitted`] first. This one does not
+//!   depend on the census recognising the write by name at all: it reads
+//!   where a write actually leaves.
+//!
+//! What stays invisible to all three, and has to be read here rather than
+//! assumed closed: a module handed an already-open connection or a built
+//! client by another module, constructing nothing itself. Neither the text
+//! census nor the write guard sees it, because there is nothing at that call
+//! site to name. Closing that would mean a read-only facade the compiler
+//! could refuse a changing command through without a permission token, which
+//! is a larger refactor than this file, and it was not attempted here.
 
 use crate::common::{Error, Result};
 use reqwest::{Method, RequestBuilder};
@@ -521,7 +557,10 @@ const CLIENTS: [&str; 4] = [
 ///   asserts the line and nothing else keeps it green.
 /// - Whether the test asserting that line is about that method at all. Two
 ///   methods can write the same verb to the same address.
-/// - A write that reaches a server some way the reading below does not know.
+/// - A write that reaches a server some way the reading in `mod completeness`
+///   does not know. That is not a small residue at the edge of this list; it
+///   is the reading's whole limit, and the module doc at the top of this file
+///   says what is and is not covered between the three checks this file has.
 ///
 /// What it can see is the thing that was missing: a write added to one of these
 /// files and never measured fails here instead of being remembered.
@@ -1007,15 +1046,32 @@ mod completeness {
     /// mention of `tokio_native_tls` reads as `native_tls` as well.
     ///
     /// What this cannot see. Written as a list rather than a sentence about
-    /// how hard it tries, because the two rounds before this one each closed
-    /// one hole and left a doc saying no arrangement of imports could hide
-    /// anything, which was not true either time:
+    /// how hard it tries, because four rounds running each closed one hole
+    /// and left a doc saying no arrangement of imports could hide anything,
+    /// which was not true any of those times:
     ///
-    /// - A module handed a live connection, or a built client, by another
-    ///   module. Where the handing on is a re-export, a type alias or a public
-    ///   signature on one line, the check below refuses it outright. A
-    ///   signature broken across several lines, or a value that travels some
-    ///   other way, is invisible here.
+    /// - A module handed an open connection, or a built client, by another
+    ///   module, constructing nothing itself. This is not a hole reading
+    ///   harder closes: a value can arrive under a generic bound, a trait
+    ///   object, `impl Trait` or an associated type, none of which names the
+    ///   type it carries. A module written that way, with a real write, was
+    ///   planted and walked straight past this reading. Nothing in this file
+    ///   catches it. What catches a write from a module like that, if the
+    ///   write lands in one of the three mail transport files, is
+    ///   [`test_nothing_sends_a_changing_command_without_asking_the_gate`],
+    ///   which reads where the write actually leaves rather than what named
+    ///   it on the way in. Outside those three files, nothing here catches it
+    ///   at all.
+    /// - A crate-local re-export split over lines, so no single line names
+    ///   both the crate and the item. Planted, and walked past this reading
+    ///   and past the refusal in
+    ///   [`test_no_module_hands_a_way_out_on_under_another_name`],
+    ///   which reads one line at a time. A lint pinning every resolved use of
+    ///   a listed type or method, which would refuse this however it is
+    ///   spelled, was considered and not attempted in this pass; nothing here
+    ///   closes this hole today.
+    /// - Anything reached with a name this reading was never taught. The list
+    ///   of names is written by hand and always will be.
     /// - A macro that writes the path. Nothing looks inside one.
     /// - A crate nobody has classified. That is the manifest sweep further
     ///   down, not this.
@@ -1031,6 +1087,12 @@ mod completeness {
     ///   comment that trails code on the same line, counts as a way out. That
     ///   direction is the safe one: it asks somebody to classify a file
     ///   rather than passing one over in silence.
+    ///
+    /// Positively, then, rather than only by exclusion: this finds files that
+    /// *name* a networking crate or a socket type, which is wide and cheap.
+    /// It is not, on its own or added to the write census beside it, a
+    /// reading of "every module that can reach a server". No arrangement of
+    /// these checks is. See the module doc at the top of this file.
     fn how_it_reaches_a_server(source: &str) -> Option<&'static str> {
         let ships = what_ships(source);
         let code: String = ships
@@ -1085,14 +1147,22 @@ mod completeness {
     }
 
     #[test]
-    fn test_every_module_that_talks_to_a_server_is_on_one_of_these_lists() {
-        // The check that would have caught the POP hole. The gate list was
-        // kept by hand and POP3 was never on it, so "mail changes are off" was
-        // never true for a POP account and nothing anywhere could say so.
+    fn test_every_module_that_names_a_way_out_is_on_one_of_these_lists() {
+        // Named for what this reads rather than what it proves: it finds a
+        // file that names a networking crate or a socket type, which is a
+        // narrower claim than "talks to a server". Four rounds running, a
+        // planted module reached a server through an idiom this reading had
+        // not been taught and named nothing on any list below, which is why
+        // the old name is a claim this file has failed to live up to four
+        // times. See the module doc at the top of this file for what the
+        // three checks in it can and cannot see between them.
         //
-        // The lists are the record; the tree is the answer. A new way out of
-        // this program now fails here until somebody has said in writing
-        // whether it can change anything at a person's account.
+        // It would still have caught the POP hole: the gate list was kept by
+        // hand and POP3 was never on it, so "mail changes are off" was never
+        // true for a POP account and nothing anywhere could say so. A new
+        // file that names a way out this reading knows now fails here until
+        // somebody has said in writing whether it can change anything at a
+        // person's account.
         let accounted_for: Vec<&str> = GATED
             .iter()
             .chain(TALKS_BUT_ONLY_READS.iter())
