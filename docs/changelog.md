@@ -8,6 +8,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: editing an Outlook contact dropped all but one of their phone
+  numbers.** Only one number was kept when a contact came down from Outlook,
+  and Outlook replaces a contact's numbers with whatever it is next sent. So
+  somebody with a home number and a work number and a mobile kept one of the
+  three the first time anything about them was changed here. Every number now
+  comes down and goes back up, under the label of the place Outlook keeps it
+  in.
+
 - **Fixed: editing a Google contact took that person's postal address off
   their Google contact.** An address held at Google was read into nothing here,
   so it was missing from every change sent back, and Google treats a missing

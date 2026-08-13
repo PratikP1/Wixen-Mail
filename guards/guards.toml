@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 49 records have arrived since and have not been through it.
+# 50 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4679,4 +4679,37 @@ after = """        phones_json,
         // Google's copy of the contact, as Google has it."""
 red = [
     "application::contacts_sync::tests::test_a_postal_address_google_holds_is_kept_here_and_sent_back",
+]
+
+# ── Every number Outlook holds is kept here, so a change does not drop one ──
+#
+# The Microsoft reader kept one number in the single-number column and set the
+# list to nothing, while the Google reader beside it kept the list. The writer
+# builds Graph's three phone fields from that list, and Graph replaces a phone
+# list with whatever it is given, so a contact with two home numbers at Outlook
+# came back with one the first time anything was changed about them here.
+#
+# The break is the reader again, one line, exactly as it was.
+#
+# Measured by hand on 2026-08-13 with scripts/guards.py.
+
+[[guard]]
+name = "every number Outlook holds is kept here rather than all but one dropped"
+file = "src/application/contacts_sync.rs"
+before = """        emails_json,
+        phones_json,
+        addresses_json,
+        custom_fields_json: None,
+        pending: false,
+        known_to: vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,"""
+after = """        emails_json,
+        phones_json: None,
+        addresses_json,
+        custom_fields_json: None,
+        pending: false,
+        known_to: vec![ProviderIdentity {
+            address_book: AddressBook::Microsoft,"""
+red = [
+    "application::contacts_sync::tests::test_every_number_outlook_holds_is_kept_here_and_sent_back",
 ]

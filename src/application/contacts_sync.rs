@@ -653,6 +653,11 @@ fn address_from_microsoft(
 /// What the two addresses Graph holds are called when they are stored here.
 const A_HOME_ADDRESS: &str = "Home";
 const A_WORK_ADDRESS: &str = "Work";
+/// What Graph's single mobile number is called when it is stored here.
+///
+/// One of the words [`where_microsoft_keeps`] reads as the mobile slot, so a
+/// number read out of Graph and sent back to it lands where it started.
+const A_MOBILE_NUMBER: &str = "Mobile";
 
 /// The version marker an address book gave, or nothing when it gave none.
 ///
@@ -2774,6 +2779,40 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         None
     };
 
+    // Every number Graph holds, under the label of the place it keeps it in.
+    // All of them, which is what the writer beside this one already expected:
+    // it builds Graph's three fields from this list, and Graph replaces a phone
+    // list with whatever it is given. Read as one number, a contact with two
+    // home numbers at Outlook came back with one the first time anything was
+    // changed here, and the second went with nothing said.
+    //
+    // The labels are the ones that map back to the same three places, so a
+    // number read here and sent again lands where it started.
+    let phones: Vec<PhoneEntry> = ms
+        .home_phones
+        .iter()
+        .map(|number| (A_HOME_ADDRESS, number))
+        .chain(
+            ms.business_phones
+                .iter()
+                .map(|number| (A_WORK_ADDRESS, number)),
+        )
+        .chain(
+            Some(&ms.mobile_phone)
+                .filter(|number| !number.trim().is_empty())
+                .map(|number| (A_MOBILE_NUMBER, number)),
+        )
+        .map(|(label, number)| PhoneEntry {
+            label: label.to_string(),
+            number: number.clone(),
+        })
+        .collect();
+    let phones_json = if phones.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&phones).ok()
+    };
+
     // Both of Graph's addresses, under the two labels this application knows
     // them by. Not folded over a stored contact's list on a sync: that list is
     // one list for every address book, and Graph can only speak for its own
@@ -2829,7 +2868,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         department,
         relationship: None,
         emails_json,
-        phones_json: None,
+        phones_json,
         addresses_json,
         custom_fields_json: None,
         pending: false,
@@ -3034,6 +3073,47 @@ mod tests {
         assert_eq!(person.phone_numbers[0].value, "+1-555-0202");
         assert_eq!(person.organizations[0].name, "Corp");
         assert_eq!(person.nicknames[0].value, "Bobby");
+    }
+
+    #[test]
+    fn test_every_number_outlook_holds_is_kept_here_and_sent_back() {
+        // The Microsoft reader kept one number and threw the rest away, while
+        // the Google reader beside it kept the list. Graph replaces a phone
+        // list with what it is given, and the writer builds that list from the
+        // one the reader never filled, so a contact with two home numbers at
+        // Outlook came back with one the first time anything here was changed
+        // about them. The second number went and nothing said so.
+        let from_outlook = MsGraphContact {
+            id: "ms-7".to_string(),
+            display_name: "Grace van der Berg".to_string(),
+            home_phones: vec!["01632 960123".to_string(), "01632 960124".to_string()],
+            business_phones: vec!["01632 960999".to_string()],
+            mobile_phone: "07700 900123".to_string(),
+            ..Default::default()
+        };
+
+        let here = ms_contact_to_contact(&from_outlook, AN_ACCOUNT);
+        let kept: Vec<PhoneEntry> = stored_list(here.phones_json.as_ref());
+        let numbers: Vec<&str> = kept.iter().map(|e| e.number.as_str()).collect();
+        assert_eq!(
+            numbers,
+            [
+                "01632 960123",
+                "01632 960124",
+                "01632 960999",
+                "07700 900123"
+            ],
+            "numbers Outlook holds were dropped: {kept:?}"
+        );
+
+        let back = contact_to_ms_contact(&here);
+        assert_eq!(
+            back.home_phones,
+            ["01632 960123", "01632 960124"],
+            "a change would have taken a home number off the contact at Outlook"
+        );
+        assert_eq!(back.business_phones, ["01632 960999"]);
+        assert_eq!(back.mobile_phone, "07700 900123");
     }
 
     #[test]
