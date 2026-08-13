@@ -15,6 +15,7 @@
 //! is not markdown is simply text with no structure in it rather than an error.
 
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::ops::Deref;
 
 /// A piece of a long field, with whatever structure it carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +178,209 @@ pub fn spoken(written: &str) -> String {
         .join("\n")
 }
 
+/// A provider's own markup, read as the structure this module understands.
+///
+/// A note or a task description can arrive as HTML rather than as something
+/// somebody typed here: Microsoft To Do's editor writes it, and so does
+/// Outlook's. Read as `body.content` and spoken with nothing done to it first,
+/// the tags themselves are read aloud, one by one.
+///
+/// `ammonia::clean` runs first. That is the security half, and it removes a
+/// `<script>` or `<style>` element's content outright, so the walk below never
+/// sees it. What follows is the accessibility half: turning what is left into
+/// the same markers [`structure`] already reads back, so a heading arrives as a
+/// heading and a list arrives as a list, not as one flat run of words.
+///
+/// A line of provider text that happens to start with a markdown marker such as
+/// `#`, `-` or `>` is read back as that marker. Escaping it would put a
+/// backslash into a box somebody edits by hand, which is a worse fate than the
+/// rare line that reads oddly.
+pub fn from_markup(html: &str) -> String {
+    let cleaned = ammonia::clean(html);
+    let fragment = scraper::Html::parse_fragment(&cleaned);
+    let mut out = String::new();
+    markup::blocks(*fragment.root_element().deref(), &mut out);
+    collapse_blank_lines(&out)
+}
+
+/// Squeeze runs of blank lines down to one, and trim the ends.
+///
+/// The block walk below closes every paragraph, heading and list with its own
+/// blank line, so two of them in a row where one block follows another is the
+/// ordinary case rather than a fault to work around.
+fn collapse_blank_lines(written: &str) -> String {
+    let mut out = String::new();
+    let mut blank_run = false;
+    for line in written.lines() {
+        if line.trim().is_empty() {
+            if blank_run {
+                continue;
+            }
+            blank_run = true;
+        } else {
+            blank_run = false;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.trim().to_string()
+}
+
+/// The tree walk behind [`from_markup`], kept to itself.
+///
+/// One small module rather than functions loose in this one, because the walk
+/// needs three helpers that share nothing with the rest of the file: a block
+/// pass, an inline pass, and a list pass that counts.
+mod markup {
+    use ego_tree::NodeRef;
+    use scraper::Node;
+
+    /// Walk a node's children, emitting each block-level element it finds as a
+    /// piece of markdown [`super::structure`] can read back.
+    pub(super) fn blocks(node: NodeRef<'_, Node>, out: &mut String) {
+        for child in node.children() {
+            match child.value() {
+                Node::Element(element) => match element.name() {
+                    "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                        let level = element.name()[1..].parse::<usize>().unwrap_or(1);
+                        push_paragraph(&format!("{} ", "#".repeat(level)), child, out);
+                    }
+                    "p" | "div" => push_paragraph("", child, out),
+                    "ul" => list(child, out, None),
+                    "ol" => list(child, out, Some(1)),
+                    "li" => {
+                        // A list item with no list around it. Malformed, but a
+                        // bullet is a better answer than silently dropping it.
+                        push_item("- ", child, out);
+                    }
+                    "blockquote" => quote(child, out),
+                    "br" => out.push('\n'),
+                    // An image reached without a paragraph around it. Its own
+                    // element, since it has no children for `inline` to walk.
+                    "img" => {
+                        if let Some(alt) = element.attr("alt")
+                            && !alt.trim().is_empty()
+                        {
+                            out.push_str(alt.trim());
+                            out.push_str("\n\n");
+                        }
+                    }
+                    // The elements ammonia removes along with their content.
+                    // Never reached in practice, since cleaning already took
+                    // them out; kept so a change to that allowlist fails safe.
+                    "script" | "style" => {}
+                    // Anything else, a `body`, `span` or `article` this
+                    // program does not otherwise care about, is a container
+                    // rather than a leaf: what is inside it still matters.
+                    _ => blocks(child, out),
+                },
+                Node::Text(text) => {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        out.push_str(trimmed);
+                        out.push_str("\n\n");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// One paragraph or heading: its inline text, with a marker in front.
+    fn push_paragraph(marker: &str, node: NodeRef<'_, Node>, out: &mut String) {
+        let mut text = String::new();
+        inline(node, &mut text);
+        let text = text.trim();
+        if !text.is_empty() {
+            out.push_str(marker);
+            out.push_str(text);
+            out.push_str("\n\n");
+        }
+    }
+
+    /// One list item, on its own line rather than followed by a blank one, so
+    /// the items of a list stay together.
+    fn push_item(marker: &str, node: NodeRef<'_, Node>, out: &mut String) {
+        let mut text = String::new();
+        inline(node, &mut text);
+        let text = text.trim();
+        if !text.is_empty() {
+            out.push_str(marker);
+            out.push_str(text);
+            out.push('\n');
+        }
+    }
+
+    /// A `ul` or `ol`'s direct `li` children.
+    ///
+    /// `counter` is `None` for a bullet list and `Some(1)` for a numbered one,
+    /// counting from one the way [`super::structure`] expects back.
+    fn list(node: NodeRef<'_, Node>, out: &mut String, mut counter: Option<usize>) {
+        for child in node.children() {
+            if let Node::Element(element) = child.value()
+                && element.name() == "li"
+            {
+                match &mut counter {
+                    Some(n) => {
+                        push_item(&format!("{n}. "), child, out);
+                        *n += 1;
+                    }
+                    None => push_item("- ", child, out),
+                }
+            }
+        }
+        out.push('\n');
+    }
+
+    /// A `blockquote`'s paragraphs, each read back as its own quoted line.
+    ///
+    /// A quote holding no `<p>` of its own is read as one paragraph of quoted
+    /// text, which is what a quote with no markup inside it amounts to.
+    fn quote(node: NodeRef<'_, Node>, out: &mut String) {
+        let mut saw_a_paragraph = false;
+        for child in node.children() {
+            if let Node::Element(element) = child.value()
+                && element.name() == "p"
+            {
+                saw_a_paragraph = true;
+                push_paragraph("> ", child, out);
+            }
+        }
+        if !saw_a_paragraph {
+            push_paragraph("> ", node, out);
+        }
+    }
+
+    /// The inline text inside a block: what a screen reader would hear read
+    /// out, with the block-level structure around it left to the caller.
+    ///
+    /// A link contributes its own text and not its address: a markdown link
+    /// written as `[text](url)` lands inside a paragraph, and
+    /// [`super::spoken`] returns a paragraph-only field exactly as written, so
+    /// the address would be read aloud character by character. An image
+    /// contributes its alt text when the sender gave it one and nothing when
+    /// they did not; inventing alt text the sender never wrote is not this
+    /// module's gap to paper over.
+    fn inline(node: NodeRef<'_, Node>, out: &mut String) {
+        for child in node.children() {
+            match child.value() {
+                Node::Text(text) => out.push_str(text),
+                Node::Element(element) => match element.name() {
+                    "br" => out.push(' '),
+                    "img" => {
+                        if let Some(alt) = element.attr("alt") {
+                            out.push_str(alt);
+                        }
+                    }
+                    "script" | "style" => {}
+                    _ => inline(child, out),
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
 /// The first line of a long field, for a list column.
 ///
 /// The words rather than the markers: a preview column reading "## Shopping"
@@ -333,5 +537,49 @@ mod tests {
                 }]
             );
         }
+    }
+
+    #[test]
+    fn test_markup_from_a_provider_is_read_as_the_structure_it_carries() {
+        // A note or a task description arrives as HTML from more than one
+        // provider's own editor. Read as tags, a screen reader says the
+        // punctuation; read as structure, it says what the punctuation means.
+        let said = spoken(&from_markup(
+            "<h2>Agenda</h2><ul><li>Budget</li><li>Papers</li></ul>",
+        ));
+
+        assert!(said.contains("heading level 2, Agenda"), "{said}");
+        assert!(said.contains("bullet, Budget"), "{said}");
+        assert!(said.contains("bullet, Papers"), "{said}");
+        assert!(!said.contains('<'), "a tag survived into speech: {said}");
+    }
+
+    #[test]
+    fn test_a_script_in_a_provider_body_does_not_survive_into_a_long_field() {
+        // The security half has to run before the accessibility half ever
+        // sees the markup, or a script's own text is read out as words.
+        let converted = from_markup("<p>Bring the papers</p><script>steal()</script>");
+
+        assert!(converted.contains("Bring the papers"), "{converted}");
+        assert!(!converted.contains("steal"), "{converted}");
+    }
+
+    #[test]
+    fn test_link_text_and_image_alt_text_survive_markup_being_read() {
+        // A link contributes its own words and not its address: a markdown
+        // link written out would land inside a paragraph and be read aloud
+        // character by character. An image contributes the alt text the
+        // sender gave it, never one invented here.
+        let converted = from_markup(
+            "<p>See the <a href=\"https://example.com/q\">quarterly report</a></p>\
+             <img src=\"x\" alt=\"Revenue chart\">",
+        );
+
+        assert!(converted.contains("quarterly report"), "{converted}");
+        assert!(converted.contains("Revenue chart"), "{converted}");
+        assert!(
+            !converted.contains("example.com"),
+            "the address leaked into text meant to be read aloud: {converted}"
+        );
     }
 }
