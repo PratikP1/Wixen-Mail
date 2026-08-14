@@ -12,6 +12,7 @@
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -81,9 +82,17 @@ struct ManagerChrome<'a> {
 
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
 ///
+/// `kind` is the word this window's rows are, "filter", "tag" or
+/// "signature", asked of [`manager_words`] for what to say about a row
+/// somebody just changed. Without it, "Deleted: Jane Smith" never said
+/// whether a contact, a filter, a tag or a signature had gone, and read
+/// identically to the mail path's own sentence for a message leaving a
+/// server besides.
+///
 /// Returns `true` if any changes were made.
 fn run_manager_loop<T: Clone>(
     chrome: ManagerChrome<'_>,
+    kind: &str,
     working: &mut Vec<T>,
     populate: impl Fn(&ListCtrl, &[T]),
     add_fn: impl Fn(&Dialog) -> Option<T>,
@@ -159,22 +168,39 @@ fn run_manager_loop<T: Clone>(
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
                 if let Some(item) = add_fn(dialog) {
+                    let name = name_fn(&item);
                     working.push(item);
                     changed = true;
                     populate(list, working);
-                    said_and_shown(status_text, a11y, "Added", Priority::Normal);
+                    said_and_shown(
+                        status_text,
+                        a11y,
+                        &manager_words::added(kind, &name),
+                        Priority::Normal,
+                    );
                 }
             }
             r if r == ID_MGR_EDIT => {
                 if let Some(idx) = get_selected(list) {
-                    if let Some(updated) = edit_fn(dialog, &working[idx]) {
-                        working[idx] = updated;
+                    if let Some(edited) = edit_fn(dialog, &working[idx]) {
+                        let name = name_fn(&edited);
+                        working[idx] = edited;
                         changed = true;
                         populate(list, working);
-                        said_and_shown(status_text, a11y, "Updated", Priority::Normal);
+                        said_and_shown(
+                            status_text,
+                            a11y,
+                            &manager_words::updated(kind, &name),
+                            Priority::Normal,
+                        );
                     }
                 } else {
-                    said_and_shown(status_text, a11y, "Select an item to edit", Priority::High);
+                    said_and_shown(
+                        status_text,
+                        a11y,
+                        &manager_words::nothing_selected(kind, "edit"),
+                        Priority::High,
+                    );
                 }
             }
             r if r == ID_MGR_DELETE => {
@@ -186,14 +212,14 @@ fn run_manager_loop<T: Clone>(
                     said_and_shown(
                         status_text,
                         a11y,
-                        &format!("Deleted: {}", name),
+                        &manager_words::deleted(kind, &name),
                         Priority::Normal,
                     );
                 } else {
                     said_and_shown(
                         status_text,
                         a11y,
-                        "Select an item to delete",
+                        &manager_words::nothing_selected(kind, "delete"),
                         Priority::High,
                     );
                 }
@@ -691,12 +717,18 @@ pub fn show_contact_manager_dialog(
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
                 if let Some(item) = show_contact_edit(&dialog, None) {
+                    let name = item.name.clone();
                     working.borrow_mut().push(item);
                     changed = true;
                     let query = search_f.get_value();
                     let w = working.borrow();
                     populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                    said_and_shown(&status, a11y, "Added", Priority::Normal);
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &manager_words::added(manager_words::CONTACT, &name),
+                        Priority::Normal,
+                    );
                 }
             }
             r if r == ID_MGR_EDIT => {
@@ -709,16 +741,27 @@ pub fn show_contact_manager_dialog(
                         }
                     };
                     let existing = working.borrow()[working_idx].clone();
-                    if let Some(updated) = show_contact_edit(&dialog, Some(&existing)) {
-                        working.borrow_mut()[working_idx] = updated;
+                    if let Some(edited) = show_contact_edit(&dialog, Some(&existing)) {
+                        let name = edited.name.clone();
+                        working.borrow_mut()[working_idx] = edited;
                         changed = true;
                         let query = search_f.get_value();
                         let w = working.borrow();
                         populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                        said_and_shown(&status, a11y, "Updated", Priority::Normal);
+                        said_and_shown(
+                            &status,
+                            a11y,
+                            &manager_words::updated(manager_words::CONTACT, &name),
+                            Priority::Normal,
+                        );
                     }
                 } else {
-                    said_and_shown(&status, a11y, "Select a contact to edit", Priority::High);
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &manager_words::nothing_selected(manager_words::CONTACT, "edit"),
+                        Priority::High,
+                    );
                 }
             }
             r if r == ID_MGR_DELETE => {
@@ -739,11 +782,16 @@ pub fn show_contact_manager_dialog(
                     said_and_shown(
                         &status,
                         a11y,
-                        &format!("Deleted: {}", name),
+                        &manager_words::deleted(manager_words::CONTACT, &name),
                         Priority::Normal,
                     );
                 } else {
-                    said_and_shown(&status, a11y, "Select a contact to delete", Priority::High);
+                    said_and_shown(
+                        &status,
+                        a11y,
+                        &manager_words::nothing_selected(manager_words::CONTACT, "delete"),
+                        Priority::High,
+                    );
                 }
             }
             r if r == ID_MGR_SYNC => {
@@ -1668,6 +1716,7 @@ pub fn show_filter_manager_dialog(
             status_text: &status,
             a11y,
         },
+        manager_words::FILTER,
         &mut working,
         populate_filters,
         |d| show_filter_edit(d, None),
@@ -1906,6 +1955,7 @@ pub fn show_tag_manager_dialog(
             status_text: &status,
             a11y,
         },
+        manager_words::TAG,
         &mut working,
         populate_tags,
         |d| show_tag_edit(d, None),
@@ -2062,6 +2112,7 @@ pub fn show_signature_manager_dialog(
             status_text: &status,
             a11y,
         },
+        manager_words::SIGNATURE,
         &mut working,
         populate_sigs,
         |d| show_sig_edit(d, None),
@@ -2482,6 +2533,65 @@ mod tests {
         );
         let wrong = what_these_windows_never_say(&windows, &the_one_call_that_says());
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_these_windows_no_longer_word_their_own_added_updated_or_deleted() {
+        // Two windows here said "Added" and "Updated" with nothing else, and
+        // three delete sites here worded a delete character for character
+        // like the mail path's own sentence for a message leaving a server.
+        // All of that now goes through manager_words, which is what this
+        // checks for rather than for the word "Deleted" itself: that owner's
+        // own sentence starts with the same word.
+        let windows = the_manager_windows();
+        assert!(
+            !windows.contains("\"Added\""),
+            "a bare \"Added\" with no kind or name survives"
+        );
+        assert!(
+            !windows.contains("\"Updated\""),
+            "a bare \"Updated\" with no kind or name survives"
+        );
+        assert!(
+            !windows.contains("format!(\"Deleted: "),
+            "a delete worded here rather than through manager_words::deleted survives"
+        );
+    }
+
+    #[test]
+    fn test_each_manager_window_hands_the_shared_loop_its_own_kind() {
+        // run_manager_loop and the contact window both ask manager_words for
+        // their words, given the kind of row this window holds. Nothing
+        // about the loop's own definition can see whether a caller handed it
+        // the wrong word, because all four calls share one loop body; this
+        // reads each caller instead.
+        let windows = the_manager_windows();
+        for (function, kind) in [
+            ("fn show_filter_manager_dialog", "manager_words::FILTER"),
+            ("fn show_tag_manager_dialog", "manager_words::TAG"),
+            (
+                "fn show_signature_manager_dialog",
+                "manager_words::SIGNATURE",
+            ),
+            ("fn show_contact_manager_dialog", "manager_words::CONTACT"),
+        ] {
+            let start = windows
+                .find(function)
+                .unwrap_or_else(|| panic!("{function} is not in this file"));
+            // Bounded by the next top-level function this file declares,
+            // rather than a fixed width: the contact window's own function is
+            // long enough that a short, fixed window missed the calls
+            // entirely and reported the right wiring as missing.
+            let end = windows[start + function.len()..]
+                .find("\npub fn ")
+                .map(|at| start + function.len() + at)
+                .unwrap_or(windows.len());
+            let body = &windows[start..end];
+            assert!(
+                body.contains(kind),
+                "{function} does not hand its own kind, {kind}, to the words it says"
+            );
+        }
     }
 
     #[test]

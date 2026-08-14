@@ -14,6 +14,7 @@ pub mod editor_page_harness;
 pub mod first_run;
 pub mod help_page;
 pub mod html_renderer;
+pub mod manager_words;
 pub mod managers;
 pub mod markdown_input;
 pub mod message_columns;

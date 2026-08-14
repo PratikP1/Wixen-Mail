@@ -13,6 +13,7 @@ use crate::data::account::{Account, app_password_url, oauth_is_default, offers_a
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::manager_words;
 
 /// What to put in the password box when the provider wants an app password.
 ///
@@ -369,7 +370,7 @@ pub fn show_account_manager_dialog(
                     said_and_shown(
                         &status,
                         a11y,
-                        &format!("Deleted: {}", name),
+                        &manager_words::deleted(manager_words::ACCOUNT, &name),
                         Priority::Normal,
                     );
                 } else {

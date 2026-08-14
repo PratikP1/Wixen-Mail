@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 90 records have arrived since and have not been through it.
+# 91 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -3755,16 +3755,22 @@ red = [
 # the name in the sentence is the item that was really deleted. Only a screen
 # reader run answers the first.
 
+
+# Re-measured by hand on 2026-08-13: the delete arm this guard is about now
+# asks manager_words::deleted for its words, named on a kind rather than
+# worded here, so before/after are updated to match. Confirmed against the
+# whole library that the break still reddens exactly the one test named.
+
 [[guard]]
 name = "deleting from a manager window says which item went"
 file = "src/presentation/wx_managers.rs"
 before = """                    said_and_shown(
                         status_text,
                         a11y,
-                        &format!("Deleted: {}", name),
+                        &manager_words::deleted(kind, &name),
                         Priority::Normal,
                     );"""
-after = """                    status_text.set_label(&format!("Deleted: {}", name));"""
+after = """                    status_text.set_label(&manager_words::deleted(kind, &name));"""
 red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
@@ -5549,4 +5555,32 @@ after = """                                OAuthFlowResult::NoCreds(provider) =>
                                 }"""
 red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
+]
+
+# ── One owner for what a manager window says about a changed row ────────────
+#
+# Three manager windows and the account manager worded a delete as
+# "Deleted: {name}", character for character what the mail path says when a
+# message is gone from a server. By ear, on a product where by ear is the
+# point, those read as the same event, and neither one said whether a
+# contact, a filter, a tag, a signature or an account had gone.
+# manager_words::deleted is now the one owner; this reverts it to the old
+# collision, which is the change the round's own intersection test was
+# written to catch.
+#
+# Measured by hand on 2026-08-13, against the whole library.
+
+[[guard]]
+name = "a manager window's delete sentence names its kind and does not collide with mail"
+file = "src/presentation/manager_words.rs"
+before = """pub(crate) fn deleted(kind: &str, name: &str) -> String {
+    format!("Deleted the {kind}: {name}")
+}"""
+after = """pub(crate) fn deleted(kind: &str, name: &str) -> String {
+    let _ = kind;
+    format!("Deleted: {name}")
+}"""
+red = [
+    "presentation::manager_words::tests::test_every_manager_sentence_names_the_kind_of_thing_it_happened_to",
+    "presentation::manager_words::tests::test_no_manager_window_says_what_the_mail_path_says_when_a_message_is_gone",
 ]

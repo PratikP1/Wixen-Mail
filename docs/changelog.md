@@ -8,6 +8,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: adding, updating or deleting an account, a contact, a filter,
+  a tag or a signature said "Added", "Updated" or "Deleted: {name}" with
+  nothing saying what kind of thing had changed.** The delete sentence was
+  worded character for character like the sentence the mail path says when
+  a message is removed from a server, so by ear the two were
+  indistinguishable. All five windows now name the kind of row as well as
+  its name: "Added the filter: Newsletter", "Deleted the contact: Jane
+  Smith".
+
 - **Fixed: the account manager described a missing sign-in credential four
   different ways, one of them reading a file name aloud and one of them
   jargon with no remedy.** Adding an account, editing one, and signing in
