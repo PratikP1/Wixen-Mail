@@ -1987,6 +1987,23 @@ mod tests {
     }
 
     #[test]
+    fn test_xoauth2_answers_the_credential_once_and_then_answers_empty() {
+        // The exchange XOAuth2's own doc comment describes: the server's
+        // first challenge is empty, the client sends the credential, and on
+        // a second challenge it sends nothing rather than the credential
+        // again. A client that resends it is one still arguing with a
+        // server that has already said no.
+        use async_imap::Authenticator;
+        let mut answering = XOAuth2 {
+            credential: "the-credential".to_string(),
+            sent: false,
+        };
+
+        assert_eq!(answering.process(b""), "the-credential");
+        assert_eq!(answering.process(b"anything"), "");
+    }
+
+    #[test]
     fn test_a_command_line_cannot_carry_a_second_command() {
         // Quoting a search value escapes a backslash and a quotation mark and
         // nothing else, because those are the two RFC 3501 names. A line ending
@@ -3424,6 +3441,75 @@ pub(crate) mod against_a_server_that_answers {
         assert!(
             outcome.is_err(),
             "a search that found messages and then refused came back as a partial list: {outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_oauth_sign_in_completes_the_continuation_rather_than_hanging() {
+        // XOAuth2's own doc comment: a server that refuses the credential
+        // sends a second challenge, and the client has to answer that one
+        // with an empty line before the failure is reported. Nothing had
+        // driven this over a real connection, and the failure mode if it
+        // regressed would not be a wrong answer, it would be a resent
+        // credential the script below does not expect, which reads as a
+        // hang rather than a sign-in failure.
+        //
+        // The tag is captured off the first line rather than read fresh off
+        // each one: the two lines after it are untagged SASL responses, not
+        // commands, and only the AUTHENTICATE line carries the tag the final
+        // refusal has to answer with. Answering "*" instead, as reading a
+        // fresh tag off the untagged lines would, sends the client a line it
+        // is not waiting for and reads as a hang rather than a refusal.
+        let step = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let command_tag = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let counting = step.clone();
+        let tagged = command_tag.clone();
+        let server = conversing("* OK loopback ready\r\n", move |line| {
+            match counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+                0 => {
+                    *tagged.lock().expect("the tag lock") =
+                        line.split_whitespace().next().unwrap_or("*").to_string();
+                    Turn::Say("+ \r\n".to_string())
+                }
+                1 => Turn::Say(
+                    "+ eyJzdGF0dXMiOiI0MDEiLCJzY2hlbWVzIjoiYmVhcmVyIiwic2NvcGUiOiJtYWlsIn0=\r\n"
+                        .to_string(),
+                ),
+                _ => {
+                    let tag = tagged.lock().expect("the tag lock").clone();
+                    Turn::Say(format!("{tag} NO invalid_grant\r\n"))
+                }
+            }
+        })
+        .await;
+        let client = ImapClient::new(ImapConfig {
+            server: server.server(),
+            port: server.port(),
+            use_tls: false,
+            username: "someone".to_string(),
+        })
+        .expect("a client");
+
+        let outcome = waiting_for(
+            client.connect(&MailAuth::OAuth2("token".to_string())),
+            "the refusal",
+        )
+        .await;
+
+        let said = match outcome {
+            Ok(_) => panic!("the server refused the sign-in and the caller was told it worked"),
+            Err(said) => said.to_string(),
+        };
+        assert!(said.contains("rejected the sign-in"), "{said}");
+        let transcript = server.transcript().await;
+        assert_eq!(
+            transcript.len(),
+            3,
+            "the exchange did not run to the three lines a refusal takes: {transcript:?}"
+        );
+        assert_eq!(
+            transcript[2], "",
+            "the client resent the credential instead of answering empty: {transcript:?}"
         );
     }
 

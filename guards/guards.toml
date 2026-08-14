@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 102 records have arrived since and have not been through it.
+# 103 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5986,6 +5986,35 @@ after = """        if false && !said.is_empty() {
         } else {"""
 red = [
     "common::answering::line_protocol_tests::test_a_sasl_response_does_not_reach_the_transcript_but_an_empty_one_still_shows",
+]
+
+# ── A refused XOAUTH2 credential is not sent a second time ──────────────────
+#
+# XOAuth2's own doc comment: a server that refuses the credential sends a
+# second challenge carrying a JSON error, and the client has to answer that
+# one with an empty line before the failure is reported. Nothing had ever
+# driven MailAuth::OAuth2 through the loopback harness before the test below,
+# so this had never run against anything that could refuse it.
+#
+# Measured by hand on 2026-08-14, against the whole library.
+
+[[guard]]
+name = "an XOAUTH2 retry answers empty rather than resending the credential"
+file = "src/service/protocols/imap.rs"
+before = """    fn process(&mut self, _challenge: &[u8]) -> Self::Response {
+        if self.sent {
+            return String::new();
+        }
+        self.sent = true;
+        std::mem::take(&mut self.credential)
+    }"""
+after = """    fn process(&mut self, _challenge: &[u8]) -> Self::Response {
+        self.sent = true;
+        self.credential.clone()
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_refused_oauth_sign_in_completes_the_continuation_rather_than_hanging",
+    "service::protocols::imap::tests::test_xoauth2_answers_the_credential_once_and_then_answers_empty",
 ]
 
 # ── Capability is read once at sign-in and never again ───────────────────────
