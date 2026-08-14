@@ -603,16 +603,34 @@ pub async fn sync_caldav_calendar(
         .filter_map(|e| e.provider_event_id.as_deref().map(|uid| (uid, e)))
         .collect();
 
+    // Whole events first, the days changed out of a series after. A resource
+    // holding a series and the days somebody moved or changed out of it sends
+    // every one of them under the series' own UID, told apart only by
+    // RECURRENCE-ID, so reading them in document order and saving each under
+    // that shared UID lets whichever is read last silently overwrite the
+    // other: the series loses its own repeat rule to the moved day's, or the
+    // moved day loses its own time to the series'. Told apart in one place,
+    // the same way `application::calendar` partitions Google's answer, so
+    // this pass and the fold after it cannot come to disagree about which
+    // event is which.
+    let (whole_events, changed_days): (Vec<&CalDavEvent>, Vec<&CalDavEvent>) = remote_events
+        .iter()
+        .partition(|event| event.recurrence_id.is_none());
+
     // Store what the server sent, keeping the parts of an event it does not
     // carry.
     // What the push just put there counts as seen. The read below asks for six
     // months back to a year ahead, so an event created a moment ago outside
     // that window is not in the answer, and without this it would be created at
     // the server and deleted from this computer in the same pass.
-    let mut seen_uids: std::collections::HashSet<&str> =
-        just_sent.iter().map(String::as_str).collect();
-    for remote in &remote_events {
-        seen_uids.insert(remote.uid.as_str());
+    //
+    // Owned strings rather than borrows: a day changed out of a series is
+    // stored under an identity built here rather than one borrowed from the
+    // answer, and that identity has to live in this set too, or the removal
+    // pass below deletes the row the very next sync after this one creates it.
+    let mut seen_uids: std::collections::HashSet<String> = just_sent;
+    for remote in whole_events {
+        seen_uids.insert(remote.uid.clone());
 
         // An event somebody deleted on this computer. The server is still
         // naming it, and writing it back down puts it on the screen again with
@@ -630,7 +648,7 @@ pub async fn sync_caldav_calendar(
         {
             // Whatever name the row was stored under, this event is still here,
             // so the pass below must not take it for one the server dropped.
-            seen_uids.insert(under);
+            seen_uids.insert(under.to_string());
         }
 
         // A change made here that has not been sent yet is the newer copy, so
@@ -655,6 +673,27 @@ pub async fn sync_caldav_calendar(
         }
     }
 
+    // The days changed out of a series, after every whole event this sync
+    // brought is already saved. A series arriving in the same sync as its own
+    // changed day is then already stored by the time its day is folded into
+    // it, whichever order the resource happened to list its VEVENTs in: the
+    // partition above, not document position, decided which loop each event
+    // fell to.
+    for changed in changed_days {
+        let Some(the_day_it_was) = changed.recurrence_id.as_deref() else {
+            continue;
+        };
+        one_caldav_day_kept_out_of_its_series(
+            cache,
+            (account_id, &calendar.id),
+            changed,
+            the_day_it_was,
+            &deleted_here,
+            &mut seen_uids,
+            &mut result,
+        )?;
+    }
+
     // Delete local events the server dropped. Silently: the server is the one
     // that dropped them, so leaving a note to delete them there would ask it on
     // every sync from now on to delete something it has already deleted.
@@ -674,6 +713,86 @@ pub async fn sync_caldav_calendar(
     }
 
     Ok(result)
+}
+
+/// One CalDAV day of a series that no longer matches the rest of them, folded
+/// into local storage the way a changed day of a Google series already is.
+///
+/// A resource naming a series and the days somebody moved or changed out of
+/// it sends every one of them under the series' own UID, told apart by
+/// RECURRENCE-ID rather than by an identifier of the changed day's own. So
+/// there is nothing to store this day under that would not collide with the
+/// series itself in local storage, and `{uid}:{recurrence-id}` is minted here
+/// purely to give it one, the same way Google's own identifier for a changed
+/// day already differs from its series'.
+///
+/// The series is read back from local storage rather than looked for among
+/// this sync's own answer, the same choice `application::calendar` makes for
+/// Google: a day changed out of a series the answer named only in passing, or
+/// whose series lies outside the window this sync asked for, still has to be
+/// folded, and reading the series back is the one way that works regardless
+/// of which the answer named or in which order.
+///
+/// `filed_under` is the account and the calendar this day belongs to, bundled
+/// the way `push_to_the_calendar_server`'s own `sign_in` pair is bundled
+/// above: both travel everywhere together and neither means anything alone.
+fn one_caldav_day_kept_out_of_its_series(
+    cache: &MessageCache,
+    filed_under: (&str, &str),
+    changed: &CalDavEvent,
+    the_day_it_was: &str,
+    deleted_here: &crate::application::deletions::DeletedHere,
+    seen_uids: &mut std::collections::HashSet<String>,
+    result: &mut CalendarSyncResult,
+) -> Result<()> {
+    let (account_id, calendar_id) = filed_under;
+    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);
+    seen_uids.insert(compound_id.clone());
+
+    // Asked about the series as well as about the day. A series somebody
+    // deleted here would otherwise come back one changed day at a time.
+    if deleted_here.holds(&compound_id) || deleted_here.holds(&changed.uid) {
+        return Ok(());
+    }
+
+    let existing = cache.get_event_by_provider_id(account_id, &compound_id)?;
+    // A change made here that has not been sent yet is the newer copy. This
+    // program does not send a changed CalDAV occurrence back yet, so nothing
+    // sets this today, but the read must not overwrite it the day something
+    // does.
+    if existing.as_ref().is_some_and(|held| held.pending) {
+        return Ok(());
+    }
+
+    let mut that_day = caldav_event_to_local(changed, account_id, calendar_id);
+    that_day.provider_event_id = Some(compound_id);
+
+    match &existing {
+        Some(held) => {
+            carry_over_local_only(&mut that_day, held);
+            result.updated += 1;
+        }
+        None => result.created += 1,
+    }
+
+    let Some(series) = cache.get_event_by_provider_id(account_id, &changed.uid)? else {
+        // The series is not held here, so there is nothing to take this day
+        // off. Stored as the meeting it says it is, the same gap Google's own
+        // read leaves when a changed day's series lies outside this window.
+        return cache.save_calendar_event(&that_day);
+    };
+    // Set here because carrying the local-only fields over does not carry it,
+    // so a second read would otherwise store the day with nothing left saying
+    // which series it came out of.
+    that_day.cut_from_event_id = Some(series.id.clone());
+
+    crate::application::calendar::one_day_kept_out_of_the_series(
+        cache,
+        &series,
+        &that_day,
+        the_day_it_was,
+        crate::application::calendar::WhoTookTheDayOut::TheProviderItself,
+    )
 }
 
 /// Refresh a subscription calendar by re-fetching the full .ics feed.
@@ -947,6 +1066,13 @@ pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
         // days it calls off would put every cancelled day back on the server's
         // copy of somebody's calendar.
         exception_dates: local.exception_dates.clone(),
+        // This program does not send a changed occurrence back to a CalDAV
+        // server yet, so nothing here ever has to say which day one replaces.
+        // A row cut out of a series carries a compound identity in
+        // `provider_event_id` rather than a UID of its own, so the day this
+        // starts sending one, `uid` above has to be taught to split the real
+        // UID back out rather than sending the compound value as one.
+        recurrence_id: None,
     };
 
     // Generate iCalendar data
@@ -977,6 +1103,7 @@ mod tests {
             time_zone: Some("Europe/London".to_string()),
             recurrence_rule: Some("FREQ=WEEKLY;BYDAY=TU".to_string()),
             exception_dates: None,
+            recurrence_id: None,
         };
 
         let local = caldav_event_to_local(&remote, "test@example.com", "cal-1");
@@ -1304,6 +1431,213 @@ mod tests {
                 .expect("the deletions waiting to be sent")
                 .is_empty(),
             "an event the server dropped left a note to delete it at the server"
+        );
+    }
+
+    // ── A resource holding a series and the day somebody moved out of it ────
+
+    /// A CalDAV multistatus carrying one resource: a series and the one
+    /// occurrence somebody moved out of it, both under one UID, told apart by
+    /// RECURRENCE-ID.
+    ///
+    /// The standard shape a calendar server sends for a moved or changed
+    /// occurrence. A copy of this shape is also kept by `service::caldav`'s own
+    /// tests; fixtures are not shared across files here, so each keeps its own.
+    fn a_multistatus_holding_a_series_and_its_moved_day() -> String {
+        let document = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "SUMMARY:Weekly review",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        .join("\r\n");
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/cal/e-1.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>\"tag-e-1\"</d:getetag>\
+             <c:calendar-data>{document}</c:calendar-data>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>"
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows() {
+        // One resource, one UID, two VEVENTs: the standard shape a calendar
+        // server sends once somebody has moved a single occurrence of a
+        // repeating event. Read as one flattened event, the moved day is
+        // silently dropped; read naively as two unrelated events, whichever
+        // is saved last overwrites the other under their shared UID and the
+        // series loses its own repeat rule. Neither happened here: both are
+        // stored, linked, and the series still says how often it repeats.
+        let cache = temp_cache("caldav_series_and_moved_day");
+        let mut calendar = container("cal-moved-day", "acct");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_its_moved_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            2,
+            "a series and its moved day should leave two rows, not {}: {stored:?}",
+            stored.len()
+        );
+
+        let series = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() == Some("e-1"))
+            .unwrap_or_else(|| panic!("the series, stored under its own UID: {stored:?}"));
+        assert_eq!(
+            series.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY"),
+            "the series lost its own repeat rule"
+        );
+        assert!(
+            series
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the moved day was not taken off the series: {:?}",
+            series.exception_dates
+        );
+        assert!(
+            !series.pending,
+            "a day the server itself moved should not queue a change back to it"
+        );
+
+        let moved = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() != Some("e-1"))
+            .unwrap_or_else(|| {
+                panic!("the moved day, stored under an identity of its own: {stored:?}")
+            });
+        assert_eq!(
+            moved.cut_from_event_id.as_deref(),
+            Some(series.id.as_str()),
+            "the moved day does not say which series it came out of"
+        );
+        assert_eq!(moved.summary, "Weekly review, the week it moved");
+        assert!(
+            moved.start_datetime.starts_with("2026-03-12T14:00"),
+            "the moved day is not shown at the time it was moved to: {}",
+            moved.start_datetime
+        );
+        assert!(!moved.pending);
+    }
+
+    #[tokio::test]
+    async fn test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it() {
+        // The second sync has to recognise the row the first one created,
+        // rather than minting a new one or, worse, deleting it for not being
+        // named in `seen_uids` under the identity it was stored with.
+        let cache = temp_cache("caldav_moved_day_twice");
+        let mut calendar = container("cal-moved-day-twice", "acct");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_its_moved_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the first sync to finish");
+
+        let after_first = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            after_first.len(),
+            2,
+            "the first sync should leave two rows: {after_first:?}"
+        );
+        let moved_id_after_first = after_first
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() != Some("e-1"))
+            .unwrap_or_else(|| panic!("the moved day after the first sync: {after_first:?}"))
+            .id
+            .clone();
+
+        let (address2, _heard2) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_its_moved_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address2}/cal/"));
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the second sync to finish");
+
+        let after_second = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            after_second.len(),
+            2,
+            "the second sync duplicated or lost a row: {after_second:?}"
+        );
+        let moved_id_after_second = after_second
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() != Some("e-1"))
+            .unwrap_or_else(|| panic!("the moved day after the second sync: {after_second:?}"))
+            .id
+            .clone();
+        assert_eq!(
+            moved_id_after_first, moved_id_after_second,
+            "the moved day was given a new identity on the second sync rather \
+             than being matched to the first"
         );
     }
 
@@ -1743,6 +2077,7 @@ mod tests {
             time_zone: None,
             recurrence_rule: None,
             exception_dates: None,
+            recurrence_id: None,
         };
 
         let timed = caldav_event_to_local(&remote, "acct", "cal-1");

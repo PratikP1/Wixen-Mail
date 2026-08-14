@@ -57,6 +57,20 @@ pub struct CalDavEvent {
     /// lines, so every line is gathered rather than the first one only. Without
     /// it a day somebody cancelled is shown as a meeting that is not happening.
     pub exception_dates: Option<String>,
+    /// The day of the series this VEVENT stands in for, when it carries
+    /// RECURRENCE-ID.
+    ///
+    /// Nothing for an ordinary event and nothing for the series itself. A
+    /// calendar resource holding a series somebody changed one day of carries
+    /// the series VEVENT and one VEVENT per changed day, all under the
+    /// series' own UID, told apart only by this. Read through the same
+    /// routine DTSTART already goes through, so the two compare on equal
+    /// footing.
+    ///
+    /// The same fact Google's `original_start_time` names on its own items,
+    /// and both providers hand it to the one shared fold,
+    /// `application::calendar::one_day_kept_out_of_the_series`.
+    pub recurrence_id: Option<String>,
 }
 
 /// What a server holds for one event right now.
@@ -676,6 +690,10 @@ fn resolved_against(href: &str, base_url: &str) -> String {
 /// though, that is not a calendar with nothing on it and it must not look like
 /// one: the two answers were the same empty list, and an empty calendar is
 /// exactly what somebody would then go looking for a broken account over.
+///
+/// A resource may hold more than one VEVENT: a series somebody changed one day
+/// of sends the series and one VEVENT per changed day in the same document, so
+/// every event a resource holds is read, not only its first.
 fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
     let mut unreadable = 0_usize;
@@ -703,9 +721,11 @@ fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>
             true => String::new(),
             false => resolved_against(&href, calendar_url),
         };
-        match parse_ical_vevent(&ical_data, &at, etag.as_deref()) {
-            Some(event) => events.push(event),
-            None => unreadable += 1,
+        let found = every_event_in_the_resource(&ical_data, &at, etag.as_deref());
+        if found.is_empty() {
+            unreadable += 1;
+        } else {
+            events.extend(found);
         }
     }
 
@@ -737,6 +757,13 @@ pub(crate) fn how_many(count: usize, thing: &str) -> String {
 }
 
 /// Parse a single VEVENT from iCalendar data.
+///
+/// The first event the document holds, and only the first. A resource holding
+/// a series and the days somebody changed out of it carries one VEVENT for the
+/// series and one per changed day, all under one UID, and this reads the
+/// series alone: two of this function's three callers see one VEVENT per
+/// document and have no second one to miss. [`parse_report_events`] is the
+/// caller that does, and it asks [`every_event_in_the_resource`] instead.
 pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Option<CalDavEvent> {
     // Put the lines the server broke up back together first, the way the
     // write path already does before it reads the document it is changing. A
@@ -764,8 +791,56 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         Some(event) => lines_at(&lines, &event.its_own).join("\r\n"),
         None => lines.join("\r\n"),
     };
-    let block = block.as_str();
+    event_from_its_own_lines(&block, ical_data, url, etag)
+}
 
+/// Every event a calendar resource holds, each read the way
+/// [`parse_ical_vevent`] reads its first.
+///
+/// A resource holding a series and the days somebody moved or changed out of
+/// it is one document carrying several VEVENTs under one UID, told apart by
+/// RECURRENCE-ID. [`parse_ical_vevent`] reads such a document as the series
+/// alone, on purpose, because its other two callers never see more than one
+/// VEVENT in a document and have nothing to gain from asking for more.
+/// [`parse_report_events`] is the one caller that does see this shape, and
+/// this is what it asks for instead.
+///
+/// One bad VEVENT in a resource is passed over rather than failing the whole
+/// resource, the same rule [`parse_report_events`] already applies one level
+/// up: a malformed occurrence must not cost somebody the series it belongs
+/// to. A document with no event marker in it at all is read whole, matching
+/// [`parse_ical_vevent`]'s own fallback, so a fragment carrying bare property
+/// lines still reads.
+fn every_event_in_the_resource(ical_data: &str, url: &str, etag: Option<&str>) -> Vec<CalDavEvent> {
+    let lines = unfolded(ical_data);
+    let events = events_in(&lines);
+    if events.is_empty() {
+        let block = lines.join("\r\n");
+        return event_from_its_own_lines(&block, ical_data, url, etag)
+            .into_iter()
+            .collect();
+    }
+    events
+        .iter()
+        .filter_map(|event| {
+            let block = lines_at(&lines, &event.its_own).join("\r\n");
+            event_from_its_own_lines(&block, ical_data, url, etag)
+        })
+        .collect()
+}
+
+/// One VEVENT's own lines, read into the shape this program stores one in.
+///
+/// Shared by [`parse_ical_vevent`], which hands it the first event a document
+/// holds, and by [`every_event_in_the_resource`], which hands it every one in
+/// turn. Both read one block the same way, so the series and the days changed
+/// out of it cannot come to disagree about what a given property means.
+fn event_from_its_own_lines(
+    block: &str,
+    whole_document: &str,
+    url: &str,
+    etag: Option<&str>,
+) -> Option<CalDavEvent> {
     // The three properties that carry words somebody typed, with the marks the
     // document puts round them taken off. The identifier below is not one of
     // them: it is the name the server calls the event by and it is matched
@@ -806,7 +881,7 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         url: url.to_string(),
         uid,
         etag: etag.map(|s| s.to_string()),
-        ical_data: ical_data.to_string(),
+        ical_data: whole_document.to_string(),
         summary,
         description,
         location,
@@ -817,6 +892,12 @@ pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Opti
         time_zone,
         recurrence_rule: extract_ical_property(block, "RRULE"),
         exception_dates,
+        // The same property, read the same way DTSTART is: extracted off this
+        // block alone and normalized through the same routine. Nothing for
+        // the series itself and for an ordinary event, which carry no
+        // RECURRENCE-ID at all.
+        recurrence_id: extract_ical_property(block, "RECURRENCE-ID")
+            .map(|raw| normalize_ical_datetime(&raw)),
     })
 }
 
@@ -2537,6 +2618,7 @@ mod tests {
             time_zone: None,
             recurrence_rule: None,
             exception_dates: None,
+            recurrence_id: None,
         };
         let ical = build_ical_vevent(&event);
         assert!(ical.contains("BEGIN:VCALENDAR"));
@@ -2569,6 +2651,7 @@ mod tests {
             time_zone: Some("Europe/London".to_string()),
             recurrence_rule: Some("FREQ=WEEKLY;BYDAY=TU".to_string()),
             exception_dates: Some("20260312T090000".to_string()),
+            recurrence_id: None,
         };
 
         let ical = build_ical_vevent(&event);
@@ -2917,6 +3000,7 @@ mod tests {
             time_zone: None,
             recurrence_rule: None,
             exception_dates: None,
+            recurrence_id: None,
         }
     }
 
@@ -4730,6 +4814,96 @@ mod tests {
         assert_eq!(events[0].uid, "good");
     }
 
+    /// A series and the one occurrence somebody moved out of it, both under one
+    /// UID in one resource, told apart by RECURRENCE-ID.
+    ///
+    /// What a calendar server really hands back for a repeating event once an
+    /// occurrence has been changed. A copy of this shape is also kept by the
+    /// write-side tests further down this file; fixtures are not shared across
+    /// test modules here, so each keeps its own.
+    fn a_series_with_one_occurrence_moved() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "SUMMARY:Weekly review",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_report_resource_holding_a_series_and_a_moved_day_reads_both_rather_than_only_the_first()
+     {
+        // The standard shape a calendar server sends for a moved or changed
+        // occurrence: one resource, one <c:calendar-data>, and inside it two
+        // VEVENTs sharing a UID, the second told apart by RECURRENCE-ID. Taking
+        // only the first VEVENT in that document is the defect this guards:
+        // the moved day was silently dropped and the series looked untouched.
+        let answer = an_answer_carrying(&[&a_series_with_one_occurrence_moved()]);
+
+        let events = parse_report_events(&answer, "https://cal.example.com/dav/sam/work/")
+            .expect("the resource to read");
+
+        assert_eq!(
+            events.len(),
+            2,
+            "a resource holding a series and its moved day should read as two \
+             events, not {}: {events:?}",
+            events.len()
+        );
+        assert!(events[0].recurrence_id.is_none(), "{:?}", events[0]);
+        assert_eq!(events[0].recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(events[0].uid, "e-1");
+        assert_eq!(
+            events[1].recurrence_id.as_deref(),
+            Some("2026-03-12T09:00:00Z"),
+            "the moved day does not say which day of the series it replaces"
+        );
+        assert_eq!(events[1].summary, "Weekly review, the week it moved");
+        assert_eq!(events[1].dtstart, "2026-03-12T14:00:00Z");
+        assert_eq!(
+            events[1].uid, "e-1",
+            "an override shares its series' own UID"
+        );
+    }
+
+    #[test]
+    fn test_every_event_in_the_resource_gives_the_series_no_recurrence_id_and_the_changed_day_its_own()
+     {
+        // The same shape, asked of the parsing layer directly rather than
+        // through the XML envelope, so a failure here points at the reader
+        // rather than at the XML extraction beside it.
+        let events = every_event_in_the_resource(
+            &a_series_with_one_occurrence_moved(),
+            "https://cal.example.com/dav/sam/work/e-1.ics",
+            Some("\"tag-1\""),
+        );
+
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert!(events[0].recurrence_id.is_none());
+        assert_eq!(events[0].recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(
+            events[1].recurrence_id.as_deref(),
+            Some("2026-03-12T09:00:00Z")
+        );
+        assert_eq!(events[1].summary, "Weekly review, the week it moved");
+        assert_eq!(events[1].dtstart, "2026-03-12T14:00:00Z");
+    }
+
     #[test]
     fn test_fuzz_ical_parsing_never_panics() {
         for seed in 0..5000u64 {
@@ -4906,6 +5080,7 @@ pub(crate) mod writing_tests {
             time_zone: None,
             recurrence_rule: None,
             exception_dates: None,
+            recurrence_id: None,
         }
     }
 
@@ -6319,6 +6494,7 @@ mod discovery_tests {
             time_zone: None,
             recurrence_rule: None,
             exception_dates: None,
+            recurrence_id: None,
         };
 
         let refused = CalDavClient::new()

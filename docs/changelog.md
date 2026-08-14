@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a CalDAV calendar holding a repeating meeting with one day moved
+  or changed showed only the unchanged series, with the changed day nowhere
+  on the diary.** A calendar server sends a moved or changed day as a second
+  appointment in the same document as the series, sharing its identifier and
+  marked with the day it replaces. Reading a calendar only ever looked at
+  the first appointment in that document, so the changed day was silently
+  dropped every time the calendar was read. Both are now kept: the series
+  stays a series, and the changed day is stored as its own appointment,
+  linked back to the series and shown at the time it moved to. Google
+  calendars already worked this way; this is the matching fix for CalDAV.
+
+  Known limitations. Sending a moved or changed day back to a CalDAV server
+  is not supported yet. This program can already send a change to a whole
+  series; changing one day cut out of a series is not wired up, so such a
+  change made here does not reach the server. A day a calendar server marks
+  cancelled outright, rather than moved, is shown as a changed appointment
+  rather than taken off the diary the way a cancelled Google day already is;
+  that is a separate fix still to come. A moved or changed day named in a
+  different time zone from the series' own start is read as plain digits
+  with no zone conversion, which matches what the calendar standard expects
+  and only affects a server that does not follow it. None of the CalDAV
+  calendar syncing has run against a real account.
+
 - **Fixed: a day of a repeating meeting moved or cancelled in Outlook still
   showed here, drawn from the meeting's own repeat rule.** Outlook answers a
   calendar view with every day of a series in the window it covers, changed
