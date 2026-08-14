@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 92 records have arrived since and have not been through it.
+# 95 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4907,6 +4907,7 @@ after = """        phones_json,
         custom_fields_json: None,
         // Google's copy of the contact, as Google has it."""
 red = [
+    "application::contacts_sync::tests::test_a_google_sync_takes_a_postal_address_held_at_google_into_a_contact_already_known_here",
     "application::contacts_sync::tests::test_a_postal_address_google_holds_is_kept_here_and_sent_back",
     "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
     "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
@@ -4942,7 +4943,87 @@ after = """        emails_json,
         known_to: vec![ProviderIdentity {
             address_book: AddressBook::Microsoft,"""
 red = [
+    "application::contacts_sync::tests::test_a_microsoft_sync_takes_a_phone_list_held_at_outlook_into_a_contact_already_known_here",
     "application::contacts_sync::tests::test_every_number_outlook_holds_is_kept_here_and_sent_back",
+]
+
+# ── A postal address held at Google reaches a contact already known here ────
+#
+# The two guards above keep a postal address in the reader that brings it
+# down from Google and the writer that sends it back up. Neither covers the
+# function between them: the one that folds a provider's copy over a contact
+# this program already had never named `addresses_json`, so `..local.clone()`
+# kept whatever was already stored no matter what Google now held. An
+# address changed, or taken away, at Google never reached a contact synced
+# more than once.
+#
+# The break takes the line back out, on the Google side.
+#
+# Measured by hand on 2026-08-14 with scripts/guards.py.
+
+[[guard]]
+name = "a postal address held at Google reaches a contact already known here"
+file = "src/application/contacts_sync.rs"
+before = """        emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
+        phones_json: remote.phones_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
+        ..local.clone()"""
+after = """        emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
+        phones_json: remote.phones_json.clone(),
+        ..local.clone()"""
+red = [
+    "application::contacts_sync::tests::test_a_google_merge_names_every_field_it_takes_and_every_field_it_keeps",
+    "application::contacts_sync::tests::test_a_google_sync_takes_a_postal_address_held_at_google_into_a_contact_already_known_here",
+    "application::contacts_sync::tests::test_an_address_no_longer_held_at_google_is_no_longer_held_here",
+]
+
+# ── A postal address held at Outlook reaches a contact already known here ───
+#
+# The same gap as the guard above, in the Microsoft half of the same
+# function: `addresses_json` was never named, so a contact synced more than
+# once kept whatever address was already stored no matter what Outlook now
+# held.
+#
+# Measured by hand on 2026-08-14 with scripts/guards.py.
+
+[[guard]]
+name = "a postal address held at Outlook reaches a contact already known here"
+file = "src/application/contacts_sync.rs"
+before = """        emails_json: remote.emails_json.clone(),
+        phones_json: remote.phones_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
+        ..local.clone()"""
+after = """        emails_json: remote.emails_json.clone(),
+        phones_json: remote.phones_json.clone(),
+        ..local.clone()"""
+red = [
+    "application::contacts_sync::tests::test_a_microsoft_merge_names_every_field_it_takes_and_every_field_it_keeps",
+    "application::contacts_sync::tests::test_a_microsoft_sync_takes_a_postal_address_held_at_outlook_into_a_contact_already_known_here",
+]
+
+# ── A phone list held at Outlook reaches a contact already known here ───────
+#
+# The same function's Microsoft half never named `phones_json` either, so a
+# phone number changed or removed at Outlook was not picked up by a sync of a
+# contact already known here, even though the reader beside it already reads
+# every number Graph gives.
+#
+# Measured by hand on 2026-08-14 with scripts/guards.py.
+
+[[guard]]
+name = "a phone list held at Outlook reaches a contact already known here"
+file = "src/application/contacts_sync.rs"
+before = """        emails_json: remote.emails_json.clone(),
+        phones_json: remote.phones_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
+        ..local.clone()"""
+after = """        emails_json: remote.emails_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
+        ..local.clone()"""
+red = [
+    "application::contacts_sync::tests::test_a_microsoft_merge_names_every_field_it_takes_and_every_field_it_keeps",
+    "application::contacts_sync::tests::test_a_microsoft_sync_takes_a_phone_list_held_at_outlook_into_a_contact_already_known_here",
+    "application::contacts_sync::tests::test_a_phone_number_no_longer_held_at_outlook_is_no_longer_held_here",
 ]
 
 # ── An event filed under two categories at Outlook goes back under two ──────

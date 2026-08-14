@@ -1234,13 +1234,13 @@ fn a_setting_stopped_this_sync_sending(contact_id: &str, result: &SyncResult) ->
 /// The stored contact with Google's copy of it folded in.
 ///
 /// Every field Google holds is named here, and Google's value wins for each of
-/// them. Everything else falls through from the stored contact. A saved photo,
-/// the card a contact was imported from, a relationship and custom fields
-/// exist only here, so falling through is the whole answer for them. Postal
-/// addresses and the email and phone lists are read in, but not folded over
-/// what is stored: each is one list for every address book a contact is known
-/// to, and Google can only speak for its own. A field added to a contact later
-/// is kept unless somebody adds it to this list.
+/// them, including the postal address and the email and phone lists: a change
+/// at Google replaces whatever list was stored, and clears it here too on a
+/// sync where Google now holds none. Everything else falls through from the
+/// stored contact. A saved photo, the card a contact was imported from, a
+/// relationship and custom fields exist only here, so falling through is the
+/// whole answer for them. A field added to a contact later is kept unless
+/// somebody adds it to this list.
 ///
 /// The address books that know the contact are deliberately not named here.
 /// Google can only speak for itself, so naming the list would take the contact
@@ -1275,6 +1275,7 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
         department: remote.department.clone(),
         emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
         phones_json: remote.phones_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
         ..local.clone()
     }
 }
@@ -1282,12 +1283,9 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
 /// The stored contact with Microsoft's copy of it folded in.
 ///
 /// Every field Microsoft holds is named here and Microsoft's value wins, the
-/// same rule as the Google side. `phones_json` is not one of them: the reader
-/// beside this builds every number Graph gives into it on every read, but
-/// that fresh copy is not folded in by this function, so a phone number
-/// changed at Outlook is not picked up through this merge. Noted rather than
-/// fixed here, since changing what a Microsoft sync does to the stored phone
-/// list is a change of its own.
+/// same rule as the Google side, including the postal address and the list of
+/// phone numbers: a change at Outlook replaces whatever list was stored, and
+/// clears it here too on a sync where Outlook now holds none.
 ///
 /// The address books that know the contact are deliberately not named here,
 /// for the same reason as on the Google side: Microsoft can only speak for
@@ -1310,6 +1308,8 @@ fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> C
         source_provider: remote.source_provider.clone(),
         last_synced_at: remote.last_synced_at.clone(),
         emails_json: remote.emails_json.clone(),
+        phones_json: remote.phones_json.clone(),
+        addresses_json: remote.addresses_json.clone(),
         ..local.clone()
     }
 }
@@ -2569,9 +2569,6 @@ fn google_person_to_contact(person: &GooglePerson, account_id: &str) -> ContactE
     // contact here for any reason took that person's postal address off their
     // Google contact and said nothing about it.
     //
-    // Not folded over a stored contact's list on a sync, for the same reason
-    // the Microsoft reader does not: that list is one list for every address
-    // book, and each book can only speak for its own addresses.
     // Google's own answer to which address is the main one, honoured the same
     // way as the email address above.
     let addresses_in_order = with_the_main_one_first(&person.addresses, |a| {
@@ -2927,10 +2924,7 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
     };
 
     // Both of Graph's addresses, under the two labels this application knows
-    // them by. Not folded over a stored contact's list on a sync: that list is
-    // one list for every address book, and Graph can only speak for its own
-    // two places, so writing it whole would take a Google address off a
-    // contact both books know. Same rule as the address books themselves.
+    // them by.
     let addresses: Vec<AddressEntry> = ms
         .home_address
         .iter()
@@ -4581,18 +4575,60 @@ mod tests {
     }
 
     #[test]
-    fn test_a_google_sync_keeps_postal_addresses_stored_only_here() {
+    fn test_a_google_sync_takes_a_postal_address_held_at_google_into_a_contact_already_known_here()
+    {
         let mut local = a_local_contact("Alice Smith", "alice@example.com");
         local.address = Some("12 Mill Lane, Leeds".to_string());
         local.addresses_json = Some(
             r#"[{"label":"Home","street":"12 Mill Lane","city":"Leeds","state":"","zip":"LS1","country":"UK"}]"#
                 .to_string(),
         );
+        let remote = google_person_to_contact(
+            &GooglePerson {
+                resource_name: "people/c1".to_string(),
+                addresses: vec![GoogleAddress {
+                    address_type: "work".to_string(),
+                    street_address: "5 New Road".to_string(),
+                    city: "York".to_string(),
+                    region: "North Yorkshire".to_string(),
+                    postal_code: "YO1 1AA".to_string(),
+                    country: "United Kingdom".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "acct",
+        );
 
-        let merged = google_fields_over_local(&local, &alice_from_google());
+        let merged = google_fields_over_local(&local, &remote);
 
-        assert_eq!(merged.address, local.address);
-        assert_eq!(merged.addresses_json, local.addresses_json);
+        let kept: Vec<AddressEntry> = stored_list(merged.addresses_json.as_ref());
+        assert_eq!(
+            kept.len(),
+            1,
+            "the address held at Google should have replaced the old one: {merged:?}"
+        );
+        assert_eq!(kept[0].street, "5 New Road");
+        assert_eq!(kept[0].city, "York");
+    }
+
+    #[test]
+    fn test_an_address_no_longer_held_at_google_is_no_longer_held_here() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.address = Some("12 Mill Lane, Leeds".to_string());
+        local.addresses_json = Some(
+            r#"[{"label":"Home","street":"12 Mill Lane","city":"Leeds","state":"","zip":"LS1","country":"UK"}]"#
+                .to_string(),
+        );
+        let remote = alice_from_google();
+        assert_eq!(
+            remote.addresses_json, None,
+            "Google holds no address for her"
+        );
+
+        let merged = google_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.addresses_json, None);
     }
 
     #[test]
@@ -4634,13 +4670,76 @@ mod tests {
     }
 
     #[test]
-    fn test_a_microsoft_sync_keeps_the_extra_phone_numbers_it_does_not_read() {
+    fn test_a_microsoft_sync_takes_a_postal_address_held_at_outlook_into_a_contact_already_known_here()
+     {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.addresses_json = Some(
+            r#"[{"label":"Home","street":"12 Mill Lane","city":"Leeds","state":"","zip":"LS1","country":"UK"}]"#
+                .to_string(),
+        );
+        let from_outlook = MsGraphContact {
+            home_address: Some(crate::service::microsoft_graph::MsPhysicalAddress {
+                street: "5 New Road".to_string(),
+                city: "York".to_string(),
+                state: "North Yorkshire".to_string(),
+                postal_code: "YO1 1AA".to_string(),
+                country_or_region: "United Kingdom".to_string(),
+            }),
+            ..a_microsoft_contact("AAMkAGI2", "Alice Smith", "alice@example.com")
+        };
+        let remote = ms_contact_to_contact(&from_outlook, "acct");
+
+        let merged = microsoft_fields_over_local(&local, &remote);
+
+        let kept: Vec<AddressEntry> = stored_list(merged.addresses_json.as_ref());
+        assert_eq!(
+            kept.len(),
+            1,
+            "the address held at Outlook should have replaced the old one: {merged:?}"
+        );
+        assert_eq!(kept[0].street, "5 New Road");
+        assert_eq!(kept[0].city, "York");
+    }
+
+    #[test]
+    fn test_a_microsoft_sync_takes_a_phone_list_held_at_outlook_into_a_contact_already_known_here()
+    {
         let mut local = a_local_contact("Alice Smith", "alice@example.com");
         local.phones_json = Some(r#"[{"label":"Home","number":"+44 113 496 0000"}]"#.to_string());
+        let from_outlook = MsGraphContact {
+            home_phones: vec!["01632 960123".to_string(), "01632 960124".to_string()],
+            business_phones: vec!["01632 960999".to_string()],
+            mobile_phone: "07700 900123".to_string(),
+            ..a_microsoft_contact("AAMkAGI2", "Alice Smith", "alice@example.com")
+        };
+        let remote = ms_contact_to_contact(&from_outlook, "acct");
 
-        let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
+        let merged = microsoft_fields_over_local(&local, &remote);
 
-        assert_eq!(merged.phones_json, local.phones_json);
+        let kept: Vec<PhoneEntry> = stored_list(merged.phones_json.as_ref());
+        let numbers: Vec<&str> = kept.iter().map(|e| e.number.as_str()).collect();
+        assert_eq!(
+            numbers,
+            [
+                "01632 960123",
+                "01632 960124",
+                "01632 960999",
+                "07700 900123"
+            ],
+            "the numbers held at Outlook should have replaced the one stored here: {kept:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_phone_number_no_longer_held_at_outlook_is_no_longer_held_here() {
+        let mut local = a_local_contact("Alice Smith", "alice@example.com");
+        local.phones_json = Some(r#"[{"label":"Home","number":"+44 113 496 0000"}]"#.to_string());
+        let remote = alice_from_microsoft();
+        assert_eq!(remote.phones_json, None, "Outlook holds no number for her");
+
+        let merged = microsoft_fields_over_local(&local, &remote);
+
+        assert_eq!(merged.phones_json, None);
     }
 
     #[test]
@@ -4649,7 +4748,6 @@ mod tests {
         local.custom_fields_json = Some(r#"[{"label":"Blood type","value":"O"}]"#.to_string());
         local.relationship = Some("Sister".to_string());
         local.avatar_data_base64 = Some("iVBORw0KGgo=".to_string());
-        local.addresses_json = Some(r#"[{"label":"Home"}]"#.to_string());
         local.vcard_raw = Some("BEGIN:VCARD\r\nEND:VCARD\r\n".to_string());
 
         let merged = microsoft_fields_over_local(&local, &alice_from_microsoft());
@@ -4657,7 +4755,6 @@ mod tests {
         assert_eq!(merged.custom_fields_json, local.custom_fields_json);
         assert_eq!(merged.relationship, local.relationship);
         assert_eq!(merged.avatar_data_base64, local.avatar_data_base64);
-        assert_eq!(merged.addresses_json, local.addresses_json);
         assert_eq!(merged.vcard_raw, local.vcard_raw);
     }
 
@@ -5009,6 +5106,7 @@ mod tests {
             department,
             emails_json,
             phones_json,
+            addresses_json,
             // This computer's, because Google either does not hold them or is
             // not asked for them.
             id,
@@ -5019,7 +5117,6 @@ mod tests {
             favorite,
             created_at,
             relationship,
-            addresses_json,
             custom_fields_json,
             pending,
             known_to,
@@ -5042,6 +5139,7 @@ mod tests {
         assert_eq!(department, google.department);
         assert_eq!(emails_json, google.emails_json);
         assert_eq!(phones_json, google.phones_json);
+        assert_eq!(addresses_json, google.addresses_json);
 
         assert_eq!(id, local.id);
         assert_eq!(account_id, local.account_id);
@@ -5051,7 +5149,6 @@ mod tests {
         assert_eq!(favorite, local.favorite);
         assert_eq!(created_at, local.created_at);
         assert_eq!(relationship, local.relationship);
-        assert_eq!(addresses_json, local.addresses_json);
         assert_eq!(custom_fields_json, local.custom_fields_json);
         assert_eq!(pending, local.pending);
         assert_eq!(known_to, local.known_to);
@@ -5059,12 +5156,10 @@ mod tests {
 
     /// The same list for Outlook, which speaks for fewer fields.
     ///
-    /// Two differences from the Google side are the point of having both. A
-    /// photo's address is Google's and never Outlook's, and the list of phone
-    /// numbers is left alone because Outlook's copy of it is only ever the
-    /// first number. The postal addresses are left alone on both sides, and
-    /// Outlook is the one that holds any: the stored list holds addresses from
-    /// every address book at once, so no single sync may write it whole.
+    /// One difference from the Google side is left: a saved photo. It comes
+    /// from Google or from a card import and never from Outlook, so this merge
+    /// leaves it to whatever is already stored, the same as every other field
+    /// this function does not name.
     #[test]
     fn test_a_microsoft_merge_names_every_field_it_takes_and_every_field_it_keeps() {
         let local = every_field_filled("here", true);
@@ -5087,6 +5182,8 @@ mod tests {
             source_provider,
             last_synced_at,
             emails_json,
+            phones_json,
+            addresses_json,
             // This computer's.
             id,
             account_id,
@@ -5097,8 +5194,6 @@ mod tests {
             favorite,
             created_at,
             relationship,
-            phones_json,
-            addresses_json,
             custom_fields_json,
             pending,
             known_to,
@@ -5119,6 +5214,8 @@ mod tests {
         assert_eq!(source_provider, outlook.source_provider);
         assert_eq!(last_synced_at, outlook.last_synced_at);
         assert_eq!(emails_json, outlook.emails_json);
+        assert_eq!(phones_json, outlook.phones_json);
+        assert_eq!(addresses_json, outlook.addresses_json);
 
         assert_eq!(id, local.id);
         assert_eq!(account_id, local.account_id);
@@ -5129,8 +5226,6 @@ mod tests {
         assert_eq!(favorite, local.favorite);
         assert_eq!(created_at, local.created_at);
         assert_eq!(relationship, local.relationship);
-        assert_eq!(phones_json, local.phones_json);
-        assert_eq!(addresses_json, local.addresses_json);
         assert_eq!(custom_fields_json, local.custom_fields_json);
         assert_eq!(pending, local.pending);
         assert_eq!(known_to, local.known_to);

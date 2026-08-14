@@ -8,6 +8,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a postal address changed at Google, or a postal address or phone
+  number changed at Outlook, did not reach a contact this program already
+  knew about.** Syncing an already-known contact took the name, the company,
+  the notes and several other details from the address book, but kept
+  whichever postal address and phone numbers were already stored, even after
+  they changed or were removed at the provider. All three now update the same
+  way an email address already did: a new value at the provider replaces what
+  was stored here, and a value removed at the provider is removed here too.
+
 - **Fixed: the password box in the account dialog had no accessible name,
   and the advice to use an app password reached nobody working by ear.**
   The box now announces as "Password" like every other field in that
