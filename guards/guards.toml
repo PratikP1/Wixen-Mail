@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 98 records have arrived since and have not been through it.
+# 99 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5936,4 +5936,27 @@ after = """fn password_box_description(email: &str) -> Option<&'static str> {
 }"""
 red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
+]
+
+# ── A changed day of a CalDAV series has to be marked seen before it can be
+#    forgotten again ─────────────────────────────────────────────────────────
+#
+# A day changed out of a CalDAV series is stored under an identity minted for
+# it, "{uid}:{recurrence-id}", because a CalDAV override shares its series'
+# own UID on the wire and has no identifier of its own. The pass that removes
+# whatever a sync's answer did not name spares only a row whose identity is in
+# seen_uids, so a changed day folded into storage without that identity being
+# marked seen looks, to the very next sync, exactly like one the server had
+# dropped, and is deleted the moment after it was created.
+#
+# Measured by hand on 2026-08-14, against the whole library.
+
+[[guard]]
+name = "a changed day of a CalDAV series is marked seen before the removal pass can run"
+file = "src/application/caldav_sync.rs"
+before = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);
+    seen_uids.insert(compound_id.clone());"""
+after = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);"""
+red = [
+    "application::caldav_sync::tests::test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it",
 ]
