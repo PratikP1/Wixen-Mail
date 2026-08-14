@@ -348,7 +348,11 @@ pub fn entry_to_google_task(task: &TaskEntry) -> GoogleTask {
     GoogleTask {
         id: strip_prefix(&task.id, "google:"),
         title: task.title.clone(),
-        notes: task.description.clone(),
+        // Always sent, and empty means clear it, the same as a calendar
+        // event's description. A field left out would tell Google to leave
+        // whatever it already holds alone, so a cleared task description
+        // would never reach it and would reappear on the next pull.
+        notes: Some(task.description.clone().unwrap_or_default()),
         status: if task.is_completed {
             "completed".to_string()
         } else {
@@ -596,8 +600,13 @@ pub fn entry_to_ms_task(task: &TaskEntry) -> Result<MsTodoTask> {
     Ok(MsTodoTask {
         id: strip_prefix(&task.id, "ms:"),
         title: task.title.clone(),
-        body: task.description.as_ref().map(|content| MsItemBody {
-            content: content.clone(),
+        // Always sent, and empty means clear it, the same reason as at
+        // Google. Returned as `None` when the description was `None`, this
+        // left the key out entirely, and a body left out reads to Graph as
+        // "leave this alone", so a cleared description stayed at Microsoft
+        // and reappeared on the next pull.
+        body: Some(MsItemBody {
+            content: task.description.clone().unwrap_or_default(),
             // Plain text, always. Sending html would put whatever is in the
             // description into a document Microsoft renders.
             content_type: "text".to_string(),
@@ -1961,6 +1970,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_task_whose_description_was_cleared_clears_it_at_google() {
+        // Left out of the change, a cleared description reads to Google as
+        // "leave this alone", so somebody who deletes a task's notes keeps
+        // the old notes at Google forever and has no way to tell.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "google:t-9".to_string();
+        let body = entry_to_google_task(&stored);
+
+        client
+            .google_update_task("a-token", "google:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Google task")
+            .await
+            .expect("a request");
+        assert!(request.contains(r#""notes":"""#), "{request}");
+    }
+
+    #[tokio::test]
     async fn test_a_change_to_a_google_task_says_nothing_about_whether_it_was_deleted() {
         // Google treats this field as one it will take a change to. Sent as
         // false on every change, it un-deletes a task somebody deleted on
@@ -2126,6 +2156,27 @@ mod tests {
             request.contains(r#""dateTime":"2026-01-31T00:00:00.0000000""#),
             "{request}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_whose_description_was_cleared_clears_it_at_microsoft() {
+        // The same failure as at Google: a body left out of the change reads
+        // to Graph as "leave this alone", so a cleared description survives
+        // at Microsoft and reappears on the next pull.
+        let (client, listening) = a_task_client_allowed_to_change_things().await;
+        let mut stored = a_stored_task_whose_priority_is("normal");
+        stored.id = "ms:t-9".to_string();
+        let body = entry_to_ms_task(&stored).expect("a task Microsoft understands");
+
+        client
+            .ms_update_task("a-token", "ms:list-1", &body)
+            .await
+            .expect("the change to be sent");
+
+        let request = heard(listening, "a change to a Microsoft task")
+            .await
+            .expect("a request");
+        assert!(request.contains(r#""content":"""#), "{request}");
     }
 
     #[tokio::test]

@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: clearing an existing task's description was never sent to Google
+  or Microsoft, so the old text could reappear on the next sync.** Sending a
+  changed task always left the description out of the request when it had
+  just been cleared to nothing, and both providers read a missing field as
+  "leave whatever is already there alone" rather than as an instruction to
+  clear it. A description changed to something else still went through
+  correctly; only clearing it all the way was silently dropped. The
+  description is now always sent, and an empty one goes out as an empty one,
+  the same fix already made for a calendar event's description and location.
+
+  Known limitations. There is no screen in this program yet for changing an
+  existing task's description, so nobody using it could have hit this by
+  hand; it was found by reading the sync code, not from a report. None of
+  the task syncing has run against a real account.
+
 - **Fixed: a CalDAV calendar holding a repeating meeting with one day moved
   or changed showed only the unchanged series, with the changed day nowhere
   on the diary.** A calendar server sends a moved or changed day as a second
