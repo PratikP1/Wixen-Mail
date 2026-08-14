@@ -8721,6 +8721,20 @@ mod tests {
         )
     }
 
+    /// A day of that series naming no original start at all.
+    ///
+    /// Google should never send this: [`a_google_day_of_the_series`] above
+    /// always carries one, because every real day of a series says which day
+    /// it stands in for. Written by hand rather than by reusing that helper,
+    /// which has nowhere to leave the property out.
+    fn a_google_day_of_the_series_naming_no_original_start(id: &str, summary: &str) -> String {
+        format!(
+            "{{\"id\":\"{id}\",\"status\":\"confirmed\",\
+               \"summary\":\"{summary}\",\"etag\":\"\\\"e2\\\"\",\
+               \"recurringEventId\":\"series-at-google\"}}"
+        )
+    }
+
     /// One whole answer from Google, holding the items named.
     fn a_google_answer(items: &[String]) -> String {
         format!(
@@ -9255,6 +9269,57 @@ mod tests {
             everything_drawn_on(&cache, that_thursday()).is_empty(),
             "a meeting cancelled in Google Calendar came back a sync later: {:?}",
             everything_drawn_on(&cache, that_thursday())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_day_with_no_original_start_is_stored_as_a_plain_meeting() {
+        // Google should never send a day of a series without saying which day
+        // it stands in for, and nothing here refuses one if it arrives anyway.
+        // The decided trade-off, reachable and until now untested: warn, and
+        // store the day as a meeting of its own rather than lose it, accepting
+        // that the rule may go on drawing the day the event actually replaced
+        // as well.
+        let cache = temp_cache("google_day_with_no_original_start");
+        let series = the_series_already_stored(&cache, false);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                a_google_day_of_the_series_naming_no_original_start(
+                    "series-at-google_20260312T090000Z",
+                    "Stand-up, moved",
+                ),
+            ])],
+        )
+        .await;
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        heard(listening, "the read").await.expect("one request");
+        let stored = cache
+            .get_event_by_provider_id("acct", "series-at-google_20260312T090000Z")
+            .expect("the calendar to be readable")
+            .expect("the day was lost instead of stored as a meeting of its own");
+        assert_eq!(
+            stored.summary, "Stand-up, moved",
+            "the day was not stored under its own words"
+        );
+        assert_eq!(
+            stored.cut_from_event_id.as_deref(),
+            Some(series.id.as_str()),
+            "the day does not say which series it came out of"
+        );
+        let series_after = cache
+            .get_event_by_id(&series.id)
+            .expect("the calendar to be readable")
+            .expect("the series to still be there");
+        assert_eq!(
+            series_after.exception_dates, None,
+            "nothing named a day to take off the series, so none should be: {:?}",
+            series_after.exception_dates
         );
     }
 
