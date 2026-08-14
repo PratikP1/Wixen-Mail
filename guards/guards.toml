@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 100 records have arrived since and have not been through it.
+# 102 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -3226,6 +3226,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_folder_list_the_server_refuses_is_not_an_account_with_no_folders",
     "service::protocols::imap::against_a_server_that_answers::test_a_header_fetch_the_server_refuses_is_not_a_folder_with_no_mail",
     "service::protocols::imap::against_a_server_that_answers::test_a_message_the_server_refuses_to_send_is_told_apart_from_one_that_is_not_there",
+    "service::protocols::imap::against_a_server_that_answers::test_a_search_that_finds_some_and_then_refuses_is_not_a_partial_list",
     "service::protocols::imap::against_a_server_that_answers::test_a_search_the_server_refuses_is_not_a_folder_with_no_messages",
     "service::protocols::imap::against_a_server_that_answers::test_a_server_that_will_not_say_what_it_supports_is_not_a_server_that_supports_nothing",
 ]
@@ -5985,4 +5986,56 @@ after = """        if false && !said.is_empty() {
         } else {"""
 red = [
     "common::answering::line_protocol_tests::test_a_sasl_response_does_not_reach_the_transcript_but_an_empty_one_still_shows",
+]
+
+# ── Capability is read once at sign-in and never again ───────────────────────
+#
+# abilities.rs's own doc comment: capabilities are "asked once, at sign-in,
+# and carried on the session," replacing a CAPABILITY command before every
+# operation that cared, which cost a round trip per delete and could answer
+# differently between two lines of the same function. Nothing had ever
+# counted how many times this file actually asks.
+#
+# Measured by hand on 2026-08-14, against the whole library.
+
+[[guard]]
+name = "capability is asked for once at sign-in, not again on every connect"
+file = "src/service/protocols/imap.rs"
+before = """        };
+        session.introduce_ourselves().await;
+        Ok(session)"""
+after = """        };
+        let _ = session.read_abilities().await;
+        session.introduce_ourselves().await;
+        Ok(session)"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_capability_is_asked_for_exactly_once_after_signing_in",
+]
+
+# ── A second SELECT of the same folder still reads the server's answer ──────
+#
+# UIDVALIDITY only means anything if a caller can see it change: a second
+# SELECT of a mailbox another client has touched in between renumbers every
+# UID, and the cached ones stop meaning anything. Nothing had ever read the
+# value back off a real SELECT reply, so a caching "optimisation" keyed on the
+# folder already being the one selected could have reached this file without
+# anything noticing.
+#
+# Measured by hand on 2026-08-14, against the whole library.
+
+[[guard]]
+name = "a second SELECT of an already-open folder still asks the server"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
+        let mailbox = if self.abilities.condstore {"""
+after = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
+        if self.selected.as_deref() == Some(path) {
+            return Ok(MailboxStatus {
+                uid_validity: Some(1),
+                highest_modseq: None,
+            });
+        }
+        let mailbox = if self.abilities.condstore {"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_second_select_of_the_same_folder_reports_a_changed_uidvalidity",
 ]

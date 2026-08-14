@@ -3328,6 +3328,105 @@ pub(crate) mod against_a_server_that_answers {
         assert!(said.contains("refused"), "{said}");
     }
 
+    #[tokio::test]
+    async fn test_capability_is_asked_for_exactly_once_after_signing_in() {
+        // abilities.rs's own doc comment: capabilities are "asked once, at
+        // sign-in, and carried on the session," which replaced a CAPABILITY
+        // command before every operation that cared. A second probe creeping
+        // back in is exactly the regression that comment warns against, and
+        // nothing had ever counted how many times this file asks.
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let mut session = signed_in_to(&server).await;
+        waiting_for(session.select_folder("INBOX"), "the folder to open")
+            .await
+            .expect("the folder to open");
+
+        let transcript = server.transcript().await;
+        let asked: Vec<usize> = transcript
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.to_uppercase().contains("CAPABILITY"))
+            .map(|(at, _)| at)
+            .collect();
+
+        assert_eq!(
+            asked.len(),
+            1,
+            "capability was asked for more than once: {transcript:?}"
+        );
+        let signed_in = server.when_told("LOGIN").await.expect("a sign-in line");
+        assert!(
+            signed_in < asked[0],
+            "capability was asked before signing in: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_second_select_of_the_same_folder_reports_a_changed_uidvalidity() {
+        // UIDVALIDITY only means anything if a caller can see it change: a
+        // second SELECT of a mailbox another client has touched in between
+        // renumbers every UID, and the cached ones stop meaning anything.
+        // Nothing before this ever read the value back off a real SELECT
+        // reply. A caching "optimisation" keyed on the folder already being
+        // the one selected would silently hand back the first answer
+        // forever, which is exactly the shape this pins against.
+        let selects = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counting = selects.clone();
+        let server = a_server_answering(move |said, tag| {
+            said.starts_with_command("SELECT").then(|| {
+                let validity = if counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+                {
+                    1
+                } else {
+                    999
+                };
+                Turn::Say(format!(
+                    "* 0 EXISTS\r\n* OK [UIDVALIDITY {validity}] valid\r\n{tag} OK [READ-WRITE] open\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let first = waiting_for(session.select_folder("INBOX"), "the first open")
+            .await
+            .expect("the folder to open");
+        let second = waiting_for(session.select_folder("INBOX"), "the second open")
+            .await
+            .expect("the folder to open again");
+
+        assert_eq!(first.uid_validity, Some(1), "{first:?}");
+        assert_eq!(
+            second.uid_validity,
+            Some(999),
+            "a second SELECT of the same folder came back with the first answer: {second:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_search_that_finds_some_and_then_refuses_is_not_a_partial_list() {
+        // Every refusal exercised above either turns the command down
+        // outright or hangs up before answering at all. A server that
+        // starts answering honestly and only then refuses is a third shape
+        // nothing had sent: proof that the single-reader discipline this
+        // file exists for does not quietly keep the untagged data it
+        // already collected once the tagged line turns out to be a
+        // refusal.
+        let server = a_server_answering(|said, tag| {
+            said.contains("SEARCH")
+                .then(|| Turn::Say(format!("* SEARCH 1 2\r\n{tag} NO out of resources\r\n")))
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let outcome = waiting_for(session.all_uids(), "the search").await;
+
+        assert!(
+            outcome.is_err(),
+            "a search that found messages and then refused came back as a partial list: {outcome:?}"
+        );
+    }
+
     /// Whether an upper-cased line is this command, tag and all.
     trait Commanded {
         fn starts_with_command(&self, command: &str) -> bool;
