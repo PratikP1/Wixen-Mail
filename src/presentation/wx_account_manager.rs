@@ -33,7 +33,6 @@ const ID_ADD: Id = ID_HIGHEST + 200;
 const ID_EDIT: Id = ID_HIGHEST + 201;
 const ID_DELETE: Id = ID_HIGHEST + 202;
 const ID_SET_ACTIVE: Id = ID_HIGHEST + 203;
-const ID_TEST: Id = ID_HIGHEST + 204;
 const ID_REAUTHORIZE: Id = ID_HIGHEST + 205;
 const ID_APP_PASSWORD: Id = ID_HIGHEST + 206;
 const ID_SET_DEFAULT: Id = ID_HIGHEST + 207;
@@ -99,10 +98,6 @@ pub fn show_account_manager_dialog(
         .with_label("Set Acti&ve")
         .with_id(ID_SET_ACTIVE)
         .build();
-    let test = Button::builder(&dlg)
-        .with_label("&Test Connection")
-        .with_id(ID_TEST)
-        .build();
     // Signing in again is a thing people have to do, not an error they have to
     // read about. A token can be revoked, a password can change, and Google
     // expires browser sign-in weekly until the application is verified. Without
@@ -123,7 +118,7 @@ pub fn show_account_manager_dialog(
         .with_label("&Close")
         .with_id(ID_OK)
         .build();
-    for b in [&add, &edit, &del, &active, &set_default, &test, &reauth] {
+    for b in [&add, &edit, &del, &active, &set_default, &reauth] {
         btns.add(b, 0, SizerFlag::All, 4);
     }
     btns.add_spacer(16);
@@ -179,12 +174,6 @@ pub fn show_account_manager_dialog(
         let d = dlg;
         move |_| {
             d.end_modal(ID_SET_ACTIVE);
-        }
-    });
-    test.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_TEST);
         }
     });
     close.on_click({
@@ -421,21 +410,6 @@ pub fn show_account_manager_dialog(
                         "Select an account to make it active",
                         Priority::High,
                     );
-                }
-            }
-            r if r == ID_TEST => {
-                if let Some(idx) = get_selected(&list) {
-                    said_and_shown(
-                        &status,
-                        a11y,
-                        &format!(
-                            "Testing {}... (not yet implemented)",
-                            working[idx].imap_server
-                        ),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(&status, a11y, "Select an account to test", Priority::High);
                 }
             }
             _ => break,
@@ -991,8 +965,11 @@ mod tests {
             ));
         }
 
+        // Twenty-three, not twenty-five: a Test Connection button used to sit
+        // on this screen with nothing behind it, and its two answers, the
+        // stub message and "Select an account to test", went with it.
         let said = screen.matches("said_and_shown(").count();
-        if said < 25 {
+        if said < 23 {
             wrong.push(format!(
                 "only {said} answers on this screen are said out loud, and there are more \
                  answers than that"
@@ -1014,16 +991,35 @@ mod tests {
         wrong
     }
 
-    /// The arguments of every call that says something, one per call.
+    /// The arguments of every call that says something, one per call, plus
+    /// the value of every string constant this screen declares.
+    ///
+    /// The second half exists because a sentence can be worded once as a
+    /// named constant and handed to `said_and_shown` by variable, which the
+    /// first half alone cannot see: the words the check for a file name is
+    /// looking for would sit in the constant's own definition, not in the
+    /// text between a call's parentheses. Without this, moving a sentence
+    /// into a constant is how the file-name check below stops seeing it.
     fn every_sentence_said(screen: &str) -> Vec<String> {
-        screen
+        let mut said: Vec<String> = screen
             .match_indices("said_and_shown(")
             .map(|(at, _)| {
                 let rest = &screen[at..];
                 let end = rest.find(");").unwrap_or(rest.len());
                 rest[..end].to_string()
             })
-            .collect()
+            .collect();
+        said.extend(screen.match_indices("const ").filter_map(|(at, _)| {
+            // Bounded to the one statement, so a constant with no string in
+            // it at all does not send the search hunting for the next quote
+            // anywhere later in the file.
+            let rest = &screen[at..];
+            let statement = &rest[..rest.find(';').unwrap_or(rest.len())];
+            let after_open_quote = &statement[statement.find('"')? + 1..];
+            let value_end = after_open_quote.find('"')?;
+            Some(after_open_quote[..value_end].to_string())
+        }));
+        said
     }
 
     /// The 300 characters around a sentence, or nothing if it is not there.
@@ -1064,6 +1060,30 @@ mod tests {
     }
 
     #[test]
+    fn test_this_screen_offers_no_control_that_does_nothing() {
+        // A Test Connection button sat on this screen with nothing in the
+        // program behind it: pressing it said "(not yet implemented)" out
+        // loud. There is no third option of making the button true, because
+        // no connection-test code exists anywhere in this program, so the fix
+        // is that the control is not offered at all.
+        //
+        // Honest bound: this is a text check. It cannot see whether this
+        // dialog is ever opened, and it cannot see whether some other control
+        // on it silently does nothing; it can only see these two names.
+        let screen = the_account_manager();
+        assert!(
+            !screen.contains("Test Connection"),
+            "a button offering to test the connection is still on this screen, \
+             and nothing in this program implements a connection test"
+        );
+        assert!(
+            !screen.contains("ID_TEST"),
+            "the identifier for the button that offered to test a connection \
+             is still wired up somewhere on this screen"
+        );
+    }
+
+    #[test]
     fn test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run() {
         // What this cannot see: whether either failure ever happens on this
         // screen, or whether the higher priority is honoured. It reads the
@@ -1098,7 +1118,7 @@ mod tests {
             \x20   line.set_label(said);\n\
             \x20   let _ = a11y.announce(said, priority);\n\
             }\n";
-        let sound = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(25);
+        let sound = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(23);
         assert!(
             what_this_screen_never_says(&sound, call).is_empty(),
             "a screen that says everything was reported as silent"
@@ -1111,7 +1131,7 @@ mod tests {
             "a screen with one answer left silent was not reported: {wrong:?}"
         );
 
-        let too_few = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(24);
+        let too_few = "said_and_shown(&status, a11y, x, Priority::High);\n".repeat(22);
         let wrong = what_this_screen_never_says(&too_few, call);
         assert!(
             wrong.iter().any(|said| said.contains("more answers")),
@@ -1148,6 +1168,19 @@ mod tests {
         assert!(
             wrong.iter().any(|said| said.contains("names a file")),
             "a spoken sentence naming a file was not reported: {wrong:?}"
+        );
+
+        // A sentence worded once as a constant and handed to said_and_shown by
+        // variable carries no file name in the text between the call's own
+        // parentheses, so only the constant-reading half of the search sees
+        // this one.
+        let file_named_in_a_const = format!(
+            "{sound}const HINT: &str = \"See docs/PROVIDER_SETUP.md.\";\nsaid_and_shown(&status, a11y, HINT, Priority::High);\n"
+        );
+        let wrong = what_this_screen_never_says(&file_named_in_a_const, call);
+        assert!(
+            wrong.iter().any(|said| said.contains("names a file")),
+            "a file name sitting in a constant was not reported: {wrong:?}"
         );
 
         // And the sentence finder really finds a sentence, and really misses

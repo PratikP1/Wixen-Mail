@@ -8,6 +8,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: an account manager button offered to test the connection and did
+  nothing.** Pressing it read out "Testing ... (not yet implemented)", which a
+  screen reader could not tell from a real result. Nothing in this program
+  ever implemented a connection test, so the button is removed rather than
+  wired up to a promise this program cannot keep yet.
+
 - **Fixed: a task Outlook held as in progress, waiting on somebody else, or
   deferred was reset to not started the first time it was touched here.**
   Microsoft To Do tracks five states for a task; this program only ever read
