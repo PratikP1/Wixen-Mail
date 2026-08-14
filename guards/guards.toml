@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 95 records have arrived since and have not been through it.
+# 96 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5620,6 +5620,35 @@ after = """                carry_over_local_only(
 red = [
     "application::calendar::tests::test_a_category_changed_in_outlook_reaches_this_computer",
     "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
+]
+
+# Measured by hand on 2026-08-14. `carry_over_local_only` is called a third
+# time, inside `one_day_of_a_google_series`, for a single day of a series that
+# changed rather than for a whole series or a whole meeting. The two guards
+# above only ever drove the whole-series call sites; this one was reachable
+# and unwatched, the same gap the pair above closed for the other two, found
+# while reading the same function for the sync gap on the Outlook side of a
+# series' changed days.
+
+[[guard]]
+name = "a Google merge of one changed day keeps the category typed here and takes Google's status"
+file = "src/application/calendar.rs"
+before = """            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::OnlyHere,
+                TheStatus::AlsoAtTheProvider,
+            );
+            result.updated += 1;"""
+after = """            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::AlsoAtTheProvider,
+                TheStatus::OnlyHere,
+            );
+            result.updated += 1;"""
+red = [
+    "application::calendar::tests::test_a_google_read_of_one_changed_day_keeps_the_category_typed_here_and_takes_googles_status",
 ]
 
 # ── One sentence for "this build has no sign-in credentials" ────────────────

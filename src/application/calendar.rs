@@ -6793,6 +6793,64 @@ mod tests {
         );
     }
 
+    /// The per-day sibling of the test above.
+    ///
+    /// `sync_google_calendar` merges a whole series through one call to
+    /// `carry_over_local_only` and a day of a series that changed through a
+    /// second, separate call inside `one_day_of_a_google_series`, each passing
+    /// its own arguments. The test above only ever drove the first: this one
+    /// stores a day of a series already synced here and reads back a changed
+    /// copy of that same day, which is the only route to the second call.
+    #[tokio::test]
+    async fn test_a_google_read_of_one_changed_day_keeps_the_category_typed_here_and_takes_googles_status()
+     {
+        let cache = temp_cache("google_per_day_read_whose_copy_survives");
+        the_series_already_stored(&cache, false);
+        an_event_already_synced_in(
+            &cache,
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            "series-at-google_20260312T090000Z",
+            "Personal",
+            "tentative",
+        );
+        // The changed day only. The per-day function looks the series up in
+        // the cache rather than in this answer, so nothing here has to name it
+        // too.
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[that_thursday_of_it("confirmed", None)])],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "one read").await.expect("one request");
+
+        let stored = cache
+            .get_event_by_provider_id("acct", "series-at-google_20260312T090000Z")
+            .expect("the calendar to be readable")
+            .expect("the day to still be there");
+        assert_eq!(
+            stored.categories, "Personal",
+            "Google Calendar has no field for this, so the category typed here \
+             has to survive the read"
+        );
+        assert_eq!(
+            stored.status, "confirmed",
+            "Google's answer says confirmed, and Google holds this field too, \
+             so its answer is the one that has to win"
+        );
+    }
+
     /// The mirror of the test above, for Outlook, where the two fields swap
     /// which provider owns them.
     #[tokio::test]
