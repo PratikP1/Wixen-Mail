@@ -422,6 +422,13 @@ async fn hold_one(
     }
     let mut reader = tokio::io::BufReader::new(reading);
     let mut line = String::new();
+    // Whether the last reply was a bare IMAP continuation ("+ "), which means
+    // the line about to arrive is a SASL response: the credential itself,
+    // with no command word in front of it for `without_the_credential` to
+    // recognise. An empty response is not a credential, and is left alone: it
+    // is XOAUTH2's own error recovery, and the only thing that tells it apart
+    // from a credential sent again is whether the line is empty.
+    let mut awaiting_sasl_response = false;
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
@@ -431,7 +438,11 @@ async fn hold_one(
         let said = line.trim_end_matches(['\r', '\n']).to_string();
         // Recorded before the answer goes out, so a client that has heard its
         // answer can rely on the line already being in the transcript.
-        record(recording, &said).await;
+        if awaiting_sasl_response && !said.is_empty() {
+            record(recording, "<a SASL response, withheld>").await;
+        } else {
+            record(recording, &said).await;
+        }
 
         let reply = match answer(&said) {
             Turn::Say(reply) => reply,
@@ -481,6 +492,7 @@ async fn hold_one(
                 done
             }
         };
+        awaiting_sasl_response = reply.starts_with("+ ");
         if writing.write_all(reply.as_bytes()).await.is_err() {
             return;
         }
@@ -699,6 +711,51 @@ mod line_protocol_tests {
         assert!(transcript[0].contains("LOGIN"), "{transcript:?}");
         assert!(transcript[1].contains("AUTH"), "{transcript:?}");
         assert!(transcript[2].contains("PASS"), "{transcript:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_sasl_response_does_not_reach_the_transcript_but_an_empty_one_still_shows() {
+        // AUTHENTICATE carries its credential differently from LOGIN and
+        // PASS above: the server prompts with a bare `+` and the client
+        // answers on a line of its own, with no command word in front of it
+        // for the rules above to recognise. Unredacted, that line is the
+        // credential itself, complete. The empty line XOAUTH2's own error
+        // recovery sends is not a credential, and losing it too would take
+        // away the one signal that tells a refusal's last step apart from a
+        // credential sent twice.
+        let server = conversing("* OK ready\r\n", |line| {
+            if line.to_uppercase().contains("AUTHENTICATE") {
+                return Turn::Say("+ \r\n".to_string());
+            }
+            if line.is_empty() {
+                return Turn::Say("A1 OK done\r\n".to_string());
+            }
+            Turn::Say("+ go again\r\n".to_string())
+        })
+        .await;
+        let mut caller = Caller::calling(&server).await;
+        caller.hears().await;
+
+        caller.says("A1 AUTHENTICATE XOAUTH2\r\n").await;
+        assert!(caller.hears().await.starts_with('+'));
+        caller.says("totally-secret-credential-value\r\n").await;
+        assert!(caller.hears().await.starts_with('+'));
+        caller.says("\r\n").await;
+        caller.hears().await;
+
+        let transcript = server.transcript().await;
+        assert!(
+            !transcript
+                .iter()
+                .any(|line| line.contains("totally-secret-credential-value")),
+            "a SASL response was recorded: {transcript:?}"
+        );
+        assert_eq!(
+            transcript.last(),
+            Some(&String::new()),
+            "the empty line that ends the exchange was withheld along with \
+             the credential: {transcript:?}"
+        );
     }
 
     #[tokio::test]

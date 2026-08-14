@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 99 records have arrived since and have not been through it.
+# 100 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5959,4 +5959,30 @@ before = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);
 after = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);"""
 red = [
     "application::caldav_sync::tests::test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it",
+]
+
+# ── A SASL response line has to be told apart from an ordinary one ──────────
+#
+# AUTHENTICATE carries its credential differently from LOGIN and PASS: the
+# server prompts with a bare "+" and the client answers on a line of its own,
+# with no command word in front of it for without_the_credential to
+# recognise. Nothing drove that exchange through this harness until the
+# XOAUTH2 loopback test below did, and until then the gap was silent: the
+# transcript is read by every failing assertion and printed with it, so an
+# unredacted credential would have gone out with the first unrelated failure
+# on a connection that happened to authenticate with a token.
+#
+# Measured by hand on 2026-08-14, against the whole library.
+
+[[guard]]
+name = "a SASL response is withheld from the transcript, and an empty one is not"
+file = "src/common/answering.rs"
+before = """        if awaiting_sasl_response && !said.is_empty() {
+            record(recording, "<a SASL response, withheld>").await;
+        } else {"""
+after = """        if false && !said.is_empty() {
+            record(recording, "<a SASL response, withheld>").await;
+        } else {"""
+red = [
+    "common::answering::line_protocol_tests::test_a_sasl_response_does_not_reach_the_transcript_but_an_empty_one_still_shows",
 ]
