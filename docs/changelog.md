@@ -17,6 +17,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   way an email address already did: a new value at the provider replaces what
   was stored here, and a value removed at the provider is removed here too.
 
+  Known limitations. A phone number, an email address or a postal address
+  that a provider never gave a type of its own is stored and sent back
+  labelled "Other", the same word used when somebody deliberately chooses
+  that label here. The two cannot be told apart once stored. Nothing about
+  the address, the email or the number itself is affected, and it settles
+  into "Other" after one sync rather than drifting further on the syncs
+  after that.
+
 - **Fixed: the password box in the account dialog had no accessible name,
   and the advice to use an app password reached nobody working by ear.**
   The box now announces as "Password" like every other field in that

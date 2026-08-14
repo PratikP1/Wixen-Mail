@@ -453,16 +453,21 @@ const UNLABELLED: &str = "Other";
 /// stay exact opposites, or a label drifts a little on every sync and a number
 /// is read out differently each time.
 ///
-/// Open question, not settled here: an untyped value from a provider and a
-/// value somebody deliberately labelled "Other" both read in as [`UNLABELLED`],
-/// and both then write back out as the explicit type `"other"`, not as no
-/// type at all: `provider_type_for_label("Other")` lower-cases the word
-/// rather than recognising it as the absence of a choice. So an address,
-/// email or phone number a provider held with no type of its own is sent
-/// back carrying a type it never had. Telling the two apart means the stored
-/// label needs a third state, "no label was ever given", which is a change
-/// to what every address, email and phone entry stores, not to this pair of
-/// functions. Left as a question rather than a guess.
+/// Decided rather than left open: an untyped value from a provider and a
+/// value somebody deliberately labelled "Other" both read in as
+/// [`UNLABELLED`], and both then write back out as the explicit type
+/// `"other"` rather than as no type at all, because the stored label has
+/// nowhere to record which of the two happened.
+///
+/// Telling them apart would need a third state on every address, email and
+/// phone entry this program stores: a schema and contact editor change of
+/// its own, reaching dozens of call sites, to fix a mixup whose only visible
+/// cost is a word. A provider-untyped entry is sent back labelled "Other"
+/// once, rather than with no label at all. No address, email or number is
+/// ever lost to it, and
+/// `test_a_number_google_gave_no_label_is_stored_as_other_and_goes_back_as_other`
+/// pins that it settles after that one round trip rather than drifting
+/// further. That is a smaller cost than the change it would take to avoid.
 fn label_for_provider_type(provider_type: &str) -> String {
     let words = words_in_provider_type(provider_type);
     if words.is_empty() {
