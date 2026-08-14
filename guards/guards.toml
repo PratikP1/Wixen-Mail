@@ -2638,6 +2638,7 @@ after = """        let tag = self
         Ok(())
     }"""
 red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_removal_the_server_refuses_still_leaves_the_newer_draft_on_it",
     "service::protocols::imap::against_a_server_that_answers::test_a_delete_whose_flag_the_server_refuses_changes_nothing",
     "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_flag_has_already_made_the_copy",
 ]
@@ -3045,7 +3046,9 @@ after = """    else {
         return DeletedGoesTo::OffTheServer;
     };"""
 red = [
+    "application::deleting_at_the_server::tests::test_a_delete_on_an_account_with_no_recognised_trash_asks_no_server_anything",
     "application::destinations::tests::test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
 ]
 
 [[guard]]
@@ -3343,6 +3346,8 @@ before = """        self.may_i("remove a message from the mail server")?;
 after = """        self.command("DELE", &[&id.to_string()]).await?;"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_pop_removal_is_refused_here_when_the_session_may_not_change_anything",
+    "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::outward::completeness::test_nothing_sends_a_changing_command_without_asking_the_gate",
     "service::protocols::pop3::against_a_server_that_answers::test_nothing_is_said_to_the_server_with_the_gate_closed",
 ]
 
