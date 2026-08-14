@@ -6772,7 +6772,13 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                     .to_string(),
             );
         }
-        let said = body.matches("no_longer_there(").count();
+        // Not every call to the shared sentence is one of the two exits this
+        // counts. A third place composes it too, for a row nobody selected
+        // rather than one that vanished after a confirmed delete, and it
+        // names no row: `no_longer_there(kind, "")` against these two exits'
+        // `no_longer_there(kind, &name)`. Counting the function's name alone
+        // once let a silenced exit hide behind that third, unrelated call.
+        let said = body.matches("no_longer_there(kind, &name)").count();
         if said < 2 {
             wrong.push(format!(
                 "{said} of the exits taken after a confirmed delete say the row has \
@@ -6849,6 +6855,45 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                 "a break the check exists for was not reported: {wrong:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_third_caller_of_the_shared_sentence_does_not_hide_a_silenced_exit() {
+        // The dilution this whole check went through once, reproduced. A
+        // third place started composing the same "row is gone" sentence
+        // through the shared function the day it stopped being typed out by
+        // hand in three places, and a check that only counted appearances of
+        // that function came out satisfied by two survivors when one of the
+        // two exits this guard is actually about had gone silent, because a
+        // decoy neither of the earlier fixtures carried made up the count.
+        let sound = "pub fn pim_command(a: u8) {\n\
+            \x20   let Some(opened) = opened else {\n\
+            \x20       return send_refusal(tx, rt, &no_longer_there(kind, &name));\n\
+            \x20   };\n\
+            \x20   let Some(series) = stored else {\n\
+            \x20       return send_refusal(tx, rt, &no_longer_there(kind, &name));\n\
+            \x20   };\n\
+            \x20   load_module_data(module_for(kind), &Some(cache), account_id, tx);\n\
+            }\n";
+        let with_a_decoy_caller = format!(
+            "pub fn pim_command(a: u8) {{\n    return send_status(tx, rt, &no_longer_there(kind, \"\"));\n{}",
+            sound
+                .strip_prefix("pub fn pim_command(a: u8) {\n")
+                .expect("the fixture to start with the signature it is named for")
+        );
+        let one_exit_silenced = with_a_decoy_caller.replace(
+            "        return send_refusal(tx, rt, &no_longer_there(kind, &name));\n    };\n    let Some(series)",
+            "        return;\n    };\n    let Some(series)",
+        );
+
+        let wrong = what_a_confirmed_delete_gets_wrong(&the_body_of(
+            &one_exit_silenced,
+            "pub fn pim_command(",
+        ));
+        assert!(
+            wrong.iter().any(|said| said.contains("say the row has")),
+            "a decoy caller of the same shared sentence hid a silenced exit: {wrong:?}"
+        );
     }
 
     #[test]
