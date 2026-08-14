@@ -1402,6 +1402,7 @@ red = [
     "application::calendar::tests::test_calling_off_a_day_already_called_off_does_not_name_it_twice",
     "application::calendar::tests::test_calling_off_one_day_keeps_the_days_the_series_had_already_called_off",
     "application::calendar::tests::test_calling_off_one_day_takes_that_day_off_the_series_and_leaves_the_others",
+    "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
     "application::calendar::tests::test_who_took_the_day_out_decides_whether_the_series_is_still_waiting_to_be_sent",
     "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone",
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_a_series_is_no_longer_shown_and_the_others_still_are",
@@ -4955,9 +4956,11 @@ red = [
     "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
     "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
     "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
+    "application::calendar::tests::test_a_google_read_keeps_the_category_typed_here_and_takes_googles_status",
     "application::calendar::tests::test_a_repeating_event_still_repeats_here_after_the_pull_that_follows_the_create",
     "application::calendar::tests::test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off",
     "application::calendar::tests::test_an_event_google_calls_cancelled_is_taken_off_and_the_others_are_kept",
+    "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 
 [[guard]]
@@ -4968,6 +4971,7 @@ before = """                let merged = everything_both_copies_call_off(merged,
 after = """                cache.save_calendar_event(&merged)?;"""
 red = [
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
+    "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 
 [[guard]]
@@ -5068,6 +5072,7 @@ after = """        WhoTookTheDayOut::SomebodyHere,
 red = [
     "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
     "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
+    "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 
 [[guard]]
@@ -5100,6 +5105,7 @@ after = """    #[serde(default)]
     pub formatted_value: String,"""
 red = [
     "application::contacts_sync::tests::test_a_change_to_a_contact_does_not_ask_google_to_clear_the_line_it_composes",
+    "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
 ]
 
 # ── An address with no recorded label sends no type key to Google ───────────
@@ -5152,6 +5158,7 @@ after = """            entry
         .collect();"""
 red = [
     "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
+    "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
 ]
 
 # ── A postal address stored before the lists existed still reaches an address book ─
