@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the account manager described a missing sign-in credential four
+  different ways, one of them reading a file name aloud and one of them
+  jargon with no remedy.** Adding an account, editing one, and signing in
+  again all now say the same sentence when this build has no browser
+  sign-in credentials for a provider, naming the provider and pointing to
+  Setting up a provider in Help. Two other messages on the same screen,
+  raised when an address cannot use browser sign-in at all or when signing
+  in fails to start on this computer, are reworded in plain language for
+  the same reason.
+
 - **Fixed: an account manager button offered to test the connection and did
   nothing.** Pressing it read out "Testing ... (not yet implemented)", which a
   screen reader could not tell from a real result. Nothing in this program

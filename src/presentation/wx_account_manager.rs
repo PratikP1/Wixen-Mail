@@ -7,6 +7,7 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
+use crate::application::mail_auth::no_sign_in_credentials;
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
@@ -203,11 +204,14 @@ pub fn show_account_manager_dialog(
                                     Priority::Normal,
                                 );
                             }
-                            OAuthFlowResult::NoCreds => {
+                            OAuthFlowResult::NoCreds(provider) => {
                                 said_and_shown(
                                     &status,
                                     a11y,
-                                    "Account added. No client credentials are configured for this provider. See Setting up a provider in Help.",
+                                    &format!(
+                                        "Account added. {}",
+                                        no_sign_in_credentials(&provider)
+                                    ),
                                     Priority::High,
                                 );
                             }
@@ -257,11 +261,11 @@ pub fn show_account_manager_dialog(
                                     Priority::Normal,
                                 );
                             }
-                            OAuthFlowResult::NoCreds => {
+                            OAuthFlowResult::NoCreds(provider) => {
                                 said_and_shown(
                                     &status,
                                     a11y,
-                                    "No client credentials are configured for this provider. See Setting up a provider in Help.",
+                                    &no_sign_in_credentials(&provider),
                                     Priority::High,
                                 );
                             }
@@ -305,11 +309,14 @@ pub fn show_account_manager_dialog(
                                         Priority::Normal,
                                     );
                                 }
-                                OAuthFlowResult::NoCreds => {
+                                OAuthFlowResult::NoCreds(provider) => {
                                     said_and_shown(
                                         &status,
                                         a11y,
-                                        "Account updated. OAuth credentials are not configured",
+                                        &format!(
+                                            "Account updated. {}",
+                                            no_sign_in_credentials(&provider)
+                                        ),
                                         Priority::High,
                                     );
                                 }
@@ -796,7 +803,10 @@ fn show_edit(
 
 enum OAuthFlowResult {
     Authorized,
-    NoCreds,
+    /// No client credentials are configured for this provider, named here so
+    /// every place that reports it can ask [`no_sign_in_credentials`] for the
+    /// one sentence rather than wording its own.
+    NoCreds(String),
     Failed(String),
 }
 
@@ -805,13 +815,20 @@ enum OAuthFlowResult {
 fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
     let provider = match OAuthService::detect_provider(&account.email) {
         Some(p) => p,
-        None => return OAuthFlowResult::Failed("Could not detect OAuth provider".into()),
+        None => {
+            return OAuthFlowResult::Failed(
+                "This address is not one Wixen Mail can sign in to through a browser. Turn \
+                 the browser sign-in off and enter a password, or see Setting up a provider \
+                 in Help."
+                    .into(),
+            );
+        }
     };
 
     // Load app-level credentials (env vars / config file / compile-time defaults)
     let creds = match oauth_credentials::credentials_for(&provider) {
         Some(c) => c,
-        None => return OAuthFlowResult::NoCreds,
+        None => return OAuthFlowResult::NoCreds(provider),
     };
 
     let auth_mgr = AuthManager::new(
@@ -824,7 +841,14 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
     let result = {
         let rt = match tokio::runtime::Runtime::new() {
             Ok(rt) => rt,
-            Err(e) => return OAuthFlowResult::Failed(format!("Runtime error: {}", e)),
+            Err(e) => {
+                tracing::warn!("OAuth runtime could not start: {}", e);
+                return OAuthFlowResult::Failed(
+                    "Signing in could not start on this computer. Try again, and see When \
+                     something goes wrong in Help if it keeps happening."
+                        .into(),
+                );
+            }
         };
         rt.block_on(auth_mgr.authorize())
     };
@@ -1057,6 +1081,47 @@ mod tests {
         );
         let wrong = what_this_screen_never_says(&screen, &the_one_call_that_says());
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_missing_credentials_condition_is_worded_once_not_here() {
+        // This screen answers a missing-credentials failure in three places:
+        // adding an account, editing one, and signing in again. All three
+        // used to word the condition inline, three different ways, one of
+        // them without saying what to do about it. All three now ask
+        // mail_auth::no_sign_in_credentials for the one sentence.
+        //
+        // Honest bound: a text check. It cannot see whether a branch that
+        // asks for the shared sentence is ever reached.
+        let screen = the_account_manager();
+        assert!(
+            !screen
+                .to_lowercase()
+                .contains("credentials are not configured"),
+            "a wording of the missing-credentials condition survives on this \
+             screen, separate from the shared sentence"
+        );
+        let sites: Vec<_> = screen.match_indices("NoCreds(provider) =>").collect();
+        assert_eq!(
+            sites.len(),
+            3,
+            "expected the three places this screen answers a \
+             missing-credentials failure, found {}",
+            sites.len()
+        );
+        for (at, _) in sites {
+            // A fixed window rather than matching the arm's own closing
+            // brace: the wording these branches build carries a `{}`
+            // placeholder of its own, which a brace-matching search would
+            // stop at before ever reaching the call it is looking for.
+            let after = &screen[at..];
+            let window = &after[..after.len().min(400)];
+            assert!(
+                window.contains("no_sign_in_credentials("),
+                "a missing-credentials branch does not ask the shared \
+                 sentence for its words: {window}"
+            );
+        }
     }
 
     #[test]

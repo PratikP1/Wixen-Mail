@@ -40,6 +40,24 @@ pub fn provider_of(account: &Account) -> Option<String> {
     })
 }
 
+/// What to say when this build has no sign-in credentials for a provider.
+///
+/// One sentence for one condition. It used to be worded four different ways
+/// across three files, at three levels of jargon, and one of those readings
+/// named a file rather than the page of Help that answers it. The Help menu
+/// names that page "Setting up a provider", so this does too.
+///
+/// Lives beside [`for_account`], which is where the condition is first
+/// noticed, rather than in the presentation layer where three of the four
+/// copies used to live. The fourth is raised here, deep in the mail path with
+/// no dialog open, and only a sentence with one owner can serve both.
+pub fn no_sign_in_credentials(provider: &str) -> String {
+    format!(
+        "No sign-in credentials are set up for {provider}, so signing in \
+         through the browser cannot run. See Setting up a provider in Help."
+    )
+}
+
 /// The credential this account signs in with, fetching a token if it needs one.
 pub async fn for_account(account: &Account) -> Result<MailAuth> {
     if !account.use_oauth {
@@ -64,9 +82,7 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
         )));
     };
     let Some(credentials) = oauth_credentials::credentials_for(&provider) else {
-        return Err(Error::Authentication(format!(
-            "No {provider} client credentials are configured, so this account cannot sign in. See docs/PROVIDER_SETUP.md."
-        )));
+        return Err(Error::Authentication(no_sign_in_credentials(&provider)));
     };
 
     let manager = AuthManager::new(
@@ -159,11 +175,51 @@ mod tests {
         let error = for_account(&expired).await.expect_err("no token is stored");
         let message = error.to_string();
         // Either it could not find credentials for the provider, or it could
-        // not find a token. Only the second names a control; the first names a
-        // file. Both have to say what to do.
+        // not find a token. Only the second names a control; the first names
+        // the page of Help that answers it. Both have to say what to do.
         assert!(
-            message.contains("Sign In Again") || message.contains("PROVIDER_SETUP"),
+            message.contains("Sign In Again") || message.contains("Setting up a provider in Help"),
             "no remedy offered: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out() {
+        // The condition "this build has no sign-in credentials for a
+        // provider" used to be worded four ways at three levels of jargon,
+        // one of them reading a file name aloud. One sentence now answers it,
+        // here rather than in a dialog, because this is where the condition
+        // is first noticed.
+        let said = no_sign_in_credentials("Gmail");
+        assert!(said.contains("Gmail"), "the provider is not named: {said}");
+        assert!(
+            said.contains("Setting up a provider in Help"),
+            "no remedy is named: {said}"
+        );
+        assert!(!said.contains(".md"), "a file name survives: {said}");
+        assert!(!said.contains("docs/"), "a file path survives: {said}");
+        assert!(
+            !said.to_lowercase().contains("oauth"),
+            "jargon survives: {said}"
+        );
+
+        // Driven through the real path too, on the account this file's other
+        // tests already use to reach the credentials failure: a Gmail
+        // address with no client credentials configured on this machine.
+        let mut expired = account();
+        expired.use_oauth = true;
+        expired.id = "no-such-account-in-the-keychain".into();
+        let message = for_account(&expired)
+            .await
+            .expect_err("no token is stored")
+            .to_string();
+        let sentence = message
+            .strip_prefix("Authentication error: ")
+            .unwrap_or(&message);
+        assert!(
+            sentence.contains("Sign In Again") || sentence == no_sign_in_credentials("gmail"),
+            "a credentials failure has to read exactly like the shared \
+             sentence for gmail, not a wording of its own: {message}"
         );
     }
 

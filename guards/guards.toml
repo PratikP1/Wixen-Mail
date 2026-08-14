@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 88 records have arrived since and have not been through it.
+# 90 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5495,4 +5495,58 @@ after = """                carry_over_local_only(
 red = [
     "application::calendar::tests::test_a_category_changed_in_outlook_reaches_this_computer",
     "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
+]
+
+# ── One sentence for "this build has no sign-in credentials" ────────────────
+#
+# The condition used to be worded four ways in three files: three levels of
+# jargon and one that read a file name aloud. `no_sign_in_credentials` is now
+# the one place that words it, and the two guards below cover its two kinds of
+# reader: the mail path that raises the condition with no dialog open, and the
+# account manager screen that reports it in three places.
+#
+# Measured by hand on 2026-08-13, against the whole library, one build and run
+# per break.
+
+[[guard]]
+name = "a missing OAuth credential is reported through the shared sentence, not a wording of its own"
+file = "src/application/mail_auth.rs"
+before = """        return Err(Error::Authentication(no_sign_in_credentials(&provider)));"""
+after = """        return Err(Error::Authentication(format!(
+            "No {provider} client credentials are configured, so this account cannot sign in."
+        )));"""
+red = [
+    "application::mail_auth::tests::test_an_account_needing_a_new_token_is_told_which_control_to_press",
+    "application::mail_auth::tests::test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out",
+]
+
+# Measured by hand on 2026-08-13. The account manager screen answers the same
+# condition in three places; this breaks one of them, the edit path, back to
+# its old jargon with no remedy.
+
+[[guard]]
+name = "the account manager's edit path reports missing credentials through the shared sentence"
+file = "src/presentation/wx_account_manager.rs"
+before = """                                OAuthFlowResult::NoCreds(provider) => {
+                                    said_and_shown(
+                                        &status,
+                                        a11y,
+                                        &format!(
+                                            "Account updated. {}",
+                                            no_sign_in_credentials(&provider)
+                                        ),
+                                        Priority::High,
+                                    );
+                                }"""
+after = """                                OAuthFlowResult::NoCreds(provider) => {
+                                    let _ = &provider;
+                                    said_and_shown(
+                                        &status,
+                                        a11y,
+                                        "Account updated. OAuth credentials are not configured",
+                                        Priority::High,
+                                    );
+                                }"""
+red = [
+    "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
