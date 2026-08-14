@@ -843,6 +843,7 @@ after = """        if false {
             continue;
         }"""
 red = [
+    "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
     "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs",
@@ -936,6 +937,8 @@ after = """    if false {
         return;
     }"""
 red = [
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away",
+    "application::tasks_sync::tests::test_a_deletion_survives_the_list_it_was_in_going_away_at_outlook",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_a_later_sync",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_outlook",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
@@ -1048,6 +1051,7 @@ red = [
     "application::caldav_sync::tests::test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_caldav_sync",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+    "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
     "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back",
@@ -1859,6 +1863,8 @@ red = [
     "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
     "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
+    "data::message_cache::contacts::tests::test_importing_a_card_does_not_forget_a_change_still_waiting_to_be_sent",
+    "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
 ]
 
 # The other direction. Joining has its own way of going wrong: an address she
@@ -1933,6 +1939,7 @@ before = """                new_to_her.push(arriving);"""
 after = """                new_to_her.push(super::EmailEntry {
                     label: Self::NO_LABEL.to_string(),
                     address: arriving.address,
+                    name: arriving.name,
                 });"""
 red = [
     "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
@@ -2406,6 +2413,14 @@ before = """    for zone in time_zones_named_on(&owned) {
 """
 after = ""
 red = [
+    "application::caldav_sync::tests::test_a_day_cut_out_of_a_series_goes_up_before_the_day_is_taken_off_the_series",
+    "application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting",
+    "application::caldav_sync::tests::test_a_replacement_that_went_up_is_kept_when_taking_the_day_off_the_series_fails",
+    "application::caldav_sync::tests::test_a_series_that_comes_first_in_the_queue_still_waits_for_the_day_cut_out_of_it",
+    "application::caldav_sync::tests::test_the_series_stays_waiting_when_the_server_refuses_the_replacement",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_keeps_a_zone_a_server_will_take",
+    "presentation::managers::changing_one_day_of_a_series::test_the_day_a_refusal_is_asked_about_names_only_the_events_own_time_zone",
+    "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
     "service::caldav::tests::test_a_document_built_from_nothing_defines_the_zone_it_names",
     "service::caldav::tests::test_a_written_document_read_back_through_our_own_reader_keeps_every_instant",
 ]
@@ -2456,6 +2471,16 @@ before = """        if !defined.contains(&zone) {
 after = """        let _ = zone;"""
 red = [
     "application::caldav_sync::tests::test_a_change_naming_a_zone_the_writer_cannot_describe_stays_waiting",
+    "application::caldav_sync::tests::test_a_day_whose_replacement_cannot_be_created_is_not_taken_off_the_series_at_the_server",
+    "application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting",
+    "application::calendar::tests::test_no_refusal_said_before_anything_is_written_describes_a_write_that_was_tried",
+    "application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed",
+    "application::calendar::tests::test_the_editor_and_the_sync_say_the_same_thing_about_a_zone_they_cannot_write",
+    "application::calendar::tests::test_the_one_day_answer_does_not_promise_a_calendar_server_a_zone_it_cannot_be_told",
+    "application::calendar::tests::test_the_refusal_check_can_tell_a_good_sentence_from_a_bad_one",
+    "application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written",
+    "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
     "service::caldav::writing_tests::test_a_zone_the_document_leaves_undefined_is_named_before_anything_is_sent",
 ]
 
@@ -2711,6 +2736,7 @@ after = """        let session = &mut *guard;
         session.delete_message(uid, trash).await"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
+    "application::mail_controller::against_a_server_that_answers::test_a_delete_with_a_trash_folder_really_moves_the_message_there",
     "application::mail_controller::against_a_server_that_answers::test_changing_a_message_opens_the_folder_it_names_before_asking",
     "application::mail_controller::against_a_server_that_answers::test_deleting_a_message_past_an_open_gate_opens_its_folder_then_moves_it",
 ]
@@ -4546,7 +4572,9 @@ after = """    if status == TheStatus::AlsoAtTheProvider {
         merged.status = held.status.clone();
     }"""
 red = [
+    "application::calendar::tests::test_a_google_read_keeps_the_category_typed_here_and_takes_googles_status",
     "application::calendar::tests::test_a_status_typed_here_is_not_overwritten_by_a_read_from_outlook",
+    "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
 ]
 
 [[guard]]
@@ -4880,6 +4908,8 @@ after = """        phones_json,
         // Google's copy of the contact, as Google has it."""
 red = [
     "application::contacts_sync::tests::test_a_postal_address_google_holds_is_kept_here_and_sent_back",
+    "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
+    "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
 ]
 
 # ── Every number Outlook holds is kept here, so a change does not drop one ──
