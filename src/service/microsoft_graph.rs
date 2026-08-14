@@ -187,6 +187,26 @@ pub struct MsGraphEvent {
     /// two of them belong together.
     #[serde(default, skip_serializing)]
     pub series_master_id: Option<String>,
+    /// Which of Graph's four shapes this event is: a single appointment, an
+    /// unmodified day of a series, a day of a series somebody changed, or the
+    /// series itself. The server's to set, and read-only even on Graph's own
+    /// side.
+    ///
+    /// A calendar view sends every day of a series in the window it was asked
+    /// about, changed or not, unlike Google, which only ever names a day
+    /// somebody touched. This is what tells the two apart: a day this program
+    /// has not seen change is drawn once already, from the rule, and reading
+    /// it down as well would draw it twice.
+    #[serde(default, rename = "type", skip_serializing)]
+    pub occurrence_type: Option<String>,
+    /// Whether the day this item names has been called off. The server's to
+    /// set.
+    ///
+    /// A cancelled day of a series is still sent, rather than left out or sent
+    /// only as a whole-event removal, so this is the only thing that says a
+    /// day drawn from the rule has to stop being drawn.
+    #[serde(default, skip_serializing)]
+    pub is_cancelled: Option<bool>,
     /// Where to open the event in a browser. The server's to set.
     #[serde(skip_serializing)]
     pub web_link: Option<String>,
@@ -205,6 +225,25 @@ pub struct MsGraphEvent {
     pub is_reminder_on: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reminder_minutes_before_start: Option<i32>,
+}
+
+impl MsGraphEvent {
+    /// The series this item is one day of, or nothing when it is a meeting in
+    /// its own right.
+    ///
+    /// One question asked in one place, the same way [`GoogleEvent`] answers
+    /// it, so the pass that reads whole series and the pass that reads their
+    /// changed days cannot come to disagree about which items belong to which.
+    /// An empty name is read as no name, because an identifier nothing can
+    /// look anything up under is not one.
+    ///
+    /// [`GoogleEvent`]: crate::service::google_api::GoogleEvent
+    pub fn the_series_it_is_one_day_of(&self) -> Option<&str> {
+        self.series_master_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|named| !named.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1374,6 +1413,81 @@ mod tests {
         let event: MsGraphEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.id, "EvtDeleted");
         assert!(event.removed.is_some());
+    }
+
+    #[test]
+    fn test_a_day_of_a_series_graph_sends_names_the_series_and_says_whether_it_is_cancelled() {
+        // A calendar view asked for a series rather than for its days still
+        // answers with the days of it somebody has called off or changed, each
+        // one saying which series it belongs to, whether it was cancelled, and
+        // which of Graph's four shapes it is. Without all three read, nothing
+        // here can tell one of those items from an ordinary, unmodified day of
+        // the same series, and Outlook sends every day of the window whether or
+        // not it changed.
+        let answered = r#"{
+            "id": "made-at-outlook_20260312T090000Z",
+            "seriesMasterId": "made-at-outlook",
+            "type": "exception",
+            "isCancelled": true,
+            "start": {"dateTime": "2026-03-12T09:00:00.0000000", "timeZone": "UTC"},
+            "end": {"dateTime": "2026-03-12T09:15:00.0000000", "timeZone": "UTC"}
+        }"#;
+
+        let event: MsGraphEvent =
+            serde_json::from_str(answered).expect("Graph's answer to be readable");
+
+        assert_eq!(
+            event.the_series_it_is_one_day_of(),
+            Some("made-at-outlook"),
+            "the series this day belongs to did not arrive"
+        );
+        assert_eq!(
+            event.occurrence_type.as_deref(),
+            Some("exception"),
+            "which of Graph's four shapes this item is did not arrive"
+        );
+        assert_eq!(
+            event.is_cancelled,
+            Some(true),
+            "whether this day was cancelled did not arrive"
+        );
+    }
+
+    #[test]
+    fn test_nothing_graph_says_about_a_series_instance_is_sent_back() {
+        // One type is read and written here, so a field added for reading goes
+        // out on every change unless it says not to. Naming a series in a
+        // change Graph never asked for, or claiming to know whether an event is
+        // cancelled or which of its four shapes it is, are all the server's to
+        // say and refused or ignored coming from a client.
+        let one_day = MsGraphEvent {
+            id: "made-at-outlook_20260312T090000Z".to_string(),
+            series_master_id: Some("made-at-outlook".to_string()),
+            occurrence_type: Some("exception".to_string()),
+            is_cancelled: Some(true),
+            ..MsGraphEvent::default()
+        };
+
+        let going_out = serde_json::to_value(&one_day).expect("a body");
+
+        let named: Vec<&str> = going_out
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            !named.contains(&"seriesMasterId"),
+            "a change would ask Graph to file this under another series: {named:?}"
+        );
+        assert!(
+            !named.contains(&"type"),
+            "a change would claim to know which of Graph's own shapes this is: {named:?}"
+        );
+        assert!(
+            !named.contains(&"isCancelled"),
+            "a change would claim to know whether Graph considers this cancelled: {named:?}"
+        );
     }
 
     #[test]
