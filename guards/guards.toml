@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 91 records have arrived since and have not been through it.
+# 92 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5583,4 +5583,29 @@ after = """pub(crate) fn deleted(kind: &str, name: &str) -> String {
 red = [
     "presentation::manager_words::tests::test_every_manager_sentence_names_the_kind_of_thing_it_happened_to",
     "presentation::manager_words::tests::test_no_manager_window_says_what_the_mail_path_says_when_a_message_is_gone",
+]
+
+# ── The app password hint attached to the password box's description ───────
+#
+# The visible hint under the email box was shown and never spoken,
+# deliberately, because it reruns on every keystroke and speaking it would
+# flood somebody typing. That left the advice reaching nobody working by ear.
+# password_box_description decides whether this address's password box
+# carries that advice as an MSAA description, read once when the box takes
+# focus rather than announced.
+#
+# Measured by hand on 2026-08-13, against the whole library.
+
+[[guard]]
+name = "the password box's description carries the app password advice for the right addresses"
+file = "src/presentation/wx_account_manager.rs"
+before = """fn password_box_description(email: &str) -> Option<&'static str> {
+    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+}"""
+after = """fn password_box_description(email: &str) -> Option<&'static str> {
+    let _ = email;
+    None
+}"""
+red = [
+    "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]

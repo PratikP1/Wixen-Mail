@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: the password box in the account dialog had no accessible name,
+  and the advice to use an app password reached nobody working by ear.**
+  The box now announces as "Password" like every other field in that
+  dialog, and for an address whose provider offers app passwords, the same
+  advice the visible hint under the email box shows is read once when the
+  password box takes focus. This reaches NVDA, which reads this dialog's
+  native controls the way this program names them. It does not reach
+  Narrator, which reads the visible label instead and is unaffected by
+  this change.
+
 - **Fixed: adding, updating or deleting an account, a contact, a filter,
   a tag or a signature said "Added", "Updated" or "Deleted: {name}" with
   nothing saying what kind of thing had changed.** The delete sentence was

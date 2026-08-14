@@ -12,7 +12,9 @@ use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
-use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::accessibility::names::{
+    name_from_label, set_accessible_name, set_accessible_name_and_description,
+};
 use crate::presentation::manager_words;
 
 /// What to put in the password box when the provider wants an app password.
@@ -441,6 +443,38 @@ pub fn show_account_manager_dialog(
 
 // ── Account Edit Sub-Dialog ─────────────────────────────────────────────────
 
+/// The accessible name given to the password box, whatever it holds.
+const PASSWORD_BOX_NAME: &str = "Password";
+
+/// The sentence to read after the password box's name, for this address.
+///
+/// The same advice the hint under the email box shows. Attached rather than
+/// announced: the hint under the email box is rewritten on every keystroke
+/// while somebody types an address, and speaking it would read a paragraph
+/// over them, over and over. A description is read once, when the box takes
+/// focus, so it reaches somebody working by ear without flooding them.
+///
+/// Asks [`offers_app_passwords`] rather than listing the domains again. Four
+/// lists of the same provider domains already exist in this file and the
+/// module it calls into; a fifth is how they come apart.
+fn password_box_description(email: &str) -> Option<&'static str> {
+    offers_app_passwords(email).then_some(APP_PASSWORD_HINT)
+}
+
+/// Give the password box a name, and this address's app-password advice as
+/// its description when there is any.
+///
+/// One call, never a name and then a description: attaching a second
+/// accessible object replaces the first, so calling both in sequence would
+/// leave only the description and the box would announce with no name at
+/// all.
+fn describe_password_box(field: &TextCtrl, email: &str) {
+    match password_box_description(email) {
+        Some(hint) => set_accessible_name_and_description(field, PASSWORD_BOX_NAME, hint),
+        None => set_accessible_name(field, PASSWORD_BOX_NAME),
+    }
+}
+
 fn show_edit(
     parent: &Dialog,
     existing: Option<&Account>,
@@ -654,17 +688,18 @@ fn show_edit(
             auth_hint.set_label(APP_PASSWORD_HINT);
         }
     }
+    describe_password_box(&pass_f, existing.map(|a| a.email.as_str()).unwrap_or(""));
 
     // Auto-detect provider and update hint on email change.
     //
     // This one hint is shown and not said, and it is the only thing on this
     // screen that is. It is rewritten on every keystroke while somebody types
     // an address and runs to about two hundred characters, so saying it would
-    // read a paragraph over them, over and over. That leaves the app password
-    // hint reaching nobody who works by ear: the answer is to attach it to the
-    // password box as its description rather than to speak it, and that is its
-    // own change. The two answers to a button press on this same line, below,
-    // are said.
+    // read a paragraph over them, over and over. Attached to the password box
+    // as its description, below, instead: read once when the box takes
+    // focus, which is what reaches somebody working by ear without flooding
+    // them. The two answers to a button press on this same line, below, are
+    // said.
     email_f.on_text_changed({
         move |_| {
             let email = email_f.get_value();
@@ -689,6 +724,7 @@ fn show_edit(
                 } else {
                     auth_hint.set_label("");
                 }
+                describe_password_box(&pass_f, &email);
             }
         }
     });
@@ -918,6 +954,8 @@ fn detect_provider(domain: &str) -> (&str, &str, &str, &str) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// This file with its own tests cut off.
     ///
     /// Cut, because the samples below quote the very calls the checks look
@@ -1123,6 +1161,52 @@ mod tests {
                  sentence for its words: {window}"
             );
         }
+    }
+
+    #[test]
+    fn test_the_password_box_is_described_with_the_app_password_advice() {
+        // The visible hint under the email box was shown and never spoken,
+        // deliberately: it is rewritten on every keystroke and speaking it
+        // would read a paragraph over somebody typing. That left the advice
+        // reaching nobody working by ear. A description read once, when the
+        // password box takes focus, is the fix.
+        assert_eq!(
+            password_box_description("me@gmail.com"),
+            Some(APP_PASSWORD_HINT),
+            "Gmail offers app passwords, so the box should carry the advice"
+        );
+        assert_eq!(
+            password_box_description("me@outlook.com"),
+            Some(APP_PASSWORD_HINT),
+            "Outlook offers app passwords, so the box should carry the advice"
+        );
+        assert_eq!(
+            password_box_description("me@example.com"),
+            None,
+            "an ordinary address gets no app-password advice"
+        );
+        assert_eq!(
+            password_box_description(""),
+            None,
+            "no address typed yet is not an address that offers app passwords"
+        );
+    }
+
+    #[test]
+    fn test_the_password_box_description_is_attached_in_both_places_the_hint_is_shown() {
+        // The visible hint under the email box is written in two places: once
+        // for an account already on file, once as somebody types a new
+        // address. The password box's description has to be attached in the
+        // same two places, or opening an existing account would show the
+        // visible hint and describe the password box to nobody until the
+        // address was retyped.
+        let screen = the_account_manager();
+        let calls = screen.matches("describe_password_box(&pass_f").count();
+        assert_eq!(
+            calls, 2,
+            "expected two calls attaching the password box's description, \
+             found {calls}"
+        );
     }
 
     #[test]
