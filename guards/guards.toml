@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 96 records have arrived since and have not been through it.
+# 98 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4547,19 +4547,33 @@ red = [
     "application::calendar::tests::test_a_repeat_outlook_sends_is_stored_as_a_rule_and_not_as_a_page_of_its_own_shape",
 ]
 
+# Re-measured by hand on 2026-08-14: the code this guard was about moved.
+# Closing the Outlook occurrence gap replaced the single loop over every
+# remote event, which used to skip a day of a series already held with the
+# check this guard broke, with a partition into whole events and the changed
+# days of a series, the second handled by a new function of its own,
+# one_day_of_a_microsoft_series. The same question the old check asked, is a
+# day of a series already held here already drawn from the rule, is now
+# asked inside that function, and this record now names that line instead.
+# One break, two new tests, and one existing test: the existing round-trip
+# test only ever drove an unmodified day, and the two new focused tests, one
+# for an unmodified day and one for a moved day, both reach this same line
+# from opposite sides of it.
+
 [[guard]]
 name = "the days of a series held here do not arrive from Outlook a second time"
 file = "src/application/calendar.rs"
-before = """        if let Some(series) = event.series_master_id.as_deref()
-            && cache
-                .get_event_by_provider_id(account_id, series)?
-                .is_some()"""
-after = """        if let Some(series) = event.series_master_id.as_deref()
-            && cache
-                .get_event_by_provider_id(account_id, series)?
-                .is_none()"""
+before = """    if series.is_some() && event.occurrence_type.as_deref() != Some("exception") {
+        return Ok(());
+    }"""
+after = """    if series.is_some() && event.occurrence_type.as_deref() == Some("exception") {
+        return Ok(());
+    }"""
 red = [
+    "application::calendar::tests::test_a_day_moved_at_outlook_is_shown_at_its_new_time_though_the_old_slot_may_still_show_too",
     "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
+    "application::calendar::tests::test_an_outlook_read_of_one_changed_day_takes_outlooks_category_and_keeps_the_status_set_here",
+    "application::calendar::tests::test_an_unmodified_day_of_an_outlook_series_already_held_is_still_drawn_once",
 ]
 
 [[guard]]
@@ -5054,12 +5068,31 @@ red = [
 # off or moved, and nothing here read those, so a day cancelled in Google
 # Calendar went on being drawn and a day moved to another time was drawn twice.
 # The seven records below hold the reading of them.
+#
+# Widened by hand on 2026-08-14, not remeasured: closing the matching gap on
+# the Outlook side gave `one_day_of_a_microsoft_series` the same shape as
+# `one_day_of_a_google_series`, on purpose, so several of these seven records'
+# `before` text started matching a second place in the file, in the new
+# function, and the check that a record still names exactly one place failed
+# on all of them at once. Each was widened with just enough of the
+# surrounding, differently-named code, a variable name or a called function
+# that only one of the two functions uses, to point at one place again. None
+# of the widening changed what a record's break actually does, so none needed
+# a fresh run; `test_every_guard_record_still_names_one_place_in_the_tree`
+# checked the anchor and `scripts/guards.py` re-confirmed the ones a new test
+# also newly reaches.
 
 [[guard]]
 name = "a Google series is read before the days of it that changed"
 file = "src/application/calendar.rs"
-before = """            .partition(|event| event.the_series_it_is_one_day_of().is_none());"""
-after = """            .partition(|event| event.the_series_it_is_one_day_of().is_some());"""
+before = """    let (whole_series, the_days_of_them_that_changed): (Vec<&GoogleEvent>, Vec<&GoogleEvent>) =
+        remote_events
+            .iter()
+            .partition(|event| event.the_series_it_is_one_day_of().is_none());"""
+after = """    let (whole_series, the_days_of_them_that_changed): (Vec<&GoogleEvent>, Vec<&GoogleEvent>) =
+        remote_events
+            .iter()
+            .partition(|event| event.the_series_it_is_one_day_of().is_some());"""
 red = [
     "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
@@ -5078,9 +5111,15 @@ red = [
 [[guard]]
 name = "the days a Google series already calls off survive a read naming only the series"
 file = "src/application/calendar.rs"
-before = """                let merged = everything_both_copies_call_off(merged, &ex);
+before = """                    TheCategory::OnlyHere,
+                    TheStatus::AlsoAtTheProvider,
+                );
+                let merged = everything_both_copies_call_off(merged, &ex);
                 cache.save_calendar_event(&merged)?;"""
-after = """                cache.save_calendar_event(&merged)?;"""
+after = """                    TheCategory::OnlyHere,
+                    TheStatus::AlsoAtTheProvider,
+                );
+                cache.save_calendar_event(&merged)?;"""
 red = [
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
@@ -5101,11 +5140,15 @@ file = "src/application/calendar.rs"
 before = """        if existing.is_some() {
             cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
             the_day_went = true;
-        }"""
+        }
+        if let (Some(series), Some(the_day_it_was)) =
+            (series, the_day_a_google_instance_replaces(event))"""
 after = """        if false && existing.is_some() {
             cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
             the_day_went = true;
-        }"""
+        }
+        if let (Some(series), Some(the_day_it_was)) =
+            (series, the_day_a_google_instance_replaces(event))"""
 red = [
     "application::calendar::tests::test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind",
 ]
@@ -5113,11 +5156,25 @@ red = [
 [[guard]]
 name = "a Google read that calls a day off leaves a change waiting here still waiting"
 file = "src/application/calendar.rs"
-before = """            cache.save_calendar_event(&CalendarEventEntry {
+before = """            (series, the_day_a_google_instance_replaces(event))
+        {
+            let called_off = crate::service::caldav::the_called_off_value_for(
+                &the_day_it_was,
+                series.is_all_day,
+            );
+            let (after, went) = with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&CalendarEventEntry {
                 pending: series.pending,
                 ..after
             })?;"""
-after = """            cache.save_calendar_event(&CalendarEventEntry {
+after = """            (series, the_day_a_google_instance_replaces(event))
+        {
+            let called_off = crate::service::caldav::the_called_off_value_for(
+                &the_day_it_was,
+                series.is_all_day,
+            );
+            let (after, went) = with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&CalendarEventEntry {
                 pending: false,
                 ..after
             })?;"""
@@ -5130,10 +5187,22 @@ name = "a day of a Google series whose series is not held here is kept as the me
 file = "src/application/calendar.rs"
 before = """    let Some(series) = series else {
         return cache.save_calendar_event(&that_day);
-    };"""
+    };
+    // Set here because carrying the local-only fields over does not carry it,
+    // so a second read would otherwise store the day with nothing left saying
+    // which series it came out of.
+    that_day.cut_from_event_id = Some(series.id.clone());
+
+    let Some(the_day_it_was) = the_day_a_google_instance_replaces(event) else {"""
 after = """    let Some(series) = series else {
         return Ok(());
-    };"""
+    };
+    // Set here because carrying the local-only fields over does not carry it,
+    // so a second read would otherwise store the day with nothing left saying
+    // which series it came out of.
+    that_day.cut_from_event_id = Some(series.id.clone());
+
+    let Some(the_day_it_was) = the_day_a_google_instance_replaces(event) else {"""
 red = [
     "application::calendar::tests::test_a_day_of_a_series_this_calendar_does_not_hold_is_kept_as_the_meeting_it_is",
 ]
@@ -5175,12 +5244,46 @@ red = [
 [[guard]]
 name = "a day changed at Google leaves the series owing Google nothing"
 file = "src/application/calendar.rs"
-before = """        WhoTookTheDayOut::TheProviderItself,
-    )
-}"""
-after = """        WhoTookTheDayOut::SomebodyHere,
-    )
-}"""
+before = """    let Some(the_day_it_was) = the_day_a_google_instance_replaces(event) else {
+        // Google should not send one. Said out loud rather than swallowed,
+        // because there is no day to take off the series and the meeting would
+        // otherwise be drawn twice with nothing anywhere saying why.
+        tracing::warn!(
+            "A day of a repeating event in a Google calendar does not say which \\
+             day of it it stands in for, so that day cannot be taken off the \\
+             series and the meeting may be shown twice. The event is {} and the \\
+             series is {at_google}.",
+            event.id
+        );
+        return cache.save_calendar_event(&that_day);
+    };
+    one_day_kept_out_of_the_series(
+        cache,
+        &series,
+        &that_day,
+        &the_day_it_was,
+        WhoTookTheDayOut::TheProviderItself,
+    )"""
+after = """    let Some(the_day_it_was) = the_day_a_google_instance_replaces(event) else {
+        // Google should not send one. Said out loud rather than swallowed,
+        // because there is no day to take off the series and the meeting would
+        // otherwise be drawn twice with nothing anywhere saying why.
+        tracing::warn!(
+            "A day of a repeating event in a Google calendar does not say which \\
+             day of it it stands in for, so that day cannot be taken off the \\
+             series and the meeting may be shown twice. The event is {} and the \\
+             series is {at_google}.",
+            event.id
+        );
+        return cache.save_calendar_event(&that_day);
+    };
+    one_day_kept_out_of_the_series(
+        cache,
+        &series,
+        &that_day,
+        &the_day_it_was,
+        WhoTookTheDayOut::SomebodyHere,
+    )"""
 red = [
     "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
     "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
@@ -5190,8 +5293,12 @@ red = [
 [[guard]]
 name = "a day of a Google series already called off is not counted as a deletion again"
 file = "src/application/calendar.rs"
-before = """            the_day_went |= went == ADayWent::OffTheSeries;"""
-after = """            the_day_went |= went != ADayWent::OffTheSeries;"""
+before = """            the_day_went |= went == ADayWent::OffTheSeries;
+        }
+        // Counted once, and only when something really went. Google names"""
+after = """            the_day_went |= went != ADayWent::OffTheSeries;
+        }
+        // Counted once, and only when something really went. Google names"""
 red = [
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
@@ -5599,6 +5706,17 @@ red = [
 # halves together. Written down rather than pruned, because that is what
 # "measured, not guessed" looks like when an existing fixture already covered
 # part of a claim.
+#
+# Widened by hand on 2026-08-14, not remeasured: closing the Outlook
+# occurrence gap added `everything_both_copies_call_off` to this same call
+# site, the same protection Google's whole-series merge already had against a
+# later read that names no series erasing a day learned some other way. The
+# text this record broke sat between `carry_over_local_only` and
+# `cache.save_calendar_event`, so the new line landed inside it and the old
+# `before` was no longer in the file at all. Widened to include the new line
+# rather than only the two lines around it, which is also what tells this
+# record apart from the two on the Google side of the same shape now that
+# both call sites end the same way.
 
 [[guard]]
 name = "an Outlook merge takes Outlook's category and keeps the status set here"
@@ -5609,6 +5727,7 @@ before = """                carry_over_local_only(
                     TheCategory::AlsoAtTheProvider,
                     TheStatus::OnlyHere,
                 );
+                let merged = everything_both_copies_call_off(merged, &ex);
                 cache.save_calendar_event(&merged)?;"""
 after = """                carry_over_local_only(
                     &mut merged,
@@ -5616,10 +5735,36 @@ after = """                carry_over_local_only(
                     TheCategory::OnlyHere,
                     TheStatus::AlsoAtTheProvider,
                 );
+                let merged = everything_both_copies_call_off(merged, &ex);
                 cache.save_calendar_event(&merged)?;"""
 red = [
     "application::calendar::tests::test_a_category_changed_in_outlook_reaches_this_computer",
     "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
+]
+
+# Measured by hand on 2026-08-14. The Outlook mirror of "the days a Google
+# series already calls off survive a read naming only the series", above:
+# `everything_both_copies_call_off` was added to this same call site to close
+# the matching gap, a later read naming only a whole event silently erasing a
+# day an earlier read had already learned was called off. This program's own
+# calendar view is not known to ever answer with a series itself as a single
+# item outside its own occurrences, unlike Google, so unlike that guard's own
+# test this one is a defence rather than a proven scenario: it proves the
+# merge would hold if such an item ever arrives, not that one has been seen
+# to.
+
+[[guard]]
+name = "the days an Outlook series already calls off survive a read naming only the event"
+file = "src/application/calendar.rs"
+before = """                TheStatus::OnlyHere,
+                );
+                let merged = everything_both_copies_call_off(merged, &ex);
+                cache.save_calendar_event(&merged)?;"""
+after = """                TheStatus::OnlyHere,
+                );
+                cache.save_calendar_event(&merged)?;"""
+red = [
+    "application::calendar::tests::test_a_day_cancelled_at_outlook_stays_off_if_a_later_read_answers_with_the_series_itself",
 ]
 
 # Measured by hand on 2026-08-14. `carry_over_local_only` is called a third
@@ -5649,6 +5794,35 @@ after = """            carry_over_local_only(
             result.updated += 1;"""
 red = [
     "application::calendar::tests::test_a_google_read_of_one_changed_day_keeps_the_category_typed_here_and_takes_googles_status",
+]
+
+# Measured by hand on 2026-08-14. The Outlook mirror of the guard above, at
+# the matching call site inside the new one_day_of_a_microsoft_series: a
+# fourth carry_over_local_only call site, and the fourth instance of the
+# choice this whole section exists to watch. Outlook's own polarity is the
+# opposite of Google's at every one of its own call sites, so this is also
+# the single easiest mistake a change here could make: copying Google's
+# per-day polarity instead of Outlook's own whole-event one.
+
+[[guard]]
+name = "an Outlook merge of one changed day takes Outlook's category and keeps the status set here"
+file = "src/application/calendar.rs"
+before = """            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::AlsoAtTheProvider,
+                TheStatus::OnlyHere,
+            );
+            result.updated += 1;"""
+after = """            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::OnlyHere,
+                TheStatus::AlsoAtTheProvider,
+            );
+            result.updated += 1;"""
+red = [
+    "application::calendar::tests::test_an_outlook_read_of_one_changed_day_takes_outlooks_category_and_keeps_the_status_set_here",
 ]
 
 # ── One sentence for "this build has no sign-in credentials" ────────────────

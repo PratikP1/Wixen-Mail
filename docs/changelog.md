@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a day of a repeating meeting moved or cancelled in Outlook still
+  showed here, drawn from the meeting's own repeat rule.** Outlook answers a
+  calendar view with every day of a series in the window it covers, changed
+  or not, and every one of those days was skipped once this program already
+  held the series. So a day cancelled in Outlook went on being shown here
+  for ever, and a day moved to another time never reached this computer at
+  all. A cancelled day is now taken off the series and stops being drawn. A
+  moved day is now stored and shown at its new time. Google calendars had
+  this same fix already; this is the matching one for Outlook.
+
+  Known limitations. Outlook does not say which day of the pattern a moved
+  day replaces in a way this program can read safely: doing that needs the
+  account's own time zone offset, and Outlook names its time zones in a form
+  this program has no table to turn into one, such as "Eastern Standard
+  Time" rather than a plain number of hours. So a day moved in Outlook is
+  shown at its new time, but the day it moved from may still be drawn too,
+  until this program can read that safely. A cancelled day does not have
+  this problem: Outlook still gives its own time, unmoved, so it is taken
+  off the series cleanly. None of the Outlook calendar syncing has run
+  against a real account.
+
 - **Fixed: a postal address changed at Google, or a postal address or phone
   number changed at Outlook, did not reach a contact this program already
   knew about.** Syncing an already-known contact took the name, the company,

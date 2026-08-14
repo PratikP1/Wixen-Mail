@@ -1191,7 +1191,16 @@ pub async fn sync_microsoft_calendar(
         )
         .await?;
 
-    for event in &remote_events {
+    // Whole events first, the changed days of a series afterwards. A calendar
+    // view promises no order, so a day met before the series it belongs to
+    // would find nothing to be taken off and be written down as a second
+    // meeting, the same reason the Google read is split the same way.
+    let (whole_events, the_days_of_them_that_changed): (Vec<&MsGraphEvent>, Vec<&MsGraphEvent>) =
+        remote_events
+            .iter()
+            .partition(|event| event.the_series_it_is_one_day_of().is_none());
+
+    for event in whole_events {
         if event.id.is_empty() {
             continue;
         }
@@ -1216,25 +1225,6 @@ pub async fn sync_microsoft_calendar(
             continue;
         }
 
-        // One day of a series this account already holds. Outlook answers with
-        // the days of a series and never with the series itself, so a series
-        // made here comes back as a row per week, none of them matching the row
-        // it was made from. The series is here with its rule and the days are
-        // drawn from it, so writing the days down as well would leave two of
-        // every one of them in the diary.
-        //
-        // Only when the series is held. A series made in Outlook has no row
-        // here, and its days go on arriving as separate meetings, which is what
-        // they did before this and is written down as a limitation rather than
-        // quietly dropped.
-        if let Some(series) = event.series_master_id.as_deref()
-            && cache
-                .get_event_by_provider_id(account_id, series)?
-                .is_some()
-        {
-            continue;
-        }
-
         let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
         if a_change_here_is_still_waiting(existing.as_ref()) {
             continue;
@@ -1250,6 +1240,7 @@ pub async fn sync_microsoft_calendar(
                     TheCategory::AlsoAtTheProvider,
                     TheStatus::OnlyHere,
                 );
+                let merged = everything_both_copies_call_off(merged, &ex);
                 cache.save_calendar_event(&merged)?;
                 result.updated += 1;
             }
@@ -1258,6 +1249,21 @@ pub async fn sync_microsoft_calendar(
                 result.created += 1;
             }
         }
+    }
+
+    for event in the_days_of_them_that_changed {
+        let Some(series_id) = event.the_series_it_is_one_day_of() else {
+            continue;
+        };
+        one_day_of_a_microsoft_series(
+            cache,
+            account_id,
+            &filed_under.id,
+            event,
+            series_id,
+            &deleted_here,
+            &mut result,
+        )?;
     }
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -1281,6 +1287,166 @@ pub async fn sync_microsoft_calendar(
     cache.save_sync_state(&new_state)?;
 
     Ok(result)
+}
+
+/// Which day of its series an Outlook occurrence stands in for, when this
+/// program can say so safely.
+///
+/// Only for a cancelled occurrence. A cancelled occurrence has nowhere to
+/// have moved to, so a calendar view still gives its `start` as the slot the
+/// pattern computes for it, read the way [`ms_event_to_local`] reads every
+/// occurrence's start: verbatim, no zone conversion, because that clock face
+/// already names the day in the account's own zone, the same zone the
+/// series' own stored start and the rule's own day-stepping are written in.
+///
+/// A moved occurrence's own slot is not answered the same way. Graph's
+/// matching field, `originalStart`, is documented as always in UTC and is
+/// not reliably present on a calendar view answer at all, and turning a UTC
+/// instant into the account's own calendar day needs that account's own time
+/// zone offset. Graph names that zone, when it names one, as something like
+/// "Eastern Standard Time", and this program has no table that turns one of
+/// those into an offset (see `graph_named_utc` in the tests below, and the
+/// comment beside it). Guessing risks taking the wrong day off the series,
+/// which can hide a meeting nobody moved, so nothing here guesses: a moved
+/// occurrence answers `None`, and its caller stores it as a meeting of its
+/// own instead of linking it to a slot this program cannot safely name.
+fn the_day_an_outlook_instance_replaces(event: &MsGraphEvent) -> Option<String> {
+    if event.is_cancelled != Some(true) {
+        return None;
+    }
+    event
+        .start
+        .as_ref()
+        .map(|dt| dt.date_time.clone())
+        .filter(|when| !when.is_empty())
+}
+
+/// One day of an Outlook series that is no longer like the rest of them, or
+/// one that is, read the way this program already writes such a day down.
+///
+/// Outlook differs from Google in the one way that matters here: a calendar
+/// view answers with every occurrence in the window, changed or not, rather
+/// than only the ones somebody touched. So this has a case Google's version
+/// does not need, an ordinary unmodified day of a series already held, and
+/// for that one case skipping it is already correct: the rule draws it once
+/// and there is nothing to take off or add.
+///
+/// A day whose series is not held here is stored as the meeting it is,
+/// changed or not, the same limitation `sync_microsoft_calendar` has always
+/// had: a series made in Outlook has no rule here to draw its days from, so
+/// nothing here consolidates them.
+fn one_day_of_a_microsoft_series(
+    cache: &MessageCache,
+    account_id: &str,
+    filed_under: &str,
+    event: &MsGraphEvent,
+    series_id: &str,
+    deleted_here: &crate::application::deletions::DeletedHere,
+    result: &mut CalendarSyncResult,
+) -> Result<()> {
+    if event.id.is_empty() {
+        return Ok(());
+    }
+    // Asked about the series as well as about the day, the same reason as on
+    // the Google side: a series somebody deleted here would otherwise come
+    // back one day at a time.
+    if deleted_here.holds(&event.id) || deleted_here.holds(series_id) {
+        return Ok(());
+    }
+
+    let series = cache.get_event_by_provider_id(account_id, series_id)?;
+    let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+
+    if event.is_cancelled == Some(true) {
+        let mut the_day_went = false;
+        // A day that had been moved and has now been called off. Both
+        // halves are needed: the appointment it became has to go, and the
+        // day has to come off the series so the rule stops drawing it.
+        if existing.is_some() {
+            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            the_day_went = true;
+        }
+        if let (Some(series), Some(the_day_it_was)) =
+            (series, the_day_an_outlook_instance_replaces(event))
+        {
+            let called_off = crate::service::caldav::the_called_off_value_for(
+                &the_day_it_was,
+                series.is_all_day,
+            );
+            let (after, went) = with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&CalendarEventEntry {
+                pending: series.pending,
+                ..after
+            })?;
+            the_day_went |= went == ADayWent::OffTheSeries;
+        }
+        // Counted once, and only when something really went. A calendar
+        // view names a cancelled day of a series in every answer that
+        // covers it, every time, so counting them as they arrive would
+        // report the same deletion for ever to somebody listening to the
+        // count.
+        if the_day_went {
+            result.deleted += 1;
+        }
+        return Ok(());
+    }
+
+    // Not cancelled. An ordinary, unmodified day of a series already held is
+    // exactly what a calendar view sends for every week nobody touched, and
+    // it is already drawn once, from the rule. Only when the series is
+    // held: a day of a series Outlook alone knows about has no rule here to
+    // be drawn from, so it is kept below as a meeting of its own instead,
+    // the same as the fallback a few lines down.
+    if series.is_some() && event.occurrence_type.as_deref() != Some("exception") {
+        return Ok(());
+    }
+
+    if a_change_here_is_still_waiting(existing.as_ref()) {
+        return Ok(());
+    }
+    let mut that_day = ms_event_to_local(event, account_id, filed_under);
+    match &existing {
+        Some(held) => {
+            carry_over_local_only(
+                &mut that_day,
+                held,
+                TheCategory::AlsoAtTheProvider,
+                TheStatus::OnlyHere,
+            );
+            result.updated += 1;
+        }
+        None => result.created += 1,
+    }
+
+    let Some(series) = series else {
+        return cache.save_calendar_event(&that_day);
+    };
+    // Set here because carrying the local-only fields over does not carry
+    // it, so a second read would otherwise store the day with nothing left
+    // saying which series it came out of.
+    that_day.cut_from_event_id = Some(series.id.clone());
+
+    let Some(the_day_it_was) = the_day_an_outlook_instance_replaces(event) else {
+        // Outlook does not say which day of the pattern a moved occurrence
+        // replaces in a way this program can safely read, so there is no
+        // day to take off the series and the meeting may be shown twice.
+        // Said out loud rather than swallowed.
+        tracing::warn!(
+            "A day of a repeating event in an Outlook calendar does not say \
+             which day of it it stands in for, so that day cannot be taken \
+             off the series and the meeting may be shown twice. The event \
+             is {} and the series is {series_id}.",
+            event.id
+        );
+        return cache.save_calendar_event(&that_day);
+    };
+    one_day_kept_out_of_the_series(
+        cache,
+        &series,
+        &that_day,
+        &the_day_it_was,
+        WhoTookTheDayOut::TheProviderItself,
+    )
 }
 
 /// Create a calendar event on Microsoft Graph and save locally.
@@ -7859,6 +8025,523 @@ mod tests {
             held[0].recurrence_rule.as_deref(),
             Some("FREQ=WEEKLY;BYDAY=TU"),
             "the meeting still repeats after the read that followed making it"
+        );
+    }
+
+    // ── One day of an Outlook series ─────────────────────────────────────
+    //
+    // Outlook is asked for a calendar view rather than for a series, and
+    // answers with every occurrence in the window, changed or not: unlike
+    // Google, which only ever names a day somebody touched, Graph's own
+    // calendarView sends the two untouched weeks of a series along with the
+    // one somebody moved or cancelled, all under the same shape. The
+    // fixtures below are that answer, so the tests drive the real sync
+    // against the shape a real calendar view sends.
+
+    /// The weekly stand-up already stored here, in the Outlook calendar,
+    /// under the identity Graph gave it when it was made.
+    fn the_outlook_series_already_stored(
+        cache: &MessageCache,
+        waiting: bool,
+    ) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", MICROSOFT, MICROSOFT_CALENDAR_NAME)
+            .expect("the Outlook calendar");
+        let series = CalendarEventEntry {
+            id: "outlook-series-here".to_string(),
+            provider_event_id: Some("made-at-outlook".to_string()),
+            calendar_id: Some(container.id),
+            summary: "Stand-up, in the small room".to_string(),
+            time_zone: Some("UTC".to_string()),
+            source_provider: Some(MICROSOFT.to_string()),
+            pending: waiting,
+            ..a_weekly_series(
+                "2026-03-05T09:00:00.0000000",
+                "2026-03-05T09:15:00.0000000",
+                false,
+            )
+        };
+        cache
+            .save_calendar_event(&series)
+            .expect("the series to be stored");
+        series
+    }
+
+    /// One day of that series, named the way a calendar view names one: its
+    /// own id, which series it belongs to, which of Graph's four shapes it
+    /// is, and whether it has been cancelled.
+    fn a_graph_day_of_the_series(
+        id: &str,
+        occurrence_type: &str,
+        is_cancelled: bool,
+        start: &str,
+        end: &str,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "seriesMasterId": "made-at-outlook",
+            "type": occurrence_type,
+            "isCancelled": is_cancelled,
+            "subject": "Stand-up",
+            "start": {"dateTime": start, "timeZone": "UTC"},
+            "end": {"dateTime": end, "timeZone": "UTC"},
+        })
+    }
+
+    /// 12 March 2026, nine in the morning: the slot the pattern computes for
+    /// the Thursday these tests move and call off, written the way Outlook
+    /// itself writes a clock face.
+    const THE_SLOT_START: &str = "2026-03-12T09:00:00.0000000";
+    const THE_SLOT_END: &str = "2026-03-12T09:15:00.0000000";
+
+    #[tokio::test]
+    async fn test_a_day_cancelled_at_outlook_is_taken_off_the_series_here() {
+        // The Outlook mirror of the same test for Google. A calendar view
+        // still lists a cancelled occurrence rather than leaving it out,
+        // isCancelled set to true and its start still at the slot the
+        // pattern computes, since a cancelled occurrence has nowhere to
+        // have moved to. Nothing here read that, so the Thursday went on
+        // being drawn from the rule for ever.
+        let cache = temp_cache("outlook_a_day_cancelled_at_outlook");
+        the_outlook_series_already_stored(&cache, false);
+        let address = replying(delta_reply(&[a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "occurrence",
+            true,
+            THE_SLOT_START,
+            THE_SLOT_END,
+        )]))
+        .await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(result.deleted, 1, "{result:?}");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "the cancelled day was written down as a meeting of its own: {stored:?}"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day was not taken off the series: {:?}",
+            stored[0].exception_dates
+        );
+        assert!(
+            !stored[0].pending,
+            "the series is waiting to be sent to Outlook over a day Outlook \
+             itself called off, so the next push hands Outlook back its own value"
+        );
+        assert!(
+            everything_drawn_on(&cache, that_thursday()).is_empty(),
+            "a meeting cancelled in Outlook is still on the diary: {:?}",
+            everything_drawn_on(&cache, that_thursday())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_moved_at_outlook_is_shown_at_its_new_time_though_the_old_slot_may_still_show_too()
+     {
+        // Google's own moved day says, on the item itself, which day of the
+        // pattern it replaces, so that day can be taken off the series and
+        // the meeting drawn once. Graph's matching field, originalStart, is
+        // documented as always in UTC and is not reliably present on a
+        // calendarView answer at all, and turning a UTC instant into the
+        // right local calendar day needs the account's own time zone
+        // offset, which this program has no table for (see
+        // graph_named_utc, above, and the comment beside it). Guessing
+        // risks taking the wrong day off the series and hiding a meeting
+        // that was never moved, which is worse than what this does
+        // instead: store the moved day as a meeting of its own at its new
+        // time, the same decided trade-off already made and tested for
+        // Google's own gap when nothing says which day an item replaces.
+        let cache = temp_cache("outlook_a_day_moved_at_outlook");
+        the_outlook_series_already_stored(&cache, false);
+        let address = replying(delta_reply(&[a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "exception",
+            false,
+            "2026-03-12T14:00:00.0000000",
+            "2026-03-12T14:30:00.0000000",
+        )]))
+        .await;
+        point_the_sync_at(&cache, &address);
+
+        sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            2,
+            "the moved day should be a meeting of its own alongside the series: {stored:?}"
+        );
+        let moved = stored
+            .iter()
+            .find(|row| {
+                row.provider_event_id.as_deref() == Some("made-at-outlook_20260312T090000Z")
+            })
+            .expect("the moved day to be stored under its own identity");
+        assert_eq!(
+            moved.start_datetime, "2026-03-12T14:00:00.0000000",
+            "the moved day was lost instead of stored at its new time"
+        );
+        let series = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() == Some("made-at-outlook"))
+            .expect("the series to still be there");
+        assert_eq!(
+            moved.cut_from_event_id.as_deref(),
+            Some(series.id.as_str()),
+            "the moved day does not say which series it came out of"
+        );
+        assert_eq!(
+            series.exception_dates, None,
+            "Outlook did not say which day this replaces, so nothing should \
+             have been taken off the series: {:?}",
+            series.exception_dates
+        );
+        let drawn = everything_drawn_on(&cache, that_thursday());
+        assert_eq!(
+            drawn.len(),
+            2,
+            "the day should be drawn from the rule and shown at its new \
+             time, which is the accepted cost of not knowing which slot \
+             the moved day replaces: {drawn:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_unmodified_day_of_an_outlook_series_already_held_is_still_drawn_once() {
+        // The one case that was already correct, protected at its own,
+        // focused level. An ordinary occurrence, unmoved and not
+        // cancelled, is exactly what a calendar view sends for every week
+        // of a series nobody touched, and it must go on being drawn once
+        // from the rule rather than written down as a second meeting.
+        let cache = temp_cache("outlook_an_unmodified_day_is_drawn_once");
+        the_outlook_series_already_stored(&cache, false);
+        let address = replying(delta_reply(&[a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "occurrence",
+            false,
+            THE_SLOT_START,
+            THE_SLOT_END,
+        )]))
+        .await;
+        point_the_sync_at(&cache, &address);
+
+        sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "an unmodified day of a series already held was written down as \
+             a meeting of its own: {stored:?}"
+        );
+        let drawn = everything_drawn_on(&cache, that_thursday());
+        assert_eq!(
+            drawn.len(),
+            1,
+            "the same day of the series is on the diary {} times: {drawn:?}",
+            drawn.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_changed_days_of_an_outlook_series_are_counted_once_and_not_again() {
+        // The count is read out, so it is behaviour and not bookkeeping. A
+        // calendar view sends every cancelled day of a series in every full
+        // answer for as long as that day is inside the window asked for.
+        // Counting it as it arrives tells somebody the same meeting was
+        // deleted again on every sync for ever.
+        let cache = temp_cache("outlook_the_changed_days_are_counted_once");
+        the_outlook_series_already_stored(&cache, false);
+        let answer = delta_reply(&[a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "occurrence",
+            true,
+            THE_SLOT_START,
+            THE_SLOT_END,
+        )]);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![answer.clone(), answer.clone(), answer],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let first = sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        // The delta marker Graph handed back points at Graph, so each read
+        // after the first is made to start afresh, the same as a marker
+        // Graph has stopped honouring would.
+        forget_the_delta_marker(&cache);
+        let second = sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+        forget_the_delta_marker(&cache);
+        let third = sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the third sync to finish");
+
+        heard(listening, "three reads")
+            .await
+            .expect("three requests");
+        assert_eq!(
+            (first.created, first.updated, first.deleted),
+            (0, 0, 1),
+            "the first read should take one day off: {first:?}"
+        );
+        for (which, sync) in [("second", &second), ("third", &third)] {
+            assert_eq!(
+                (sync.created, sync.updated, sync.deleted),
+                (0, 0, 0),
+                "the {which} read was told nothing new and counted it as \
+                 something: {sync:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_day_of_an_outlook_series_this_computer_deleted_is_not_written_back() {
+        // The series was deleted here and Outlook is still naming its days.
+        // A moved day, not a cancelled one: a cancelled day only ever
+        // touches a row that already exists or a series that can still be
+        // looked up, so once the series itself is gone that branch is
+        // already inert on its own and cannot tell this guard apart from no
+        // guard at all. A moved day is different. Its fallback stores any
+        // day whose series cannot be found as a meeting of its own, which
+        // is correct when Outlook alone knows the series and wrong here,
+        // where this computer knows it and deleted it. Only the guard that
+        // asks whether the series' own identity was deleted, not only the
+        // day's, tells the two apart.
+        let cache = temp_cache("outlook_a_deleted_series_comes_back_a_day_at_a_time");
+        let going = the_outlook_series_already_stored(&cache, false);
+        cache
+            .delete_calendar_event(&going.id)
+            .expect("the series to be deleted here");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{}".to_string(),
+                delta_reply(&[a_graph_day_of_the_series(
+                    "made-at-outlook_20260312T090000Z",
+                    "exception",
+                    false,
+                    "2026-03-12T14:00:00.0000000",
+                    "2026-03-12T14:30:00.0000000",
+                )]),
+            ],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        heard(listening, "a deletion and a read")
+            .await
+            .expect("two requests");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert!(
+            stored.is_empty(),
+            "a series deleted on this computer came back a day at a time: {stored:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_series_with_a_change_waiting_here_keeps_waiting_when_outlook_calls_a_day_off()
+     {
+        // Two things are true at once and both have to survive: somebody
+        // typed a change to the series here that has not reached Outlook,
+        // and Outlook has called one day of it off. Writing the series
+        // back with the change no longer waiting drops the words somebody
+        // typed with nothing left to try again.
+        let cache = temp_cache("outlook_cancelled_day_keeps_the_change_waiting");
+        let waiting = the_outlook_series_already_stored(&cache, true);
+        let address = replying(delta_reply(&[a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "occurrence",
+            true,
+            THE_SLOT_START,
+            THE_SLOT_END,
+        )]))
+        .await;
+        point_the_sync_at(&cache, &address);
+
+        sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        let stored = cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the series to still be there");
+        assert!(
+            stored.pending,
+            "the change somebody typed stopped waiting without ever \
+             reaching Outlook, so nothing will try again"
+        );
+        assert_eq!(
+            stored.summary, waiting.summary,
+            "Outlook's copy was written over the words somebody typed"
+        );
+        assert!(
+            stored
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day Outlook called off was not taken off the series: {:?}",
+            stored.exception_dates
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_cancelled_at_outlook_stays_off_if_a_later_read_answers_with_the_series_itself()
+     {
+        // The Outlook mirror of the Google test with almost the same name,
+        // kept as a defence rather than a proven scenario: this program's
+        // own calendar view never names the series itself, only its days,
+        // so nothing here confirms a real account ever sends what the
+        // second read below does. What it proves is narrower and still
+        // worth having: if an item ever does arrive naming no series and
+        // matching the series' own identity, the merge must not silently
+        // erase a day the first read already learned was called off, which
+        // is exactly the shape Google's own gap took.
+        let cache = temp_cache("outlook_cancelled_day_survives_a_whole_event_read");
+        the_outlook_series_already_stored(&cache, false);
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                delta_reply(&[a_graph_day_of_the_series(
+                    "made-at-outlook_20260312T090000Z",
+                    "occurrence",
+                    true,
+                    THE_SLOT_START,
+                    THE_SLOT_END,
+                )]),
+                delta_reply(&[graph_event("made-at-outlook", "Stand-up, renamed")]),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the first sync to finish");
+        forget_the_delta_marker(&cache);
+        sync_microsoft_calendar(&cache, &graph, "a-token", "acct")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "two reads").await.expect("two requests");
+        let stored = cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "more than the series was stored: {stored:?}"
+        );
+        // Proof the second read really reached the row. Without this the
+        // test could pass because nothing happened at all.
+        assert_eq!(
+            stored[0].summary, "Stand-up, renamed",
+            "the second read never reached the stored series, so this test \
+             cannot see whether it would have erased anything"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the second read erased the day the first one took off: {:?}",
+            stored[0].exception_dates
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_read_of_one_changed_day_takes_outlooks_category_and_keeps_the_status_set_here()
+     {
+        // The per-day sibling of test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here,
+        // for the same reason its Google counterpart needed one: a calendar
+        // merges a whole event through one call to carry_over_local_only
+        // and a single changed day of a series through a second, separate
+        // call inside the new one_day_of_a_microsoft_series, each passing
+        // its own arguments. This is the only route to the second call.
+        //
+        // The stored category and the answer's category are made to differ
+        // on purpose. A fixture that leaves them the same could pass
+        // whether or not the merge ever ran at all, which is exactly the
+        // gap this test exists to close.
+        let cache = temp_cache("outlook_per_day_read_whose_copy_survives");
+        the_outlook_series_already_stored(&cache, false);
+        an_event_already_synced_in(
+            &cache,
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "made-at-outlook_20260312T090000Z",
+            "Personal",
+            "tentative",
+        );
+        let mut changed_day = a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "exception",
+            false,
+            "2026-03-12T14:00:00.0000000",
+            "2026-03-12T14:30:00.0000000",
+        );
+        changed_day["categories"] = serde_json::json!(["Work"]);
+        let address = replying(delta_reply(&[changed_day])).await;
+        point_the_sync_at(&cache, &address);
+
+        sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        let stored = cache
+            .get_event_by_provider_id("acct", "made-at-outlook_20260312T090000Z")
+            .expect("the calendar to be readable")
+            .expect("the day to still be there");
+        assert_eq!(
+            stored.categories, "Work",
+            "Outlook holds this field too now, so its answer is the one \
+             that has to arrive"
+        );
+        assert_eq!(
+            stored.status, "tentative",
+            "Graph has no field for this, so the status set here has to \
+             survive the read"
         );
     }
 
