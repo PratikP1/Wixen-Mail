@@ -829,6 +829,22 @@ pub struct CalendarEventEntry {
     /// owing a pair of writes to a calendar server, and the write that takes
     /// the day off the series would be held back for ever.
     pub cut_from_event_id: Option<String>,
+    /// The RECURRENCE-ID a calendar server itself sent for this row, when it
+    /// is one VEVENT among several a single resource holds for one series.
+    /// Nothing for an ordinary event and nothing for the series' own row.
+    ///
+    /// Set the moment such a row is read, whether or not the series it
+    /// belongs to is stored here yet: a brand-new account's first sync, a
+    /// series outside the window a sync asked for, or a resource whose answer
+    /// never carries the master alongside its override all leave
+    /// `cut_from_event_id` unset, because there is no local series row to
+    /// name. This field does not depend on one existing. A calendar server
+    /// gives such a row no address of its own; the whole resource is
+    /// addressed under the series' own web link, so an edit or a delete aimed
+    /// at this row on its own would reach every day of the series, not just
+    /// this one. Reading this field is how that is known without first
+    /// having to find the series.
+    pub provider_recurrence_id: Option<String>,
 }
 
 /// Reminder entry
@@ -1806,6 +1822,12 @@ impl MessageCache {
         // already stored, which is the right answer for all of them: until
         // this shipped no day had ever been cut out of a series.
         self.ensure_column_exists("calendar_events", "cut_from_event_id", "TEXT")?;
+        // The RECURRENCE-ID a calendar server itself sent for a row, when the
+        // one resource it came from holds a series and a day changed out of
+        // it together. Nothing for every event already stored, which is the
+        // right answer for all of them: until this shipped nothing recorded
+        // this fact independently of whether the series was stored here too.
+        self.ensure_column_exists("calendar_events", "provider_recurrence_id", "TEXT")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -2331,6 +2353,12 @@ impl MessageCache {
                 -- there and missing here is dropped again on exactly the
                 -- oldest databases, and every later read naming it fails.
                 cut_from_event_id TEXT,
+                -- Left out of EVENT_COLUMNS for the same reason as the three
+                -- columns above, and named here for the same reason
+                -- `cut_from_event_id` is: a database old enough to need this
+                -- rebuild predates a calendar server ever sending one VEVENT
+                -- among several for one series, so there is nothing to copy.
+                provider_recurrence_id TEXT,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

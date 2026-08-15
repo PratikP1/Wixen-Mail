@@ -1227,6 +1227,10 @@ fn event_entry(
         // been told about, whether it is a new event or a correction to one.
         pending: true,
         cut_from_event_id: None,
+        // The editor makes an ordinary event; only a calendar server itself
+        // sends one VEVENT among several for one series. See the field's own
+        // doc comment.
+        provider_recurrence_id: None,
     }
 }
 
@@ -2030,6 +2034,9 @@ fn store_new_item(
                 // off is not something any screen here offers.
                 exception_dates: None,
                 cut_from_event_id: None,
+                // Made here, so it is an ordinary event, not one VEVENT among
+                // several a calendar server sent for one series.
+                provider_recurrence_id: None,
             })
         }
         ItemKind::Reminder => cache.save_reminder(&ReminderEntry {
@@ -6260,6 +6267,7 @@ mod changing_one_day_of_a_series {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         };
         cache.save_calendar_event(&series).expect("the series");
         series
@@ -7201,6 +7209,42 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
             !allows.shares_its_address_with_the_series_it_left,
             "an ordinary day that already has an address of its own was read \
              as though it still shared its series' address"
+        );
+    }
+
+    #[test]
+    fn test_what_this_rows_calendar_allows_flags_a_row_whose_series_is_not_yet_resolved() {
+        // The round-22 gap, reproduced at the level production code actually
+        // calls: a brand-new account's first sync (or a series outside the
+        // window a sync asked for) leaves `cut_from_event_id` unset, because
+        // there is no local series row to cut the day from yet. The lookup
+        // this flag depends on, `cache.get_event_by_id` at the series'
+        // identity, never even runs in that case: nothing here saves a series
+        // row at all. A row like this has to be flagged some other way, or
+        // this glue code asks the pure function about a series that does not
+        // exist and gets back "nothing is shared".
+        let cache = a_cache("series_not_yet_resolved");
+        a_calendar_on_a_server(&cache);
+        // Built off a series-shaped row from a cache of its own, so `moved`
+        // carries realistic values without a series ever being saved to the
+        // cache this test actually asks about.
+        let shaped_like_a_series = a_weekly_series(&a_cache("series_shape_only"));
+        let moved = CalendarEventEntry {
+            id: "moved-1".to_string(),
+            provider_event_id: Some("uid-1:20260803T090000Z".to_string()),
+            recurrence_rule: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: Some("2026-08-03T09:00:00Z".to_string()),
+            ..shaped_like_a_series
+        };
+        cache.save_calendar_event(&moved).expect("the moved day");
+
+        let allows = what_this_rows_calendar_allows(&cache, &CalendarEventItem::from_entry(&moved));
+
+        assert!(
+            allows.shares_its_address_with_the_series_it_left,
+            "a day the provider itself named as a RECURRENCE-ID override was \
+             not flagged just because its series is not stored here yet"
         );
     }
 }

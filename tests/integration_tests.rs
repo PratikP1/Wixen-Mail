@@ -687,6 +687,7 @@ fn test_calendar_manager_visibility_filters_unified() {
         pending: false,
         exception_dates: None,
         cut_from_event_id: None,
+        provider_recurrence_id: None,
     });
 
     assert_eq!(mgr.unified_events().len(), 1);

@@ -849,6 +849,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 

@@ -1923,23 +1923,37 @@ impl WhatTheCalendarAllows {
     }
 }
 
-/// Whether this row still lives at the same address as the series it names in
-/// `cut_from_event_id`.
+/// Whether this row still lives at the same address as the series it left.
 ///
-/// True only for a day a calendar server itself moved or changed out of a
-/// series. One CalDAV document holds a series and every day changed out of
-/// it, so the read that first meets such a day stores it under the series'
-/// own web link, because there is no address of its own to give it yet. An
-/// edit or a delete aimed at that row through the ordinary whole-event path
-/// would then reach the whole document: every other day of the series too,
-/// not the one day somebody opened.
+/// True for a day a calendar server itself moved or changed out of a series.
+/// One CalDAV document holds a series and every day changed out of it, so the
+/// read that first meets such a day stores it under the series' own web
+/// link, because there is no address of its own to give it yet. An edit or a
+/// delete aimed at that row through the ordinary whole-event path would then
+/// reach the whole document: every other day of the series too, not the one
+/// day somebody opened.
 ///
-/// False for a day taken off a series through the one-day answer this program
-/// already offers. That row keeps `cut_from_event_id` for as long as it
-/// exists, but the first time it reaches a calendar server it is created as a
-/// resource of its own, and from then on its address and the series' address
-/// differ: it is an ordinary, safely editable appointment that happens to
-/// remember which series it came from.
+/// Answered two ways, because the series that would prove it is not always
+/// there to ask. `row.provider_recurrence_id` is set the moment such a row is
+/// read, whether or not this program has the series stored yet, so it is
+/// checked first and settles the question on its own: a row a calendar
+/// server sent as one VEVENT among several for one series shares that
+/// series' address by the shape of where it came from, not by anything
+/// compared against a row that might not exist locally at all. A brand-new
+/// account's first sync, a series outside the window a sync asked for, and a
+/// resource whose answer never carries the master alongside its override all
+/// leave `cut_from_event_id` unset on a row like this, which is exactly the
+/// condition this check must not depend on.
+///
+/// Without a `provider_recurrence_id`, the older comparison still applies,
+/// for a row named in `cut_from_event_id`: matched against the series it
+/// names, sharing its address is true only when both are known to be at the
+/// same web link. False for a day taken off a series through the one-day
+/// answer this program already offers. That row keeps `cut_from_event_id`
+/// for as long as it exists, but the first time it reaches a calendar server
+/// it is created as a resource of its own, and from then on its address and
+/// the series' address differ: it is an ordinary, safely editable
+/// appointment that happens to remember which series it came from.
 ///
 /// `series` is trusted only once its own identity is checked against what
 /// `row` names. A caller handing in the wrong row, or a stale one, must not
@@ -1948,6 +1962,9 @@ pub fn shares_its_address_with_the_series_it_left(
     row: &CalendarEventEntry,
     series: Option<&CalendarEventEntry>,
 ) -> bool {
+    if row.provider_recurrence_id.is_some() {
+        return true;
+    }
     let Some(cut_from) = row.cut_from_event_id.as_deref() else {
         return false;
     };
@@ -2643,6 +2660,11 @@ pub fn google_event_to_local(
         updated_at: now,
         pending: false,
         cut_from_event_id: None,
+        // Google gives a day moved or changed out of a series an identity of
+        // its own from the moment it first mentions it, never a shared
+        // resource the way a calendar server does, so this fact never arises
+        // here. See the field's own doc comment.
+        provider_recurrence_id: None,
     }
 }
 
@@ -3068,6 +3090,11 @@ pub fn ms_event_to_local(
         updated_at: now,
         pending: false,
         cut_from_event_id: None,
+        // Outlook gives a day moved or changed out of a series an identity of
+        // its own from the moment it first mentions it, never a shared
+        // resource the way a calendar server does, so this fact never arises
+        // here. See the field's own doc comment.
+        provider_recurrence_id: None,
     }
 }
 
@@ -3501,6 +3528,27 @@ mod tests {
             &day,
             Some(&series)
         ));
+    }
+
+    #[test]
+    fn test_a_day_carrying_a_provider_recurrence_id_shares_the_series_address_even_when_the_series_is_not_given()
+     {
+        // The ordinary first sync of a brand-new account: a calendar server
+        // names a moved or changed day before this program has ever stored
+        // the series it came from, so there is no local row to compare
+        // addresses against and `cut_from_event_id` is never set either. A day
+        // like that must still be read as sharing its series' address, or the
+        // gate that refuses an edit or delete of it never fires and a delete
+        // reaches the whole series.
+        let mut day = an_event_stored_here();
+        day.provider_recurrence_id = Some("20260803T090000Z".to_string());
+        day.cut_from_event_id = None;
+        assert!(
+            shares_its_address_with_the_series_it_left(&day, None),
+            "a day the provider itself named as a RECURRENCE-ID override was \
+             not read as sharing its series' address just because the series \
+             is not stored here yet"
+        );
     }
 
     #[test]
@@ -4076,6 +4124,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 
@@ -4806,6 +4855,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         };
 
         let google = local_to_google_event(&local, TheBodyIsFor::ChangingIt)
@@ -4877,6 +4927,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         };
 
         let ms =
@@ -4919,6 +4970,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         });
         mgr.add_event(CalendarEventEntry {
             id: "e2".to_string(),
@@ -4950,6 +5002,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         });
 
         let day_events = mgr.events_for_day("2026-03-05");
@@ -5013,6 +5066,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 
@@ -5255,6 +5309,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 

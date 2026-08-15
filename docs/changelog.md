@@ -23,6 +23,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   server: Google and Outlook already give a moved or changed day an address
   of its own, so editing or deleting one of those was never affected.
 
+  The refusal also now covers the very first sync of a new account, and any
+  other sync where this program has not yet downloaded the rest of the
+  meeting a moved day belongs to. Until now, the refusal only worked once the
+  rest of the meeting had already been downloaded on an earlier sync: a moved
+  or changed day met for the first time on its own looked like an ordinary
+  meeting, and deleting or editing it could still silently delete the whole
+  meeting from the server. It is caught now the moment such a day is seen,
+  whether or not the rest of the meeting has been downloaded yet.
+
   Known limitations: this program still cannot send a targeted change to one
   moved or changed day of a repeating meeting back to a calendar server on
   its own. Refusing cleanly is the whole fix for now.

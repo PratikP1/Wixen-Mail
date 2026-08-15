@@ -36,7 +36,8 @@ const EVENT_COLS: &str =
      start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
      status, recurrence_rule, source_provider, etag, web_link, show_as,
      last_modified_remote, last_synced_at, attendees_json, reminders_json,
-     created_at, updated_at, categories, pending, exception_dates, cut_from_event_id";
+     created_at, updated_at, categories, pending, exception_dates, cut_from_event_id,
+     provider_recurrence_id";
 
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
 fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
@@ -73,6 +74,7 @@ fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
         pending: row.get(26)?,
         exception_dates: row.get(27)?,
         cut_from_event_id: row.get(28)?,
+        provider_recurrence_id: row.get(29)?,
     })
 }
 
@@ -102,12 +104,13 @@ impl MessageCache {
               start_datetime, end_datetime, start_date, end_date, is_all_day, time_zone,
               status, recurrence_rule, source_provider, etag, web_link, show_as,
               last_modified_remote, last_synced_at, attendees_json, reminders_json,
-              created_at, updated_at, categories, pending, exception_dates, cut_from_event_id)
+              created_at, updated_at, categories, pending, exception_dates, cut_from_event_id,
+              provider_recurrence_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23,
                      COALESCE((SELECT created_at FROM calendar_events
                                WHERE account_id = ?2 AND calendar_id IS ?4 AND provider_event_id = ?3), ?24),
-                     ?25, ?26, ?27, ?28, ?29)
+                     ?25, ?26, ?27, ?28, ?29, ?30)
              ON CONFLICT(id) DO UPDATE SET
                 provider_event_id = COALESCE(excluded.provider_event_id, calendar_events.provider_event_id),
                 calendar_id = excluded.calendar_id,
@@ -134,6 +137,7 @@ impl MessageCache {
                 pending = excluded.pending,
                 exception_dates = excluded.exception_dates,
                 cut_from_event_id = excluded.cut_from_event_id,
+                provider_recurrence_id = excluded.provider_recurrence_id,
                 updated_at = excluded.updated_at
              ON CONFLICT(account_id, calendar_id, provider_event_id) DO UPDATE SET
                 summary = excluded.summary,
@@ -159,6 +163,7 @@ impl MessageCache {
                 pending = excluded.pending,
                 exception_dates = excluded.exception_dates,
                 cut_from_event_id = excluded.cut_from_event_id,
+                provider_recurrence_id = excluded.provider_recurrence_id,
                 updated_at = excluded.updated_at",
             params![
                 &event.id, &event.account_id, &event.provider_event_id, &event.calendar_id,
@@ -171,7 +176,7 @@ impl MessageCache {
                 &event.last_modified_remote, &event.last_synced_at,
                 &event.attendees_json, &event.reminders_json,
                 &now, &now, &event.categories, &event.pending, &event.exception_dates,
-                &event.cut_from_event_id,
+                &event.cut_from_event_id, &event.provider_recurrence_id,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
         Ok(())
@@ -659,6 +664,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 
@@ -733,6 +739,29 @@ mod tests {
     }
 
     #[test]
+    fn test_a_provider_recurrence_id_survives_being_saved_and_read_back() {
+        // Defends against exactly the split this project keeps naming as its
+        // worst defect family: a column dropped from one of the five places a
+        // row's shape is spelled out (`EVENT_COLS`, `map_event_row`, the
+        // INSERT column list, either `ON CONFLICT` clause, or `params!`)
+        // leaves a value that was really saved silently missing the moment it
+        // is read back, with nothing anywhere saying so.
+        let cache = temp_cache("provider_recurrence_id_round_trip");
+        let mut event = make_event("evt-1", "acct", "e-1:20260312T090000Z", "Moved day");
+        event.provider_recurrence_id = Some("20260312T090000Z".to_string());
+        cache.save_calendar_event(&event).unwrap();
+
+        let found = cache
+            .get_event_by_id("evt-1")
+            .unwrap()
+            .expect("the row to be readable");
+        assert_eq!(
+            found.provider_recurrence_id.as_deref(),
+            Some("20260312T090000Z")
+        );
+    }
+
+    #[test]
     fn test_all_day_event() {
         let cache = temp_cache("cal_allday");
 
@@ -766,6 +795,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         };
 
         cache.save_calendar_event(&event).unwrap();

@@ -1030,6 +1030,11 @@ fn caldav_event_to_local(
         updated_at: now,
         pending: false,
         cut_from_event_id: None,
+        // Set unconditionally from what the server just sent, never worked
+        // out from anything local: a row like this shares its series' own
+        // address by the shape of where it came from, and that has to hold
+        // whether or not the series is stored here yet.
+        provider_recurrence_id: remote.recurrence_id.clone(),
     }
 }
 
@@ -1146,6 +1151,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         };
 
         let caldav = local_to_caldav_event(&local);
@@ -1232,6 +1238,7 @@ mod tests {
             pending: false,
             exception_dates: None,
             cut_from_event_id: None,
+            provider_recurrence_id: None,
         }
     }
 
@@ -1473,6 +1480,95 @@ mod tests {
              </d:prop></d:propstat></d:response>\
              </d:multistatus>"
         )
+    }
+
+    /// A CalDAV multistatus naming a moved occurrence and nothing else: the
+    /// series it was moved out of is not in this answer at all.
+    ///
+    /// The ordinary first sync of a brand-new account, a series outside the
+    /// window a sync asked for, or a resource whose answer never carries the
+    /// master alongside its override: whichever the reason, this is the shape
+    /// that reaches the sync when it happens. Built by keeping only the
+    /// second VEVENT of [`a_multistatus_holding_a_series_and_its_moved_day`],
+    /// so the two fixtures cannot come to describe the moved day differently.
+    fn a_multistatus_holding_a_moved_day_with_no_series_present() -> String {
+        let document = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        .join("\r\n");
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/cal/e-1.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>\"tag-e-1\"</d:getetag>\
+             <c:calendar-data>{document}</c:calendar-data>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>"
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_caldav_moved_day_synced_with_no_series_in_the_answer_still_carries_its_recurrence_id()
+     {
+        // The round-22 probe, made permanent: a first sync that names a moved
+        // occurrence with no series master anywhere in the answer. Before the
+        // fix, the row this leaves behind has no `cut_from_event_id` (there is
+        // no local series to cut it from) and nothing else recorded that it
+        // still shares its series' address, so the edit and delete gate never
+        // fired and a delete reached the whole series.
+        let cache = temp_cache("caldav_moved_day_no_series_present");
+        let mut calendar = container("cal-no-series-yet", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_moved_day_with_no_series_present(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "a moved day with no series in the answer should leave one row, \
+             not {}: {stored:?}",
+            stored.len()
+        );
+        assert_eq!(
+            stored[0].cut_from_event_id, None,
+            "the precondition this test is about: no local series row exists \
+             to cut this day from, so `cut_from_event_id` really is unset"
+        );
+        assert_eq!(
+            stored[0].provider_recurrence_id.as_deref(),
+            Some("2026-03-12T09:00:00Z"),
+            "the day's own RECURRENCE-ID was not carried, so nothing records \
+             that this row still shares its series' address even though the \
+             series was never resolved"
+        );
     }
 
     #[tokio::test]
@@ -3279,6 +3375,72 @@ mod tests {
         }
     }
 
+    // ── The same exception, met before its series is resolved locally ───────
+    //
+    // Round 22 fixed the case above: a series already stored here. It left
+    // open the ordinary first sync of a brand-new account, where a moved day
+    // arrives with no local series row to compare it against at all.
+    // `a_series_and_its_moved_day_synced_once` above cannot stand in for that:
+    // it syncs a document naming both the series and the moved day, so the
+    // series is always resolved by the time it returns. The two helpers below
+    // build the unresolved shape instead, by syncing a document that never
+    // names the series at all.
+
+    /// A cache holding only the day a calendar server moved out of a series,
+    /// synced from an answer that never names the series: the ordinary first
+    /// sync of a brand-new account, or any sync that meets a moved day before
+    /// its series.
+    async fn a_moved_day_synced_with_no_series_present(
+        label: &str,
+    ) -> (TempHome<MessageCache>, CalendarEventEntry) {
+        let cache = temp_cache(label);
+        let mut calendar = container("cal-occurrence-exception-unresolved", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_moved_day_with_no_series_present(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the first sync to finish");
+
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "a moved day with no series in the answer should leave one row: {stored:?}"
+        );
+        (cache, stored[0].clone())
+    }
+
+    /// What `can_be_honoured` says about a whole-event change to a row whose
+    /// series was never resolved, built the same way
+    /// `what_this_rows_calendar_allows` builds it in production when the
+    /// series lookup finds nothing: `series` is `None`, not skipped.
+    fn what_a_whole_event_change_to_an_unresolved_day_allows(
+        moved: &CalendarEventEntry,
+    ) -> crate::application::calendar::WhatTheCalendarAllows {
+        crate::application::calendar::WhatTheCalendarAllows {
+            goes: crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+            keeping_the_day_apart: None,
+            shares_its_address_with_the_series_it_left:
+                crate::application::calendar::shares_its_address_with_the_series_it_left(
+                    moved, None,
+                ),
+        }
+    }
+
     #[tokio::test]
     async fn test_editing_a_caldav_occurrence_exception_is_refused_before_it_can_loop_forever() {
         // Before the gate: this row's own repeat rule is empty, so the
@@ -3437,6 +3599,166 @@ mod tests {
                     "deleting one occurrence exception sent {} rather than \
                      refusing: that reaches the whole series it shares an \
                      address with, not just the one day that was opened",
+                    asked_for(&request)
+                );
+            }
+            Err(refused) => {
+                assert!(refused.contains("Nothing has been changed"), "{refused}");
+                assert!(
+                    !refused.to_lowercase().contains("every day in the series"),
+                    "the refusal suggests editing the whole series: {refused}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever()
+     {
+        // The round-22 gap, made permanent: the exact probe scenario that
+        // round found live, a first sync naming a moved occurrence with no
+        // series master anywhere in the answer. `cut_from_event_id` is never
+        // set here, because there is no local series row to cut this day
+        // from, so the gate must not depend on one existing.
+        let (cache, moved) =
+            a_moved_day_synced_with_no_series_present("edit_unresolved_occurrence").await;
+        let allows = what_a_whole_event_change_to_an_unresolved_day_allows(&moved);
+
+        match crate::application::calendar::can_be_honoured(
+            crate::application::calendar::WhatIsBeingDone::Changing,
+            crate::application::calendar::EditMeans::WholeSeries,
+            &allows,
+        ) {
+            Ok(()) => {
+                let mut calendar2 = container("cal-occurrence-exception-unresolved", "acct");
+                let (address2, listening2) = answering_in_turn(
+                    "200 OK",
+                    "text/calendar",
+                    vec![
+                        Answer::plain(a_document_the_server_holds("e-1")),
+                        Answer::plain(a_multistatus_holding_a_moved_day_with_no_series_present()),
+                    ],
+                )
+                .await;
+                calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
+
+                let mut edited = moved.clone();
+                edited.summary = "Weekly review, edited the ordinary way".to_string();
+                edited.web_link = Some(format!("http://{address2}/cal/e-1.ics"));
+                edited.pending = true;
+                cache
+                    .save_calendar_event(&edited)
+                    .expect("the edit to be stored");
+
+                let result = sync_caldav_calendar(
+                    &cache,
+                    &CalDavClient::allowed_to_change_things(),
+                    &calendar2,
+                    "acct",
+                    "user",
+                    "secret",
+                )
+                .await
+                .expect("the second sync to finish");
+                let _ = heard(listening2, "a preflight read and the calendar read").await;
+
+                assert!(
+                    result.errors.is_empty(),
+                    "editing an occurrence exception through the ordinary path \
+                     reached the calendar server and failed: {:?}",
+                    result.errors
+                );
+                let after = cache
+                    .get_event_by_id(&edited.id)
+                    .expect("the cache to be readable")
+                    .expect("the row to still exist");
+                assert!(
+                    !after.pending,
+                    "the edit is stuck retrying at the calendar server for \
+                     ever: {after:?}"
+                );
+            }
+            Err(refused) => {
+                // The fix: refused before anything is written, so the doomed
+                // push above is never reached.
+                assert!(refused.contains("Nothing has been changed"), "{refused}");
+                assert!(
+                    !refused.to_lowercase().contains("every day in the series"),
+                    "the refusal suggests editing the whole series, which \
+                     would change every day rather than just the one that was \
+                     opened: {refused}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_caldav_occurrence_exception_whose_series_was_never_resolved_never_sends_a_delete_for_the_whole_series()
+     {
+        // The round-22 gap, made permanent: the exact probe scenario that
+        // round found live, a first sync naming a moved occurrence with no
+        // series master anywhere in the answer. Before the fix: the generic
+        // delete path records a deletion note carrying this row's own
+        // `web_link`, which is the series' own shared resource, and the next
+        // sync sends an unconditional DELETE there. WebDAV DELETE removes the
+        // whole resource: the entire series goes, silently, not just the one
+        // day somebody opened.
+        let (cache, moved) =
+            a_moved_day_synced_with_no_series_present("delete_unresolved_occurrence").await;
+        let allows = what_a_whole_event_change_to_an_unresolved_day_allows(&moved);
+
+        match crate::application::calendar::can_be_honoured(
+            crate::application::calendar::WhatIsBeingDone::Deleting,
+            crate::application::calendar::EditMeans::WholeSeries,
+            &allows,
+        ) {
+            Ok(()) => {
+                let mut calendar2 = container("cal-occurrence-exception-unresolved", "acct");
+                let (address2, listening2) = answering(
+                    "207 Multi-Status",
+                    "application/xml; charset=utf-8",
+                    a_multistatus_holding_a_moved_day_with_no_series_present(),
+                )
+                .await;
+                calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
+
+                // Pointed at the address under test, the same way the edit
+                // test above points its row there, so the delete this test is
+                // watching for would really reach this loopback server rather
+                // than one that shut down after the first sync.
+                let mut still_at_its_series_address = moved.clone();
+                still_at_its_series_address.web_link =
+                    Some(format!("http://{address2}/cal/e-1.ics"));
+                cache
+                    .save_calendar_event(&still_at_its_series_address)
+                    .expect("the row to be restored at the address under test");
+
+                // The generic delete path both real UI call sites take:
+                // `presentation::managers`'s calendar-window handler and its
+                // cross-panel `PimCommand::Delete` handler.
+                cache
+                    .delete_calendar_event(&still_at_its_series_address.id)
+                    .expect("the deletion to be noted");
+
+                let _ = sync_caldav_calendar(
+                    &cache,
+                    &CalDavClient::allowed_to_change_things(),
+                    &calendar2,
+                    "acct",
+                    "user",
+                    "secret",
+                )
+                .await;
+
+                let request = heard(listening2, "the calendar being read or deleted from")
+                    .await
+                    .expect("one request");
+                assert!(
+                    !asked_for(&request).starts_with("DELETE"),
+                    "deleting one occurrence exception whose series was never \
+                     resolved sent {} rather than refusing: that reaches the \
+                     whole series it shares an address with, not just the \
+                     one day that was opened",
                     asked_for(&request)
                 );
             }
