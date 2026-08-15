@@ -1900,6 +1900,16 @@ pub struct WhatTheCalendarAllows {
     /// clause. Nothing where it can be, and nothing for any calendar but a
     /// calendar server, which is the only one anything is sent from.
     pub keeping_the_day_apart: Option<String>,
+    /// Whether this row still lives at the same address as the series it was
+    /// cut out of, and so cannot be edited or deleted on its own.
+    ///
+    /// Only ever computed true for a calendar server. A day Google or Outlook
+    /// moved out of a series is given an identity of its own from the moment
+    /// this program first hears about it, and where either of them fills in a
+    /// web link at all it is a page to open in a browser, never the address a
+    /// write goes to, so the same question asked of one of theirs would be
+    /// comparing two things that were never the same kind of value.
+    pub shares_its_address_with_the_series_it_left: bool,
 }
 
 impl WhatTheCalendarAllows {
@@ -1908,8 +1918,43 @@ impl WhatTheCalendarAllows {
         Self {
             goes,
             keeping_the_day_apart: None,
+            shares_its_address_with_the_series_it_left: false,
         }
     }
+}
+
+/// Whether this row still lives at the same address as the series it names in
+/// `cut_from_event_id`.
+///
+/// True only for a day a calendar server itself moved or changed out of a
+/// series. One CalDAV document holds a series and every day changed out of
+/// it, so the read that first meets such a day stores it under the series'
+/// own web link, because there is no address of its own to give it yet. An
+/// edit or a delete aimed at that row through the ordinary whole-event path
+/// would then reach the whole document: every other day of the series too,
+/// not the one day somebody opened.
+///
+/// False for a day taken off a series through the one-day answer this program
+/// already offers. That row keeps `cut_from_event_id` for as long as it
+/// exists, but the first time it reaches a calendar server it is created as a
+/// resource of its own, and from then on its address and the series' address
+/// differ: it is an ordinary, safely editable appointment that happens to
+/// remember which series it came from.
+///
+/// `series` is trusted only once its own identity is checked against what
+/// `row` names. A caller handing in the wrong row, or a stale one, must not
+/// be read as though `row` shares an address it does not.
+pub fn shares_its_address_with_the_series_it_left(
+    row: &CalendarEventEntry,
+    series: Option<&CalendarEventEntry>,
+) -> bool {
+    let Some(cut_from) = row.cut_from_event_id.as_deref() else {
+        return false;
+    };
+    let Some(series) = series.filter(|series| series.id == cut_from) else {
+        return false;
+    };
+    row.web_link.is_some() && row.web_link == series.web_link
 }
 
 /// Whether an answer can be carried out, or the sentence saying why not.
@@ -1935,6 +1980,15 @@ pub fn can_be_honoured(
     means: EditMeans,
     allows: &WhatTheCalendarAllows,
 ) -> std::result::Result<(), String> {
+    // Checked before either answer is asked about. A row still filed at its
+    // series' own address cannot be reached on its own at all yet, whichever
+    // of the two was chosen: the whole-event path this program has always had
+    // would write or delete the whole document, and the one-day path is for a
+    // day this computer is cutting out of a series now, not one a server has
+    // already moved.
+    if allows.shares_its_address_with_the_series_it_left {
+        return Err(a_shared_address_is_refused(done));
+    }
     match (means, allows.goes) {
         (EditMeans::WholeSeries, _) => Ok(()),
         (EditMeans::OneDay, WhereAChangeGoes::ACalendarServer | WhereAChangeGoes::KeptHere) => {
@@ -1962,6 +2016,34 @@ pub fn can_be_honoured(
             further_off_for(refused),
         )),
     }
+}
+
+/// The refusal for a row still filed at the address of the series it was cut
+/// out of.
+///
+/// One calendar document holds a series and every day changed out of it, so
+/// reaching such a row through the ordinary whole-event edit or delete would
+/// reach that whole document: every other day of the series too, not the one
+/// day somebody opened. Nothing here can change or delete one day at that
+/// address on its own yet, so the honest answer is to refuse rather than
+/// reach further than was asked.
+///
+/// Silent about editing the whole series as a way round this, on purpose:
+/// that would change every day, which is a worse mistake than the one this
+/// refusal is preventing.
+fn a_shared_address_is_refused(done: WhatIsBeingDone) -> String {
+    let verb = match done {
+        WhatIsBeingDone::Changing => "Changing",
+        WhatIsBeingDone::Deleting => "Deleting",
+    };
+    format!(
+        "{verb} this day on its own is not something this can do yet: your \
+         calendar server already moved or changed it out of its series, and \
+         it still shares an address there with the whole series. Reaching \
+         that address would reach every day of the series, not just this \
+         one. Nothing has been changed. Use your calendar server to change \
+         or delete this day directly; that already works there."
+    )
 }
 
 /// The sentence read under an answer that cannot be carried out.
@@ -3341,6 +3423,86 @@ mod tests {
         assert_eq!(where_a_change_goes(None), WhereAChangeGoes::KeptHere);
     }
 
+    // ── Whether a day still lives at its series' own address ─────────────
+
+    /// A day cut out of a series, and the series it names, filed at one
+    /// shared web link the way a day a calendar server itself moved always
+    /// is: one CalDAV document holds the series and every day changed out of
+    /// it, under one address.
+    fn a_day_still_at_its_series_address() -> (CalendarEventEntry, CalendarEventEntry) {
+        let mut series = an_event_stored_here();
+        series.id = "series-1".to_string();
+        series.web_link = Some("https://example.test/cal/e-1.ics".to_string());
+
+        let mut day = an_event_stored_here();
+        day.id = "day-1".to_string();
+        day.cut_from_event_id = Some(series.id.clone());
+        day.web_link = series.web_link.clone();
+
+        (day, series)
+    }
+
+    #[test]
+    fn test_a_day_never_cut_out_of_a_series_shares_no_address_with_one() {
+        let day = an_event_stored_here();
+        assert!(!shares_its_address_with_the_series_it_left(&day, None));
+    }
+
+    #[test]
+    fn test_a_day_cut_out_of_a_series_shares_no_address_when_no_series_is_given() {
+        let (day, _series) = a_day_still_at_its_series_address();
+        assert!(!shares_its_address_with_the_series_it_left(&day, None));
+    }
+
+    #[test]
+    fn test_a_day_shares_no_address_with_a_series_it_was_not_cut_from() {
+        // Defends the function against a caller handing in the wrong series,
+        // rather than trusting whatever it is given.
+        let (day, _series) = a_day_still_at_its_series_address();
+        let mut some_other_series = an_event_stored_here();
+        some_other_series.id = "not-the-one".to_string();
+        some_other_series.web_link = day.web_link.clone();
+        assert!(
+            !shares_its_address_with_the_series_it_left(&day, Some(&some_other_series)),
+            "a series that is not the one this day was cut from was trusted anyway"
+        );
+    }
+
+    #[test]
+    fn test_a_day_shares_no_address_when_neither_row_has_one() {
+        let (mut day, mut series) = a_day_still_at_its_series_address();
+        day.web_link = None;
+        series.web_link = None;
+        assert!(!shares_its_address_with_the_series_it_left(
+            &day,
+            Some(&series)
+        ));
+    }
+
+    #[test]
+    fn test_a_day_shares_no_address_once_it_has_one_of_its_own() {
+        // The day this program already lets somebody take off a series on
+        // their own: it keeps `cut_from_event_id` for ever, but the first
+        // time it reaches a calendar server it is given a resource of its
+        // own, and from then on its address and the series' address differ.
+        let (mut day, series) = a_day_still_at_its_series_address();
+        day.web_link = Some("https://example.test/cal/day-1-of-its-own.ics".to_string());
+        assert!(
+            !shares_its_address_with_the_series_it_left(&day, Some(&series)),
+            "an ordinary day already given an address of its own was read as \
+             still sharing its series' address"
+        );
+    }
+
+    #[test]
+    fn test_a_day_still_at_its_series_own_address_shares_it() {
+        let (day, series) = a_day_still_at_its_series_address();
+        assert!(shares_its_address_with_the_series_it_left(
+            &day,
+            Some(&series)
+        ));
+    }
+
     #[test]
     fn test_changing_every_day_of_a_series_is_what_this_can_do() {
         for goes in EVERY_CALENDAR {
@@ -3353,6 +3515,32 @@ mod tests {
                 Ok(()),
                 "for {goes:?}"
             );
+        }
+    }
+
+    #[test]
+    fn test_a_row_that_shares_its_address_with_its_series_is_refused_whatever_is_chosen() {
+        // The round-21 defect: a day a calendar server itself moved out of a
+        // series, still filed at the series' own address, meeting the
+        // ordinary edit and delete paths for the first time. Such a row's own
+        // repeat rule is always empty, so every real caller reaches this
+        // through `EditMeans::WholeSeries`; the whole matrix is walked anyway
+        // so the refusal cannot come to depend on an answer nobody asked for.
+        for goes in EVERY_CALENDAR {
+            for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
+                for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
+                    let allows = WhatTheCalendarAllows {
+                        goes,
+                        keeping_the_day_apart: None,
+                        shares_its_address_with_the_series_it_left: true,
+                    };
+                    assert!(
+                        can_be_honoured(done, means, &allows).is_err(),
+                        "a row sharing its series' own address was allowed for \
+                         {done:?} {means:?} on {goes:?}"
+                    );
+                }
+            }
         }
     }
 
@@ -3427,6 +3615,7 @@ mod tests {
                 the_zone_that_cannot_be_written(&a_day_in_a_zone_no_server_can_be_told())
                     .expect("a zone no server can be told"),
             ),
+            shares_its_address_with_the_series_it_left: false,
         }
     }
 
@@ -3538,6 +3727,7 @@ mod tests {
                 let allows = WhatTheCalendarAllows {
                     goes,
                     keeping_the_day_apart,
+                    shares_its_address_with_the_series_it_left: false,
                 };
                 for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
                     for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
@@ -3652,14 +3842,17 @@ mod tests {
         );
         for goes in EVERY_CALENDAR {
             for keeping_the_day_apart in [None, Some(clause.clone())] {
-                let allows = WhatTheCalendarAllows {
-                    goes,
-                    keeping_the_day_apart,
-                };
-                for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
-                    for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
-                        if let Err(said) = can_be_honoured(done, means, &allows) {
-                            check(&format!("{done:?} {means:?} on {goes:?}"), &said);
+                for shares_its_address_with_the_series_it_left in [false, true] {
+                    let allows = WhatTheCalendarAllows {
+                        goes,
+                        keeping_the_day_apart: keeping_the_day_apart.clone(),
+                        shares_its_address_with_the_series_it_left,
+                    };
+                    for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
+                        for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
+                            if let Err(said) = can_be_honoured(done, means, &allows) {
+                                check(&format!("{done:?} {means:?} on {goes:?}"), &said);
+                            }
                         }
                     }
                 }

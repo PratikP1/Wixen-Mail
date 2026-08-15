@@ -536,22 +536,38 @@ fn what_this_rows_calendar_allows(
     row: &CalendarEventItem,
 ) -> crate::application::calendar::WhatTheCalendarAllows {
     let goes = the_calendar_it_is_in(cache, row);
+    // Read once and reused below: what the day as it stands carries, and
+    // whether it still shares an address with the series it may have been
+    // cut out of both start from the same stored row.
+    let stored = cache.get_event_by_id(&row.id).ok().flatten();
     // The day as it stands, before the editor opens. It carries the series'
     // own time zone, and the editor has no time zone box, so this is the same
     // zone the write asks about afterwards.
-    let keeping_the_day_apart = cache
-        .get_event_by_id(&row.id)
-        .ok()
-        .flatten()
-        .and_then(|series| {
-            the_zone_that_stops_keeping_the_day(
-                goes,
-                &the_day_kept_on_its_own(&series, &wx_calendar::CalendarEventData::as_shown(row)),
+    let keeping_the_day_apart = stored.as_ref().and_then(|series| {
+        the_zone_that_stops_keeping_the_day(
+            goes,
+            &the_day_kept_on_its_own(series, &wx_calendar::CalendarEventData::as_shown(row)),
+        )
+    });
+    // Only ever true for a calendar server: Google and Outlook give a day cut
+    // out of a series an identity of its own from the moment they first hand
+    // it one, so the fact this asks about never arises for either.
+    let shares_its_address_with_the_series_it_left = goes
+        == crate::application::calendar::WhereAChangeGoes::ACalendarServer
+        && stored.as_ref().is_some_and(|held| {
+            let named_series = held
+                .cut_from_event_id
+                .as_deref()
+                .and_then(|id| cache.get_event_by_id(id).ok().flatten());
+            crate::application::calendar::shares_its_address_with_the_series_it_left(
+                held,
+                named_series.as_ref(),
             )
         });
     crate::application::calendar::WhatTheCalendarAllows {
         goes,
         keeping_the_day_apart,
+        shares_its_address_with_the_series_it_left,
     }
 }
 
@@ -7122,6 +7138,69 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                 .iter()
                 .any(|row| row.start.starts_with("2026-08-10") && row.summary == "Stand-up"),
             "the rest of the series went with it: {shown:?}"
+        );
+    }
+
+    // ── Whether a row still shares its series' own address ───────────────
+
+    /// A series and the day a calendar server moved out of it, stored the way
+    /// `caldav_sync` leaves them the first time it meets that shape: both
+    /// filed at the same web link.
+    fn a_series_and_its_moved_day(
+        cache: &MessageCache,
+    ) -> (CalendarEventEntry, CalendarEventEntry) {
+        let series = a_weekly_series(cache);
+        let moved = CalendarEventEntry {
+            id: "moved-1".to_string(),
+            provider_event_id: Some("uid-1:20260803T090000Z".to_string()),
+            recurrence_rule: None,
+            cut_from_event_id: Some(series.id.clone()),
+            ..series.clone()
+        };
+        cache.save_calendar_event(&moved).expect("the moved day");
+        (series, moved)
+    }
+
+    #[test]
+    fn test_what_this_rows_calendar_allows_flags_a_row_that_shares_its_address_with_its_series() {
+        let cache = a_cache("shares_address_with_its_series");
+        a_calendar_on_a_server(&cache);
+        let (_series, moved) = a_series_and_its_moved_day(&cache);
+
+        let allows = what_this_rows_calendar_allows(&cache, &CalendarEventItem::from_entry(&moved));
+
+        assert!(
+            allows.shares_its_address_with_the_series_it_left,
+            "a day still filed at its series' own address was not flagged"
+        );
+    }
+
+    #[test]
+    fn test_what_this_rows_calendar_allows_does_not_flag_a_day_with_an_address_of_its_own() {
+        // The pre-existing "just this one day" case. `cut_from_event_id`
+        // stays set for ever, but the day is given a resource of its own the
+        // first time it reaches the calendar server, and from then on it is
+        // an ordinary, safely editable appointment. A gate that could not
+        // tell the two apart would refuse this one for ever, the moment it
+        // was ever touched again.
+        let cache = a_cache("day_with_its_own_address");
+        a_calendar_on_a_server(&cache);
+        let (_series, moved) = a_series_and_its_moved_day(&cache);
+        let on_its_own = CalendarEventEntry {
+            web_link: Some("https://example.test/cal/moved-of-its-own.ics".to_string()),
+            ..moved
+        };
+        cache
+            .save_calendar_event(&on_its_own)
+            .expect("the day with its own address");
+
+        let allows =
+            what_this_rows_calendar_allows(&cache, &CalendarEventItem::from_entry(&on_its_own));
+
+        assert!(
+            !allows.shares_its_address_with_the_series_it_left,
+            "an ordinary day that already has an address of its own was read \
+             as though it still shared its series' address"
         );
     }
 }
