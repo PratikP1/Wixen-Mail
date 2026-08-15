@@ -149,6 +149,12 @@ fn check_contacts(parent: &Panel, palette: theme::Palette, into: &mut Vec<SiteRe
         into,
     );
     check(
+        "contacts content search",
+        &content.search_input,
+        palette.main_surface(),
+        into,
+    );
+    check(
         "contacts content list",
         &content.contact_list,
         palette.main_surface(),

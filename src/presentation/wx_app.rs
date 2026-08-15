@@ -3268,6 +3268,7 @@ impl WxMailApp {
                                     &cal_content,
                                     &cal_cp.event_list,
                                     &contacts_content,
+                                    &contacts_cp.search_input,
                                     &contacts_cp.contact_list,
                                     &contacts_cp.detail,
                                     &reminders_content,

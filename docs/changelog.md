@@ -15,7 +15,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   modules meant switching back to an uncoloured screen. The sidebar and
   content area of every module now take the same colours Mail already had,
   including the button panel used to switch between modules, Contacts'
-  detail pane, and the list and editor panes in Notes.
+  search box and detail pane, and the list and editor panes in Notes.
 
   The window a message opens into for reading is coloured now too, and so is
   the window that shows a conversation as headings. The security warning bar

@@ -88,11 +88,12 @@ pub fn build_contacts_panel(
     sizer.add(&detail, 1, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
-    // The content surface: this panel, the list that does most of the
-    // reading, and the detail sub-panel, which has a visible border of its
-    // own once a contact is chosen.
+    // The content surface: this panel, the search box, the list that does
+    // most of the reading, and the detail sub-panel, which has a visible
+    // border of its own once a contact is chosen.
     if let Some(palette) = palette {
         theme::paint(&panel, palette.main_surface());
+        theme::paint(&search_input, palette.main_surface());
         theme::paint(&contact_list, palette.main_surface());
         theme::paint(&detail, palette.main_surface());
     }
