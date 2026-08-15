@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 104 records have arrived since and have not been through it.
+# 107 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -198,13 +198,82 @@ red = [
     "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
 ]
 
+# ── A change that never reached the address book at all ─────────────────────
+#
+# A push that fails at the network carries no answer from the address book at
+# all, so it is not a refusal that could repeat for ever the way a content
+# refusal can. Read the same as a change a setting held back: kept for the
+# next sync rather than lost to a concurrent move the read in this one finds.
+
 [[guard]]
+name = "a push that failed at the network is read as one"
+file = "src/application/contacts_sync.rs"
+before = """fn the_push_failed_at_the_network(error: &Error) -> bool {
+    matches!(error, Error::Network(_))
+}"""
+after = """fn the_push_failed_at_the_network(error: &Error) -> bool {
+    let _ = error;
+    false
+}"""
+red = [
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
+]
+
+[[guard]]
+# The rule is written out once per provider, and this project has shipped a
+# bug before where only one of the two copies was covered and nothing here
+# reddened. One guard per call site, the same shape as the pair that already
+# covers the marker-conflict resend, so a fix landing in only one push
+# function cannot pass silently.
+name = "a network failure is kept for Google's push, not only Outlook's"
+file = "src/application/contacts_sync.rs"
+before = """        // now holds.
+        if sent.as_ref().is_err_and(the_push_failed_at_the_network)
+            && the_copy_here_was_written_here(&contact)
+        {
+            still_built_on_an_old_copy.note(&contact.id);
+        }"""
+after = """        // now holds.
+        if false {
+            still_built_on_an_old_copy.note(&contact.id);
+        }"""
+red = [
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
+]
+
+[[guard]]
+# The Outlook half of the pair above. Fixing only the Google push would leave
+# this call site exactly as broken as before, with nothing here to notice.
+name = "a network failure is kept for Outlook's push, not only Google's"
+file = "src/application/contacts_sync.rs"
+before = """        // it at all.
+        if sent.as_ref().is_err_and(the_push_failed_at_the_network)
+            && the_copy_here_was_written_here(&contact)
+        {
+            still_built_on_an_old_copy.note(&contact.id);
+        }"""
+after = """        // it at all.
+        if false {
+            still_built_on_an_old_copy.note(&contact.id);
+        }"""
+red = [
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
+]
+
+[[guard]]
+# Measured again after a network failure was folded into the same
+# accumulator: a push that never reaches the address book keeps the edit the
+# same way a push refused for a stale marker does, so a break here now reddens
+# both new tests as well as the one that was here first.
 name = "a change that could not be sent again is not replaced by the read"
 file = "src/application/contacts_sync.rs"
 before = """            || still_built_on_an_old_copy.holds(&the_copy_here.id))"""
 after = """            || false)"""
 red = [
     "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
 ]
 
 [[guard]]
@@ -571,6 +640,9 @@ red = [
 ]
 
 [[guard]]
+# Measured again after a network failure joined the reasons this predicate
+# gates: it is still one function guarding one line, but two more tests now
+# depend on it answering true for a contact typed here.
 name = "an edit written here and then lost is still counted and said"
 file = "src/application/contacts_sync.rs"
 before = """fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
@@ -590,6 +662,8 @@ red = [
     "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_outlook_replaced_is_counted_as_a_loss_as_well_as_stored",
     "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
     "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
@@ -644,6 +718,10 @@ red = [
 # gone. Turning it on then sent nothing, twice over: once for each setting.
 
 [[guard]]
+# Measured again after a network failure was folded into the same
+# accumulator this condition reads: the whole gate covers three reasons a
+# push can fail to leave now, not two, and a break here reddens a test for
+# each.
 name = "a change no setting let out is kept, not replaced"
 file = "src/application/contacts_sync.rs"
 before = """    if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
@@ -661,6 +739,8 @@ red = [
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
+    "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",

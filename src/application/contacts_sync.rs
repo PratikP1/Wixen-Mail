@@ -887,6 +887,22 @@ fn the_address_book_had_moved_past_it(error: &Error) -> bool {
     matches!(status, 400 | 409) && (said.contains("failed_precondition") || said.contains("etag"))
 }
 
+// ── When a change never reaches the address book at all ─────────────────────
+
+/// Whether a push failed at the network, rather than the address book itself
+/// answering it and turning it down.
+///
+/// The address book never saw this one, so it never had the chance to refuse
+/// it for a reason of its own the way a real refusal does, and a refusal for a
+/// reason of its own can repeat for ever: the same content sent again meets
+/// the same answer. A network failure carries no such reason, so it is kept
+/// the same way a change a setting held back is kept, retried whole on the
+/// next sync rather than lost to whatever the read that follows in this one
+/// finds the address book now holds.
+fn the_push_failed_at_the_network(error: &Error) -> bool {
+    matches!(error, Error::Network(_))
+}
+
 // ── Matching a provider's copy of a person to a stored contact ──────────────
 
 /// Which stored contact, if any, this address book's copy of a person is.
@@ -1184,21 +1200,30 @@ fn a_change_here_that_lost(
 /// about work that was already gone: turning it on sent nothing, because by
 /// then there was nothing left to send.
 ///
-/// Two reasons, and both of them are reasons this sync could never have won.
+/// Three reasons, and all of them are reasons this sync could never have won.
 /// A setting refused the push, and nothing but changing the setting will let it
-/// out. Or the address book turned the change down for being built on a copy it
+/// out. The address book turned the change down for being built on a copy it
 /// has moved past, and building it again on the copy it holds now did not get
-/// in either. Throwing the edit away in either case is the application losing
-/// somebody's work over its own arrangements.
+/// in either. Or the push never reached the address book at all, because the
+/// network dropped it. Throwing the edit away in any of the three is the
+/// application losing somebody's work over its own arrangements, or over a
+/// connection that had nothing to do with what was typed.
 ///
-/// A push that failed at the network is not kept, and that is a live gap rather
-/// than a decision that reads well: where the address book had also moved its
-/// copy, the read that follows still replaces the edit and says so. It is left
-/// this way because a change kept for any reason at all freezes the contact
-/// against that address book until the push works, and a push failing for a
-/// reason that never clears would freeze it for good. The refusals above both
-/// clear: one when the setting is turned on, the other on the next sync, which
-/// builds the change again on what the address book holds by then.
+/// Every one of the three clears on its own, which is what makes keeping the
+/// edit safe rather than a way to freeze a contact for good. A setting clears
+/// when it is turned on. A stale marker clears on the next sync, which builds
+/// the change again on what the address book holds by then. A network failure
+/// carries nothing that would repeat: nothing about it is remembered as state
+/// anywhere, so the very next sync attempts the push again from a clean slate,
+/// against whatever the address book holds by then.
+///
+/// This is not the same as keeping a change the address book refused for a
+/// reason of its own, content it would not accept, an account it would not
+/// recognise. That refusal can repeat for ever: sending the same words again
+/// meets the same answer, so it is left to the ordinary tie instead, and the
+/// address book wins. `test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said`
+/// pins that ending; confusing the two would freeze a contact against a
+/// refusal that never clears.
 ///
 /// Only what somebody typed here is held back this way. Once an address book's
 /// copy has replaced the edit, what is still waiting is that address book's own
@@ -2010,10 +2035,11 @@ fn version_given_by(contact: &ContactEntry, address_book: &AddressBook) -> Optio
 /// tried again next time. Failing once is not a reason to drop somebody's
 /// edit, and a refusal by one address book leaves the other's alone.
 ///
-/// Answers with the changes it offered and could not get in, because the
+/// Answers with the changes it offered and could not get in: because the
 /// address book had moved past the copy they were built on and building them
-/// again did not work either. Those must survive the read that follows in the
-/// same sync; [`keep_a_change_this_sync_could_not_send`] is what keeps them.
+/// again did not work either, or because the push never reached the address
+/// book at all. Those must survive the read that follows in the same sync;
+/// [`keep_a_change_this_sync_could_not_send`] is what keeps them.
 async fn push_changed_contacts_to_google<B: GoogleContactBook>(
     cache: &MessageCache,
     google: &B,
@@ -2058,6 +2084,18 @@ async fn push_changed_contacts_to_google<B: GoogleContactBook>(
                     continue;
                 }
             }
+        }
+
+        // A push that fails at the network never reaches Google at all, so
+        // Google never gets the chance to turn this change down for a reason
+        // of its own. That is not a refusal that can repeat for ever the way
+        // a real one can, so the edit is kept for the next sync rather than
+        // lost to whatever the read that follows in this sync finds Google
+        // now holds.
+        if sent.as_ref().is_err_and(the_push_failed_at_the_network)
+            && the_copy_here_was_written_here(&contact)
+        {
+            still_built_on_an_old_copy.note(&contact.id);
         }
 
         if let Ok(now_there) = &sent {
@@ -2117,6 +2155,15 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
                     continue;
                 }
             }
+        }
+
+        // Same reason as the Google side: a push that fails at the network
+        // never reaches Outlook, so Outlook never gets the chance to answer
+        // it at all.
+        if sent.as_ref().is_err_and(the_push_failed_at_the_network)
+            && the_copy_here_was_written_here(&contact)
+        {
+            still_built_on_an_old_copy.note(&contact.id);
         }
 
         if let Ok(now_there) = &sent {
@@ -6239,6 +6286,11 @@ mod tests {
         /// Whether a change to a contact is accepted. Refusing is the default,
         /// for the same reason.
         accepts_a_change: bool,
+        /// Whether sending a change to this address book fails at the
+        /// network, before Google itself ever answers it. How a test reaches
+        /// the path where a push failing this way is kept for the next sync
+        /// rather than lost to a concurrent move.
+        the_network_drops_the_change: bool,
         /// Whether a change comes back refused by the write gate rather than
         /// by Google, which is what an account open for reading only answers.
         the_account_is_read_only: bool,
@@ -6324,6 +6376,9 @@ mod tests {
             self.changed
                 .borrow_mut()
                 .push((provider_contact_id.to_string(), person.clone()));
+            if self.the_network_drops_the_change {
+                return Err(Error::Network("Google could not be reached".to_string()));
+            }
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Google refused the change".to_string()));
             }
@@ -6386,6 +6441,10 @@ mod tests {
         contacts: Vec<MsGraphContact>,
         accepts_a_contact: bool,
         accepts_a_change: bool,
+        /// Whether sending a change to this address book fails at the
+        /// network, before Outlook itself ever answers it. Same reason as the
+        /// Google side.
+        the_network_drops_the_change: bool,
         the_account_is_read_only: bool,
         /// The version marker Outlook puts on what it hands back, the way the
         /// Google script hands back "etag-after". Nothing here gave one until
@@ -6447,6 +6506,9 @@ mod tests {
             self.changed
                 .borrow_mut()
                 .push((provider_contact_id.to_string(), contact.clone()));
+            if self.the_network_drops_the_change {
+                return Err(Error::Network("Outlook could not be reached".to_string()));
+            }
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Microsoft refused the change".to_string()));
             }
@@ -10424,6 +10486,123 @@ mod tests {
                 .find(|identity| identity.address_book == AddressBook::Google)
                 .and_then(|identity| identity.provider_version.as_deref()),
             Some(THE_GOOGLE_MARKER_LAST_SEEN),
+            "the marker moved on without the change going, so the next sync \
+             believes there is nothing to reconcile"
+        );
+        assert_eq!(
+            result.replaced.count(),
+            0,
+            "nothing replaced the edit and somebody was told it had: {result:?}"
+        );
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a change that did not go was reported as a clean run: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move() {
+        // A push that fails at the network never reaches Google at all, so
+        // Google never gets the chance to answer it, refuse it or say its own
+        // copy has moved. That is not a refusal that can repeat for ever the
+        // way a real one can, so the edit has to survive the read that follows
+        // in the same sync the same way a change a setting refused does,
+        // rather than being lost to whatever that read finds Google now
+        // holds.
+        let cache = a_cache("the_network_drops_the_change_at_google");
+        a_contact_both_address_books_are_owed(&cache);
+        let google = ScriptedGoogle {
+            people: vec![a_google_person_at_version(
+                GOOGLES_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "etag-2",
+            )],
+            the_network_drops_the_change: true,
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the read in the same sync destroyed an edit that had just failed to reach the network"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "Google is no longer owed a change the network never delivered"
+        );
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|identity| identity.address_book == AddressBook::Google)
+                .and_then(|identity| identity.provider_version.as_deref()),
+            Some(THE_GOOGLE_MARKER_LAST_SEEN),
+            "the marker moved on without the change going, so the next sync \
+             believes there is nothing to reconcile"
+        );
+        assert_eq!(
+            result.replaced.count(),
+            0,
+            "nothing replaced the edit and somebody was told it had: {result:?}"
+        );
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a change that did not go was reported as a clean run: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move() {
+        // The Outlook half of the test above. The rule that keeps a change
+        // the network dropped is written out once per provider in this file,
+        // so it has to be proven once per provider: fixing only the Google
+        // push would leave this half exactly as broken as before, with
+        // nothing here to turn red and say so.
+        let cache = a_cache("the_network_drops_the_change_at_outlook");
+        a_contact_both_address_books_are_owed(&cache);
+        let outlook = ScriptedMicrosoft {
+            contacts: vec![a_microsoft_contact_at_version(
+                OUTLOOKS_NAME_FOR_HER,
+                THE_ADDRESS_BOOKS_OWN_WORDS,
+                "W/\"2\"",
+            )],
+            the_network_drops_the_change: true,
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        let stored = the_contact_under(&cache, "local-in-both-books");
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the read in the same sync destroyed an edit that had just failed to reach the network"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "Outlook is no longer owed a change the network never delivered"
+        );
+        assert_eq!(
+            stored
+                .known_to
+                .iter()
+                .find(|identity| identity.address_book == AddressBook::Microsoft)
+                .and_then(|identity| identity.provider_version.as_deref()),
+            Some(THE_OUTLOOK_MARKER_LAST_SEEN),
             "the marker moved on without the change going, so the next sync \
              believes there is nothing to reconcile"
         );

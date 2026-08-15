@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Fixed: a contact edit that failed to send because of the network was
+  thrown away and reported as replaced by the address book, even though the
+  address book never actually saw it.** Every contact edit made here is sent
+  to Google or Outlook on the next sync. Until now, if that send failed
+  because the connection dropped, and the address book's own copy of the
+  same contact had also changed since the last sync, the sync treated the
+  address book as having won a real disagreement over the contact. It
+  replaced the edit and counted it as lost. The edit is kept now instead,
+  the same way an edit held back by the Allow Changes setting is kept, and
+  it is sent again on the next sync.
+
+  Known limitations. If the connection keeps failing sync after sync, the
+  edit keeps waiting with no limit on how many attempts, and nothing yet
+  warns you that it has been waiting a long time. An address book that looks
+  at an edit and refuses it outright, for example because of the content
+  itself, is handled the old way: that kind of refusal can repeat forever,
+  so the address book's copy still wins and you are still told.
+
 - **Fixed: editing or deleting a day a calendar server had already moved or
   changed out of a repeating meeting could silently delete the whole meeting,
   or fail forever with a confusing error.** A calendar server stores a moved
