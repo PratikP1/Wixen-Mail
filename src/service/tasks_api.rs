@@ -463,6 +463,19 @@ pub enum TaskProgress {
 impl TaskProgress {
     /// Graph's own word as a progress state, or nothing when it is not one of
     /// the five.
+    ///
+    /// The `notStarted` arm looks redundant, and for the two callers that
+    /// exist today it is: [`ms_task_to_entry`] only asks whether the answer
+    /// equals [`Self::Completed`], and [`entry_to_ms_task`] falls back to
+    /// [`Self::NotStarted`] whenever nothing was recognised, so returning
+    /// `None` for `"notStarted"` instead of `Some(Self::NotStarted)` reaches
+    /// the same place both times. Checked against every call site in the
+    /// crate, not just those two; there are no others.
+    ///
+    /// Left in anyway. [`Self::as_word`] and this function are meant to
+    /// invert each other, `"notStarted"` is a real word Graph sends, and a
+    /// caller narrower than an equality check or a fallback should still be
+    /// able to ask this function what it means. No behaviour change.
     pub fn stored(value: &str) -> Option<Self> {
         match value {
             "notStarted" => Some(Self::NotStarted),
