@@ -3059,6 +3059,253 @@ mod tests {
         );
     }
 
+    // ── An exception the ordinary edit and delete paths never met before ────
+    //
+    // Round 21 taught the read above to bring a day like this back for the
+    // first time. Nobody had walked what the ordinary edit and delete paths
+    // do when they meet one, because before that they never reached the UI at
+    // all. Both tests below build the row the same way the read above does,
+    // from the real multi-VEVENT fixture, and then run exactly the sequence
+    // the real UI handlers run: ask `can_be_honoured` first, and act only
+    // when it does not refuse. That is what ties each test's outcome to the
+    // real gate rather than to a stand-in for it.
+
+    /// A cache holding a series and the day a calendar server moved out of
+    /// it, synced once so both rows exist exactly the way
+    /// `sync_caldav_calendar` leaves them the first time it meets that shape:
+    /// both still filed at the series' own web link.
+    async fn a_series_and_its_moved_day_synced_once(
+        label: &str,
+    ) -> (
+        TempHome<MessageCache>,
+        CalendarEventEntry,
+        CalendarEventEntry,
+    ) {
+        let cache = temp_cache(label);
+        let mut calendar = container("cal-occurrence-exception", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_its_moved_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the first sync to finish");
+
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        let series = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() == Some("e-1"))
+            .cloned()
+            .expect("the series");
+        let moved = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() != Some("e-1"))
+            .cloned()
+            .expect("the moved day");
+        (cache, series, moved)
+    }
+
+    /// What `can_be_honoured` says about a whole-event change to a row still
+    /// filed at its series' own address, built the same way
+    /// `what_this_rows_calendar_allows` builds it in production.
+    fn what_a_whole_event_change_to_it_allows(
+        moved: &CalendarEventEntry,
+        series: &CalendarEventEntry,
+    ) -> crate::application::calendar::WhatTheCalendarAllows {
+        crate::application::calendar::WhatTheCalendarAllows {
+            goes: crate::application::calendar::WhereAChangeGoes::ACalendarServer,
+            keeping_the_day_apart: None,
+            shares_its_address_with_the_series_it_left:
+                crate::application::calendar::shares_its_address_with_the_series_it_left(
+                    moved,
+                    Some(series),
+                ),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_editing_a_caldav_occurrence_exception_is_refused_before_it_can_loop_forever() {
+        // Before the gate: this row's own repeat rule is empty, so the
+        // ordinary edit window defaults straight to a whole-event save that
+        // keeps the compound identity unchanged and marks the row pending.
+        // The push that follows reads back a document naming the series' own
+        // UID, never the compound one this row is stored under, so the
+        // mismatch is reported as an error and `pending` never clears: the
+        // same failure, for ever, on every sync.
+        let (cache, series, moved) =
+            a_series_and_its_moved_day_synced_once("edit_occurrence_exception").await;
+        let allows = what_a_whole_event_change_to_it_allows(&moved, &series);
+
+        match crate::application::calendar::can_be_honoured(
+            crate::application::calendar::WhatIsBeingDone::Changing,
+            crate::application::calendar::EditMeans::WholeSeries,
+            &allows,
+        ) {
+            Ok(()) => {
+                let mut calendar2 = container("cal-occurrence-exception", "acct");
+                let (address2, listening2) = answering_in_turn(
+                    "200 OK",
+                    "text/calendar",
+                    vec![
+                        Answer::plain(a_document_the_server_holds("e-1")),
+                        Answer::plain(a_multistatus_holding_a_series_and_its_moved_day()),
+                    ],
+                )
+                .await;
+                calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
+
+                // What `event_with_edits` does to a row like this: the
+                // compound identity and the calendar server's address both
+                // carried over unchanged, only the summary and the waiting
+                // flag touched. Pointed at the address under test, the way
+                // every pending row in this file is.
+                let mut edited = moved.clone();
+                edited.summary = "Weekly review, edited the ordinary way".to_string();
+                edited.web_link = Some(format!("http://{address2}/cal/e-1.ics"));
+                edited.pending = true;
+                cache
+                    .save_calendar_event(&edited)
+                    .expect("the edit to be stored");
+
+                let result = sync_caldav_calendar(
+                    &cache,
+                    &CalDavClient::allowed_to_change_things(),
+                    &calendar2,
+                    "acct",
+                    "user",
+                    "secret",
+                )
+                .await
+                .expect("the second sync to finish");
+                let _ = heard(listening2, "a preflight read and the calendar read").await;
+
+                assert!(
+                    result.errors.is_empty(),
+                    "editing an occurrence exception through the ordinary path \
+                     reached the calendar server and failed: {:?}",
+                    result.errors
+                );
+                let after = cache
+                    .get_event_by_id(&edited.id)
+                    .expect("the cache to be readable")
+                    .expect("the row to still exist");
+                assert!(
+                    !after.pending,
+                    "the edit is stuck retrying at the calendar server for \
+                     ever: {after:?}"
+                );
+            }
+            Err(refused) => {
+                // The fix: refused before anything is written, so the doomed
+                // push above is never reached. What the sync mechanism itself
+                // does with a document naming the wrong event is proven
+                // directly in service::caldav's own tests.
+                assert!(refused.contains("Nothing has been changed"), "{refused}");
+                assert!(
+                    !refused.to_lowercase().contains("every day in the series"),
+                    "the refusal suggests editing the whole series, which \
+                     would change every day rather than just the one that was \
+                     opened: {refused}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series()
+    {
+        // The destroy-the-whole-series case. The exception row's web link is
+        // the series' own resource, because one CalDAV document holds both.
+        // Before the gate: the generic delete path records a deletion note
+        // carrying that shared address, and the next sync sends an
+        // unconditional DELETE there with no version guard. WebDAV DELETE
+        // removes the whole resource: the entire series goes, silently, not
+        // just the one day somebody opened.
+        //
+        // `test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed`
+        // just above is the positive control: it already proves a real
+        // DELETE against this exact harness is detectable, so this reuses
+        // that proof rather than repeating it.
+        let (cache, series, moved) =
+            a_series_and_its_moved_day_synced_once("delete_occurrence_exception").await;
+        let allows = what_a_whole_event_change_to_it_allows(&moved, &series);
+
+        match crate::application::calendar::can_be_honoured(
+            crate::application::calendar::WhatIsBeingDone::Deleting,
+            crate::application::calendar::EditMeans::WholeSeries,
+            &allows,
+        ) {
+            Ok(()) => {
+                let mut calendar2 = container("cal-occurrence-exception", "acct");
+                let (address2, listening2) = answering(
+                    "207 Multi-Status",
+                    "application/xml; charset=utf-8",
+                    a_multistatus_holding_a_series_and_its_moved_day(),
+                )
+                .await;
+                calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
+
+                // Pointed at the address under test, the same way the edit
+                // test above points its row there, so the delete this test
+                // is watching for would really reach this loopback server
+                // rather than one that shut down after the first sync.
+                let mut still_at_its_series_address = moved.clone();
+                still_at_its_series_address.web_link =
+                    Some(format!("http://{address2}/cal/e-1.ics"));
+                cache
+                    .save_calendar_event(&still_at_its_series_address)
+                    .expect("the row to be restored at the address under test");
+
+                // The generic delete path both real UI call sites take:
+                // `presentation::managers`'s calendar-window handler and its
+                // cross-panel `PimCommand::Delete` handler.
+                cache
+                    .delete_calendar_event(&still_at_its_series_address.id)
+                    .expect("the deletion to be noted");
+
+                let _ = sync_caldav_calendar(
+                    &cache,
+                    &CalDavClient::allowed_to_change_things(),
+                    &calendar2,
+                    "acct",
+                    "user",
+                    "secret",
+                )
+                .await;
+
+                let request = heard(listening2, "the calendar being read or deleted from")
+                    .await
+                    .expect("one request");
+                assert!(
+                    !asked_for(&request).starts_with("DELETE"),
+                    "deleting one occurrence exception sent {} rather than \
+                     refusing: that reaches the whole series it shares an \
+                     address with, not just the one day that was opened",
+                    asked_for(&request)
+                );
+            }
+            Err(refused) => {
+                assert!(refused.contains("Nothing has been changed"), "{refused}");
+                assert!(
+                    !refused.to_lowercase().contains("every day in the series"),
+                    "the refusal suggests editing the whole series: {refused}"
+                );
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows() {
         // The server takes the deletion and the read that follows in the same
