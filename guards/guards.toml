@@ -4583,6 +4583,7 @@ after = """    if series.is_some() && event.occurrence_type.as_deref() == Some("
     }"""
 red = [
     "application::calendar::tests::test_a_day_moved_at_outlook_is_shown_at_its_new_time_though_the_old_slot_may_still_show_too",
+    "application::calendar::tests::test_a_new_changed_day_of_an_outlook_series_counts_as_created_and_a_held_one_as_updated",
     "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
     "application::calendar::tests::test_an_outlook_read_of_one_changed_day_takes_outlooks_category_and_keeps_the_status_set_here",
     "application::calendar::tests::test_an_unmodified_day_of_an_outlook_series_already_held_is_still_drawn_once",

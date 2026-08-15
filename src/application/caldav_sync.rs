@@ -1695,6 +1695,96 @@ mod tests {
         );
     }
 
+    /// A CalDAV multistatus carrying one resource with two changed days of the
+    /// same series and no master event of its own: the shape a changed day
+    /// arrives in when its series lies outside the window this sync asked
+    /// for, so only the days somebody touched are answered.
+    fn a_multistatus_holding_two_changed_days_of_one_series() -> String {
+        let document = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260319T090000Z",
+            "SUMMARY:Weekly review a second changed week",
+            "DTSTART:20260319T140000Z",
+            "DTEND:20260319T150000Z",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        .join("\r\n");
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/cal/e-1.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>\"tag-e-1\"</d:getetag>\
+             <c:calendar-data>{document}</c:calendar-data>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>"
+        )
+    }
+
+    #[tokio::test]
+    async fn test_a_new_changed_day_of_a_caldav_series_counts_as_created_and_a_held_one_as_updated()
+    {
+        // one_caldav_day_kept_out_of_its_series increments result.updated for a
+        // changed day already held here and result.created for one that is
+        // not, and nothing before this test asked either number for a value.
+        // Both counters have to start this sync at a real zero, which is why
+        // the fixture carries no master event: a counter contaminated by a
+        // whole event's own created or updated count hides a mutated +=
+        // behind a value nothing here checks.
+        let cache = temp_cache("caldav_changed_day_counts");
+        let mut calendar = container("cal-changed-day-counts", "acct");
+        // The compound id a changed day is stored under is built from the
+        // RECURRENCE-ID after it has passed through the same iCalendar-to-RFC
+        // 3339 normalizing every other stamp on the event does, so it reads
+        // "2026-03-12T09:00:00Z" rather than the wire form "20260312T090000Z".
+        cache
+            .save_calendar_event(&held_event(
+                "held-day",
+                "e-1:2026-03-12T09:00:00Z",
+                &calendar.id,
+                "acct",
+            ))
+            .expect("the already-held changed day");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_two_changed_days_of_one_series(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(
+            (result.created, result.updated),
+            (1, 1),
+            "one changed day was already held and should have counted as \
+             updated, the other was new and should have counted as created: \
+             {result:?}"
+        );
+    }
+
     #[tokio::test]
     async fn test_refreshing_a_subscription_replaces_everything_it_held() {
         let cache = temp_cache("subscription");

@@ -8853,6 +8853,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_new_changed_day_of_an_outlook_series_counts_as_created_and_a_held_one_as_updated()
+     {
+        // one_day_of_a_microsoft_series increments result.updated for a
+        // changed day already held here and result.created for one that is
+        // not, and nothing before this test asked either number for a value.
+        // See the CalDAV sibling of this test in application::caldav_sync for
+        // why the fixture has to give both counters a real zero to start
+        // from: both days here carry seriesMasterId, so both are read as
+        // changed days of the series rather than as whole events of their
+        // own, and neither touches the whole-event counters above.
+        let cache = temp_cache("outlook_changed_day_counts");
+        the_outlook_series_already_stored(&cache, false);
+        an_event_already_synced_in(
+            &cache,
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            "made-at-outlook_20260312T090000Z",
+            "Work",
+            "confirmed",
+        );
+        let held_day = a_graph_day_of_the_series(
+            "made-at-outlook_20260312T090000Z",
+            "exception",
+            false,
+            "2026-03-12T14:00:00.0000000",
+            "2026-03-12T14:30:00.0000000",
+        );
+        let new_day = a_graph_day_of_the_series(
+            "made-at-outlook_20260319T090000Z",
+            "exception",
+            false,
+            "2026-03-19T14:00:00.0000000",
+            "2026-03-19T14:30:00.0000000",
+        );
+        let address = replying(delta_reply(&[held_day, new_day])).await;
+        point_the_sync_at(&cache, &address);
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert_eq!(
+            (result.created, result.updated),
+            (1, 1),
+            "one changed day was already held and should have counted as \
+             updated, the other was new and should have counted as created: \
+             {result:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found() {
         // The meeting goes up, because half a meeting at Outlook beats none.
         // What must not happen is it going up quietly: it is there once, on the
