@@ -311,8 +311,9 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      also reaches the window a message opens into for reading, and the \
      window that shows a conversation as headings. Everything else follows \
      Windows. Changing it here recolours them immediately, with nothing to \
-     restart. Default now matches whether Windows itself is set to light \
-     or dark.";
+     restart, except a message already open for reading, which catches up \
+     the next time you open it. Default now matches whether Windows itself \
+     is set to light or dark.";
 
 /// The palette to draw with right now.
 ///
@@ -328,10 +329,15 @@ pub fn current(setting: &str) -> Option<Palette> {
         // That call recolours every native control in the application at
         // once, which is a change only eyes on a running build can accept or
         // reject, so it stays out of here; all this chooses is which of our
-        // own two palettes to paint over the three surfaces `REACH` names,
-        // and Windows keeps drawing everything else however it always has.
+        // own two palettes to paint over the surfaces `REACH` names, and
+        // Windows keeps drawing everything else however it always has.
         // A read that fails, or answers something that is neither light nor
         // dark, falls back to light, the same safe default as before.
+        //
+        // How many surfaces that is is not repeated here on purpose: it
+        // drifted out of step with REACH once already, when a surface was
+        // added and this comment was not touched. REACH is the one place
+        // that count is allowed to live.
         windows_prefers_dark(),
         windows_high_contrast(),
     )
@@ -846,9 +852,10 @@ mod tests {
         // whatever looked nice in a screenshot.
         //
         // It checks the palette. What reaches the screen is a separate
-        // question and only looking at a running build answers it. The palette
-        // is applied to three places, listed in `REACH`; everywhere else in
-        // the application these colours are arithmetic and nothing more.
+        // question and only looking at a running build answers it. The
+        // palette is applied to the surfaces listed in `REACH`; everywhere
+        // else in the application these colours are arithmetic and nothing
+        // more.
         for (name, palette) in [("light", Palette::LIGHT), ("dark", Palette::DARK)] {
             for (role, colour) in palette.text_roles() {
                 for (surface_name, surface) in [
@@ -894,6 +901,11 @@ mod tests {
         }
         assert!(REACH.contains("follows Windows"), "{REACH}");
         assert!(REACH.contains("immediately"), "{REACH}");
+        // A message already open when the setting changes keeps its old
+        // colours until it is reopened; see ReaderWindow::repaint for why.
+        // REACH used to promise "nothing to restart" with no exception, which
+        // was not quite true, so the note has to say so.
+        assert!(REACH.contains("already open"), "{REACH}");
         // A wrapped string literal that loses its continuations keeps every
         // space of the indenting, and this one is read aloud. Runs of stray
         // spaces are silence in the middle of a sentence.
