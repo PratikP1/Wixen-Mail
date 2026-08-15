@@ -17,14 +17,17 @@
 //! the harness itself works, never split across more than one, and never
 //! inside `src/**`'s own test modules.
 //!
-//! This is the first of three steps this round takes through this file: the
-//! five PIM modules first, then the reader window, then the sites that stay
-//! inside `wx_app.rs` and cannot be constructed standalone at all.
+//! This is the second of three steps this round takes through this file: the
+//! five PIM modules, then the reader window, then the sites that stay inside
+//! `wx_app.rs` and cannot be constructed standalone at all.
 
 use std::sync::{Arc, Mutex};
+use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reminders_module, wx_tasks_module,
+    wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reader, wx_reminders_module,
+    wx_tasks_module,
 };
 use wxdragon::prelude::*;
 
@@ -264,6 +267,106 @@ fn check_notes(parent: &Panel, palette: theme::Palette, into: &mut Vec<SiteResul
     );
 }
 
+/// A message with both a warning and an attachment, so the reader builds
+/// both of its optional tab widgets and this can check them rather than
+/// finding `None` and having nothing to read a colour from.
+fn document_that_exercises_every_optional_widget() -> ReaderDocument {
+    ReaderDocument {
+        title: "Test message".to_string(),
+        text: "Subject: Test message\n\nThis is a test.".to_string(),
+        landmarks: Vec::new(),
+        warning: Some("This message could not be verified.".to_string()),
+        attachments: vec![ReaderAttachment {
+            message_row_id: 1,
+            uid: 1,
+            index: 0,
+            name: "report.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 1024,
+        }],
+    }
+}
+
+fn check_reader(parent: &Frame, a11y: &Arc<Accessibility>, into: &mut Vec<SiteResult>) {
+    let reader = wx_reader::ReaderWindow::new(parent, a11y);
+
+    // The reader reads its own palette rather than taking one as a
+    // parameter, the same as `show_conversation_as_page` and for the same
+    // reason given on both (see their doc comments). So this test asks the
+    // same question production code does, instead of assuming a fixed
+    // answer: whatever `theme::current` reports right now, on whatever
+    // machine is running this suite, is what a freshly built reader should
+    // show. `theme.rs`'s own tests follow the same rule for the same reason:
+    // a test that asserted a fixed light or dark answer would go red the
+    // moment Pratik switched high contrast on to do an accessibility pass,
+    // which is the one time this suite must not be lying to him.
+    let palette = theme::current(
+        &wixen_mail::data::config::ConfigManager::load_stored()
+            .map(|mgr| mgr.app_config().theme.clone())
+            .unwrap_or_default(),
+    );
+    let Some(palette) = palette else {
+        // High contrast is on wherever this suite is running. Nothing should
+        // be painted, and there is no fixed colour to compare against, so
+        // this records that the branch was reached rather than asserting a
+        // colour nobody can predict from here.
+        for site in [
+            "reader frame",
+            "reader notebook",
+            "reader tab panel",
+            "reader tab text",
+            "reader tab warning",
+            "reader tab attachments",
+        ] {
+            into.push((
+                site,
+                true,
+                "high contrast is on for this run: nothing is painted, which is correct"
+                    .to_string(),
+            ));
+        }
+        return;
+    };
+
+    check("reader frame", reader.frame(), palette.main_surface(), into);
+    check(
+        "reader notebook",
+        reader.notebook(),
+        palette.main_surface(),
+        into,
+    );
+
+    let handles = reader.open(document_that_exercises_every_optional_widget());
+    check(
+        "reader tab panel",
+        &handles.panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "reader tab text",
+        &handles.text,
+        palette.main_surface(),
+        into,
+    );
+    match &handles.warning {
+        Some(bar) => check("reader tab warning", bar, palette.main_surface(), into),
+        None => into.push((
+            "reader tab warning",
+            false,
+            "no warning bar was built for a document with a warning".to_string(),
+        )),
+    }
+    match &handles.attachments {
+        Some(list) => check("reader tab attachments", list, palette.main_surface(), into),
+        None => into.push((
+            "reader tab attachments",
+            false,
+            "no attachment list was built for a document with an attachment".to_string(),
+        )),
+    }
+}
+
 /// Every site this round wires that can be reached without a running
 /// application, checked against the real colour a real control reports.
 ///
@@ -291,6 +394,9 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_reminders(&parent, palette, &mut sites);
             check_tasks(&parent, palette, &mut sites);
             check_notes(&parent, palette, &mut sites);
+
+            let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+            check_reader(&frame, &a11y, &mut sites);
 
             *results.lock().unwrap() = sites;
 

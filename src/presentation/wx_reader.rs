@@ -22,6 +22,7 @@ use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
+use crate::presentation::theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -90,6 +91,28 @@ pub struct ReaderWindow {
     /// the close over and done with.
     go_back: Rc<Timer<Frame>>,
     a11y: Arc<Accessibility>,
+    /// The palette this window's tabs paint themselves with, read once at
+    /// construction the same way the main window reads it once at startup.
+    /// `None` under Windows high contrast, or when the system is set up in a
+    /// way nothing here has an opinion about; either way nothing is painted
+    /// and Windows keeps deciding.
+    palette: Option<theme::Palette>,
+}
+
+/// Handles to the widgets one open tab is made of.
+///
+/// Returned by [`ReaderWindow::open`] so a test can reach and read back what
+/// each one was painted, the same way every other handle in this file is
+/// reached. Production code has never needed them before, because the window
+/// keeps its own records of what it built; they exist now only so live
+/// controls are reachable from outside this module.
+pub struct ReaderTabHandles {
+    pub panel: Panel,
+    pub text: TextCtrl,
+    /// `None` for an ordinary message, which has no warning bar at all.
+    pub warning: Option<TextCtrl>,
+    /// `None` for a message with nothing attached, which has no list at all.
+    pub attachments: Option<ListBox>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -241,8 +264,26 @@ impl ReaderWindow {
             .with_size(Size::new(900, 700))
             .build();
 
+        // Read once here rather than per tab, the same reason the main
+        // window reads it once at startup rather than per control: a
+        // settings file opened once per widget is a file opened a hundred
+        // times over a long reading session. This window is built once and
+        // reused for as long as Wixen Mail runs, so "once" here means once
+        // per run, the same as everywhere else the palette is read.
+        let palette = theme::current(
+            &crate::data::config::ConfigManager::load_stored()
+                .map(|mgr| mgr.app_config().theme.clone())
+                .unwrap_or_default(),
+        );
+        if let Some(palette) = palette {
+            theme::paint(&frame, palette.main_surface());
+        }
+
         let notebook = Notebook::builder(&frame).build();
         set_accessible_name(&notebook, "Open messages");
+        if let Some(palette) = palette {
+            theme::paint(&notebook, palette.main_surface());
+        }
 
         // A menu bar rather than bare accelerators, because a menu is
         // discoverable: someone who cannot see the window can walk it and find
@@ -323,7 +364,18 @@ impl ReaderWindow {
             closed,
             go_back,
             a11y: a11y.clone(),
+            palette,
         }
+    }
+
+    /// The window itself, for reaching what it was painted.
+    pub fn frame(&self) -> &Frame {
+        &self.frame
+    }
+
+    /// The tab strip, for reaching what it was painted.
+    pub fn notebook(&self) -> &Notebook {
+        &self.notebook
     }
 
     /// Say what to do when somebody asks to save an attachment.
@@ -341,8 +393,16 @@ impl ReaderWindow {
     }
 
     /// Add a document as a new tab and show the window.
-    pub fn open(&self, document: ReaderDocument) {
+    ///
+    /// Returns handles to the tab's own widgets. Production code has no use
+    /// for them, since the window keeps its own records of what it built;
+    /// they exist so a test can reach a live control and read back what it
+    /// was painted.
+    pub fn open(&self, document: ReaderDocument) -> ReaderTabHandles {
         let panel = Panel::builder(&self.notebook).build();
+        if let Some(palette) = self.palette {
+            theme::paint(&panel, palette.main_surface());
+        }
         let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
         // The warning goes above the message and therefore first in the tab
@@ -365,6 +425,14 @@ impl ReaderWindow {
             set_accessible_name(&bar, "Security warning");
             bar.set_insertion_point(0);
             sizer.add(&bar, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            // Plain main surface, the same as the rest of the tab. `Palette`
+            // has no colour of its own for a warning role today, only a text
+            // colour tested against the two existing surfaces, and inventing
+            // a background for one is a design decision this round does not
+            // make.
+            if let Some(palette) = self.palette {
+                theme::paint(&bar, palette.main_surface());
+            }
             bar
         });
 
@@ -380,6 +448,9 @@ impl ReaderWindow {
             )
             .build();
         set_accessible_name(&text, &document.title);
+        if let Some(palette) = self.palette {
+            theme::paint(&text, palette.main_surface());
+        }
         text.set_value(&document.text);
         // The caret starts at the top: a control that opens with the caret at
         // the end reads the last line first, which is not where a message
@@ -416,6 +487,9 @@ impl ReaderWindow {
                 (count, many) => format!("Attachments, {count} items, {many} are programs"),
             };
             set_accessible_name(&list, &name);
+            if let Some(palette) = self.palette {
+                theme::paint(&list, palette.main_surface());
+            }
             list.set_selection(0, true);
             sizer.add(&list, 0, SizerFlag::Expand | SizerFlag::All, 4);
             list
@@ -459,6 +533,13 @@ impl ReaderWindow {
         }
         if let Some(list) = attachments {
             self.wire_attachment_list(list, index);
+        }
+
+        ReaderTabHandles {
+            panel,
+            text,
+            warning,
+            attachments,
         }
     }
 
