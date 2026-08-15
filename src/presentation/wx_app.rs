@@ -553,6 +553,11 @@ impl WxMailApp {
             // | Context sidebar       |                               |
             // | (changes per module)  |                               |
             // +-----------------------+-------------------------------+
+            // Not painted, the one deliberate exception among this window's
+            // own panels. It spans both the sidebar role and the content
+            // role with a hard seam between them, so no single surface is
+            // the right one to hand it, and its two children below are
+            // painted and cover it edge to edge either way.
             let panel = Panel::builder(&frame).build();
             let panel_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
