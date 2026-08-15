@@ -311,8 +311,8 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      also reaches the window a message opens into for reading, and the \
      window that shows a conversation as headings. Everything else follows \
      Windows. Changing it here recolours them immediately, with nothing to \
-     restart. Default means light for now, because Wixen Mail has not yet \
-     asked Windows for its dark mode.";
+     restart. Default now matches whether Windows itself is set to light \
+     or dark.";
 
 /// The palette to draw with right now.
 ///
@@ -322,19 +322,17 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
 pub fn current(setting: &str) -> Option<Palette> {
     palette_for(
         setting,
-        // This answers no in Wixen Mail whatever Windows is set to, so Default
-        // means light. wxWidgets reports dark either when the application has
-        // switched itself into the Windows dark mode, through
-        // `AppAppearance::set_appearance`, or when the window background it is
-        // already being given is dark. Nothing here calls `set_appearance`, and
-        // a Windows dark theme leaves an application that has not asked for it
-        // on the light system colours, so neither half is ever true.
-        //
-        // Calling `set_appearance` recolours every native control in the
-        // application at once, which is a change only eyes on a running build
-        // can accept or reject, so it is not made here. `REACH` says Default
-        // means light so that nobody is left guessing why.
-        wxdragon::is_system_dark_mode(),
+        // Read straight from Windows, through the registry, rather than
+        // through wxWidgets: see `windows_prefers_dark` and `dark_mode_from`
+        // for the detail. This still never calls `AppAppearance::set_appearance`.
+        // That call recolours every native control in the application at
+        // once, which is a change only eyes on a running build can accept or
+        // reject, so it stays out of here; all this chooses is which of our
+        // own two palettes to paint over the three surfaces `REACH` names,
+        // and Windows keeps drawing everything else however it always has.
+        // A read that fails, or answers something that is neither light nor
+        // dark, falls back to light, the same safe default as before.
+        windows_prefers_dark(),
         windows_high_contrast(),
     )
 }
@@ -351,6 +349,117 @@ fn palette_for(setting: &str, system_is_dark: bool, high_contrast: bool) -> Opti
         return None;
     }
     Theme::from_setting(setting).palette(system_is_dark)
+}
+
+/// Whether Windows itself prefers a dark or a light app appearance.
+///
+/// `SystemParametersInfo` has no question for this; it lives in the registry
+/// instead, as `AppsUseLightTheme`. This composition mirrors
+/// [`windows_high_contrast`] exactly: [`ask_windows_about_light_or_dark`]
+/// does the asking and holds no decision, [`dark_mode_from`] does the reading
+/// and is compiled and tested everywhere.
+fn windows_prefers_dark() -> bool {
+    let (status, apps_use_light_theme) = ask_windows_about_light_or_dark();
+    dark_mode_from(status, apps_use_light_theme)
+}
+
+/// Nobody to ask off Windows, so nothing was answered.
+///
+/// The registry call this stands in for reports success as `0`, the opposite
+/// of `SystemParametersInfoW` in [`ask_windows_about_high_contrast`], where
+/// `0` is failure. A refused call has to look like a refused call here too,
+/// so this answers a status [`dark_mode_from`] does not read as success,
+/// rather than the `(0, 0)` a copy of that sibling stub would reach for.
+#[cfg(not(target_os = "windows"))]
+fn ask_windows_about_light_or_dark() -> (i32, u32) {
+    (1, 0)
+}
+
+/// Put the question to Windows, and answer with what came back untouched.
+///
+/// Reads `AppsUseLightTheme`, under
+/// `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize` in the
+/// current user's part of the registry, which is where Windows itself keeps
+/// this preference; there is no dedicated Win32 call for it the way there is
+/// for high contrast. Holds no decision, the way `date_display::read_locale`
+/// holds none: the reading is [`dark_mode_from`], which is compiled and
+/// tested everywhere.
+///
+/// A read. Nothing here writes a value, and nothing here can change what
+/// Windows is set to.
+///
+/// Split out so a test can say the call still works. Whatever comes back is
+/// returned untouched, matching [`ask_windows_about_high_contrast`]'s own
+/// doc: interpreting it is [`dark_mode_from`]'s job, not this one's.
+#[cfg(target_os = "windows")]
+fn ask_windows_about_light_or_dark() -> (i32, u32) {
+    #[link(name = "advapi32")]
+    unsafe extern "system" {
+        fn RegGetValueW(
+            hkey: isize,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            out_type: *mut u32,
+            out_data: *mut core::ffi::c_void,
+            out_size: *mut u32,
+        ) -> i32;
+    }
+
+    // Windows documents `HKEY_CURRENT_USER` as `0x80000001` read as a signed
+    // 32 bit value and then sign-extended to pointer width. Casting straight
+    // from `u32` to `isize` would zero-extend instead and hand the API a
+    // handle it has never heard of.
+    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+    const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    let sub_key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+    let value_name = wide("AppsUseLightTheme");
+    let mut data: u32 = 0;
+    let mut size: u32 = size_of::<u32>() as u32;
+    // Safe: `sub_key` and `value_name` are null-terminated UTF-16 buffers
+    // kept alive for the whole call, `data` is a plain four byte buffer that
+    // matches `RRF_RT_REG_DWORD`, and `size` tells the API exactly how big
+    // it is. A refused call leaves `data` at the zero it was set to here,
+    // and `dark_mode_from` reads the status before it ever reads `data`.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sub_key.as_ptr(),
+            value_name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut data).cast(),
+            &raw mut size,
+        )
+    };
+    (status, data)
+}
+
+/// Read what Windows answered, separately from asking it.
+///
+/// The registry call this reads is an `LSTATUS`, where zero is success, the
+/// opposite convention from `SystemParametersInfoW` in [`high_contrast_from`],
+/// where nonzero is success. Getting this backwards reads every real answer
+/// as a failure and Default silently stays light forever: the exact bug this
+/// function exists to fix, reached again through code that looks correct and
+/// compiles clean.
+///
+/// A failed call never touched `apps_use_light_theme`, so it is read as
+/// light, the same safe default as before. And only an exact `0` reads as
+/// dark: Microsoft documents this value as `0` for dark and `1` for light, so
+/// anything else, `2`, `0xFFFF_FFFF`, whatever a future Windows release
+/// invents, is an answer nobody has written down and falls back to light
+/// rather than being guessed at.
+///
+/// Outside the platform gate on purpose, so it is compiled and tested
+/// everywhere rather than only where it runs.
+const fn dark_mode_from(status: i32, apps_use_light_theme: u32) -> bool {
+    status == 0 && apps_use_light_theme == 0
 }
 
 /// Whether Windows is in a high contrast theme.
@@ -530,6 +639,75 @@ mod tests {
         assert!(red > blue, "red {red:.2} is not above blue {blue:.2}");
     }
 
+    /// The question to Windows really is asked and really is answered.
+    ///
+    /// This asserts the call succeeded and that Windows filled the value in
+    /// with one of the two answers Microsoft documents. It must never assert
+    /// which one: that is the state of the machine running the suite, and a
+    /// test that pinned it would go red the moment Pratik switches his own
+    /// machine's theme to do an accessibility pass, which is the one time
+    /// the suite must not be lying to him.
+    ///
+    /// What it does not prove: nothing at all about what a person sees.
+    /// Only a pass on a machine actually set to each answer proves that.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_still_answers_when_asked_about_light_or_dark() {
+        let (status, value) = ask_windows_about_light_or_dark();
+
+        assert!(
+            status == 0,
+            "Windows refused the light or dark registry read, so Default could never follow it"
+        );
+        assert!(
+            value == 0 || value == 1,
+            "AppsUseLightTheme came back as {value}, which is not a documented value"
+        );
+    }
+
+    /// The answer handed to the palette is the machine's, not a constant.
+    ///
+    /// The expected side works the bit out longhand rather than calling
+    /// [`dark_mode_from`], so the two sides are not the same code and a wrong
+    /// reading cannot move them together.
+    ///
+    /// It asserts nothing about whether the machine is light or dark, so it
+    /// stays green whichever way Pratik's own machine is set.
+    #[test]
+    fn test_the_light_or_dark_answer_is_the_machines_own_and_not_a_constant() {
+        let (status, value) = ask_windows_about_light_or_dark();
+        let machine_says_dark = status == 0 && value == 0;
+
+        assert_eq!(
+            windows_prefers_dark(),
+            machine_says_dark,
+            "Windows answered {status} with AppsUseLightTheme {value} and the palette was told otherwise"
+        );
+    }
+
+    #[test]
+    fn test_the_registry_answer_zero_means_dark_and_one_means_light() {
+        // Microsoft documents `AppsUseLightTheme` as `0` for dark and `1` for
+        // light, the opposite sense of a name like `HCF_HIGHCONTRASTON` where
+        // the bit itself is the "on" state.
+        assert!(dark_mode_from(0, 0));
+        assert!(!dark_mode_from(0, 1));
+    }
+
+    #[test]
+    fn test_a_failed_or_unrecognised_registry_read_is_not_read_as_dark() {
+        // A failed call never touched `apps_use_light_theme`, so whatever is
+        // sitting in it means nothing. Believing a stray zero there would
+        // hand the whole interface to a setting nobody asked for, the same
+        // mistake a failed high contrast call would make if it were read the
+        // same way.
+        assert!(!dark_mode_from(1, 0));
+        // A successful read of a value nobody has documented is not a
+        // documented answer either.
+        assert!(!dark_mode_from(0, 2));
+        assert!(!dark_mode_from(0, 0xFFFF_FFFF));
+    }
+
     /// The neighbouring bit: a high contrast scheme is available, as opposed to
     /// in use. Windows sets it on any desktop install and leaves it set when
     /// somebody switches high contrast on.
@@ -641,6 +819,27 @@ mod tests {
         assert_eq!(palette_for("default", true, false), Some(Palette::DARK));
     }
 
+    /// `palette_for` takes two bare `bool`s in a row, and a swap at
+    /// [`current`]'s call site compiles and passes every test that calls
+    /// `palette_for` directly, since none of them go through `current` at
+    /// all. The expected side is worked out longhand here, not by calling
+    /// `palette_for`, so the same swap cannot move both sides together.
+    ///
+    /// It asserts nothing about whether the machine is light, dark, or in
+    /// high contrast, so it stays green whichever way Pratik's own machine
+    /// is set.
+    #[test]
+    fn test_current_picks_the_right_palette_from_the_dark_and_high_contrast_readings() {
+        let expected = if windows_high_contrast() {
+            None
+        } else if windows_prefers_dark() {
+            Some(Palette::DARK)
+        } else {
+            Some(Palette::LIGHT)
+        };
+        assert_eq!(current("default"), expected);
+    }
+
     #[test]
     fn test_every_readable_colour_in_the_palette_meets_four_and_a_half_to_one() {
         // 1.4.3. This is the test that stops the palette drifting towards
@@ -699,6 +898,16 @@ mod tests {
         // space of the indenting, and this one is read aloud. Runs of stray
         // spaces are silence in the middle of a sentence.
         assert!(!REACH.contains("  "), "{REACH}");
+    }
+
+    #[test]
+    fn test_the_theme_note_says_default_follows_the_real_system_preference() {
+        // Default used to mean light always, because nothing here had ever
+        // asked Windows. `current` asks now, so the sentence has to say what
+        // is true today rather than what used to be true.
+        assert!(!REACH.contains("has not yet asked"), "{REACH}");
+        assert!(REACH.contains("Default"), "{REACH}");
+        assert!(REACH.contains("light or dark"), "{REACH}");
     }
 
     #[test]

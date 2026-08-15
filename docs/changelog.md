@@ -37,6 +37,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   or restarting, is what picks up the new ones. The description under the
   Theme setting in Settings is updated to match what now works.
 
+- **Fixed: the Default theme setting could not tell whether Windows was set
+  to light or dark, so it always drew the light colours.** Default is meant
+  to match whatever Windows itself prefers, the same way Light and Dark match
+  what you pick by hand. Until now it never actually asked Windows, so
+  anybody using Default saw the light palette even on a system set to dark.
+  Default now reads the real system preference and follows it.
+
+  Known limitations. This changes only which of the two colours Default
+  picks, not how far colour reaches; see the entry above for what is coloured
+  and what is not. On a system set to dark, the sidebar, message list and
+  other coloured surfaces now go dark while the rest of the window, menus,
+  dialogs, and every control outside what that entry lists, still renders in
+  whatever colours Windows gives an application that has never switched
+  itself into dark mode. That mismatch already existed for anybody who chose
+  Dark by hand; Default can reach it too now.
+
 - **Fixed: a contact edit that failed to send because of the network was
   thrown away and reported as replaced by the address book, even though the
   address book never actually saw it.** Every contact edit made here is sent
