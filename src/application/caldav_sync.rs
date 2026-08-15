@@ -1642,6 +1642,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_day_of_a_caldav_series_this_computer_deleted_is_not_written_back() {
+        // The CalDAV mirror of
+        // test_a_day_of_an_outlook_series_this_computer_deleted_is_not_written_back
+        // in application::calendar: the series was deleted here and the server
+        // is still naming a changed day of it. That day's own compound identity
+        // has never been seen on this computer, so only the series' own UID is
+        // in deleted_here. Suppressing on that alone is what the || in
+        // one_caldav_day_kept_out_of_its_series does; an && would need the
+        // day's own identity marked deleted too, which never happens for a day
+        // this computer has not stored yet, and the day would come back.
+        let cache = temp_cache("caldav_a_deleted_series_keeps_out_its_changed_day");
+        let mut calendar = container("cal-deleted-series", "acct");
+        let series = held_event("series-1", "e-1", &calendar.id, "acct");
+        cache
+            .save_calendar_event(&series)
+            .expect("the series to be stored");
+        cache
+            .delete_calendar_event(&series.id)
+            .expect("the series to be deleted here");
+
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_its_moved_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(
+            result.created, 0,
+            "the changed day of a series deleted here was written back: {result:?}"
+        );
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert!(
+            stored.is_empty(),
+            "a series deleted on this computer came back a day at a time: {stored:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_refreshing_a_subscription_replaces_everything_it_held() {
         let cache = temp_cache("subscription");
         let mut calendar = container("sub-refresh", "acct");
