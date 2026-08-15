@@ -1114,8 +1114,8 @@ impl TasksClient {
             // completion time labelled `calendar::COORDINATED_UNIVERSAL_TIME`,
             // which is exactly what Graph sends a task read that asks for no
             // particular zone. Adding such a header here would not corrupt
-            // that field silently -- a differently-labelled completion time
-            // is dropped, not misread -- but it would stop being populated
+            // that field silently (a differently-labelled completion time
+            // is dropped, not misread), but it would stop being populated
             // for every task read this way, so touch that comment too if
             // this one changes.
             let response: MsTasksResponse = self.get(&url, token).await?;
@@ -1388,7 +1388,7 @@ mod tests {
     #[test]
     fn test_a_microsoft_completion_time_read_in_utc_still_reads_as_the_hour_it_carries() {
         // Honest note: this one was never red, the same as this file's other
-        // "never red" tests -- nothing exercised `completed_at` at all before
+        // "never red" tests: nothing exercised `completed_at` at all before
         // this pass. It is the counterweight to the test above: without it, a
         // fix that dropped every completion time regardless of zone would
         // still pass that one.
