@@ -3105,6 +3105,12 @@ pub fn ms_event_to_local(
 pub(crate) const GRAPH_WALL_CLOCK: &str = "%Y-%m-%dT%H:%M:%S";
 
 /// What the zone is called when a time already said which moment it meant.
+///
+/// Also the one zone name [`crate::service::tasks_api::ms_task_to_entry`]
+/// trusts when it reads a Microsoft task's completion time back: a response
+/// labelled anything else is dropped there rather than misread. Repurposing
+/// this constant for a calendar-only reason would silently change that
+/// reading too.
 pub(crate) const COORDINATED_UNIVERSAL_TIME: &str = "UTC";
 
 /// A stored time, written the way Graph reads one.

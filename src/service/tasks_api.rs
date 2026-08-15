@@ -557,10 +557,19 @@ pub fn ms_task_to_entry(task: &MsTodoTask, account_id: &str, list_id: &str) -> T
         // way the priority below asks `TaskPriority`, so this reads exactly
         // as it always has for the five words and for anything unrecognised.
         is_completed: TaskProgress::stored(&task.status) == Some(TaskProgress::Completed),
-        completed_at: task
-            .completed_date_time
-            .as_ref()
-            .map(|done| done.date_time.clone()),
+        // Trusted only when Graph itself labelled it universal time.
+        // `TasksClient::ms_tasks`, which fetches the task this came from,
+        // never sends a `Prefer: outlook.timezone=` header asking Graph for
+        // another one (see the comment on that function's `self.get` call),
+        // so a response naming any other zone means that assumption already
+        // broke somewhere upstream. Reading the bare clock face as universal
+        // time regardless would hand back a silently wrong hour; refusing it
+        // hands back a missing one instead, the same trade `due_date_only`
+        // above makes for a due date shape it does not recognise.
+        completed_at: task.completed_date_time.as_ref().and_then(|done| {
+            (done.time_zone == crate::application::calendar::COORDINATED_UNIVERSAL_TIME)
+                .then(|| done.date_time.clone())
+        }),
         // Microsoft's own three words, and the middle one for anything else,
         // because a priority nobody here recognises is not a claim to store.
         // The same place the writer asks, so the two cannot answer differently.
@@ -1100,6 +1109,15 @@ impl TasksClient {
         let list = in_an_address(list_id, "ms:");
         let mut url = format!("{base}/me/todo/lists/{list}/tasks");
         loop {
+            // No `Prefer: outlook.timezone=` header added here, on purpose:
+            // `ms_task_to_entry`'s `completed_at` field only trusts a
+            // completion time labelled `calendar::COORDINATED_UNIVERSAL_TIME`,
+            // which is exactly what Graph sends a task read that asks for no
+            // particular zone. Adding such a header here would not corrupt
+            // that field silently -- a differently-labelled completion time
+            // is dropped, not misread -- but it would stop being populated
+            // for every task read this way, so touch that comment too if
+            // this one changes.
             let response: MsTasksResponse = self.get(&url, token).await?;
             all.extend(response.value);
             if cut_short_at_the_limit(all.len()) {
@@ -1337,6 +1355,57 @@ mod tests {
                 "for {status}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_microsoft_completion_time_read_in_a_different_zone_is_dropped_not_misread() {
+        // `ms_task_to_entry`'s `completed_at` field, below, trusts a
+        // completion time only when Graph labelled it
+        // `calendar::COORDINATED_UNIVERSAL_TIME`, the only zone
+        // `TasksClient::ms_tasks` ever asks for (see the comment on its
+        // `self.get` call). A response naming any other zone means that
+        // assumption already broke, and reading the bare clock face as
+        // universal time regardless would hand back a silently wrong hour,
+        // not a missing one.
+        let task = MsTodoTask {
+            completed_date_time: Some(MsDateTimeTimeZone {
+                date_time: "2026-01-30T09:00:00.0000000".to_string(),
+                time_zone: "Pacific Standard Time".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let entry = ms_task_to_entry(&task, "acc-1", "l");
+
+        assert!(
+            entry.completed_at.is_none(),
+            "a completion time in a zone this client never asked for must be \
+             dropped, not misread as universal time: {:?}",
+            entry.completed_at
+        );
+    }
+
+    #[test]
+    fn test_a_microsoft_completion_time_read_in_utc_still_reads_as_the_hour_it_carries() {
+        // Honest note: this one was never red, the same as this file's other
+        // "never red" tests -- nothing exercised `completed_at` at all before
+        // this pass. It is the counterweight to the test above: without it, a
+        // fix that dropped every completion time regardless of zone would
+        // still pass that one.
+        let task = MsTodoTask {
+            completed_date_time: Some(MsDateTimeTimeZone {
+                date_time: "2026-01-30T09:00:00.0000000".to_string(),
+                time_zone: crate::application::calendar::COORDINATED_UNIVERSAL_TIME.to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let entry = ms_task_to_entry(&task, "acc-1", "l");
+
+        assert_eq!(
+            entry.completed_at.as_deref(),
+            Some("2026-01-30T09:00:00.0000000")
+        );
     }
 
     /// A stored task carrying a provider progress word, otherwise settled.

@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 108 records have arrived since and have not been through it.
+# 109 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -5706,6 +5706,37 @@ after = """        status: if task.is_completed {
         },"""
 red = [
     "service::tasks_api::tests::test_the_progress_microsoft_holds_is_kept_when_a_change_goes_back",
+]
+
+# ── A Microsoft task's completion time trusts only the zone this was asked for ─
+#
+# `ms_task_to_entry`'s `completed_at` used to take whatever `dateTime` Graph
+# sent back with no regard to the `timeZone` sent beside it, correct only
+# because `TasksClient::ms_tasks` never asks Graph for a zone other than
+# universal time. A header added there for some unrelated reason would have
+# silently misread every completion time as if it were universal when it was
+# not, with nothing but a comment and a test of the header's absence to
+# notice it. The read side now asks the same question the write side already
+# answers strictly: a completion time is trusted only when it is labelled
+# `calendar::COORDINATED_UNIVERSAL_TIME`, and dropped rather than misread
+# otherwise.
+#
+# Measured by hand on 2026-08-15 with scripts/guards.py: this break reddens
+# exactly the one test named below and nothing else in the library.
+
+[[guard]]
+name = "a Microsoft task's completion time is trusted only when Graph labelled it universal time"
+file = "src/service/tasks_api.rs"
+before = """        completed_at: task.completed_date_time.as_ref().and_then(|done| {
+            (done.time_zone == crate::application::calendar::COORDINATED_UNIVERSAL_TIME)
+                .then(|| done.date_time.clone())
+        }),"""
+after = """        completed_at: task
+            .completed_date_time
+            .as_ref()
+            .map(|done| done.date_time.clone()),"""
+red = [
+    "service::tasks_api::tests::test_a_microsoft_completion_time_read_in_a_different_zone_is_dropped_not_misread",
 ]
 
 # ── Mail joins the write census, and a read that cannot carry a changing verb ─
