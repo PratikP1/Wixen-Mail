@@ -3,11 +3,17 @@
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the notes content panel.
 pub struct NotesPanelHandles {
     pub panel: Panel,
+    /// The list side of the split, its own sub-panel rather than a bare
+    /// sizer slot, and painted separately for the same reason.
+    pub list_panel: Panel,
+    /// The editor side of the split.
+    pub editor_panel: Panel,
     pub btn_new: Button,
     pub btn_save: Button,
     pub note_list: ListCtrl,
@@ -24,7 +30,11 @@ pub struct NotesSidebarHandles {
 }
 
 /// Build the notes module content panel.
-pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
+///
+/// `palette` is `None` under Windows high contrast, or when the system is set
+/// up in a way nothing here has an opinion about; either way nothing is
+/// painted and Windows keeps deciding.
+pub fn build_notes_panel(parent: &Panel, palette: Option<theme::Palette>) -> NotesPanelHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
@@ -101,8 +111,22 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
     sizer.add(&editor_panel, 2, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
+    // The content surface. This is one content region split into two
+    // sub-panels rather than a sidebar and content pair, so every one of
+    // them, and the controls inside them, gets the same main surface.
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.main_surface());
+        theme::paint(&list_panel, palette.main_surface());
+        theme::paint(&note_list, palette.main_surface());
+        theme::paint(&editor_panel, palette.main_surface());
+        theme::paint(&title_input, palette.main_surface());
+        theme::paint(&body_input, palette.main_surface());
+    }
+
     NotesPanelHandles {
         panel,
+        list_panel,
+        editor_panel,
         btn_new,
         btn_save,
         note_list,
@@ -112,12 +136,18 @@ pub fn build_notes_panel(parent: &Panel) -> NotesPanelHandles {
 }
 
 /// Build the notes sidebar panel.
-pub fn build_notes_sidebar(parent: &Panel) -> NotesSidebarHandles {
+///
+/// `palette` follows the same rule as [`build_notes_panel`].
+pub fn build_notes_sidebar(parent: &Panel, palette: Option<theme::Palette>) -> NotesSidebarHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
     set_accessible_name(&tree, "Note folders");
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.second_surface());
+        theme::paint(&tree, palette.second_surface());
+    }
     if let Some(root) = tree.add_root("Note Folders", None, None) {
         tree.append_item(&root, "All Notes", None, None);
         tree.expand(&root);

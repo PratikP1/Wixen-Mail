@@ -5,6 +5,7 @@
 //! in the content area.
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the calendar content panel.
@@ -28,8 +29,14 @@ pub struct CalendarSidebarHandles {
 
 /// Build the calendar module content panel.
 ///
-/// Returns handles to the panel and its interactive widgets.
-pub fn build_calendar_panel(parent: &Panel) -> CalendarPanelHandles {
+/// Returns handles to the panel and its interactive widgets. `palette` is
+/// `None` under Windows high contrast, or when the system is set up in a way
+/// nothing here has an opinion about; either way nothing is painted and
+/// Windows keeps deciding.
+pub fn build_calendar_panel(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> CalendarPanelHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -74,6 +81,13 @@ pub fn build_calendar_panel(parent: &Panel) -> CalendarPanelHandles {
     sizer.add(&event_list, 1, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
+    // The content surface: this panel and the list that does most of the
+    // reading, matching the message list's own precedent.
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.main_surface());
+        theme::paint(&event_list, palette.main_surface());
+    }
+
     CalendarPanelHandles {
         panel,
         btn_today,
@@ -86,8 +100,12 @@ pub fn build_calendar_panel(parent: &Panel) -> CalendarPanelHandles {
 
 /// Build the calendar sidebar panel.
 ///
-/// Contains a tree of calendar containers with checkboxes.
-pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
+/// Contains a tree of calendar containers with checkboxes. `palette` follows
+/// the same rule as [`build_calendar_panel`].
+pub fn build_calendar_sidebar(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> CalendarSidebarHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -95,6 +113,10 @@ pub fn build_calendar_sidebar(parent: &Panel) -> CalendarSidebarHandles {
 
     let tree = TreeCtrl::builder(&panel).build();
     set_accessible_name(&tree, "Calendars");
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.second_surface());
+        theme::paint(&tree, palette.second_surface());
+    }
     if let Some(root) = tree.add_root("All Calendars", None, None) {
         tree.append_item(&root, "My Calendar", None, None);
         tree.expand(&root);

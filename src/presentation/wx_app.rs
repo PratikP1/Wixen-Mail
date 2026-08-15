@@ -624,30 +624,38 @@ impl WxMailApp {
             mail_sidebar.set_sizer(mail_sb_sizer, true);
 
             // Calendar sidebar
-            let cal_sb =
-                crate::presentation::wx_calendar_module::build_calendar_sidebar(&left_panel);
+            let cal_sb = crate::presentation::wx_calendar_module::build_calendar_sidebar(
+                &left_panel,
+                palette,
+            );
             cal_sb.panel.show(false);
             let cal_sidebar = cal_sb.panel;
 
             // Contacts sidebar
-            let contacts_sb =
-                crate::presentation::wx_contacts_module::build_contacts_sidebar(&left_panel);
+            let contacts_sb = crate::presentation::wx_contacts_module::build_contacts_sidebar(
+                &left_panel,
+                palette,
+            );
             contacts_sb.panel.show(false);
             let contacts_sidebar = contacts_sb.panel;
 
             // Reminders sidebar
-            let reminders_sb =
-                crate::presentation::wx_reminders_module::build_reminders_sidebar(&left_panel);
+            let reminders_sb = crate::presentation::wx_reminders_module::build_reminders_sidebar(
+                &left_panel,
+                palette,
+            );
             reminders_sb.panel.show(false);
             let reminders_sidebar = reminders_sb.panel;
 
             // Tasks sidebar
-            let tasks_sb = crate::presentation::wx_tasks_module::build_tasks_sidebar(&left_panel);
+            let tasks_sb =
+                crate::presentation::wx_tasks_module::build_tasks_sidebar(&left_panel, palette);
             tasks_sb.panel.show(false);
             let tasks_sidebar = tasks_sb.panel;
 
             // Notes sidebar
-            let notes_sb = crate::presentation::wx_notes_module::build_notes_sidebar(&left_panel);
+            let notes_sb =
+                crate::presentation::wx_notes_module::build_notes_sidebar(&left_panel, palette);
             notes_sb.panel.show(false);
             let notes_sidebar = notes_sb.panel;
 
@@ -978,30 +986,38 @@ impl WxMailApp {
             mail_content.set_sizer(mail_content_sizer, true);
 
             // Calendar content panel
-            let cal_cp =
-                crate::presentation::wx_calendar_module::build_calendar_panel(&right_panel);
+            let cal_cp = crate::presentation::wx_calendar_module::build_calendar_panel(
+                &right_panel,
+                palette,
+            );
             cal_cp.panel.show(false);
             let cal_content = cal_cp.panel;
 
             // Contacts content panel
-            let contacts_cp =
-                crate::presentation::wx_contacts_module::build_contacts_panel(&right_panel);
+            let contacts_cp = crate::presentation::wx_contacts_module::build_contacts_panel(
+                &right_panel,
+                palette,
+            );
             contacts_cp.panel.show(false);
             let contacts_content = contacts_cp.panel;
 
             // Reminders content panel
-            let reminders_cp =
-                crate::presentation::wx_reminders_module::build_reminders_panel(&right_panel);
+            let reminders_cp = crate::presentation::wx_reminders_module::build_reminders_panel(
+                &right_panel,
+                palette,
+            );
             reminders_cp.panel.show(false);
             let reminders_content = reminders_cp.panel;
 
             // Tasks content panel
-            let tasks_cp = crate::presentation::wx_tasks_module::build_tasks_panel(&right_panel);
+            let tasks_cp =
+                crate::presentation::wx_tasks_module::build_tasks_panel(&right_panel, palette);
             tasks_cp.panel.show(false);
             let tasks_content = tasks_cp.panel;
 
             // Notes content panel
-            let notes_cp = crate::presentation::wx_notes_module::build_notes_panel(&right_panel);
+            let notes_cp =
+                crate::presentation::wx_notes_module::build_notes_panel(&right_panel, palette);
             notes_cp.panel.show(false);
             let notes_content = notes_cp.panel;
 

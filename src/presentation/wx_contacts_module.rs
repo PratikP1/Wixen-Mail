@@ -3,6 +3,7 @@
 //! This panel lives inside the main window content area (not a dialog).
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the contacts content panel.
@@ -10,6 +11,10 @@ pub struct ContactsPanelHandles {
     pub panel: Panel,
     pub search_input: TextCtrl,
     pub contact_list: ListCtrl,
+    /// The detail sub-panel, shown once a contact is chosen. Its own handle,
+    /// rather than only its label, because it has a visible border of its own
+    /// and so is painted separately from `panel`.
+    pub detail: Panel,
     pub detail_label: StaticText,
 }
 
@@ -24,7 +29,14 @@ pub struct ContactsSidebarHandles {
 }
 
 /// Build the contacts module content panel.
-pub fn build_contacts_panel(parent: &Panel) -> ContactsPanelHandles {
+///
+/// `palette` is `None` under Windows high contrast, or when the system is set
+/// up in a way nothing here has an opinion about; either way nothing is
+/// painted and Windows keeps deciding.
+pub fn build_contacts_panel(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> ContactsPanelHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -76,21 +88,40 @@ pub fn build_contacts_panel(parent: &Panel) -> ContactsPanelHandles {
     sizer.add(&detail, 1, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
+    // The content surface: this panel, the list that does most of the
+    // reading, and the detail sub-panel, which has a visible border of its
+    // own once a contact is chosen.
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.main_surface());
+        theme::paint(&contact_list, palette.main_surface());
+        theme::paint(&detail, palette.main_surface());
+    }
+
     ContactsPanelHandles {
         panel,
         search_input,
         contact_list,
+        detail,
         detail_label,
     }
 }
 
 /// Build the contacts sidebar panel.
-pub fn build_contacts_sidebar(parent: &Panel) -> ContactsSidebarHandles {
+///
+/// `palette` follows the same rule as [`build_contacts_panel`].
+pub fn build_contacts_sidebar(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> ContactsSidebarHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
     set_accessible_name(&tree, "Contact groups");
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.second_surface());
+        theme::paint(&tree, palette.second_surface());
+    }
     if let Some(root) = tree.add_root("Contacts", None, None) {
         tree.append_item(&root, "All Contacts", None, None);
         tree.append_item(&root, "Favorites", None, None);

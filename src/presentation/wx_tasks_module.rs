@@ -1,6 +1,7 @@
 //! Tasks module panel: view and manage tasks and task lists.
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the tasks content panel.
@@ -19,7 +20,11 @@ pub struct TasksSidebarHandles {
 }
 
 /// Build the tasks module content panel.
-pub fn build_tasks_panel(parent: &Panel) -> TasksPanelHandles {
+///
+/// `palette` is `None` under Windows high contrast, or when the system is set
+/// up in a way nothing here has an opinion about; either way nothing is
+/// painted and Windows keeps deciding.
+pub fn build_tasks_panel(parent: &Panel, palette: Option<theme::Palette>) -> TasksPanelHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -53,6 +58,11 @@ pub fn build_tasks_panel(parent: &Panel) -> TasksPanelHandles {
     sizer.add(&task_list, 1, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.main_surface());
+        theme::paint(&task_list, palette.main_surface());
+    }
+
     TasksPanelHandles {
         panel,
         btn_new,
@@ -61,12 +71,18 @@ pub fn build_tasks_panel(parent: &Panel) -> TasksPanelHandles {
 }
 
 /// Build the tasks sidebar panel.
-pub fn build_tasks_sidebar(parent: &Panel) -> TasksSidebarHandles {
+///
+/// `palette` follows the same rule as [`build_tasks_panel`].
+pub fn build_tasks_sidebar(parent: &Panel, palette: Option<theme::Palette>) -> TasksSidebarHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
     set_accessible_name(&tree, "Task lists");
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.second_surface());
+        theme::paint(&tree, palette.second_surface());
+    }
     if let Some(root) = tree.add_root("Task Lists", None, None) {
         tree.append_item(&root, "My Tasks", None, None);
         tree.expand(&root);

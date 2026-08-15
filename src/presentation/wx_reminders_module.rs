@@ -1,6 +1,7 @@
 //! Reminders module panel: view and manage reminders.
 
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the reminders content panel.
@@ -17,7 +18,14 @@ pub struct RemindersSidebarHandles {
 }
 
 /// Build the reminders module content panel.
-pub fn build_reminders_panel(parent: &Panel) -> RemindersPanelHandles {
+///
+/// `palette` is `None` under Windows high contrast, or when the system is set
+/// up in a way nothing here has an opinion about; either way nothing is
+/// painted and Windows keeps deciding.
+pub fn build_reminders_panel(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> RemindersPanelHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -51,6 +59,11 @@ pub fn build_reminders_panel(parent: &Panel) -> RemindersPanelHandles {
     sizer.add(&reminder_list, 1, SizerFlag::Expand | SizerFlag::All, 2);
     panel.set_sizer(sizer, true);
 
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.main_surface());
+        theme::paint(&reminder_list, palette.main_surface());
+    }
+
     RemindersPanelHandles {
         panel,
         btn_new,
@@ -59,12 +72,21 @@ pub fn build_reminders_panel(parent: &Panel) -> RemindersPanelHandles {
 }
 
 /// Build the reminders sidebar panel.
-pub fn build_reminders_sidebar(parent: &Panel) -> RemindersSidebarHandles {
+///
+/// `palette` follows the same rule as [`build_reminders_panel`].
+pub fn build_reminders_sidebar(
+    parent: &Panel,
+    palette: Option<theme::Palette>,
+) -> RemindersSidebarHandles {
     let panel = Panel::builder(parent).build();
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let tree = TreeCtrl::builder(&panel).build();
     set_accessible_name(&tree, "Reminder groups");
+    if let Some(palette) = palette {
+        theme::paint(&panel, palette.second_surface());
+        theme::paint(&tree, palette.second_surface());
+    }
     if let Some(root) = tree.add_root("Reminders", None, None) {
         tree.append_item(&root, "Upcoming", None, None);
         tree.append_item(&root, "Today", None, None);
