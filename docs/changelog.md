@@ -1123,6 +1123,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A meeting from a calendar server whose time zone name itself contains a
+  colon showed the wrong start and end time, or a broken time zone name.**
+  Microsoft Exchange and Office 365 write some time zone names this way, for
+  example `(UTC-05:00) Eastern Time (US & Canada)`. The calendar standard
+  requires such a name to be quoted, precisely because it holds a colon, and
+  this program was reading only as far as the first colon in the line,
+  quoted or not. Such a meeting now reads its start, its end and its own
+  time zone correctly, and saving a change to it now writes the time zone
+  name back out quoted, the way it arrived.
+
 - **When a row had gone, or a command went wrong, you were told almost
   nothing.** Eight places said "That row is no longer there", which does not
   say what row or whether anything happened, and half of them left out the

@@ -1152,16 +1152,41 @@ fn names_the_property(line: &str, property: &str) -> bool {
 /// is also satisfied by a crafted SUMMARYX line. It is matched whatever case it
 /// is written in, which is what the calendar standard asks for.
 ///
-/// Everything up to the first colon is the name and its parameters, and the
-/// value is what follows. Taking the value off here rather than at each caller
-/// is what keeps a parameter out of the value: a zone name is allowed a digit,
-/// `Etc/GMT+5`, and a reader that keeps the parameters has to know that.
+/// Everything up to the delimiter colon is the name and its parameters, and
+/// the value is what follows. Taking the value off here rather than at each
+/// caller is what keeps a parameter out of the value: a zone name is allowed
+/// a digit, `Etc/GMT+5`, and a reader that keeps the parameters has to know
+/// that.
 fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
     if !names_the_property(line, property) {
         return None;
     }
-    let value = line[line.find(':')? + 1..].trim();
+    let value = line[delimiter_colon(line)? + 1..].trim();
     (!value.is_empty()).then_some(value)
+}
+
+/// The colon that ends a property's name and parameters, ignoring any colon
+/// written inside a quoted parameter value.
+///
+/// RFC 5545 section 3.2 requires a parameter value to be quoted whenever it
+/// holds a colon, a semicolon or a comma, precisely so that punctuation is
+/// not mistaken for the format's own delimiters. A plain search for the
+/// first colon does not know that, so a real Exchange Server document
+/// naming its zone `"(UTC-05:00) Eastern Time (US & Canada)"`
+/// (github.com/sabre-io/vobject issue #344) had both the zone name and the
+/// property's own value read as fragments of each other: the colon inside
+/// the quotes was taken for the line's delimiter, and the real one, after
+/// the closing quote, was never reached.
+fn delimiter_colon(line: &str) -> Option<usize> {
+    let mut quoted = false;
+    for (at, ch) in line.char_indices() {
+        match ch {
+            '"' => quoted = !quoted,
+            ':' if !quoted => return Some(at),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Extract an iCalendar property value from VEVENT data.
@@ -1388,9 +1413,9 @@ fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<Str
     if !names_the_property(line, property) {
         return None;
     }
-    // Parameters sit between the name and the first colon, so a line whose
-    // first punctuation is the colon carries none.
-    let (semicolon, colon) = (line.find(';')?, line.find(':')?);
+    // Parameters sit between the name and the delimiter colon, so a line
+    // whose first punctuation is that colon carries none.
+    let (semicolon, colon) = (line.find(';')?, delimiter_colon(line)?);
     if semicolon > colon {
         return None;
     }
@@ -1435,6 +1460,26 @@ fn unquoted(value: &str) -> &str {
         .strip_prefix('"')
         .and_then(|inner| inner.strip_suffix('"'))
         .unwrap_or(value)
+}
+
+/// [`unquoted`]'s opposite: a parameter value quoted the way the standard
+/// requires, when it needs to be.
+///
+/// The one value this program ever writes as a parameter that a person did
+/// not type is a zone name, and Outlook and Exchange write zone names
+/// carrying exactly the punctuation RFC 5545 section 3.2 requires a quoted
+/// value for, such as `(UTC-05:00) Eastern Time (US & Canada)`. Written back
+/// out unquoted, that is not the name that arrived: this program's own
+/// reader cannot tell where it ends, and neither can anyone else's.
+///
+/// A value holding none of the three characters goes out exactly as it
+/// always has, so nothing that already round-trips correctly changes shape.
+fn quoted_if_it_must_be(value: &str) -> std::borrow::Cow<'_, str> {
+    if value.contains([':', ';', ',']) {
+        std::borrow::Cow::Owned(format!("\"{value}\""))
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    }
 }
 
 /// Normalize an iCalendar datetime to RFC 3339 format.
@@ -1598,7 +1643,9 @@ fn the_properties_this_program_owns(event: &CalDavEvent) -> Vec<String> {
         // by not asking: an empty name went out as `TZID=` and a space as
         // `TZID= `, and neither is a calendar document.
         let zone = match crate::common::moment::the_zone_named(event.time_zone.as_deref()) {
-            Some(named) if !says_utc(&start) => format!(";TZID={named}"),
+            Some(named) if !says_utc(&start) => {
+                format!(";TZID={}", quoted_if_it_must_be(named))
+            }
             _ => String::new(),
         };
         (start, zone)
@@ -1833,7 +1880,11 @@ pub(crate) fn cancelled_day_lines(called_off: &str, zone: Option<&str>) -> Vec<S
     }
     for (under, faces) in clock_faces {
         lines.push(match under {
-            Some(named) => format!("EXDATE;{TIME_ZONE_PARAMETER}={named}:{}", faces.join(",")),
+            Some(named) => format!(
+                "EXDATE;{TIME_ZONE_PARAMETER}={}:{}",
+                quoted_if_it_must_be(named),
+                faces.join(",")
+            ),
             None => format!("EXDATE:{}", faces.join(",")),
         });
     }
@@ -3501,6 +3552,121 @@ mod tests {
         );
     }
 
+    /// The two fragments RFC 5545's folding rule broke this identifier across,
+    /// named once so the fixture that carries it and the test reading it back
+    /// cannot disagree by a transcription slip in a hundred-and-fifteen
+    /// character hex string.
+    const EXCHANGE_UID_PART_ONE: &str =
+        "040000003232E00074C5B7876A82E00800000000FD0CCC288FF8D101000000000000000";
+    const EXCHANGE_UID_PART_TWO: &str = "01000000006F59CB9230499438F3AB6F603BBFA69";
+
+    /// A real Microsoft Exchange Server 2010 / Office 365 calendar feed,
+    /// exactly as pasted into sabre/vobject issue #344 by a reporter tracing a
+    /// bug in a response from `webcal://outlook.office365.com/owa/...`
+    /// (<https://github.com/sabre-io/vobject/issues/344>). sabre/vobject is
+    /// BSD-2-Clause (fruux GmbH); this is a real user's own bug report, not
+    /// sabre/vobject's own source, kept here to test against the shape a real
+    /// Exchange server writes: a Windows zone name that carries a colon of its
+    /// own and is quoted everywhere it names a parameter, and an identifier
+    /// folded mid-token.
+    fn a_document_a_real_exchange_server_wrote() -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\n\
+             METHOD:PUBLISH\r\n\
+             PRODID:Microsoft Exchange Server 2010\r\n\
+             VERSION:2.0\r\n\
+             X-WR-CALNAME:Calendar\r\n\
+             BEGIN:VTIMEZONE\r\n\
+             TZID:(UTC-05:00) Eastern Time (US & Canada)\r\n\
+             BEGIN:STANDARD\r\n\
+             DTSTART:16010101T020000\r\n\
+             TZOFFSETFROM:-0400\r\n\
+             TZOFFSETTO:-0500\r\n\
+             RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=1SU;BYMONTH=11\r\n\
+             END:STANDARD\r\n\
+             BEGIN:DAYLIGHT\r\n\
+             DTSTART:16010101T020000\r\n\
+             TZOFFSETFROM:-0500\r\n\
+             TZOFFSETTO:-0400\r\n\
+             RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=2SU;BYMONTH=3\r\n\
+             END:DAYLIGHT\r\n\
+             END:VTIMEZONE\r\n\
+             BEGIN:VEVENT\r\n\
+             DESCRIPTION:Quick meeting\r\n\
+             UID:{EXCHANGE_UID_PART_ONE}\r\n\
+             \x20{EXCHANGE_UID_PART_TWO}\r\n\
+             SUMMARY:STAFF MEETING\r\n\
+             DTSTART;TZID=\"(UTC-05:00) Eastern Time (US & Canada)\":20160802T083000\r\n\
+             DTEND;TZID=\"(UTC-05:00) Eastern Time (US & Canada)\":20160802T090000\r\n\
+             CLASS:PUBLIC\r\n\
+             PRIORITY:5\r\n\
+             DTSTAMP:20160822T184151Z\r\n\
+             TRANSP:OPAQUE\r\n\
+             STATUS:CONFIRMED\r\n\
+             SEQUENCE:0\r\n\
+             LOCATION:\r\n\
+             X-MICROSOFT-CDO-APPT-SEQUENCE:0\r\n\
+             X-MICROSOFT-CDO-BUSYSTATUS:BUSY\r\n\
+             X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY\r\n\
+             X-MICROSOFT-CDO-ALLDAYEVENT:FALSE\r\n\
+             X-MICROSOFT-CDO-IMPORTANCE:1\r\n\
+             X-MICROSOFT-CDO-INSTTYPE:0\r\n\
+             X-MICROSOFT-DISALLOW-COUNTER:FALSE\r\n\
+             END:VEVENT\r\n\
+             END:VCALENDAR\r\n"
+        )
+    }
+
+    #[test]
+    fn test_a_real_exchange_meeting_whose_zone_name_carries_its_own_colon_is_read_whole() {
+        // RFC 5545 section 3.2 requires a parameter value holding a colon to
+        // be quoted, precisely so the colon inside it is not mistaken for the
+        // line's own delimiter colon. A real Exchange zone name does exactly
+        // this, and the reader used to stop at the first colon regardless of
+        // the quotes around it: the zone name, the start and the end all came
+        // back as fragments of each other.
+        let event = parse_ical_vevent(
+            &a_document_a_real_exchange_server_wrote(),
+            "https://example.test/e.ics",
+            None,
+        )
+        .expect("an event");
+
+        assert_eq!(
+            event.uid,
+            format!("{EXCHANGE_UID_PART_ONE}{EXCHANGE_UID_PART_TWO}")
+        );
+        assert_eq!(event.summary, "STAFF MEETING");
+        assert_eq!(event.description.as_deref(), Some("Quick meeting"));
+        assert_eq!(event.dtstart, "2016-08-02T08:30:00");
+        assert_eq!(event.dtend.as_deref(), Some("2016-08-02T09:00:00"));
+        assert_eq!(
+            event.time_zone.as_deref(),
+            Some("(UTC-05:00) Eastern Time (US & Canada)")
+        );
+        assert!(!event.is_all_day);
+    }
+
+    #[test]
+    fn test_a_real_exchange_meetings_zone_name_survives_a_change_and_goes_back_out_quoted() {
+        // The round trip on the change path: reading this meeting must not
+        // corrupt its zone name, and sending a change must quote it again,
+        // because an unquoted zone name holding a colon is not the name the
+        // server sent.
+        let held = a_document_a_real_exchange_server_wrote();
+        let event = parse_ical_vevent(&held, "https://example.test/e.ics", None).expect("an event");
+
+        let sent = ical_with_the_event_changed(&held, &event).expect("the change to be written");
+
+        assert!(
+            sent.contains(
+                "DTSTART;TZID=\"(UTC-05:00) Eastern Time (US & Canada)\":20160802T083000\r\n"
+            ),
+            "the meeting's start did not go back out naming the zone it \
+             arrived in:\n{sent}"
+        );
+    }
+
     #[test]
     fn test_a_cancelled_day_stored_with_its_property_name_goes_out_as_one_cancelled_day() {
         // What old rows written from Google hold, and what the occurrence
@@ -3704,6 +3870,18 @@ mod tests {
                 "DTSTART;TZID=Eastern Standard Time:20260305T090000",
                 "DTSTART",
                 Some("Eastern Standard Time"),
+            ),
+            // A zone name holding a colon of its own, quoted because RFC 5545
+            // section 3.2 requires that of any parameter value carrying a
+            // colon, a semicolon or a comma. A real Exchange Server 2010 /
+            // Office 365 document writes exactly this
+            // (github.com/sabre-io/vobject issue #344): the colon inside the
+            // quotes used to be read as the line's delimiter colon instead of
+            // the one after them.
+            (
+                "DTSTART;TZID=\"(UTC-05:00) Eastern Time (US & Canada)\":20160802T083000",
+                "DTSTART",
+                Some("(UTC-05:00) Eastern Time (US & Canada)"),
             ),
             // No parameters at all.
             ("DTSTART:20260305T090000Z", "DTSTART", None),
