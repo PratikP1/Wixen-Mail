@@ -509,6 +509,58 @@ fn wx_app_source() -> String {
         .expect("src/presentation/wx_app.rs should be readable")
 }
 
+/// Whether `needle` sits on a line of `haystack` that a `//` comment has not
+/// swallowed.
+///
+/// `str::contains` cannot tell a live call from a commented-out one, because
+/// a line commented out with `// theme::paint(...)` still holds the call's
+/// exact text as a literal substring. Proven by hand before this existed:
+/// commenting out a real call left `haystack.contains(needle)` reporting
+/// true, so the two checks below traded that method for this one.
+fn appears_live(haystack: &str, needle: &str) -> bool {
+    haystack.lines().any(|line| {
+        line.find(needle)
+            .is_some_and(|at| !line[..at].contains("//"))
+    })
+}
+
+#[cfg(test)]
+mod appears_live_tests {
+    use super::appears_live;
+
+    #[test]
+    fn test_a_call_on_its_own_line_is_live() {
+        assert!(appears_live(
+            "theme::paint(&x, y);\n",
+            "theme::paint(&x, y);"
+        ));
+    }
+
+    #[test]
+    fn test_a_commented_out_call_is_not_live() {
+        assert!(!appears_live(
+            "// theme::paint(&x, y);\n",
+            "theme::paint(&x, y);"
+        ));
+    }
+
+    #[test]
+    fn test_a_call_after_other_code_on_the_same_line_is_still_live() {
+        assert!(appears_live(
+            "if let Some(y) = z { theme::paint(&x, y); }\n",
+            "theme::paint(&x, y);"
+        ));
+    }
+
+    #[test]
+    fn test_a_call_present_only_inside_a_doc_comment_is_not_live() {
+        assert!(!appears_live(
+            "/// See also `theme::paint(&x, y);` for the pattern this follows.\n",
+            "theme::paint(&x, y);"
+        ));
+    }
+}
+
 /// The body of one named function, cut from the rest of the file so a check
 /// cannot pass by matching a similar line that belongs to something else.
 fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
@@ -537,9 +589,10 @@ fn test_wx_app_local_panels_are_written_to_paint_themselves() {
         "theme::paint(&inner, palette.main_surface());",
     ] {
         assert!(
-            source.contains(needle),
-            "wx_app.rs no longer contains `{needle}`; this only checks the \
-             call is written, not that any control shows it"
+            appears_live(&source, needle),
+            "wx_app.rs no longer has a live `{needle}`; this only checks the \
+             call is written and not commented out, not that any control \
+             shows it"
         );
     }
 }
@@ -554,9 +607,10 @@ fn test_the_conversation_as_headings_window_is_written_to_paint_itself() {
         "theme::paint(&list, palette.main_surface());",
     ] {
         assert!(
-            body.contains(needle),
-            "show_conversation_as_page no longer contains `{needle}`; this \
-             only checks the call is written, not that any control shows it"
+            appears_live(body, needle),
+            "show_conversation_as_page no longer has a live `{needle}`; this \
+             only checks the call is written and not commented out, not \
+             that any control shows it"
         );
     }
 
