@@ -733,6 +733,31 @@ mod tests {
         assert!(tasks.is_empty());
     }
 
+    #[test]
+    fn test_un_ticking_a_task_clears_the_completed_at_stamp() {
+        // Ticking a task off stamps the moment; ticking it back off has to
+        // let that stamp go, or an un-done task keeps claiming a time it
+        // was finished.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        synced_task(&cache, "google:t1", &list.id);
+
+        cache.toggle_task_complete("google:t1").unwrap();
+        let completed = cache.find_task("google:t1").unwrap().expect("still there");
+        assert!(
+            completed.completed_at.is_some(),
+            "ticking a task off did not stamp a completion time"
+        );
+
+        cache.toggle_task_complete("google:t1").unwrap();
+        let uncompleted = cache.find_task("google:t1").unwrap().expect("still there");
+        assert!(
+            uncompleted.completed_at.is_none(),
+            "un-ticking a task left its old completed_at stamp in place: {:?}",
+            uncompleted.completed_at
+        );
+    }
+
     fn synced_task(cache: &MessageCache, id: &str, list_id: &str) -> TaskEntry {
         let now = chrono::Utc::now().to_rfc3339();
         let task = TaskEntry {
