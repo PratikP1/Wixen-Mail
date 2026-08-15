@@ -80,10 +80,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   linked back to the series and shown at the time it moved to. Google
   calendars already worked this way; this is the matching fix for CalDAV.
 
-  Known limitations. Sending a moved or changed day back to a CalDAV server
-  is not supported yet. This program can already send a change to a whole
-  series; changing one day cut out of a series is not wired up, so such a
-  change made here does not reach the server. A day a calendar server marks
+  Known limitations. A day a calendar server has already moved or changed
+  out of a repeating meeting still cannot be edited or deleted on its own
+  here; the whole series can still be changed. Cutting a day out of a
+  series here, for a day no calendar server has touched before, is
+  different and already reaches the server: the day comes off the series
+  there too, and is kept as an appointment of its own, the same as it is
+  kept here. A day a calendar server marks
   cancelled outright, rather than moved, is shown as a changed appointment
   rather than taken off the diary the way a cancelled Google day already is;
   that is a separate fix still to come. A moved or changed day named in a
