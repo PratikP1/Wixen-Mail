@@ -15,11 +15,20 @@
 //! hung until it was killed. So building a live widget and reading it back
 //! happens in exactly one `#[test]` function below, including the check that
 //! the harness itself works, never split across more than one, and never
-//! inside `src/**`'s own test modules.
+//! inside `src/**`'s own test modules. The two source-text checks at the
+//! bottom of this file touch no wxWidgets API at all, so running them
+//! alongside the live one in the same process is not that hazard.
 //!
-//! This is the second of three steps this round takes through this file: the
-//! five PIM modules, then the reader window, then the sites that stay inside
-//! `wx_app.rs` and cannot be constructed standalone at all.
+//! Two call sites this round wires are not reachable from here at all:
+//! `wx_app.rs`'s own local panels (the module switcher, the mail sidebar and
+//! content panels, the splitter) and `show_conversation_as_page`'s frame and
+//! attachment list are built deep inside functions that are private, or that
+//! need a running application's accounts, database and runtime to reach.
+//! Making them independently constructible was not part of this round's
+//! remit, so those sites are proven the way `tests/wired.rs` proves the
+//! things it cannot construct either: by reading the source and confirming
+//! the call is written where it should be, which is weaker than a live
+//! read-back and says so.
 
 use std::sync::{Arc, Mutex};
 use wixen_mail::presentation::accessibility::Accessibility;
@@ -422,5 +431,87 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
         "{} site(s) did not carry the colour they were given:\n{}",
         failed.len(),
         failed.join("\n")
+    );
+}
+
+// ── What cannot be built standalone ─────────────────────────────────────
+//
+// `wx_app.rs`'s own local panels and `show_conversation_as_page` are not
+// reachable from outside a running application: the first are built deep
+// inside the window's own private setup function, alongside accounts, a
+// database and a runtime this test has none of, and the second is a private
+// function only that setup function calls. Splitting either apart so a test
+// could construct them standalone was not part of this round's work.
+//
+// So these two checks do what `tests/wired.rs` already does for the things
+// it cannot construct either: read the source and confirm the call is
+// written where it should be. That is weaker than everything above, and says
+// so. It proves the line exists, not that a control ever showed the colour.
+
+fn wx_app_source() -> String {
+    std::fs::read_to_string("src/presentation/wx_app.rs")
+        .expect("src/presentation/wx_app.rs should be readable")
+}
+
+/// The body of one named function, cut from the rest of the file so a check
+/// cannot pass by matching a similar line that belongs to something else.
+fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
+    let start = source
+        .find(signature_start)
+        .unwrap_or_else(|| panic!("{signature_start} was not found in wx_app.rs"));
+    let after = &source[start..];
+    // The next line that starts a top level item at column zero, which is
+    // where this function ends and whatever follows it begins.
+    let end = after[1..]
+        .find("\nfn ")
+        .map(|at| at + 1)
+        .unwrap_or(after.len());
+    &after[..end]
+}
+
+#[test]
+fn test_wx_app_local_panels_are_written_to_paint_themselves() {
+    let source = wx_app_source();
+
+    for needle in [
+        "theme::paint(&btn_panel, palette.second_surface());",
+        "theme::paint(&mail_sidebar, palette.second_surface());",
+        "theme::paint(&right_panel, palette.main_surface());",
+        "theme::paint(&mail_content, palette.main_surface());",
+        "theme::paint(&inner, palette.main_surface());",
+    ] {
+        assert!(
+            source.contains(needle),
+            "wx_app.rs no longer contains `{needle}`; this only checks the \
+             call is written, not that any control shows it"
+        );
+    }
+}
+
+#[test]
+fn test_the_conversation_as_headings_window_is_written_to_paint_itself() {
+    let source = wx_app_source();
+    let body = function_body(&source, "fn show_conversation_as_page(");
+
+    for needle in [
+        "theme::paint(&frame, palette.main_surface());",
+        "theme::paint(&list, palette.main_surface());",
+    ] {
+        assert!(
+            body.contains(needle),
+            "show_conversation_as_page no longer contains `{needle}`; this \
+             only checks the call is written, not that any control shows it"
+        );
+    }
+
+    // The WebView is the named exception: it owns its colour through its
+    // document's own HTML and CSS, independent of this setting, the same as
+    // the mail preview and the compose body editor. Recorded here so a
+    // change that starts painting it is a deliberate one, not an oversight
+    // this check would otherwise wave through silently.
+    assert!(
+        !body.contains("theme::paint(&page,"),
+        "the conversation page WebView is now painted; if that is deliberate, \
+         update this test and the comment above it rather than deleting either"
     );
 }

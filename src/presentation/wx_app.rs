@@ -575,6 +575,9 @@ impl WxMailApp {
 
             // Module navigation buttons (2x3 grid), wrapped in a panel for show/hide
             let btn_panel = Panel::builder(&left_panel).build();
+            if let Some(palette) = palette {
+                theme::paint(&btn_panel, palette.second_surface());
+            }
             let btn_panel_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let btn_grid = FlexGridSizer::builder(3, 2)
                 .with_vgap(2)
@@ -607,6 +610,9 @@ impl WxMailApp {
             // Context sidebars: one per module, only active one visible
             // Mail sidebar: folder tree
             let mail_sidebar = Panel::builder(&left_panel).build();
+            if let Some(palette) = palette {
+                theme::paint(&mail_sidebar, palette.second_surface());
+            }
             let mail_sb_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let folder_tree = TreeCtrl::builder(&mail_sidebar).build();
             set_accessible_name(&folder_tree, "Mail folders");
@@ -670,13 +676,27 @@ impl WxMailApp {
 
             // ── Right pane: module content panels ─────────────────
             let right_panel = Panel::builder(&panel).build();
+            if let Some(palette) = palette {
+                theme::paint(&right_panel, palette.main_surface());
+            }
             let right_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
             // Mail content panel (default visible)
             let mail_content = Panel::builder(&right_panel).build();
+            if let Some(palette) = palette {
+                theme::paint(&mail_content, palette.main_surface());
+            }
             let mail_content_sizer = BoxSizer::builder(Orientation::Vertical).build();
             let inner = SplitterWindow::builder(&mail_content).build();
             inner.set_minimum_pane_size(100);
+            // The splitter itself, so the sash and any strip either side of
+            // the two panes it manages are not left in whatever Windows
+            // would otherwise draw there. A call here is a request, the same
+            // as everywhere else in this file: the sash is drawn by Windows
+            // and may keep its own chrome regardless of what this asks for.
+            if let Some(palette) = palette {
+                theme::paint(&inner, palette.main_surface());
+            }
 
             // Virtual mode: the control asks for the text of visible rows and
             // never holds the rest. Memory is proportional to what is on screen
@@ -8661,10 +8681,26 @@ fn show_conversation_as_page(
         .with_size(Size::new(900, 700))
         .build();
 
+    // This window is opened fresh each time rather than kept alive like the
+    // reader, so the palette is read fresh each time too rather than carried
+    // in from a caller: there is no single "once at startup" moment here to
+    // read it at instead.
+    let palette = theme::current(
+        &crate::data::config::ConfigManager::load_stored()
+            .map(|mgr| mgr.app_config().theme.clone())
+            .unwrap_or_default(),
+    );
+    if let Some(palette) = palette {
+        theme::paint(&frame, palette.main_surface());
+    }
+
     let page = WebView::builder(&frame)
         .with_backend(WebViewBackend::Edge)
         .build();
     set_accessible_name(&page, "Conversation");
+    // Not painted. The page's own document sets its colour in HTML and CSS,
+    // independent of this setting, the same as the mail preview and the
+    // compose body editor.
     // A sizer, because the window is no longer only the page: anything hanging
     // off these messages gets a list below it.
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -8752,6 +8788,9 @@ fn show_conversation_as_page(
     let hanging_off = reader_text::attachments_in(parts);
     if !hanging_off.is_empty() {
         let list = ListBox::builder(&frame).build();
+        if let Some(palette) = palette {
+            theme::paint(&list, palette.main_surface());
+        }
         for attachment in &hanging_off {
             list.append(&attachment.label());
         }

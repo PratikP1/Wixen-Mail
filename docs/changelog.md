@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The Theme setting now colours every module, not only Mail.** Choosing
+  Light or Dark used to change three places: the folder list, the message
+  list and the sidebar beside them. Every other module (Calendar, Contacts,
+  Reminders, Tasks and Notes) kept Windows' own grey and white, so switching
+  modules meant switching back to an uncoloured screen. The sidebar and
+  content area of every module now take the same colours Mail already had,
+  including the button panel used to switch between modules, Contacts'
+  detail pane, and the list and editor panes in Notes.
+
+  The window a message opens into for reading is coloured now too, and so is
+  the window that shows a conversation as headings. The security warning bar
+  in the reader keeps the same background as the rest of the message; there
+  is no separate warning colour yet.
+
+  Known limitations: Settings, Compose, and roughly thirty other windows that
+  open on top of the main one, such as the Account Manager and the calendar
+  event editor, still show Windows' own colours regardless of the Theme
+  setting. The description under the Theme setting in Settings is updated to
+  match what now works.
+
 - **Fixed: a contact edit that failed to send because of the network was
   thrown away and reported as replaced by the address book, even though the
   address book never actually saw it.** Every contact edit made here is sent

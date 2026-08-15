@@ -298,17 +298,21 @@ impl Rgb {
 /// How far the theme reaches, in the words a person reads.
 ///
 /// The setting used to be described as though picking Dark made the
-/// application dark. It applies the palette to three places, and a note that
-/// does not say so leaves somebody hunting for the reason the rest of the
-/// window did not change.
+/// application dark. It applies the palette to the sidebar and content area
+/// of every module and to the windows a message can open into, and a note
+/// that does not say so leaves somebody hunting for the reason the rest of
+/// the window did not change.
 ///
 /// It lives here rather than in the settings dialog so the sentence and the
 /// code it describes sit together, and so a test can read it. What no test
 /// here can say is whether anybody sees or hears it.
-pub const REACH: &str = "Colour is applied to the folder list, the message list and the side panel. \
-     Everything else follows Windows. A change takes effect the next time \
-     Wixen Mail starts. Default means light for now, because Wixen Mail has \
-     not yet asked Windows for its dark mode.";
+pub const REACH: &str = "Colour is applied to the sidebar and content area of \
+     every module: Mail, Calendar, Contacts, Reminders, Tasks and Notes. It \
+     also reaches the window a message opens into for reading, and the \
+     window that shows a conversation as headings. Everything else follows \
+     Windows. A change takes effect the next time Wixen Mail starts. Default \
+     means light for now, because Wixen Mail has not yet asked Windows for \
+     its dark mode.";
 
 /// The palette to draw with right now.
 ///
@@ -659,19 +663,29 @@ mod tests {
 
     #[test]
     fn test_the_theme_note_names_how_far_the_colour_reaches_and_when_it_arrives() {
-        // The sentence shown under the Theme setting. It has to name the three
-        // places the palette is applied, say the rest is left to Windows, and
-        // say a change waits for the next start, because somebody who is told
-        // none of that reads the setting as broken and changes it again.
+        // The sentence shown under the Theme setting. It has to name every
+        // module the palette reaches, the two windows a message can open
+        // into, say the rest is left to Windows, and say a change waits for
+        // the next start, because somebody who is told none of that reads
+        // the setting as broken and changes it again.
         //
         // This checks the sentence. Whether it is displayed, whether it is in
         // the accessibility tree, and whether a screen reader reaches it when
         // focus lands on the Theme choice are three separate questions, and
         // none of them is answered here.
-        for place in ["folder list", "message list", "side panel"] {
+        for place in [
+            "Mail",
+            "Calendar",
+            "Contacts",
+            "Reminders",
+            "Tasks",
+            "Notes",
+            "reading",
+            "conversation as headings",
+        ] {
             assert!(
                 REACH.contains(place),
-                "the note does not name the {place}: {REACH}"
+                "the note does not name {place}: {REACH}"
             );
         }
         assert!(REACH.contains("follows Windows"), "{REACH}");
