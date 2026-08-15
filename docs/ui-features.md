@@ -248,9 +248,11 @@
 4. **High Contrast** - Hands the colours back to Windows. Wixen Mail paints
    nothing of its own, so your high contrast scheme is what you get.
 
-A theme colours the folder list, the message list and the side panel. Every
-other part of the window uses the Windows colours. A change takes effect the
-next time Wixen Mail starts.
+A theme colours the sidebar and content area of every module: Mail, Calendar,
+Contacts, Reminders, Tasks and Notes. It also reaches the window a message
+opens into for reading, and the window that shows a conversation as
+headings. Everything else uses the Windows colours. A change takes effect as
+soon as you close Settings with OK; nothing needs to restart.
 
 ### Color Indicators
 - **Unread**: Bold text

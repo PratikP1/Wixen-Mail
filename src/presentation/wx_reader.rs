@@ -23,7 +23,7 @@ use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use crate::presentation::theme;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -92,11 +92,18 @@ pub struct ReaderWindow {
     go_back: Rc<Timer<Frame>>,
     a11y: Arc<Accessibility>,
     /// The palette this window's tabs paint themselves with, read once at
-    /// construction the same way the main window reads it once at startup.
-    /// `None` under Windows high contrast, or when the system is set up in a
-    /// way nothing here has an opinion about; either way nothing is painted
-    /// and Windows keeps deciding.
-    palette: Option<theme::Palette>,
+    /// construction the same way the main window reads it once at startup,
+    /// and replaced by [`Self::repaint`] whenever the Theme setting changes
+    /// while this window is already built. `None` under Windows high
+    /// contrast, or when the system is set up in a way nothing here has an
+    /// opinion about; either way nothing is painted and Windows keeps
+    /// deciding.
+    ///
+    /// A `Cell` rather than a plain field: every method here takes `&self`,
+    /// because the window is shared as `Rc<ReaderWindow>` and reused for as
+    /// long as Wixen Mail runs, so there is no `&mut self` to update it
+    /// through.
+    palette: Cell<Option<theme::Palette>>,
 }
 
 /// Handles to the widgets one open tab is made of.
@@ -364,7 +371,7 @@ impl ReaderWindow {
             closed,
             go_back,
             a11y: a11y.clone(),
-            palette,
+            palette: Cell::new(palette),
         }
     }
 
@@ -376,6 +383,30 @@ impl ReaderWindow {
     /// The tab strip, for reaching what it was painted.
     pub fn notebook(&self) -> &Notebook {
         &self.notebook
+    }
+
+    /// Re-apply the theme immediately when the Theme setting changes while
+    /// this window is already built, using the same [`theme::paint`] call
+    /// [`Self::new`] makes once at startup.
+    ///
+    /// This window's own frame and tab strip repaint on the spot. Any tab
+    /// opened after this call paints itself with the new palette too,
+    /// because this also replaces the palette [`Self::open`] reads from.
+    ///
+    /// A tab already open when this runs keeps the colours it was built
+    /// with. Repainting its message text, warning bar and attachment list
+    /// would mean this window keeping hold of them past the moment they are
+    /// built, which today it does not: [`Self::open`] hands its widgets back
+    /// to the caller and keeps none of them except the attachment list,
+    /// for reasons its own doc comment gives. Reopening the message, or the
+    /// next restart, is what picks up the new colour there.
+    pub fn repaint(&self, palette: Option<theme::Palette>) {
+        self.palette.set(palette);
+        let Some(palette) = palette else {
+            return;
+        };
+        theme::paint(&self.frame, palette.main_surface());
+        theme::paint(&self.notebook, palette.main_surface());
     }
 
     /// Say what to do when somebody asks to save an attachment.
@@ -400,7 +431,7 @@ impl ReaderWindow {
     /// was painted.
     pub fn open(&self, document: ReaderDocument) -> ReaderTabHandles {
         let panel = Panel::builder(&self.notebook).build();
-        if let Some(palette) = self.palette {
+        if let Some(palette) = self.palette.get() {
             theme::paint(&panel, palette.main_surface());
         }
         let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -430,7 +461,7 @@ impl ReaderWindow {
             // colour tested against the two existing surfaces, and inventing
             // a background for one is a design decision this round does not
             // make.
-            if let Some(palette) = self.palette {
+            if let Some(palette) = self.palette.get() {
                 theme::paint(&bar, palette.main_surface());
             }
             bar
@@ -448,7 +479,7 @@ impl ReaderWindow {
             )
             .build();
         set_accessible_name(&text, &document.title);
-        if let Some(palette) = self.palette {
+        if let Some(palette) = self.palette.get() {
             theme::paint(&text, palette.main_surface());
         }
         text.set_value(&document.text);
@@ -487,7 +518,7 @@ impl ReaderWindow {
                 (count, many) => format!("Attachments, {count} items, {many} are programs"),
             };
             set_accessible_name(&list, &name);
-            if let Some(palette) = self.palette {
+            if let Some(palette) = self.palette.get() {
                 theme::paint(&list, palette.main_surface());
             }
             list.set_selection(0, true);

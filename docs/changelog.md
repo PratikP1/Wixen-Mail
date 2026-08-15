@@ -22,11 +22,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   in the reader keeps the same background as the rest of the message; there
   is no separate warning colour yet.
 
+  Changing the setting also takes effect immediately now. Closing Settings
+  with OK used to leave every open window on its old colours until the next
+  restart; the folder list, the message list, every module's sidebar and
+  content area, and the reader window's own frame and tab strip repaint on
+  the spot instead, with nothing to restart and no delay or flash while it
+  happens.
+
   Known limitations: Settings, Compose, and roughly thirty other windows that
   open on top of the main one, such as the Account Manager and the calendar
   event editor, still show Windows' own colours regardless of the Theme
-  setting. The description under the Theme setting in Settings is updated to
-  match what now works.
+  setting. A message already open in the reader when you change the setting
+  keeps the colours it had; closing that tab and opening the message again,
+  or restarting, is what picks up the new ones. The description under the
+  Theme setting in Settings is updated to match what now works.
 
 - **Fixed: a contact edit that failed to send because of the network was
   thrown away and reported as replaced by the address book, even though the

@@ -2259,6 +2259,10 @@ impl WxMailApp {
                 let do_switch = do_switch_module.clone();
                 let a11y = a11y.clone();
                 let message_cache = message_cache.clone();
+                // Cloned rather than moved in: the reader is `Rc`, not one
+                // of the `Copy` widget handles, and other closures built
+                // later in this function still need the original.
+                let reader = reader.clone();
                 // The selection lives in the control, not in the state, so the
                 // commands that act on it need the lists themselves. These are
                 // handles rather than owned widgets, so copying them costs
@@ -3230,7 +3234,61 @@ impl WxMailApp {
                             send_status(&ui_tx, &runtime, "Syncing tasks...");
                             spawn_tasks_sync(&state, &ui_tx, &runtime);
                         }
-                        _ if id == ID_SETTINGS => handle_settings(&frame, &ui_tx, &runtime, &a11y),
+                        _ if id == ID_SETTINGS => {
+                            let palette = handle_settings(&frame, &ui_tx, &runtime, &a11y);
+                            // Every widget startup paints once, painted
+                            // again right now: the sidebar and content area
+                            // of every module, and the main window's own
+                            // panels around them. `repaint_theme` does
+                            // nothing when `palette` is `None`, the same as
+                            // startup does nothing then.
+                            repaint_theme(
+                                palette,
+                                &[
+                                    &left_panel,
+                                    &btn_panel,
+                                    &mail_sidebar,
+                                    &folder_tree,
+                                    &cal_sidebar,
+                                    &cal_sb.tree,
+                                    &contacts_sidebar,
+                                    &contacts_sb.tree,
+                                    &reminders_sidebar,
+                                    &reminders_sb.tree,
+                                    &tasks_sidebar,
+                                    &tasks_sb.tree,
+                                    &notes_sidebar,
+                                    &notes_sb.tree,
+                                ],
+                                &[
+                                    &right_panel,
+                                    &mail_content,
+                                    &inner,
+                                    &msg_list,
+                                    &cal_content,
+                                    &cal_cp.event_list,
+                                    &contacts_content,
+                                    &contacts_cp.contact_list,
+                                    &contacts_cp.detail,
+                                    &reminders_content,
+                                    &reminders_cp.reminder_list,
+                                    &tasks_content,
+                                    &tasks_cp.task_list,
+                                    &notes_content,
+                                    &notes_cp.list_panel,
+                                    &notes_cp.note_list,
+                                    &notes_cp.editor_panel,
+                                    &notes_cp.title_input,
+                                    &notes_cp.body_input,
+                                ],
+                            );
+                            // The reader window is kept alive and reused
+                            // rather than rebuilt per message, so it is not
+                            // reached by the list above; it repaints its own
+                            // frame and tab strip, and remembers the palette
+                            // for the next tab it opens.
+                            reader.repaint(palette);
+                        }
                         _ if id == ID_OFFLINE_MODE => {
                             let new_mode = {
                                 let mut s = lock_state(&state);
@@ -6282,7 +6340,13 @@ fn open_for_scanning(
 
     tracing::info!("Opening {} for the accessibility scan", target.as_name());
     match target {
-        ScanTarget::Settings => handle_settings(frame, tx, rt, a11y),
+        ScanTarget::Settings => {
+            // The palette is thrown away: this scan runs on a fresh profile
+            // with no folder tree, message list or module panel of its own
+            // for a caller to repaint, and the scan process is killed by the
+            // workflow once the walk is done.
+            handle_settings(frame, tx, rt, a11y);
+        }
         ScanTarget::Accounts => handle_account_mgr(frame, state, a11y),
         ScanTarget::FirstRun => {
             // The answer is thrown away. On a fresh profile this screen shows
@@ -6404,13 +6468,51 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>, a11y: &Ar
     }
 }
 
+/// Re-apply the theme's colours to every widget already on screen, the
+/// moment the Theme setting changes, using the same [`theme::paint`] call
+/// startup already makes once for each of them.
+///
+/// `None` leaves every widget exactly as it was: the same behaviour startup
+/// already has when high contrast, or a system state this application has
+/// no opinion about, means there is no palette of ours to apply.
+///
+/// Takes `&dyn WxWidget` rather than the widgets' own concrete types so one
+/// function can repaint the whole mixture startup paints, a `Panel` here, a
+/// `TreeCtrl` there, without a type parameter per widget. A test proves this
+/// with fakes, since nothing in this crate builds a live wxWidgets window
+/// inside `cargo test`; whether a real control obeys the colour it is given
+/// is, as everywhere else in this file, a question only a running build
+/// answers.
+fn repaint_theme(
+    palette: Option<theme::Palette>,
+    second_surface_widgets: &[&dyn WxWidget],
+    main_surface_widgets: &[&dyn WxWidget],
+) {
+    let Some(palette) = palette else {
+        return;
+    };
+    for widget in second_surface_widgets {
+        theme::paint(*widget, palette.second_surface());
+    }
+    for widget in main_surface_widgets {
+        theme::paint(*widget, palette.main_surface());
+    }
+}
+
 /// Open the Settings dialog and persist changes.
+///
+/// Returns the palette the new Theme setting maps to, so the caller can
+/// repaint every open window immediately: `None` when the dialog was
+/// cancelled, when settings could not be opened at all, or when the theme
+/// chosen is high contrast or a system state this application has no
+/// opinion about, the same three cases [`theme::current`] already folds
+/// into one answer.
 fn handle_settings(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
-) {
+) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
     let mut mgr = match ConfigManager::new() {
         Ok(mut mgr) => {
@@ -6425,7 +6527,7 @@ fn handle_settings(
         Err(e) => {
             tracing::error!("Settings folder unavailable: {}", e);
             send_status(tx, rt, &format!("Cannot open settings: {}", e));
-            return;
+            return None;
         }
     };
     let config = mgr.app_config().clone();
@@ -6446,6 +6548,12 @@ fn handle_settings(
                 new_config.working_day_starts,
                 new_config.working_day_ends,
             );
+            // Read before `new_config` moves into storage below, and kept
+            // regardless of whether the save that follows succeeds: a save
+            // failure is already reported through `send_status`, and should
+            // not also make the colour change somebody just asked for
+            // silently fail to show.
+            let palette = theme::current(&new_config.theme);
             *mgr.app_config_mut() = *new_config;
             if let Err(e) = mgr.save() {
                 tracing::error!("Failed to save settings: {}", e);
@@ -6454,8 +6562,9 @@ fn handle_settings(
                 let _ = tx.try_send(UIUpdate::WorkingDayChanged(working_day));
                 send_status(tx, rt, "Settings saved");
             }
+            palette
         }
-        wx_settings::SettingsResult::Cancelled => {}
+        wx_settings::SettingsResult::Cancelled => None,
     }
 }
 
@@ -10252,7 +10361,130 @@ mod tests {
     use super::{Deleting, ServerChange};
     use crate::common::temp_home::TempHome;
     use crate::presentation::panes::{Holding, Pane};
+    use crate::presentation::theme::{self, Theme};
     use crate::presentation::ui_types::{MessageItem, PimModule};
+
+    /// Stands in for a real window so `repaint_theme` can be tested without
+    /// building one.
+    ///
+    /// Nothing in this crate builds a live wxWidgets window inside `cargo
+    /// test`: `tests/theme_reach.rs`'s file comment explains why, one
+    /// process may run `wxdragon::main` at most once, and this binary runs
+    /// many `#[test]` functions in parallel. `WxWidget`'s only method
+    /// without a default body is `handle_ptr`, so every colour accessor is
+    /// overridden here instead of relying on the default, and a null
+    /// pointer from `handle_ptr` is safe because none of the overrides call
+    /// it.
+    struct RecordedWindow {
+        background: std::cell::Cell<wxdragon::prelude::Colour>,
+        foreground: std::cell::Cell<wxdragon::prelude::Colour>,
+    }
+
+    impl Default for RecordedWindow {
+        fn default() -> Self {
+            let black = wxdragon::prelude::Colour::rgb(0, 0, 0);
+            Self {
+                background: std::cell::Cell::new(black),
+                foreground: std::cell::Cell::new(black),
+            }
+        }
+    }
+
+    impl wxdragon::prelude::WxWidget for RecordedWindow {
+        fn handle_ptr(&self) -> *mut wxdragon::ffi::wxd_Window_t {
+            std::ptr::null_mut()
+        }
+        fn set_background_color(&self, color: wxdragon::prelude::Colour) {
+            self.background.set(color);
+        }
+        fn get_background_color(&self) -> wxdragon::prelude::Colour {
+            self.background.get()
+        }
+        fn set_foreground_color(&self, color: wxdragon::prelude::Colour) {
+            self.foreground.set(color);
+        }
+        fn get_foreground_color(&self) -> wxdragon::prelude::Colour {
+            self.foreground.get()
+        }
+    }
+
+    /// The colour a real control would report after `theme::paint` gave it
+    /// this `Rgb`, so a `RecordedWindow`'s reading can be compared to what a
+    /// palette asked for.
+    fn colour(rgb: theme::Rgb) -> wxdragon::prelude::Colour {
+        wxdragon::prelude::Colour::rgb(rgb.r, rgb.g, rgb.b)
+    }
+
+    #[test]
+    fn test_changing_the_theme_setting_recolours_open_windows_without_a_restart() {
+        // DONE MEANS for this round's theme work: the Settings handler
+        // repaints the widgets already on screen, rather than new ones. So
+        // this builds each fake once and paints it twice, the same
+        // instances both times, which is what "without a restart" means for
+        // a test that cannot open a real window to prove it on.
+        let sidebar = RecordedWindow::default();
+        let tree = RecordedWindow::default();
+        let content = RecordedWindow::default();
+        let list = RecordedWindow::default();
+
+        let light = Theme::Light
+            .palette(false)
+            .expect("Theme::Light always has a palette");
+        let dark = Theme::Dark
+            .palette(false)
+            .expect("Theme::Dark always has a palette");
+
+        super::repaint_theme(Some(light), &[&sidebar, &tree], &[&content, &list]);
+        assert_eq!(
+            list.get_background_color(),
+            colour(light.main_surface().background)
+        );
+
+        super::repaint_theme(Some(dark), &[&sidebar, &tree], &[&content, &list]);
+
+        assert_eq!(
+            list.get_background_color(),
+            colour(dark.main_surface().background),
+            "a widget painted with the main surface did not pick up the new palette"
+        );
+        assert_eq!(
+            list.get_foreground_color(),
+            colour(dark.main_surface().text)
+        );
+        assert_eq!(
+            content.get_background_color(),
+            colour(dark.main_surface().background)
+        );
+        assert_eq!(
+            content.get_foreground_color(),
+            colour(dark.main_surface().text)
+        );
+        for widget in [&sidebar, &tree] {
+            assert_eq!(
+                widget.get_background_color(),
+                colour(dark.second_surface().background),
+                "a widget painted with the second surface did not pick up the new palette"
+            );
+            assert_eq!(
+                widget.get_foreground_color(),
+                colour(dark.second_surface().text)
+            );
+        }
+    }
+
+    #[test]
+    fn test_repaint_theme_leaves_widgets_untouched_when_there_is_no_palette_to_apply() {
+        // High contrast, or a system state this application has no opinion
+        // about, is `None`, the same as at startup: nothing is painted and
+        // Windows keeps deciding.
+        let widget = RecordedWindow::default();
+        let black = wxdragon::prelude::Colour::rgb(0, 0, 0);
+
+        super::repaint_theme(None, &[&widget], &[]);
+
+        assert_eq!(widget.get_background_color(), black);
+        assert_eq!(widget.get_foreground_color(), black);
+    }
 
     #[test]
     fn test_the_sidebar_shows_a_group_kept_on_this_computer() {

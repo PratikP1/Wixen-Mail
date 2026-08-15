@@ -314,66 +314,116 @@ fn check_reader(parent: &Frame, a11y: &Arc<Accessibility>, into: &mut Vec<SiteRe
             .map(|mgr| mgr.app_config().theme.clone())
             .unwrap_or_default(),
     );
-    let Some(palette) = palette else {
-        // High contrast is on wherever this suite is running. Nothing should
-        // be painted, and there is no fixed colour to compare against, so
-        // this records that the branch was reached rather than asserting a
-        // colour nobody can predict from here.
-        for site in [
-            "reader frame",
-            "reader notebook",
-            "reader tab panel",
-            "reader tab text",
-            "reader tab warning",
-            "reader tab attachments",
-        ] {
-            into.push((
-                site,
-                true,
-                "high contrast is on for this run: nothing is painted, which is correct"
-                    .to_string(),
-            ));
+    match palette {
+        Some(palette) => {
+            check("reader frame", reader.frame(), palette.main_surface(), into);
+            check(
+                "reader notebook",
+                reader.notebook(),
+                palette.main_surface(),
+                into,
+            );
+
+            let handles = reader.open(document_that_exercises_every_optional_widget());
+            check(
+                "reader tab panel",
+                &handles.panel,
+                palette.main_surface(),
+                into,
+            );
+            check(
+                "reader tab text",
+                &handles.text,
+                palette.main_surface(),
+                into,
+            );
+            match &handles.warning {
+                Some(bar) => check("reader tab warning", bar, palette.main_surface(), into),
+                None => into.push((
+                    "reader tab warning",
+                    false,
+                    "no warning bar was built for a document with a warning".to_string(),
+                )),
+            }
+            match &handles.attachments {
+                Some(list) => check("reader tab attachments", list, palette.main_surface(), into),
+                None => into.push((
+                    "reader tab attachments",
+                    false,
+                    "no attachment list was built for a document with an attachment".to_string(),
+                )),
+            }
         }
-        return;
-    };
+        None => {
+            // High contrast is on wherever this suite is running. Nothing
+            // should be painted, and there is no fixed colour to compare
+            // against, so this records that the branch was reached rather
+            // than asserting a colour nobody can predict from here.
+            for site in [
+                "reader frame",
+                "reader notebook",
+                "reader tab panel",
+                "reader tab text",
+                "reader tab warning",
+                "reader tab attachments",
+            ] {
+                into.push((
+                    site,
+                    true,
+                    "high contrast is on for this run: nothing is painted, which is correct"
+                        .to_string(),
+                ));
+            }
+        }
+    }
 
-    check("reader frame", reader.frame(), palette.main_surface(), into);
+    // Whether `repaint` moves a window that is already built, already open
+    // and already showing one palette to a different one immediately, with
+    // nothing torn down and rebuilt: the guarantee the Theme setting's own
+    // live handler depends on. `Theme::Light` and `Theme::Dark` directly,
+    // not `theme::current`, so this cannot read the same answer on both
+    // sides and pass by accident on a machine that happens to be running
+    // high contrast.
+    let light = Theme::Light
+        .palette(false)
+        .expect("Theme::Light always has a palette");
+    let dark = Theme::Dark
+        .palette(false)
+        .expect("Theme::Dark always has a palette");
+
+    reader.repaint(Some(light));
     check(
-        "reader notebook",
+        "reader frame repainted to light on the same window",
+        reader.frame(),
+        light.main_surface(),
+        into,
+    );
+
+    reader.repaint(Some(dark));
+    check(
+        "reader frame repainted to dark on the same window, not rebuilt",
+        reader.frame(),
+        dark.main_surface(),
+        into,
+    );
+    check(
+        "reader notebook repainted to dark on the same window, not rebuilt",
         reader.notebook(),
-        palette.main_surface(),
+        dark.main_surface(),
         into,
     );
 
-    let handles = reader.open(document_that_exercises_every_optional_widget());
+    // A tab opened after `repaint` uses the palette it was given, not the
+    // one the window was built with: the same guarantee, for the tabs
+    // `repaint` cannot reach directly because it keeps hold of none of
+    // them (see its own doc comment).
+    let after = reader.open(document_that_exercises_every_optional_widget());
     check(
-        "reader tab panel",
-        &handles.panel,
-        palette.main_surface(),
+        "reader tab text opened after repaint uses the new palette",
+        &after.text,
+        dark.main_surface(),
         into,
     );
-    check(
-        "reader tab text",
-        &handles.text,
-        palette.main_surface(),
-        into,
-    );
-    match &handles.warning {
-        Some(bar) => check("reader tab warning", bar, palette.main_surface(), into),
-        None => into.push((
-            "reader tab warning",
-            false,
-            "no warning bar was built for a document with a warning".to_string(),
-        )),
-    }
-    match &handles.attachments {
-        Some(list) => check("reader tab attachments", list, palette.main_surface(), into),
-        None => into.push((
-            "reader tab attachments",
-            false,
-            "no attachment list was built for a document with an attachment".to_string(),
-        )),
-    }
 }
 
 /// Every site this round wires that can be reached without a running

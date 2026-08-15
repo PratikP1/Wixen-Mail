@@ -310,9 +310,9 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      every module: Mail, Calendar, Contacts, Reminders, Tasks and Notes. It \
      also reaches the window a message opens into for reading, and the \
      window that shows a conversation as headings. Everything else follows \
-     Windows. A change takes effect the next time Wixen Mail starts. Default \
-     means light for now, because Wixen Mail has not yet asked Windows for \
-     its dark mode.";
+     Windows. Changing it here recolours them immediately, with nothing to \
+     restart. Default means light for now, because Wixen Mail has not yet \
+     asked Windows for its dark mode.";
 
 /// The palette to draw with right now.
 ///
@@ -470,7 +470,12 @@ const fn high_contrast_from(ok: i32, flags: u32) -> bool {
 /// Whether a given control obeys either colour is a question about the native
 /// control underneath it. wxWidgets forwards both to Windows and some controls
 /// ignore one or the other, so a call here is a request and not a result.
-pub fn paint(window: &impl wxdragon::prelude::WxWidget, surface: Surface) {
+///
+/// `?Sized` so a `&dyn WxWidget` can be handed in as well as a concrete
+/// control: repainting an open window when the Theme setting changes means
+/// calling this once for each of a mixture of widget types, and a trait
+/// object is how that is held in one list.
+pub fn paint(window: &(impl wxdragon::prelude::WxWidget + ?Sized), surface: Surface) {
     window.set_background_color(surface.background.wx());
     window.set_foreground_color(surface.text.wx());
 }
@@ -665,8 +670,8 @@ mod tests {
     fn test_the_theme_note_names_how_far_the_colour_reaches_and_when_it_arrives() {
         // The sentence shown under the Theme setting. It has to name every
         // module the palette reaches, the two windows a message can open
-        // into, say the rest is left to Windows, and say a change waits for
-        // the next start, because somebody who is told none of that reads
+        // into, say the rest is left to Windows, and say the change is
+        // immediate, because somebody who is told none of that reads
         // the setting as broken and changes it again.
         //
         // This checks the sentence. Whether it is displayed, whether it is in
@@ -689,7 +694,7 @@ mod tests {
             );
         }
         assert!(REACH.contains("follows Windows"), "{REACH}");
-        assert!(REACH.contains("starts"), "{REACH}");
+        assert!(REACH.contains("immediately"), "{REACH}");
         // A wrapped string literal that loses its continuations keeps every
         // space of the indenting, and this one is read aloud. Runs of stray
         // spaces are silence in the middle of a sentence.
