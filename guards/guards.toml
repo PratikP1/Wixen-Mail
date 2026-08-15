@@ -1395,6 +1395,7 @@ file = "src/application/calendar.rs"
 before = """        exception_dates: Some(all),"""
 after = """        exception_dates: series.exception_dates.clone(),"""
 red = [
+    "application::caldav_sync::tests::test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows",
     "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
     "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
