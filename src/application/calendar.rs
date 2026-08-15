@@ -7487,6 +7487,120 @@ mod tests {
         );
     }
 
+    // ── Editing an occurrence exception already synced from Google or Outlook ─
+    //
+    // Close, same area as the CalDAV gate above, and expected to already be
+    // correct rather than needing a fix: unlike a CalDAV moved day, a day
+    // Google or Outlook itself cut out of a series arrives with an instance
+    // id of its own, independently addressable from the day it arrives. Both
+    // proofs below are expected to pass on arrival; if either comes back red,
+    // that is a third, separate defect to report rather than a reason to
+    // adjust the assertion to match what the code does.
+
+    #[tokio::test]
+    async fn test_editing_a_google_occurrence_exception_patches_its_own_instance_id() {
+        let cache = temp_cache("push_google_occurrence_exception");
+        let mut event = a_pending_event_in(
+            &cache,
+            GOOGLE,
+            GOOGLE_CALENDAR_NAME,
+            Some("evt1_20260312T090000Z"),
+        );
+        event.cut_from_event_id = Some("series-kept-here".to_string());
+        cache
+            .save_calendar_event(&event)
+            .expect("the occurrence exception");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"id\":\"evt1_20260312T090000Z\"}".to_string(),
+                "{}".to_string(),
+            ],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and then a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "PATCH /calendars/primary/events/evt1_20260312T090000Z",
+            "{}",
+            requests[0]
+        );
+
+        let stored = cache
+            .get_event_by_id(&event.id)
+            .expect("the cache to be readable")
+            .expect("the row to still exist");
+        assert!(
+            !stored.pending,
+            "the edit is stuck retrying at Google for ever: {stored:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_editing_an_outlook_occurrence_exception_patches_its_own_instance_id() {
+        let cache = temp_cache("push_ms_occurrence_exception");
+        let mut event = a_pending_event_in(
+            &cache,
+            MICROSOFT,
+            MICROSOFT_CALENDAR_NAME,
+            Some("evt1_20260312T090000Z"),
+        );
+        event.cut_from_event_id = Some("series-kept-here".to_string());
+        cache
+            .save_calendar_event(&event)
+            .expect("the occurrence exception");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"id\":\"evt1_20260312T090000Z\"}".to_string(),
+                "{}".to_string(),
+            ],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let requests = heard(listening, "a change and then a read")
+            .await
+            .expect("two requests");
+        assert_eq!(
+            asked_for(&requests[0]),
+            "PATCH /me/events/evt1_20260312T090000Z",
+            "{}",
+            requests[0]
+        );
+
+        let stored = cache
+            .get_event_by_id(&event.id)
+            .expect("the cache to be readable")
+            .expect("the row to still exist");
+        assert!(
+            !stored.pending,
+            "the edit is stuck retrying at Outlook for ever: {stored:?}"
+        );
+    }
+
     #[tokio::test]
     async fn test_changing_an_event_leaves_its_repeat_rule_and_its_guests_alone() {
         // The two guarantees this whole unit rests on. Google merges a change
