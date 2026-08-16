@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 115 records have arrived since and have not been through it.
+# 116 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6431,8 +6431,12 @@ red = [
 # every reply to a real, named sender. The break puts that naive split back,
 # byte for byte.
 #
-# Measured by hand on 2026-08-16 with scripts/guards.py: all 5 tests named
-# went red and nothing else did.
+# Measured by hand again on 2026-08-16 with scripts/guards.py, after a second
+# round added four more tests for a name containing a comma or a bracket: all
+# 9 tests named went red and nothing else did. The first measurement, the
+# same day, named 5; the record fell one edit behind its own file before it
+# was ever run against anything else, which is the exact failure mode this
+# file exists to catch.
 
 [[guard]]
 name = "a recipient copied from a message sends as a bare address"
@@ -6455,5 +6459,51 @@ red = [
     "application::mail_controller::send_request_tests::test_a_name_and_address_cc_recipient_is_split_too",
     "application::mail_controller::send_request_tests::test_a_display_name_with_a_comma_does_not_split_into_two_bad_recipients",
     "application::mail_controller::send_request_tests::test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_bare",
+    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare",
+    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_named_sender_reaches_the_wire_as_a_bare_address",
+]
+
+# ── A name written back out is quoted when it needs to be ──────────────────
+#
+# `EmailAddress`'s `Display` wrote a name next to its address with no quoting
+# at all. A name containing a comma read back as a second, non-existent
+# recipient; a name containing a literal angle bracket read back as the start
+# of a second address wrapper, corrupting the real one behind it. The break
+# puts the old, unquoted line back.
+#
+# Measured by hand on 2026-08-16 with scripts/guards.py: all 8 tests named
+# went red and nothing else did.
+
+[[guard]]
+name = "a name written back out is quoted when it needs to be"
+file = "src/common/types.rs"
+before = """impl fmt::Display for EmailAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            Some(name) if needs_quoting(name) => write!(f, "{} <{}>", quoted(name), self.address),
+            Some(name) => write!(f, "{} <{}>", name, self.address),
+            None => write!(f, "{}", self.address),
+        }
+    }
+}"""
+after = """impl fmt::Display for EmailAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            Some(name) => write!(f, "{} <{}>", name, self.address),
+            None => write!(f, "{}", self.address),
+        }
+    }
+}"""
+red = [
+    "common::types::tests::test_a_display_name_with_a_comma_is_quoted_so_it_reads_back_as_one_person",
+    "common::types::tests::test_a_display_name_with_an_angle_bracket_is_quoted_so_it_does_not_look_like_a_second_address",
+    "service::mime::tests::test_a_quoted_name_with_a_comma_is_read_back_as_one_address",
+    "service::mime::tests::test_a_quoted_name_with_an_angle_bracket_is_read_back_as_one_address",
+    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare",
+    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address",
 ]
