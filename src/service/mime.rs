@@ -12,6 +12,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use mail_parser::parsers::MessageStream;
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 
 /// A message, decoded far enough to display.
@@ -268,6 +269,30 @@ fn addresses(header: Option<&Address<'_>>) -> Vec<EmailAddress> {
             Some(EmailAddress::new(address.to_string(), name))
         })
         .collect()
+}
+
+/// Parse the text of one recipient field: a bare address, or a display name
+/// wrapped around one, quoted or not.
+///
+/// The same parser [`parse`] already uses to read a `From` or `To` header off
+/// the wire, reused rather than a second, hand-rolled reader: this project
+/// already depends on `mail_parser` for exactly this shape, backslash
+/// escaping and all, and one RFC 5322 address parser is safer than two that
+/// might answer the same question differently. A value naming more than one
+/// address returns every one found; a value naming none returns nothing
+/// rather than failing, since what calls this already falls back to the raw
+/// text when nothing is found.
+///
+/// The parser only flushes its last token on a trailing delimiter, so a bare
+/// value with nothing after it would otherwise be silently dropped rather
+/// than parsed; the newline every one of its own test fixtures ends with is
+/// appended here for exactly that reason.
+pub(crate) fn parse_addresses(value: &str) -> Vec<EmailAddress> {
+    let terminated = format!("{value}\n");
+    match MessageStream::new(terminated.as_bytes()).parse_address() {
+        HeaderValue::Address(address) => addresses(Some(&address)),
+        _ => Vec::new(),
+    }
 }
 
 /// One message id from a header that should hold exactly one.
@@ -894,5 +919,80 @@ mod tests {
         let truncated = &full[..full.len() / 2];
         let parsed = parse(truncated.as_bytes()).expect("should parse");
         assert_eq!(parsed.from[0].address, "ada@example.com");
+    }
+
+    // ── Parsing one recipient field, not a whole message ────────────────────
+    //
+    // `parse_addresses` is the write-side boundary's counterpart to `parse`
+    // above: given the text one To or Cc field holds, rather than a whole raw
+    // message, it uses the same underlying parser to recover the address a
+    // display name may be wrapped around.
+
+    #[test]
+    fn test_a_bare_address_with_nothing_after_it_is_not_silently_dropped() {
+        // The underlying parser only flushes its last token on a trailing
+        // delimiter. A bare value with nothing after it, and no newline
+        // appended before parsing, comes back as no address at all rather
+        // than the one address that is there.
+        let found = parse_addresses("charles@example.com");
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert_eq!(found[0].address, "charles@example.com");
+        assert!(found[0].name.is_none());
+    }
+
+    #[test]
+    fn test_a_plain_name_and_address_is_read_as_one_entry() {
+        let found = parse_addresses("Charles Babbage <charles@example.com>");
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert_eq!(found[0].address, "charles@example.com");
+        assert_eq!(found[0].name.as_deref(), Some("Charles Babbage"));
+    }
+
+    #[test]
+    fn test_a_quoted_name_with_a_comma_is_read_back_as_one_address() {
+        // Built from `EmailAddress::new(...).to_string()`, the real shape
+        // this codebase's own storage produces, not a hand-quoted stand-in.
+        let stored = EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Babbage, Charles".to_string()),
+        )
+        .to_string();
+        let found = parse_addresses(&stored);
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert_eq!(found[0].address, "charles@example.com");
+        assert_eq!(found[0].name.as_deref(), Some("Babbage, Charles"));
+    }
+
+    #[test]
+    fn test_a_quoted_name_with_an_angle_bracket_is_read_back_as_one_address() {
+        let stored =
+            EmailAddress::new("bob@example.com".to_string(), Some("Bob <VIP>".to_string()))
+                .to_string();
+        let found = parse_addresses(&stored);
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert_eq!(found[0].address, "bob@example.com");
+        assert_eq!(found[0].name.as_deref(), Some("Bob <VIP>"));
+    }
+
+    #[test]
+    fn test_parsing_one_recipient_field_never_panics_on_whatever_arrives() {
+        // This reads a field somebody typed by hand as often as it reads one
+        // copied from a message a stranger sent.
+        for value in [
+            "",
+            ",",
+            ";;;",
+            "<",
+            ">",
+            "<<>>",
+            "a>b<c",
+            ">x<",
+            "\"unclosed <a@example.com>",
+            "a@example.com,",
+            ",a@example.com",
+            "\u{4f60}\u{597d} <ni@example.com>",
+        ] {
+            let _ = parse_addresses(value);
+        }
     }
 }

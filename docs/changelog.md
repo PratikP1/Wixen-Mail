@@ -16,14 +16,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   server every time, with an error that gave no way to fix it, and the
   message sat in the outbox failing the same way on every retry. The only
   way around it was retyping the address by hand with the name taken off
-  first. Any message whose To or Cc line already carries a name this way
-  now sends the same as one typed as a bare address.
+  first. An ordinary name now sends the same as one typed as a bare
+  address, and so does a name that itself contains a comma, the way a
+  "Last, First" style name does, or a literal angle bracket, which is
+  unusual but legal in a name and which a sender's own mail program can
+  produce.
 
   Known limitations. The name itself does not reach the message that goes
   out, or the copy kept in Sent; only the address does, even though the
   compose window still shows the name correctly while it is being written.
   Carrying the name through the same way this program already does for
-  your own name is tracked as a follow-up, not done here.
+  your own name is tracked as a follow-up, not done here. A name that
+  needs an escaped quotation mark and also contains a comma or a bracket
+  elsewhere has not been made to work; nobody has seen one in real mail
+  yet. A reply naming just one person out loud can still say the wrong
+  name for them, and replying to everyone can still list that same
+  person twice, when their name contains a bracket; only whether the
+  message reaches them is fixed here.
 
 - **Fixed: a day a calendar server has already moved or changed out of a
   repeating meeting could not be edited here on its own.** A calendar server

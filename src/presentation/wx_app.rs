@@ -12852,4 +12852,211 @@ mod reply_recipients_reach_the_wire {
             "the bare address never reached the server"
         );
     }
+
+    /// The same chain, for a sender name containing a comma.
+    ///
+    /// Built from `EmailAddress::new(...).to_string()`, the real shape this
+    /// codebase's own storage produces, not a hand-quoted stand-in.
+    /// "Babbage, Charles" is an ordinary directory-style name, and before the
+    /// `EmailAddress` write side quoted it correctly, the comma split this
+    /// into two recipients on the way to the server, one of which does not
+    /// exist.
+    #[tokio::test]
+    async fn test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address() {
+        let stored = crate::common::types::EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Babbage, Charles".to_string()),
+        )
+        .to_string();
+        let message = crate::application::reply::RepliedTo {
+            from: &stored,
+            ..Default::default()
+        };
+        let reply = crate::application::reply::reply_recipients(
+            &message,
+            &[],
+            crate::application::reply::ReplyMode::Default,
+        );
+        assert_eq!(
+            reply.to, stored,
+            "the fixture no longer reproduces the reported shape"
+        );
+
+        let data = wx_compose::ComposeData {
+            to: reply.to.clone(),
+            cc: String::new(),
+            bcc: String::new(),
+            subject: "Re: Hello".to_string(),
+            body: String::new(),
+            body_plain: "Thanks!".to_string(),
+            html_mode: false,
+            account_index: None,
+            attachments: Vec::new(),
+            answering: None,
+        };
+
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a1")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the queued message to be there");
+        assert_eq!(
+            queued.to_addr, stored,
+            "the queue is expected to hold the field's raw text; this test proves the fix \
+             downstream of here"
+        );
+
+        let server =
+            crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
+        let smtp_config =
+            crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
+
+        let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
+        account.id = "a1".to_string();
+        account.smtp_server = smtp_config.server.clone();
+        account.smtp_port = smtp_config.port.to_string();
+        account.smtp_use_tls = false;
+
+        let request = SendEmailRequest::from_queued(
+            &queued,
+            &account,
+            crate::service::protocols::MailAuth::Password("hunter2".to_string()),
+        )
+        .expect("a sendable request");
+        let email =
+            crate::application::mail_controller::outgoing(&request).expect("a message to build");
+
+        let client = crate::service::protocols::smtp::SmtpClient::allowed_to_send(smtp_config)
+            .expect("a client");
+        let sent = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            client.send_email(email, &request.auth),
+        )
+        .await
+        .expect("the server never finished the exchange");
+
+        assert!(
+            sent.is_ok(),
+            "replying to a sender with a comma in their name failed to send: {:?}",
+            sent.err()
+        );
+        assert!(
+            server.was_told("RCPT TO:<charles@example.com>").await,
+            "the bare address never reached the server"
+        );
+    }
+
+    /// The same chain again, for a sender name containing a literal angle
+    /// bracket.
+    ///
+    /// Built from `EmailAddress::new(...).to_string()`, the real shape this
+    /// codebase's own storage produces, not a hand-quoted stand-in. A display
+    /// name containing a literal angle bracket is unusual but legal, and
+    /// mail_parser decodes one back to this exact text. Before the
+    /// `EmailAddress` write side quoted it correctly, the bracket inside the
+    /// name was mistaken for the start of the address wrapper, and the
+    /// address extracted from it was corrupted rather than merely wrong.
+    #[tokio::test]
+    async fn test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address()
+     {
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        let message = crate::application::reply::RepliedTo {
+            from: &stored,
+            ..Default::default()
+        };
+        let reply = crate::application::reply::reply_recipients(
+            &message,
+            &[],
+            crate::application::reply::ReplyMode::Default,
+        );
+        assert_eq!(
+            reply.to, stored,
+            "the fixture no longer reproduces the reported shape"
+        );
+
+        let data = wx_compose::ComposeData {
+            to: reply.to.clone(),
+            cc: String::new(),
+            bcc: String::new(),
+            subject: "Re: Hello".to_string(),
+            body: String::new(),
+            body_plain: "Thanks!".to_string(),
+            html_mode: false,
+            account_index: None,
+            attachments: Vec::new(),
+            answering: None,
+        };
+
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a1")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the queued message to be there");
+        assert_eq!(
+            queued.to_addr, stored,
+            "the queue is expected to hold the field's raw text; this test proves the fix \
+             downstream of here"
+        );
+
+        let server =
+            crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
+        let smtp_config =
+            crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
+
+        let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
+        account.id = "a1".to_string();
+        account.smtp_server = smtp_config.server.clone();
+        account.smtp_port = smtp_config.port.to_string();
+        account.smtp_use_tls = false;
+
+        let request = SendEmailRequest::from_queued(
+            &queued,
+            &account,
+            crate::service::protocols::MailAuth::Password("hunter2".to_string()),
+        )
+        .expect("a sendable request");
+        let email =
+            crate::application::mail_controller::outgoing(&request).expect("a message to build");
+
+        let client = crate::service::protocols::smtp::SmtpClient::allowed_to_send(smtp_config)
+            .expect("a client");
+        let sent = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            client.send_email(email, &request.auth),
+        )
+        .await
+        .expect("the server never finished the exchange");
+
+        assert!(
+            sent.is_ok(),
+            "replying to a sender with a bracket in their name failed to send: {:?}",
+            sent.err()
+        );
+        assert!(
+            server.was_told("RCPT TO:<bob@example.com>").await,
+            "the bare address never reached the server"
+        );
+    }
 }

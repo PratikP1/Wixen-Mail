@@ -33,19 +33,24 @@ fn addresses(field: &str) -> Vec<String> {
 
 /// One recipient entry, with any "Name <address>" wrapper stripped off.
 ///
-/// Mirrors the bracket-finding shape `reply`'s own `key_of` uses, without its
-/// lowercasing: `key_of` exists to build a comparison key, and lowercasing
-/// the local part here would send to a different address than the one a
-/// person typed. The name itself is dropped rather than carried onto the
-/// outgoing header: it can come from a message a stranger sent, and this
-/// function is the boundary where that untrusted text stops being carried
-/// any further.
+/// Reads the wrapper with the same parser [`crate::service::mime`] already
+/// uses to read a `From` or `To` header off the wire, rather than a naive
+/// search for the first `<` and the last `>`: a name that itself contains a
+/// bracket, such as one `mail_parser` decoded from a quoted display name on
+/// the way in, makes a naive search find the wrong pair. The name itself is
+/// dropped rather than carried onto the outgoing header: it can come from a
+/// message a stranger sent, and this function is the boundary where that
+/// untrusted text stops being carried any further. Nothing recognisable as an
+/// address falls back to the entry as it stood, trimmed, the same as before:
+/// a mistyped recipient should fail at the server with a reason, not vanish
+/// here.
 fn bare_address(entry: &str) -> String {
     let trimmed = entry.trim();
-    match (trimmed.find('<'), trimmed.rfind('>')) {
-        (Some(open), Some(close)) if close > open => trimmed[open + 1..close].trim().to_string(),
-        _ => trimmed.to_string(),
-    }
+    crate::service::mime::parse_addresses(trimmed)
+        .into_iter()
+        .next()
+        .map(|address| address.address)
+        .unwrap_or_else(|| trimmed.to_string())
 }
 
 /// Parameters for sending an email via SMTP.
@@ -2373,6 +2378,59 @@ mod send_request_tests {
                 "charles@example.com".to_string(),
             ]
         );
+    }
+
+    // ── The same bug, for two shapes the round-29 fix did not reach ────────
+    //
+    // The tests above prove the splitter handles a hand-quoted stand-in.
+    // These build the To line the way this codebase's own writer produces
+    // it, `EmailAddress::new(...).to_string()`, which is what a synced
+    // message's stored sender name actually becomes once it round-trips
+    // through Reply. A stand-in already shaped correctly proves the reader
+    // works; it proves nothing about whether the writer ever produces that
+    // shape.
+
+    #[test]
+    fn test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare() {
+        // "Babbage, Charles" is an ordinary directory-style name. Before the
+        // `EmailAddress` write side quoted it, this reached the queue as
+        // `Babbage, Charles <charles@example.com>`, and the comma split it
+        // into two recipients, one of which does not exist.
+        let stored = crate::common::types::EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Babbage, Charles".to_string()),
+        )
+        .to_string();
+
+        let req = SendEmailRequest::from_queued(
+            &queued(&stored),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare() {
+        // A display name containing a literal angle bracket is unusual but
+        // legal, and mail_parser decodes one back to this exact text. Before
+        // the `EmailAddress` write side quoted it, this reached the queue as
+        // `Bob <VIP> <bob@example.com>`, and the bracket inside the name was
+        // mistaken for the start of the address wrapper.
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+
+        let req = SendEmailRequest::from_queued(
+            &queued(&stored),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(req.to, vec!["bob@example.com".to_string()]);
     }
 
     #[test]
