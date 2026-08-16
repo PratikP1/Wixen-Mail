@@ -1,0 +1,140 @@
+name: NVDA
+
+# Screen-reader-driven tests: a real copy of NVDA, driven against the real
+# application, checked against what it actually says out loud.
+#
+# accessibility.yml's Axe.Windows and MSAA walk catches missing names, wrong
+# roles, and similar structural defects, on every window it can reach. It
+# never presses a key and never listens. This workflow does both, for two
+# places a previous round of accessibility work found and a structural scan
+# could not settle: whether a specific announcement is really heard, and
+# whether what is focused and what is ticked, on a dialog that opens with an
+# answer already chosen, agree with each other.
+#
+# NVDA runs in exactly one place here: a disposable, Windows GitHub-hosted
+# runner that nobody is using for anything else. See nvda-tests/README.md
+# for why these tests must never run on a developer's own machine.
+#
+# The job is non-blocking on purpose, the same as accessibility.yml's.
+# Treat its findings as a work queue, not a gate, and read the uploaded
+# transcript rather than the pass or fail badge.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  nvda-tests:
+    name: NVDA screen reader tests
+    runs-on: windows-latest
+    continue-on-error: true
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-nvda-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build application
+      run: cargo build --release --verbose
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: 'npm'
+        cache-dependency-path: nvda-tests/package-lock.json
+
+    - name: Install test dependencies
+      working-directory: nvda-tests
+      run: npm ci
+
+    - name: Install a disposable NVDA
+      working-directory: nvda-tests
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        # Both run from here so `npx` resolves the copy of @guidepup/setup
+        # this package's own package-lock.json pins, rather than reaching
+        # the registry for a possibly different version. @guidepup/guidepup
+        # finds NVDA by reading a manifest bundled inside itself and looking
+        # for exactly the version that manifest names; a setup tool at a
+        # different version could put a different one where the driver goes
+        # looking, and it is easy for that mismatch to go unnoticed until it
+        # is why a run failed.
+        npx @guidepup/setup setup --ci
+        npx @guidepup/setup install nvda
+
+    - name: Run the NVDA tests
+      id: run_tests
+      working-directory: nvda-tests
+      run: npm test
+
+    - name: Summarise findings
+      if: always()
+      shell: pwsh
+      run: |
+        Add-Content $env:GITHUB_STEP_SUMMARY '## NVDA screen reader tests'
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+
+        $resultsDir = 'nvda-tests/results'
+        $results = Get-ChildItem $resultsDir -Filter *.json -ErrorAction SilentlyContinue
+        if (-not $results) {
+          Add-Content $env:GITHUB_STEP_SUMMARY 'No transcript was written. NVDA or the application likely never started; check the "Run the NVDA tests" step log.'
+        } else {
+          Add-Content $env:GITHUB_STEP_SUMMARY 'Transcripts of everything NVDA said, by test:'
+          Add-Content $env:GITHUB_STEP_SUMMARY ''
+          foreach ($file in $results) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "- ``$($file.BaseName)``"
+          }
+        }
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+
+        $outcome = '${{ steps.run_tests.outcome }}'
+        if ($outcome -eq 'success') {
+          Add-Content $env:GITHUB_STEP_SUMMARY 'Every test that ran passed. One test in this package is written but intentionally skipped; see nvda-tests/README.md for why.'
+        } else {
+          Add-Content $env:GITHUB_STEP_SUMMARY '**At least one test failed or NVDA could not be driven at all.** Read the "Run the NVDA tests" step log for which, and download the transcript below for exactly what NVDA said.'
+        }
+        Add-Content $env:GITHUB_STEP_SUMMARY ''
+
+        Add-Content $env:GITHUB_STEP_SUMMARY 'A pass here means the specific keystrokes and the specific sentences these tests check were really spoken by a real screen reader. That is stronger than the structural scan in the Accessibility workflow, which never presses a key. It is still not a full manual walkthrough, and it says nothing about any control, dialog, or sentence these tests do not touch.'
+
+    - name: Upload NVDA transcripts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nvda-transcripts
+        path: nvda-tests/results/
+        if-no-files-found: warn
