@@ -405,4 +405,187 @@ END:VCALENDAR"#;
         assert_eq!(events[0].uid, "a");
         assert_eq!(events[1].uid, "b");
     }
+
+    // ── Real published feeds ─────────────────────────────────────────────
+    //
+    // Four feeds fetched live on 2026-08-15 from four different systems: a
+    // national government's own calendar generator, a university's public
+    // events platform, a professional sports team's official schedule feed,
+    // and Google Calendar's own "publish as ICS" feature. Each excerpt below
+    // is copied byte for byte from what the server actually sent (aside from
+    // DTSTAMP, which two of the four generate fresh on every request and
+    // this program never reads).
+
+    #[test]
+    fn test_the_uk_governments_bank_holiday_feed_reads_both_its_events() {
+        // https://www.gov.uk/bank-holidays/england-and-wales.ics, fetched
+        // 2026-08-15. Two of its 83 real events: the shortest UID and the
+        // longest (102 octets, never folded by this generator).
+        let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:PUBLISH\r\n\
+                   PRODID:-//uk.gov/GOVUK calendars//EN\r\nCALSCALE:GREGORIAN\r\n\
+                   BEGIN:VEVENT\r\nDTEND;VALUE=DATE:20190102\r\n\
+                   DTSTART;VALUE=DATE:20190101\r\nSUMMARY:New Year\u{2019}s Day\r\n\
+                   UID:ca6af7456b0088abad9a69f9f620f5ac-2019-01-01-NewYearsDay@gov.uk\r\n\
+                   SEQUENCE:0\r\nDTSTAMP:20260815T100628Z\r\nEND:VEVENT\r\n\
+                   BEGIN:VEVENT\r\nDTEND;VALUE=DATE:20220920\r\n\
+                   DTSTART;VALUE=DATE:20220919\r\n\
+                   SUMMARY:Bank Holiday for the State Funeral of Queen Elizabeth II\r\n\
+                   UID:ca6af7456b0088abad9a69f9f620f5ac-2022-09-19-BankHolidayfortheStateFuneralofQueenElizabethII@gov.uk\r\n\
+                   SEQUENCE:0\r\nDTSTAMP:20260815T100628Z\r\nEND:VEVENT\r\n\
+                   END:VCALENDAR\r\n";
+
+        let events = parse_ics(ics).expect("a government holiday feed to read");
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0].uid,
+            "ca6af7456b0088abad9a69f9f620f5ac-2019-01-01-NewYearsDay@gov.uk"
+        );
+        assert_eq!(events[0].summary, "New Year\u{2019}s Day");
+        assert_eq!(events[0].dtstart, "2019-01-01");
+        assert_eq!(events[0].dtend.as_deref(), Some("2019-01-02"));
+        assert!(events[0].is_all_day);
+        assert_eq!(
+            events[0].status, "CONFIRMED",
+            "this feed sends no STATUS on any event; the default has to hold"
+        );
+        assert_eq!(
+            events[1].uid,
+            "ca6af7456b0088abad9a69f9f620f5ac-2022-09-19-BankHolidayfortheStateFuneralofQueenElizabethII@gov.uk",
+            "a 102-octet UID this generator never folds"
+        );
+        assert_eq!(
+            events[1].summary,
+            "Bank Holiday for the State Funeral of Queen Elizabeth II"
+        );
+    }
+
+    #[test]
+    fn test_a_university_academic_calendar_feed_reads_bare_line_feeds_and_leaves_its_own_stray_tzid_line_unread()
+     {
+        // https://planitpurple.northwestern.edu/feed/ical/1426, Northwestern's
+        // Registrar academic calendar, fetched 2026-08-15. Every line break in
+        // the real document is a bare \n; there is no \r anywhere in it. Every
+        // one of its 107 events also carries a bare TZID: property line on the
+        // VEVENT itself, which RFC 5545 does not define and this reader does
+        // not read as the event's zone.
+        let ics = "BEGIN:VCALENDAR\nPRODID:-//planitpurple.northwestern.edu//iCalendar Event//EN\n\
+                   VERSION:2.0\nCALSCALE:GREGORIAN\nMETHOD:PUBLISH\nCLASS:PUBLIC\n\
+                   BEGIN:VTIMEZONE\nTZID:America/Chicago\n\
+                   TZURL:http://tzurl.org/zoneinfo-outlook/America/Chicago\n\
+                   X-LIC-LOCATION:America/Chicago\nBEGIN:DAYLIGHT\nTZOFFSETFROM:-0600\n\
+                   TZOFFSETTO:-0500\nTZNAME:CDT\nDTSTART:19700308T020000\n\
+                   RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\nEND:DAYLIGHT\nBEGIN:STANDARD\n\
+                   TZOFFSETFROM:-0500\nTZOFFSETTO:-0600\nTZNAME:CST\nDTSTART:19701101T020000\n\
+                   RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\nEND:STANDARD\nEND:VTIMEZONE\n\
+                   BEGIN:VEVENT\nSEQUENCE:0\nDTSTART;VALUE=DATE:20260821\n\
+                   DTEND;VALUE=DATE:20260822\nDTSTAMP:20260816T001648Z\n\
+                   SUMMARY:Master's completion form due for TGS Summer master's candidates\n\
+                   UID:629710@northwestern.edu\nTZID:America/Chicago\n\
+                   DESCRIPTION:Master's completion form due for TGS Summer master's candidates\n\
+                   LOCATION:\nTRANSP:TRANSPARENT\n\
+                   URL:https://planitpurple.northwestern.edu/event/629710\n\
+                   CREATED:20250523T050000Z\nSTATUS:CONFIRMED\n\
+                   LAST-MODIFIED:20250523T050000Z\nPRIORITY:0\nEND:VEVENT\nEND:VCALENDAR\n";
+
+        let events = parse_ics(ics).expect("a university academic calendar feed to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "629710@northwestern.edu");
+        assert_eq!(
+            events[0].summary,
+            "Master's completion form due for TGS Summer master's candidates"
+        );
+        assert!(events[0].is_all_day);
+        assert_eq!(
+            events[0].location, None,
+            "an empty LOCATION: line is no location, not one that reads as blank"
+        );
+        assert_eq!(
+            events[0].time_zone, None,
+            "TZID is written here as its own property line, not a DTSTART parameter, \
+             and must not be read as the event's zone"
+        );
+        assert_eq!(
+            events[0].recurrence_rule, None,
+            "the VTIMEZONE's own DAYLIGHT/STANDARD rules must never leak into the event's"
+        );
+    }
+
+    #[test]
+    fn test_a_sports_team_schedule_feed_keeps_its_named_zone_and_its_emoji_whole() {
+        // https://cdn.celtics.com/schedule/ics/2025_celtics_schedule.ics, the
+        // Boston Celtics' own official 2025-26 schedule, fetched 2026-08-15.
+        // Bare \n throughout, a genuine DTSTART;TZID= parameter (unlike
+        // source 2's bare property), and a DESCRIPTION carrying real 4-byte
+        // UTF-8 emoji next to escaped commas and escaped newlines.
+        let ics = "BEGIN:VCALENDAR\nVERSION:2.0\nMETHOD:PUBLISH\n\
+                   X-WR-TIMEZONE:America/New_York\n\
+                   PRODID:-//Boston Celtics//Boston Celtics 2025-26 Full-Season Schedule//EN\n\
+                   CALSCALE:GREGORIAN\nBEGIN:VEVENT\nSEQUENCE:15\n\
+                   DTSTART;TZID=America/New_York:20251111T200000\nSTATUS:TENTATIVE\n\
+                   DTSTAMP:20260502T220417\nSUMMARY:Celtics @ 76ers\n\
+                   DTEND;TZID=America/New_York:20251111T230000\n\
+                   LOCATION:Xfinity Mobile Arena, Philadelphia, PA\n\
+                   DESCRIPTION:\u{1F4FA} Watch: Peacock\\, NBC\\, NBC Sports Boston\\n\u{1F4FB} Listen: WROR (105.7 FM)\\n\n\
+                   UID:20260502T220417-15\nTRANSP:OPAQUE\n\
+                   ORGANIZER:CN=Boston Celtics 2025-26 Full-Season Schedule\nCLASS:PUBLIC\n\
+                   CREATED:20260502T220417\nEND:VEVENT\nEND:VCALENDAR\n";
+
+        let events = parse_ics(ics).expect("a sports team's schedule feed to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "20260502T220417-15");
+        assert!(!events[0].is_all_day);
+        assert_eq!(events[0].dtstart, "2025-11-11T20:00:00");
+        assert_eq!(events[0].dtend.as_deref(), Some("2025-11-11T23:00:00"));
+        assert_eq!(events[0].time_zone.as_deref(), Some("America/New_York"));
+        assert_eq!(events[0].status, "TENTATIVE");
+        assert_eq!(
+            events[0].location.as_deref(),
+            Some("Xfinity Mobile Arena, Philadelphia, PA"),
+            "an unescaped comma in LOCATION is literal text, not a list separator"
+        );
+        assert_eq!(
+            events[0].description.as_deref(),
+            Some(
+                "\u{1F4FA} Watch: Peacock, NBC, NBC Sports Boston\n\u{1F4FB} Listen: WROR (105.7 FM)\n"
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_publish_as_ics_holiday_calendar_folds_its_description_back_into_one_line() {
+        // https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics,
+        // Google Calendar's own "Holidays in United States", fetched
+        // 2026-08-15. Real CRLF folding: the DESCRIPTION line below is
+        // exactly as the server sent it, split mid-word ("Setting" / "s")
+        // with one leading space marking the continuation.
+        let ics = "BEGIN:VCALENDAR\r\nPRODID:-//Google Inc//Google Calendar 70.9054//EN\r\n\
+                   VERSION:2.0\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n\
+                   X-WR-CALNAME:Holidays in United States\r\nX-WR-TIMEZONE:UTC\r\n\
+                   X-WR-CALDESC:Holidays and Observances in United States\r\n\
+                   BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20210314\r\n\
+                   DTEND;VALUE=DATE:20210315\r\nDTSTAMP:20260816T001701Z\r\n\
+                   UID:20210314_eut7bu0kn9gl5458v3anfjb1hc@google.com\r\nCLASS:PUBLIC\r\n\
+                   CREATED:20240603T101345Z\r\n\
+                   DESCRIPTION:Observance\\nTo hide observances\\, go to Google Calendar Setting\r\n\
+                   \x20s > Holidays in United States\r\n\
+                   LAST-MODIFIED:20240603T101345Z\r\nSEQUENCE:0\r\nSTATUS:CONFIRMED\r\n\
+                   SUMMARY:Daylight Saving Time starts\r\nTRANSP:TRANSPARENT\r\n\
+                   END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        let events = parse_ics(ics).expect("a Google-published holiday calendar to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "Daylight Saving Time starts");
+        assert!(events[0].is_all_day);
+        assert_eq!(events[0].status, "CONFIRMED");
+        assert_eq!(
+            events[0].description.as_deref(),
+            Some(
+                "Observance\nTo hide observances, go to Google Calendar Settings > Holidays in United States"
+            )
+        );
+    }
 }

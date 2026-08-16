@@ -4379,6 +4379,20 @@ mod tests {
     /// file somebody was looking at and the file next to it kept matching
     /// capitals, so the reader and the writer disagreed and the disagreement
     /// cost somebody their work.
+    /// How small a file's own shipped share may be before its scan is
+    /// treated as reading a corner of the file rather than the file.
+    ///
+    /// The failure this really watches for is catastrophic: a scan that
+    /// stops near the top and reads a sliver of a file, the way one guard
+    /// once read 227 of 11,031 lines and passed against whatever the other
+    /// 98% said. One part in ten is nowhere near that, and it still holds
+    /// clear of every file in the list below, including
+    /// `ical_subscription.rs`, which stays the smallest on purpose: it is a
+    /// thin reader wrapped in a growing shelf of real subscribed feeds, so
+    /// its own share of shipped code was never going to hold the same ratio
+    /// as a file that does most of its own work.
+    const SHIPPED_CODE_IS_AT_LEAST_ONE_PART_IN: usize = 10;
+
     const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 8] = [
         "src/service/caldav.rs",
         "src/service/ical_subscription.rs",
@@ -4496,11 +4510,10 @@ mod tests {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
             let ships = what_ships(&source);
 
-            // And it has to be reading the file, not a corner of it. Every one
-            // of these keeps its tests at the bottom, so what ships is a good
-            // part of the whole.
+            // And it has to be reading the file, not a corner of it.
             assert!(
-                ships.lines().count() * 5 >= source.lines().count(),
+                ships.lines().count() * SHIPPED_CODE_IS_AT_LEAST_ONE_PART_IN
+                    >= source.lines().count(),
                 "{path}: the scan is reading {} of {} lines, so it would pass whatever the \
                  rest of the file said",
                 ships.lines().count(),
