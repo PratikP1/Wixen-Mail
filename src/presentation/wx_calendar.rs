@@ -312,6 +312,7 @@ pub fn show_calendar_dialog(
                             &item.repeats,
                             WhatIsBeingDone::Changing,
                             &allows,
+                            palette,
                         ) {
                             if let Err(refused) =
                                 can_be_honoured(WhatIsBeingDone::Changing, means, &allows)
@@ -390,6 +391,7 @@ pub fn show_calendar_dialog(
                                 &item.repeats,
                                 WhatIsBeingDone::Deleting,
                                 &allows,
+                                palette,
                             )
                         {
                             // Asked here, where the person is standing, rather

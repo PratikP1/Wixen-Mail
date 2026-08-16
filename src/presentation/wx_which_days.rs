@@ -33,6 +33,7 @@ use crate::application::calendar::{
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// What the group of answers is called, and the question itself.
@@ -54,11 +55,45 @@ pub fn which_days_are_meant(
     repeats: &str,
     done: WhatIsBeingDone,
     allows: &WhatTheCalendarAllows,
+    palette: Option<theme::Palette>,
 ) -> Option<EditMeans> {
     if !asking_is_needed(repeats) {
         return Some(EditMeans::WholeSeries);
     }
 
+    let (dialog, buttons) =
+        build_which_days_dialog(parent, summary, repeats, done, allows, palette);
+
+    let answered = dialog.show_modal();
+    // Read off the buttons, and only when Continue was pressed. Anything else
+    // is somebody leaving the question alone, which is not an answer.
+    let chosen = (answered == ID_OK).then(|| {
+        buttons
+            .iter()
+            .find(|(_, button)| button.get_value())
+            .map_or(EditMeans::PRESELECTED, |(means, _)| *means)
+    });
+    dialog.destroy();
+    chosen
+}
+
+/// Build the "which days do you mean" dialog without showing it.
+///
+/// Everything `which_days_are_meant` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the radio buttons alongside the dialog, the same way the caller
+/// needs them after a real `.show_modal()`: to read which one is ticked.
+pub fn build_which_days_dialog(
+    parent: &dyn WxWidget,
+    summary: &str,
+    repeats: &str,
+    done: WhatIsBeingDone,
+    allows: &WhatTheCalendarAllows,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Vec<(EditMeans, RadioButton)>) {
     let dialog = Dialog::builder(parent, "This event repeats")
         .with_size(560, 420)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -155,15 +190,15 @@ pub fn which_days_are_meant(
         ticked.set_focus();
     }
 
-    let answered = dialog.show_modal();
-    // Read off the buttons, and only when Continue was pressed. Anything else
-    // is somebody leaving the question alone, which is not an answer.
-    let chosen = (answered == ID_OK).then(|| {
-        buttons
-            .iter()
-            .find(|(_, button)| button.get_value())
-            .map_or(EditMeans::PRESELECTED, |(means, _)| *means)
-    });
-    dialog.destroy();
-    chosen
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides. No `TextCtrl`, `ListCtrl` or `TreeCtrl`
+    // anywhere in this dialog, so the dialog itself is the only site: the
+    // radio buttons, like every checkbox and button elsewhere in this round,
+    // are left to Windows.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+
+    (dialog, buttons)
 }

@@ -128,11 +128,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   of the coloured application instead of showing Windows' own white
   regardless of what Light or Dark chose.
 
-  Known limitations: the Calendar window this opens from, the confirm
-  delete dialog and the "which days do you mean" question it can also
-  open, are not coloured yet. Compose and roughly thirty other windows
-  that open on top of the main one still show Windows' own colours
-  regardless of the Theme setting.
+  Known limitations: the Calendar window this opens from, and the confirm
+  delete dialog nested inside it, are not coloured yet. Compose and
+  roughly thirty other windows that open on top of the main one still
+  show Windows' own colours regardless of the Theme setting.
+
+- **The "which days do you mean" question a repeating event's edit or
+  delete can open now takes the Theme colours too.** This dialog has no
+  text boxes of its own to colour; painting the window itself is what
+  changes here.
+
+  Known limitations: the Calendar window this can open from, and the
+  confirm delete dialog nested inside it, are not coloured yet. Compose
+  and roughly thirty other windows that open on top of the main one
+  still show Windows' own colours regardless of the Theme setting.
 
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant

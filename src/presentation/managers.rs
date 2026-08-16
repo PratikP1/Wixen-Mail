@@ -1681,6 +1681,7 @@ pub fn pim_command(
                 &opened.repeats,
                 crate::application::calendar::WhatIsBeingDone::Deleting,
                 &allows,
+                crate::presentation::theme::current_from_stored_config(),
             ) else {
                 return;
             };

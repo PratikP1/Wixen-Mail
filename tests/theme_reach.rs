@@ -31,13 +31,14 @@
 //! read-back and says so.
 
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::calendar::{WhatIsBeingDone, WhatTheCalendarAllows, WhereAChangeGoes};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
     wx_account_manager, wx_calendar, wx_calendar_module, wx_contacts_module, wx_notes_module,
-    wx_reader, wx_reminders_module, wx_settings, wx_tasks_module,
+    wx_reader, wx_reminders_module, wx_settings, wx_tasks_module, wx_which_days,
 };
 use wxdragon::prelude::*;
 
@@ -448,6 +449,23 @@ fn check_event_editor(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
     }
 }
 
+/// The "which days do you mean" question a repeating event's edit or delete
+/// can open. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this dialog
+/// (`StaticText`, `RadioButton` and `Button` only), so the dialog itself is
+/// the only site to check.
+fn check_which_days(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let allows = WhatTheCalendarAllows::just(WhereAChangeGoes::KeptHere);
+    let (dialog, _buttons) = wx_which_days::build_which_days_dialog(
+        parent,
+        "Test event",
+        "Weekly",
+        WhatIsBeingDone::Changing,
+        &allows,
+        Some(palette),
+    );
+    check("which days dialog", &dialog, palette.main_surface(), into);
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -631,6 +649,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_settings(&frame, palette, &mut sites);
             check_account_manager(&frame, &a11y, palette, &mut sites);
             check_event_editor(&frame, palette, &mut sites);
+            check_which_days(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
