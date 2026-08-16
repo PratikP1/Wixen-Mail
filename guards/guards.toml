@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 109 records have arrived since and have not been through it.
+# 111 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6258,4 +6258,53 @@ red = [
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever",
     "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_whose_series_was_never_resolved_never_sends_a_delete_for_the_whole_series",
     "presentation::managers::changing_one_day_of_a_series::test_what_this_rows_calendar_allows_flags_a_row_whose_series_is_not_yet_resolved",
+]
+
+# ── The POP delete checkboxes keep their spoken consequence ────────────────
+#
+# "Leave mail on the server after downloading it" and "Let me delete mail on
+# this computer" used to read to a screen reader as a name and a checked
+# state and nothing else. Neither said what happens next, and the two are
+# easy to mix up on a POP account: one throws mail off the server for good
+# with no Trash behind it, the other never leaves this computer at all.
+# cb_with_description attaches SERVER_REMOVAL_IS_PERMANENT and
+# DELETING_HERE_NEVER_REACHES_THE_SERVER as their accessible descriptions,
+# one call each, the same shape describe_password_box already uses above it
+# in this file for the app password hint.
+#
+# Reverting either checkbox back to the plain `cb` closure this dialog
+# builds every other checkbox with is exactly how that regression would
+# happen: quietly, in a future edit with no reason to suspect these two
+# controls are different from their neighbours. `cb` and
+# `cb_with_description` look almost identical on purpose, because the whole
+# point is that they attach an accessible object the same one-call way; nothing
+# else marks the difference.
+#
+# Measured by hand on 2026-08-16, against the whole library: the one test
+# named went red and nothing else did.
+
+[[guard]]
+name = "POP's leave-on-server checkbox keeps its spoken consequence"
+file = "src/presentation/wx_account_manager.rs"
+before = """    let pop_leave = cb_with_description(
+        "&Leave mail on the server after downloading it",
+        true,
+        SERVER_REMOVAL_IS_PERMANENT,
+    );"""
+after = """    let pop_leave = cb("&Leave mail on the server after downloading it", true);"""
+red = [
+    "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
+]
+
+[[guard]]
+name = "POP's local-delete checkbox keeps its spoken consequence"
+file = "src/presentation/wx_account_manager.rs"
+before = """    let allow_deleting = cb_with_description(
+        "Let me delete mail on this &computer",
+        true,
+        DELETING_HERE_NEVER_REACHES_THE_SERVER,
+    );"""
+after = """    let allow_deleting = cb("Let me delete mail on this &computer", true);"""
+red = [
+    "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
