@@ -46,13 +46,19 @@ const FIXTURE_ACCOUNT_NAME = "Scan target";
 let app;
 
 beforeAll(async () => {
+  // NVDA starts before the application does, and stays running while it
+  // opens, so nothing the dialog announces as it appears is missed. This
+  // test's own assertions do not depend on that first announcement, since
+  // pressing Down makes a fresh one either way, but the other test in this
+  // package does, and starting NVDA first is correct for both.
+  await nvda.start();
+
   const dataDir = freshProfileDir("accounts");
   app = launchForScanning("accounts", dataDir);
   // Accounts is a modal dialog opened on top of the main frame, the same
   // shape accessibility.yml already scans, so it gets the same extra settle
   // time on top of the main-window poll.
   await waitForWindow(app, { extraSettleMs: 3000 });
-  await nvda.start();
 });
 
 afterAll(async () => {

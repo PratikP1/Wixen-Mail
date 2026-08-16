@@ -67,6 +67,12 @@ const PRESELECTED_DESCRIPTION =
 let app;
 
 beforeAll(async () => {
+  // NVDA has to be running before the dialog opens, not after: the
+  // assertion below is about the very first thing announced, with no key
+  // pressed, and an NVDA that started listening after that announcement
+  // already happened would never have heard it.
+  await nvda.start();
+
   const dataDir = freshProfileDir("which-days");
   // No scan target exists for this dialog yet; see the file comment above.
   // Left as the name this dialog would use if one were added, following
@@ -74,7 +80,6 @@ beforeAll(async () => {
   // (`as_name()`: "first-run", "add-calendar").
   app = launchForScanning("which-days", dataDir);
   await waitForWindow(app, { extraSettleMs: 3000 });
-  await nvda.start();
 });
 
 afterAll(async () => {
