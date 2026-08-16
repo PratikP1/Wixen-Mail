@@ -93,13 +93,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the spot instead, with nothing to restart and no delay or flash while it
   happens.
 
-  Known limitations: Settings, Compose, and roughly thirty other windows that
-  open on top of the main one, such as the Account Manager and the calendar
-  event editor, still show Windows' own colours regardless of the Theme
-  setting. A message already open in the reader when you change the setting
-  keeps the colours it had; closing that tab and opening the message again,
-  or restarting, is what picks up the new ones. The description under the
+  Known limitations: Compose and roughly thirty other windows that open on
+  top of the main one, such as the Account Manager and the calendar event
+  editor, still show Windows' own colours regardless of the Theme setting.
+  A message already open in the reader when you change the setting keeps
+  the colours it had; closing that tab and opening the message again, or
+  restarting, is what picks up the new ones. The description under the
   Theme setting in Settings is updated to match what now works.
+
+- **The Settings window now takes the Theme colours too, including the
+  window you are reading this sentence in.** Every tab, and the three text
+  boxes on them (font size, the default reminder length, and the download
+  folder), now match the rest of the coloured application instead of
+  showing Windows' own white regardless of what Light or Dark chose.
+
+  Known limitations: Compose, the Account Manager, the calendar event
+  editor, and roughly thirty other windows that open on top of the main
+  one still show Windows' own colours regardless of the Theme setting.
 
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant

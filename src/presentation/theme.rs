@@ -308,12 +308,12 @@ impl Rgb {
 /// here can say is whether anybody sees or hears it.
 pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      every module: Mail, Calendar, Contacts, Reminders, Tasks and Notes. It \
-     also reaches the window a message opens into for reading, and the \
-     window that shows a conversation as headings. Everything else follows \
-     Windows. Changing it here recolours them immediately, with nothing to \
-     restart, except a message already open for reading, which catches up \
-     the next time you open it. Default now matches whether Windows itself \
-     is set to light or dark.";
+     also reaches the window a message opens into for reading, the window \
+     that shows a conversation as headings, and the Settings window you are \
+     reading this in. Everything else follows Windows. Changing it here \
+     recolours them immediately, with nothing to restart, except a message \
+     already open for reading, which catches up the next time you open it. \
+     Default now matches whether Windows itself is set to light or dark.";
 
 /// The palette to draw with right now.
 ///
@@ -934,6 +934,7 @@ mod tests {
             "Notes",
             "reading",
             "conversation as headings",
+            "Settings",
         ] {
             assert!(
                 REACH.contains(place),

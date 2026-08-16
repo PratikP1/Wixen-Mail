@@ -31,12 +31,13 @@
 //! read-back and says so.
 
 use std::sync::{Arc, Mutex};
+use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
     wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reader, wx_reminders_module,
-    wx_tasks_module,
+    wx_settings, wx_tasks_module,
 };
 use wxdragon::prelude::*;
 
@@ -282,6 +283,93 @@ fn check_notes(parent: &Panel, palette: theme::Palette, into: &mut Vec<SiteResul
     );
 }
 
+/// The Settings dialog: the first of the standalone, `show_modal`-in-one-go
+/// dialogs this file proves without a human closing a live modal. `config`'s
+/// `theme` field, not a palette argument, because `build_settings_dialog`
+/// deliberately reads its palette from the config it already holds rather
+/// than a second, independent disk read that could disagree with it (see the
+/// function's own doc comment).
+fn check_settings(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let config = AppConfig {
+        theme: "light".to_string(),
+        ..AppConfig::default()
+    };
+    let widgets = wx_settings::build_settings_dialog(parent, &config);
+
+    check(
+        "settings dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings notebook",
+        &widgets.notebook,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings general tab panel",
+        &widgets.general_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings compose tab panel",
+        &widgets.compose_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings reading tab panel",
+        &widgets.reading_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings language tab panel",
+        &widgets.lang_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings calendar and pim tab panel",
+        &widgets.pim_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings feedback tab panel",
+        &widgets.feedback_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings advanced tab panel",
+        &widgets.advanced_panel,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings font size field",
+        &widgets.font_size,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings default reminder field",
+        &widgets.default_reminder,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "settings download folder field",
+        &widgets.download_folder,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -462,6 +550,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
 
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
             check_reader(&frame, &a11y, &mut sites);
+            check_settings(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 

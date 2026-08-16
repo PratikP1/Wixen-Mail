@@ -13,6 +13,7 @@ use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::theme;
 use crate::service::spellcheck::available_languages;
 use wxdragon::prelude::*;
 
@@ -33,10 +34,28 @@ pub enum SettingsResult {
 
 /// Holds references to all mutable settings widgets so we can read them back
 /// when the user presses OK.
-struct SettingsWidgets {
+///
+/// Public, and every field with it, so a test can build the dialog without
+/// showing it and read back what a live control was really painted: the same
+/// shape `CalendarPanelHandles` and `ReaderTabHandles` already use for the
+/// eight surfaces round 25 could reach directly.
+pub struct SettingsWidgets {
+    /// The dialog itself, and the notebook that tabs it, so both can be
+    /// painted and both can be read back by a test.
+    pub dialog: Dialog,
+    pub notebook: Notebook,
+    // Which panel backs which tab, so a test can check each one was painted
+    // without walking the notebook's own children to find it.
+    pub general_panel: Panel,
+    pub compose_panel: Panel,
+    pub reading_panel: Panel,
+    pub lang_panel: Panel,
+    pub pim_panel: Panel,
+    pub feedback_panel: Panel,
+    pub advanced_panel: Panel,
     // General
     theme: Choice,
-    font_size: TextCtrl,
+    pub font_size: TextCtrl,
     notifications: CheckBox,
     check_updates: CheckBox,
     // Compose
@@ -66,12 +85,12 @@ struct SettingsWidgets {
     cal_default_view: Choice,
     cal_show_weekends: CheckBox,
     cal_first_day: Choice,
-    default_reminder: TextCtrl,
+    pub default_reminder: TextCtrl,
     day_starts: Choice,
     day_ends: Choice,
     // Advanced
     log_level: Choice,
-    download_folder: TextCtrl,
+    pub download_folder: TextCtrl,
     look_at_message_contents: CheckBox,
     check_links_with_google: CheckBox,
     // Feedback channels: each box carries the channel it switches, so a tick
@@ -95,6 +114,32 @@ fn section(parent: &Panel, label: &str) -> StaticBoxSizer {
 
 /// Show the Settings dialog and return the (possibly updated) configuration.
 pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResult {
+    let widgets = build_settings_dialog(parent, config);
+    if widgets.dialog.show_modal() == ID_OK {
+        SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
+    } else {
+        SettingsResult::Cancelled
+    }
+}
+
+/// Build the Settings dialog without showing it.
+///
+/// Everything `show_settings_dialog` used to do up to its own
+/// `.show_modal()` call, split out so a test can build the real dialog, read
+/// back the real colour a real control is holding, and never call
+/// `.show_modal()` at all. Round 25 used this shape for the eight surfaces it
+/// could reach directly; this is the same shape reaching a standalone dialog
+/// for the first time.
+///
+/// Takes `&AppConfig` rather than a separate palette argument: Settings is
+/// the one dialog in this application that already holds, in `config`, the
+/// exact settings it is about to display and let somebody change, so it asks
+/// [`theme::current`] with that value directly rather than through
+/// [`theme::current_from_stored_config`], which would mean a second,
+/// independent disk read that could in principle disagree with the config
+/// already in hand, including the very Theme dropdown this dialog is about
+/// to build.
+pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidgets {
     let dlg = Dialog::builder(parent, "Settings")
         .with_size(560, 520)
         .build();
@@ -203,7 +248,40 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         }
     });
 
-    let widgets = SettingsWidgets {
+    // Painted last, after every tab has built and populated its own
+    // controls, and computed from `config` rather than a fresh disk read
+    // (see this function's own doc comment for why). `None` means high
+    // contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = theme::current(&config.theme) {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&notebook, palette.main_surface());
+        for panel in [
+            &general_panel,
+            &compose_panel,
+            &reading_panel,
+            &lang_panel,
+            &pim_panel,
+            &feedback_panel,
+            &advanced_panel,
+        ] {
+            theme::paint(panel, palette.main_surface());
+        }
+        for field in [&font_size, &default_reminder, &download_folder] {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    SettingsWidgets {
+        dialog: dlg,
+        notebook,
+        general_panel,
+        compose_panel,
+        reading_panel,
+        lang_panel,
+        pim_panel,
+        feedback_panel,
+        advanced_panel,
         theme,
         font_size,
         notifications,
@@ -239,12 +317,6 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
         look_at_message_contents,
         check_links_with_google,
         feedback,
-    };
-
-    if dlg.show_modal() == ID_OK {
-        SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
-    } else {
-        SettingsResult::Cancelled
     }
 }
 
