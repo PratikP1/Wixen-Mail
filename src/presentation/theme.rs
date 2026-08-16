@@ -310,11 +310,12 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      every module: Mail, Calendar, Contacts, Reminders, Tasks and Notes. It \
      also reaches the window a message opens into for reading, the window \
      that shows a conversation as headings, the Settings window you are \
-     reading this in, and the Account Manager. Everything else follows \
-     Windows. Changing it here recolours them immediately, with nothing to \
-     restart, except a message already open for reading, which catches up \
-     the next time you open it. Default now matches whether Windows itself \
-     is set to light or dark.";
+     reading this in, the Account Manager, and the window where a calendar \
+     event is added or edited. Everything else follows Windows. Changing it \
+     here recolours them immediately, with nothing to restart, except a \
+     message already open for reading, which catches up the next time you \
+     open it. Default now matches whether Windows itself is set to light or \
+     dark.";
 
 /// The palette to draw with right now.
 ///
@@ -937,6 +938,7 @@ mod tests {
             "conversation as headings",
             "Settings",
             "Account Manager",
+            "calendar event is added or edited",
         ] {
             assert!(
                 REACH.contains(place),

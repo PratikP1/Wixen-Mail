@@ -24,6 +24,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::status_line::said_and_shown;
+use crate::presentation::theme;
 use crate::presentation::ui_types::CalendarEventItem;
 use crate::presentation::wx_which_days::which_days_are_meant;
 use std::sync::Arc;
@@ -169,6 +170,12 @@ pub fn show_calendar_dialog(
     where_changes_go: &dyn Fn(&CalendarEventItem) -> WhatTheCalendarAllows,
     a11y: &Arc<Accessibility>,
 ) -> Vec<CalendarAction> {
+    // Not yet applied to this window's own controls (see the module's own
+    // notes on how far this round's painting reaches); read here so it can
+    // still be passed down to the event editor this window opens, which is
+    // painted.
+    let palette = theme::current_from_stored_config();
+
     let dialog = Dialog::builder(parent, "Calendar")
         .with_size(800, 600)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -276,7 +283,7 @@ pub fn show_calendar_dialog(
                 said_and_shown(&status, a11y, "Sync requested...", Priority::Normal);
             }
             r if r == ID_CAL_NEW => {
-                if let Some(data) = show_event_editor(&dialog, None) {
+                if let Some(data) = show_event_editor(&dialog, None, palette) {
                     actions.push(CalendarAction::CreateEvent(data));
                     said_and_shown(
                         &status,
@@ -310,7 +317,9 @@ pub fn show_calendar_dialog(
                                 can_be_honoured(WhatIsBeingDone::Changing, means, &allows)
                             {
                                 said_and_shown(&status, a11y, &refused, Priority::High);
-                            } else if let Some(data) = show_event_editor(&dialog, Some(&prefill)) {
+                            } else if let Some(data) =
+                                show_event_editor(&dialog, Some(&prefill), palette)
+                            {
                                 actions.push(CalendarAction::UpdateEvent(
                                     item.clone(),
                                     means,
@@ -449,10 +458,59 @@ fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
 /// Show the event editor dialog with optional prefill data.
 ///
 /// Returns `Some(data)` if the user clicked OK, `None` if cancelled.
+/// The New/Edit Event dialog's fields, returned so a test can build it
+/// without a human closing a live modal and so `show_event_editor` can read
+/// every field back after a real `.show_modal()`.
+pub struct EventEditorWidgets {
+    pub dialog: Dialog,
+    pub txt_summary: TextCtrl,
+    pub txt_start_date: TextCtrl,
+    pub txt_start_time: TextCtrl,
+    pub txt_end_date: TextCtrl,
+    pub txt_end_time: TextCtrl,
+    pub chk_allday: CheckBox,
+    pub txt_location: TextCtrl,
+    pub txt_desc: TextCtrl,
+    pub txt_reminder: TextCtrl,
+}
+
 fn show_event_editor(
     parent: &Dialog,
     prefill: Option<&CalendarEventData>,
+    palette: Option<theme::Palette>,
 ) -> Option<CalendarEventData> {
+    let w = build_event_editor_dialog(parent, prefill, palette);
+    if w.dialog.show_modal() == ID_OK {
+        let result = CalendarEventData {
+            summary: w.txt_summary.get_value(),
+            start_date: w.txt_start_date.get_value(),
+            start_time: w.txt_start_time.get_value(),
+            end_date: w.txt_end_date.get_value(),
+            end_time: w.txt_end_time.get_value(),
+            is_all_day: w.chk_allday.get_value(),
+            location: w.txt_location.get_value(),
+            description: w.txt_desc.get_value(),
+            reminder_minutes: w.txt_reminder.get_value().parse().unwrap_or(15),
+        };
+        w.dialog.destroy();
+        Some(result)
+    } else {
+        w.dialog.destroy();
+        None
+    }
+}
+
+/// Build the New/Edit Event dialog without showing it.
+///
+/// Everything `show_event_editor` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_event_editor_dialog(
+    parent: &Dialog,
+    prefill: Option<&CalendarEventData>,
+    palette: Option<theme::Palette>,
+) -> EventEditorWidgets {
     let title = if prefill.is_some() {
         "Edit Event"
     } else {
@@ -643,23 +701,36 @@ fn show_event_editor(
         }
     });
 
-    if editor.show_modal() == ID_OK {
-        let result = CalendarEventData {
-            summary: txt_summary.get_value(),
-            start_date: txt_start_date.get_value(),
-            start_time: txt_start_time.get_value(),
-            end_date: txt_end_date.get_value(),
-            end_time: txt_end_time.get_value(),
-            is_all_day: chk_allday.get_value(),
-            location: txt_location.get_value(),
-            description: txt_desc.get_value(),
-            reminder_minutes: txt_reminder.get_value().parse().unwrap_or(15),
-        };
-        editor.destroy();
-        Some(result)
-    } else {
-        editor.destroy();
-        None
+    // Painted last, once every field is built. `None` means high contrast is
+    // on, or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&editor, palette.main_surface());
+        for field in [
+            &txt_summary,
+            &txt_start_date,
+            &txt_start_time,
+            &txt_end_date,
+            &txt_end_time,
+            &txt_location,
+            &txt_desc,
+            &txt_reminder,
+        ] {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    EventEditorWidgets {
+        dialog: editor,
+        txt_summary,
+        txt_start_date,
+        txt_start_time,
+        txt_end_date,
+        txt_end_time,
+        chk_allday,
+        txt_location,
+        txt_desc,
+        txt_reminder,
     }
 }
 

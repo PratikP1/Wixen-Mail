@@ -36,8 +36,8 @@ use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_account_manager, wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reader,
-    wx_reminders_module, wx_settings, wx_tasks_module,
+    wx_account_manager, wx_calendar, wx_calendar_module, wx_contacts_module, wx_notes_module,
+    wx_reader, wx_reminders_module, wx_settings, wx_tasks_module,
 };
 use wxdragon::prelude::*;
 
@@ -421,6 +421,33 @@ fn check_account_manager(
     }
 }
 
+/// The calendar's New/Edit Event dialog. Parented to a throwaway `Dialog`
+/// rather than to `parent` directly, the same as production: the real
+/// event editor is always opened from inside the Calendar list window, not
+/// from the main frame.
+fn check_event_editor(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for the event editor").build();
+    let editor = wx_calendar::build_event_editor_dialog(&scratch_parent, None, Some(palette));
+    check(
+        "event editor dialog",
+        &editor.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("event editor summary field", &editor.txt_summary),
+        ("event editor start date field", &editor.txt_start_date),
+        ("event editor start time field", &editor.txt_start_time),
+        ("event editor end date field", &editor.txt_end_date),
+        ("event editor end time field", &editor.txt_end_time),
+        ("event editor location field", &editor.txt_location),
+        ("event editor description field", &editor.txt_desc),
+        ("event editor reminder field", &editor.txt_reminder),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -603,6 +630,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_reader(&frame, &a11y, &mut sites);
             check_settings(&frame, palette, &mut sites);
             check_account_manager(&frame, &a11y, palette, &mut sites);
+            check_event_editor(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
