@@ -2136,6 +2136,10 @@ pub enum WhyTheChangeWasNotMade {
     TheDocumentIsForAnotherEvent,
     /// The change was written in, and reading the result back does not find it.
     TheChangeDidNotComeBackOut,
+    /// A change to one day a calendar server already split into its own
+    /// VEVENT names no VEVENT in the document sharing both its event's
+    /// identity and its own RECURRENCE-ID.
+    TheOccurrenceIsNotInTheDocument,
 }
 
 impl std::fmt::Display for WhyTheChangeWasNotMade {
@@ -2160,6 +2164,11 @@ impl std::fmt::Display for WhyTheChangeWasNotMade {
                 "the change was written into the document and reading that \
                  document back does not find it, so what would go out is not \
                  what you typed"
+            }
+            Self::TheOccurrenceIsNotInTheDocument => {
+                "the document the calendar server handed back does not hold \
+                 this day as a VEVENT of its own, so there is nowhere in it \
+                 this change belongs"
             }
         })
     }
@@ -2206,6 +2215,37 @@ fn the_change_came_back_out(document: &str, uid: &str, meant: &[String]) -> bool
         return false;
     };
     if its.closed_on.is_none() || !holds_the_event(&lines, &its, uid) {
+        return false;
+    }
+    let came_back_out: Vec<&str> = lines_at(&lines, &its.its_own)
+        .into_iter()
+        .filter(|line| a_change_replaces(line))
+        .collect();
+    came_back_out == meant.iter().map(String::as_str).collect::<Vec<&str>>()
+}
+
+/// [`the_change_came_back_out`]'s own check, asked of one VEVENT among
+/// several rather than of the first: whether the change to an occurrence
+/// exception really is in the document that is about to go out.
+///
+/// Locates the VEVENT to read back the same way the writer located the one to
+/// splice into, through [`the_occurrence_named`], so the write and the
+/// read-back proof cannot come to disagree about which VEVENT either one
+/// means. What this can and cannot see is exactly what
+/// [`the_change_came_back_out`]'s own doc comment says, asked of one VEVENT
+/// among several instead of the document's first.
+fn the_occurrence_came_back_out(
+    document: &str,
+    uid: &str,
+    recurrence_id: &str,
+    meant: &[String],
+) -> bool {
+    let lines = unfolded(document);
+    let events = events_in(&lines);
+    let Some(its) = the_occurrence_named(&events, &lines, uid, recurrence_id) else {
+        return false;
+    };
+    if its.closed_on.is_none() {
         return false;
     }
     let came_back_out: Vec<&str> = lines_at(&lines, &its.its_own)
@@ -2312,6 +2352,102 @@ pub fn ical_with_the_event_changed(
     // different stamps and the check would be checking itself.
     let meant = said_again(&ours, numbered);
 
+    let written = document_with_the_change_spliced_into(&lines, its, closes_on, &meant);
+    let written = written_with_zones_defined(written, &meant, event);
+
+    let mut document = written_out(&written);
+    document.push_str("\r\n");
+    if !the_change_came_back_out(&document, &event.uid, &meant) {
+        return Err(WhyTheChangeWasNotMade::TheChangeDidNotComeBackOut);
+    }
+    Ok(document)
+}
+
+/// The document the server holds, with one day it has already split into its
+/// own VEVENT changed, and every other VEVENT in the resource, the series and
+/// any sibling exception alike, copied through exactly as it arrived.
+///
+/// [`ical_with_the_event_changed`] always changes the first VEVENT a document
+/// holds, which is right for an ordinary event and for a series itself, and
+/// wrong for a day the server has already split out: that VEVENT is hardly
+/// ever first, and a series with two changed days holds two of them under one
+/// UID, told apart only by RECURRENCE-ID. That function's own doc comment
+/// says why it is pinned to the first VEVENT and no other: writing into every
+/// VEVENT sharing a UID once corrupted a series and left a moved occurrence
+/// bare. This is the sibling that comment asks for instead: the same splice,
+/// [`document_with_the_change_spliced_into`], aimed at the one VEVENT
+/// actually being changed rather than at whichever is first.
+///
+/// `event.recurrence_id` names which VEVENT that is, and `event.uid` the
+/// identity every VEVENT in the resource shares. Nothing is written when the
+/// document holds no VEVENT under that UID carrying that RECURRENCE-ID, or
+/// when `event.recurrence_id` is nothing at all: a stale document, a day
+/// somebody else already turned back into an ordinary occurrence, and a
+/// caller's own mistake all look the same from here, and none of them is a
+/// document safe to write a change into.
+pub fn ical_with_the_occurrence_changed(
+    held: &str,
+    event: &CalDavEvent,
+) -> std::result::Result<String, WhyTheChangeWasNotMade> {
+    // Nothing to locate a VEVENT by. Falling back to the first VEVENT the way
+    // the ordinary writer does would silently change the series when the
+    // caller meant one day of it.
+    let Some(recurrence_id) = event.recurrence_id.as_deref() else {
+        return Err(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument);
+    };
+    let lines = unfolded(held);
+    let events = events_in(&lines);
+    if events.is_empty() {
+        return Err(WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent);
+    }
+    let its = the_occurrence_named(&events, &lines, &event.uid, recurrence_id)
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;
+
+    // The one VEVENT named opens and never closes. Nothing is guessed at, and
+    // handing the document back unchanged would be the silent loss
+    // `ical_with_the_event_changed`'s own doc comment describes, by another
+    // route.
+    let closes_on = its
+        .closed_on
+        .ok_or(WhyTheChangeWasNotMade::TheEventIsNeverClosed)?;
+
+    let ours = the_properties_this_program_owns(event);
+    let numbered = lines_at(&lines, &its.its_own)
+        .into_iter()
+        .filter_map(|line| value_named_on(line, "SEQUENCE"))
+        .filter_map(|written| written.parse::<u64>().ok())
+        .next_back()
+        .unwrap_or(0);
+    let meant = said_again(&ours, numbered);
+
+    let written = document_with_the_change_spliced_into(&lines, its, closes_on, &meant);
+    let written = written_with_zones_defined(written, &meant, event);
+
+    let mut document = written_out(&written);
+    document.push_str("\r\n");
+    if !the_occurrence_came_back_out(&document, &event.uid, recurrence_id, &meant) {
+        return Err(WhyTheChangeWasNotMade::TheChangeDidNotComeBackOut);
+    }
+    Ok(document)
+}
+
+/// The document's lines with a change spliced into one event's own lines: the
+/// properties a change owns replaced, and every other line, including every
+/// other event in the document, copied through exactly as it arrived.
+///
+/// Shared by [`ical_with_the_event_changed`], which always targets the first
+/// event a document holds, and by [`ical_with_the_occurrence_changed`], which
+/// targets whichever one VEVENT among several carries a given RECURRENCE-ID.
+/// One splice asked by both is what stops a resource holding a series and the
+/// days changed out of it from being spliced two different ways: the case
+/// defect this file is a record of was exactly two routines each convinced
+/// they knew where an event's lines stopped.
+fn document_with_the_change_spliced_into(
+    lines: &[String],
+    its: &EventLines,
+    closes_on: usize,
+    meant: &[String],
+) -> Vec<String> {
     let mut written: Vec<String> = Vec::new();
     let mut where_ours_go: Option<usize> = None;
     let mut its_own = its.its_own.iter().copied().peekable();
@@ -2319,26 +2455,39 @@ pub fn ical_with_the_event_changed(
     for (at, line) in lines.iter().enumerate() {
         if at == closes_on {
             let goes = where_ours_go.unwrap_or(written.len());
-            written.splice(goes..goes, meant.clone());
+            written.splice(goes..goes, meant.to_vec());
         }
-        // Only the event's own property lines are replaced. Everything else is
-        // copied through exactly as it arrived, which is what leaves an alarm
-        // its own trigger and description and the timezone rules theirs.
+        // Only the targeted event's own property lines are replaced.
+        // Everything else is copied through exactly as it arrived, which is
+        // what leaves an alarm its own trigger and description, the timezone
+        // rules theirs, and a sibling VEVENT everything it had.
         if its_own.next_if_eq(&at).is_some() && a_change_replaces(line) {
             where_ours_go.get_or_insert(written.len());
             continue;
         }
         written.push(line.clone());
     }
+    written
+}
 
-    // Every zone the change names has to be defined in the document going
-    // out. The server's own definitions were copied through above, so this
-    // adds rules only where the held document had none: a server that omitted
-    // them, or a document from before anything here wrote a zone. A zone the
-    // timezone database does not know is passed through as the server had it,
-    // said in the log rather than blocking the edit, because the server
-    // accepted its own document once already.
-    for zone in time_zones_named_on(&meant) {
+/// The lines with every zone the change names defined somewhere among them,
+/// added where the document had none.
+///
+/// Shared for the reason [`document_with_the_change_spliced_into`] is: an
+/// occurrence exception changed into a zone the document does not yet define
+/// needs the rules added exactly as a change to the series would add them.
+/// The server's own definitions were copied through by the splice above, so
+/// this adds rules only where the held document had none: a server that
+/// omitted them, or a document from before anything here wrote a zone. A zone
+/// the timezone database does not know is passed through as the server had
+/// it, said in the log rather than blocking the edit, because the server
+/// accepted its own document once already.
+fn written_with_zones_defined(
+    mut written: Vec<String>,
+    meant: &[String],
+    event: &CalDavEvent,
+) -> Vec<String> {
+    for zone in time_zones_named_on(meant) {
         if timezone_ids_defined(&written).contains(&zone) {
             continue;
         }
@@ -2358,13 +2507,7 @@ pub fn ical_with_the_event_changed(
             ),
         }
     }
-
-    let mut document = written_out(&written);
-    document.push_str("\r\n");
-    if !the_change_came_back_out(&document, &event.uid, &meant) {
-        return Err(WhyTheChangeWasNotMade::TheChangeDidNotComeBackOut);
-    }
-    Ok(document)
+    written
 }
 
 /// Whether the document the server handed back is the one holding this event.
@@ -2377,6 +2520,47 @@ fn holds_the_event(lines: &[String], its: &EventLines, uid: &str) -> bool {
         .into_iter()
         .find_map(|line| value_named_on(line, "UID"))
         .is_some_and(|held| held == uid)
+}
+
+/// Whether this VEVENT is the one day an occurrence exception's own change
+/// means: [`holds_the_event`]'s own identity check, and the same
+/// RECURRENCE-ID as the day being changed.
+///
+/// Read the same two steps [`event_from_its_own_lines`] already reads
+/// RECURRENCE-ID off a block through: [`value_named_on`] and
+/// [`normalize_ical_datetime`]. A reader locating this day and a writer
+/// locating the same one ask the same question the same way, so they cannot
+/// come to disagree about which VEVENT it is.
+fn holds_the_occurrence(
+    lines: &[String],
+    its: &EventLines,
+    uid: &str,
+    recurrence_id: &str,
+) -> bool {
+    holds_the_event(lines, its, uid)
+        && lines_at(lines, &its.its_own)
+            .into_iter()
+            .find_map(|line| value_named_on(line, "RECURRENCE-ID"))
+            .map(normalize_ical_datetime)
+            .as_deref()
+            == Some(recurrence_id)
+}
+
+/// The one VEVENT among a document's own that [`holds_the_occurrence`], if the
+/// document holds one.
+///
+/// A resource holding a series and the days somebody changed out of it is
+/// several VEVENTs under one UID, told apart only by RECURRENCE-ID, so
+/// finding the one day being changed needs both.
+fn the_occurrence_named<'a>(
+    events: &'a [EventLines],
+    lines: &[String],
+    uid: &str,
+    recurrence_id: &str,
+) -> Option<&'a EventLines> {
+    events
+        .iter()
+        .find(|its| holds_the_occurrence(lines, its, uid, recurrence_id))
 }
 
 /// Whether a line carries one of the properties a change replaces.
@@ -6556,6 +6740,205 @@ pub(crate) mod writing_tests {
         assert!(
             !changed.contains("SUMMARY:Weekly review\r\n"),
             "the series kept its old title:\n{changed}"
+        );
+    }
+
+    // ── Editing a day the server has already split into its own VEVENT ──────
+    //
+    // `ical_with_the_event_changed` above is deliberately pinned to the first
+    // VEVENT a document holds. A day the server has already moved or changed
+    // out of a series is hardly ever first, and a series with two changed
+    // days holds two VEVENTs under one UID told apart only by RECURRENCE-ID,
+    // so writing a change to one of them needs a writer that locates by both
+    // rather than one that always takes the first.
+
+    /// A series and two occurrences somebody moved out of it, all under one
+    /// UID, told apart by RECURRENCE-ID: the one this test changes, and a
+    /// sibling that has to survive untouched. Extends
+    /// [`a_series_with_one_occurrence_moved`]'s own shape with a second
+    /// changed day, so a change to one cannot be told from a change to the
+    /// other by the shape of the document alone.
+    fn a_series_with_two_occurrences_moved() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "SUMMARY:Weekly review",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY",
+            "SEQUENCE:2",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, the week it moved",
+            "DTSTART:20260312T140000Z",
+            "DTEND:20260312T150000Z",
+            "SEQUENCE:1",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260319T090000Z",
+            "SUMMARY:Weekly review\\, a different week that moved",
+            "DTSTART:20260319T160000Z",
+            "DTEND:20260319T170000Z",
+            "SEQUENCE:1",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    /// The first occurrence of [`a_series_with_two_occurrences_moved`], as
+    /// somebody edited it.
+    fn the_occurrence_as_it_was_changed_here() -> CalDavEvent {
+        CalDavEvent {
+            summary: "Weekly review, moved again".to_string(),
+            description: None,
+            location: None,
+            dtstart: "2026-03-12T15:00:00Z".to_string(),
+            dtend: Some("2026-03-12T16:00:00Z".to_string()),
+            recurrence_id: Some("2026-03-12T09:00:00Z".to_string()),
+            ..an_event("e-1")
+        }
+    }
+
+    #[test]
+    fn test_editing_the_occurrence_leaves_the_series_and_a_sibling_exception_alone() {
+        // Proving the series and the sibling come back exactly as they went
+        // in is what makes "everything else survives" a claim this test can
+        // check rather than a sentence in a comment, the same reason
+        // `a_document_the_server_holds` exists for the single-VEVENT writer.
+        let held = a_series_with_two_occurrences_moved();
+        let lines_before = unfolded(&held);
+        let events_before = events_in(&lines_before);
+        assert_eq!(events_before.len(), 3, "the fixture itself is wrong");
+        let series_before = lines_at(&lines_before, &events_before[0].its_own).join("\r\n");
+        let sibling_before = lines_at(&lines_before, &events_before[2].its_own).join("\r\n");
+
+        let changed =
+            ical_with_the_occurrence_changed(&held, &the_occurrence_as_it_was_changed_here())
+                .expect("the occurrence to be found and changed");
+
+        assert_eq!(
+            changed
+                .matches("SUMMARY:Weekly review\\, moved again")
+                .count(),
+            1,
+            "the change was written into the document more than once:\n{changed}"
+        );
+
+        let lines_after = unfolded(&changed);
+        let events_after = events_in(&lines_after);
+        assert_eq!(
+            events_after.len(),
+            3,
+            "an event was lost or gained:\n{changed}"
+        );
+
+        let series_after = lines_at(&lines_after, &events_after[0].its_own).join("\r\n");
+        assert_eq!(
+            series_before, series_after,
+            "the series was changed by an edit to one occurrence:\n{changed}"
+        );
+
+        let target_after = lines_at(&lines_after, &events_after[1].its_own).join("\r\n");
+        assert!(
+            target_after.contains("SUMMARY:Weekly review\\, moved again"),
+            "the change never reached the occurrence:\n{target_after}"
+        );
+        assert!(
+            !target_after.contains("the week it moved"),
+            "the occurrence's old title is still in the document:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("DTSTART:20260312T150000Z"),
+            "the change never reached the occurrence's own time:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("RECURRENCE-ID:20260312T090000Z"),
+            "the occurrence lost what says which day it replaces:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("SEQUENCE:2"),
+            "the occurrence's own number was not counted on:\n{target_after}"
+        );
+
+        let sibling_after = lines_at(&lines_after, &events_after[2].its_own).join("\r\n");
+        assert_eq!(
+            sibling_before, sibling_after,
+            "a sibling exception was changed by an edit to a different one:\n{changed}"
+        );
+    }
+
+    #[test]
+    fn test_editing_an_occurrence_not_present_in_the_document_is_refused() {
+        // A day the fixture never split out: a stale local row, a day already
+        // turned back into an ordinary occurrence, or a caller's own mistake
+        // all look the same from here, and none of them is a document safe to
+        // write a change into.
+        let held = a_series_with_two_occurrences_moved();
+        let mut missing = the_occurrence_as_it_was_changed_here();
+        missing.recurrence_id = Some("2026-04-02T09:00:00Z".to_string());
+
+        assert_eq!(
+            ical_with_the_occurrence_changed(&held, &missing),
+            Err(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)
+        );
+    }
+
+    #[test]
+    fn test_editing_the_wrong_events_occurrence_is_refused() {
+        // The RECURRENCE-ID matches and the UID does not: a server answering
+        // a GET with the wrong resource, or a stale address, both hand back
+        // somebody else's appointment, and writing into it and sending it
+        // back with If-Match would overwrite theirs.
+        let held = a_series_with_two_occurrences_moved();
+        let mut for_another_event = the_occurrence_as_it_was_changed_here();
+        for_another_event.uid = "a-different-event".to_string();
+
+        assert_eq!(
+            ical_with_the_occurrence_changed(&held, &for_another_event),
+            Err(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)
+        );
+    }
+
+    #[test]
+    fn test_editing_with_no_recurrence_id_at_all_is_refused_rather_than_guessing_the_series() {
+        // Nothing to locate a VEVENT by. Falling back to the first VEVENT the
+        // way the ordinary writer does would silently change the series when
+        // the caller meant one day of it, which is exactly the corruption
+        // this function exists to avoid.
+        let held = a_series_with_two_occurrences_moved();
+        let mut no_day_named = the_occurrence_as_it_was_changed_here();
+        no_day_named.recurrence_id = None;
+
+        assert_eq!(
+            ical_with_the_occurrence_changed(&held, &no_day_named),
+            Err(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)
+        );
+    }
+
+    #[test]
+    fn test_editing_an_occurrence_in_a_document_with_no_event_at_all_is_refused() {
+        let held = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+        assert_eq!(
+            ical_with_the_occurrence_changed(held, &the_occurrence_as_it_was_changed_here()),
+            Err(WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent)
+        );
+    }
+
+    #[test]
+    fn test_an_occurrence_that_opens_and_never_closes_produces_no_document_to_send() {
+        let held = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e-1\r\n\
+                    RECURRENCE-ID:20260312T090000Z\r\nSUMMARY:Moved\r\n\
+                    DTSTART:20260312T140000Z\r\n";
+        assert_eq!(
+            ical_with_the_occurrence_changed(held, &the_occurrence_as_it_was_changed_here()),
+            Err(WhyTheChangeWasNotMade::TheEventIsNeverClosed)
         );
     }
 

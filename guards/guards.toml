@@ -2514,11 +2514,11 @@ red = [
 [[guard]]
 name = "a change into a document that defines no zone adds the rules"
 file = "src/service/caldav.rs"
-before = """    for zone in time_zones_named_on(&meant) {
+before = """    for zone in time_zones_named_on(meant) {
         if timezone_ids_defined(&written).contains(&zone) {
             continue;
         }"""
-after = """    for zone in time_zones_named_on(&meant) {
+after = """    for zone in time_zones_named_on(meant) {
         if true {
             continue;
         }"""
