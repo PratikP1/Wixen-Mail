@@ -177,7 +177,12 @@ pub fn reply_recipients(
 /// do commas inside angle brackets. `"Smith, John" <j@example.com>` is one
 /// person, and splitting it in two produces two recipients that do not exist
 /// and a message that bounces.
-fn split_addresses(value: &str) -> Vec<String> {
+///
+/// `pub(crate)` so [`crate::application::mail_controller`] can split a
+/// recipient field the same quote-aware way on the way out, rather than
+/// splitting it a second, naive way that cuts a name like the one above in
+/// half.
+pub(crate) fn split_addresses(value: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;

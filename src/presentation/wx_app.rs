@@ -11615,8 +11615,12 @@ mod tests {
     // drops left to right and the folder happened to be written first.
     // Nothing said so, and swapping the two would have leaked a folder per
     // test in silence. `TempHome` keeps the order in one place.
+    //
+    // `pub(super)` so a sibling test module can build a real cache from the
+    // one place that already carries the allow above, rather than adding a
+    // second `Arc::new(MessageCache::new(...))` and a second allow beside it.
     #[allow(clippy::arc_with_non_send_sync)]
-    fn test_cache() -> TempHome<Option<Arc<MessageCache>>> {
+    pub(super) fn test_cache() -> TempHome<Option<Arc<MessageCache>>> {
         TempHome::named("wixen_wx_app_", |dir| {
             let cache = MessageCache::new(dir.to_path_buf(), None).expect("cache");
             Some(Arc::new(cache))
@@ -12732,6 +12736,120 @@ mod one_owner_for_what_a_delete_did {
             delete_outcomes_worded_in("let said = format!(\"Deleted: {subject}\");"),
             vec!["Deleted".to_string()],
             "a second spelling of a delete outcome went unnoticed"
+        );
+    }
+}
+
+/// The reported bug, followed end to end rather than proved on an internal
+/// struct built with the field already correct.
+///
+/// A synced message's From is stored and shown as "Name <address>"
+/// (`mail_sync`'s `join_addresses`). `reply_recipients` carries that exact
+/// text into the To field. The compose window writes it into the field
+/// verbatim. `queue_for_sending` reads the field back unedited into the
+/// outbox. From there the same request-building and message-building code
+/// the running program uses carries it to a real SMTP server. If anything
+/// between the field and the wire stops splitting the name off the address,
+/// this fails exactly the way replying to almost any real message failed.
+#[cfg(test)]
+mod reply_recipients_reach_the_wire {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_replying_to_a_named_sender_reaches_the_wire_as_a_bare_address() {
+        let message = crate::application::reply::RepliedTo {
+            from: "Charles Babbage <charles@example.com>",
+            ..Default::default()
+        };
+        let reply = crate::application::reply::reply_recipients(
+            &message,
+            &[],
+            crate::application::reply::ReplyMode::Default,
+        );
+        assert_eq!(
+            reply.to, "Charles Babbage <charles@example.com>",
+            "the fixture no longer reproduces the reported shape"
+        );
+
+        // What the compose window's To field holds after Reply pre-fills it,
+        // read back the way Send reads it.
+        let data = wx_compose::ComposeData {
+            to: reply.to.clone(),
+            cc: String::new(),
+            bcc: String::new(),
+            subject: "Re: Hello".to_string(),
+            body: String::new(),
+            body_plain: "Thanks!".to_string(),
+            html_mode: false,
+            account_index: None,
+            attachments: Vec::new(),
+            answering: None,
+        };
+
+        // The existing test-only cache builder, not a second one: it already
+        // carries the allow a real `rusqlite` connection needs to sit behind
+        // an `Arc` in a test, and one place carrying that is enough.
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a1")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the queued message to be there");
+        assert_eq!(
+            queued.to_addr, "Charles Babbage <charles@example.com>",
+            "the queue is expected to hold the field's raw text; this test proves the fix \
+             downstream of here"
+        );
+
+        let server =
+            crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
+        let smtp_config =
+            crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
+
+        let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
+        account.id = "a1".to_string();
+        account.smtp_server = smtp_config.server.clone();
+        account.smtp_port = smtp_config.port.to_string();
+        account.smtp_use_tls = false;
+
+        let request = SendEmailRequest::from_queued(
+            &queued,
+            &account,
+            crate::service::protocols::MailAuth::Password("hunter2".to_string()),
+        )
+        .expect("a sendable request");
+        let email =
+            crate::application::mail_controller::outgoing(&request).expect("a message to build");
+
+        // The same bypass the SMTP suite's own loopback tests use to reach a
+        // real send: allowed_to_send() skips only the environment-dependent
+        // "may this account send" gate, which reads real on-disk config, and
+        // nothing in the chain this test is about.
+        let client = crate::service::protocols::smtp::SmtpClient::allowed_to_send(smtp_config)
+            .expect("a client");
+        let sent = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            client.send_email(email, &request.auth),
+        )
+        .await
+        .expect("the server never finished the exchange");
+
+        assert!(
+            sent.is_ok(),
+            "replying to a named sender failed to send: {:?}",
+            sent.err()
+        );
+        assert!(
+            server.was_told("RCPT TO:<charles@example.com>").await,
+            "the bare address never reached the server"
         );
     }
 }

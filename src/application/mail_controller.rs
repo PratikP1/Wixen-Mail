@@ -13,17 +13,39 @@ use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
-/// The addresses in one typed recipient field.
+/// The addresses in one typed recipient field, stripped to the bare address.
 ///
-/// Split on comma or semicolon, which is what people paste and what every
-/// other client accepts. Empty entries are dropped: a trailing comma is a
+/// Split the same quote- and bracket-aware way [`crate::application::reply`]
+/// already splits a header for replying, so a display name with a comma in
+/// it is not mistaken for two recipients. What comes out of a reply, a
+/// forward, or a reopened draft is often not a bare address but a whole
+/// "Name <address>" entry copied from a message somebody else sent, the same
+/// shape `EmailAddress`'s own `Display` writes; any such wrapper is stripped
+/// down to the address alone; here, because sending it as one address is
+/// what the server refuses. Empty entries are dropped: a trailing comma is a
 /// typing artefact, not a request to send to nobody.
 fn addresses(field: &str) -> Vec<String> {
-    field
-        .split([',', ';'])
-        .map(|addr| addr.trim().to_string())
-        .filter(|addr| !addr.is_empty())
+    crate::application::reply::split_addresses(field)
+        .iter()
+        .map(|entry| bare_address(entry))
         .collect()
+}
+
+/// One recipient entry, with any "Name <address>" wrapper stripped off.
+///
+/// Mirrors the bracket-finding shape `reply`'s own `key_of` uses, without its
+/// lowercasing: `key_of` exists to build a comparison key, and lowercasing
+/// the local part here would send to a different address than the one a
+/// person typed. The name itself is dropped rather than carried onto the
+/// outgoing header: it can come from a message a stranger sent, and this
+/// function is the boundary where that untrusted text stops being carried
+/// any further.
+fn bare_address(entry: &str) -> String {
+    let trimmed = entry.trim();
+    match (trimmed.find('<'), trimmed.rfind('>')) {
+        (Some(open), Some(close)) if close > open => trimmed[open + 1..close].trim().to_string(),
+        _ => trimmed.to_string(),
+    }
 }
 
 /// Parameters for sending an email via SMTP.
@@ -2287,6 +2309,70 @@ mod send_request_tests {
         )
         .expect("should build");
         assert_eq!(req.to, vec!["a@example.com", "b@example.com"]);
+    }
+
+    // ── A recipient copied from a message, not typed bare ──────────────────
+    //
+    // A synced message's From and To are stored and shown as
+    // "Name <address>" (see `mail_sync::join_addresses`), and Reply carries
+    // that exact text into the compose window's To field unedited. Sending
+    // it as one address, wrapper and all, is the bug that made replying to
+    // almost any real message fail: the server was asked to accept
+    // "Charles Babbage <charles@example.com>" as a single mailbox and
+    // refused it, identically, every time.
+
+    #[test]
+    fn test_a_name_and_address_recipient_is_split_so_the_address_alone_reaches_the_request() {
+        let req = SendEmailRequest::from_queued(
+            &queued("Charles Babbage <charles@example.com>"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_a_name_and_address_cc_recipient_is_split_too() {
+        let req = SendEmailRequest::from_queued(
+            &queued_with("alice@example.com", "Grace Hopper <grace@example.com>", ""),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(req.cc, vec!["grace@example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_a_display_name_with_a_comma_does_not_split_into_two_bad_recipients() {
+        // A naive split on comma cuts a quoted name like this one in half
+        // before the "Name <address>" wrapper is even visible, so this is red
+        // for a different reason than the two tests above: it is what proves
+        // the split itself has to be quote-aware, not just the unwrapping.
+        let req = SendEmailRequest::from_queued(
+            &queued("\"Babbage, Charles\" <charles@example.com>"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_bare() {
+        let req = SendEmailRequest::from_queued(
+            &queued("alice@example.com, Charles Babbage <charles@example.com>"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        assert_eq!(
+            req.to,
+            vec![
+                "alice@example.com".to_string(),
+                "charles@example.com".to_string(),
+            ]
+        );
     }
 
     #[test]

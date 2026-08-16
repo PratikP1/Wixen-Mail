@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Replying to a message, or replying to everyone on one, now actually
+  sends when the person you are answering has a name attached to their
+  address.** That is most real mail: an incoming message's sender is shown
+  and stored as a name next to an address, and Reply carried that exact
+  text into the To line unedited. Sending it that way was refused at the
+  server every time, with an error that gave no way to fix it, and the
+  message sat in the outbox failing the same way on every retry. The only
+  way around it was retyping the address by hand with the name taken off
+  first. Any message whose To or Cc line already carries a name this way
+  now sends the same as one typed as a bare address.
+
+  Known limitations. The name itself does not reach the message that goes
+  out, or the copy kept in Sent; only the address does, even though the
+  compose window still shows the name correctly while it is being written.
+  Carrying the name through the same way this program already does for
+  your own name is tracked as a follow-up, not done here.
+
 - **Fixed: a day a calendar server has already moved or changed out of a
   repeating meeting could not be edited here on its own.** A calendar server
   keeps a day like that as its own appointment inside the same document as
