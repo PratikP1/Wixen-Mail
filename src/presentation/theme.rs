@@ -343,6 +343,31 @@ pub fn current(setting: &str) -> Option<Palette> {
     )
 }
 
+/// The palette to draw with right now, read from the theme setting saved to
+/// disk.
+///
+/// Every standalone dialog that does not already hold a fresher [`AppConfig`]
+/// in memory reads its palette this way: load the stored settings, fall back
+/// to the default theme if that read fails, then ask [`current`] the same
+/// question every other painted surface asks. Three call sites worked this
+/// out by hand before this existed, and each dialog this round paints would
+/// have made it a fourth, fifth and sixth copy of the same five lines.
+///
+/// Settings itself is the deliberate exception: it already holds the
+/// [`AppConfig`] it is about to display and edit, and calls [`current`]
+/// directly with that value, because going through this helper there would
+/// mean a second, independent disk read that could in principle disagree
+/// with the config already in hand.
+///
+/// [`AppConfig`]: crate::data::config::AppConfig
+pub fn current_from_stored_config() -> Option<Palette> {
+    current(
+        &crate::data::config::ConfigManager::load_stored()
+            .map(|mgr| mgr.app_config().theme.clone())
+            .unwrap_or_default(),
+    )
+}
+
 /// Which palette follows from the setting and what the machine reports.
 ///
 /// Split from [`current`] so the rule can be stated without asking the machine
@@ -844,6 +869,22 @@ mod tests {
             Some(Palette::LIGHT)
         };
         assert_eq!(current("default"), expected);
+    }
+
+    #[test]
+    fn test_current_from_stored_config_reads_the_theme_the_stored_config_holds() {
+        // `ConfigManager::load_stored` reads Pratik's real settings file, the
+        // same one every standalone dialog's palette now comes from. There is
+        // no lower-level primitive to recompute this from by hand the way the
+        // Windows registry reads above are recomputed: this function's whole
+        // job is composing `load_stored` with `current`, so the test proves
+        // it does exactly that composition rather than pinning a light or
+        // dark answer that would go stale the moment the settings file on
+        // this machine changes.
+        let theme = crate::data::config::ConfigManager::load_stored()
+            .map(|mgr| mgr.app_config().theme.clone())
+            .unwrap_or_default();
+        assert_eq!(current_from_stored_config(), current(&theme));
     }
 
     #[test]

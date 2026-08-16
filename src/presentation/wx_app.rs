@@ -593,11 +593,7 @@ impl WxMailApp {
             // paint over, so nothing is set and Windows decides.
             // Read once here rather than per control: a settings file opened
             // once per widget is a file opened a hundred times at startup.
-            let palette = theme::current(
-                &crate::data::config::ConfigManager::load_stored()
-                    .map(|mgr| mgr.app_config().theme.clone())
-                    .unwrap_or_default(),
-            );
+            let palette = theme::current_from_stored_config();
             if let Some(palette) = palette {
                 theme::paint(&left_panel, palette.second_surface());
             }
@@ -8974,11 +8970,7 @@ fn show_conversation_as_page(
     // reader, so the palette is read fresh each time too rather than carried
     // in from a caller: there is no single "once at startup" moment here to
     // read it at instead.
-    let palette = theme::current(
-        &crate::data::config::ConfigManager::load_stored()
-            .map(|mgr| mgr.app_config().theme.clone())
-            .unwrap_or_default(),
-    );
+    let palette = theme::current_from_stored_config();
     if let Some(palette) = palette {
         theme::paint(&frame, palette.main_surface());
     }

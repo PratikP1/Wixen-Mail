@@ -277,11 +277,7 @@ impl ReaderWindow {
         // times over a long reading session. This window is built once and
         // reused for as long as Wixen Mail runs, so "once" here means once
         // per run, the same as everywhere else the palette is read.
-        let palette = theme::current(
-            &crate::data::config::ConfigManager::load_stored()
-                .map(|mgr| mgr.app_config().theme.clone())
-                .unwrap_or_default(),
-        );
+        let palette = theme::current_from_stored_config();
         if let Some(palette) = palette {
             theme::paint(&frame, palette.main_surface());
         }
