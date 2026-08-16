@@ -5432,6 +5432,199 @@ mod tests {
         );
     }
 
+    /// A real personal Google Calendar export, pasted by the reporter of
+    /// mifi/ical-expander issue #8
+    /// (<https://github.com/mifi/ical-expander/issues/8>, the issue body's
+    /// first calendar). mifi/ical-expander is MIT (Mikael Finstad). A clean
+    /// IANA zone and two ordinary recurring events, neither carrying a
+    /// RECURRENCE-ID, which is the shape every other fixture in this file
+    /// deliberately complicates on: worth pinning down as a document that
+    /// already reads correctly, plain as it is.
+    fn a_real_google_calendar_export() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "PRODID:-//Google Inc//Google Calendar 70.9054//EN",
+            "VERSION:2.0",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "X-WR-CALNAME:Test",
+            "X-WR-TIMEZONE:America/Los_Angeles",
+            "X-WR-CALDESC:Test Public Calendar",
+            "BEGIN:VTIMEZONE",
+            "TZID:America/Los_Angeles",
+            "X-LIC-LOCATION:America/Los_Angeles",
+            "BEGIN:DAYLIGHT",
+            "TZOFFSETFROM:-0800",
+            "TZOFFSETTO:-0700",
+            "TZNAME:PDT",
+            "DTSTART:19700308T020000",
+            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
+            "END:DAYLIGHT",
+            "BEGIN:STANDARD",
+            "TZOFFSETFROM:-0700",
+            "TZOFFSETTO:-0800",
+            "TZNAME:PST",
+            "DTSTART:19701101T020000",
+            "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT",
+            "DTSTART;TZID=America/Los_Angeles:20180914T140000",
+            "DTEND;TZID=America/Los_Angeles:20180914T150000",
+            "RRULE:FREQ=WEEKLY;COUNT=5;BYDAY=FR",
+            "DTSTAMP:20180911T175958Z",
+            "UID:5kg6i9kku32b0uvj1jkig3i773@google.com",
+            "CREATED:20180911T155050Z",
+            "DESCRIPTION:",
+            "LAST-MODIFIED:20180911T155050Z",
+            "LOCATION:",
+            "SEQUENCE:0",
+            "STATUS:CONFIRMED",
+            "SUMMARY:Recurring Event with Ending",
+            "TRANSP:OPAQUE",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "DTSTART;TZID=America/Los_Angeles:20180914T100000",
+            "DTEND;TZID=America/Los_Angeles:20180914T110000",
+            "RRULE:FREQ=WEEKLY;BYDAY=FR",
+            "DTSTAMP:20180911T175958Z",
+            "UID:0240jd9trkafkccbhpl7s3t83m@google.com",
+            "CREATED:20180911T154655Z",
+            "DESCRIPTION:This is a description",
+            "LAST-MODIFIED:20180911T154656Z",
+            "LOCATION:Test Location",
+            "SEQUENCE:0",
+            "STATUS:CONFIRMED",
+            "SUMMARY:Test Recurring Event",
+            "TRANSP:OPAQUE",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_real_google_calendar_export_with_two_ordinary_recurring_events_reads_correctly() {
+        let events = every_event_in_the_resource(
+            &a_real_google_calendar_export(),
+            "https://example.test/google/basic.ics",
+            None,
+        );
+
+        assert_eq!(events.len(), 2, "{events:?}");
+
+        assert_eq!(events[0].uid, "5kg6i9kku32b0uvj1jkig3i773@google.com");
+        assert_eq!(events[0].dtstart, "2018-09-14T14:00:00");
+        assert_eq!(events[0].dtend.as_deref(), Some("2018-09-14T15:00:00"));
+        assert_eq!(events[0].time_zone.as_deref(), Some("America/Los_Angeles"));
+        assert_eq!(
+            events[0].recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;COUNT=5;BYDAY=FR")
+        );
+        assert_eq!(events[0].summary, "Recurring Event with Ending");
+        assert!(
+            events[0].description.is_none(),
+            "an empty DESCRIPTION line names no note, the same as none at all"
+        );
+        assert!(events[0].recurrence_id.is_none());
+
+        assert_eq!(events[1].uid, "0240jd9trkafkccbhpl7s3t83m@google.com");
+        assert_eq!(events[1].dtstart, "2018-09-14T10:00:00");
+        assert_eq!(events[1].dtend.as_deref(), Some("2018-09-14T11:00:00"));
+        assert_eq!(
+            events[1].recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=FR")
+        );
+        assert_eq!(events[1].summary, "Test Recurring Event");
+        assert_eq!(
+            events[1].description.as_deref(),
+            Some("This is a description")
+        );
+        assert_eq!(events[1].location.as_deref(), Some("Test Location"));
+    }
+
+    /// A real G-Suite public calendar feed, pasted by the same reporter in
+    /// mifi/ical-expander issue #8
+    /// (<https://github.com/mifi/ical-expander/issues/8>), showing what the
+    /// server auto-expanded a recurring event into: five VEVENTs, every one
+    /// of them carrying RECURRENCE-ID and none carrying RRULE, so the
+    /// resource holds no bare series master at all. The issue itself is
+    /// truncated after these five ("... more events ..."); only the five
+    /// whose full text the reporter actually pasted are reproduced here.
+    /// mifi/ical-expander is MIT (Mikael Finstad). The ATTENDEE line folds
+    /// mid-word inside "calendar.google.com", a second real, independent
+    /// example of the shape sabre/vobject issue #344 also shows.
+    fn a_real_gsuite_feed_with_no_bare_series_master() -> String {
+        let mut lines = vec![
+            "BEGIN:VCALENDAR".to_string(),
+            "PRODID:-//Google Inc//Google Calendar 70.9054//EN".to_string(),
+            "VERSION:2.0".to_string(),
+            "CALSCALE:GREGORIAN".to_string(),
+            "METHOD:PUBLISH".to_string(),
+            "X-WR-CALNAME:Test".to_string(),
+            "X-WR-TIMEZONE:America/Los_Angeles".to_string(),
+            "X-WR-CALDESC:Test public calendar".to_string(),
+        ];
+        for start in [
+            "20181012T190000Z",
+            "20181005T190000Z",
+            "20180928T190000Z",
+            "20180921T190000Z",
+            "20180914T190000Z",
+        ] {
+            let end = format!("{}T200000Z", &start[..8]);
+            lines.extend([
+                "BEGIN:VEVENT".to_string(),
+                format!("DTSTART:{start}"),
+                format!("DTEND:{end}"),
+                "DTSTAMP:20180910T215427Z".to_string(),
+                "UID:22q6ni7gkhpg31sbt2024i26og@google.com".to_string(),
+                "ATTENDEE;X-NUM-GUESTS=0:mailto:601t.com_a029mt9oo3j20r5okc98g4lfe4@group.ca"
+                    .to_string(),
+                " lendar.google.com".to_string(),
+                format!("RECURRENCE-ID:{start}"),
+                "SUMMARY:Busy".to_string(),
+                "END:VEVENT".to_string(),
+            ]);
+        }
+        lines.push("END:VCALENDAR".to_string());
+        lines.push(String::new());
+        lines.join("\r\n")
+    }
+
+    #[test]
+    fn test_a_real_gsuite_feed_with_no_bare_series_master_reads_as_independent_events() {
+        // ical.js and ical-expander's own bug, traced in the issue this
+        // fixture comes from, was treating "carries a RECURRENCE-ID" as
+        // "carries no occurrence of its own", so a resource shaped exactly
+        // like this one read back as zero events. This program's reader
+        // never asked that question in the first place: every VEVENT with a
+        // UID and a DTSTART is an event, RECURRENCE-ID or not.
+        let events = every_event_in_the_resource(
+            &a_real_gsuite_feed_with_no_bare_series_master(),
+            "https://example.test/google/gsuite.ics",
+            None,
+        );
+
+        assert_eq!(events.len(), 5, "{events:?}");
+        for event in &events {
+            assert_eq!(event.uid, "22q6ni7gkhpg31sbt2024i26og@google.com");
+            assert!(
+                event.recurrence_rule.is_none(),
+                "none of these carries an RRULE of its own"
+            );
+            assert_eq!(
+                event.recurrence_id.as_deref(),
+                Some(event.dtstart.as_str()),
+                "each one's RECURRENCE-ID names its own start"
+            );
+            assert_eq!(event.summary, "Busy");
+        }
+        assert_eq!(events[0].dtstart, "2018-10-12T19:00:00Z");
+        assert_eq!(events[4].dtstart, "2018-09-14T19:00:00Z");
+    }
+
     #[test]
     fn test_fuzz_ical_parsing_never_panics() {
         for seed in 0..5000u64 {
