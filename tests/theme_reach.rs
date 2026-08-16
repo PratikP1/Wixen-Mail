@@ -39,7 +39,7 @@ use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_account_manager, wx_calendar, wx_calendar_module, wx_compose, wx_contacts_module,
+    wx_account_manager, wx_app, wx_calendar, wx_calendar_module, wx_compose, wx_contacts_module,
     wx_notes_module, wx_reader, wx_reminders_module, wx_settings, wx_tasks_module, wx_which_days,
 };
 use wxdragon::prelude::*;
@@ -586,6 +586,15 @@ fn check_confirm_delete(parent: &Frame, palette: theme::Palette, into: &mut Vec<
     );
 }
 
+/// The Search dialog. The scope `Choice` is left to Windows, matching every
+/// other `Choice` this round paints around, so only the dialog and the
+/// search field are checked here.
+fn check_search(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, q_field) = wx_app::build_search_dialog(parent, Some(palette));
+    check("search dialog", &dialog, palette.main_surface(), into);
+    check("search query field", &q_field, palette.main_surface(), into);
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -775,6 +784,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_send_preview(&frame, palette, &mut sites);
             check_calendar_list(&frame, palette, &mut sites);
             check_confirm_delete(&frame, palette, &mut sites);
+            check_search(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 

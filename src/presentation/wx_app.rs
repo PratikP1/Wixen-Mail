@@ -10377,7 +10377,16 @@ fn show_about_dialog(parent: &Frame) {
     dlg.show_modal();
 }
 
-fn show_search_dialog(parent: &Frame) -> Option<String> {
+/// Build the Search dialog without showing it.
+///
+/// Everything `show_search_dialog` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the dialog alongside the field `show_search_dialog` still needs
+/// to read after a real `.show_modal()`.
+pub fn build_search_dialog(parent: &Frame, palette: Option<theme::Palette>) -> (Dialog, TextCtrl) {
     let dlg = Dialog::builder(parent, "Search Messages")
         .with_size(450, 200)
         .build();
@@ -10450,6 +10459,21 @@ fn show_search_dialog(parent: &Frame) -> Option<String> {
             d.end_modal(ID_CANCEL);
         }
     });
+
+    // Painted last. The scope Choice is left to Windows, matching every
+    // other Choice this round paints around. `None` means high contrast is
+    // on, or the system is set up in a way this application should not
+    // paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&q_field, palette.main_surface());
+    }
+
+    (dlg, q_field)
+}
+
+fn show_search_dialog(parent: &Frame) -> Option<String> {
+    let (dlg, q_field) = build_search_dialog(parent, theme::current_from_stored_config());
 
     if dlg.show_modal() == ID_OK {
         let q = q_field.get_value();
