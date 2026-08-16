@@ -752,6 +752,10 @@ pub struct ContactGroupItem {
     pub id: String,
     pub name: String,
     pub member_count: usize,
+    /// Who is in the group, so the sidebar can filter the contact list to it
+    /// without a database round trip on every click. Always the same length
+    /// as `member_count`; the two are read from the same stored list.
+    pub member_ids: Vec<String>,
 }
 
 impl std::fmt::Display for ConnectionStatus {

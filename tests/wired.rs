@@ -1106,3 +1106,25 @@ fn ids_in_lists_used_with_contains(text: &str) -> Vec<String> {
     }
     found
 }
+
+/// Choosing a row in the contacts sidebar changes what the contact list shows.
+///
+/// The tree has said "Team A, 3 people" and answered nothing when a row was
+/// clicked since groups were first built: nothing read the selection, so a
+/// group somebody made and put people in never once narrowed the list it
+/// sits beside.
+///
+/// What this cannot see: whether the handler resolves the row clicked to the
+/// right group, whether the list visibly narrows, or whether a screen reader
+/// hears about it. `application::contact_groups::belongs` is where that
+/// decision is made and tested on its own; this only says a selection
+/// handler exists to call it from.
+#[test]
+fn test_choosing_a_row_in_the_contacts_sidebar_changes_what_the_list_shows() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        app.contains("contacts_sb.tree.on_selection_changed"),
+        "nothing reads a selection made in the contacts sidebar tree"
+    );
+}

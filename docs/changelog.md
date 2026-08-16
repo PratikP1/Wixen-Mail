@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Choosing a group, Favorites, or All Contacts in the contacts sidebar now
+  changes which contacts the list shows.** A contact group could always be
+  made, named, and have people put in or taken out of it, and the sidebar
+  tree always said how many people were in each one. Choosing that row, or
+  Favorites, or All Contacts, did nothing else: the contact list beside the
+  sidebar never changed to match what was clicked, so a group that had been
+  carefully built looked exactly like an empty sidebar to anybody trying to
+  use it. All three now narrow the list, and the change is read aloud along
+  with how many contacts are showing.
+
+  Known limitations: the search box above the contact list still does not
+  filter anything; typing there announces that a search is starting and
+  narrows nothing.
+
 - **Fixed: a contact's phone number always said "Phone" in the contacts
   detail pane and when read aloud, whatever it was really labelled, and no
   postal address appeared there at all.** Every phone number and postal

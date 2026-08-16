@@ -232,7 +232,29 @@ pub struct WxUIState {
     pub active_module: PimModule,
     /// PIM items currently shown, kept so selection handlers can read the
     /// real record rather than re-deriving it from the list widget.
+    ///
+    /// For contacts, "currently shown" through the sidebar's own selection:
+    /// every contact under All Contacts, only the favorites, or only a
+    /// group's members. Whatever narrowed it, a row index into this list is
+    /// still what every reader of it, the paint callback, the detail pane,
+    /// and the context menu commands, already assumes a row index means.
     pub contacts: Vec<ContactItem>,
+    /// Every contact loaded for the account being looked at, before the
+    /// sidebar's selection narrows `contacts` to some of them.
+    ///
+    /// Kept apart so narrowing twice narrows from the whole list each time.
+    /// Filtering `contacts` in place would make choosing Team A and then
+    /// Team B show the overlap between the two instead of Team B's own
+    /// members, because Team A's members would already be all that was left
+    /// to filter.
+    pub all_contacts: Vec<ContactItem>,
+    /// The contact groups loaded for the account being looked at, with who
+    /// is in each one. Read by the sidebar's selection handler to resolve a
+    /// clicked row to a member list, and rebuilt every time the sidebar tree
+    /// itself is, so the two can never name different groups.
+    pub contact_groups: Vec<ContactGroupItem>,
+    /// What the contacts sidebar's selection currently narrows the list to.
+    pub contacts_shown: crate::application::contact_groups::Shown,
     pub notes: Vec<NoteItem>,
     pub reminders: Vec<ReminderItem>,
     pub tasks: Vec<TaskItem>,
@@ -271,6 +293,9 @@ impl Default for WxUIState {
             context_link_href: None,
             active_module: PimModule::Mail,
             contacts: Vec::new(),
+            all_contacts: Vec::new(),
+            contact_groups: Vec::new(),
+            contacts_shown: crate::application::contact_groups::Shown::Everyone,
             notes: Vec::new(),
             reminders: Vec::new(),
             tasks: Vec::new(),
@@ -1499,6 +1524,69 @@ impl WxMailApp {
                             &format!("Searching contacts: {}...", query),
                         );
                     }
+                }
+            });
+
+            // ── Contacts sidebar selection ───────────────────────────────
+            //
+            // All Contacts, Favorites, and each named group narrow the
+            // contact list beside it. Until this, choosing any row here,
+            // including a group somebody had made and put people in, did
+            // nothing: nothing read the selection at all.
+            contacts_sb.tree.on_selection_changed({
+                let state = state.clone();
+                let contacts_tree = contacts_sb.tree;
+                let contact_list = contacts_cp.contact_list;
+                let a11y = a11y.clone();
+                move |event| {
+                    use crate::application::contact_groups::Shown;
+
+                    let Some(item) = event.get_item() else {
+                        return;
+                    };
+                    let Some(text) = contacts_tree.get_item_text(&item) else {
+                        return;
+                    };
+                    // Everything that is not one of the two fixed rows or a
+                    // named group is the tree's root or the "Groups, N"
+                    // branch header, and landing on either is a no-op, the
+                    // same way landing on "Mail Folders" is for the folder
+                    // tree.
+                    let (shown, label) = if text == "All Contacts" {
+                        (Shown::Everyone, text.clone())
+                    } else if text == "Favorites" {
+                        (Shown::Favorites, text.clone())
+                    } else {
+                        let resolved = lock_state(&state)
+                            .contact_groups
+                            .iter()
+                            .find(|g| {
+                                crate::application::contact_groups::spoken(&g.name, g.member_count)
+                                    == text
+                            })
+                            .map(|g| (g.id.clone(), g.name.clone()));
+                        let Some((id, name)) = resolved else {
+                            return;
+                        };
+                        (Shown::Group(id), name)
+                    };
+
+                    let count = {
+                        let mut s = lock_state(&state);
+                        s.contacts_shown = shown;
+                        recompute_which_contacts_are_shown(&mut s);
+                        s.contacts.len()
+                    };
+                    contact_list.set_item_count(count as i64);
+                    // The list is a separate control from the tree that just
+                    // took focus, so its new row count is not itself
+                    // announced by anything unless this says so.
+                    let said = crate::application::contact_groups::now_showing(&label, count);
+                    let _ = a11y.announce_topic(
+                        &said,
+                        crate::presentation::accessibility::announcements::Priority::Low,
+                        "contacts",
+                    );
                 }
             });
 
@@ -4894,6 +4982,38 @@ fn how_many_loaded(count: usize, thing: &str) -> String {
     format!("{} loaded", crate::service::caldav::how_many(count, thing))
 }
 
+/// Recompute which contacts the sidebar's current selection shows, from the
+/// full list and the groups loaded so far, and leave the answer in
+/// `state.contacts`.
+///
+/// One function with three callers rather than the filter written out three
+/// times: a fresh contact list, a fresh group list, and a new sidebar
+/// selection each change one piece of the answer, and each calls this
+/// afterwards so the painted list can never fall out of step with what the
+/// sidebar says is chosen. `application::contact_groups::belongs` is the one
+/// place that decides whether a contact belongs; this only gathers what it
+/// needs to ask.
+fn recompute_which_contacts_are_shown(state: &mut WxUIState) {
+    use crate::application::contact_groups::{Shown, belongs};
+
+    let member_ids: Vec<String> = match &state.contacts_shown {
+        Shown::Group(id) => state
+            .contact_groups
+            .iter()
+            .find(|group| &group.id == id)
+            .map(|group| group.member_ids.clone())
+            .unwrap_or_default(),
+        Shown::Everyone | Shown::Favorites => Vec::new(),
+    };
+    let shown = state.contacts_shown.clone();
+    state.contacts = state
+        .all_contacts
+        .iter()
+        .filter(|contact| belongs(&contact.id, contact.favorite, &shown, &member_ids))
+        .cloned()
+        .collect();
+}
+
 /// What a mailbox holds, said whenever its message list arrives.
 ///
 /// "unread" is the same word either way, so only the first count picks a word.
@@ -5195,6 +5315,7 @@ pub(crate) fn load_module_data(
                         id: g.id.clone(),
                         name: g.name.clone(),
                         member_count: g.member_ids.len(),
+                        member_ids: g.member_ids.clone(),
                     })
                     .collect(),
             ));
@@ -7016,15 +7137,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "notes");
         }
         UIUpdate::ContactsLoaded(contacts) => {
-            {
+            let shown = {
                 let mut s = lock_state(state);
-                s.contacts = contacts.clone();
-            }
+                s.all_contacts = contacts.clone();
+                // Narrowed by whatever the sidebar already has selected,
+                // rather than shown unfiltered and corrected a moment later:
+                // a reload while Team A is chosen must not flash every
+                // contact before settling back down to Team A's own.
+                recompute_which_contacts_are_shown(&mut s);
+                s.contacts.len()
+            };
             // Virtual mode: the row count, and the callback answers for
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
-            pim.contact_list.set_item_count(contacts.len() as i64);
-            let msg = how_many_loaded(contacts.len(), "contact");
+            pim.contact_list.set_item_count(shown as i64);
+            let msg = how_many_loaded(shown, "contact");
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "contacts");
         }
@@ -7060,6 +7187,19 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 }
                 pim.contacts_tree.expand(&root);
             }
+            // Kept alongside the tree text built just above, from the same
+            // `groups` list, so a lookup by that text can never name a group
+            // the tree itself does not show. Recomputed too: a group's
+            // membership can have changed since the sidebar last read it, and
+            // if it is the one currently chosen the list has to catch up
+            // rather than keep showing who used to be in it.
+            let shown = {
+                let mut s = lock_state(state);
+                s.contact_groups = groups.clone();
+                recompute_which_contacts_are_shown(&mut s);
+                s.contacts.len()
+            };
+            pim.contact_list.set_item_count(shown as i64);
         }
         UIUpdate::MessageDeletedFromCache(cache_id) => {
             if let Some(cache) = &message_cache
@@ -10582,6 +10722,95 @@ mod tests {
             .map(|group| group.name)
             .collect();
         assert!(names.contains(&"Book club".to_string()), "{names:?}");
+    }
+
+    /// A bare contact naming only its id, so a test that filters by
+    /// membership says only what it is about.
+    fn contact_item(id: &str) -> crate::presentation::ui_types::ContactItem {
+        crate::presentation::ui_types::ContactItem {
+            id: id.to_string(),
+            name: String::new(),
+            email: String::new(),
+            phone: String::new(),
+            phone_label: String::new(),
+            company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
+            birthday: String::new(),
+            favorite: false,
+        }
+    }
+
+    #[test]
+    fn test_choosing_a_group_narrows_the_contact_list_to_its_members() {
+        // The gap this whole feature sat in: a group could be made, named,
+        // and put people in, and nothing anywhere read that back. This is
+        // the state change a sidebar click is meant to cause.
+        use crate::application::contact_groups::Shown;
+        use crate::presentation::ui_types::ContactGroupItem;
+
+        let mut state = WxUIState {
+            all_contacts: vec![contact_item("c1"), contact_item("c2"), contact_item("c3")],
+            contact_groups: vec![ContactGroupItem {
+                id: "g1".to_string(),
+                name: "Team A".to_string(),
+                member_count: 2,
+                member_ids: vec!["c1".to_string(), "c2".to_string()],
+            }],
+            contacts_shown: Shown::Group("g1".to_string()),
+            ..Default::default()
+        };
+
+        super::recompute_which_contacts_are_shown(&mut state);
+
+        let shown: Vec<String> = state.contacts.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(shown, vec!["c1".to_string(), "c2".to_string()]);
+    }
+
+    #[test]
+    fn test_a_selection_naming_a_group_no_longer_listed_shows_nobody_rather_than_everyone() {
+        // A group the sidebar once offered can be gone by the time this
+        // runs again: deleted, or not yet loaded on a fresh account switch.
+        // Falling back to Everyone would show a person contacts that were
+        // never that group's, which is worse than showing none.
+        use crate::application::contact_groups::Shown;
+
+        let mut state = WxUIState {
+            all_contacts: vec![contact_item("c1"), contact_item("c2")],
+            contact_groups: Vec::new(),
+            contacts_shown: Shown::Group("gone".to_string()),
+            ..Default::default()
+        };
+
+        super::recompute_which_contacts_are_shown(&mut state);
+
+        assert!(state.contacts.is_empty(), "{:?}", state.contacts);
+    }
+
+    #[test]
+    fn test_a_fresh_contact_list_is_narrowed_by_whatever_is_already_selected() {
+        // A reload while a group is chosen, such as after putting somebody
+        // in it, must land back on that group's members rather than
+        // flashing every contact before the next click narrows it again.
+        use crate::application::contact_groups::Shown;
+        use crate::presentation::ui_types::ContactGroupItem;
+
+        let mut state = WxUIState {
+            contact_groups: vec![ContactGroupItem {
+                id: "g1".to_string(),
+                name: "Team A".to_string(),
+                member_count: 1,
+                member_ids: vec!["c2".to_string()],
+            }],
+            contacts_shown: Shown::Group("g1".to_string()),
+            ..Default::default()
+        };
+
+        state.all_contacts = vec![contact_item("c1"), contact_item("c2")];
+        super::recompute_which_contacts_are_shown(&mut state);
+
+        let shown: Vec<String> = state.contacts.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(shown, vec!["c2".to_string()]);
     }
 
     #[test]

@@ -178,6 +178,60 @@ pub fn made(name: &str) -> String {
 pub const STAYS_ON_THIS_COMPUTER: &str = "Contact groups are kept on this computer. A group made here is not sent to Google or \
      Outlook, and a group you already keep there does not appear in this address book.";
 
+/// What the contacts sidebar's current selection narrows the list to.
+///
+/// A group could have been named by its id alone and left the sidebar to
+/// remember what "no group" means, but that is two states (all contacts,
+/// favorites) with no group id to carry, against one where every state
+/// carries exactly what it needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shown {
+    /// Every contact, the sidebar's own resting state.
+    Everyone,
+    /// Only the contacts marked as a favorite.
+    Favorites,
+    /// Only the contacts recorded as members of this group, by id.
+    Group(String),
+}
+
+/// Whether a contact belongs under the sidebar's current selection.
+///
+/// `member_ids` is who the selected group holds, resolved by the caller
+/// before asking; this does not go looking for a group by the id
+/// [`Shown::Group`] carries, so a group that has since been renamed or
+/// deleted cannot make this answer something it was never asked.
+///
+/// An empty `member_ids` under [`Shown::Group`] shows nobody rather than
+/// falling back to everyone. A group with nobody in it is a real, empty
+/// answer, and reading an empty list as "no filter" would make it
+/// indistinguishable from All Contacts instead of the empty group it is.
+pub fn belongs(contact_id: &str, is_favorite: bool, shown: &Shown, member_ids: &[String]) -> bool {
+    match shown {
+        Shown::Everyone => true,
+        Shown::Favorites => is_favorite,
+        Shown::Group(_) => member_ids.iter().any(|member| member == contact_id),
+    }
+}
+
+/// Said when the sidebar selection changes what the contact list shows.
+///
+/// Deliberately not "loaded": nothing was fetched over the network or read
+/// off disk here, the list already held every contact and this only narrows
+/// which of them are shown, so claiming a load would describe work that did
+/// not happen.
+pub fn now_showing(label: &str, count: usize) -> String {
+    match count {
+        // Matches the group row's own "nobody in it yet": a selection that
+        // narrows the list to nothing is a real, complete answer, not an
+        // error, and reads the same way the row that led to it does.
+        0 => format!("{label}, nobody to show"),
+        some => format!(
+            "{label}, {} shown",
+            crate::service::caldav::how_many(some, "contact")
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,5 +495,65 @@ mod tests {
                 "{jargon} is a word about the machine, not about the person"
             );
         }
+    }
+
+    #[test]
+    fn test_everyone_is_shown_under_the_all_contacts_selection() {
+        assert!(belongs("c1", false, &Shown::Everyone, &[]));
+        assert!(belongs("c1", true, &Shown::Everyone, &[]));
+    }
+
+    #[test]
+    fn test_only_favorites_are_shown_under_the_favorites_selection() {
+        assert!(belongs("c1", true, &Shown::Favorites, &[]));
+        assert!(!belongs("c1", false, &Shown::Favorites, &[]));
+    }
+
+    #[test]
+    fn test_a_named_group_shows_only_the_contacts_recorded_as_its_members() {
+        let members = ["c1".to_string(), "c2".to_string()];
+        let shown = Shown::Group("g1".to_string());
+
+        assert!(belongs("c1", false, &shown, &members));
+        assert!(belongs("c2", false, &shown, &members));
+        assert!(!belongs("c3", false, &shown, &members));
+    }
+
+    #[test]
+    fn test_a_group_with_no_members_shows_nobody_rather_than_falling_back_to_everyone() {
+        // The bug this guards against: mistaking an empty member list for "no
+        // filter", which would make an empty group indistinguishable from All
+        // Contacts instead of the empty group it really is.
+        let shown = Shown::Group("g1".to_string());
+
+        assert!(!belongs("c1", false, &shown, &[]));
+        assert!(!belongs("c1", true, &shown, &[]));
+    }
+
+    #[test]
+    fn test_membership_ignores_favorite_status() {
+        // Being a favorite and being in a named group are two different
+        // questions; a favorite who is not in the group does not sneak in.
+        let members = ["c2".to_string()];
+        let shown = Shown::Group("g1".to_string());
+
+        assert!(!belongs("c1", true, &shown, &members));
+    }
+
+    #[test]
+    fn test_the_sidebar_selection_is_named_when_the_list_changes_to_match_it() {
+        assert_eq!(
+            now_showing("All Contacts", 3),
+            "All Contacts, 3 contacts shown"
+        );
+        assert_eq!(now_showing("Favorites", 1), "Favorites, 1 contact shown");
+    }
+
+    #[test]
+    fn test_the_sidebar_selection_says_nobody_rather_than_zero_contacts_shown_is_awkward() {
+        // Not wrong either way, but this is the same shape every other count
+        // in this module already takes, and a screen reader user hears this
+        // one right after the group's own "nobody in it yet".
+        assert_eq!(now_showing("Empty Group", 0), "Empty Group, nobody to show");
     }
 }
