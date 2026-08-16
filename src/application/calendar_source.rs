@@ -1074,6 +1074,17 @@ mod tests {
             asking.contains("wait_for_an_answer"),
             "nothing keeps the window alive while the answer is waited for"
         );
+        // Off the window's thread is not the same as bounded: a server that
+        // never answers would still be waited for forever, just without
+        // freezing anything while it happened. Proven able to fail on its own
+        // on 2026-08-16 by removing this wrapping and watching every test
+        // above still pass with nothing at this call site to say a server
+        // that never answers has to be given up on.
+        assert!(
+            asking.contains("tokio::time::timeout"),
+            "nothing bounds how long a server is waited for, so one that \
+             never answers would be waited for forever"
+        );
     }
 
     #[test]
@@ -1154,7 +1165,7 @@ mod tests {
 
     // ── The whole act of adding one ──────────────────────────────────────
 
-    use crate::common::answering::{answering, heard};
+    use crate::common::answering::{answering, heard, never_answering};
 
     fn temp_cache(label: &str) -> TempHome<MessageCache> {
         TempHome::named(label, |dir| {
@@ -1307,6 +1318,28 @@ mod tests {
         assert!(
             waited.is_err(),
             "a refused address still reached the server"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_never_answers_is_not_waited_for_on_its_own() {
+        // What makes the timeout at the call site load-bearing rather than
+        // decorative: this has no bound of its own. A server that accepts the
+        // connection and then says nothing would be waited for forever if
+        // nothing outside it were watching the clock, which is exactly the
+        // freeze this asking was moved off the window's own thread to end.
+        let address = never_answering().await;
+
+        let bounded = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            what_a_server_has(&format!("http://{address}/dav/"), "sam", "hunter2"),
+        )
+        .await;
+
+        assert!(
+            bounded.is_err(),
+            "a server that never answers returned on its own, so nothing here \
+             still needs a timeout wrapped around it"
         );
     }
 

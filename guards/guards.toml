@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 111 records have arrived since and have not been through it.
+# 112 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6307,4 +6307,38 @@ before = """    let allow_deleting = cb_with_description(
 after = """    let allow_deleting = cb("Let me delete mail on this &computer", true);"""
 red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
+]
+
+# ── A server that never answers is waited for off the window's thread, but ──
+# ── still has to be given up on ──────────────────────────────────────────────
+#
+# Moving the asking off the window's own thread stops the freeze; it does not
+# by itself stop an unbounded wait. Before this guard existed, taking the
+# bound back out of the asking, while leaving it running away from the
+# window's thread and the waiting window itself untouched, left the whole
+# library green: the window would stay responsive but the "Looking for
+# calendars" dialog would sit open forever against a server that never
+# answers, with no way out but Stop and no sentence ever telling somebody
+# that is what happened.
+#
+# The break takes the bound back out and waits on the asking directly, exactly
+# as it read before this call was moved off the window's thread.
+#
+# Measured by hand on 2026-08-16 with scripts/guards.py: the one test named
+# went red and nothing else did.
+
+[[guard]]
+name = "a calendar server that never answers is still given up on"
+file = "src/presentation/managers.rs"
+before = """    rt.spawn(async move {
+        let asking = calendar_source::what_a_server_has(&address, &user_name, &password);
+        let answer =
+            match tokio::time::timeout(calendar_source::HOW_LONG_A_SERVER_IS_GIVEN, asking).await {
+                Ok(answer) => answer,
+                Err(_) => Err(calendar_source::NO_ANSWER_IN_TIME.to_string()),
+            };"""
+after = """    rt.spawn(async move {
+        let answer = calendar_source::what_a_server_has(&address, &user_name, &password).await;"""
+red = [
+    "application::calendar_source::tests::test_the_window_is_never_held_while_a_calendar_server_is_asked",
 ]

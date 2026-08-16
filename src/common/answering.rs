@@ -32,6 +32,31 @@ pub async fn answering(
     answering_one(status, content_type, None, reply).await
 }
 
+/// Accept a connection and never answer it.
+///
+/// A refused connection and a stalled one are different failures a client can
+/// tell apart, and code that only knows the first still needs proving against
+/// the second. This is what an overloaded or half-fallen-over server looks
+/// like: reachable, and then silent. Nothing is ever written back, so a caller
+/// with no bound of its own waits here forever.
+pub async fn never_answering() -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port");
+    let address = listener.local_addr().expect("the port that was taken");
+
+    tokio::spawn(async move {
+        // Held open for as long as anything stays connected. The stream is
+        // kept alive by staying in scope; nothing is ever read from it or
+        // written back to it.
+        if let Ok((_stream, _)) = listener.accept().await {
+            std::future::pending::<()>().await;
+        }
+    });
+
+    address
+}
+
 /// Answer one request with a version tag on the reply, and hand back what was
 /// asked.
 ///
