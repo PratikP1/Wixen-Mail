@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 114 records have arrived since and have not been through it.
+# 115 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6421,4 +6421,39 @@ after = """    rt.spawn(async move {
         let answer = calendar_source::what_a_server_has(&address, &user_name, &password).await;"""
 red = [
     "application::calendar_source::tests::test_the_window_is_never_held_while_a_calendar_server_is_asked",
+]
+
+# ── A recipient copied from a message keeps its name stripped off ──────────
+#
+# `addresses()` had no coverage at all for a "Name <address>" entry before
+# this guard existed: every existing fixture was already a bare address, so
+# a naive split on comma and semicolon passed the whole suite while failing
+# every reply to a real, named sender. The break puts that naive split back,
+# byte for byte.
+#
+# Measured by hand on 2026-08-16 with scripts/guards.py: all 5 tests named
+# went red and nothing else did.
+
+[[guard]]
+name = "a recipient copied from a message sends as a bare address"
+file = "src/application/mail_controller.rs"
+before = """fn addresses(field: &str) -> Vec<String> {
+    crate::application::reply::split_addresses(field)
+        .iter()
+        .map(|entry| bare_address(entry))
+        .collect()
+}"""
+after = """fn addresses(field: &str) -> Vec<String> {
+    field
+        .split([',', ';'])
+        .map(|addr| addr.trim().to_string())
+        .filter(|addr| !addr.is_empty())
+        .collect()
+}"""
+red = [
+    "application::mail_controller::send_request_tests::test_a_name_and_address_recipient_is_split_so_the_address_alone_reaches_the_request",
+    "application::mail_controller::send_request_tests::test_a_name_and_address_cc_recipient_is_split_too",
+    "application::mail_controller::send_request_tests::test_a_display_name_with_a_comma_does_not_split_into_two_bad_recipients",
+    "application::mail_controller::send_request_tests::test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_bare",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_named_sender_reaches_the_wire_as_a_bare_address",
 ]
