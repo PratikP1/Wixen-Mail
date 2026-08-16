@@ -6348,7 +6348,24 @@ fn open_for_scanning(
             // workflow once the walk is done.
             handle_settings(frame, tx, rt, a11y);
         }
-        ScanTarget::Accounts => handle_account_mgr(frame, state, a11y),
+        ScanTarget::Accounts => {
+            // A fresh profile has no accounts, so nothing here is old enough
+            // to press "Sign In Again" on. This scan-only fixture gives it
+            // one, turned on for OAuth and addressed at a domain nothing in
+            // `service::oauth` recognises, so signing in again fails locally
+            // and at once rather than waiting on a network or a browser.
+            // `handle_account_mgr`, and the real state it reads and writes,
+            // are untouched: the real "Manage Accounts" and "New Account"
+            // menu actions still call it, unchanged.
+            let fixture = scan_only_account();
+            let _ = wx_account_manager::show_account_manager_dialog(
+                frame,
+                &[fixture],
+                None,
+                None,
+                a11y,
+            );
+        }
         ScanTarget::FirstRun => {
             // The answer is thrown away. On a fresh profile this screen shows
             // itself once and never again, so the only way to look at it more
@@ -6425,6 +6442,23 @@ fn open_for_scanning(
         }
         ScanTarget::Filters => managers::manage_filters(state, &None, frame, tx, rt, a11y),
     }
+}
+
+/// One account that exists only for the scan and for a screen-reader-driven
+/// test: OAuth turned on, addressed at a domain nothing in `service::oauth`
+/// recognises as a provider, so "Sign In Again" fails locally and at once
+/// rather than reaching a network or opening a browser.
+///
+/// A separate function rather than built inline where `open_for_scanning`
+/// uses it, so the one property that matters, that signing in to it cannot
+/// reach a network, can be pinned down by a test that needs no window.
+fn scan_only_account() -> crate::data::account::Account {
+    let mut account = crate::data::account::Account::new(
+        "Scan target".to_string(),
+        "scan-target@example.com".to_string(),
+    );
+    account.use_oauth = true;
+    account
 }
 
 /// Handle Account Manager dialog result.
@@ -10354,6 +10388,32 @@ pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
         Some(title_field.get_value())
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod scan_only_account_tests {
+    // `scan_only_account` sits earlier in this file, beside
+    // `open_for_scanning`, the one place it is used. Its test lives here
+    // instead, beside the rest of this file's test modules, because
+    // `what_the_status_line_says::the_window_itself` below reads this file's
+    // own text and stops at the first line that is exactly `#[cfg(test)]`: a
+    // test module any earlier than this one would cut that reading off
+    // before it ever reached `handle_update`.
+    use super::scan_only_account;
+
+    #[test]
+    fn test_the_scan_fixture_cannot_reach_a_real_provider() {
+        let account = scan_only_account();
+        assert!(
+            account.use_oauth,
+            "\"Sign In Again\" only acts on an account with OAuth turned on"
+        );
+        assert!(
+            crate::service::oauth::OAuthService::detect_provider(&account.email).is_none(),
+            "a recognised provider would try a real network connection instead of \
+             failing at once"
+        );
     }
 }
 
