@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 116 records have arrived since and have not been through it.
+# 117 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -4854,6 +4854,16 @@ before = """        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.re
 after = """        MailSortOption::UnreadFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
+]
+
+[[guard]]
+name = "the contacts search box narrows within the sidebar's group filter rather than replacing it"
+file = "src/presentation/wx_app.rs"
+before = """            belongs(&contact.id, contact.favorite, &shown, &member_ids)
+                && contact_matches_search(contact, &query)"""
+after = """            belongs(&contact.id, contact.favorite, &shown, &member_ids) && true"""
+red = [
+    "presentation::wx_app::tests::test_a_search_query_narrows_within_the_selected_group_rather_than_resetting_to_all_contacts",
 ]
 
 # ── A priority no task service understands stops before the wire ────────────

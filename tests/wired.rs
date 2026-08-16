@@ -1128,3 +1128,50 @@ fn test_choosing_a_row_in_the_contacts_sidebar_changes_what_the_list_shows() {
         "nothing reads a selection made in the contacts sidebar tree"
     );
 }
+
+/// Typing in the contacts search box changes what the contact list shows.
+///
+/// The search box read the query typed into it and posted "Searching
+/// contacts: ..." to the status bar and nothing else: `state.contacts`,
+/// `state.all_contacts`, and the list's own row count were all untouched, so
+/// typing there announced that a search was starting and narrowed nothing.
+///
+/// What this cannot see: whether the narrowed list is what a screen reader
+/// actually hears, or whether the announced count matches the list. It only
+/// says the handler reaches the one shared pipeline the sidebar selection and
+/// a fresh contact load already trust, `recompute_which_contacts_are_shown`,
+/// rather than a second filter of its own, and that it records what was
+/// typed rather than only saying it out loud.
+#[test]
+fn test_typing_in_the_contacts_search_box_changes_what_the_list_shows() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let start = app
+        .find("contacts_cp.search_input.on_text_changed")
+        .expect("the search box handler is no longer wired, so this guard measures nothing");
+    let end = app[start..]
+        .find("contacts_sb.tree.on_selection_changed")
+        .map(|at| start + at)
+        .expect("the sidebar selection handler that follows the search box handler is gone");
+    let handler = &app[start..end];
+
+    assert!(
+        handler.contains("recompute_which_contacts_are_shown"),
+        "the search box handler no longer reaches the shared filter pipeline, so it \
+         either does nothing or filters the list a second, different way"
+    );
+    assert!(
+        handler.contains("contacts_search"),
+        "the search box handler never records what was typed, so the shared pipeline \
+         has nothing of the search box's own to filter by"
+    );
+    assert!(
+        handler.contains("set_item_count"),
+        "the list's row count is never updated, so the control a screen reader reads \
+         stays at whatever it last held"
+    );
+    assert!(
+        !handler.contains("Searching contacts"),
+        "the search box handler still only announces that a search is starting, the \
+         stub sentence this was meant to replace"
+    );
+}

@@ -255,6 +255,13 @@ pub struct WxUIState {
     pub contact_groups: Vec<ContactGroupItem>,
     /// What the contacts sidebar's selection currently narrows the list to.
     pub contacts_shown: crate::application::contact_groups::Shown,
+    /// What has been typed into the contacts search box.
+    ///
+    /// Composed with `contacts_shown` rather than replacing it: typing here
+    /// narrows within whichever group, Favorites, or All Contacts the
+    /// sidebar already has selected, the same as a search inside a filtered
+    /// folder would.
+    pub contacts_search: String,
     pub notes: Vec<NoteItem>,
     pub reminders: Vec<ReminderItem>,
     pub tasks: Vec<TaskItem>,
@@ -296,6 +303,7 @@ impl Default for WxUIState {
             all_contacts: Vec::new(),
             contact_groups: Vec::new(),
             contacts_shown: crate::application::contact_groups::Shown::Everyone,
+            contacts_search: String::new(),
             notes: Vec::new(),
             reminders: Vec::new(),
             tasks: Vec::new(),
@@ -1507,17 +1515,45 @@ impl WxMailApp {
             });
 
             // ── Contacts panel button handlers ──────────────────────────
+            //
+            // Narrows within whatever the sidebar already has selected
+            // rather than replacing it, through the same
+            // recompute_which_contacts_are_shown pipeline the sidebar
+            // selection below uses, so the two can never disagree about
+            // what the list holds.
             contacts_cp.search_input.on_text_changed({
+                let state = state.clone();
                 let search_input = contacts_cp.search_input;
-                let ui_tx = ui_tx.clone();
-                let runtime = runtime.clone();
+                let contact_list = contacts_cp.contact_list;
+                let a11y = a11y.clone();
                 move |_| {
                     let query = search_input.get_value();
-                    if query.len() >= 2 {
-                        send_status(
-                            &ui_tx,
-                            &runtime,
-                            &format!("Searching contacts: {}...", query),
+                    let (before, count) = {
+                        let mut s = lock_state(&state);
+                        let before = s.contacts.len();
+                        s.contacts_search = query;
+                        recompute_which_contacts_are_shown(&mut s);
+                        (before, s.contacts.len())
+                    };
+                    contact_list.set_item_count(count as i64);
+                    // Bounded to when the count actually changes: a fast
+                    // typist would otherwise queue an announcement on every
+                    // keystroke, and superseding on the "contacts" topic
+                    // only helps an entry still waiting, not one already
+                    // spoken.
+                    if count != before {
+                        let said = if count == 0 {
+                            "No contacts match".to_string()
+                        } else {
+                            format!(
+                                "{} shown",
+                                crate::service::caldav::how_many(count, "contact")
+                            )
+                        };
+                        let _ = a11y.announce_topic(
+                            &said,
+                            crate::presentation::accessibility::announcements::Priority::Low,
+                            "contacts",
                         );
                     }
                 }
@@ -4978,17 +5014,20 @@ fn how_many_loaded(count: usize, thing: &str) -> String {
     format!("{} loaded", crate::service::caldav::how_many(count, thing))
 }
 
-/// Recompute which contacts the sidebar's current selection shows, from the
-/// full list and the groups loaded so far, and leave the answer in
-/// `state.contacts`.
+/// Recompute which contacts the sidebar's current selection and search box
+/// together show, from the full list and the groups loaded so far, and leave
+/// the answer in `state.contacts`.
 ///
-/// One function with three callers rather than the filter written out three
-/// times: a fresh contact list, a fresh group list, and a new sidebar
-/// selection each change one piece of the answer, and each calls this
-/// afterwards so the painted list can never fall out of step with what the
-/// sidebar says is chosen. `application::contact_groups::belongs` is the one
-/// place that decides whether a contact belongs; this only gathers what it
-/// needs to ask.
+/// One function with four callers rather than the filter written out four
+/// times: a fresh contact list, a fresh group list, a new sidebar selection,
+/// and a search box edit each change one piece of the answer, and each calls
+/// this afterwards so the painted list can never fall out of step with what
+/// the sidebar and the search box together say is chosen.
+/// `application::contact_groups::belongs` decides whether a contact belongs
+/// to the sidebar's selection; [`contact_matches_search`] decides whether it
+/// answers the search box. A contact needs both to be shown, so narrowing to
+/// a group and then searching narrows further rather than reopening the list
+/// to everyone who matches the text.
 fn recompute_which_contacts_are_shown(state: &mut WxUIState) {
     use crate::application::contact_groups::{Shown, belongs};
 
@@ -5002,12 +5041,43 @@ fn recompute_which_contacts_are_shown(state: &mut WxUIState) {
         Shown::Everyone | Shown::Favorites => Vec::new(),
     };
     let shown = state.contacts_shown.clone();
+    let query = state.contacts_search.clone();
     state.contacts = state
         .all_contacts
         .iter()
-        .filter(|contact| belongs(&contact.id, contact.favorite, &shown, &member_ids))
+        .filter(|contact| {
+            belongs(&contact.id, contact.favorite, &shown, &member_ids)
+                && contact_matches_search(contact, &query)
+        })
         .cloned()
         .collect();
+}
+
+/// Whether a contact answers what has been typed into the contacts search
+/// box.
+///
+/// Mirrors [`crate::presentation::wx_managers::worth_showing`], the search
+/// already shipped for the separate Manage Contacts dialog, but over
+/// [`ContactItem`]'s narrower, single-valued shape: a name, one email
+/// address, one phone number, and a company, not every address or number a
+/// contact holds and not a nickname, which `ContactItem` carries no field
+/// for. Reaching that same breadth here would mean giving `ContactItem` a
+/// nickname field and turning its one email, phone, and address into lists,
+/// which is a bigger change than this narrows to; tracked in
+/// `docs/changelog.md` rather than done quietly.
+///
+/// An empty or blank query matches everyone, the rule `worth_showing` uses
+/// too: an empty search box is not a filter.
+fn contact_matches_search(contact: &ContactItem, query: &str) -> bool {
+    let looking_for = query.trim().to_lowercase();
+    if looking_for.is_empty() {
+        return true;
+    }
+    let holds = |value: &str| value.to_lowercase().contains(&looking_for);
+    holds(&contact.name)
+        || holds(&contact.email)
+        || holds(&contact.phone)
+        || holds(&contact.company)
 }
 
 /// What a mailbox holds, said whenever its message list arrives.
@@ -10803,6 +10873,127 @@ mod tests {
 
         let shown: Vec<String> = state.contacts.iter().map(|c| c.id.clone()).collect();
         assert_eq!(shown, vec!["c2".to_string()]);
+    }
+
+    #[test]
+    fn test_a_search_query_matching_the_name_narrows_to_that_contact() {
+        let grace = crate::presentation::ui_types::ContactItem {
+            name: "Grace Hopper".to_string(),
+            ..contact_item("c1")
+        };
+
+        assert!(super::contact_matches_search(&grace, "grace"));
+        assert!(!super::contact_matches_search(&contact_item("c2"), "grace"));
+    }
+
+    #[test]
+    fn test_a_search_query_matching_the_email_phone_or_company_narrows_to_that_contact() {
+        let by_email = crate::presentation::ui_types::ContactItem {
+            email: "grace@example.com".to_string(),
+            ..contact_item("c1")
+        };
+        let by_phone = crate::presentation::ui_types::ContactItem {
+            phone: "555-0100".to_string(),
+            ..contact_item("c2")
+        };
+        let by_company = crate::presentation::ui_types::ContactItem {
+            company: "Analytical Engines".to_string(),
+            ..contact_item("c3")
+        };
+
+        assert!(super::contact_matches_search(&by_email, "grace@example"));
+        assert!(super::contact_matches_search(&by_phone, "0100"));
+        assert!(super::contact_matches_search(&by_company, "analytical"));
+    }
+
+    #[test]
+    fn test_an_empty_or_blank_search_query_matches_every_contact() {
+        let contact = crate::presentation::ui_types::ContactItem {
+            name: "Grace Hopper".to_string(),
+            ..contact_item("c1")
+        };
+
+        assert!(super::contact_matches_search(&contact, ""));
+        assert!(super::contact_matches_search(&contact, "   "));
+    }
+
+    #[test]
+    fn test_a_search_query_matching_none_of_a_contacts_fields_excludes_it() {
+        let grace = crate::presentation::ui_types::ContactItem {
+            name: "Grace Hopper".to_string(),
+            ..contact_item("c1")
+        };
+
+        assert!(!super::contact_matches_search(
+            &grace,
+            "nobody by this name"
+        ));
+    }
+
+    #[test]
+    fn test_a_search_query_narrows_within_the_selected_group_rather_than_resetting_to_all_contacts()
+    {
+        // Chosen so neither condition alone gives the right answer: a group
+        // member who does not match the text (c2) must still be excluded,
+        // and a text match who is not a group member (c3) must still be
+        // excluded, so only c1, which satisfies both, can be right.
+        use crate::application::contact_groups::Shown;
+        use crate::presentation::ui_types::{ContactGroupItem, ContactItem};
+
+        let mut state = WxUIState {
+            all_contacts: vec![
+                ContactItem {
+                    name: "Ada Lovelace".to_string(),
+                    ..contact_item("c1")
+                },
+                ContactItem {
+                    name: "Grace Chisholm".to_string(),
+                    ..contact_item("c2")
+                },
+                ContactItem {
+                    name: "Ada Kelly".to_string(),
+                    ..contact_item("c3")
+                },
+            ],
+            contact_groups: vec![ContactGroupItem {
+                id: "g1".to_string(),
+                name: "Team A".to_string(),
+                member_count: 2,
+                member_ids: vec!["c1".to_string(), "c2".to_string()],
+            }],
+            contacts_shown: Shown::Group("g1".to_string()),
+            contacts_search: "ada".to_string(),
+            ..Default::default()
+        };
+
+        super::recompute_which_contacts_are_shown(&mut state);
+
+        let shown: Vec<String> = state.contacts.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(shown, vec!["c1".to_string()], "{shown:?}");
+    }
+
+    #[test]
+    fn test_clearing_the_search_box_returns_to_the_active_group_filter_alone() {
+        use crate::application::contact_groups::Shown;
+        use crate::presentation::ui_types::ContactGroupItem;
+
+        let mut state = WxUIState {
+            all_contacts: vec![contact_item("c1"), contact_item("c2"), contact_item("c3")],
+            contact_groups: vec![ContactGroupItem {
+                id: "g1".to_string(),
+                name: "Team A".to_string(),
+                member_count: 2,
+                member_ids: vec!["c1".to_string(), "c2".to_string()],
+            }],
+            contacts_shown: Shown::Group("g1".to_string()),
+            contacts_search: String::new(),
+            ..Default::default()
+        };
+
+        super::recompute_which_contacts_are_shown(&mut state);
+
+        let shown: Vec<String> = state.contacts.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(shown, vec!["c1".to_string(), "c2".to_string()], "{shown:?}");
     }
 
     #[test]

@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Typing in the box above the contact list now narrows which contacts it
+  shows, searching within whatever the sidebar already has selected.** The
+  search box read what was typed and announced "Searching contacts: ..." and
+  did nothing else: the list beside it never changed, so typing a name into
+  it never found anyone. Typing now narrows the list by name, email address,
+  phone number, or company, the same way the Manage Contacts dialog's own
+  search already did. Doing this inside a chosen group, Favorites, or All
+  Contacts narrows further rather than starting over from everyone: searching
+  "grace" inside a group named Book Club shows only the Graces in that group,
+  not every Grace in the address book.
+
+  Known limitations: this search only reaches the fields above. The Manage
+  Contacts dialog's own search also matches a nickname and every email
+  address or phone number a contact holds, not only the first of each; this
+  one does not, because the contacts list here keeps only the first of each
+  for its rows. Reaching that same breadth would mean carrying a nickname and
+  every address on the row itself, which is tracked as a follow-up rather
+  than done quietly here.
+
 - **Replying to a message, or replying to everyone on one, now actually
   sends when the person you are answering has a name attached to their
   address.** That is most real mail: an incoming message's sender is shown
@@ -61,10 +80,6 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   carefully built looked exactly like an empty sidebar to anybody trying to
   use it. All three now narrow the list, and the change is read aloud along
   with how many contacts are showing.
-
-  Known limitations: the search box above the contact list still does not
-  filter anything; typing there announces that a search is starting and
-  narrows nothing.
 
 - **Fixed: a contact's phone number always said "Phone" in the contacts
   detail pane and when read aloud, whatever it was really labelled, and no
