@@ -48,10 +48,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   your own name is tracked as a follow-up, not done here. A name that
   needs an escaped quotation mark and also contains a comma or a bracket
   elsewhere has not been made to work; nobody has seen one in real mail
-  yet. A reply naming just one person out loud can still say the wrong
-  name for them, and replying to everyone can still list that same
-  person twice, when their name contains a bracket; only whether the
-  message reaches them is fixed here.
+  yet.
+
+- **A sender's name that contains a literal angle bracket, unusual but legal,
+  is now read back whole instead of cut off.** `Bob <VIP>` is a real name a
+  mail program can produce, and the code that pulls a name out of a stored
+  "Name <address>" entry treated the bracket inside it as the start of the
+  address, the same way an address wrapper starts one. Announcing a reply
+  said only "Bob" rather than "Bob <VIP>", the message list's Correspondent
+  column showed the same cut-off name, and replying to everyone could list
+  that person twice, once under their real address and once under whatever
+  the broken search had pulled out. All three now read the whole name back
+  correctly, the way the rest of the program already reads a name off an
+  incoming message.
 
 - **Fixed: a day a calendar server has already moved or changed out of a
   repeating meeting could not be edited here on its own.** A calendar server

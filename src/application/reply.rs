@@ -92,14 +92,16 @@ pub fn announcement(mode: ReplyMode, recipients: &ReplyRecipients) -> String {
 /// made from the local part, which would announce a name nobody chose.
 fn name_or_address(address: &str) -> String {
     let trimmed = address.trim();
-    let Some(open) = trimmed.find('<') else {
+    let Some(parsed) = crate::service::mime::parse_addresses(trimmed)
+        .into_iter()
+        .next()
+    else {
         return trimmed.to_string();
     };
-    let name = trimmed[..open].trim().trim_matches('"').trim();
-    if name.is_empty() {
-        return key_of(trimmed);
+    match parsed.name {
+        Some(name) if !name.trim().is_empty() => name,
+        _ => parsed.address,
     }
-    name.to_string()
 }
 
 /// What one message looks like for the purpose of replying.
@@ -226,11 +228,13 @@ fn push_trimmed(out: &mut Vec<String>, value: &str) {
 /// recipient, and a reply-all that lists both sends two copies.
 fn key_of(address: &str) -> String {
     let trimmed = address.trim();
-    let inner = match (trimmed.find('<'), trimmed.rfind('>')) {
-        (Some(open), Some(close)) if close > open => &trimmed[open + 1..close],
-        _ => trimmed,
-    };
-    inner.trim().to_lowercase()
+    match crate::service::mime::parse_addresses(trimmed)
+        .into_iter()
+        .next()
+    {
+        Some(parsed) => parsed.address.trim().to_lowercase(),
+        None => trimmed.to_lowercase(),
+    }
 }
 
 fn join(addresses: &[String]) -> String {
@@ -433,10 +437,97 @@ mod tests {
     }
 
     #[test]
-    fn test_an_address_with_the_brackets_the_wrong_way_round_is_left_alone() {
-        // Slicing from the opening bracket to a closing one that came first is
-        // a panic, on a header a stranger wrote.
-        assert_eq!(key_of("a>b<c"), "a>b<c");
+    fn test_an_address_with_the_brackets_the_wrong_way_round_is_read_by_the_shared_parser_without_panicking()
+     {
+        // "a>b<c" is not well formed: the closing bracket comes before the
+        // opening one. The naive search this replaced treated that as reason
+        // to refuse and hand the whole string back untouched, because
+        // slicing from an opening bracket to a closing one that came first
+        // would panic.
+        //
+        // key_of no longer has a slice of its own to panic: it reads every
+        // address through the same parser this program already trusts for a
+        // header off the wire (`mime::parse_addresses`). That parser is not
+        // aware the string is malformed and is not required to refuse it; it
+        // opens an address at the stray '<' and takes what follows, so "c" is
+        // what the same parser this whole program relies on elsewhere
+        // recovers from this text, consciously accepted here as the new,
+        // more consistent answer in place of a special-cased fallback.
+        // mime.rs's own test of this exact string,
+        // test_parsing_one_recipient_field_never_panics_on_whatever_arrives,
+        // is what still guarantees the one property that must never regress:
+        // this does not panic, on this string or any other malformed one.
+        assert_eq!(key_of("a>b<c"), "c");
+    }
+
+    #[test]
+    fn test_key_of_recovers_the_real_address_when_the_name_contains_a_literal_angle_bracket() {
+        // Built from `EmailAddress::new(...).to_string()`, the shape this
+        // program's own storage produces, not a hand-quoted stand-in. The
+        // naive first-'<'/last-'>' search this replaces sliced from the
+        // bracket inside the quoted name to the one that closes the address,
+        // and returned neither.
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        assert_eq!(key_of(&stored), "bob@example.com");
+    }
+
+    #[test]
+    fn test_name_or_address_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket() {
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        assert_eq!(name_or_address(&stored), "Bob <VIP>");
+    }
+
+    #[test]
+    fn test_a_reply_to_one_person_whose_name_has_a_bracket_says_the_whole_name() {
+        // Wired, not just unit-correct: the announcement heard when the
+        // compose window opens has to carry the whole name too.
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        let one = reply_recipients(
+            &RepliedTo {
+                from: &stored,
+                ..Default::default()
+            },
+            &mine(),
+            ReplyMode::Default,
+        );
+        assert_eq!(announcement(ReplyMode::Default, &one), "Reply, Bob <VIP>");
+    }
+
+    #[test]
+    fn test_reply_to_all_does_not_double_a_sender_whose_name_has_a_bracket_in_it() {
+        // The actual consequence of the key_of bug, not just a wrong string:
+        // with the naive search, the sender's key computed from "Bob <VIP>
+        // <bob@example.com>" never matched the bare "bob@example.com" also on
+        // the message, so a reply to all listed the same person twice.
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        let message = RepliedTo {
+            from: &stored,
+            to: "bob@example.com, me@example.com",
+            ..Default::default()
+        };
+        let reply = reply_recipients(&message, &mine(), ReplyMode::All);
+        assert!(
+            !reply.cc.to_lowercase().contains("bob@example.com"),
+            "bob was listed in both to and cc: to={} cc={}",
+            reply.to,
+            reply.cc
+        );
     }
 
     #[test]

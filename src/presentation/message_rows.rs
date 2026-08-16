@@ -117,13 +117,12 @@ fn thread_cell(message: &MessageItem) -> String {
 /// and the address is still available in the details read with Shift+Space.
 fn display_address(address: &str) -> String {
     let trimmed = address.trim();
-    if let Some(open) = trimmed.find('<') {
-        let name = trimmed[..open].trim().trim_matches('"').trim();
-        if !name.is_empty() {
-            return name.to_string();
-        }
-    }
-    trimmed.to_string()
+    let name = crate::service::mime::parse_addresses(trimmed)
+        .into_iter()
+        .next()
+        .and_then(|parsed| parsed.name)
+        .filter(|name| !name.trim().is_empty());
+    name.unwrap_or_else(|| trimmed.to_string())
 }
 
 /// How big the conversation this row belongs to is, when it is one.
@@ -571,6 +570,68 @@ mod tests {
             ),
             "\"\" <ada@example.com>"
         );
+    }
+
+    #[test]
+    fn test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket() {
+        // Built from `EmailAddress::new(...).to_string()`, the shape this
+        // program's own storage produces, not a hand-quoted stand-in. The
+        // naive first-'<' search this replaces cut the name off at the
+        // bracket inside it and read back only "Bob".
+        let stored = crate::common::types::EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob <VIP>".to_string()),
+        )
+        .to_string();
+        let mut m = message();
+        m.from = stored;
+        assert_eq!(
+            cell_text(
+                &m,
+                MessageColumn::Correspondent,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            "Bob <VIP>"
+        );
+    }
+
+    #[test]
+    fn test_display_address_never_panics_on_a_malformed_header() {
+        // This module's own contract says the paint callback must never
+        // fail. The same malformed-input battery reply.rs and mime.rs both
+        // already run through their own address readers.
+        for value in [
+            "",
+            ",",
+            ";;;",
+            "<",
+            ">",
+            "<<>>",
+            "a>b<c",
+            ">x<",
+            "\"unclosed <a@example.com>",
+            "a@example.com,",
+            ",a@example.com",
+            "\u{4f60}\u{597d} <ni@example.com>",
+        ] {
+            let mut m = message();
+            m.from = value.to_string();
+            m.to = value.to_string();
+            m.cc = value.to_string();
+            for column in [
+                MessageColumn::Correspondent,
+                MessageColumn::To,
+                MessageColumn::Cc,
+            ] {
+                let text = cell_text(&m, column, DateSettings::default(), chrono::Local::now());
+                assert!(
+                    !text.chars().any(|c| c.is_control()),
+                    "{:?} produced a control character for {value:?}: {text:?}",
+                    column
+                );
+            }
+        }
     }
 
     #[test]
