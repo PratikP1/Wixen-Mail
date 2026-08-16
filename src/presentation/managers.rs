@@ -549,25 +549,35 @@ fn what_this_rows_calendar_allows(
             &the_day_kept_on_its_own(series, &wx_calendar::CalendarEventData::as_shown(row)),
         )
     });
+    // The series this row was cut out of, if this program has it stored,
+    // read once and reused below for both of the next two answers: whether
+    // the row still shares that series' own address, and whether the series
+    // is known here at all to change one VEVENT of a shared resource
+    // against rather than the whole document.
+    let named_series = stored.as_ref().and_then(|held| {
+        held.cut_from_event_id
+            .as_deref()
+            .and_then(|id| cache.get_event_by_id(id).ok().flatten())
+    });
     // Only ever true for a calendar server: Google and Outlook give a day cut
     // out of a series an identity of its own from the moment they first hand
     // it one, so the fact this asks about never arises for either.
     let shares_its_address_with_the_series_it_left = goes
         == crate::application::calendar::WhereAChangeGoes::ACalendarServer
         && stored.as_ref().is_some_and(|held| {
-            let named_series = held
-                .cut_from_event_id
-                .as_deref()
-                .and_then(|id| cache.get_event_by_id(id).ok().flatten());
             crate::application::calendar::shares_its_address_with_the_series_it_left(
                 held,
                 named_series.as_ref(),
             )
         });
+    let the_series_it_left_is_known_here = goes
+        == crate::application::calendar::WhereAChangeGoes::ACalendarServer
+        && named_series.is_some();
     crate::application::calendar::WhatTheCalendarAllows {
         goes,
         keeping_the_day_apart,
         shares_its_address_with_the_series_it_left,
+        the_series_it_left_is_known_here,
     }
 }
 
@@ -798,6 +808,21 @@ pub fn manage_calendar(
                         }
                         one_day_of_a_series_changed(&cache, &series, &opened, that_day)
                     }
+                    // A row a calendar server has already split into its own
+                    // VEVENT, still sharing that VEVENT's resource with the
+                    // series it came from. `can_be_honoured` above only lets
+                    // this arm run at all once the series is known here, and
+                    // the dedicated merge is what keeps the row able to tell
+                    // itself apart from that series on every edit after this
+                    // one, not only this one: `event_with_edits` would zero
+                    // both fields.
+                    (Some(stored), EditMeans::WholeSeries)
+                        if stored.provider_recurrence_id.is_some() =>
+                    {
+                        cache.save_calendar_event(&occurrence_exception_with_edits(
+                            stored, &opened, &data,
+                        ))
+                    }
                     (Some(stored), EditMeans::WholeSeries) => {
                         cache.save_calendar_event(&event_with_edits(stored, &opened, &data))
                     }
@@ -958,6 +983,38 @@ fn event_with_edits(
         attendees_json: stored.attendees_json,
         created_at: stored.created_at,
         ..edited
+    }
+}
+
+/// [`event_with_edits`]'s own merge, with the two identity fields a day a
+/// calendar server has already split into its own VEVENT needs kept: which
+/// series it stands in for, and which day of that series it is.
+///
+/// [`event_entry`], which [`event_with_edits`] rebuilds its result from,
+/// makes an ordinary event and explicitly zeroes both, on the grounds its own
+/// doc comment gives: only a calendar server itself ever sends one VEVENT
+/// among several for one series. That grounds holds for the fresh event
+/// [`event_entry`] is built to describe, and it stops holding the moment a
+/// row like this is saved through it: the row IS one of those VEVENTs, and
+/// losing either field would leave it unable to tell itself apart from its
+/// own series the next time either is changed, which is the exact corruption
+/// the occurrence-exception gate in `application::calendar` exists to
+/// prevent.
+///
+/// Reused from [`event_with_edits`] rather than a second copy of its merge,
+/// so one routine answers "what survives an edit" for both kinds of row and
+/// the two cannot come to answer differently about any field but these two.
+fn occurrence_exception_with_edits(
+    stored: crate::data::message_cache::CalendarEventEntry,
+    opened: &CalendarEventItem,
+    data: &wx_calendar::CalendarEventData,
+) -> crate::data::message_cache::CalendarEventEntry {
+    let cut_from_event_id = stored.cut_from_event_id.clone();
+    let provider_recurrence_id = stored.provider_recurrence_id.clone();
+    crate::data::message_cache::CalendarEventEntry {
+        cut_from_event_id,
+        provider_recurrence_id,
+        ..event_with_edits(stored, opened, data)
     }
 }
 
@@ -3398,6 +3455,99 @@ mod tests {
         );
 
         assert!(edited_from_its_own_row(stored, &untouched).pending);
+    }
+
+    // ── Editing a day the calendar server already split into its own VEVENT ─
+
+    /// An occurrence exception's own row: a day a calendar server has
+    /// already split into its own VEVENT, still sharing that VEVENT's
+    /// resource with the series it came from.
+    fn an_occurrence_exception_row() -> crate::data::message_cache::CalendarEventEntry {
+        let mut stored = event_entry("occ-1".to_string(), "acct", &data(false));
+        stored.pending = false;
+        stored.provider_event_id = Some("e-1:2026-03-12T09:00:00Z".to_string());
+        stored.provider_recurrence_id = Some("2026-03-12T09:00:00Z".to_string());
+        stored.cut_from_event_id = Some("series-1".to_string());
+        stored.web_link = Some("https://cal.example.test/dav/sam/work/e-1.ics".to_string());
+        stored
+    }
+
+    /// An occurrence exception opened on its own day, the same as
+    /// [`edited_from_its_own_row`] but through the dedicated merge a row
+    /// that still shares its series' own address needs.
+    fn occurrence_edited_from_its_own_row(
+        stored: crate::data::message_cache::CalendarEventEntry,
+        data: &wx_calendar::CalendarEventData,
+    ) -> crate::data::message_cache::CalendarEventEntry {
+        let opened = CalendarEventItem::from_entry(&stored);
+        occurrence_exception_with_edits(stored, &opened, data)
+    }
+
+    #[test]
+    fn test_editing_an_occurrence_exception_twice_keeps_its_series_and_its_own_day_both_times() {
+        // `event_entry`, which the ordinary merge rebuilds its result from,
+        // explicitly zeroes both fields, on the grounds given in its own doc
+        // comment that only a calendar server itself sends one VEVENT among
+        // several for one series. That is exactly what this row is. Losing
+        // either field on the first edit would mean the second edit no
+        // longer recognised the row as one, reopening the corruption the
+        // occurrence-exception gate exists to prevent, so this edits the row
+        // twice rather than once: a field set correctly only on the first
+        // save and dropped on the next one would still look right after one
+        // green assertion.
+        let stored = an_occurrence_exception_row();
+
+        let mut renamed = data(false);
+        renamed.summary = "Weekly review, edited once".to_string();
+        let once = occurrence_edited_from_its_own_row(stored.clone(), &renamed);
+
+        assert_eq!(once.summary, "Weekly review, edited once");
+        assert_eq!(once.provider_event_id, stored.provider_event_id);
+        assert_eq!(once.provider_recurrence_id, stored.provider_recurrence_id);
+        assert_eq!(once.cut_from_event_id, stored.cut_from_event_id);
+        assert_eq!(once.web_link, stored.web_link);
+        assert!(
+            once.pending,
+            "the edit never marks itself waiting to be sent"
+        );
+
+        let mut renamed_again = data(false);
+        renamed_again.summary = "Weekly review, edited twice".to_string();
+        let twice = occurrence_edited_from_its_own_row(once.clone(), &renamed_again);
+
+        assert_eq!(twice.summary, "Weekly review, edited twice");
+        assert_eq!(
+            twice.provider_event_id, stored.provider_event_id,
+            "the row's own compound identity was lost on the second edit"
+        );
+        assert_eq!(
+            twice.provider_recurrence_id, stored.provider_recurrence_id,
+            "the row forgot which day of its series it stands for on the \
+             second edit"
+        );
+        assert_eq!(twice.cut_from_event_id, stored.cut_from_event_id);
+    }
+
+    #[test]
+    fn test_an_occurrence_exception_that_was_not_really_changed_is_handed_back_untouched() {
+        // The same rule `event_with_edits` follows for an ordinary event:
+        // opening the editor and pressing Save without typing anything must
+        // not mark the row pending, or every sync from here on sends the
+        // whole record back to the calendar server over every property this
+        // program does not model.
+        let stored = an_occurrence_exception_row();
+        let untouched =
+            wx_calendar::CalendarEventData::as_shown(&CalendarEventItem::from_entry(&stored));
+
+        let saved = occurrence_edited_from_its_own_row(stored.clone(), &untouched);
+
+        assert!(
+            !saved.pending,
+            "a save that changed nothing queued a full overwrite at the \
+             calendar server"
+        );
+        assert_eq!(saved.provider_recurrence_id, stored.provider_recurrence_id);
+        assert_eq!(saved.cut_from_event_id, stored.cut_from_event_id);
     }
 
     // ── The zone a moment was in has to survive an edit ──────────────────
@@ -7102,6 +7252,69 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
         assert!(
             what_the_sync_button_gets_wrong("nothing at all")[0].contains("no Sync button"),
             "a window with no Sync button was not reported"
+        );
+    }
+
+    /// What the calendar window's whole-series Update handling gets wrong
+    /// about a row a calendar server has already split into its own VEVENT.
+    ///
+    /// Read off the source rather than run, the same way the Sync button
+    /// above is checked: `manage_calendar` needs a window on a screen to run
+    /// at all, so there is no other way to prove this arm is reached.
+    fn what_updating_an_occurrence_exception_gets_wrong(body: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        if !body.contains("provider_recurrence_id.is_some()") {
+            wrong.push(
+                "the whole-series update arm no longer tells a row a \
+                 calendar server has already split into its own VEVENT \
+                 apart from an ordinary one"
+                    .to_string(),
+            );
+        }
+        if !body.contains("occurrence_exception_with_edits(") {
+            wrong.push(
+                "a row a calendar server has already split into its own \
+                 VEVENT is saved through the ordinary merge, which drops \
+                 the two fields that keep it able to tell itself apart \
+                 from its series"
+                    .to_string(),
+            );
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_updating_an_occurrence_exception_in_the_calendar_window_uses_the_dedicated_merge() {
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = the_body_of(&source, "pub fn manage_calendar(");
+        let wrong = what_updating_an_occurrence_exception_gets_wrong(&body);
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_occurrence_exception_merge_check_can_tell_the_two_apart() {
+        // Proving the measurement, the same discipline the Sync button check
+        // above follows.
+        let wired = "                    (Some(stored), EditMeans::WholeSeries)\n\
+                        if stored.provider_recurrence_id.is_some() =>\n\
+                    {\n\
+                        cache.save_calendar_event(&occurrence_exception_with_edits(\n\
+                            stored, &opened, &data,\n\
+                        ))\n\
+                    }\n";
+        assert!(
+            what_updating_an_occurrence_exception_gets_wrong(wired).is_empty(),
+            "a body that really uses the dedicated merge was reported as broken"
+        );
+
+        let unwired = "                    (Some(stored), EditMeans::WholeSeries) => {\n\
+                        cache.save_calendar_event(&event_with_edits(stored, &opened, &data))\n\
+                    }\n";
+        assert_eq!(
+            what_updating_an_occurrence_exception_gets_wrong(unwired).len(),
+            2,
+            "a body with no guard and no dedicated merge should fail both checks"
         );
     }
 

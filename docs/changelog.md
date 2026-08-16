@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Fixed: a day a calendar server has already moved or changed out of a
+  repeating meeting could not be edited here on its own.** A calendar server
+  keeps a day like that as its own appointment inside the same document as
+  the series it came from, the same way a Google calendar keeps it as an
+  appointment of its own. Editing that day here was refused outright until
+  now, with changing the whole series the only thing that could be done.
+  Editing the one day now works: the change reaches the calendar server as a
+  change to that appointment alone, and the series, and any other changed
+  day sharing the same document, are left exactly as they were.
+
+  Known limitations. Deleting a day like this is still refused; the whole
+  series can still be deleted, the same as before this fix. Editing needs
+  the series itself already stored here, which is normally already true by
+  the time a changed day is read at all; the one time it is not is a first
+  sync whose answer names a changed day without the series it belongs to,
+  something some calendar servers do. Editing that day stays refused until a
+  later sync brings the series in as well.
+
 - **Choosing a group, Favorites, or All Contacts in the contacts sidebar now
   changes which contacts the list shows.** A contact group could always be
   made, named, and have people put in or taken out of it, and the sidebar
