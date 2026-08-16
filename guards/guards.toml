@@ -6474,8 +6474,10 @@ red = [
 # of a second address wrapper, corrupting the real one behind it. The break
 # puts the old, unquoted line back.
 #
-# Measured by hand on 2026-08-16 with scripts/guards.py: all 8 tests named
-# went red and nothing else did.
+# Measured by hand on 2026-08-16 with scripts/guards.py: all 10 tests named
+# went red and nothing else did. (Corrected from an earlier count of 8: the
+# break also reddens the escaping tests added a commit later, which the
+# original count was taken before.)
 
 [[guard]]
 name = "a name written back out is quoted when it needs to be"
@@ -6506,4 +6508,6 @@ red = [
     "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address",
+    "common::types::tests::test_a_quote_mark_inside_a_display_name_is_escaped_so_the_quoting_stays_well_formed",
+    "common::types::tests::test_a_backslash_inside_a_display_name_is_escaped_so_it_is_not_read_as_an_escape_itself",
 ]
