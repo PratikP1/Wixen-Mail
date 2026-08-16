@@ -32,13 +32,15 @@
 
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::calendar::{WhatIsBeingDone, WhatTheCalendarAllows, WhereAChangeGoes};
+use wixen_mail::application::spell_session;
+use wixen_mail::application::words::{TextNode, words_in};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_account_manager, wx_calendar, wx_calendar_module, wx_contacts_module, wx_notes_module,
-    wx_reader, wx_reminders_module, wx_settings, wx_tasks_module, wx_which_days,
+    wx_account_manager, wx_calendar, wx_calendar_module, wx_compose, wx_contacts_module,
+    wx_notes_module, wx_reader, wx_reminders_module, wx_settings, wx_tasks_module, wx_which_days,
 };
 use wxdragon::prelude::*;
 
@@ -466,6 +468,54 @@ fn check_which_days(parent: &Frame, palette: theme::Palette, into: &mut Vec<Site
     check("which days dialog", &dialog, palette.main_surface(), into);
 }
 
+/// A single misspelling, built through the real `findings` function rather
+/// than a `Finding` typed by hand: the words come from `words_in`, the same
+/// segmenter the real spell check runs the message body through, so the
+/// fixture is a shape this codebase's own code actually produces.
+fn one_misspelling() -> spell_session::Finding {
+    let words = words_in(&[TextNode {
+        text: "the wrold turns".to_string(),
+        block: 0,
+    }]);
+    let found = spell_session::findings(
+        &words,
+        |word| word == "wrold",
+        |_| vec!["world".to_string()],
+    );
+    found
+        .into_iter()
+        .next()
+        .expect("\"wrold\" is misspelled by construction")
+}
+
+/// The Check Spelling dialog Compose opens for one misspelled or repeated
+/// word. Parented to a throwaway `Dialog` rather than to `parent` directly,
+/// the same as production: it always opens from inside the Compose window,
+/// never from the main frame.
+fn check_check_spelling(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for check spelling").build();
+    let finding = one_misspelling();
+    let widgets = wx_compose::build_check_spelling_dialog(&scratch_parent, &finding, Some(palette));
+    check(
+        "check spelling dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "check spelling replacement field",
+        &widgets.replacement,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "check spelling suggestions list",
+        &widgets.suggestions,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -650,6 +700,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_account_manager(&frame, &a11y, palette, &mut sites);
             check_event_editor(&frame, palette, &mut sites);
             check_which_days(&frame, palette, &mut sites);
+            check_check_spelling(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 

@@ -13,6 +13,7 @@ use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
 use crate::presentation::html_renderer::HtmlRenderer;
+use crate::presentation::theme;
 use crate::presentation::ui_types::CompositionData;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -1655,6 +1656,10 @@ fn check_spelling(
         .map(|config| config.app_config().language.clone())
         .unwrap_or_else(|_| "en".to_string());
     let speller = crate::service::spellcheck::for_language(&language);
+    // Read once for the whole pass rather than once per word: `Check
+    // Spelling` opens and closes many times in one call to this function, and
+    // the setting is not going to change mid-pass.
+    let palette = theme::current_from_stored_config();
 
     let mut ignored = session::Ignored::default();
     // Where the last thing that happened left off. `None` is the start.
@@ -1689,7 +1694,7 @@ fn check_spelling(
         ));
         let _ = a11y.announce(&finding.spoken(), Priority::High);
 
-        match ask_about_word(dialog, finding) {
+        match ask_about_word(dialog, finding, palette) {
             SpellChoice::Stop => return,
             SpellChoice::Ignore => resume_from = Some(past),
             SpellChoice::IgnoreAll => {
@@ -1774,16 +1779,31 @@ fn replace_one(
     editor_document::position_from_editor(&answer)
 }
 
-/// Ask what to do about one word.
+/// The Check Spelling dialog's fields, returned so a test can build it
+/// without a human closing a live modal and so `ask_about_word` can read
+/// the field back after a real `.show_modal()`.
+pub struct CheckSpellingWidgets {
+    pub dialog: Dialog,
+    pub replacement: TextCtrl,
+    pub suggestions: ListBox,
+}
+
+/// Build the Check Spelling dialog without showing it.
+///
+/// Everything `ask_about_word` used to do up to its own `.show_modal()` call,
+/// split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
 ///
 /// The layout is the one people already know from Word: the word, a field
 /// holding what it will become, and the suggestions under it. The field is
 /// editable and comes first, so somebody who knows the answer types it and
 /// presses Enter without ever hearing the list.
-fn ask_about_word(
+pub fn build_check_spelling_dialog(
     parent: &Dialog,
     finding: &crate::application::spell_session::Finding,
-) -> SpellChoice {
+    palette: Option<theme::Palette>,
+) -> CheckSpellingWidgets {
     use crate::application::spell_session::Problem;
 
     let asker = Dialog::builder(parent, "Check Spelling")
@@ -1878,12 +1898,36 @@ fn ask_about_word(
     // and Enter from there is the common case.
     replacement.set_focus();
 
-    let answer = asker.show_modal();
-    let typed = replacement.get_value();
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&asker, palette.main_surface());
+        theme::paint(&replacement, palette.main_surface());
+        theme::paint(&suggestions, palette.main_surface());
+    }
+
+    CheckSpellingWidgets {
+        dialog: asker,
+        replacement,
+        suggestions,
+    }
+}
+
+/// Ask what to do about one word.
+fn ask_about_word(
+    parent: &Dialog,
+    finding: &crate::application::spell_session::Finding,
+    palette: Option<theme::Palette>,
+) -> SpellChoice {
+    let widgets = build_check_spelling_dialog(parent, finding, palette);
+
+    let answer = widgets.dialog.show_modal();
+    let typed = widgets.replacement.get_value();
     // Read first, then destroy: the field belongs to the dialog. This is the
     // worst of the leaks, because it is one per word rather than one per
     // window, so a message with thirty misspellings left thirty behind.
-    asker.destroy();
+    widgets.dialog.destroy();
     match answer {
         ID_SPELL_CHANGE => SpellChoice::Change(typed),
         ID_SPELL_CHANGE_ALL => SpellChoice::ChangeAll(typed),

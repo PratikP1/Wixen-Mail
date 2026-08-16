@@ -207,13 +207,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and its Add/Edit Account window, the calendar event editor, and this
   one), and the rest named plainly rather than left for someone to
   discover unpainted. What is still left, in the order most people would
-  reach it: Compose and its Check Spelling, Insert Table and Send Preview
-  sub-dialogs; the Calendar window itself and its nested confirm delete
-  dialog; the Contact, Filter, Tag and Signature managers and their own
-  edit dialogs; Add Calendar, Columns, Destination, Item Form, First
-  Run's Allowed Changes screen, Folder Choice, Reminder Alert, Thread
-  View, Search, and Ask For A Name; and About, which almost nobody opens
+  reach it: Compose and its Insert Table and Send Preview sub-dialogs;
+  the Calendar window itself and its nested confirm delete dialog; the
+  Contact, Filter, Tag and Signature managers and their own edit
+  dialogs; Add Calendar, Columns, Destination, Item Form, First Run's
+  Allowed Changes screen, Folder Choice, Reminder Alert, Thread View,
+  Search, and Ask For A Name; and About, which almost nobody opens
   twice.
+
+- **The Check Spelling window Compose opens for a misspelled or repeated
+  word now takes the Theme colours too.** The word, the field holding what
+  it will become, and the list of suggestions under it now match the rest
+  of the coloured application instead of showing Windows' own white
+  regardless of what Light or Dark chose.
+
+  Known limitations: Compose's own window, Insert Table, Send Preview, the
+  Calendar window itself and its nested confirm delete dialog, and roughly
+  thirty other windows that open on top of the main one still show
+  Windows' own colours regardless of the Theme setting.
 
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
