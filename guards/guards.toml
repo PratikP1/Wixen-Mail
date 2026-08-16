@@ -2792,11 +2792,17 @@ red = [
 [[guard]]
 name = "a blind copy reaches the server and never the message"
 file = "src/service/protocols/smtp.rs"
+# Measured by hand again on 2026-08-16 with scripts/guards.py, after a round
+# that let a recipient carry a name changed `bcc`'s element type from a bare
+# `String` to an `EmailAddress`, which moved the address one field deeper
+# (`bcc` to `bcc.address`) and fell one edit behind its own file within the
+# same round. What the break does and what it reddens are unchanged: the
+# same `keep_bcc()` call, still reddening only the one test named.
 before = """    for bcc in &email.bcc {
-        builder = builder.bcc(parse_mailbox(bcc, None)?);
+        builder = builder.bcc(parse_mailbox(&bcc.address, bcc.name.as_deref())?);
     }"""
 after = """    for bcc in &email.bcc {
-        builder = builder.bcc(parse_mailbox(bcc, None)?);
+        builder = builder.bcc(parse_mailbox(&bcc.address, bcc.name.as_deref())?);
     }
     builder = builder.keep_bcc();"""
 red = [
@@ -6433,13 +6439,13 @@ red = [
     "application::calendar_source::tests::test_the_window_is_never_held_while_a_calendar_server_is_asked",
 ]
 
-# ── A recipient copied from a message keeps its name stripped off ──────────
+# ── A recipient copied from a message is split the quote-aware way ─────────
 #
 # `addresses()` had no coverage at all for a "Name <address>" entry before
 # this guard existed: every existing fixture was already a bare address, so
 # a naive split on comma and semicolon passed the whole suite while failing
 # every reply to a real, named sender. The break puts that naive split back,
-# byte for byte.
+# adapted to whatever `addresses()` returns at the time it is measured.
 #
 # Measured by hand again on 2026-08-16 with scripts/guards.py, after a second
 # round added four more tests for a name containing a comma or a bracket: all
@@ -6447,33 +6453,46 @@ red = [
 # same day, named 5; the record fell one edit behind its own file before it
 # was ever run against anything else, which is the exact failure mode this
 # file exists to catch.
+#
+# Measured by hand a third time on 2026-08-16, the same day, after a round
+# that let a recipient's name travel all the way to the outgoing header
+# renamed `bare_address` to `recipient_address` and widened what it returns
+# from a bare `String` to an `EmailAddress` carrying the name too. The record
+# fell one edit behind its own file again within the same round, exactly the
+# case this project's own guardrails warn a guard can go stale without a
+# session boundary in between. The break itself is the same naive split as
+# before, written against the type `addresses()` returns now; the count of
+# tests it reddens grew from 9 to 10, because four of this round's renamed
+# tests and one wx_app real-chain test now also check the name survives, not
+# only the address.
 
 [[guard]]
-name = "a recipient copied from a message sends as a bare address"
+name = "a recipient copied from a message is split the quote-aware way, name and address both"
 file = "src/application/mail_controller.rs"
-before = """fn addresses(field: &str) -> Vec<String> {
+before = """fn addresses(field: &str) -> Vec<EmailAddress> {
     crate::application::reply::split_addresses(field)
         .iter()
-        .map(|entry| bare_address(entry))
+        .map(|entry| recipient_address(entry))
         .collect()
 }"""
-after = """fn addresses(field: &str) -> Vec<String> {
+after = """fn addresses(field: &str) -> Vec<EmailAddress> {
     field
         .split([',', ';'])
-        .map(|addr| addr.trim().to_string())
-        .filter(|addr| !addr.is_empty())
+        .map(|addr| EmailAddress::new(addr.trim().to_string(), None))
+        .filter(|addr| !addr.address.is_empty())
         .collect()
 }"""
 red = [
-    "application::mail_controller::send_request_tests::test_a_name_and_address_recipient_is_split_so_the_address_alone_reaches_the_request",
+    "application::mail_controller::send_request_tests::test_a_name_and_address_recipient_reaches_the_request_as_address_and_name_both",
     "application::mail_controller::send_request_tests::test_a_name_and_address_cc_recipient_is_split_too",
     "application::mail_controller::send_request_tests::test_a_display_name_with_a_comma_does_not_split_into_two_bad_recipients",
-    "application::mail_controller::send_request_tests::test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_bare",
-    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare",
-    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare",
+    "application::mail_controller::send_request_tests::test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_each_with_whatever_name_it_had",
+    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept",
+    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_named_sender_reaches_the_wire_as_a_bare_address",
+    "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_named_sender_carries_their_name_onto_the_to_header_on_the_wire",
 ]
 
 # ── A name written back out is quoted when it needs to be ──────────────────

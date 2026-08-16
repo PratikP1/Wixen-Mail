@@ -41,14 +41,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   unusual but legal in a name and which a sender's own mail program can
   produce.
 
-  Known limitations. The name itself does not reach the message that goes
-  out, or the copy kept in Sent; only the address does, even though the
-  compose window still shows the name correctly while it is being written.
-  Carrying the name through the same way this program already does for
-  your own name is tracked as a follow-up, not done here. A name that
-  needs an escaped quotation mark and also contains a comma or a bracket
-  elsewhere has not been made to work; nobody has seen one in real mail
-  yet.
+  Known limitations. A name that needs an escaped quotation mark and also
+  contains a comma or a bracket elsewhere has not been made to work; nobody
+  has seen one in real mail yet.
 
 - **A sender's name that contains a literal angle bracket, unusual but legal,
   is now read back whole instead of cut off.** `Bob <VIP>` is a real name a
@@ -61,6 +56,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the broken search had pulled out. All three now read the whole name back
   correctly, the way the rest of the program already reads a name off an
   incoming message.
+
+- **A recipient's name now reaches the message that goes out, the same way
+  this program already sends your own name in front of your own address.**
+  This is what Reply pre-fills the To line with whenever the message being
+  answered showed a name next to the address, and it is also what a name
+  typed straight into the To or Cc line by hand becomes. Both used to reach
+  the person but arrive as a bare address, so the recipient's own mail
+  program had nothing to show but the address itself where every other
+  message shows a name. A recipient's name comes from a message somebody
+  else sent, so it is treated as untrusted text: before it is written onto
+  the outgoing To or Cc line, it goes through the same check that already
+  strips a stray line break out of your own name, so a name cannot be used
+  to write extra, unwanted lines into the headers of the message it travels
+  on.
 
 - **Fixed: a day a calendar server has already moved or changed out of a
   repeating meeting could not be edited here on its own.** A calendar server

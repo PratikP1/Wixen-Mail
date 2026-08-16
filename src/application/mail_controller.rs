@@ -2,6 +2,7 @@
 //!
 //! Bridges the UI with IMAP/SMTP protocols and manages mail operations.
 
+use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
 use crate::service::protocols::imap::{
@@ -13,44 +14,46 @@ use crate::service::protocols::smtp::{Email, SmtpClient, SmtpConfig};
 use std::sync::Arc;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
-/// The addresses in one typed recipient field, stripped to the bare address.
+/// The addresses in one typed recipient field, each with its name intact.
 ///
 /// Split the same quote- and bracket-aware way [`crate::application::reply`]
 /// already splits a header for replying, so a display name with a comma in
 /// it is not mistaken for two recipients. What comes out of a reply, a
 /// forward, or a reopened draft is often not a bare address but a whole
 /// "Name <address>" entry copied from a message somebody else sent, the same
-/// shape `EmailAddress`'s own `Display` writes; any such wrapper is stripped
-/// down to the address alone; here, because sending it as one address is
-/// what the server refuses. Empty entries are dropped: a trailing comma is a
-/// typing artefact, not a request to send to nobody.
-fn addresses(field: &str) -> Vec<String> {
+/// shape `EmailAddress`'s own `Display` writes; the wrapper is read apart
+/// into the two fields it was written from, because the server refuses the
+/// address sent wrapped as one address, but the name in front of it is
+/// exactly what an outgoing header carries for any other sender. Empty
+/// entries are dropped: a trailing comma is a typing artefact, not a request
+/// to send to nobody.
+fn addresses(field: &str) -> Vec<EmailAddress> {
     crate::application::reply::split_addresses(field)
         .iter()
-        .map(|entry| bare_address(entry))
+        .map(|entry| recipient_address(entry))
         .collect()
 }
 
-/// One recipient entry, with any "Name <address>" wrapper stripped off.
+/// One recipient entry, with any "Name <address>" wrapper read apart.
 ///
 /// Reads the wrapper with the same parser [`crate::service::mime`] already
 /// uses to read a `From` or `To` header off the wire, rather than a naive
 /// search for the first `<` and the last `>`: a name that itself contains a
 /// bracket, such as one `mail_parser` decoded from a quoted display name on
-/// the way in, makes a naive search find the wrong pair. The name itself is
-/// dropped rather than carried onto the outgoing header: it can come from a
-/// message a stranger sent, and this function is the boundary where that
-/// untrusted text stops being carried any further. Nothing recognisable as an
-/// address falls back to the entry as it stood, trimmed, the same as before:
-/// a mistyped recipient should fail at the server with a reason, not vanish
-/// here.
-fn bare_address(entry: &str) -> String {
+/// the way in, makes a naive search find the wrong pair. The name travels
+/// with the address rather than being dropped here: it can come from a
+/// message a stranger sent, so it is untrusted text, and [`outgoing`] is the
+/// boundary where that untrusted text is made safe before it reaches an
+/// outgoing header, the same way it already is for the account's own name.
+/// Nothing recognisable as an address falls back to the entry as it stood,
+/// trimmed, with no name, the same as before: a mistyped recipient should
+/// fail at the server with a reason, not vanish here.
+fn recipient_address(entry: &str) -> EmailAddress {
     let trimmed = entry.trim();
     crate::service::mime::parse_addresses(trimmed)
         .into_iter()
         .next()
-        .map(|address| address.address)
-        .unwrap_or_else(|| trimmed.to_string())
+        .unwrap_or_else(|| EmailAddress::new(trimmed.to_string(), None))
 }
 
 /// Parameters for sending an email via SMTP.
@@ -79,7 +82,13 @@ pub struct SendEmailRequest {
     pub from_name: Option<String>,
     pub auth: MailAuth,
     pub use_tls: bool,
-    pub to: Vec<String>,
+    /// Each recipient with the name a stored or typed entry carried, when it
+    /// carried one.
+    ///
+    /// The name travels this far untrusted: it can come from a message a
+    /// stranger sent. [`outgoing`] is where it is made safe before it
+    /// reaches an outgoing header.
+    pub to: Vec<EmailAddress>,
     /// The outbox row this message is.
     ///
     /// Carried so the message's own `Message-ID` can be derived from it. A row
@@ -98,8 +107,8 @@ pub struct SendEmailRequest {
     /// These were collected by the composer, shown in the preview, counted in
     /// Reply All's "2 recipients" announcement, and then hardcoded empty here,
     /// so only the To addresses were ever sent and nothing said otherwise.
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
+    pub cc: Vec<EmailAddress>,
+    pub bcc: Vec<EmailAddress>,
     pub subject: String,
     /// The files to send with it, where they are on this computer.
     ///
@@ -197,9 +206,14 @@ pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
         // server the two differ and the login is often not an address at all.
         from: req.from_address.clone(),
         from_name: req.from_name.as_deref().map(one_line),
-        to: req.to.clone(),
-        cc: req.cc.clone(),
-        bcc: req.bcc.clone(),
+        // Each recipient's name travels this far exactly as it was typed or
+        // read off a message, and a message's sender is never somebody this
+        // program can vouch for. `safe_recipient` is the boundary where that
+        // untrusted text is made safe, the same way `one_line` just above
+        // already makes the account's own name safe.
+        to: req.to.iter().map(safe_recipient).collect(),
+        cc: req.cc.iter().map(safe_recipient).collect(),
+        bcc: req.bcc.iter().map(safe_recipient).collect(),
         subject: req.subject.clone(),
         body_text: req.body.clone(),
         body_html: req.body_html.clone(),
@@ -222,6 +236,21 @@ pub fn outgoing(req: &SendEmailRequest) -> Result<Email> {
 /// somebody else's message.
 fn one_line(text: &str) -> String {
     text.replace(['\r', '\n'], " ").trim().to_string()
+}
+
+/// A recipient, with its name made safe to write onto an outgoing header.
+///
+/// The address is never touched: it already went through the same address
+/// parser the rest of this program trusts, in [`recipient_address`]. The name
+/// is a different kind of text. Where the account's own name comes from a
+/// field this program's own settings screen wrote, a recipient's name can
+/// come from a display name on a message somebody else sent, so it gets the
+/// same [`one_line`] treatment before it reaches the same kind of header.
+fn safe_recipient(address: &EmailAddress) -> EmailAddress {
+    EmailAddress::new(
+        address.address.clone(),
+        address.name.as_deref().map(one_line),
+    )
 }
 
 /// Mail controller for managing mail operations
@@ -800,7 +829,7 @@ mod tests {
             from_name: Some("Ada Lovelace".to_string()),
             auth: MailAuth::Password("password".to_string()),
             use_tls: true,
-            to: vec!["to@example.com".to_string()],
+            to: vec![EmailAddress::new("to@example.com".to_string(), None)],
             cc: Vec::new(),
             bcc: Vec::new(),
             subject: "Hello".to_string(),
@@ -2204,8 +2233,8 @@ mod send_request_tests {
         )
         .expect("a sendable request");
 
-        assert_eq!(req.cc, ["bob@example.com", "dan@example.com"]);
-        assert_eq!(req.bcc, ["carol@example.com"]);
+        assert_eq!(addrs(&req.cc), ["bob@example.com", "dan@example.com"]);
+        assert_eq!(addrs(&req.bcc), ["carol@example.com"]);
     }
 
     #[test]
@@ -2249,6 +2278,12 @@ mod send_request_tests {
         assert!(req.bcc.is_empty(), "{:?}", req.bcc);
     }
 
+    /// The bare addresses out of a recipient list, for a test that does not
+    /// care what name, if any, came with each one.
+    fn addrs(list: &[EmailAddress]) -> Vec<&str> {
+        list.iter().map(|a| a.address.as_str()).collect()
+    }
+
     fn queued_with(to: &str, cc: &str, bcc: &str) -> QueuedOutboxMessage {
         QueuedOutboxMessage {
             id: "q1".into(),
@@ -2278,7 +2313,7 @@ mod send_request_tests {
         .expect("should build");
         assert_eq!(req.server, "smtp.example.com");
         assert_eq!(req.port, 587);
-        assert_eq!(req.to, vec!["you@example.com"]);
+        assert_eq!(addrs(&req.to), vec!["you@example.com"]);
         assert_eq!(req.subject, "Quarterly report");
         assert!(req.use_tls);
     }
@@ -2291,7 +2326,7 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("should build");
-        assert_eq!(req.to, vec!["a@example.com", "b@example.com"]);
+        assert_eq!(addrs(&req.to), vec!["a@example.com", "b@example.com"]);
     }
 
     #[test]
@@ -2313,7 +2348,7 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("should build");
-        assert_eq!(req.to, vec!["a@example.com", "b@example.com"]);
+        assert_eq!(addrs(&req.to), vec!["a@example.com", "b@example.com"]);
     }
 
     // ── A recipient copied from a message, not typed bare ──────────────────
@@ -2325,16 +2360,30 @@ mod send_request_tests {
     // almost any real message fail: the server was asked to accept
     // "Charles Babbage <charles@example.com>" as a single mailbox and
     // refused it, identically, every time.
+    //
+    // The address has to be split out for the server either way. What
+    // changed since is what happens to the name once it is: an earlier round
+    // dropped it, as a considered decision, because it can come from a
+    // message a stranger sent. This round carries it instead, now that
+    // `outgoing` below sanitizes it the same way it already does the
+    // account's own name, so these tests were renamed and widened from
+    // asserting the address alone to asserting both.
 
     #[test]
-    fn test_a_name_and_address_recipient_is_split_so_the_address_alone_reaches_the_request() {
+    fn test_a_name_and_address_recipient_reaches_the_request_as_address_and_name_both() {
         let req = SendEmailRequest::from_queued(
             &queued("Charles Babbage <charles@example.com>"),
             &account(),
             MailAuth::Password("hunter2".into()),
         )
         .expect("a sendable request");
-        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+        assert_eq!(
+            req.to,
+            vec![EmailAddress::new(
+                "charles@example.com".to_string(),
+                Some("Charles Babbage".to_string())
+            )]
+        );
     }
 
     #[test]
@@ -2345,7 +2394,13 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("a sendable request");
-        assert_eq!(req.cc, vec!["grace@example.com".to_string()]);
+        assert_eq!(
+            req.cc,
+            vec![EmailAddress::new(
+                "grace@example.com".to_string(),
+                Some("Grace Hopper".to_string())
+            )]
+        );
     }
 
     #[test]
@@ -2360,11 +2415,18 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("a sendable request");
-        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+        assert_eq!(
+            req.to,
+            vec![EmailAddress::new(
+                "charles@example.com".to_string(),
+                Some("Babbage, Charles".to_string())
+            )]
+        );
     }
 
     #[test]
-    fn test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_bare() {
+    fn test_a_mixed_list_of_bare_and_named_recipients_all_reach_the_request_each_with_whatever_name_it_had()
+     {
         let req = SendEmailRequest::from_queued(
             &queued("alice@example.com, Charles Babbage <charles@example.com>"),
             &account(),
@@ -2374,8 +2436,11 @@ mod send_request_tests {
         assert_eq!(
             req.to,
             vec![
-                "alice@example.com".to_string(),
-                "charles@example.com".to_string(),
+                EmailAddress::new("alice@example.com".to_string(), None),
+                EmailAddress::new(
+                    "charles@example.com".to_string(),
+                    Some("Charles Babbage".to_string())
+                ),
             ]
         );
     }
@@ -2391,7 +2456,7 @@ mod send_request_tests {
     // shape.
 
     #[test]
-    fn test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare() {
+    fn test_a_comma_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept() {
         // "Babbage, Charles" is an ordinary directory-style name. Before the
         // `EmailAddress` write side quoted it, this reached the queue as
         // `Babbage, Charles <charles@example.com>`, and the comma split it
@@ -2408,11 +2473,18 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("a sendable request");
-        assert_eq!(req.to, vec!["charles@example.com".to_string()]);
+        assert_eq!(
+            req.to,
+            vec![EmailAddress::new(
+                "charles@example.com".to_string(),
+                Some("Babbage, Charles".to_string())
+            )]
+        );
     }
 
     #[test]
-    fn test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare() {
+    fn test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept()
+    {
         // A display name containing a literal angle bracket is unusual but
         // legal, and mail_parser decodes one back to this exact text. Before
         // the `EmailAddress` write side quoted it, this reached the queue as
@@ -2430,7 +2502,47 @@ mod send_request_tests {
             MailAuth::Password("hunter2".into()),
         )
         .expect("a sendable request");
-        assert_eq!(req.to, vec!["bob@example.com".to_string()]);
+        assert_eq!(
+            req.to,
+            vec![EmailAddress::new(
+                "bob@example.com".to_string(),
+                Some("Bob <VIP>".to_string())
+            )]
+        );
+    }
+
+    #[test]
+    fn test_a_recipients_name_cannot_smuggle_a_second_header() {
+        // The mirror of test_a_name_cannot_smuggle_a_second_header above, for
+        // a recipient rather than the account's own name. A recipient's name
+        // is untrusted in a way the account's own name never is: it can come
+        // from a message a stranger sent, decoded straight out of a header
+        // by mime::parse, so this is seeded directly onto the request rather
+        // than routed through the compose window's string field. A raw CRLF
+        // embedded in a display name breaks mail_parser's own address parser
+        // before it ever reaches an address (traced against mail_parser
+        // 0.11.5's source: an embedded newline not followed by folding
+        // whitespace ends the parse), so routing this through
+        // `queued()`/`addresses()` would only prove the address parser
+        // rejects garbage, not that `outgoing` sanitizes a name it is
+        // actually given.
+        let mut req = SendEmailRequest::from_queued(
+            &queued("charles@example.com"),
+            &account(),
+            MailAuth::Password("hunter2".into()),
+        )
+        .expect("a sendable request");
+        req.to = vec![EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Charles\r\nBcc: sneak@example.com".to_string()),
+        )];
+
+        let email = outgoing(&req).expect("a message to build");
+        let name = email.to[0].name.as_ref().expect("a name");
+        assert!(!name.contains('\r'), "{name:?}");
+        assert!(!name.contains('\n'), "{name:?}");
+        assert!(name.starts_with("Charles"), "{name:?}");
+        assert_eq!(email.to[0].address, "charles@example.com");
     }
 
     #[test]

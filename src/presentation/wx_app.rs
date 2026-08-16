@@ -13250,4 +13250,94 @@ mod reply_recipients_reach_the_wire {
             "the bare address never reached the server"
         );
     }
+
+    /// The real-chain proof for the second half of this round's fix: not
+    /// only does the reply reach the server, the name on it now reaches the
+    /// message every recipient's own mail program reads, the same way this
+    /// program already carries the account's own name on `From`.
+    #[tokio::test]
+    async fn test_replying_to_a_named_sender_carries_their_name_onto_the_to_header_on_the_wire() {
+        let stored = crate::common::types::EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Charles Babbage".to_string()),
+        )
+        .to_string();
+        let message = crate::application::reply::RepliedTo {
+            from: &stored,
+            ..Default::default()
+        };
+        let reply = crate::application::reply::reply_recipients(
+            &message,
+            &[],
+            crate::application::reply::ReplyMode::Default,
+        );
+        assert_eq!(
+            reply.to, stored,
+            "the fixture no longer reproduces the reported shape"
+        );
+
+        let data = wx_compose::ComposeData {
+            to: reply.to.clone(),
+            cc: String::new(),
+            bcc: String::new(),
+            subject: "Re: Hello".to_string(),
+            body: String::new(),
+            body_plain: "Thanks!".to_string(),
+            html_mode: false,
+            account_index: None,
+            attachments: Vec::new(),
+            answering: None,
+        };
+
+        let cache = super::tests::test_cache();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        lock_state(&state).active_account_id = Some("a1".to_string());
+
+        queue_for_sending(&state, &cache, &data).expect("the message to queue");
+
+        let queued = cache
+            .as_ref()
+            .expect("the cache to be there")
+            .load_outbox_messages("a1")
+            .expect("the queue to load")
+            .into_iter()
+            .next()
+            .expect("the queued message to be there");
+
+        let server =
+            crate::service::protocols::smtp::against_a_server_that_answers::an_smtp_server().await;
+        let smtp_config =
+            crate::service::protocols::smtp::against_a_server_that_answers::pointed_at(&server);
+
+        let mut account = Account::new("Test".to_string(), "ada@example.com".to_string());
+        account.id = "a1".to_string();
+        account.smtp_server = smtp_config.server.clone();
+        account.smtp_port = smtp_config.port.to_string();
+        account.smtp_use_tls = false;
+
+        let request = SendEmailRequest::from_queued(
+            &queued,
+            &account,
+            crate::service::protocols::MailAuth::Password("hunter2".to_string()),
+        )
+        .expect("a sendable request");
+        let email =
+            crate::application::mail_controller::outgoing(&request).expect("a message to build");
+
+        let client = crate::service::protocols::smtp::SmtpClient::allowed_to_send(smtp_config)
+            .expect("a client");
+        let sent = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            client.send_email(email, &request.auth),
+        )
+        .await
+        .expect("the server never finished the exchange")
+        .expect("replying to a named sender should send");
+
+        let bytes = String::from_utf8_lossy(&sent);
+        assert!(
+            bytes.contains("To: \"Charles Babbage\" <charles@example.com>"),
+            "the recipient's name never reached the message that went out: {bytes}"
+        );
+    }
 }

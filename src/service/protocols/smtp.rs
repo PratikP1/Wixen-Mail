@@ -2,6 +2,7 @@
 //!
 //! Handles SMTP protocol for sending email.
 
+use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::service::protocols::MailAuth;
 use lettre::{
@@ -61,9 +62,14 @@ pub struct Email {
     /// that made its own would make a second one for the second build.
     /// [`crate::application::message_id`] owns the rule.
     pub message_id: String,
-    pub to: Vec<String>,
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
+    /// Each recipient, with a name when one is known.
+    ///
+    /// The name is trusted by the time it reaches here: making it safe to
+    /// write onto a header is [`crate::application::mail_controller::outgoing`]'s
+    /// job, done once, before a message reaches this struct at all.
+    pub to: Vec<EmailAddress>,
+    pub cc: Vec<EmailAddress>,
+    pub bcc: Vec<EmailAddress>,
     pub subject: String,
     pub body_text: String,
     pub body_html: Option<String>,
@@ -95,7 +101,7 @@ impl Email {
             message_id: crate::application::message_id::fresh(&from),
             from,
             from_name: None,
-            to: vec![to],
+            to: vec![EmailAddress::new(to, None)],
             cc: Vec::new(),
             bcc: Vec::new(),
             subject,
@@ -144,19 +150,24 @@ fn build_message(email: &Email) -> Result<Message> {
         builder = builder.references(chain.clone());
     }
 
+    // Each recipient's name is trusted by the time it reaches here: making it
+    // safe to write onto a header is mail_controller::outgoing's job, done
+    // once, before a message reaches this struct at all.
     for to in &email.to {
-        builder = builder.to(parse_mailbox(to, None)?);
+        builder = builder.to(parse_mailbox(&to.address, to.name.as_deref())?);
     }
     for cc in &email.cc {
-        builder = builder.cc(parse_mailbox(cc, None)?);
+        builder = builder.cc(parse_mailbox(&cc.address, cc.name.as_deref())?);
     }
     // Blind means blind, and that rests on a default rather than on anything
     // written here: lettre builds the envelope from the Bcc header and then
     // removes the header, so the address reaches the server and no recipient
     // sees it. `keep_bcc()` turns that off, and must not be called. Checked
-    // against lettre 0.11.22.
+    // against lettre 0.11.22. The name is carried for type uniformity with
+    // `to` and `cc`; it is functionally inert here, since the whole header
+    // this name would be written on is what `keep_bcc()`'s absence removes.
     for bcc in &email.bcc {
-        builder = builder.bcc(parse_mailbox(bcc, None)?);
+        builder = builder.bcc(parse_mailbox(&bcc.address, bcc.name.as_deref())?);
     }
 
     let both_ways = |html: &str| {
@@ -283,7 +294,7 @@ impl SmtpClient {
             email
                 .to
                 .iter()
-                .map(|e| crate::common::logging::mask_email(e))
+                .map(|e| crate::common::logging::mask_email(&e.address))
                 .collect::<Vec<_>>()
         );
 
@@ -524,6 +535,37 @@ mod tests {
     }
 
     #[test]
+    fn test_a_message_goes_out_with_the_name_of_the_recipient_it_is_to() {
+        // The mirror case: every message went out with the recipient's name
+        // dropped, even when one was known, because nothing ever carried it
+        // this far. `EmailAddress` already writes a name the same way for a
+        // sender or a recipient, so this is the same quoting the From header
+        // test above already checks, on the To header instead.
+        let sent = on_the_wire(&Email {
+            to: vec![EmailAddress::new(
+                "charles@example.com".to_string(),
+                Some("Charles Babbage".to_string()),
+            )],
+            ..plain_note()
+        });
+        assert!(
+            sent.contains("To: \"Charles Babbage\" <charles@example.com>"),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn test_a_recipient_with_no_name_still_reaches_a_bare_address_on_the_wire() {
+        // The neighbour case, and a regression guard for the refactor that
+        // let a recipient carry a name at all: a recipient with none must
+        // still read as a bare address, not as empty quotes in front of one.
+        let sent = on_the_wire(&plain_note());
+        assert!(sent.contains("To: sam@example.com"), "{sent}");
+        assert!(!sent.contains("To: <"), "{sent}");
+        assert!(!sent.contains("To: \"\""), "{sent}");
+    }
+
+    #[test]
     fn test_no_name_leaves_a_bare_address_rather_than_empty_brackets() {
         // What an account with nothing typed in that box sends, and what every
         // message sent before the box existed sent.
@@ -662,7 +704,10 @@ mod tests {
             "Test Body".to_string(),
         );
         assert_eq!(email.from, "sender@example.com");
-        assert_eq!(email.to, vec!["recipient@example.com"]);
+        assert_eq!(
+            email.to,
+            vec![EmailAddress::new("recipient@example.com".to_string(), None)]
+        );
         assert_eq!(email.subject, "Test Subject");
         assert_eq!(email.body_text, "Test Body");
         assert!(email.body_html.is_none());
@@ -688,8 +733,13 @@ mod tests {
             "Test".to_string(),
             "Body".to_string(),
         );
-        email.to.push("recipient2@example.com".to_string());
-        email.cc.push("cc@example.com".to_string());
+        email.to.push(EmailAddress::new(
+            "recipient2@example.com".to_string(),
+            None,
+        ));
+        email
+            .cc
+            .push(EmailAddress::new("cc@example.com".to_string(), None));
         assert_eq!(email.to.len(), 2);
         assert_eq!(email.cc.len(), 1);
     }
@@ -1080,7 +1130,7 @@ pub(crate) mod against_a_server_that_answers {
         let sent = sending(
             &client,
             Email {
-                bcc: vec!["quiet@example.com".to_string()],
+                bcc: vec![EmailAddress::new("quiet@example.com".to_string(), None)],
                 ..a_message()
             },
         )
@@ -1113,8 +1163,8 @@ pub(crate) mod against_a_server_that_answers {
         sending(
             &client,
             Email {
-                cc: vec!["copied@example.com".to_string()],
-                bcc: vec!["quiet@example.com".to_string()],
+                cc: vec![EmailAddress::new("copied@example.com".to_string(), None)],
+                bcc: vec![EmailAddress::new("quiet@example.com".to_string(), None)],
                 ..a_message()
             },
         )
