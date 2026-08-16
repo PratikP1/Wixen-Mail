@@ -1133,6 +1133,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   time zone correctly, and saving a change to it now writes the time zone
   name back out quoted, the way it arrived.
 
+- **An event whose calendar server says how long it runs instead of giving a
+  separate end time showed no end time at all.** Radicale, one of the
+  calendar servers this program connects to, is one that writes events this
+  way. Such an event now shows the correct end time, worked out from when it
+  starts and how long the server said it lasts. Saving a change to such an
+  event also no longer leaves the server's own line saying how long it runs
+  sitting beside the new end time, which the calendar standard does not
+  allow together on one event.
+
 - **When a row had gone, or a command went wrong, you were told almost
   nothing.** Eight places said "That row is no longer there", which does not
   say what row or whether anything happened, and half of them left out the

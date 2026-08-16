@@ -42,6 +42,10 @@ pub struct CalDavEvent {
     pub description: Option<String>,
     pub location: Option<String>,
     pub dtstart: String,
+    /// When the event ends. Read off an explicit end time when the document
+    /// carries one, or worked out from the start and how long the server
+    /// said the event runs when it does not: the calendar standard allows
+    /// either and forbids a document from carrying both.
     pub dtend: Option<String>,
     pub is_all_day: bool,
     pub status: String,
@@ -857,7 +861,6 @@ fn event_from_its_own_lines(
         .as_deref()
         .map(as_typed);
     let dtstart_raw = extract_ical_property(block, "DTSTART")?;
-    let dtend = extract_ical_property(block, "DTEND");
     let status = extract_ical_property(block, "STATUS").unwrap_or_else(|| "CONFIRMED".to_string());
 
     // Detect all-day events (DATE vs DATE-TIME)
@@ -865,6 +868,19 @@ fn event_from_its_own_lines(
 
     // Normalize to RFC 3339
     let dtstart = normalize_ical_datetime(&dtstart_raw);
+
+    // How long the event runs, in whichever of the standard's two mutually
+    // exclusive ways the server said it (RFC 5545 section 3.6.1: "dtend /
+    // duration"). DURATION is read only as a fallback, never preferred over
+    // an explicit DTEND, so a document carrying both, which the grammar
+    // forbids, still keeps the DTEND a strict server would have validated.
+    let dtend = extract_ical_property(block, "DTEND")
+        .map(|d| normalize_ical_datetime(&d))
+        .or_else(|| {
+            extract_ical_property(block, "DURATION")
+                .and_then(|d| ical_duration(&d))
+                .and_then(|duration| moment_after(&dtstart, duration))
+        });
 
     // The zone first, because the cancelled days are counted in it: a
     // cancellation carrying a zone of its own is moved into the event's, or
@@ -886,7 +902,7 @@ fn event_from_its_own_lines(
         description,
         location,
         dtstart,
-        dtend: dtend.map(|d| normalize_ical_datetime(&d)),
+        dtend,
         is_all_day,
         status,
         time_zone,
@@ -1341,6 +1357,109 @@ fn the_wire_clock_face(one: &str) -> Option<chrono::NaiveDateTime> {
     let clock =
         chrono::NaiveTime::from_hms_opt(figures(8, 10)?, figures(10, 12)?, figures(12, 14)?)?;
     Some(date.and_time(clock))
+}
+
+/// An RFC 5545 section 3.3.6 DURATION value, however long it names.
+///
+/// The standard's other, mutually exclusive way of saying how long an event
+/// runs: `dtend / duration`. Radicale's own fixtures
+/// (radicale/tests/static/event_daily_rrule_overridden.ics and
+/// .../event_mixed_recurrence_id_dt_type.ics) write it on every VEVENT they
+/// carry rather than a DTEND.
+///
+/// Grammar: an optional leading sign, then `P`, then either a week count
+/// alone or a day count optionally followed by `T` and hours, minutes and
+/// seconds in that order, each optional but each, once present, in that
+/// order. Nothing is guessed at: a value outside this shape, including the
+/// empty string or a bare `P` naming no week, day, hour, minute or second at
+/// all, comes back as nothing rather than as a duration of zero.
+fn ical_duration(value: &str) -> Option<chrono::Duration> {
+    /// The digits in front of one unit letter, and what follows it.
+    fn one_unit(rest: &str, letter: char) -> Option<(i64, &str)> {
+        let (digits, after) = rest.split_once(letter)?;
+        (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| digits.parse().ok())
+            .flatten()
+            .map(|n| (n, after))
+    }
+
+    let value = value.trim();
+    let (negative, value) = match value.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let mut rest = value.strip_prefix('P')?;
+    let mut seconds: i64 = 0;
+    let mut named_something = false;
+
+    if let Some((weeks, after)) = one_unit(rest, 'W') {
+        seconds += weeks * 7 * 24 * 60 * 60;
+        rest = after;
+        named_something = true;
+    } else {
+        if let Some((days, after)) = one_unit(rest, 'D') {
+            seconds += days * 24 * 60 * 60;
+            rest = after;
+            named_something = true;
+        }
+        if let Some(time) = rest.strip_prefix('T') {
+            rest = time;
+            if let Some((hours, after)) = one_unit(rest, 'H') {
+                seconds += hours * 60 * 60;
+                rest = after;
+                named_something = true;
+            }
+            if let Some((minutes, after)) = one_unit(rest, 'M') {
+                seconds += minutes * 60;
+                rest = after;
+                named_something = true;
+            }
+            if let Some((secs, after)) = one_unit(rest, 'S') {
+                seconds += secs;
+                rest = after;
+                named_something = true;
+            }
+        }
+    }
+
+    (named_something && rest.is_empty())
+        .then(|| chrono::Duration::seconds(if negative { -seconds } else { seconds }))
+}
+
+/// A stored moment, moved forward by a duration, in the same shape
+/// [`normalize_ical_datetime`] would have produced for it.
+///
+/// Read through [`common::moment::read`] rather than a second hand-rolled
+/// parser, because that module already knows every shape this program stores
+/// a moment in; a duration-derived end keeping its own list of shapes is
+/// exactly the split that module's own doc comment exists to prevent.
+///
+/// Nothing is invented on overflow: an end so far past a start that the
+/// calendar cannot name it comes back as nothing rather than as a panic, the
+/// same as everywhere else here that does arithmetic on a value read off the
+/// wire.
+fn moment_after(dtstart: &str, duration: chrono::Duration) -> Option<String> {
+    use crate::common::moment::Moment;
+    match crate::common::moment::read(dtstart)? {
+        Moment::WholeDay(day) => Some(
+            day.checked_add_signed(duration)?
+                .format(crate::common::moment::WHOLE_DAY)
+                .to_string(),
+        ),
+        Moment::ClockFace(clock) => Some(
+            clock
+                .checked_add_signed(duration)?
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string(),
+        ),
+        Moment::Fixed(fixed) => Some(format!(
+            "{}Z",
+            fixed
+                .checked_add_signed(duration)?
+                .with_timezone(&chrono::Utc)
+                .format("%Y-%m-%dT%H:%M:%S")
+        )),
+    }
 }
 
 /// An instant written the way a calendar server expects to read it.
@@ -1978,12 +2097,21 @@ fn denormalize_ical_datetime(dt: &str) -> String {
 /// the notes box here clears the note at the server, which is what emptying it
 /// means. `SEQUENCE` and `DTSTAMP` are here because both are rewritten below
 /// rather than kept.
-const PROPERTIES_A_CHANGE_REPLACES: [&str; 10] = [
+///
+/// `DURATION` is here even though nothing below ever writes one: this program
+/// always says how long an event runs with `DTEND`, and RFC 5545 section
+/// 3.6.1 makes the two mutually exclusive ("dtend / duration"). A server that
+/// wrote `DURATION` instead, as Radicale's own fixtures do, needs that line
+/// taken out the same way an old `DTEND` already is, or the document goes out
+/// carrying both, which the standard forbids on one event and a validating
+/// server can refuse outright.
+const PROPERTIES_A_CHANGE_REPLACES: [&str; 11] = [
     "SUMMARY",
     "DESCRIPTION",
     "LOCATION",
     "DTSTART",
     "DTEND",
+    "DURATION",
     "RRULE",
     "EXDATE",
     "STATUS",
@@ -2614,6 +2742,66 @@ mod tests {
         assert_eq!(
             normalize_ical_datetime("2026-03-05T09:00:00Z"),
             "2026-03-05T09:00:00Z"
+        );
+    }
+
+    #[test]
+    fn test_ical_duration_reads_the_grammar_and_only_the_grammar() {
+        // RFC 5545 section 3.3.6. Radicale's own fixtures
+        // (radicale/tests/static/event_daily_rrule_overridden.ics and
+        // .../event_mixed_recurrence_id_dt_type.ics) write "PT1H" on every
+        // VEVENT they carry rather than a DTEND, which is where this is met
+        // in practice.
+        for (value, seconds) in [
+            ("PT1H", Some(3600)),
+            ("P1D", Some(86400)),
+            ("P1DT2H30M", Some(95400)),
+            ("PT0S", Some(0)),
+            ("P2W", Some(1_209_600)),
+            ("-PT1H", Some(-3600)),
+            ("+PT1H", Some(3600)),
+            // Nothing is guessed at: a value outside the grammar comes back
+            // as nothing rather than as a duration of zero.
+            ("", None),
+            ("garbage", None),
+            ("P", None),
+            ("PT", None),
+            // A week count never mixes with a day or a time part.
+            ("P2W3D", None),
+        ] {
+            assert_eq!(
+                ical_duration(value).map(|duration| duration.num_seconds()),
+                seconds,
+                "reading the duration {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_moment_moved_by_a_duration_keeps_the_shape_normalize_ical_datetime_gives_it() {
+        // The three shapes common::moment::read knows, each moved forward and
+        // handed back in the same shape normalize_ical_datetime already
+        // writes that shape in, so a DURATION-derived end reads the same way
+        // downstream as a DTEND-derived one.
+        assert_eq!(
+            moment_after("2026-01-02", chrono::Duration::days(1)).as_deref(),
+            Some("2026-01-03"),
+            "a whole day moved by a duration is still a whole day"
+        );
+        assert_eq!(
+            moment_after("2026-01-02T12:00:00", chrono::Duration::minutes(90)).as_deref(),
+            Some("2026-01-02T13:30:00"),
+            "a floating clock face keeps no zone and gains no Z"
+        );
+        assert_eq!(
+            moment_after("2026-01-02T12:00:00Z", chrono::Duration::hours(1)).as_deref(),
+            Some("2026-01-02T13:00:00Z"),
+            "an instant that already said UTC still says UTC"
+        );
+        assert_eq!(
+            moment_after("not a moment", chrono::Duration::hours(1)),
+            None,
+            "nothing is invented for a start this cannot read"
         );
     }
 
@@ -5082,6 +5270,168 @@ mod tests {
         assert_eq!(events[1].dtstart, "2026-03-12T14:00:00Z");
     }
 
+    /// Radicale's own regression fixture
+    /// `radicale/tests/static/event_mixed_recurrence_id_dt_type.ics`
+    /// (<https://github.com/Kozea/Radicale>, fetched from the raw file at
+    /// `radicale/tests/static/event_mixed_recurrence_id_dt_type.ics` on the
+    /// `master` branch). Radicale is GPL-3.0 (`COPYING.md`), and is one of
+    /// the four calendar servers this program's own issue history names.
+    /// Radicale's own name for this shape is "wrong type": a RECURRENCE-ID
+    /// carrying `VALUE=DATE`, a bare day, against a series whose own DTSTART
+    /// carries a full date and time. Both VEVENTs say how long they run with
+    /// DURATION rather than DTEND.
+    fn a_real_radicale_fixture_naming_a_date_only_recurrence_id() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "",
+            "BEGIN:VEVENT",
+            "DTSTART:20060102T120000Z",
+            "DURATION:PT1H",
+            "RRULE:FREQ=DAILY;COUNT=3",
+            "SUMMARY:Recurring event",
+            "UID:event_mixed_recurrence_id_dt_type",
+            "END:VEVENT",
+            "",
+            "BEGIN:VEVENT",
+            "DTSTART:20060103T140000Z",
+            "DURATION:PT1H",
+            "RECURRENCE-ID;VALUE=DATE:20060103",
+            "SUMMARY:Override with wrong type",
+            "UID:event_mixed_recurrence_id_dt_type",
+            "END:VEVENT",
+            "",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_real_radicale_fixture_reads_a_date_only_recurrence_id_against_a_timed_series() {
+        let events = every_event_in_the_resource(
+            &a_real_radicale_fixture_naming_a_date_only_recurrence_id(),
+            "https://example.test/radicale/event_mixed_recurrence_id_dt_type.ics",
+            None,
+        );
+
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0].dtstart, "2006-01-02T12:00:00Z");
+        assert_eq!(
+            events[0].recurrence_rule.as_deref(),
+            Some("FREQ=DAILY;COUNT=3")
+        );
+        assert!(events[0].recurrence_id.is_none());
+        assert_eq!(
+            events[0].dtend.as_deref(),
+            Some("2006-01-02T13:00:00Z"),
+            "an event whose server wrote DURATION instead of DTEND should \
+             still show an end time"
+        );
+
+        // The type mismatch itself: a bare day against a series timed to the
+        // second. Read losslessly, exactly as the document stated it, rather
+        // than guessed into a time of day nothing here was told.
+        assert_eq!(events[1].recurrence_id.as_deref(), Some("2006-01-03"));
+        assert_eq!(events[1].dtstart, "2006-01-03T14:00:00Z");
+        assert_eq!(
+            events[1].dtend.as_deref(),
+            Some("2006-01-03T15:00:00Z"),
+            "the override's own DURATION should give it an end time too"
+        );
+    }
+
+    /// Radicale's own regression fixture
+    /// `radicale/tests/static/event_daily_rrule_overridden.ics`
+    /// (<https://github.com/Kozea/Radicale>, fetched from the raw file at
+    /// `radicale/tests/static/event_daily_rrule_overridden.ics` on the
+    /// `master` branch). Radicale is GPL-3.0 (`COPYING.md`). A clean master
+    /// and override sharing one UID, both in the legacy IANA alias
+    /// `US/Eastern` (a `backward` link to `America/New_York`, carried by
+    /// chrono-tz's own default build), and both saying how long they run
+    /// with DURATION rather than DTEND. The override's RECURRENCE-ID carries
+    /// its own TZID parameter, which nothing else here had exercised.
+    fn a_real_radicale_fixture_pairing_a_master_and_its_override() -> String {
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VTIMEZONE",
+            "LAST-MODIFIED:20040110T032845Z",
+            "TZID:US/Eastern",
+            "BEGIN:DAYLIGHT",
+            "DTSTART:20000404T020000",
+            "RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4",
+            "TZNAME:EDT",
+            "TZOFFSETFROM:-0500",
+            "TZOFFSETTO:-0400",
+            "END:DAYLIGHT",
+            "BEGIN:STANDARD",
+            "DTSTART:20001026T020000",
+            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10",
+            "TZNAME:EST",
+            "TZOFFSETFROM:-0400",
+            "TZOFFSETTO:-0500",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT",
+            "DTSTART;TZID=US/Eastern:20060102T120000",
+            "DURATION:PT1H",
+            "RRULE:FREQ=DAILY;COUNT=5",
+            "SUMMARY:Event #2",
+            "UID:event_daily_rrule_overridden",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "DTSTART;TZID=US/Eastern:20060104T140000",
+            "DURATION:PT1H",
+            "RECURRENCE-ID;TZID=US/Eastern:20060104T120000",
+            "SUMMARY:Event #2 bis",
+            "UID:event_daily_rrule_overridden",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+        .join("\r\n")
+    }
+
+    #[test]
+    fn test_a_real_radicale_master_and_override_in_a_legacy_iana_zone_alias_read_correctly() {
+        assert!(
+            "US/Eastern".parse::<chrono_tz::Tz>().is_ok(),
+            "US/Eastern is a standard IANA backward-compatibility alias for \
+             America/New_York; if this ever fails, chrono-tz stopped \
+             carrying the `backward` file and the assertions below would be \
+             passing for the wrong reason"
+        );
+
+        let events = every_event_in_the_resource(
+            &a_real_radicale_fixture_pairing_a_master_and_its_override(),
+            "https://example.test/radicale/event_daily_rrule_overridden.ics",
+            None,
+        );
+
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0].time_zone.as_deref(), Some("US/Eastern"));
+        assert!(events[0].recurrence_id.is_none());
+        assert_eq!(
+            events[0].dtend.as_deref(),
+            Some("2006-01-02T13:00:00"),
+            "an event whose server wrote DURATION instead of DTEND should \
+             still show an end time"
+        );
+
+        assert_eq!(
+            events[1].recurrence_id.as_deref(),
+            Some("2006-01-04T12:00:00"),
+            "a RECURRENCE-ID carrying its own TZID parameter should read the \
+             same way DTSTART does"
+        );
+        assert_eq!(
+            events[1].dtend.as_deref(),
+            Some("2006-01-04T15:00:00"),
+            "the override's own DURATION should give it an end time too"
+        );
+    }
+
     #[test]
     fn test_fuzz_ical_parsing_never_panics() {
         for seed in 0..5000u64 {
@@ -5315,6 +5665,35 @@ pub(crate) mod writing_tests {
         }
     }
 
+    #[test]
+    fn test_a_change_to_an_event_whose_server_document_used_duration_replaces_it_with_dtend() {
+        // RFC 5545 section 3.6.1 makes DTEND and DURATION mutually exclusive
+        // ways to say how long an event runs: "dtend / duration". Radicale's
+        // own fixtures (radicale/tests/static/event_daily_rrule_overridden.ics
+        // and .../event_mixed_recurrence_id_dt_type.ics) write DURATION on
+        // every VEVENT rather than DTEND. Before DURATION was on the list
+        // this program takes out first, a change to such an event left the
+        // server's own DURATION line standing beside the new DTEND, which is
+        // a document the same standard says is invalid and a validating
+        // server, Radicale among them, can refuse outright.
+        let held = a_document_carrying(
+            "BEGIN:VEVENT\r\nUID:dur-1\r\nSUMMARY:Old title\r\n\
+             DTSTART:20260305T090000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n",
+        );
+
+        let sent = ical_with_the_event_changed(&held, &an_event("dur-1"))
+            .expect("the change to be written");
+
+        assert!(sent.contains("DTEND:20260305T130000Z\r\n"), "{sent}");
+        assert!(
+            !sent
+                .lines()
+                .any(|line| property_name(line) == Some("DURATION")),
+            "the server's own DURATION line survived beside the new DTEND, \
+             which RFC 5545 forbids on one event:\n{sent}"
+        );
+    }
+
     /// A calendar document wrapped round whatever an event block holds.
     fn a_document_carrying(event: &str) -> String {
         format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{event}END:VCALENDAR\r\n")
@@ -5372,6 +5751,7 @@ pub(crate) mod writing_tests {
             "LOCATION:Room 12",
             "DTSTART:20260305T090000Z",
             "DTEND:20260305T100000Z",
+            "DURATION:PT1H",
             "RRULE:FREQ=WEEKLY;COUNT=10",
             "EXDATE:20260312T090000Z",
             "STATUS:CONFIRMED",
