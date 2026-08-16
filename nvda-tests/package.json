@@ -1,0 +1,17 @@
+{
+  "name": "wixen-mail-nvda-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Screen-reader-driven tests that run the real Wixen Mail binary under NVDA. CI only; see README.md.",
+  "scripts": {
+    "test": "jest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@guidepup/guidepup": "0.33.0",
+    "@guidepup/setup": "0.24.2",
+    "jest": "^30.4.2"
+  }
+}
