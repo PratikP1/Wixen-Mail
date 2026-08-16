@@ -154,28 +154,29 @@ impl CalendarEventData {
 
 // ── Calendar Dialog ─────────────────────────────────────────────────────────
 
-/// Show the calendar agenda dialog.
+/// The Calendar list window's own controls, returned so a test can build it
+/// without a human closing a live modal.
 ///
-/// Returns a list of `CalendarAction`s the user performed.
+/// Only the chrome `show_calendar_dialog`'s own loop still needs after
+/// construction: the buttons are wired to `end_modal` entirely inside
+/// [`build_calendar_dialog`] and are never referred to again.
+pub struct CalendarDialogHandles {
+    pub dialog: Dialog,
+    pub list: ListCtrl,
+    pub status: StaticText,
+}
+
+/// Build the Calendar list window without showing it.
 ///
-/// `where_changes_go` answers, for one row, what the calendar the event is
-/// filed in allows: which kind of calendar it is, and whether the day could be
-/// kept as an appointment of its own there. Handed in rather than worked out
-/// here, because answering it needs the stored calendar and this window has
-/// none, and because there is one place that question is answered for the whole
-/// program.
-pub fn show_calendar_dialog(
+/// Everything `show_calendar_dialog` used to do up to its own modal loop,
+/// split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_calendar_dialog(
     parent: &Frame,
     events: &[CalendarEventItem],
-    where_changes_go: &dyn Fn(&CalendarEventItem) -> WhatTheCalendarAllows,
-    a11y: &Arc<Accessibility>,
-) -> Vec<CalendarAction> {
-    // Not yet applied to this window's own controls (see the module's own
-    // notes on how far this round's painting reaches); read here so it can
-    // still be passed down to the event editor this window opens, which is
-    // painted.
-    let palette = theme::current_from_stored_config();
-
+    palette: Option<theme::Palette>,
+) -> CalendarDialogHandles {
     let dialog = Dialog::builder(parent, "Calendar")
         .with_size(800, 600)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -271,6 +272,57 @@ pub fn show_calendar_dialog(
         }
     });
 
+    // Painted last, after the list's columns are inserted and its first
+    // population has run: nothing in this codebase proves whether a native
+    // list-view control keeps a manually set background colour across
+    // `InsertColumn`, so the buttons and list are fully built and populated
+    // before either of these calls, never before (the same caution the
+    // Account Manager's own list takes). `None` means high contrast is on,
+    // or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    // Painted last, after the list's columns are inserted and its first
+    // population has run: nothing in this codebase proves whether a native
+    // list-view control keeps a manually set background colour across
+    // `InsertColumn`, so the buttons and list are fully built and populated
+    // before either of these calls, never before (the same caution the
+    // Account Manager's own list takes). `None` means high contrast is on,
+    // or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        theme::paint(&list, palette.main_surface());
+    }
+
+    CalendarDialogHandles {
+        dialog,
+        list,
+        status,
+    }
+}
+
+/// Show the calendar agenda dialog.
+///
+/// Returns a list of `CalendarAction`s the user performed.
+///
+/// `where_changes_go` answers, for one row, what the calendar the event is
+/// filed in allows: which kind of calendar it is, and whether the day could be
+/// kept as an appointment of its own there. Handed in rather than worked out
+/// here, because answering it needs the stored calendar and this window has
+/// none, and because there is one place that question is answered for the whole
+/// program.
+pub fn show_calendar_dialog(
+    parent: &Frame,
+    events: &[CalendarEventItem],
+    where_changes_go: &dyn Fn(&CalendarEventItem) -> WhatTheCalendarAllows,
+    a11y: &Arc<Accessibility>,
+) -> Vec<CalendarAction> {
+    let palette = theme::current_from_stored_config();
+    let CalendarDialogHandles {
+        dialog,
+        list,
+        status,
+    } = build_calendar_dialog(parent, events, palette);
+
     // Modal event loop
     let mut actions = Vec::<CalendarAction>::new();
     let events_data: Vec<CalendarEventItem> = events.to_vec();
@@ -347,41 +399,8 @@ pub fn show_calendar_dialog(
                 if sel >= 0 {
                     let idx = sel as usize;
                     if let Some(item) = events_data.get(idx) {
-                        // Use a simple confirmation dialog
-                        let confirm = Dialog::builder(&dialog, "Confirm Delete")
-                            .with_size(350, 150)
-                            .build();
-                        let cs = BoxSizer::builder(Orientation::Vertical).build();
-                        let msg = StaticText::builder(&confirm)
-                            .with_label(&format!("Delete '{}'?", item.summary))
-                            .build();
-                        cs.add(&msg, 0, SizerFlag::Expand | SizerFlag::All, 12);
-                        let cbs = BoxSizer::builder(Orientation::Horizontal).build();
-                        let yes_btn = Button::builder(&confirm)
-                            .with_label("&Yes")
-                            .with_id(ID_OK)
-                            .build();
-                        let no_btn = Button::builder(&confirm)
-                            .with_label("&No")
-                            .with_id(ID_CANCEL)
-                            .build();
-                        cbs.add(&yes_btn, 0, SizerFlag::All, 4);
-                        cbs.add(&no_btn, 0, SizerFlag::All, 4);
-                        cs.add_sizer(&cbs, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
-                        confirm.set_sizer(*cs, true);
-                        confirm.centre();
-                        yes_btn.on_click({
-                            let d = confirm;
-                            move |_| {
-                                d.end_modal(ID_OK);
-                            }
-                        });
-                        no_btn.on_click({
-                            let d = confirm;
-                            move |_| {
-                                d.end_modal(ID_CANCEL);
-                            }
-                        });
+                        let (confirm, _yes_btn, _no_btn) =
+                            build_confirm_delete_dialog(&dialog, &item.summary, palette);
 
                         let allows = where_changes_go(item);
                         if confirm.show_modal() == ID_OK
@@ -433,6 +452,69 @@ pub fn show_calendar_dialog(
 
     dialog.destroy();
     actions
+}
+
+/// Build the Confirm Delete dialog `show_calendar_dialog` opens before
+/// deleting one event, without showing it.
+///
+/// Everything the delete branch used to build up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the dialog alongside the two buttons the caller still needs after
+/// a real `.show_modal()`, though both only ever end the dialog with the id
+/// already wired here.
+pub fn build_confirm_delete_dialog(
+    parent: &Dialog,
+    summary: &str,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Button, Button) {
+    let confirm = Dialog::builder(parent, "Confirm Delete")
+        .with_size(350, 150)
+        .build();
+    let cs = BoxSizer::builder(Orientation::Vertical).build();
+    let msg = StaticText::builder(&confirm)
+        .with_label(&format!("Delete '{summary}'?"))
+        .build();
+    cs.add(&msg, 0, SizerFlag::Expand | SizerFlag::All, 12);
+    let cbs = BoxSizer::builder(Orientation::Horizontal).build();
+    let yes_btn = Button::builder(&confirm)
+        .with_label("&Yes")
+        .with_id(ID_OK)
+        .build();
+    let no_btn = Button::builder(&confirm)
+        .with_label("&No")
+        .with_id(ID_CANCEL)
+        .build();
+    cbs.add(&yes_btn, 0, SizerFlag::All, 4);
+    cbs.add(&no_btn, 0, SizerFlag::All, 4);
+    cs.add_sizer(&cbs, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    confirm.set_sizer(*cs, true);
+    confirm.centre();
+    yes_btn.on_click({
+        let d = confirm;
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    });
+    no_btn.on_click({
+        let d = confirm;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
+
+    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
+    // dialog, so the dialog itself is the only site, the same shape as
+    // `build_which_days_dialog`. `None` means high contrast is on, or the
+    // system is set up in a way this application should not paint over, so
+    // nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&confirm, palette.main_surface());
+    }
+
+    (confirm, yes_btn, no_btn)
 }
 
 fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
