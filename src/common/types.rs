@@ -22,10 +22,47 @@ impl EmailAddress {
 impl fmt::Display for EmailAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.name {
+            Some(name) if needs_quoting(name) => write!(f, "{} <{}>", quoted(name), self.address),
             Some(name) => write!(f, "{} <{}>", name, self.address),
             None => write!(f, "{}", self.address),
         }
     }
+}
+
+/// Whether a display name has to be wrapped as an RFC 5322 quoted-string to
+/// be written back out safely.
+///
+/// A bare comma or semicolon reads as the separator between two recipients on
+/// the way back in, and a bare angle bracket reads as the start or end of the
+/// address wrapper: "Babbage, Charles <charles@example.com>" and
+/// "Bob <VIP> <bob@example.com>" both corrupt on the way back in without
+/// this. A quote character has to be escaped rather than left bare for the
+/// same reason, once anything downstream reads this text with a
+/// quote-aware parser. A backslash is included because escaping exists for
+/// exactly the two characters that would otherwise end a quoted-string
+/// early: itself and the quote mark.
+///
+/// Triggered only by characters a real defect has been traced to, not by
+/// every RFC 5322 special: nothing here is proven broken by, say, a period,
+/// and quoting on one would change how very ordinary names like
+/// "A. Lovelace" display everywhere this is shown.
+fn needs_quoting(name: &str) -> bool {
+    name.contains(['"', '\\', ',', ';', '<', '>'])
+}
+
+/// A name wrapped as an RFC 5322 quoted-string, with the two characters that
+/// would otherwise end the quote early escaped.
+fn quoted(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    out.push('"');
+    for ch in name.chars() {
+        if ch == '"' || ch == '\\' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('"');
+    out
 }
 
 /// Mail protocol types
@@ -395,6 +432,33 @@ mod tests {
     fn test_email_address_no_name() {
         let addr = EmailAddress::new("test@example.com".to_string(), None);
         assert_eq!(addr.to_string(), "test@example.com");
+    }
+
+    #[test]
+    fn test_a_display_name_with_a_comma_is_quoted_so_it_reads_back_as_one_person() {
+        // "Babbage, Charles" is an ordinary directory-style name. Written back
+        // out unquoted, the comma reads as the separator between two
+        // recipients and the address is split away from the name that goes
+        // with it.
+        let addr = EmailAddress::new(
+            "charles@example.com".to_string(),
+            Some("Babbage, Charles".to_string()),
+        );
+        assert_eq!(
+            addr.to_string(),
+            "\"Babbage, Charles\" <charles@example.com>"
+        );
+    }
+
+    #[test]
+    fn test_a_display_name_with_an_angle_bracket_is_quoted_so_it_does_not_look_like_a_second_address()
+     {
+        // A display name containing a literal angle bracket is unusual but
+        // legal, and mail_parser decodes one back to this exact text on the
+        // way in. Written back out unquoted, the bracket reads as the start
+        // of a second address wrapper.
+        let addr = EmailAddress::new("bob@example.com".to_string(), Some("Bob <VIP>".to_string()));
+        assert_eq!(addr.to_string(), "\"Bob <VIP>\" <bob@example.com>");
     }
 
     #[test]
