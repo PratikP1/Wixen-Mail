@@ -462,6 +462,33 @@ mod tests {
     }
 
     #[test]
+    fn test_a_quote_mark_inside_a_display_name_is_escaped_so_the_quoting_stays_well_formed() {
+        // A name is quoted because it contains a comma, an angle bracket, or
+        // a quote mark; the quote mark case needs its own proof, because an
+        // unescaped one would end the quoting early and leave the rest of
+        // the name sitting outside it, unprotected. Built with the standard
+        // library's own `replace` rather than a hand-typed literal: two
+        // independent ways of doubling the mark, so a bug in one is not
+        // hidden by the same bug in the other.
+        let name = r#"Bob "The Machine" Smith"#;
+        let addr = EmailAddress::new("bob@example.com".to_string(), Some(name.to_string()));
+        let escaped = name.replace('"', "\\\"");
+        assert_eq!(addr.to_string(), format!("\"{escaped}\" <bob@example.com>"));
+    }
+
+    #[test]
+    fn test_a_backslash_inside_a_display_name_is_escaped_so_it_is_not_read_as_an_escape_itself() {
+        // The other character quoting has to protect: a lone backslash left
+        // unescaped inside the quotes would be read as introducing an escape
+        // for whatever character follows it, silently swallowing that
+        // character on the way back in.
+        let name = r"C:\Temp\Bob";
+        let addr = EmailAddress::new("bob@example.com".to_string(), Some(name.to_string()));
+        let escaped = name.replace('\\', "\\\\");
+        assert_eq!(addr.to_string(), format!("\"{escaped}\" <bob@example.com>"));
+    }
+
+    #[test]
     fn test_server_config() {
         let config = ServerConfig::new("imap.example.com".to_string(), 993, true);
         assert_eq!(config.host, "imap.example.com");
