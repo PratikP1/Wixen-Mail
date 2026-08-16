@@ -111,6 +111,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   editor, and roughly thirty other windows that open on top of the main
   one still show Windows' own colours regardless of the Theme setting.
 
+- **The Account Manager, and the Add/Edit Account window it opens, now take
+  the Theme colours too.** The list of configured accounts and every text
+  box in the Add/Edit Account window (name, email, sender name, server
+  addresses and ports, username, password, and the check interval) now
+  match the rest of the coloured application instead of showing Windows'
+  own white regardless of what Light or Dark chose.
+
+  Known limitations: Compose, the calendar event editor, and roughly
+  thirty other windows that open on top of the main one still show
+  Windows' own colours regardless of the Theme setting.
+
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
   to match whatever Windows itself prefers, the same way Light and Dark match

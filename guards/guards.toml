@@ -3842,7 +3842,7 @@ red = [
 name = "signing in failing on the account screen is said, not only shown"
 file = "src/presentation/wx_account_manager.rs"
 before = """                                said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!("Signing in failed: {msg}"),
                                     Priority::High,
@@ -6011,7 +6011,7 @@ name = "the account manager's edit path reports missing credentials through the 
 file = "src/presentation/wx_account_manager.rs"
 before = """                                OAuthFlowResult::NoCreds(provider) => {
                                     said_and_shown(
-                                        &status,
+                                        status,
                                         a11y,
                                         &format!(
                                             "Account updated. {}",
@@ -6023,7 +6023,7 @@ before = """                                OAuthFlowResult::NoCreds(provider) =
 after = """                                OAuthFlowResult::NoCreds(provider) => {
                                     let _ = &provider;
                                     said_and_shown(
-                                        &status,
+                                        status,
                                         a11y,
                                         "Account updated. OAuth credentials are not configured",
                                         Priority::High,

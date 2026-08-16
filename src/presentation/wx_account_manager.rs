@@ -18,6 +18,7 @@ use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
+use crate::presentation::theme;
 
 /// What to put in the password box when the provider wants an app password.
 ///
@@ -53,6 +54,18 @@ pub enum AccountManagerAction {
     },
 }
 
+/// The Account Manager's own list window, returned so a test can build it
+/// without a human closing a live modal.
+///
+/// Only the chrome `show_account_manager_dialog`'s own loop still needs after
+/// construction: the buttons are wired to `end_modal` entirely inside
+/// [`build_account_manager_dialog`] and are never referred to again.
+pub struct AccountManagerDialogHandles {
+    pub dialog: Dialog,
+    pub list: ListCtrl,
+    pub status: StaticText,
+}
+
 pub fn show_account_manager_dialog(
     parent: &Frame,
     accounts: &[Account],
@@ -60,6 +73,52 @@ pub fn show_account_manager_dialog(
     default_account_id: Option<&str>,
     a11y: &Arc<Accessibility>,
 ) -> AccountManagerAction {
+    let palette = theme::current_from_stored_config();
+    let widgets = build_account_manager_dialog(
+        parent,
+        accounts,
+        active_account_id,
+        default_account_id,
+        palette,
+    );
+
+    let mut state = AccountManagerState {
+        working: accounts.to_vec(),
+        active_id: active_account_id.map(|s| s.to_string()),
+        default_id: default_account_id.map(|s| s.to_string()),
+        changed: false,
+    };
+
+    run_account_manager_loop(&widgets, &mut state, a11y, palette);
+
+    if state.changed {
+        AccountManagerAction::Updated {
+            // Corrected against what is actually configured, in case the
+            // default account was the one just deleted.
+            default_id: crate::application::new_item::default_after_change(
+                &state.working,
+                state.default_id.as_deref(),
+            ),
+            accounts: state.working,
+        }
+    } else {
+        AccountManagerAction::None
+    }
+}
+
+/// Build the Account Manager's list window without showing it.
+///
+/// Everything `show_account_manager_dialog` used to do up to its own modal
+/// loop, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_account_manager_dialog(
+    parent: &Frame,
+    accounts: &[Account],
+    active_account_id: Option<&str>,
+    default_account_id: Option<&str>,
+    palette: Option<theme::Palette>,
+) -> AccountManagerDialogHandles {
     let dlg = Dialog::builder(parent, "Account Manager")
         .with_size(650, 450)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -140,11 +199,7 @@ pub fn show_account_manager_dialog(
     );
     dlg.set_sizer(sizer, true);
 
-    let mut working = accounts.to_vec();
-    let mut active_id: Option<String> = active_account_id.map(|s| s.to_string());
-    let mut default_id: Option<String> = default_account_id.map(|s| s.to_string());
-    let mut changed = false;
-    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+    populate(&list, accounts, active_account_id, default_account_id);
 
     add.on_click({
         let d = dlg;
@@ -189,12 +244,55 @@ pub fn show_account_manager_dialog(
         }
     });
 
+    // Painted last, after the list's columns are inserted and its first
+    // population has run: nothing in this codebase proves whether a native
+    // list-view control keeps a manually set background colour across
+    // `InsertColumn`, so the buttons and list are fully built and populated
+    // before either of these calls, never before. `None` means high contrast
+    // is on, or the system is set up in a way this application should not
+    // paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&list, palette.main_surface());
+    }
+
+    AccountManagerDialogHandles {
+        dialog: dlg,
+        list,
+        status,
+    }
+}
+
+/// What one pass through the Account Manager's own loop can change, held
+/// together so the loop that changes it takes one argument for all of it
+/// rather than a handful of separate `&mut` parameters.
+struct AccountManagerState {
+    working: Vec<Account>,
+    active_id: Option<String>,
+    default_id: Option<String>,
+    changed: bool,
+}
+
+/// The Add/Edit/Delete/Sign-In-Again/Set-Active/Set-Default modal loop
+/// `show_account_manager_dialog` runs against the dialog
+/// [`build_account_manager_dialog`] built. Unchanged from what
+/// `show_account_manager_dialog` used to do inline; only the construction
+/// above it moved.
+fn run_account_manager_loop(
+    widgets: &AccountManagerDialogHandles,
+    state: &mut AccountManagerState,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) {
+    let dlg = &widgets.dialog;
+    let list = &widgets.list;
+    let status = &widgets.status;
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD => {
-                if let Some(mut a) = show_edit(&dlg, None, a11y) {
-                    if working.is_empty() {
-                        active_id = Some(a.id.clone());
+                if let Some(mut a) = show_edit(dlg, None, a11y, palette) {
+                    if state.working.is_empty() {
+                        state.active_id = Some(a.id.clone());
                     }
 
                     // OAuth is automatic: if this is a Gmail/Microsoft account,
@@ -203,7 +301,7 @@ pub fn show_account_manager_dialog(
                         match run_oauth_flow(&mut a) {
                             OAuthFlowResult::Authorized => {
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!("Account added, authorized for {}", a.email),
                                     Priority::Normal,
@@ -211,7 +309,7 @@ pub fn show_account_manager_dialog(
                             }
                             OAuthFlowResult::NoCreds(provider) => {
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!(
                                         "Account added. {}",
@@ -222,7 +320,7 @@ pub fn show_account_manager_dialog(
                             }
                             OAuthFlowResult::Failed(msg) => {
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!("Account added, but authorization failed: {}", msg),
                                     Priority::High,
@@ -230,37 +328,42 @@ pub fn show_account_manager_dialog(
                             }
                         }
                     } else {
-                        said_and_shown(&status, a11y, "Account added", Priority::Normal);
+                        said_and_shown(status, a11y, "Account added", Priority::Normal);
                     }
 
-                    working.push(a);
-                    changed = true;
-                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                    state.working.push(a);
+                    state.changed = true;
+                    populate(
+                        list,
+                        &state.working,
+                        state.active_id.as_deref(),
+                        state.default_id.as_deref(),
+                    );
                 }
             }
             r if r == ID_REAUTHORIZE => {
-                match get_selected(&list) {
-                    Some(idx) if working[idx].use_oauth => {
-                        let name = working[idx].name.clone();
+                match get_selected(list) {
+                    Some(idx) if state.working[idx].use_oauth => {
+                        let name = state.working[idx].name.clone();
                         said_and_shown(
-                            &status,
+                            status,
                             a11y,
                             &format!("Signing in to {name}. Finish in the browser."),
                             Priority::Normal,
                         );
-                        let mut account = working[idx].clone();
+                        let mut account = state.working[idx].clone();
                         match run_oauth_flow(&mut account) {
                             OAuthFlowResult::Authorized => {
-                                working[idx] = account;
-                                changed = true;
+                                state.working[idx] = account;
+                                state.changed = true;
                                 populate(
-                                    &list,
-                                    &working,
-                                    active_id.as_deref(),
-                                    default_id.as_deref(),
+                                    list,
+                                    &state.working,
+                                    state.active_id.as_deref(),
+                                    state.default_id.as_deref(),
                                 );
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!("{name} is signed in again"),
                                     Priority::Normal,
@@ -268,7 +371,7 @@ pub fn show_account_manager_dialog(
                             }
                             OAuthFlowResult::NoCreds(provider) => {
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &no_sign_in_credentials(&provider),
                                     Priority::High,
@@ -276,7 +379,7 @@ pub fn show_account_manager_dialog(
                             }
                             OAuthFlowResult::Failed(msg) => {
                                 said_and_shown(
-                                    &status,
+                                    status,
                                     a11y,
                                     &format!("Signing in failed: {msg}"),
                                     Priority::High,
@@ -287,13 +390,13 @@ pub fn show_account_manager_dialog(
                     // Saying which of the two it is, because they need
                     // different things done about them.
                     Some(_) => said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
                         Priority::High,
                     ),
                     None => said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         "Select an account to sign in again",
                         Priority::High,
@@ -301,14 +404,14 @@ pub fn show_account_manager_dialog(
                 }
             }
             r if r == ID_EDIT => {
-                if let Some(idx) = get_selected(&list) {
-                    if let Some(mut u) = show_edit(&dlg, Some(&working[idx]), a11y) {
+                if let Some(idx) = get_selected(list) {
+                    if let Some(mut u) = show_edit(dlg, Some(&state.working[idx]), a11y, palette) {
                         // Run OAuth if needed and no tokens yet
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
                                 OAuthFlowResult::Authorized => {
                                     said_and_shown(
-                                        &status,
+                                        status,
                                         a11y,
                                         "Account updated and authorized",
                                         Priority::Normal,
@@ -316,7 +419,7 @@ pub fn show_account_manager_dialog(
                                 }
                                 OAuthFlowResult::NoCreds(provider) => {
                                     said_and_shown(
-                                        &status,
+                                        status,
                                         a11y,
                                         &format!(
                                             "Account updated. {}",
@@ -327,7 +430,7 @@ pub fn show_account_manager_dialog(
                                 }
                                 OAuthFlowResult::Failed(msg) => {
                                     said_and_shown(
-                                        &status,
+                                        status,
                                         a11y,
                                         &format!(
                                             "Account updated, but authorization failed: {}",
@@ -338,23 +441,28 @@ pub fn show_account_manager_dialog(
                                 }
                             }
                         } else {
-                            said_and_shown(&status, a11y, "Account updated", Priority::Normal);
+                            said_and_shown(status, a11y, "Account updated", Priority::Normal);
                         }
-                        working[idx] = u;
-                        changed = true;
-                        populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                        state.working[idx] = u;
+                        state.changed = true;
+                        populate(
+                            list,
+                            &state.working,
+                            state.active_id.as_deref(),
+                            state.default_id.as_deref(),
+                        );
                     }
                 } else {
-                    said_and_shown(&status, a11y, "Select an account to edit", Priority::High);
+                    said_and_shown(status, a11y, "Select an account to edit", Priority::High);
                 }
             }
             r if r == ID_DELETE => {
-                if let Some(idx) = get_selected(&list) {
-                    let rid = working[idx].id.clone();
-                    let name = working[idx].name.clone();
+                if let Some(idx) = get_selected(list) {
+                    let rid = state.working[idx].id.clone();
+                    let name = state.working[idx].name.clone();
                     // Revoke keychain tokens
-                    if working[idx].use_oauth
-                        && let Some(prov) = OAuthService::detect_provider(&working[idx].email)
+                    if state.working[idx].use_oauth
+                        && let Some(prov) = OAuthService::detect_provider(&state.working[idx].email)
                         && let Some(creds) = oauth_credentials::credentials_for(&prov)
                     {
                         let mgr = AuthManager::new(
@@ -365,39 +473,49 @@ pub fn show_account_manager_dialog(
                         );
                         mgr.revoke_stored_tokens();
                     }
-                    working.remove(idx);
-                    changed = true;
-                    if active_id.as_deref() == Some(&rid) {
-                        active_id = working.first().map(|a| a.id.clone());
+                    state.working.remove(idx);
+                    state.changed = true;
+                    if state.active_id.as_deref() == Some(&rid) {
+                        state.active_id = state.working.first().map(|a| a.id.clone());
                     }
-                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                    populate(
+                        list,
+                        &state.working,
+                        state.active_id.as_deref(),
+                        state.default_id.as_deref(),
+                    );
                     said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         &manager_words::deleted(manager_words::ACCOUNT, &name),
                         Priority::Normal,
                     );
                 } else {
-                    said_and_shown(&status, a11y, "Select an account to delete", Priority::High);
+                    said_and_shown(status, a11y, "Select an account to delete", Priority::High);
                 }
             }
             r if r == ID_SET_DEFAULT => {
-                if let Some(idx) = get_selected(&list) {
-                    default_id = Some(working[idx].id.clone());
-                    changed = true;
-                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                if let Some(idx) = get_selected(list) {
+                    state.default_id = Some(state.working[idx].id.clone());
+                    state.changed = true;
+                    populate(
+                        list,
+                        &state.working,
+                        state.active_id.as_deref(),
+                        state.default_id.as_deref(),
+                    );
                     said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         &format!(
                             "New contacts, events, tasks and notes go to {} from now on",
-                            working[idx].name
+                            state.working[idx].name
                         ),
                         Priority::Normal,
                     );
                 } else {
                     said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         "Select an account to make it the default",
                         Priority::High,
@@ -405,19 +523,24 @@ pub fn show_account_manager_dialog(
                 }
             }
             r if r == ID_SET_ACTIVE => {
-                if let Some(idx) = get_selected(&list) {
-                    active_id = Some(working[idx].id.clone());
-                    changed = true;
-                    populate(&list, &working, active_id.as_deref(), default_id.as_deref());
+                if let Some(idx) = get_selected(list) {
+                    state.active_id = Some(state.working[idx].id.clone());
+                    state.changed = true;
+                    populate(
+                        list,
+                        &state.working,
+                        state.active_id.as_deref(),
+                        state.default_id.as_deref(),
+                    );
                     said_and_shown(
-                        &status,
+                        status,
                         a11y,
-                        &format!("Active: {}", working[idx].name),
+                        &format!("Active: {}", state.working[idx].name),
                         Priority::Normal,
                     );
                 } else {
                     said_and_shown(
-                        &status,
+                        status,
                         a11y,
                         "Select an account to make it active",
                         Priority::High,
@@ -426,20 +549,6 @@ pub fn show_account_manager_dialog(
             }
             _ => break,
         }
-    }
-
-    if changed {
-        AccountManagerAction::Updated {
-            // Corrected against what is actually configured, in case the
-            // default account was the one just deleted.
-            default_id: crate::application::new_item::default_after_change(
-                &working,
-                default_id.as_deref(),
-            ),
-            accounts: working,
-        }
-    } else {
-        AccountManagerAction::None
     }
 }
 
@@ -477,11 +586,123 @@ fn describe_password_box(field: &TextCtrl, email: &str) {
     }
 }
 
+/// The Add/Edit Account dialog's fields, returned so a test can build it
+/// without a human closing a live modal and so `show_edit` can read every
+/// field back after a real `.show_modal()`.
+pub struct AccountEditWidgets {
+    pub dialog: Dialog,
+    pub name_f: TextCtrl,
+    pub sender_name_f: TextCtrl,
+    pub email_f: TextCtrl,
+    pub protocol_choice: Choice,
+    pub imap_f: TextCtrl,
+    pub imap_port_f: TextCtrl,
+    pub imap_tls: CheckBox,
+    pub pop_f: TextCtrl,
+    pub pop_port_f: TextCtrl,
+    pub pop_tls: CheckBox,
+    pub pop_leave: CheckBox,
+    pub pop_days: SpinCtrl,
+    pub allow_deleting: CheckBox,
+    pub smtp_f: TextCtrl,
+    pub smtp_port_f: TextCtrl,
+    pub smtp_tls: CheckBox,
+    pub use_oauth_cb: CheckBox,
+    pub user_f: TextCtrl,
+    pub pass_f: TextCtrl,
+    pub interval_f: TextCtrl,
+    pub enabled: CheckBox,
+}
+
 fn show_edit(
     parent: &Dialog,
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
 ) -> Option<Account> {
+    let w = build_account_edit_dialog(parent, existing, a11y, palette);
+    if w.dialog.show_modal() == ID_OK {
+        let interval: u32 = w.interval_f.get_value().parse().unwrap_or(5).clamp(1, 60);
+        let email_val = w.email_f.get_value();
+        let is_oauth = w.use_oauth_cb.get_value();
+
+        let provider =
+            email_val
+                .split('@')
+                .nth(1)
+                .and_then(|domain| match domain.to_lowercase().as_str() {
+                    "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
+                    "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
+                        Some("Outlook".to_string())
+                    }
+                    "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
+                    "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
+                    "aol.com" => Some("AOL".to_string()),
+                    "zoho.com" => Some("Zoho".to_string()),
+                    "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
+                    _ => None,
+                });
+
+        Some(Account {
+            id: existing
+                .map(|a| a.id.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            name: w.name_f.get_value(),
+            sender_name: w.sender_name_f.get_value().trim().to_string(),
+            email: email_val,
+            provider,
+            imap_server: w.imap_f.get_value(),
+            imap_port: w.imap_port_f.get_value(),
+            imap_use_tls: w.imap_tls.get_value(),
+            smtp_server: w.smtp_f.get_value(),
+            smtp_port: w.smtp_port_f.get_value(),
+            smtp_use_tls: w.smtp_tls.get_value(),
+            username: w.user_f.get_value(),
+            password: w.pass_f.get_value(),
+            use_oauth: is_oauth,
+            oauth_access_token: existing
+                .map(|a| a.oauth_access_token.clone())
+                .unwrap_or_default(),
+            oauth_refresh_token: existing
+                .map(|a| a.oauth_refresh_token.clone())
+                .unwrap_or_default(),
+            oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
+            enabled: w.enabled.get_value(),
+            check_interval_minutes: interval,
+            protocol: Protocol::ALL
+                .get(w.protocol_choice.get_selection().unwrap_or(0) as usize)
+                .copied()
+                .unwrap_or_default()
+                .as_str()
+                .to_string(),
+            pop_server: w.pop_f.get_value(),
+            pop_port: w.pop_port_f.get_value(),
+            pop_use_tls: w.pop_tls.get_value(),
+            pop_leave_on_server: w.pop_leave.get_value(),
+            pop_remove_after_days: w.pop_days.value().max(0) as u32,
+            allow_deleting_here: w.allow_deleting.get_value(),
+            color: existing
+                .map(|a| a.color.clone())
+                .unwrap_or_else(|| "#4A90E2".into()),
+            last_sync: existing.and_then(|a| a.last_sync),
+        })
+    } else {
+        None
+    }
+}
+
+/// Build the Add/Edit Account dialog without showing it.
+///
+/// Everything `show_edit` used to do up to its own `.show_modal()` call,
+/// split out the same way [`build_account_manager_dialog`] splits the list
+/// window above it: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_account_edit_dialog(
+    parent: &Dialog,
+    existing: Option<&Account>,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> AccountEditWidgets {
     let title = if existing.is_some() {
         "Edit Account"
     } else {
@@ -499,12 +720,18 @@ fn show_edit(
         .build();
     fields.add_growable_col(1, 1);
 
+    // The labelled-field factory: every plain text field in this dialog is
+    // built and painted here, so a field left unpainted is a missing call to
+    // `tf`, not a missing call to `theme::paint` at twenty call sites.
     let tf = |label: &str, default: &str| -> TextCtrl {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let f = TextCtrl::builder(&dlg).with_value(default).build();
         set_accessible_name(&f, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&f, palette.main_surface());
+        }
         f
     };
     let section = |label: &str| {
@@ -635,6 +862,9 @@ fn show_edit(
     // own mail with no control to change it and nothing saying why.
     let use_oauth_cb = cb("Sign in with the provider in a &browser (OAuth)", false);
     let user_f = tf("&Username:", "");
+    // Built with a raw `TextCtrl::builder` rather than through `tf`, because
+    // it needs the password style `tf` does not offer, so it needs its own
+    // paint call rather than getting one from the factory above.
     let pass_f = {
         let l = StaticText::builder(&dlg).with_label("Pass&word:").build();
         let f = TextCtrl::builder(&dlg)
@@ -642,6 +872,9 @@ fn show_edit(
             .build();
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&f, palette.main_surface());
+        }
         f
     };
     // Opening the page rather than describing where it is. It sits three levels
@@ -790,73 +1023,40 @@ fn show_edit(
         }
     });
 
-    if dlg.show_modal() == ID_OK {
-        let interval: u32 = interval_f.get_value().parse().unwrap_or(5).clamp(1, 60);
-        let email_val = email_f.get_value();
-        let is_oauth = use_oauth_cb.get_value();
+    // Painted last: the dialog itself, once every field on it is built. Every
+    // field this dialog builds through `tf`, or explicitly beside it (the
+    // password box above), is already painted by the time execution reaches
+    // here; nothing here repaints a field, this only paints the dialog that
+    // holds them. `None` means high contrast is on, or the system is set up
+    // in a way this application should not paint over, so nothing is set
+    // here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+    }
 
-        let provider =
-            email_val
-                .split('@')
-                .nth(1)
-                .and_then(|domain| match domain.to_lowercase().as_str() {
-                    "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
-                    "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
-                        Some("Outlook".to_string())
-                    }
-                    "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
-                    "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
-                    "aol.com" => Some("AOL".to_string()),
-                    "zoho.com" => Some("Zoho".to_string()),
-                    "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
-                    _ => None,
-                });
-
-        Some(Account {
-            id: existing
-                .map(|a| a.id.clone())
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-            name: name_f.get_value(),
-            sender_name: sender_name_f.get_value().trim().to_string(),
-            email: email_val,
-            provider,
-            imap_server: imap_f.get_value(),
-            imap_port: imap_port_f.get_value(),
-            imap_use_tls: imap_tls.get_value(),
-            smtp_server: smtp_f.get_value(),
-            smtp_port: smtp_port_f.get_value(),
-            smtp_use_tls: smtp_tls.get_value(),
-            username: user_f.get_value(),
-            password: pass_f.get_value(),
-            use_oauth: is_oauth,
-            oauth_access_token: existing
-                .map(|a| a.oauth_access_token.clone())
-                .unwrap_or_default(),
-            oauth_refresh_token: existing
-                .map(|a| a.oauth_refresh_token.clone())
-                .unwrap_or_default(),
-            oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
-            enabled: enabled.get_value(),
-            check_interval_minutes: interval,
-            protocol: Protocol::ALL
-                .get(protocol_choice.get_selection().unwrap_or(0) as usize)
-                .copied()
-                .unwrap_or_default()
-                .as_str()
-                .to_string(),
-            pop_server: pop_f.get_value(),
-            pop_port: pop_port_f.get_value(),
-            pop_use_tls: pop_tls.get_value(),
-            pop_leave_on_server: pop_leave.get_value(),
-            pop_remove_after_days: pop_days.value().max(0) as u32,
-            allow_deleting_here: allow_deleting.get_value(),
-            color: existing
-                .map(|a| a.color.clone())
-                .unwrap_or_else(|| "#4A90E2".into()),
-            last_sync: existing.and_then(|a| a.last_sync),
-        })
-    } else {
-        None
+    AccountEditWidgets {
+        dialog: dlg,
+        name_f,
+        sender_name_f,
+        email_f,
+        protocol_choice,
+        imap_f,
+        imap_port_f,
+        imap_tls,
+        pop_f,
+        pop_port_f,
+        pop_tls,
+        pop_leave,
+        pop_days,
+        allow_deleting,
+        smtp_f,
+        smtp_port_f,
+        smtp_tls,
+        use_oauth_cb,
+        user_f,
+        pass_f,
+        interval_f,
+        enabled,
     }
 }
 

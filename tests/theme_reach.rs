@@ -36,8 +36,8 @@ use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reader, wx_reminders_module,
-    wx_settings, wx_tasks_module,
+    wx_account_manager, wx_calendar_module, wx_contacts_module, wx_notes_module, wx_reader,
+    wx_reminders_module, wx_settings, wx_tasks_module,
 };
 use wxdragon::prelude::*;
 
@@ -370,6 +370,57 @@ fn check_settings(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRe
     );
 }
 
+/// The Account Manager's own list window, and the Add/Edit Account dialog it
+/// opens: two dialogs, proved the same way as Settings above, one nested
+/// inside the other the way it really is opened in production (the edit
+/// dialog's parent is the manager dialog, not the main frame).
+fn check_account_manager(
+    parent: &Frame,
+    a11y: &Arc<Accessibility>,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) {
+    let manager =
+        wx_account_manager::build_account_manager_dialog(parent, &[], None, None, Some(palette));
+    check(
+        "account manager dialog",
+        &manager.dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "account manager list",
+        &manager.list,
+        palette.main_surface(),
+        into,
+    );
+
+    let edit =
+        wx_account_manager::build_account_edit_dialog(&manager.dialog, None, a11y, Some(palette));
+    check(
+        "account edit dialog",
+        &edit.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("account edit name field", &edit.name_f),
+        ("account edit sender name field", &edit.sender_name_f),
+        ("account edit email field", &edit.email_f),
+        ("account edit imap server field", &edit.imap_f),
+        ("account edit imap port field", &edit.imap_port_f),
+        ("account edit pop server field", &edit.pop_f),
+        ("account edit pop port field", &edit.pop_port_f),
+        ("account edit smtp server field", &edit.smtp_f),
+        ("account edit smtp port field", &edit.smtp_port_f),
+        ("account edit username field", &edit.user_f),
+        ("account edit password field", &edit.pass_f),
+        ("account edit check interval field", &edit.interval_f),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -551,6 +602,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
             check_reader(&frame, &a11y, &mut sites);
             check_settings(&frame, palette, &mut sites);
+            check_account_manager(&frame, &a11y, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
