@@ -665,7 +665,16 @@ pub struct ContactItem {
     pub name: String,
     pub email: String,
     pub phone: String,
+    /// What the provider or the person called this number: "Work", "Mobile",
+    /// "Home", or a custom label. Empty only when [`ContactItem::phone`] is
+    /// also empty; a real number always carries a real label, because
+    /// [`ContactItem::from_entry`] reads both from the same recorded entry.
+    pub phone_label: String,
     pub company: String,
+    /// The primary postal address on one line, or empty when there is none.
+    pub address: String,
+    /// Same rule as [`ContactItem::phone_label`], for [`ContactItem::address`].
+    pub address_label: String,
     /// Exactly as it is stored, which for a birthday nobody gave a year for is
     /// "--03-14". Written as words wherever it is shown or said, never here:
     /// this is the value, and the value is what a card holds.
@@ -675,13 +684,28 @@ pub struct ContactItem {
 
 impl ContactItem {
     /// Create a ContactItem from a cache ContactEntry.
+    ///
+    /// The phone and the address each come with the label recorded for them,
+    /// from [`crate::data::message_cache::ContactEntry::primary_phone`] and
+    /// `primary_address`. Reading the bare legacy columns here instead, the
+    /// way this used to, is what dropped "Work" from a contact with exactly
+    /// one phone number: the label was stored, only nothing here asked for
+    /// it.
     pub fn from_entry(entry: &crate::data::message_cache::ContactEntry) -> Self {
+        let phone = entry.primary_phone();
+        let address = entry.primary_address();
         Self {
             id: entry.id.clone(),
             name: entry.name.clone(),
             email: entry.email.clone(),
-            phone: entry.phone.clone().unwrap_or_default(),
+            phone: phone.as_ref().map(|p| p.number.clone()).unwrap_or_default(),
+            phone_label: phone.map(|p| p.label).unwrap_or_default(),
             company: entry.company.clone().unwrap_or_default(),
+            address: address
+                .as_ref()
+                .map(crate::data::message_cache::AddressEntry::on_one_line)
+                .unwrap_or_default(),
+            address_label: address.map(|a| a.label).unwrap_or_default(),
             birthday: entry.birthday.clone().unwrap_or_default(),
             favorite: entry.favorite,
         }
@@ -700,8 +724,9 @@ impl ContactItem {
         let birthday = crate::presentation::date_display::a_day_in_words(&self.birthday, dates);
         let fields = [
             ("Email", &self.email),
-            ("Phone", &self.phone),
+            (self.phone_label.as_str(), &self.phone),
             ("Company", &self.company),
+            (self.address_label.as_str(), &self.address),
             ("Birthday", &birthday),
         ];
         for (label, value) in fields {
@@ -1132,7 +1157,10 @@ mod tests {
             name: "Ada Lovelace".into(),
             email: "ada@example.com".into(),
             phone: String::new(),
+            phone_label: String::new(),
             company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: String::new(),
             favorite: false,
         };
@@ -1149,7 +1177,10 @@ mod tests {
             name: "Ada Lovelace".into(),
             email: "ada@example.com".into(),
             phone: "555-0100".into(),
+            phone_label: "Phone".into(),
             company: "Analytical Engines".into(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: "1815-12-10".into(),
             favorite: true,
         };
@@ -1158,6 +1189,82 @@ mod tests {
             "Ada Lovelace\nEmail: ada@example.com\nPhone: 555-0100\n\
              Company: Analytical Engines\nBirthday: December 10, 1815\nFavorite"
         );
+    }
+
+    #[test]
+    fn test_a_lone_labeled_phone_number_keeps_its_provider_label_in_the_detail_pane() {
+        // The exact shape reported: one phone number, one label, nothing else
+        // recorded. The old reader ignored the label a provider sent and
+        // always captioned it "Phone".
+        let mut entry = a_stored_contact();
+        entry.phones_json = Some(
+            serde_json::to_string(&[crate::data::message_cache::PhoneEntry {
+                label: "Work".to_string(),
+                number: "555-0100".to_string(),
+            }])
+            .expect("a phone list encodes"),
+        );
+
+        let text = ContactItem::from_entry(&entry).detail_text(date_settings());
+
+        assert!(text.contains("Work: 555-0100"), "{text}");
+        assert!(!text.contains("Phone: 555-0100"), "{text}");
+    }
+
+    #[test]
+    fn test_a_lone_labeled_address_appears_in_the_detail_pane_with_its_label() {
+        let mut entry = a_stored_contact();
+        entry.addresses_json = Some(
+            serde_json::to_string(&[crate::data::message_cache::AddressEntry {
+                label: "Work".to_string(),
+                street: "1 Main St".to_string(),
+                city: String::new(),
+                state: String::new(),
+                zip: String::new(),
+                country: String::new(),
+            }])
+            .expect("an address list encodes"),
+        );
+
+        let text = ContactItem::from_entry(&entry).detail_text(date_settings());
+
+        assert!(text.contains("Work: 1 Main St"), "{text}");
+    }
+
+    /// A contact with nothing filled in but a name, so a test that adds one
+    /// field says only what it is about.
+    fn a_stored_contact() -> crate::data::message_cache::ContactEntry {
+        crate::data::message_cache::ContactEntry {
+            id: "c1".into(),
+            account_id: "acct".into(),
+            name: "Ada Lovelace".into(),
+            given_name: None,
+            family_name: None,
+            email: String::new(),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: String::new(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: Vec::new(),
+        }
     }
 
     /// Fixed rather than the machine's, so this reads the same everywhere.
@@ -1178,7 +1285,10 @@ mod tests {
             name: "Ada Lovelace".into(),
             email: String::new(),
             phone: String::new(),
+            phone_label: String::new(),
             company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: "--12-10".into(),
             favorite: false,
         };
@@ -1195,7 +1305,10 @@ mod tests {
             name: "Ada Lovelace".into(),
             email: "ada@example.com".into(),
             phone: String::new(),
+            phone_label: String::new(),
             company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: String::new(),
             favorite: false,
         };
@@ -1213,7 +1326,10 @@ mod tests {
             name: "Ada Lovelace".into(),
             email: String::new(),
             phone: String::new(),
+            phone_label: String::new(),
             company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: "1815-12-10".into(),
             favorite: false,
         };

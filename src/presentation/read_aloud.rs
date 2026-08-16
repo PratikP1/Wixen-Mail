@@ -318,8 +318,9 @@ impl ReadAloud for ContactItem {
         spoken(&[
             ("", &self.name),
             ("Email", &self.email),
-            ("Phone", &self.phone),
+            (&self.phone_label, &self.phone),
             ("Company", &self.company),
+            (&self.address_label, &self.address),
             ("Birthday", &birthday),
             // Spelled the way the menu item, the tree node and the detail
             // pane spell it. One record read two ways is two records to
@@ -551,7 +552,10 @@ mod tests {
             name: "Grace Hopper".to_string(),
             email: "grace@example.com".to_string(),
             phone: String::new(),
+            phone_label: String::new(),
             company: String::new(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: String::new(),
             favorite: false,
         }
@@ -819,6 +823,7 @@ mod tests {
         // without opening the record.
         let mut contact = contact();
         contact.phone = "555 0100".to_string();
+        contact.phone_label = "Phone".to_string();
         contact.company = "Analytical Engines".to_string();
         contact.favorite = true;
 
@@ -827,6 +832,24 @@ mod tests {
             "Grace Hopper. Email: grace@example.com. Phone: 555 0100. \
              Company: Analytical Engines. Favorite"
         );
+    }
+
+    #[test]
+    fn test_reading_a_contact_aloud_names_a_lone_phones_label_and_the_address() {
+        // Spelled the way the detail pane spells it: the file's own comment
+        // on `read_full` says a record read two ways is two records to
+        // anybody listening, so this pins that the two agree.
+        let mut contact = contact();
+        contact.phone = "555 0100".to_string();
+        contact.phone_label = "Work".to_string();
+        contact.address = "1 Main St".to_string();
+        contact.address_label = "Home".to_string();
+
+        let reading = contact.read_full(aloud());
+
+        assert!(reading.contains("Work: 555 0100"), "{reading}");
+        assert!(!reading.contains("Phone: 555 0100"), "{reading}");
+        assert!(reading.contains("Home: 1 Main St"), "{reading}");
     }
 
     #[test]

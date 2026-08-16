@@ -184,7 +184,7 @@ pub struct MessageFilterRule {
 /// Nothing writes a partial shape today, which makes it a hazard rather than a
 /// defect. It is one field added to an editor away from being one, and the cost
 /// of being wrong is somebody else's data.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PhoneEntry {
     /// Label: "Mobile", "Home", "Work", "Work Fax", "Home Fax", "Pager", "Other"
@@ -247,7 +247,7 @@ impl EmailEntry {
 /// Structured physical address entry (stored as JSON array)
 ///
 /// A missing field is a blank, for the reason set out on [`PhoneEntry`].
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct AddressEntry {
     /// Label: "Home", "Work", "Other"
@@ -556,6 +556,71 @@ impl ContactEntry {
             .as_deref()
             .and_then(|json| serde_json::from_str::<Vec<EmailEntry>>(json).ok())
             .unwrap_or_default()
+    }
+
+    /// The stored list of phone numbers, or nothing when there is no readable
+    /// one. Same rule as [`ContactEntry::every_address_in_the_list`].
+    fn every_phone_in_the_list(&self) -> Vec<PhoneEntry> {
+        self.phones_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<Vec<PhoneEntry>>(json).ok())
+            .unwrap_or_default()
+    }
+
+    /// The stored list of postal addresses, or nothing when there is no
+    /// readable one. Same rule as [`ContactEntry::every_address_in_the_list`].
+    ///
+    /// Named apart from that method because the two answer different
+    /// questions under confusingly similar names: that one lists email
+    /// addresses, this one lists postal ones.
+    fn every_postal_address_in_the_list(&self) -> Vec<AddressEntry> {
+        self.addresses_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<Vec<AddressEntry>>(json).ok())
+            .unwrap_or_default()
+    }
+
+    /// This contact's first stored phone number, with the label a provider or
+    /// a person gave it.
+    ///
+    /// Read from the labelled list when there is one, because that is the
+    /// only place a label survives regardless of how many numbers a contact
+    /// has: a contact with one entry and a contact with five are read the
+    /// same way. Falls back to the legacy column, under the same default
+    /// label [`crate::presentation::contact_convert::to_editor`] already
+    /// gives a contact stored before the list existed, so the two readers of
+    /// this column cannot give two different answers about what an
+    /// unlabelled number is called.
+    pub fn primary_phone(&self) -> Option<PhoneEntry> {
+        if let Some(first) = self.every_phone_in_the_list().into_iter().next() {
+            return Some(first);
+        }
+        self.phone
+            .as_ref()
+            .filter(|number| !number.trim().is_empty())
+            .map(|number| PhoneEntry {
+                label: "Mobile".to_string(),
+                number: number.clone(),
+            })
+    }
+
+    /// This contact's first stored postal address, with its label, under the
+    /// same rule as [`ContactEntry::primary_phone`].
+    pub fn primary_address(&self) -> Option<AddressEntry> {
+        if let Some(first) = self.every_postal_address_in_the_list().into_iter().next() {
+            return Some(first);
+        }
+        self.address
+            .as_ref()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| AddressEntry {
+                label: "Home".to_string(),
+                street: line.clone(),
+                city: String::new(),
+                state: String::new(),
+                zip: String::new(),
+                country: String::new(),
+            })
     }
 
     /// What this address book calls the contact, when it knows it at all.
@@ -2600,5 +2665,149 @@ mod tests {
                 .is_ok(),
             "an ordinary column could not be added"
         );
+    }
+
+    /// A contact with nothing filled in but a name, so a test says only what
+    /// it is about.
+    fn a_contact(name: &str) -> ContactEntry {
+        ContactEntry {
+            id: "c1".to_string(),
+            account_id: "test@example.com".to_string(),
+            name: name.to_string(),
+            given_name: None,
+            family_name: None,
+            email: String::new(),
+            phone: None,
+            company: None,
+            job_title: None,
+            website: None,
+            address: None,
+            birthday: None,
+            avatar_url: None,
+            avatar_data_base64: None,
+            source_provider: None,
+            last_synced_at: None,
+            vcard_raw: None,
+            notes: None,
+            favorite: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            nickname: None,
+            department: None,
+            relationship: None,
+            emails_json: None,
+            phones_json: None,
+            addresses_json: None,
+            custom_fields_json: None,
+            pending: false,
+            known_to: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_a_contacts_one_recorded_phone_number_is_returned_with_its_label() {
+        // The exact shape a provider sends for somebody with a single
+        // number: one entry, not two, and the label is the whole point.
+        let mut contact = a_contact("Ada Lovelace");
+        contact.phones_json = Some(
+            serde_json::to_string(&[PhoneEntry {
+                label: "Work".to_string(),
+                number: "555-0100".to_string(),
+            }])
+            .expect("a phone list encodes"),
+        );
+
+        assert_eq!(
+            contact.primary_phone(),
+            Some(PhoneEntry {
+                label: "Work".to_string(),
+                number: "555-0100".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_only_the_legacy_phone_field_still_gets_a_reasonable_label() {
+        // Stored before the labelled list existed. The fallback label is the
+        // same one `contact_convert::to_editor` already uses for this case,
+        // so the two readers of this column cannot disagree.
+        let mut contact = a_contact("Ada Lovelace");
+        contact.phone = Some("555-0100".to_string());
+
+        assert_eq!(
+            contact.primary_phone(),
+            Some(PhoneEntry {
+                label: "Mobile".to_string(),
+                number: "555-0100".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_no_phone_at_all_returns_nothing_to_show() {
+        let contact = a_contact("Ada Lovelace");
+
+        assert_eq!(contact.primary_phone(), None);
+    }
+
+    #[test]
+    fn test_an_empty_phone_list_falls_back_to_the_legacy_field_rather_than_showing_nothing() {
+        // A list present but empty is what a contact with every number
+        // deleted from the editor looks like. It is not the same as a list
+        // that was never written, but it means the same thing here: nothing
+        // in the list to read, so read what the legacy column still holds.
+        let mut contact = a_contact("Ada Lovelace");
+        contact.phones_json = Some("[]".to_string());
+        contact.phone = Some("555-0100".to_string());
+
+        assert_eq!(
+            contact.primary_phone(),
+            Some(PhoneEntry {
+                label: "Mobile".to_string(),
+                number: "555-0100".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_contacts_one_recorded_address_is_returned_with_its_label() {
+        let mut contact = a_contact("Ada Lovelace");
+        let address = AddressEntry {
+            label: "Work".to_string(),
+            street: "12 High Street".to_string(),
+            city: "London".to_string(),
+            state: String::new(),
+            zip: String::new(),
+            country: String::new(),
+        };
+        contact.addresses_json = Some(
+            serde_json::to_string(std::slice::from_ref(&address)).expect("an address list encodes"),
+        );
+
+        assert_eq!(contact.primary_address(), Some(address));
+    }
+
+    #[test]
+    fn test_a_contact_with_only_the_legacy_address_field_still_gets_a_reasonable_label() {
+        let mut contact = a_contact("Ada Lovelace");
+        contact.address = Some("12 High Street, London".to_string());
+
+        assert_eq!(
+            contact.primary_address(),
+            Some(AddressEntry {
+                label: "Home".to_string(),
+                street: "12 High Street, London".to_string(),
+                city: String::new(),
+                state: String::new(),
+                zip: String::new(),
+                country: String::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_contact_with_no_address_at_all_returns_nothing_to_show() {
+        let contact = a_contact("Ada Lovelace");
+
+        assert_eq!(contact.primary_address(), None);
     }
 }

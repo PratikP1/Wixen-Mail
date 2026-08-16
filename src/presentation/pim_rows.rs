@@ -301,7 +301,10 @@ mod tests {
             name: "Grace Hopper".to_string(),
             email: "grace@example.com".to_string(),
             phone: "555 0100".to_string(),
+            phone_label: "Mobile".to_string(),
             company: "Navy".to_string(),
+            address: String::new(),
+            address_label: String::new(),
             birthday: String::new(),
             favorite: false,
         }

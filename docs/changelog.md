@@ -6,6 +6,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fixed: a contact's phone number always said "Phone" in the contacts
+  detail pane and when read aloud, whatever it was really labelled, and no
+  postal address appeared there at all.** Every phone number and postal
+  address a contact holds keeps the label a synced address book or an
+  imported card gave it, such as "Work" or "Home". Storage and the contact
+  editor already read that label correctly. This one summary view did not:
+  a number Google or Outlook labelled "Work" was shown and read as "Phone:
+  555-0100," with "Work" nowhere in it, and a postal address never showed
+  here regardless of its label. Both now carry their real label, and the
+  postal address has a line of its own in this view for the first time.
+
+  Known limitations: this view still shows only the first phone number and
+  the first postal address a contact holds. Seeing every number or address a
+  contact has still needs the contact editor open.
+
 ### Changed
 
 - **The account settings screen now says what a POP account's two
