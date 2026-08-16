@@ -169,7 +169,8 @@ pub struct MsGraphEvent {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<MsAttendee>,
     /// What the event is filed under. Outlook calls these categories and shows
-    /// them by name and colour; this program stores one per event.
+    /// them by name and colour; this program keeps every one an event carries,
+    /// not just the first.
     ///
     /// Skipped when empty for the same reason as the attendees above: Graph
     /// reads a list that is present as the whole truth, so sending an empty one
