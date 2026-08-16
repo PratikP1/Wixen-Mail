@@ -62,7 +62,7 @@ impl ICalSubscriptionClient {
 /// over, that is not a feed with nothing on it and it must not look like one:
 /// both used to come back as the same empty list, and a subscribed calendar
 /// that quietly shows nothing is a calendar somebody trusts and should not.
-fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
+pub(crate) fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
     let mut events = Vec::new();
     let mut unreadable = 0_usize;
 

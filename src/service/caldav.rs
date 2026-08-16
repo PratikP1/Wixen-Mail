@@ -5659,6 +5659,56 @@ mod tests {
             let _ = extract_xml_value(&data, "d:href");
         }
     }
+
+    #[test]
+    fn test_the_subscription_reader_and_the_caldav_report_reader_agree_on_the_same_real_event() {
+        // A real event from the Boston Celtics' official schedule feed
+        // (https://cdn.celtics.com/schedule/ics/2025_celtics_schedule.ics,
+        // fetched 2026-08-15), read once as a subscribed .ics feed and once
+        // as a calendar server's REPORT answer. Both readers are asked about
+        // the exact same bytes, because this repo's worst-known defect
+        // family is two pieces of code answering one question differently.
+        let document = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSEQUENCE:0\n\
+            DTSTART;TZID=America/New_York:20251008T200000\nSTATUS:TENTATIVE\n\
+            DTSTAMP:20260502T220417\nSUMMARY:PRESEASON - Celtics @ Grizzlies\n\
+            DTEND;TZID=America/New_York:20251008T230000\n\
+            LOCATION:FedExForum, Memphis, TN\n\
+            DESCRIPTION:\u{1F4FA} Watch: NBC Sports Boston\\n\u{1F4FB} Listen: WROR (105.7 FM)\\n\n\
+            UID:20260502T220417-0\nTRANSP:OPAQUE\n\
+            ORGANIZER:CN=Boston Celtics 2025-26 Full-Season Schedule\nCLASS:PUBLIC\n\
+            CREATED:20260502T220417\nEND:VEVENT\nEND:VCALENDAR";
+
+        let subscribed = crate::service::ical_subscription::parse_ics(document)
+            .expect("the subscription reader to read it");
+        let from_a_server = parse_report_events(
+            &an_answer_carrying(&[document]),
+            "https://cal.example.com/dav/",
+        )
+        .expect("the CalDAV reader to read it");
+
+        assert_eq!(subscribed.len(), 1);
+        assert_eq!(from_a_server.len(), 1);
+        let (a, b) = (&subscribed[0], &from_a_server[0]);
+
+        // Everything the calendar body itself says has to come out the same,
+        // whichever door it came in by.
+        assert_eq!(a.uid, b.uid);
+        assert_eq!(a.summary, b.summary);
+        assert_eq!(a.description, b.description);
+        assert_eq!(a.location, b.location);
+        assert_eq!(a.dtstart, b.dtstart);
+        assert_eq!(a.dtend, b.dtend);
+        assert_eq!(a.is_all_day, b.is_all_day);
+        assert_eq!(a.status, b.status);
+        assert_eq!(a.time_zone, b.time_zone);
+        assert_eq!(a.recurrence_rule, b.recurrence_rule);
+        assert_eq!(a.exception_dates, b.exception_dates);
+        assert_eq!(a.recurrence_id, b.recurrence_id);
+
+        // url and etag are transport, not the calendar body, and are
+        // expected to differ: a subscription never carries either, a
+        // server answer always carries an address and usually an etag.
+    }
 }
 
 #[cfg(test)]
