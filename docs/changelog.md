@@ -93,11 +93,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the spot instead, with nothing to restart and no delay or flash while it
   happens.
 
-  Known limitations: Compose and roughly thirty other windows that open on
-  top of the main one, such as the Account Manager and the calendar event
-  editor, still show Windows' own colours regardless of the Theme setting.
-  A message already open in the reader when you change the setting keeps
-  the colours it had; closing that tab and opening the message again, or
+  Known limitations: Compose, the Calendar window itself, and roughly
+  thirty other windows that open on top of the main one still show
+  Windows' own colours regardless of the Theme setting. A message
+  already open in the reader when you change the setting keeps the
+  colours it had; closing that tab and opening the message again, or
   restarting, is what picks up the new ones. The description under the
   Theme setting in Settings is updated to match what now works.
 
@@ -107,9 +107,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   folder), now match the rest of the coloured application instead of
   showing Windows' own white regardless of what Light or Dark chose.
 
-  Known limitations: Compose, the Account Manager, the calendar event
-  editor, and roughly thirty other windows that open on top of the main
-  one still show Windows' own colours regardless of the Theme setting.
+  Known limitations: Compose, the Calendar window itself, and roughly
+  thirty other windows that open on top of the main one still show
+  Windows' own colours regardless of the Theme setting.
 
 - **The Account Manager, and the Add/Edit Account window it opens, now take
   the Theme colours too.** The list of configured accounts and every text
@@ -118,7 +118,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   match the rest of the coloured application instead of showing Windows'
   own white regardless of what Light or Dark chose.
 
-  Known limitations: Compose, the calendar event editor, and roughly
+  Known limitations: Compose, the Calendar window itself, and roughly
   thirty other windows that open on top of the main one still show
   Windows' own colours regardless of the Theme setting.
 
@@ -142,6 +142,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   confirm delete dialog nested inside it, are not coloured yet. Compose
   and roughly thirty other windows that open on top of the main one
   still show Windows' own colours regardless of the Theme setting.
+
+  This closes out the round of standalone-dialog painting that started
+  with Settings above: five dialogs done (Settings, the Account Manager
+  and its Add/Edit Account window, the calendar event editor, and this
+  one), and the rest named plainly rather than left for someone to
+  discover unpainted. What is still left, in the order most people would
+  reach it: Compose and its Check Spelling, Insert Table and Send Preview
+  sub-dialogs; the Calendar window itself and its nested confirm delete
+  dialog; the Contact, Filter, Tag and Signature managers and their own
+  edit dialogs; Add Calendar, Columns, Destination, Item Form, First
+  Run's Allowed Changes screen, Folder Choice, Reminder Alert, Thread
+  View, Search, and Ask For A Name; and About, which almost nobody opens
+  twice.
 
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
