@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 112 records have arrived since and have not been through it.
+# 113 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6258,6 +6258,46 @@ red = [
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever",
     "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_whose_series_was_never_resolved_never_sends_a_delete_for_the_whole_series",
     "presentation::managers::changing_one_day_of_a_series::test_what_this_rows_calendar_allows_flags_a_row_whose_series_is_not_yet_resolved",
+]
+
+# ── An occurrence exception's own change lands in its own VEVENT ───────────
+#
+# `ical_with_the_event_changed` is pinned to the first VEVENT a document
+# holds, on purpose: its own doc comment says why, and the guard nearby on
+# `holds_the_event` protects it. `ical_with_the_occurrence_changed` is the
+# sibling that exists because that pin is wrong for a day the server has
+# already split out, which is hardly ever first. This guards the one line
+# that makes it right: locating by UID and RECURRENCE-ID rather than falling
+# back to the document's first VEVENT the way its sibling always does. That
+# fallback is the exact naive shape a first attempt at this took, caught
+# before it shipped: the series gets the change instead of the day, or the
+# document is refused outright, and either way a sibling exception sitting
+# beside the one being changed is exactly the case most likely to go unnoticed
+# in a document with only one VEVENT in it.
+#
+# The first measurement named three tests and missed two: the pure-function
+# tests in `service::caldav` are not the only ones that build a real
+# multi-VEVENT document and change one occurrence in it.
+# `application::caldav_sync`'s own occurrence-exception tests do too, one
+# level up, and this break reaches them the same way.
+#
+# Measured by hand on 2026-08-16, against the whole library: exactly these
+# five tests went red and nothing else did.
+
+[[guard]]
+name = "an occurrence exception is located by UID and RECURRENCE-ID, not taken as the first VEVENT"
+file = "src/service/caldav.rs"
+before = """    let its = the_occurrence_named(&events, &lines, &event.uid, recurrence_id)
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;"""
+after = """    let its = events
+        .first()
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;"""
+red = [
+    "service::caldav::writing_tests::test_editing_the_occurrence_leaves_the_series_and_a_sibling_exception_alone",
+    "service::caldav::writing_tests::test_editing_an_occurrence_not_present_in_the_document_is_refused",
+    "service::caldav::writing_tests::test_editing_the_wrong_events_occurrence_is_refused",
+    "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_is_refused_before_it_can_loop_forever",
+    "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_sends_if_match_with_the_fetched_tag",
 ]
 
 # ── The POP delete checkboxes keep their spoken consequence ────────────────

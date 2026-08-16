@@ -59,6 +59,7 @@ use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
 use crate::service::caldav::{
     CalDavClient, CalDavEvent, build_ical_vevent, ical_with_the_event_changed,
+    ical_with_the_occurrence_changed,
 };
 use crate::service::ical_subscription::ICalSubscriptionClient;
 
@@ -233,8 +234,18 @@ async fn send_one_change(
     username: &str,
     password: &str,
 ) -> Result<String> {
-    let mut going = local_to_caldav_event(event);
+    let going = local_to_caldav_event(event);
 
+    // A day a calendar server already split into its own VEVENT shares a
+    // resource, and so a document, with its series and any sibling exception.
+    // `send_one_occurrence_change` is the sibling of everything below that
+    // knows to locate and change the one VEVENT this row means rather than
+    // the first one a document holds.
+    if event.provider_recurrence_id.is_some() {
+        return send_one_occurrence_change(cache, caldav, event, going, username, password).await;
+    }
+
+    let mut going = going;
     match where_it_lives(event) {
         WhereItLives::AtThisAddress(at) => {
             if !caldav.may_change() {
@@ -307,6 +318,101 @@ async fn send_one_change(
                 .to_string(),
         )),
     }
+}
+
+/// [`send_one_change`]'s own sibling for a day a calendar server has already
+/// split into its own VEVENT.
+///
+/// The address is always already known here: a row like this is never
+/// created by this program, only ever read from a server that had already
+/// split it out, so there is nothing for [`where_it_lives`] to answer but "at
+/// this address" or "the address is not known yet", the same gap an ordinary
+/// event has before its first successful sync resolves one.
+///
+/// Read, change, write, the same order and for the same reason
+/// [`send_one_change`] reads its own document: a PUT replaces the whole
+/// resource, and every other VEVENT in it, the series and any sibling
+/// exception, has to be copied through exactly as it arrived.
+/// [`ical_with_the_occurrence_changed`] is what makes that safe here the way
+/// [`ical_with_the_event_changed`] makes it safe above, locating the one
+/// VEVENT this row means by its UID and its own RECURRENCE-ID rather than
+/// always taking the first VEVENT a document holds.
+async fn send_one_occurrence_change(
+    cache: &MessageCache,
+    caldav: &CalDavClient,
+    event: &CalendarEventEntry,
+    mut going: CalDavEvent,
+    username: &str,
+    password: &str,
+) -> Result<String> {
+    let at = match where_it_lives(event) {
+        WhereItLives::AtThisAddress(at) => at,
+        WhereItLives::NotThereYet => {
+            return Err(crate::common::Error::Other(
+                "This change cannot be sent: a day the calendar server has \
+                 already split into its own appointment is never created \
+                 here, and this one is stored with nowhere to send it. \
+                 Reading the calendar again will find where it really lives."
+                    .to_string(),
+            ));
+        }
+        WhereItLives::AddressNotKnownYet => {
+            return Err(crate::common::Error::Other(
+                "This change cannot be sent yet: where this day lives on the \
+                 calendar server is not known here. Reading the calendar \
+                 again will find it."
+                    .to_string(),
+            ));
+        }
+    };
+
+    if !caldav.may_change() {
+        caldav
+            .update_event(&at, username, password, &going, None)
+            .await?;
+        return Ok(going.uid);
+    }
+
+    let held = caldav.fetch_event(&at, username, password).await?;
+    let document = match ical_with_the_occurrence_changed(&held.document, &going) {
+        Ok(document) => document,
+        Err(why) => {
+            return Err(crate::common::Error::Other(format!(
+                "This change was not sent: {why}. The change is still \
+                 waiting and will be tried again at the next sync."
+            )));
+        }
+    };
+    going.ical_data = document;
+    let changed = caldav
+        .update_event(&at, username, password, &going, held.tag.as_deref())
+        .await?;
+    settled_here_for_an_occurrence(cache, event, changed.etag)?;
+    Ok(going.uid)
+}
+
+/// Write down that the calendar server now holds this change to a day it had
+/// already split into its own VEVENT.
+///
+/// Only the version and the waiting flag. Everything [`settled_here`] writes
+/// down for an ordinary event, a row like this already has right: its own
+/// compound `provider_event_id`, its `provider_recurrence_id` and its
+/// `web_link` were all set when this program first read the day off the
+/// server, and none of them changed by sending this edit. Writing the bare
+/// UID the change was sent under back over `provider_event_id`, the way
+/// [`settled_here`] would, is exactly the corruption
+/// [`the_bare_identity_of_an_occurrence_exception`]'s own doc comment warns
+/// against: the row would no longer be able to tell itself apart from its
+/// series the next time either is changed.
+fn settled_here_for_an_occurrence(
+    cache: &MessageCache,
+    event: &CalendarEventEntry,
+    tag: Option<String>,
+) -> Result<()> {
+    let mut settled = event.clone();
+    settled.etag = tag;
+    settled.pending = false;
+    cache.save_calendar_event(&settled)
 }
 
 /// Write down that the calendar server now holds this event.
@@ -756,10 +862,11 @@ fn one_caldav_day_kept_out_of_its_series(
     }
 
     let existing = cache.get_event_by_provider_id(account_id, &compound_id)?;
-    // A change made here that has not been sent yet is the newer copy. This
-    // program does not send a changed CalDAV occurrence back yet, so nothing
-    // sets this today, but the read must not overwrite it the day something
-    // does.
+    // A change made here that has not been sent yet is the newer copy.
+    // Editing a row like this through the ordinary editor sets `pending`
+    // exactly the way editing anything else does, so a read arriving in the
+    // same sync as an edit nobody has pushed yet must not write the server's
+    // older copy back over it.
     if existing.as_ref().is_some_and(|held| held.pending) {
         return Ok(());
     }
@@ -1038,6 +1145,31 @@ fn caldav_event_to_local(
     }
 }
 
+/// The bare UID an occurrence exception's row shares with its series, and its
+/// own RECURRENCE-ID, recovered from the compound identity
+/// [`one_caldav_day_kept_out_of_its_series`] mints for a row like this:
+/// `{uid}:{recurrence-id}`.
+///
+/// Undone the one place it is done, by stripping the exact suffix that was
+/// added, rather than by splitting on the first colon:
+/// [`crate::service::caldav`]'s own `normalize_ical_datetime` writes a colon
+/// into the recurrence id itself, so a UID that happened to hold one too
+/// would come apart in the wrong place under a naive split. A
+/// `provider_event_id` that does not carry the expected suffix, which should
+/// never arise from anything this program writes, is kept whole rather than
+/// guessed at: sent as a UID nothing in the document holds, it is refused by
+/// [`ical_with_the_occurrence_changed`]'s own identity check rather than
+/// risking a write into the wrong VEVENT.
+fn the_bare_identity_of_an_occurrence_exception(local: &CalendarEventEntry) -> (String, String) {
+    let recurrence_id = local.provider_recurrence_id.clone().unwrap_or_default();
+    let whole = local.provider_event_id.clone().unwrap_or_default();
+    let uid = whole
+        .strip_suffix(format!(":{recurrence_id}").as_str())
+        .map(str::to_string)
+        .unwrap_or(whole);
+    (uid, recurrence_id)
+}
+
 /// Convert a local CalendarEventEntry to a CalDavEvent for upload.
 ///
 /// The shape a change takes on the way out. An event that has never been sent
@@ -1045,13 +1177,34 @@ fn caldav_event_to_local(
 /// stored row as soon as the server accepts it: a fresh one is minted on every
 /// call, so an event sent twice without the write-back in between would end up
 /// on somebody's calendar twice.
+///
+/// A row that is one day a calendar server already split into its own VEVENT
+/// carries a compound identity instead: `provider_recurrence_id` names which
+/// day, and `provider_event_id` is `{uid}:{recurrence-id}` rather than a UID
+/// of its own, minted by [`one_caldav_day_kept_out_of_its_series`] because
+/// there was nothing else to store the day under locally. Sent whole, the
+/// calendar server would be asked to find an event under an identity it never
+/// gave out. The bare UID and the RECURRENCE-ID are recovered here instead,
+/// through [`the_bare_identity_of_an_occurrence_exception`], so the change
+/// locates the one VEVENT it means.
 pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
+    let (uid, recurrence_id) = match local.provider_recurrence_id.is_some() {
+        true => {
+            let (uid, recurrence_id) = the_bare_identity_of_an_occurrence_exception(local);
+            (uid, Some(recurrence_id))
+        }
+        false => (
+            local
+                .provider_event_id
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            None,
+        ),
+    };
+
     let event = CalDavEvent {
         url: local.web_link.clone().unwrap_or_default(),
-        uid: local
-            .provider_event_id
-            .clone()
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        uid,
         etag: local.etag.clone(),
         ical_data: String::new(), // Will be set below
         summary: local.summary.clone(),
@@ -1071,13 +1224,7 @@ pub fn local_to_caldav_event(local: &CalendarEventEntry) -> CalDavEvent {
         // days it calls off would put every cancelled day back on the server's
         // copy of somebody's calendar.
         exception_dates: local.exception_dates.clone(),
-        // This program does not send a changed occurrence back to a CalDAV
-        // server yet, so nothing here ever has to say which day one replaces.
-        // A row cut out of a series carries a compound identity in
-        // `provider_event_id` rather than a UID of its own, so the day this
-        // starts sending one, `uid` above has to be taught to split the real
-        // UID back out rather than sending the compound value as one.
-        recurrence_id: None,
+        recurrence_id,
     };
 
     // Generate iCalendar data
@@ -1443,15 +1590,20 @@ mod tests {
 
     // ── A resource holding a series and the day somebody moved out of it ────
 
-    /// A CalDAV multistatus carrying one resource: a series and the one
-    /// occurrence somebody moved out of it, both under one UID, told apart by
-    /// RECURRENCE-ID.
+    /// The document a resource holds naming a series and the one occurrence
+    /// somebody moved out of it, both under one UID, told apart by
+    /// RECURRENCE-ID: the standard shape a calendar server sends for a
+    /// repeating event once an occurrence has been changed.
     ///
-    /// The standard shape a calendar server sends for a moved or changed
-    /// occurrence. A copy of this shape is also kept by `service::caldav`'s own
-    /// tests; fixtures are not shared across files here, so each keeps its own.
-    fn a_multistatus_holding_a_series_and_its_moved_day() -> String {
-        let document = [
+    /// Named apart from [`a_multistatus_holding_a_series_and_its_moved_day`]
+    /// so a test standing in for the bare document a `GET` on the event
+    /// itself would return, rather than the `REPORT` multistatus wrapping
+    /// it, can ask for exactly that without building a second copy of the
+    /// same VEVENTs to do it. A copy of this shape is also kept by
+    /// `service::caldav`'s own tests; fixtures are not shared across files
+    /// here, so each keeps its own.
+    fn a_document_naming_a_series_and_its_moved_day() -> String {
+        [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
             "BEGIN:VEVENT",
@@ -1470,7 +1622,14 @@ mod tests {
             "END:VEVENT",
             "END:VCALENDAR",
         ]
-        .join("\r\n");
+        .join("\r\n")
+    }
+
+    /// A CalDAV multistatus carrying one resource: a series and the one
+    /// occurrence somebody moved out of it, both under one UID, told apart by
+    /// RECURRENCE-ID.
+    fn a_multistatus_holding_a_series_and_its_moved_day() -> String {
+        let document = a_document_naming_a_series_and_its_moved_day();
         format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
              <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
@@ -3372,7 +3531,110 @@ mod tests {
                     moved,
                     Some(series),
                 ),
+            // Built the same way `what_this_rows_calendar_allows` builds it
+            // in production: whether the row's own `cut_from_event_id`
+            // resolves to the series handed in.
+            the_series_it_left_is_known_here: moved.cut_from_event_id.as_deref()
+                == Some(series.id.as_str()),
         }
+    }
+
+    #[tokio::test]
+    async fn test_editing_a_caldav_occurrence_exception_sends_if_match_with_the_fetched_tag() {
+        // The same proof as the whole-event push,
+        // `test_a_change_waiting_here_is_sent_to_the_calendar_server_before_the_calendar_is_read`,
+        // asked of a day the server has already split into its own VEVENT:
+        // the change is made against the document the server holds right
+        // now, named by the tag that document just arrived with, and every
+        // other VEVENT in the resource, the series and the sibling exception
+        // alike, survives it. Calls `send_one_change` directly rather than
+        // the whole sync, so the row this test inspects afterward is the one
+        // the push itself settled, not one a later `REPORT` in the same sync
+        // has already read back over.
+        let (cache, _series, moved) =
+            a_series_and_its_moved_day_synced_once("occurrence_sends_if_match").await;
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged(
+                    "\"tag-e-1\"",
+                    a_document_naming_a_series_and_its_moved_day(),
+                ),
+                Answer::plain(String::new()),
+            ],
+        )
+        .await;
+        let calendar_url = format!("http://{address}/cal/");
+
+        let mut edited = moved.clone();
+        edited.summary = "Weekly review, moved and renamed".to_string();
+        edited.web_link = Some(format!("http://{address}/cal/e-1.ics"));
+        edited.pending = true;
+        cache
+            .save_calendar_event(&edited)
+            .expect("the edit to be stored");
+
+        let sent = send_one_change(
+            &cache,
+            &CalDavClient::allowed_to_change_things(),
+            &calendar_url,
+            &edited,
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the change to be sent");
+        assert_eq!(
+            sent, "e-1",
+            "the identity handed back has to name the event itself, not this \
+             row's own compound identity"
+        );
+
+        let requests = heard(listening, "a preflight read and a change")
+            .await
+            .expect("two requests");
+        assert_eq!(asked_for(&requests[0]), "GET /cal/e-1.ics");
+        assert_eq!(asked_for(&requests[1]), "PUT /cal/e-1.ics");
+        assert_eq!(
+            header_of(&requests[1], "If-Match").as_deref(),
+            Some("\"tag-e-1\""),
+            "the change has to name the version it was made against, and \
+             that is the one the server just answered with"
+        );
+        let put_body = body_of(&requests[1]);
+        assert!(
+            put_body.contains("SUMMARY:Weekly review\\, moved and renamed"),
+            "what was typed here did not go out: {put_body}"
+        );
+        assert_eq!(
+            put_body.matches("BEGIN:VEVENT").count(),
+            2,
+            "the series or the sibling exception was lost from the document \
+             going out: {put_body}"
+        );
+        assert!(
+            put_body.contains("SUMMARY:Weekly review\r\n"),
+            "the series' own title is missing from what went out: {put_body}"
+        );
+
+        let after = cache
+            .get_event_by_id(&edited.id)
+            .expect("the cache to be readable")
+            .expect("the row to still exist");
+        assert!(!after.pending, "the edit is stuck waiting: {after:?}");
+        assert_eq!(
+            after.provider_event_id.as_deref(),
+            edited.provider_event_id.as_deref(),
+            "settling the change must not overwrite the row's own compound \
+             identity with the bare UID the change was sent under"
+        );
+        assert_eq!(
+            after.provider_recurrence_id.as_deref(),
+            edited.provider_recurrence_id.as_deref(),
+            "settling the change must not lose which day this row stands for"
+        );
+        assert_eq!(after.web_link.as_deref(), edited.web_link.as_deref());
     }
 
     // ── The same exception, met before its series is resolved locally ───────
@@ -3438,18 +3700,21 @@ mod tests {
                 crate::application::calendar::shares_its_address_with_the_series_it_left(
                     moved, None,
                 ),
+            // No series to resolve `cut_from_event_id` against: this is
+            // exactly the "series never resolved" shape.
+            the_series_it_left_is_known_here: false,
         }
     }
 
     #[tokio::test]
     async fn test_editing_a_caldav_occurrence_exception_is_refused_before_it_can_loop_forever() {
-        // Before the gate: this row's own repeat rule is empty, so the
-        // ordinary edit window defaults straight to a whole-event save that
-        // keeps the compound identity unchanged and marks the row pending.
-        // The push that follows reads back a document naming the series' own
-        // UID, never the compound one this row is stored under, so the
-        // mismatch is reported as an error and `pending` never clears: the
-        // same failure, for ever, on every sync.
+        // Once the gate opens for a row whose series is known here: the
+        // fixture below is the real multi-VEVENT shape the resource holds,
+        // three answers for the three requests a successful push and read
+        // really make (a preflight GET, the PUT, and the calendar's own
+        // REPORT), so this exercises the same locate-by-recurrence-id path
+        // production code takes rather than a stand-in single-VEVENT shape
+        // that could pass or fail for the wrong reason.
         let (cache, series, moved) =
             a_series_and_its_moved_day_synced_once("edit_occurrence_exception").await;
         let allows = what_a_whole_event_change_to_it_allows(&moved, &series);
@@ -3465,18 +3730,19 @@ mod tests {
                     "200 OK",
                     "text/calendar",
                     vec![
-                        Answer::plain(a_document_the_server_holds("e-1")),
+                        Answer::plain(a_document_naming_a_series_and_its_moved_day()),
+                        Answer::plain(String::new()),
                         Answer::plain(a_multistatus_holding_a_series_and_its_moved_day()),
                     ],
                 )
                 .await;
                 calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
 
-                // What `event_with_edits` does to a row like this: the
-                // compound identity and the calendar server's address both
-                // carried over unchanged, only the summary and the waiting
-                // flag touched. Pointed at the address under test, the way
-                // every pending row in this file is.
+                // What the dedicated occurrence-exception merge does to a row
+                // like this: the compound identity and the calendar server's
+                // address both carried over unchanged, only the summary and
+                // the waiting flag touched. Pointed at the address under
+                // test, the way every pending row in this file is.
                 let mut edited = moved.clone();
                 edited.summary = "Weekly review, edited the ordinary way".to_string();
                 edited.web_link = Some(format!("http://{address2}/cal/e-1.ics"));
@@ -3495,7 +3761,11 @@ mod tests {
                 )
                 .await
                 .expect("the second sync to finish");
-                let _ = heard(listening2, "a preflight read and the calendar read").await;
+                let _ = heard(
+                    listening2,
+                    "a preflight read, a change and the calendar read",
+                )
+                .await;
 
                 assert!(
                     result.errors.is_empty(),
