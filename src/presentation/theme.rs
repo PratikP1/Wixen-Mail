@@ -313,8 +313,9 @@ pub const REACH: &str = "Colour is applied to the sidebar and content area of \
      reading this in, the Account Manager, the window where a calendar \
      event is added or edited, the question a repeating event asks about \
      which days you mean, the Check Spelling window Compose opens to ask \
-     about one word, and the Insert Table window its formatting menu \
-     opens. Everything else follows Windows. Changing \
+     about one word, the Insert Table window its formatting menu opens, \
+     and the preview it can show before a message sends. Everything \
+     else follows Windows. Changing \
      it here recolours them immediately, with nothing to restart, except a \
      message already open for reading, which catches up the next time you \
      open it. Default now matches whether Windows itself is set to light \
@@ -945,6 +946,7 @@ mod tests {
             "which days you mean",
             "Check Spelling",
             "Insert Table",
+            "before a message sends",
         ] {
             assert!(
                 REACH.contains(place),

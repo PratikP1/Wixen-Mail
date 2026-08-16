@@ -207,12 +207,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and its Add/Edit Account window, the calendar event editor, and this
   one), and the rest named plainly rather than left for someone to
   discover unpainted. What is still left, in the order most people would
-  reach it: Compose and its Send Preview sub-dialog; the Calendar
-  window itself and its nested confirm delete dialog; the Contact,
-  Filter, Tag and Signature managers and their own edit dialogs; Add
-  Calendar, Columns, Destination, Item Form, First Run's Allowed
-  Changes screen, Folder Choice, Reminder Alert, Thread View, Search,
-  and Ask For A Name; and About, which almost nobody opens twice.
+  reach it: Compose's own window; the Calendar window itself and its
+  nested confirm delete dialog; the Contact, Filter, Tag and Signature
+  managers and their own edit dialogs; Add Calendar, Columns,
+  Destination, Item Form, First Run's Allowed Changes screen, Folder
+  Choice, Reminder Alert, Thread View, Search, and Ask For A Name; and
+  About, which almost nobody opens twice.
 
 - **The Check Spelling window Compose opens for a misspelled or repeated
   word now takes the Theme colours too.** The word, the field holding what
@@ -220,19 +220,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   of the coloured application instead of showing Windows' own white
   regardless of what Light or Dark chose.
 
-  Known limitations: Compose's own window, Send Preview, the Calendar
-  window itself and its nested confirm delete dialog, and roughly thirty
-  other windows that open on top of the main one still show Windows' own
-  colours regardless of the Theme setting.
+  Known limitations: Compose's own window, the Calendar window itself and
+  its nested confirm delete dialog, and roughly thirty other windows that
+  open on top of the main one still show Windows' own colours regardless
+  of the Theme setting.
 
 - **The Insert Table window Compose's formatting menu opens now takes the
   Theme colours too.** This dialog has no text boxes of its own to
   colour; painting the window itself is what changes here.
 
-  Known limitations: Compose's own window, Send Preview, the Calendar
-  window itself and its nested confirm delete dialog, and roughly thirty
-  other windows that open on top of the main one still show Windows' own
-  colours regardless of the Theme setting.
+  Known limitations: Compose's own window, the Calendar window itself and
+  its nested confirm delete dialog, and roughly thirty other windows that
+  open on top of the main one still show Windows' own colours regardless
+  of the Theme setting.
+
+- **The preview Compose can show before a message sends now takes the
+  Theme colours too.** The window itself now matches the rest of the
+  coloured application instead of showing Windows' own white regardless
+  of what Light or Dark chose. The message preview inside it is a
+  browser control that renders the message's own HTML, and keeps
+  showing that HTML's own colours the same way the message reader and
+  the compose body editor already do.
+
+  Known limitations: Compose's own window, the Calendar window itself and
+  its nested confirm delete dialog, and roughly thirty other windows that
+  open on top of the main one still show Windows' own colours regardless
+  of the Theme setting.
 
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant

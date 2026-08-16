@@ -528,6 +528,32 @@ fn check_insert_table(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
     check("insert table dialog", &dialog, palette.main_surface(), into);
 }
 
+/// The Preview Before Send dialog Compose opens before a message goes out.
+/// Parented to a throwaway `Dialog`, the same as production: it always opens
+/// from inside the Compose window, never from the main frame. The body
+/// preview is a `WebView`, excluded from painting for the same reason the
+/// compose body editor and the conversation-as-headings page are (see the
+/// `appears_live` checks at the bottom of this file), so the dialog itself
+/// is the only site.
+fn check_send_preview(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for send preview").build();
+    let data = wx_compose::ComposeData {
+        to: "person@example.com".to_string(),
+        cc: String::new(),
+        bcc: String::new(),
+        subject: "Test subject".to_string(),
+        body: "<p>Test body</p>".to_string(),
+        body_plain: "Test body".to_string(),
+        html_mode: true,
+        account_index: None,
+        attachments: Vec::new(),
+        answering: None,
+    };
+    let (dialog, _send_btn, _back_btn) =
+        wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
+    check("send preview dialog", &dialog, palette.main_surface(), into);
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -714,6 +740,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_which_days(&frame, palette, &mut sites);
             check_check_spelling(&frame, palette, &mut sites);
             check_insert_table(&frame, palette, &mut sites);
+            check_send_preview(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 

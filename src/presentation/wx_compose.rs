@@ -1484,7 +1484,12 @@ pub fn show_compose_dialog_full(
                 }
                 if preview_before_send {
                     // Show preview-before-send dialog
-                    match show_send_preview(&dialog, &data, account_names) {
+                    match show_send_preview(
+                        &dialog,
+                        &data,
+                        account_names,
+                        theme::current_from_stored_config(),
+                    ) {
                         PreviewDecision::ConfirmSend => break 'compose ComposeResult::Send(data),
                         PreviewDecision::GoBack => continue, // re-show compose dialog
                     }
@@ -2127,12 +2132,21 @@ enum PreviewDecision {
 const ID_CONFIRM_SEND: Id = ID_HIGHEST + 180;
 const ID_GO_BACK: Id = ID_HIGHEST + 181;
 
-/// Show a read-only preview of the composed email before sending.
-fn show_send_preview(
+/// Build the Preview Before Send dialog without showing it.
+///
+/// Everything `show_send_preview` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the dialog alongside the two buttons `show_send_preview` still
+/// needs to read after a real `.show_modal()`.
+pub fn build_send_preview_dialog(
     parent: &Dialog,
     data: &ComposeData,
     account_names: &[String],
-) -> PreviewDecision {
+    palette: Option<theme::Palette>,
+) -> (Dialog, Button, Button) {
     let dlg = Dialog::builder(parent, "Preview Before Send")
         .with_size(650, 500)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -2248,6 +2262,30 @@ fn show_send_preview(
             d.end_modal(ID_GO_BACK);
         }
     });
+
+    // Painted last. The `WebView` is the named exception: it owns its colour
+    // through its document's own HTML and CSS, independent of this setting,
+    // the same as the compose body editor and the conversation-as-headings
+    // page. No `TextCtrl`, `ListCtrl` or `TreeCtrl` elsewhere in this dialog,
+    // so the dialog itself is the only other site. `None` means high
+    // contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+    }
+
+    (dlg, send_btn, back_btn)
+}
+
+/// Show a read-only preview of the composed email before sending.
+fn show_send_preview(
+    parent: &Dialog,
+    data: &ComposeData,
+    account_names: &[String],
+    palette: Option<theme::Palette>,
+) -> PreviewDecision {
+    let (dlg, _send_btn, _back_btn) =
+        build_send_preview_dialog(parent, data, account_names, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
