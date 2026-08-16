@@ -809,7 +809,12 @@ pub fn show_compose_dialog_full(
                 return;
             }
             if id == ID_INSERT_TABLE {
-                insert_table(&dialog, body_editor, &a11y);
+                insert_table(
+                    &dialog,
+                    body_editor,
+                    &a11y,
+                    theme::current_from_stored_config(),
+                );
                 return;
             }
             // Inside the run kept for formatting, or not ours at all. The
@@ -1938,19 +1943,24 @@ fn ask_about_word(
     }
 }
 
-/// Ask for a table's shape and put one in the message.
+/// Build the Insert Table dialog without showing it.
+///
+/// Everything `insert_table` used to do up to its own `.show_modal()` call,
+/// split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
 ///
 /// Rows, columns, and whether the first row is headers. That last one is the
 /// question worth asking: a header row is what makes the table navigable for
 /// whoever receives the message, and defaulting it on is the accessible
 /// default rather than a preference.
-fn insert_table(
+///
+/// Returns the dialog alongside the three controls `insert_table` still needs
+/// to read after a real `.show_modal()`.
+pub fn build_insert_table_dialog(
     dialog: &Dialog,
-    body_editor: WebView,
-    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
-) {
-    use crate::presentation::accessibility::announcements::Priority;
-
+    palette: Option<theme::Palette>,
+) -> (Dialog, SpinCtrl, SpinCtrl, CheckBox) {
     let asker = Dialog::builder(dialog, "Insert Table")
         .with_style(DialogStyle::DefaultDialogStyle)
         .build();
@@ -2012,6 +2022,31 @@ fn insert_table(
 
     asker.set_sizer_and_fit(sizer, true);
     rows.set_focus();
+
+    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
+    // dialog: rows and columns are a `SpinCtrl` and the header choice is a
+    // `CheckBox`, so the dialog itself is the only site, the same shape as
+    // `build_which_days_dialog`. `None` means high contrast is on, or the
+    // system is set up in a way this application should not paint over, so
+    // nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&asker, palette.main_surface());
+    }
+
+    (asker, rows, columns, header)
+}
+
+/// Ask for a table's shape and put one in the message.
+fn insert_table(
+    dialog: &Dialog,
+    body_editor: WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+    palette: Option<theme::Palette>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let (asker, rows, columns, header) = build_insert_table_dialog(dialog, palette);
+
     let answer = asker.show_modal();
     let (rows, columns, header) = (
         rows.value().max(0) as usize,
