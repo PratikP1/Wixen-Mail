@@ -10517,7 +10517,7 @@ pub(crate) fn prompt_for_new_item(
 /// A struct rather than five arguments, so the two callers cannot get the
 /// window title and the label the wrong way round: both are strings and both
 /// still compile.
-pub(crate) struct Asking<'a> {
+pub struct Asking<'a> {
     /// The window title.
     pub window: &'a str,
     /// The label beside the box, carrying its own mnemonic.
@@ -10534,12 +10534,20 @@ pub(crate) struct Asking<'a> {
     pub button: &'a str,
 }
 
-/// Ask for one name, and nothing else.
+/// Build the Ask For A Name dialog without showing it.
 ///
-/// Returns what was typed, or `None` if it was cancelled. Deliberately does
-/// not store anything or announce success: it used to do both, announcing
-/// "created" for an item that was written to a log line and thrown away.
-pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
+/// Everything `ask_for_a_name` used to do up to its own `.show_modal()` call,
+/// split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the dialog alongside the field `ask_for_a_name` still needs to
+/// read after a real `.show_modal()`.
+pub fn build_ask_for_a_name_dialog(
+    frame: &Frame,
+    asking: Asking,
+    palette: Option<theme::Palette>,
+) -> (Dialog, TextCtrl) {
     let Asking {
         window,
         label,
@@ -10609,6 +10617,26 @@ pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
             d.end_modal(ID_CANCEL);
         }
     });
+
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&title_field, palette.main_surface());
+    }
+
+    (dlg, title_field)
+}
+
+/// Ask for one name, and nothing else.
+///
+/// Returns what was typed, or `None` if it was cancelled. Deliberately does
+/// not store anything or announce success: it used to do both, announcing
+/// "created" for an item that was written to a log line and thrown away.
+pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
+    let (dlg, title_field) =
+        build_ask_for_a_name_dialog(frame, asking, theme::current_from_stored_config());
 
     if dlg.show_modal() == ID_OK {
         Some(title_field.get_value())

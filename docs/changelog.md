@@ -210,8 +210,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   reach it: Compose's own window; the Contact, Filter, Tag and Signature
   managers and their own edit dialogs; Add Calendar, Columns,
   Destination, Item Form, First Run's Allowed Changes screen, Folder
-  Choice, Reminder Alert, Thread View, and Ask For A Name; and About,
-  which almost nobody opens twice.
+  Choice, Reminder Alert, and Thread View; and About, which almost
+  nobody opens twice.
 
 - **The Check Spelling window Compose opens for a misspelled or repeated
   word now takes the Theme colours too.** The word, the field holding what
@@ -260,6 +260,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   of showing Windows' own white regardless of what Light or Dark chose.
   The "In" choice is left to Windows, matching every other choice box
   this round paints around.
+
+  Known limitations: Compose's own window, and roughly thirty other
+  windows that open on top of the main one, still show Windows' own
+  colours regardless of the Theme setting.
+
+- **The window that asks for a name when you create a calendar event,
+  reminder, task or note, or rename one, now takes the Theme colours
+  too.** The dialog and its name field now match the rest of the
+  coloured application instead of showing Windows' own white regardless
+  of what Light or Dark chose.
 
   Known limitations: Compose's own window, and roughly thirty other
   windows that open on top of the main one, still show Windows' own

@@ -595,6 +595,37 @@ fn check_search(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResu
     check("search query field", &q_field, palette.main_surface(), into);
 }
 
+/// The Ask For A Name dialog, reached both from "New" on a PIM item and
+/// directly from a rename. A note is included so the taller of the two
+/// window sizes is the one this test builds, the same way
+/// `document_that_exercises_every_optional_widget` builds a reader document
+/// that exercises both of its optional tabs.
+fn check_ask_for_a_name(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, title_field) = wx_app::build_ask_for_a_name_dialog(
+        parent,
+        wx_app::Asking {
+            window: "New Event",
+            label: "Event &title:",
+            note: Some("Kept in the calendar you last used."),
+            filled_in: "",
+            button: "C&reate",
+        },
+        Some(palette),
+    );
+    check(
+        "ask for a name dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "ask for a name title field",
+        &title_field,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -785,6 +816,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_calendar_list(&frame, palette, &mut sites);
             check_confirm_delete(&frame, palette, &mut sites);
             check_search(&frame, palette, &mut sites);
+            check_ask_for_a_name(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
