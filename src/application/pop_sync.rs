@@ -66,6 +66,20 @@ impl Housekeeping {
     };
 }
 
+/// What turning off "leave mail on the server" costs, for the account
+/// settings screen to attach as that checkbox's accessible description.
+///
+/// Said here rather than only in the box's visible neighbourhood, because a
+/// screen reader user tabbing onto the checkbox hears its name and its
+/// checked state and stops there unless a description is attached to carry
+/// the rest. POP's removal is worth the extra sentence: it has no Trash
+/// behind it the way deleting mail on an IMAP account does, so once the days
+/// below have passed there is nothing left to recover a copy from.
+pub const SERVER_REMOVAL_IS_PERMANENT: &str = "Turning this off allows mail to be removed from the server for good, once the number \
+     of days below has passed (0 there means never). POP has no Trash folder to recover \
+     it from, unlike deleting mail on an IMAP account. Mail already downloaded to this \
+     computer is unaffected.";
+
 /// Which messages on the server have not been downloaded.
 ///
 /// Compared by identifier, never by number. Returned in the order the server
@@ -1699,5 +1713,38 @@ X-Spam-Flag: YES\r\n\r\nbody";
             .iter()
             .map(|uidl| ((*uidl).to_string(), when))
             .collect()
+    }
+
+    #[test]
+    fn test_the_server_removal_setting_says_it_is_permanent_and_unlike_imap() {
+        // What the account settings screen attaches to "Leave mail on the
+        // server after downloading it" as its consequence. A screen reader
+        // user hears the name and the checked state and nothing else without
+        // this, and POP's removal is the one setting here with no undo: no
+        // Trash folder on the server, and no other device to recover a copy
+        // from once the days below have run out.
+        let lowered = SERVER_REMOVAL_IS_PERMANENT.to_lowercase();
+        assert!(
+            lowered.contains("imap"),
+            "does not contrast with IMAP's own delete, which has a Trash: {SERVER_REMOVAL_IS_PERMANENT}"
+        );
+        assert!(
+            lowered.contains("trash"),
+            "does not say POP has no Trash to recover mail from: {SERVER_REMOVAL_IS_PERMANENT}"
+        );
+        assert!(
+            ["gone", "for good", "permanent"]
+                .iter()
+                .any(|word| lowered.contains(word)),
+            "does not say the removal is permanent: {SERVER_REMOVAL_IS_PERMANENT}"
+        );
+        assert!(
+            SERVER_REMOVAL_IS_PERMANENT.ends_with('.'),
+            "read aloud, this needs to end as a sentence: {SERVER_REMOVAL_IS_PERMANENT}"
+        );
+        assert!(
+            !SERVER_REMOVAL_IS_PERMANENT.contains("  "),
+            "a doubled space is read as a pause in the middle of a sentence: {SERVER_REMOVAL_IS_PERMANENT}"
+        );
     }
 }

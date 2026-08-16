@@ -7,7 +7,9 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
+use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::no_sign_in_credentials;
+use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
@@ -524,6 +526,20 @@ fn show_edit(
         fields.add(&c, 0, SizerFlag::All, 4);
         c
     };
+    // For a checkbox whose consequence is not obvious from its label alone.
+    // One call, not two, same as `describe_password_box` above and for the
+    // same reason: attaching an accessible object replaces the last one, so
+    // this is `cb` with `set_accessible_name_and_description` in the one spot
+    // that call happens, never `cb` followed by a second attach afterward.
+    let cb_with_description = |label: &str, default: bool, description: &str| -> CheckBox {
+        let l = StaticText::builder(&dlg).with_label("").build();
+        let c = CheckBox::builder(&dlg).with_label(label).build();
+        set_accessible_name_and_description(&c, &name_from_label(label), description);
+        c.set_value(default);
+        fields.add(&l, 0, SizerFlag::All, 4);
+        fields.add(&c, 0, SizerFlag::All, 4);
+        c
+    };
 
     let choice = |label: &str, options: &[&str]| -> Choice {
         let l = StaticText::builder(&dlg).with_label(label).build();
@@ -589,14 +605,22 @@ fn show_edit(
     // On by default and deliberately. POP3 has one delete and it is permanent,
     // so a client that clears the server as it downloads leaves somebody with
     // one copy, on one computer, with no way back.
-    let pop_leave = cb("&Leave mail on the server after downloading it", true);
+    let pop_leave = cb_with_description(
+        "&Leave mail on the server after downloading it",
+        true,
+        SERVER_REMOVAL_IS_PERMANENT,
+    );
     let pop_days = spin("Then remove it after this many &days (0 for never):", 0);
     // What happens, rather than what it is called underneath. On by default,
     // because Delete doing nothing is what somebody meets first and it never
     // touches a server: mail moves to this account's own Trash folder here.
     // Somebody clearing the POP server after downloading has this computer as
     // the only copy, and this is how they say Delete must not lose it.
-    let allow_deleting = cb("Let me delete mail on this &computer", true);
+    let allow_deleting = cb_with_description(
+        "Let me delete mail on this &computer",
+        true,
+        DELETING_HERE_NEVER_REACHES_THE_SERVER,
+    );
 
     section("── SMTP Settings ──");
     let smtp_f = tf("&SMTP Server:", "");
@@ -1099,6 +1123,24 @@ mod tests {
         )
     }
 
+    /// However many characters follow `needle`, the first time it appears.
+    ///
+    /// Char-safe rather than a raw byte slice, the same way `around` above is:
+    /// this reads the file's own source, which can carry non-ASCII prose in a
+    /// comment, and byte-slicing at a fixed offset can land inside one of
+    /// those characters and panic.
+    fn after(screen: &str, needle: &str, len: usize) -> Option<String> {
+        let at = screen.find(needle)?;
+        let to = (at + len).min(screen.len());
+        Some(
+            screen
+                .char_indices()
+                .filter(|(i, _)| *i >= at && *i < to)
+                .map(|(_, c)| c)
+                .collect(),
+        )
+    }
+
     #[test]
     fn test_every_answer_the_account_manager_gives_is_said_out_loud() {
         // This is the screen a new account is created on and every one of its
@@ -1207,6 +1249,32 @@ mod tests {
             "expected two calls attaching the password box's description, \
              found {calls}"
         );
+    }
+
+    #[test]
+    fn test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader() {
+        // Both checkboxes read fine before this: a name and a checked state,
+        // and nothing else. Neither said what happens next, which for POP is
+        // the one thing worth knowing before touching either of them: one
+        // removes mail from the server for good with no Trash behind it, the
+        // other never leaves this computer at all. Whitespace-tolerant, so a
+        // rustfmt reflow of the call this checks does not break it.
+        let screen = the_account_manager();
+
+        for (site, constant) in [
+            ("let pop_leave = ", "SERVER_REMOVAL_IS_PERMANENT"),
+            (
+                "let allow_deleting = ",
+                "DELETING_HERE_NEVER_REACHES_THE_SERVER",
+            ),
+        ] {
+            let window = after(&screen, site, 400)
+                .unwrap_or_else(|| panic!("{site} is no longer how this control is built"));
+            assert!(
+                window.contains(constant),
+                "{site} does not attach {constant} within reach of where it is built: {window}"
+            );
+        }
     }
 
     #[test]

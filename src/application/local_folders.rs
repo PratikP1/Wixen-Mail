@@ -146,6 +146,18 @@ pub fn local_trash(protocol: Protocol) -> Option<String> {
 pub const DELETING_IS_SWITCHED_OFF: &str = "Deleting is switched off for this account. Turn on \"Let me delete mail on this computer\" \
      in the account's settings if you want it.";
 
+/// What letting somebody delete mail here costs, for the account settings
+/// screen to attach as that checkbox's accessible description.
+///
+/// A screen reader user tabbing onto "Let me delete mail on this computer"
+/// hears its name and its checked state and nothing more unless a
+/// description carries the rest, and what needs saying here is the opposite
+/// of the setting above it: this one never reaches the POP server at all,
+/// whatever "Leave mail on the server" decides.
+pub const DELETING_HERE_NEVER_REACHES_THE_SERVER: &str = "Deletes only the copy stored on this computer, moving it to this account's own Trash \
+     folder here. It never reaches the mail server; the settings above decide whether mail \
+     is removed from there.";
+
 /// What deleting a message in a folder on this computer means.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalDelete {
@@ -386,6 +398,32 @@ mod tests {
         assert!(
             why.ends_with('.'),
             "the refusal is read aloud and needs to end as a sentence: {why}"
+        );
+    }
+
+    #[test]
+    fn test_the_local_delete_consequence_says_it_stays_off_the_server() {
+        // What the account settings screen attaches to "Let me delete mail on
+        // this computer" as its consequence. Without it a screen reader user
+        // hears a name and a checked state and nothing about the one thing
+        // that matters here: this checkbox never reaches the POP server at
+        // all, whatever "Leave mail on the server" above decides.
+        let lowered = DELETING_HERE_NEVER_REACHES_THE_SERVER.to_lowercase();
+        assert!(
+            lowered.contains("never"),
+            "does not say this never reaches the server: {DELETING_HERE_NEVER_REACHES_THE_SERVER}"
+        );
+        assert!(
+            lowered.contains("server"),
+            "does not mention the server it stays off: {DELETING_HERE_NEVER_REACHES_THE_SERVER}"
+        );
+        assert!(
+            lowered.contains("computer") || lowered.contains("trash"),
+            "does not say where the message actually goes: {DELETING_HERE_NEVER_REACHES_THE_SERVER}"
+        );
+        assert!(
+            DELETING_HERE_NEVER_REACHES_THE_SERVER.ends_with('.'),
+            "read aloud, this needs to end as a sentence: {DELETING_HERE_NEVER_REACHES_THE_SERVER}"
         );
     }
 

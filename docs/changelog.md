@@ -6,6 +6,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **The account settings screen now says what a POP account's two
+  delete-related checkboxes actually do, not just their names.** "Leave mail
+  on the server after downloading it" and "Let me delete mail on this
+  computer" used to give a screen reader a name and a checked state and
+  nothing else. Neither said what happens next, and for a POP account the two
+  are easy to mix up: turning the first one off, together with a number of
+  days, removes mail from the server for good, with no Trash there to
+  recover it from, unlike deleting mail on an IMAP account. The second only
+  ever moves a downloaded message to this account's own Trash folder on this
+  computer and never reaches the server at all. Both checkboxes now carry
+  that sentence as an accessible description, read after the name when the
+  checkbox takes focus.
+
 ### Added
 
 - **The Theme setting now colours every module, not only Mail.** Choosing
