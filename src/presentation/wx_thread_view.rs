@@ -12,6 +12,7 @@
 
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -100,6 +101,47 @@ pub fn show_thread_dialog(
         return ThreadChoice::Cancelled;
     }
 
+    let Some((dlg, chosen)) =
+        build_thread_dialog(parent, subject, nodes, theme::current_from_stored_config())
+    else {
+        return ThreadChoice::Cancelled;
+    };
+
+    let _ = a11y.announce(
+        &format!("Conversation, {} messages", nodes.len()),
+        Priority::Normal,
+    );
+
+    match dlg.show_modal() {
+        ID_OK => chosen.borrow().clone(),
+        // Always the whole thread, whichever row the tree was on. The plain
+        // reading is of the conversation, and one message already has its own
+        // way in through Enter.
+        ID_PLAIN_TEXT => ThreadChoice::WholeConversation,
+        _ => ThreadChoice::Cancelled,
+    }
+}
+
+/// Build the Conversation tree dialog without showing it.
+///
+/// Everything `show_thread_dialog` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` or make an
+/// announcement at all.
+///
+/// `None` when the tree's root could not be created, mirroring what
+/// `show_thread_dialog` itself used to do on the same failure.
+///
+/// Returns what was chosen alongside the dialog: selecting a row in the tree
+/// keeps this current, so reading it back is all `show_thread_dialog` has to
+/// do once the dialog closes.
+pub fn build_thread_dialog(
+    parent: &Frame,
+    subject: &str,
+    nodes: &[ThreadNode],
+    palette: Option<theme::Palette>,
+) -> Option<(Dialog, std::rc::Rc<std::cell::RefCell<ThreadChoice>>)> {
     let dlg = Dialog::builder(parent, "Conversation")
         .with_size(620, 460)
         .build();
@@ -142,7 +184,7 @@ pub fn show_thread_dialog(
     // depth rather than something we invented.
     let Some(root) = tree.add_root(&root_label(nodes.len()), None, None) else {
         tracing::error!("Conversation tree root could not be created");
-        return ThreadChoice::Cancelled;
+        return None;
     };
 
     // The message id rides on the item rather than being looked up by
@@ -192,19 +234,16 @@ pub fn show_thread_dialog(
     plain.on_click(move |_| dlg.end_modal(ID_PLAIN_TEXT));
     cancel.on_click(move |_| dlg.end_modal(ID_CANCEL));
 
-    let _ = a11y.announce(
-        &format!("Conversation, {} messages", nodes.len()),
-        Priority::Normal,
-    );
-
-    match dlg.show_modal() {
-        ID_OK => chosen.borrow().clone(),
-        // Always the whole thread, whichever row the tree was on. The plain
-        // reading is of the conversation, and one message already has its own
-        // way in through Enter.
-        ID_PLAIN_TEXT => ThreadChoice::WholeConversation,
-        _ => ThreadChoice::Cancelled,
+    // Painted last. The tree is left to Windows here, the same as every
+    // `Choice`, `ComboBox`, `RadioButton` and `CheckBox` elsewhere in this
+    // round. `None` means high contrast is on, or the system is set up in a
+    // way this application should not paint over, so nothing is set here and
+    // Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
     }
+
+    Some((dlg, chosen))
 }
 
 #[cfg(test)]
