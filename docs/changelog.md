@@ -438,15 +438,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Allowed Changes screen, Folder Choice, Item Form, the Reminder Alert
   window, the Conversation window, and About.
 
-  Known limitations: the Add and Edit windows each of the Filter, Tag,
-  Signature and Contact managers opens to create or change one row are
-  not painted; that is the next standalone-dialog work still to do.
-  Separately, and true of every round of this work so far though never
-  said plainly until now: the application's own stock Windows dialogs, a
-  confirmation message box, the Open, Save and folder pickers, and the
-  plain text box Compose's Insert Link command opens, are never reached
-  by any of this. wxWidgets hands those to Windows itself to draw, and
-  nothing this project does can put its own colours on one.
+  Known limitations, true of every round of this work so far though
+  never said plainly until now: the application's own stock Windows
+  dialogs, a confirmation message box, the Open, Save and folder
+  pickers, and the plain text box Compose's Insert Link command opens,
+  are never reached by any of this. wxWidgets hands those to Windows
+  itself to draw, and nothing this project does can put its own
+  colours on one.
 
 - **The Add/Edit Contact window, and the four small windows it opens to add
   an email address, a phone number, a physical address or a custom field,
@@ -459,10 +457,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with, are left to Windows, matching every checkbox and choice box
   elsewhere in this round.
 
-  Known limitations: the Filter, Tag and Signature managers' own Add/Edit
-  windows are not coloured yet. Roughly thirty other windows that open on
-  top of the main one still show Windows' own colours regardless of the
-  Theme setting.
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
 
 - **The Add/Edit windows for a filter rule, a tag and a signature now take
   the Theme colours too.** The filter editor's rule name, pattern and
