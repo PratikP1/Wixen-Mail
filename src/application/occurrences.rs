@@ -2061,8 +2061,7 @@ mod tests {
     #[test]
     fn test_a_real_google_calendar_rule_with_wkst_su_and_three_weekdays_expands_correctly() {
         // machBar - Öffentlich, a real public Google Calendar (PRODID
-        // "-//Google Inc//Google Calendar 70.9054//EN"), "Open Health
-        // HACKademy - freie Termine".
+        // "-//Google Inc//Google Calendar 70.9054//EN").
         // niccokunzmann/python-recurring-ical-events @ 2ba2510e,
         // recurring_ical_events/test/calendars/machbar_16_feb_2019.ics.
         //
@@ -2096,7 +2095,7 @@ mod tests {
 
     #[test]
     fn test_a_real_weekly_series_excludes_its_real_cancelled_thursday() {
-        // Same calendar, "Montessori Schulklasse": a weekly Thursday morning
+        // Same calendar: a weekly Thursday morning
         // with one real cancellation. EXDATE names the same zone as DTSTART,
         // which is the shape a Google export almost always sends and the
         // shape none of this module's other tests used before this one; they
@@ -2127,7 +2126,7 @@ mod tests {
 
     #[test]
     fn test_a_real_monthly_last_saturday_series_keeps_both_of_its_real_exclusions() {
-        // Same calendar, "mB-onTour: repairCafé": the last Saturday of the
+        // Same calendar: the last Saturday of the
         // month, ending in November 2018, with two of its five remaining
         // occurrences called off.
         let mut event = an_event(
@@ -2151,7 +2150,7 @@ mod tests {
 
     #[test]
     fn test_a_real_fortnightly_series_runs_thirteen_months_with_one_exclusion() {
-        // Same calendar, the Freifunk Potsdam meetup: every other Tuesday
+        // Same calendar: every other Tuesday
         // for thirteen months, one occurrence called off, two changes of the
         // Berlin clocks crossed along the way without moving the clock face.
         let mut event = an_event(
