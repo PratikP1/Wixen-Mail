@@ -22,6 +22,7 @@ use crate::application::new_item::ItemKind;
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// A container the new thing could go in: a calendar, a task list, a folder.
@@ -60,6 +61,53 @@ pub fn ask_for(
     containers: &[Container],
     known_categories: &[String],
 ) -> Option<(Filled, Option<String>)> {
+    let widgets = build_item_form_dialog(
+        parent,
+        kind,
+        containers,
+        known_categories,
+        theme::current_from_stored_config(),
+    )?;
+
+    let answer = widgets.dialog.show_modal();
+    let filled = if answer == ID_OK {
+        Some(read_back(&widgets.built, containers))
+    } else {
+        None
+    };
+    widgets.dialog.destroy();
+    filled
+}
+
+/// The item form dialog's widgets, returned so a test can build it without a
+/// human closing a live modal and so `ask_for` can read every field back
+/// after a real `.show_modal()`.
+pub struct ItemFormWidgets {
+    pub dialog: Dialog,
+    /// Every `TextCtrl` this form built for an `Entry::Line` or
+    /// `Entry::Paragraph` field, paired with the field it belongs to. A test
+    /// can find the one it wants by name without reaching into `Control`,
+    /// which stays private to this module.
+    pub text_fields: Vec<(&'static Field, TextCtrl)>,
+    built: Vec<(&'static Field, Control)>,
+}
+
+/// Build the item form dialog without showing it.
+///
+/// Everything `ask_for` used to do up to its own `.show_modal()` call, split
+/// out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// `None` when `kind` has no fields to ask for, mirroring what `ask_for`
+/// itself used to do on the same case.
+pub fn build_item_form_dialog(
+    parent: &Frame,
+    kind: ItemKind,
+    containers: &[Container],
+    known_categories: &[String],
+    palette: Option<theme::Palette>,
+) -> Option<ItemFormWidgets> {
     let fields = fields_for(kind);
     if fields.is_empty() {
         return None;
@@ -133,14 +181,33 @@ pub fn ask_for(
         focus(first);
     }
 
-    let answer = dialog.show_modal();
-    let filled = if answer == ID_OK {
-        Some(read_back(&built, containers))
-    } else {
-        None
-    };
-    dialog.destroy();
-    filled
+    let text_fields: Vec<(&'static Field, TextCtrl)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Line(c) | Control::Paragraph(c) => Some((*field, *c)),
+            _ => None,
+        })
+        .collect();
+
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides. Every other kind of field this form can
+    // build (`DatePickerCtrl`, `TimePickerCtrl`, `Choice`, `ComboBox`,
+    // `SpinCtrl`, `CheckBox`) is left to Windows, matching every one of
+    // those elsewhere in this round; only a real `TextCtrl` gets its own
+    // call.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        for (_, field) in &text_fields {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    Some(ItemFormWidgets {
+        dialog,
+        text_fields,
+        built,
+    })
 }
 
 /// Build the control one field asks for.
