@@ -485,6 +485,7 @@ fn ask_a_server_and_add_what_was_chosen(
         &calendar_source::looking_for_calendars(),
         STOP_LOOKING,
         coming,
+        crate::presentation::theme::current_from_stored_config(),
     );
     let Some(answer) = waited else {
         send_status(tx, rt, calendar_source::LOOKING_WAS_STOPPED);
@@ -497,7 +498,14 @@ fn ask_a_server_and_add_what_was_chosen(
     let count = calendar_source::how_many_were_found(offers.len());
     send_status(tx, rt, &count.replace('&', ""));
     let lines: Vec<String> = offers.iter().map(|offer| offer.name.clone()).collect();
-    let chosen = wx_managers::choose_from_list(frame, "Choose a calendar", &count, "&Add", &lines);
+    let chosen = wx_managers::choose_from_list(
+        frame,
+        "Choose a calendar",
+        &count,
+        "&Add",
+        &lines,
+        crate::presentation::theme::current_from_stored_config(),
+    );
     let Some(chosen) = chosen.and_then(|which| offers.get(which)) else {
         return Ok(None);
     };
@@ -1409,7 +1417,12 @@ pub fn manage_contacts(
     let rows: Vec<wx_managers::ContactEntry> =
         stored.iter().map(contact_convert::to_editor).collect();
 
-    match wx_managers::show_contact_manager_dialog(frame, &rows, a11y) {
+    match wx_managers::show_contact_manager_dialog(
+        frame,
+        &rows,
+        a11y,
+        crate::presentation::theme::current_from_stored_config(),
+    ) {
         wx_managers::ContactManagerAction::SyncRequested => return true,
         wx_managers::ContactManagerAction::None => return false,
         wx_managers::ContactManagerAction::Updated(updated) => {
@@ -2266,8 +2279,14 @@ pub fn open_draft(
     }
 
     let labels: Vec<String> = drafts.iter().map(draft_label).collect();
-    let chosen =
-        wx_managers::choose_from_list(frame, "Open Draft", "&Saved drafts:", "&Open", &labels)?;
+    let chosen = wx_managers::choose_from_list(
+        frame,
+        "Open Draft",
+        "&Saved drafts:",
+        "&Open",
+        &labels,
+        crate::presentation::theme::current_from_stored_config(),
+    )?;
     let draft = drafts.get(chosen)?;
 
     Some(crate::presentation::ui_types::CompositionData {

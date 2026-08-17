@@ -227,7 +227,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   one), and the rest named plainly rather than left for someone to
   discover unpainted. What is still left, in the order most people would
   reach it: Compose's own window; the Contact, Filter, Tag and Signature
-  managers and their own edit dialogs; Add Calendar, Columns,
+  managers' own edit dialogs; Add Calendar, Columns,
   Destination, Item Form, First Run's Allowed Changes screen, Folder
   Choice, Reminder Alert, and Thread View; and About, which almost
   nobody opens twice.
@@ -304,6 +304,124 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   message body is a browser control that renders the message's own HTML
   and keeps showing that HTML's own colours, the same way the message
   reader and the preview Compose shows before sending already do.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The Add Calendar window now takes the Theme colours too.** The
+  address, the name a feed is kept under, the user name, and the password
+  now match the rest of the coloured application instead of showing
+  Windows' own white regardless of what Light or Dark chose.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The Columns window now takes the Theme colours too.** This dialog has
+  no text boxes of its own to colour; painting the window itself is what
+  changes here. The checked list of columns draws its own tick marks
+  rather than using a control this pass paints, so it is left to Windows,
+  the same as every choice box, combo box, radio button and checkbox
+  elsewhere in this round.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The window that asks where a message, or an event, task, note or
+  reminder, should be moved or copied to now takes the Theme colours
+  too.** This dialog has no text boxes of its own to colour; painting the
+  window itself is what changes here. The tree of accounts and folders is
+  left to Windows, the same as every choice box, combo box, radio button
+  and checkbox elsewhere in this round.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The first-run screen that asks what Wixen Mail may change now takes
+  the Theme colours too.** This screen has no text boxes of its own to
+  colour; painting the window itself is what changes here.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The window that asks which folders an account should keep up to date
+  now takes the Theme colours too.** This dialog has no text boxes of its
+  own to colour; painting the window itself is what changes here. The
+  checked list of folders draws its own tick marks rather than using a
+  control this pass paints, so it is left to Windows, the same as every
+  choice box, combo box, radio button and checkbox elsewhere in this
+  round.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The window that asks for the details of a new event, task, reminder
+  or note now takes the Theme colours too.** Every text box it can build,
+  the title, the location and the description, now matches the rest of
+  the coloured application instead of showing Windows' own white
+  regardless of what Light or Dark chose. The date, time, choice, spin,
+  category and checkbox fields it can also build are left to Windows,
+  matching every one of those elsewhere in this round.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The window that opens when a reminder comes due now takes the Theme
+  colours too.** This dialog has no text boxes of its own to colour;
+  painting the window itself is what changes here. The Come Back In
+  choice is left to Windows, matching every other choice box this round
+  paints around.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The Conversation window, opened before choosing to view a thread as
+  headings, one message, or plain text, now takes the Theme colours
+  too.** This dialog has no text boxes of its own to colour; painting the
+  window itself is what changes here. The tree of messages in the thread
+  is left to Windows, the same as every choice box, combo box, radio
+  button and checkbox elsewhere in this round. This is a different window
+  from the one that shows a conversation as headings once you choose to
+  open it that way, which still shows Windows' own colours.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The About window now takes the Theme colours too.** This dialog has
+  no text boxes of its own to colour; painting the window itself is what
+  changes here.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
+- **The Filter, Tag, Signature and Contact managers' own list windows now
+  take the Theme colours too.** The Filter, Tag and Signature managers
+  share one dialog shell, so painting it once colours the dialog and the
+  list of rules, tags or signatures in all three. The Contact Manager
+  builds its own window rather than using that shared shell, and gets the
+  same treatment: the dialog, its search box, and the list of contacts.
+
+  Known limitations: the Add and Edit windows each of these four managers
+  opens to create or change one row are not coloured yet. Roughly thirty
+  other windows that open on top of the main one still show Windows' own
+  colours regardless of the Theme setting.
+
+- **The window that waits while a calendar server is asked what it has,
+  and the window used to pick one item from a list, now take the Theme
+  colours too.** The second of these is reached both when choosing a
+  calendar to add and when reopening a saved draft. Neither has a text
+  box of its own to colour; painting the window itself is what changes
+  here. The list in the second is left to Windows, the same as a choice
+  box or a radio button group elsewhere in this round.
 
   Known limitations: roughly thirty other windows that open on top of the
   main one still show Windows' own colours regardless of the Theme

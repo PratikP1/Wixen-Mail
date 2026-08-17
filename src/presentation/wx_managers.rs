@@ -14,6 +14,7 @@ use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
 use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
+use crate::presentation::theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -231,11 +232,20 @@ fn run_manager_loop<T: Clone>(
 }
 
 /// Create the standard manager dialog shell: dialog + sizer + list + status.
-fn make_shell(
+///
+/// Shared by the Filter, Tag and Signature managers' own list windows, so
+/// painting the dialog and the list once here reaches all three the moment
+/// each caller forwards a palette into this call. The status line is left to
+/// Windows: it carries no row content of its own, matching the rule this
+/// round follows throughout for a `StaticText` that is not one. `None` means
+/// high contrast is on, or the system is set up in a way this application
+/// should not paint over, so nothing is set here and Windows decides.
+pub fn make_shell(
     parent: &Frame,
     title: &str,
     w: i32,
     h: i32,
+    palette: Option<theme::Palette>,
 ) -> (Dialog, BoxSizer, ListCtrl, StaticText) {
     let dialog = Dialog::builder(parent, title)
         .with_size(w, h)
@@ -247,6 +257,12 @@ fn make_shell(
         .build();
     set_accessible_name(&list, "Items");
     let status = StaticText::builder(&dialog).with_label(" ").build();
+
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        theme::paint(&list, palette.main_surface());
+    }
+
     (dialog, sizer, list, status)
 }
 
@@ -580,11 +596,31 @@ pub(crate) fn get_address_field_labels(country: &str) -> (&'static str, &'static
 
 // ── Contact Manager: Custom Loop with Live Search ──────────────────────────
 
-pub fn show_contact_manager_dialog(
+/// What `show_contact_manager_dialog`'s own loop still needs after
+/// construction: the controls to read from and, for the search field and the
+/// list, to repaint whenever a search narrows what they show, plus the
+/// shared state the live search and the Add/Edit/Delete handlers already
+/// close over.
+pub struct ContactManagerDialogHandles {
+    pub dialog: Dialog,
+    pub search: TextCtrl,
+    pub list: ListCtrl,
+    pub status: StaticText,
+    working: Rc<RefCell<Vec<ContactEntry>>>,
+    index_map: Rc<RefCell<Vec<usize>>>,
+}
+
+/// Build the Contact Manager's own list window without showing it.
+///
+/// Everything `show_contact_manager_dialog` used to do up to its own modal
+/// loop, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_contact_manager_dialog(
     parent: &Frame,
     contacts: &[ContactEntry],
-    a11y: &Arc<Accessibility>,
-) -> ContactManagerAction {
+    palette: Option<theme::Palette>,
+) -> ContactManagerDialogHandles {
     let dialog = Dialog::builder(parent, "Contact Manager")
         .with_size(700, 500)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -710,6 +746,44 @@ pub fn show_contact_manager_dialog(
 
     // Set focus to search field for accessibility
     search_f.set_focus();
+
+    // Painted last, after the list's columns are inserted and its first
+    // population has run: nothing in this codebase proves whether a native
+    // list-view control keeps a manually set background colour across
+    // `InsertColumn`, the same caution the Account Manager's own list takes.
+    // `None` means high contrast is on, or the system is set up in a way
+    // this application should not paint over, so nothing is set here and
+    // Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        theme::paint(&search_f, palette.main_surface());
+        theme::paint(&list, palette.main_surface());
+    }
+
+    ContactManagerDialogHandles {
+        dialog,
+        search: search_f,
+        list,
+        status,
+        working,
+        index_map,
+    }
+}
+
+pub fn show_contact_manager_dialog(
+    parent: &Frame,
+    contacts: &[ContactEntry],
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> ContactManagerAction {
+    let ContactManagerDialogHandles {
+        dialog,
+        search: search_f,
+        list,
+        status,
+        working,
+        index_map,
+    } = build_contact_manager_dialog(parent, contacts, palette);
 
     // ── Modal loop ──────────────────────────────────────────────────
     let mut changed = false;
@@ -1699,7 +1773,13 @@ pub fn show_filter_manager_dialog(
     rules: &[FilterRule],
     a11y: &Arc<Accessibility>,
 ) -> FilterManagerAction {
-    let (dialog, sizer, list, status) = make_shell(parent, "Filter Manager", 650, 450);
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        "Filter Manager",
+        650,
+        450,
+        theme::current_from_stored_config(),
+    );
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 130);
     list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
@@ -1940,7 +2020,13 @@ pub fn show_tag_manager_dialog(
     tags: &[TagEntry],
     a11y: &Arc<Accessibility>,
 ) -> TagManagerAction {
-    let (dialog, sizer, list, status) = make_shell(parent, "Tag Manager", 450, 400);
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        "Tag Manager",
+        450,
+        400,
+        theme::current_from_stored_config(),
+    );
 
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
     list.insert_column(1, "Color", ListColumnFormat::Left, 100);
@@ -2096,7 +2182,13 @@ pub fn show_signature_manager_dialog(
     signatures: &[SignatureEntry],
     a11y: &Arc<Accessibility>,
 ) -> SignatureManagerAction {
-    let (dialog, sizer, list, status) = make_shell(parent, "Signature Manager", 550, 450);
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        "Signature Manager",
+        550,
+        450,
+        theme::current_from_stored_config(),
+    );
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 200);
     list.insert_column(1, "Default", ListColumnFormat::Centre, 80);
@@ -2263,6 +2355,56 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
 /// saying so, rare enough to cost nothing while it waits.
 const HOW_OFTEN_TO_LOOK_FOR_THE_ANSWER: i32 = 50;
 
+/// Build the "please wait" dialog without showing it.
+///
+/// Everything `wait_for_an_answer` used to do up to its own timer, channel
+/// and `.show_modal()` call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the stop button alongside the dialog, the same way
+/// `wait_for_an_answer` still needs it after a real `.show_modal()`: to wire
+/// its click and give it focus.
+pub fn build_wait_for_an_answer_dialog(
+    parent: &Frame,
+    title: &str,
+    what_is_happening: &str,
+    stop: &str,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Button) {
+    let dialog = Dialog::builder(parent, title).with_size(520, 200).build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Named as well as shown. A static text with no name of its own is read
+    // from its label on most builds and from nothing on some, and this is the
+    // only sentence in the window.
+    let saying = StaticText::builder(&dialog)
+        .with_label(what_is_happening)
+        .build();
+    set_accessible_name(&saying, what_is_happening);
+    sizer.add(&saying, 1, SizerFlag::Expand | SizerFlag::All, 12);
+
+    // The one control, and it carries the cancel id, so Escape and the window's
+    // own close button both mean the same thing as pressing it.
+    let stop_button = Button::builder(&dialog)
+        .with_label(stop)
+        .with_id(ID_CANCEL)
+        .build();
+    set_accessible_name(&stop_button, &name_from_label(stop));
+    sizer.add(&stop_button, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    dialog.set_sizer(sizer, true);
+
+    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
+    // dialog, so the dialog itself is the only site. `None` means high
+    // contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+
+    (dialog, stop_button)
+}
+
 /// Wait for an answer being worked out somewhere else, with the window alive.
 ///
 /// The alternative, waiting on this thread, is a window that cannot repaint,
@@ -2289,28 +2431,10 @@ pub fn wait_for_an_answer<T: 'static>(
     what_is_happening: &str,
     stop: &str,
     coming: async_channel::Receiver<T>,
+    palette: Option<theme::Palette>,
 ) -> Option<T> {
-    let dialog = Dialog::builder(parent, title).with_size(520, 200).build();
-    let sizer = BoxSizer::builder(Orientation::Vertical).build();
-
-    // Named as well as shown. A static text with no name of its own is read
-    // from its label on most builds and from nothing on some, and this is the
-    // only sentence in the window.
-    let saying = StaticText::builder(&dialog)
-        .with_label(what_is_happening)
-        .build();
-    set_accessible_name(&saying, what_is_happening);
-    sizer.add(&saying, 1, SizerFlag::Expand | SizerFlag::All, 12);
-
-    // The one control, and it carries the cancel id, so Escape and the window's
-    // own close button both mean the same thing as pressing it.
-    let stop_button = Button::builder(&dialog)
-        .with_label(stop)
-        .with_id(ID_CANCEL)
-        .build();
-    set_accessible_name(&stop_button, &name_from_label(stop));
-    sizer.add(&stop_button, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
-    dialog.set_sizer(sizer, true);
+    let (dialog, stop_button) =
+        build_wait_for_an_answer_dialog(parent, title, what_is_happening, stop, palette);
 
     let arrived: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
     // Held until this function returns: dropping a timer stops it, so one that
@@ -2347,25 +2471,23 @@ pub fn wait_for_an_answer<T: 'static>(
     arrived.borrow_mut().take()
 }
 
-/// Pick one item from a list, or nothing.
+/// Build the "pick one" dialog without showing it.
 ///
-/// A single-selection list box with OK and Cancel. Deliberately plain: it is
-/// reached by keyboard, read by a screen reader, and closed with Escape, and
-/// none of that is improved by anything more elaborate.
+/// Everything `choose_from_list` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
 ///
-/// `confirm` is what the button that accepts says, because the word has to
-/// match what happens: "Open" is right for a draft and wrong for adding a
-/// calendar, and a button whose word is wrong is a button somebody hesitates
-/// over every time.
-///
-/// Returns the index chosen, or `None` if it was cancelled.
-pub fn choose_from_list(
+/// Returns the list alongside the dialog, the same way `choose_from_list`
+/// still needs it after a real `.show_modal()`: to read what was chosen.
+pub fn build_choose_from_list_dialog(
     parent: &Frame,
     title: &str,
     label: &str,
     confirm: &str,
     items: &[String],
-) -> Option<usize> {
+    palette: Option<theme::Palette>,
+) -> (Dialog, ListBox) {
     let dlg = Dialog::builder(parent, title)
         .with_size(520, 380)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -2414,6 +2536,41 @@ pub fn choose_from_list(
         let d = dlg;
         move |_| d.end_modal(ID_CANCEL)
     });
+
+    // Painted last. The list is left to Windows: it offers one item per
+    // choice, the same as a Choice or a radio group elsewhere in this round,
+    // rather than showing rows of content the way a contact or an account
+    // does. `None` means high contrast is on, or the system is set up in a
+    // way this application should not paint over, so nothing is set here and
+    // Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+    }
+
+    (dlg, list)
+}
+
+/// Pick one item from a list, or nothing.
+///
+/// A single-selection list box with OK and Cancel. Deliberately plain: it is
+/// reached by keyboard, read by a screen reader, and closed with Escape, and
+/// none of that is improved by anything more elaborate.
+///
+/// `confirm` is what the button that accepts says, because the word has to
+/// match what happens: "Open" is right for a draft and wrong for adding a
+/// calendar, and a button whose word is wrong is a button somebody hesitates
+/// over every time.
+///
+/// Returns the index chosen, or `None` if it was cancelled.
+pub fn choose_from_list(
+    parent: &Frame,
+    title: &str,
+    label: &str,
+    confirm: &str,
+    items: &[String],
+    palette: Option<theme::Palette>,
+) -> Option<usize> {
+    let (dlg, list) = build_choose_from_list_dialog(parent, title, label, confirm, items, palette);
     if dlg.show_modal() == ID_OK {
         list.get_selection().map(|chosen| chosen as usize)
     } else {

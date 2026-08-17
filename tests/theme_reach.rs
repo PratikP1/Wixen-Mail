@@ -32,15 +32,21 @@
 
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::calendar::{WhatIsBeingDone, WhatTheCalendarAllows, WhereAChangeGoes};
+use wixen_mail::application::destinations::{Branch, Destination, Moving};
+use wixen_mail::application::due::Snooze;
+use wixen_mail::application::new_item::ItemKind;
 use wixen_mail::application::spell_session;
 use wixen_mail::application::words::{TextNode, words_in};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind};
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
-    wx_account_manager, wx_app, wx_calendar, wx_calendar_module, wx_compose, wx_contacts_module,
-    wx_notes_module, wx_reader, wx_reminders_module, wx_settings, wx_tasks_module, wx_which_days,
+    wx_account_manager, wx_add_calendar, wx_app, wx_calendar, wx_calendar_module, wx_columns,
+    wx_compose, wx_contacts_module, wx_destination, wx_first_run, wx_folder_choice, wx_item_form,
+    wx_managers, wx_notes_module, wx_reader, wx_reminder_alert, wx_reminders_module, wx_settings,
+    wx_tasks_module, wx_thread_view, wx_which_days,
 };
 use wxdragon::prelude::*;
 
@@ -626,6 +632,172 @@ fn check_ask_for_a_name(parent: &Frame, palette: theme::Palette, into: &mut Vec<
     );
 }
 
+/// The Add Calendar dialog. The two radio buttons are left to Windows,
+/// matching every other `RadioButton` this round paints around, so the
+/// dialog and its four `TextCtrl` fields are what is checked here.
+fn check_add_calendar(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let widgets = wx_add_calendar::build_add_calendar_dialog(parent, Some(palette));
+    check(
+        "add calendar dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("add calendar address field", &widgets.address),
+        ("add calendar name field", &widgets.name),
+        ("add calendar user name field", &widgets.user_name),
+        ("add calendar password field", &widgets.password),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
+/// The Columns dialog. The `CheckListBox` draws its own check marks rather
+/// than going through a control the established pattern paints, so it is
+/// left to Windows here, the same as every `Choice`, `ComboBox`,
+/// `RadioButton` and `CheckBox` elsewhere in this round; only the dialog
+/// itself is checked.
+fn check_columns(
+    parent: &Frame,
+    a11y: &Arc<Accessibility>,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) {
+    let layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+    let (dialog, _working) =
+        wx_columns::build_column_dialog(parent, &layout, FolderKind::Inbox, a11y, Some(palette));
+    check("columns dialog", &dialog, palette.main_surface(), into);
+}
+
+/// The "where does this go" dialog, opened to move or copy a message or a
+/// PIM item. The tree is left to Windows here, the same as every `Choice`,
+/// `ComboBox`, `RadioButton` and `CheckBox` elsewhere in this round; only the
+/// dialog itself is checked.
+fn check_destination(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let branches = [Branch {
+        account_id: "acct-1".to_string(),
+        account_name: "person@example.com".to_string(),
+        places: vec![Destination {
+            name: "Archive".to_string(),
+            id: "archive".to_string(),
+            account_id: "acct-1".to_string(),
+            depth: 0,
+        }],
+    }];
+    let (dialog, _tree) = wx_destination::build_destination_dialog(
+        parent,
+        Moving::Message,
+        false,
+        &branches,
+        None,
+        Some(palette),
+    );
+    check("destination dialog", &dialog, palette.main_surface(), into);
+}
+
+/// The first-run "what may Wixen Mail change" dialog. No `TextCtrl`,
+/// `ListCtrl` or `TreeCtrl` anywhere in this dialog (`StaticText` and
+/// `RadioButton` only), so the dialog itself is the only site.
+fn check_first_run(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, _buttons) = wx_first_run::build_first_run_dialog(parent, Some(palette));
+    check("first run dialog", &dialog, palette.main_surface(), into);
+}
+
+/// The folder chooser opened from "Choose folders to keep up to date". The
+/// `CheckListBox` draws its own check marks rather than going through a
+/// control the established pattern paints, so it is left to Windows here,
+/// the same as every `Choice`, `ComboBox`, `RadioButton` and `CheckBox`
+/// elsewhere in this round; only the dialog itself is checked.
+fn check_folder_choice(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let folders = [wx_folder_choice::FolderRow {
+        path: "INBOX".to_string(),
+        name: "Inbox".to_string(),
+        syncing: true,
+        subscribed: true,
+        holds_all_mail: false,
+        total: 10,
+    }];
+    let (dialog, _list) = wx_folder_choice::build_folder_choice_dialog(
+        parent,
+        "person@example.com",
+        &folders,
+        Some(palette),
+    );
+    check(
+        "folder choice dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The item form dialog, asking for an Event: the one kind whose fields cover
+/// every `Entry::Line` and `Entry::Paragraph` field this round paints (title,
+/// location, description), alongside the ones it leaves to Windows (date,
+/// time, choice, spin, category, tick).
+fn check_item_form(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let widgets =
+        wx_item_form::build_item_form_dialog(parent, ItemKind::Event, &[], &[], Some(palette))
+            .expect("an Event has fields to ask for");
+    check(
+        "item form dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (field, control) in &widgets.text_fields {
+        check(field.label, control, palette.main_surface(), into);
+    }
+}
+
+/// The reminder alert window. No `TextCtrl`, `ListCtrl` or `TreeCtrl`
+/// anywhere in this dialog (`StaticText`, `Choice` and buttons only), so the
+/// dialog itself is the only site.
+fn check_reminder_alert(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, _snooze_choice) = wx_reminder_alert::build_reminder_alert_dialog(
+        parent,
+        "Test reminder due now",
+        Snooze::ALL[0],
+        Some(palette),
+    );
+    check(
+        "reminder alert dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The Conversation tree dialog, opened before choosing to view a thread as
+/// headings, one message, or plain text. The tree is left to Windows here,
+/// the same as every `Choice`, `ComboBox`, `RadioButton` and `CheckBox`
+/// elsewhere in this round; only the dialog itself is checked.
+fn check_thread_view(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let nodes = [wx_thread_view::ThreadNode {
+        message_id: 1,
+        uid: 1,
+        sender: "Ada Lovelace".to_string(),
+        subject: "Quarterly report".to_string(),
+        date: "2026-07-26".to_string(),
+        read: true,
+        depth: 0,
+        parent: None,
+    }];
+    let (dialog, _chosen) =
+        wx_thread_view::build_thread_dialog(parent, "Quarterly report", &nodes, Some(palette))
+            .expect("a tree root should build from one node");
+    check("thread view dialog", &dialog, palette.main_surface(), into);
+}
+
+/// The About dialog. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in
+/// this dialog (four `StaticText` and a button), so the dialog itself is the
+/// only site.
+fn check_about(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let dialog = wx_app::build_about_dialog(parent, Some(palette));
+    check("about dialog", &dialog, palette.main_surface(), into);
+}
+
 /// A message with both a warning and an attachment, so the reader builds
 /// both of its optional tab widgets and this can check them rather than
 /// finding `None` and having nothing to read a colour from.
@@ -814,6 +986,96 @@ fn check_compose(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRes
     );
 }
 
+/// The shell shared by the Filter, Tag and Signature managers' own list
+/// windows: one dialog and one list stand in for all three, since each of
+/// them only adds its own columns and its own Add/Edit/Delete loop on top of
+/// what `make_shell` builds. "Filter Manager" is the title and size the real
+/// filter manager passes; its own columns are inserted here too, the same
+/// way a real caller inserts them right after this call returns, so this
+/// proves the colour survives `InsertColumn` rather than only the moment
+/// before it.
+fn check_managers_shell(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, _sizer, list, _status) =
+        wx_managers::make_shell(parent, "Filter Manager", 650, 450, Some(palette));
+    list.insert_column(0, "Name", ListColumnFormat::Left, 130);
+    list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
+    list.insert_column(2, "Action", ListColumnFormat::Left, 150);
+    list.insert_column(3, "Status", ListColumnFormat::Centre, 70);
+    check(
+        "managers shell dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+    check("managers shell list", &list, palette.main_surface(), into);
+}
+
+/// The Contact Manager's own list window, built directly rather than through
+/// `make_shell`. An empty contact list is enough: painting the dialog, the
+/// search field and the list does not depend on what the list holds.
+fn check_contact_manager(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let handles = wx_managers::build_contact_manager_dialog(parent, &[], Some(palette));
+    check(
+        "contact manager dialog",
+        &handles.dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "contact manager search field",
+        &handles.search,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "contact manager list",
+        &handles.list,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The "please wait" window shown while a calendar server is asked what it
+/// has. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this dialog
+/// (`StaticText` and a `Button` only), so the dialog itself is the only site.
+fn check_wait_for_an_answer(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let (dialog, _stop_button) = wx_managers::build_wait_for_an_answer_dialog(
+        parent,
+        "Adding a calendar",
+        "Looking for calendars...",
+        "Stop looking",
+        Some(palette),
+    );
+    check(
+        "wait for an answer dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The "pick one" window used to choose a calendar to add and to reopen a
+/// saved draft. The list offers one item per choice, the same as a `Choice`
+/// or a radio group elsewhere in this round, so it is left to Windows here
+/// too; only the dialog itself is checked.
+fn check_choose_from_list(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let items = vec!["Calendar A".to_string(), "Calendar B".to_string()];
+    let (dialog, _list) = wx_managers::build_choose_from_list_dialog(
+        parent,
+        "Choose a calendar",
+        "2 calendars found:",
+        "&Add",
+        &items,
+        Some(palette),
+    );
+    check(
+        "choose from list dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// Every site this round wires that can be reached without a running
 /// application, checked against the real colour a real control reports.
 ///
@@ -855,7 +1117,20 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_confirm_delete(&frame, palette, &mut sites);
             check_search(&frame, palette, &mut sites);
             check_ask_for_a_name(&frame, palette, &mut sites);
+            check_add_calendar(&frame, palette, &mut sites);
+            check_columns(&frame, &a11y, palette, &mut sites);
+            check_destination(&frame, palette, &mut sites);
+            check_first_run(&frame, palette, &mut sites);
+            check_folder_choice(&frame, palette, &mut sites);
+            check_item_form(&frame, palette, &mut sites);
+            check_reminder_alert(&frame, palette, &mut sites);
+            check_thread_view(&frame, palette, &mut sites);
+            check_about(&frame, palette, &mut sites);
             check_compose(&frame, palette, &mut sites);
+            check_managers_shell(&frame, palette, &mut sites);
+            check_contact_manager(&frame, palette, &mut sites);
+            check_wait_for_an_answer(&frame, palette, &mut sites);
+            check_choose_from_list(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
