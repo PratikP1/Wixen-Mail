@@ -1635,7 +1635,8 @@ impl MessageCache {
                 calendar_id TEXT,
                 deleted_at TEXT NOT NULL,
                 event_url TEXT,
-                taken_at TEXT
+                taken_at TEXT,
+                provider_recurrence_id TEXT
             )",
                 [],
             )
@@ -1903,6 +1904,13 @@ impl MessageCache {
         // survived to be read here is one no provider has taken, because until
         // this shipped a note was dropped the moment one did.
         self.ensure_column_exists("deleted_calendar_events", "taken_at", "TEXT")?;
+        // The day of a series an occurrence exception stood for, so a delete
+        // note for a row like this can recover the bare UID a push needs
+        // without taking `provider_event_id`'s compound identity back apart.
+        // Nothing for every note already written, which is the right answer
+        // for all of them: until this shipped, deleting a day like this was
+        // refused before a note was ever written.
+        self.ensure_column_exists("deleted_calendar_events", "provider_recurrence_id", "TEXT")?;
         self.ensure_column_exists("deleted_contacts", "taken_at", "TEXT")?;
         self.ensure_column_exists("deleted_tasks", "taken_at", "TEXT")?;
 

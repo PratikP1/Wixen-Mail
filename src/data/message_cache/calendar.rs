@@ -26,6 +26,19 @@ pub struct DeletedCalendarEvent {
     /// is cleared, with one the server can still hand the event back and the
     /// note is kept to stand in the way.
     pub event_url: Option<String>,
+    /// The day of a series this row stood for, when it was one day a calendar
+    /// server had already split into its own VEVENT.
+    ///
+    /// Carried through rather than recovered later by taking it back apart
+    /// from `provider_event_id`: that compound identity is
+    /// `{uid}:{recurrence-id}`, and a recurrence id can itself carry a colon,
+    /// so splitting it on the first one cuts it apart in the wrong place.
+    /// `provider_recurrence_id` is already known on the row this note was
+    /// written from, and keeping it here is what lets a later push recover
+    /// the bare UID without parsing anything back apart. Nothing for an
+    /// ordinary event's own deletion, and nothing for a note written before
+    /// this existed.
+    pub provider_recurrence_id: Option<String>,
     /// Whether the provider has taken it yet.
     pub so_far: TheDeletionSoFar,
 }
@@ -380,8 +393,9 @@ impl MessageCache {
             self.conn
                 .execute(
                     "INSERT OR REPLACE INTO deleted_calendar_events
-                        (id, account_id, provider_event_id, calendar_id, deleted_at, event_url)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        (id, account_id, provider_event_id, calendar_id, deleted_at, event_url,
+                         provider_recurrence_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![
                         going.id,
                         going.account_id,
@@ -389,6 +403,7 @@ impl MessageCache {
                         going.calendar_id,
                         chrono::Utc::now().to_rfc3339(),
                         going.web_link,
+                        going.provider_recurrence_id,
                     ],
                 )
                 .map_err(|e| Error::Other(format!("Failed to record a deleted event: {}", e)))?;
@@ -446,7 +461,7 @@ impl MessageCache {
             .conn
             .prepare(
                 "SELECT id, account_id, provider_event_id, calendar_id, deleted_at, event_url,
-                        taken_at
+                        taken_at, provider_recurrence_id
                  FROM deleted_calendar_events WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
@@ -460,6 +475,7 @@ impl MessageCache {
                     deleted_at: row.get(4)?,
                     event_url: row.get(5)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(6)?),
+                    provider_recurrence_id: row.get(7)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?
@@ -686,6 +702,34 @@ mod tests {
         assert_eq!(
             notes[0].event_url.as_deref(),
             Some("https://cal.example.com/dav/sam/work/e-1.ics")
+        );
+    }
+
+    #[test]
+    fn test_a_deletion_notes_which_day_of_its_series_an_occurrence_exception_stood_for() {
+        // A day a calendar server has already split into its own VEVENT
+        // shares its resource, and so its address, with the series it was
+        // cut out of. Recovering the bare UID from just `provider_event_id`
+        // once the row is gone risks cutting a recurrence id that itself
+        // carries a colon apart in the wrong place, the exact hazard
+        // `the_bare_identity_of_an_occurrence_exception` already exists to
+        // avoid; carrying the already-known `provider_recurrence_id` through
+        // the note is what lets the push recover the identity without
+        // parsing it back apart.
+        let cache = temp_cache("deletion_recurrence_id");
+        let mut going = make_event("evt-1", "acct", "e-1:2026-03-12T09:00:00Z", "Weekly review");
+        going.web_link = Some("https://cal.example.com/dav/sam/work/e-1.ics".to_string());
+        going.provider_recurrence_id = Some("2026-03-12T09:00:00Z".to_string());
+        cache.save_calendar_event(&going).expect("the event");
+
+        cache.delete_calendar_event("evt-1").expect("the deletion");
+
+        let notes = cache.deleted_calendar_events("acct").expect("the notes");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].provider_recurrence_id.as_deref(),
+            Some("2026-03-12T09:00:00Z"),
+            "the note lost which day of the series this row stood for"
         );
     }
 
@@ -1157,6 +1201,13 @@ mod tests {
             "a note written before deletions were remembered has to read as one \
              still owed, because until then a note a provider had taken was \
              dropped on the spot"
+        );
+        assert_eq!(
+            notes[0].provider_recurrence_id, None,
+            "a note written before this column existed has to open and read the \
+             new column as nothing, which is the right answer for every one of \
+             them: until this shipped, deleting a day like this was refused \
+             before a note was ever written"
         );
     }
 
