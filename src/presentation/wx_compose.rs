@@ -667,7 +667,10 @@ pub fn build_compose_dialog(
     // other Choice this round paints around. The message body above is a
     // `WebView` that owns its colour through its own document's HTML and
     // CSS, the same deliberate exclusion this file's own
-    // `build_send_preview_dialog` and the message reader already make.
+    // `build_send_preview_dialog` and `wx_app.rs`'s
+    // `show_conversation_as_page` already make; the message reader is not
+    // a third instance of it, since its reading surface is a native rich
+    // text control that this round already paints, not a `WebView`.
     // `None` means high contrast is on, or the system is set up in a way
     // this application should not paint over, so nothing is set here and
     // Windows decides.
