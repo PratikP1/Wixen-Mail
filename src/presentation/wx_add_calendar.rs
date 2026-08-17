@@ -30,6 +30,7 @@
 
 use crate::application::calendar_source::{NOT_TRIED_FOR_REAL, Source};
 use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// What somebody asked for.
@@ -50,6 +51,46 @@ pub struct Asked {
 /// `None` when somebody changed their mind, which must leave everything as it
 /// was.
 pub fn ask_for_a_calendar(parent: &Frame) -> Option<Asked> {
+    let widgets = build_add_calendar_dialog(parent, theme::current_from_stored_config());
+
+    let answer = widgets.dialog.show_modal();
+    let asked = (answer == ID_OK).then(|| Asked {
+        source: if widgets.from_a_feed.get_value() {
+            Source::Feed
+        } else {
+            Source::Server
+        },
+        address: widgets.address.get_value(),
+        name: widgets.name.get_value(),
+        user_name: widgets.user_name.get_value(),
+        password: widgets.password.get_value(),
+    });
+    widgets.dialog.destroy();
+    asked
+}
+
+/// The Add Calendar dialog's widgets, returned so a test can build it without
+/// a human closing a live modal and so `ask_for_a_calendar` can read every
+/// field back after a real `.show_modal()`.
+pub struct AddCalendarWidgets {
+    pub dialog: Dialog,
+    pub from_a_feed: RadioButton,
+    pub address: TextCtrl,
+    pub name: TextCtrl,
+    pub user_name: TextCtrl,
+    pub password: TextCtrl,
+}
+
+/// Build the Add Calendar dialog without showing it.
+///
+/// Everything `ask_for_a_calendar` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_add_calendar_dialog(
+    parent: &Frame,
+    palette: Option<theme::Palette>,
+) -> AddCalendarWidgets {
     let dialog = Dialog::builder(parent, "Add a calendar by its address")
         .with_size(620, 480)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -150,20 +191,27 @@ pub fn ask_for_a_calendar(parent: &Frame) -> Option<Asked> {
     // kind is already answered with the commoner of the two.
     address.set_focus();
 
-    let answer = dialog.show_modal();
-    let asked = (answer == ID_OK).then(|| Asked {
-        source: if from_a_feed.get_value() {
-            Source::Feed
-        } else {
-            Source::Server
-        },
-        address: address.get_value(),
-        name: name.get_value(),
-        user_name: user_name.get_value(),
-        password: password.get_value(),
-    });
-    dialog.destroy();
-    asked
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides. The two radio buttons are left to Windows,
+    // matching every other `RadioButton` this round paints around; every
+    // `TextCtrl` on this dialog gets its own call.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        theme::paint(&address, palette.main_surface());
+        theme::paint(&name, palette.main_surface());
+        theme::paint(&user_name, palette.main_surface());
+        theme::paint(&password, palette.main_surface());
+    }
+
+    AddCalendarWidgets {
+        dialog,
+        from_a_feed,
+        address,
+        name,
+        user_name,
+        password,
+    }
 }
 
 /// A label and the box beside it, with the box named the way NVDA reads.
