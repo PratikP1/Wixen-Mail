@@ -2020,4 +2020,339 @@ mod tests {
             "no machine words at somebody: {CANNOT_BE_READ}"
         );
     }
+
+    // ── Real-world fixtures ─────────────────────────────────────────────
+    //
+    // Every rule below is copied verbatim from a real calendar somebody
+    // else's software wrote, not composed to satisfy this suite. Sources:
+    // `niccokunzmann/python-recurring-ical-events` (LGPL-3.0) at commit
+    // `2ba2510e`, its checked-in `machbar_16_feb_2019.ics`,
+    // `issue_151_macos_linux_difference.ics`, `issue_4_weidenrinde.ics` and
+    // `issue_28_rrule_with_UTC_endinginZ.ics` fixtures; Boston University's
+    // published Google Calendar seminar feeds
+    // (https://www.bu.edu/econ/research/seminars), fetched directly; and
+    // `tplaner/When` (MIT) issue #44. Each was re-read from its source
+    // rather than taken on trust, and each expected date list below was
+    // cross-checked against `python-dateutil`, an independent RFC 5545
+    // reader, rather than against whatever this module already produced (one
+    // fixture, F7 below, is where a real server's own rule breaks RFC 5545,
+    // and dateutil's stricter parser refuses to read it at all; that one is
+    // checked by hand against the standard instead).
+    //
+    // What a per-instance override or a moved occurrence looks like
+    // (RECURRENCE-ID) is a separate, already-tested fold in
+    // `application::calendar`, not something this function computes, so
+    // where a source calendar carries one alongside a series used here, only
+    // the series' own rule and exclusions are taken.
+
+    #[test]
+    fn test_a_real_weekly_series_excludes_its_real_cancelled_thursday() {
+        // Same calendar, "Montessori Schulklasse": a weekly Thursday morning
+        // with one real cancellation. EXDATE names the same zone as DTSTART,
+        // which is the shape a Google export almost always sends and the
+        // shape none of this module's other tests used before this one; they
+        // exercise a UTC `Z` or a numeric offset instead.
+        let mut event = an_event(
+            "2019-02-28T08:30:00",
+            "2019-02-28T14:30:00",
+            Some("FREQ=WEEKLY;BYDAY=TH"),
+        );
+        event.time_zone = Some("Europe/Berlin".to_string());
+        event.exception_dates = Some("20190307T083000".to_string());
+        let (from, to) = between("2019-02-25", "2019-04-30");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2019-02-28T08:30:00",
+                "2019-03-14T08:30:00",
+                "2019-03-21T08:30:00",
+                "2019-03-28T08:30:00",
+                "2019-04-04T08:30:00",
+                "2019-04-11T08:30:00",
+                "2019-04-18T08:30:00",
+                "2019-04-25T08:30:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_monthly_last_saturday_series_keeps_both_of_its_real_exclusions() {
+        // Same calendar, "mB-onTour: repairCafé": the last Saturday of the
+        // month, ending in November 2018, with two of its five remaining
+        // occurrences called off.
+        let mut event = an_event(
+            "2018-06-30T11:00:00",
+            "2018-06-30T15:00:00",
+            Some("FREQ=MONTHLY;UNTIL=20181123T225959Z;BYDAY=-1SA"),
+        );
+        event.time_zone = Some("Europe/Berlin".to_string());
+        event.exception_dates = Some("20180825T110000,20180728T110000".to_string());
+        let (from, to) = between("2018-06-01", "2018-12-01");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2018-06-30T11:00:00",
+                "2018-09-29T11:00:00",
+                "2018-10-27T11:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_fortnightly_series_runs_thirteen_months_with_one_exclusion() {
+        // Same calendar, the Freifunk Potsdam meetup: every other Tuesday
+        // for thirteen months, one occurrence called off, two changes of the
+        // Berlin clocks crossed along the way without moving the clock face.
+        let mut event = an_event(
+            "2017-09-12T18:00:00",
+            "2017-09-12T21:00:00",
+            Some("FREQ=WEEKLY;UNTIL=20181008T215959Z;INTERVAL=2;BYDAY=TU"),
+        );
+        event.time_zone = Some("Europe/Berlin".to_string());
+        event.exception_dates = Some("20171121T180000".to_string());
+        let (from, to) = between("2017-09-01", "2018-10-15");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2017-09-12T18:00:00",
+                "2017-09-26T18:00:00",
+                "2017-10-10T18:00:00",
+                "2017-10-24T18:00:00",
+                "2017-11-07T18:00:00",
+                "2017-12-05T18:00:00",
+                "2017-12-19T18:00:00",
+                "2018-01-02T18:00:00",
+                "2018-01-16T18:00:00",
+                "2018-01-30T18:00:00",
+                "2018-02-13T18:00:00",
+                "2018-02-27T18:00:00",
+                "2018-03-13T18:00:00",
+                "2018-03-27T18:00:00",
+                "2018-04-10T18:00:00",
+                "2018-04-24T18:00:00",
+                "2018-05-08T18:00:00",
+                "2018-05-22T18:00:00",
+                "2018-06-05T18:00:00",
+                "2018-06-19T18:00:00",
+                "2018-07-03T18:00:00",
+                "2018-07-17T18:00:00",
+                "2018-07-31T18:00:00",
+                "2018-08-14T18:00:00",
+                "2018-08-28T18:00:00",
+                "2018-09-11T18:00:00",
+                "2018-09-25T18:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_yearly_anniversary_series_excludes_one_years_occurrence() {
+        // A real public events calendar (PRODID Google Calendar 70.9054),
+        // filed as niccokunzmann/python-recurring-ical-events issue #151
+        // ("Regression in v2.2.3 for annual events"),
+        // issue_151_macos_linux_difference.ics @ 2ba2510e. A bare YEARLY rule
+        // with no BYMONTH or BYMONTHDAY relies entirely on DTSTART for its
+        // date, which this module's other YEARLY tests never combined with
+        // an exclusion before this.
+        let mut event = an_event(
+            "2014-08-01T19:00:00",
+            "2014-08-01T20:00:00",
+            Some("FREQ=YEARLY"),
+        );
+        event.time_zone = Some("America/Los_Angeles".to_string());
+        event.exception_dates = Some("20160801T190000".to_string());
+        let (from, to) = between("2014-01-01", "2018-12-31");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2014-08-01T19:00:00",
+                "2015-08-01T19:00:00",
+                "2017-08-01T19:00:00",
+                "2018-08-01T19:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_outlook_all_day_series_honours_an_until_written_as_a_bare_date() {
+        // A real Outlook/Exchange export (X-MICROSOFT-CDO-ALLDAYEVENT:TRUE),
+        // niccokunzmann/python-recurring-ical-events issue #4 ("weidenrinde"),
+        // issue_4_weidenrinde.ics @ 2ba2510e. UNTIL is written as a bare
+        // eight-digit date, matching DTSTART's DATE value type, rather than
+        // the DATE-TIME-with-`Z` shape the rest of this module's fixtures
+        // carry.
+        let mut event = an_event(
+            "2019-08-23T00:00:00Z",
+            "2019-08-24T00:00:00Z",
+            Some("FREQ=WEEKLY;UNTIL=20190830;INTERVAL=1;BYDAY=FR"),
+        );
+        event.is_all_day = true;
+        event.start_date = Some("2019-08-23".to_string());
+        event.end_date = Some("2019-08-24".to_string());
+        let (from, to) = between("2019-08-01", "2019-09-30");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            ["2019-08-23", "2019-08-30"]
+        );
+    }
+
+    #[test]
+    fn test_a_real_exchange_all_day_series_truncates_a_utc_until_to_its_date() {
+        // A real Exchange 2010 export (PRODID "Microsoft Exchange Server
+        // 2010"), niccokunzmann/python-recurring-ical-events issue #28,
+        // issue_28_rrule_with_UTC_endinginZ.ics @ 2ba2510e: "Refuse black
+        // bin", a fortnightly all-day reminder. RFC 5545 3.3.10 requires
+        // UNTIL to carry the same value type as DTSTART; this DTSTART is a
+        // bare DATE, but Exchange writes UNTIL as a full UTC DATE-TIME
+        // anyway. python-dateutil's own RRULE reader refuses to parse the
+        // combination at all ("RRULE UNTIL values must be specified in UTC
+        // when DTSTART is timezone-aware"), which is itself confirmation
+        // that reading UNTIL by its date alone, dropping the time and the
+        // `Z`, is the standard's own answer for a DATE-typed series; it is
+        // also what this module's UNTIL reader has always done, Exchange's
+        // slip or not.
+        let mut event = an_event(
+            "2020-04-02T00:00:00Z",
+            "2020-04-03T00:00:00Z",
+            Some("FREQ=WEEKLY;UNTIL=20200916T230000Z;INTERVAL=2;BYDAY=TH;WKST=MO"),
+        );
+        event.is_all_day = true;
+        event.start_date = Some("2020-04-02".to_string());
+        event.end_date = Some("2020-04-03".to_string());
+        let (from, to) = between("2020-04-01", "2020-10-01");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2020-04-02",
+                "2020-04-16",
+                "2020-04-30",
+                "2020-05-14",
+                "2020-05-28",
+                "2020-06-11",
+                "2020-06-25",
+                "2020-07-09",
+                "2020-07-23",
+                "2020-08-06",
+                "2020-08-20",
+                "2020-09-03",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_google_calendar_series_stops_its_count_before_removing_excluded_days() {
+        // Same source, a different real series (UID
+        // m2qsuk7npbdn01keauavorg1lo@google.com): eight weekly occurrences by
+        // COUNT, three of them then called off, one of them the series' own
+        // opening week. COUNT bounds the raw weekly generation before EXDATE
+        // ever runs, matching both python-dateutil's reading of the same
+        // text and RFC 5545's recurrence-set definition (DTSTART and RRULE
+        // build the set first; EXDATE removes instances from it afterwards)
+        // rather than refilling to make up for what gets excluded, so five
+        // Mondays are shown, not eight.
+        let mut event = an_event(
+            "2017-03-20T15:30:00",
+            "2017-03-20T17:00:00",
+            Some("FREQ=WEEKLY;COUNT=8;BYDAY=MO"),
+        );
+        event.time_zone = Some("America/New_York".to_string());
+        event.exception_dates = Some("20170320T153000,20170417T153000,20170508T153000".to_string());
+        let (from, to) = between("2017-03-01", "2017-06-01");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2017-03-27T15:30:00",
+                "2017-04-03T15:30:00",
+                "2017-04-10T15:30:00",
+                "2017-04-24T15:30:00",
+                "2017-05-01T15:30:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_google_calendar_series_includes_its_until_day_despite_a_non_midnight_time() {
+        // Same source, the Macroeconomics Seminar series (UID
+        // n7mjjko300ke4un1lcsiv1ki6s@google.com). Every other rule this feed
+        // writes ends UNTIL at 03, 04 or 05:59:59Z, the small hours in New
+        // York; this one instead ends at 19:30:00Z, an ordinary afternoon.
+        // This module reads UNTIL by its date alone regardless of the time it
+        // carries, so the boundary Thursday is included either way, which is
+        // worth pinning down against a real UNTIL that is not the boilerplate
+        // shape.
+        let mut event = an_event(
+            "2017-03-02T15:30:00",
+            "2017-03-02T17:00:00",
+            Some("FREQ=WEEKLY;UNTIL=20170427T193000Z;BYDAY=TH"),
+        );
+        event.time_zone = Some("America/New_York".to_string());
+        event.exception_dates = Some("20170309T153000".to_string());
+        let (from, to) = between("2017-02-15", "2017-05-15");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2017-03-02T15:30:00",
+                "2017-03-16T15:30:00",
+                "2017-03-23T15:30:00",
+                "2017-03-30T15:30:00",
+                "2017-04-06T15:30:00",
+                "2017-04-13T15:30:00",
+                "2017-04-20T15:30:00",
+                "2017-04-27T15:30:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_real_monthly_second_sunday_series_from_a_bug_report_runs_two_years() {
+        // Reported against the PHP "When" library (MIT), tplaner/When issue
+        // #44 ("Wrong Occurrences using Google Calendar RRULE"): the reporter
+        // states the rule came from Google Calendar and gives the exact
+        // DTSTART and RRULE. No end time is part of the source; a round hour
+        // later is invented for it here.
+        let mut event = an_event(
+            "2014-01-12T13:30:00",
+            "2014-01-12T14:30:00",
+            Some("FREQ=MONTHLY;UNTIL=20151212T235959Z;BYDAY=2SU"),
+        );
+        event.time_zone = Some("Europe/Rome".to_string());
+        let (from, to) = between("2014-01-01", "2015-12-31");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2014-01-12T13:30:00",
+                "2014-02-09T13:30:00",
+                "2014-03-09T13:30:00",
+                "2014-04-13T13:30:00",
+                "2014-05-11T13:30:00",
+                "2014-06-08T13:30:00",
+                "2014-07-13T13:30:00",
+                "2014-08-10T13:30:00",
+                "2014-09-14T13:30:00",
+                "2014-10-12T13:30:00",
+                "2014-11-09T13:30:00",
+                "2014-12-14T13:30:00",
+                "2015-01-11T13:30:00",
+                "2015-02-08T13:30:00",
+                "2015-03-08T13:30:00",
+                "2015-04-12T13:30:00",
+                "2015-05-10T13:30:00",
+                "2015-06-14T13:30:00",
+                "2015-07-12T13:30:00",
+                "2015-08-09T13:30:00",
+                "2015-09-13T13:30:00",
+                "2015-10-11T13:30:00",
+                "2015-11-08T13:30:00",
+            ]
+        );
+    }
 }
