@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 117 records have arrived since and have not been through it.
+# 118 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6312,48 +6312,84 @@ red = [
     "service::caldav::writing_tests::test_editing_the_occurrence_leaves_the_series_and_a_sibling_exception_alone",
     "service::caldav::writing_tests::test_editing_an_occurrence_not_present_in_the_document_is_refused",
     "service::caldav::writing_tests::test_editing_the_wrong_events_occurrence_is_refused",
+    "service::caldav::writing_tests::test_cancelling_the_occurrence_leaves_the_series_and_a_sibling_exception_alone",
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_is_refused_before_it_can_loop_forever",
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_sends_if_match_with_the_fetched_tag",
+    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_sends_a_cancellation_rather_than_a_delete",
+    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
 ]
 
-# ── Editing a CalDAV exception is opened exactly as narrowly as intended ────
+# ── An occurrence is read off the document the same careful way ─────────────
 #
-# The refusal above stayed absolute for a day a calendar server already split
-# into its own VEVENT until this round: whichever of edit or delete was
-# chosen, on a row like that, it was always refused. This round opened one
-# door and only one: changing the whole event, and only once this program has
-# the series stored locally to change one VEVENT of the shared resource
-# against rather than the whole document. A break that makes the escape
-# clause always true reopens the door for every combination at once,
-# including the two this program still cannot do safely: deleting one VEVENT
-# of a shared resource, which has no write primitive yet, and a row whose
-# series was never resolved, which has no document locally to change one
-# VEVENT of.
+# `the_occurrence_as_the_document_holds_it` is the read-side sibling the
+# delete path uses: it has to locate the same one VEVENT among several that
+# `ical_with_the_occurrence_changed` above locates to write into, through the
+# same [`the_occurrence_named`], so a caller that reads a day off a document
+# before cancelling it and the writer that splices the cancellation back in
+# cannot come to disagree about which VEVENT either one means. This is a
+# second call to that function, not the same call the guard above protects,
+# so a naive fallback to the document's first VEVENT here needs its own
+# guard: the one above only breaks the call inside
+# `ical_with_the_occurrence_changed` and would leave this one, a completely
+# separate line of source, untouched.
 #
-# Measured by hand on 2026-08-16, against the whole library. The first
-# measurement named three tests and missed two: with the door open for every
-# combination, `WhatIsBeingDone::Deleting` reaches the ordinary whole-event
-# delete path too, which has no idea a row like this shares its resource with
-# a series, so it queues an unconditional DELETE at the shared address. Both
-# delete tests below exist to catch exactly that, from before this round
-# opened anything, and they still do. Five tests went red and nothing else
-# did.
+# Measured by hand on 2026-08-17, against the whole library.
 
 [[guard]]
-name = "editing a CalDAV exception is allowed exactly as narrowly as intended"
+name = "an occurrence is read off the document by UID and RECURRENCE-ID, not taken as the first VEVENT"
+file = "src/service/caldav.rs"
+before = """    let its = the_occurrence_named(&events, &lines, uid, recurrence_id)
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;"""
+after = """    let its = events
+        .first()
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;"""
+red = [
+    "service::caldav::writing_tests::test_the_occurrence_is_read_off_the_document_with_its_own_current_properties_intact",
+    "service::caldav::writing_tests::test_the_occurrence_is_not_found_when_the_document_names_no_such_recurrence_id",
+    "service::caldav::writing_tests::test_cancelling_the_occurrence_leaves_the_series_and_a_sibling_exception_alone",
+    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_sends_a_cancellation_rather_than_a_delete",
+    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
+]
+
+# ── An occurrence exception is opened exactly as narrowly as intended ───────
+#
+# The refusal above stayed absolute for a day a calendar server already split
+# into its own VEVENT until an earlier round: whichever of edit or delete was
+# chosen, on a row like that, it was always refused. That round opened one
+# door: changing the whole event, once this program has the series stored
+# locally to change one VEVENT of the shared resource against rather than the
+# whole document. A later round opened a second door the same narrow way:
+# deleting the whole event, once a write primitive existed
+# (`application::caldav_sync::delete_one_occurrence`) that marks the one
+# VEVENT cancelled rather than removing the resource. A break that makes the
+# escape clause always true reopens both doors for every combination at once,
+# including a row whose series was never resolved, which has no document
+# locally to change or cancel one VEVENT of.
+#
+# Two tests reliably catch this now, both pure unit tests of `can_be_honoured`
+# walking its full matrix: nothing that reaches a calendar server over the
+# network does, once a write primitive exists for both editing and deleting
+# that is itself safe regardless of what this gate decides, because it routes
+# on the row's own `provider_recurrence_id` rather than on anything the gate
+# computed. That is not a reason to trust the gate less; it is a second,
+# independent layer refusing the same thing this gate refuses, and this
+# guard is what proves the gate's own refusal still holds on its own.
+#
+# Measured by hand on 2026-08-17, against the whole library.
+
+[[guard]]
+name = "editing or deleting a CalDAV exception is allowed exactly as narrowly as intended"
 file = "src/application/calendar.rs"
-before = """    let a_known_occurrence_exception_being_changed_whole = allows.goes
+before = """    let a_known_occurrence_exception_reached_as_a_whole = allows.goes
         == WhereAChangeGoes::ACalendarServer
         && allows.the_series_it_left_is_known_here
-        && done == WhatIsBeingDone::Changing
+        && matches!(done, WhatIsBeingDone::Changing | WhatIsBeingDone::Deleting)
         && means == EditMeans::WholeSeries;"""
-after = """    let a_known_occurrence_exception_being_changed_whole = true;"""
+after = """    let a_known_occurrence_exception_reached_as_a_whole = true;"""
 red = [
     "application::calendar::tests::test_a_row_that_shares_its_address_with_its_series_is_refused_whatever_is_chosen",
     "application::calendar::tests::test_a_row_that_shares_its_address_is_allowed_only_to_change_the_whole_series_once_its_series_is_known",
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever",
-    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
-    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_whose_series_was_never_resolved_never_sends_a_delete_for_the_whole_series",
 ]
 
 # ── The POP delete checkboxes keep their spoken consequence ────────────────

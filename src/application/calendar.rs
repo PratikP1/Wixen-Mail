@@ -1910,8 +1910,8 @@ pub struct WhatTheCalendarAllows {
     /// write goes to, so the same question asked of one of theirs would be
     /// comparing two things that were never the same kind of value.
     pub shares_its_address_with_the_series_it_left: bool,
-    /// Whether the series this row was cut out of is stored here, so a change
-    /// to the row has a document it can be written into.
+    /// Whether the series this row was cut out of is stored here, so a
+    /// change or a delete aimed at the row is allowed through at all.
     ///
     /// A separate question from
     /// [`WhatTheCalendarAllows::shares_its_address_with_the_series_it_left`]:
@@ -2014,17 +2014,26 @@ pub fn can_be_honoured(
     // A row still filed at its series' own address cannot be reached on its
     // own at all, whichever of the two was chosen: the one-day path is for a
     // day this computer is cutting out of a series now, not one a server has
-    // already moved, and deleting one VEVENT of a shared resource is not
-    // built yet. Changing the whole event is the one door that is open, and
-    // only once the series is known here to change one VEVENT of the
-    // resource against rather than the whole document.
-    let a_known_occurrence_exception_being_changed_whole = allows.goes
+    // already moved. Changing or deleting the whole event is the one door
+    // that is open, and only once the series is known here to change one
+    // VEVENT of the resource against rather than the whole document.
+    //
+    // Deleting is allowed through the same narrow shape as changing, on
+    // purpose, rather than a looser one: both write primitives fetch the
+    // document fresh from the server rather than reading the local series
+    // row, so neither strictly needs the series known here to work
+    // mechanically. Consistency with the gate editing already established is
+    // the stronger reason to keep the two identical: a delete that were let
+    // through in a case an edit still refuses would be a second, differently
+    // shaped answer to the same question this file asks in one place on
+    // purpose.
+    let a_known_occurrence_exception_reached_as_a_whole = allows.goes
         == WhereAChangeGoes::ACalendarServer
         && allows.the_series_it_left_is_known_here
-        && done == WhatIsBeingDone::Changing
+        && matches!(done, WhatIsBeingDone::Changing | WhatIsBeingDone::Deleting)
         && means == EditMeans::WholeSeries;
     if allows.shares_its_address_with_the_series_it_left
-        && !a_known_occurrence_exception_being_changed_whole
+        && !a_known_occurrence_exception_reached_as_a_whole
     {
         return Err(a_shared_address_is_refused(done));
     }
@@ -3627,13 +3636,13 @@ mod tests {
     #[test]
     fn test_a_row_that_shares_its_address_is_allowed_only_to_change_the_whole_series_once_its_series_is_known()
      {
-        // The narrow opening this round adds: a row still filed at its
-        // series' own address may be reached exactly one way, changing the
-        // whole event, and only once this program has the series stored
-        // locally to change one VEVENT of the shared resource against rather
-        // than the whole document. Every other combination stays exactly as
-        // refused as the test above proves it always was; deleting one VEVENT
-        // of a shared resource is not built yet.
+        // The narrow opening round 28 added for editing, and this round adds
+        // again for deleting: a row still filed at its series' own address
+        // may be reached exactly two ways, changing or deleting the whole
+        // event, and only once this program has the series stored locally to
+        // change one VEVENT of the shared resource against rather than the
+        // whole document. Every other combination stays exactly as refused
+        // as the test above proves it always was.
         for goes in EVERY_CALENDAR {
             for means in [EditMeans::OneDay, EditMeans::WholeSeries] {
                 for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
@@ -3644,8 +3653,8 @@ mod tests {
                         the_series_it_left_is_known_here: true,
                     };
                     let should_be_allowed = goes == WhereAChangeGoes::ACalendarServer
-                        && done == WhatIsBeingDone::Changing
-                        && means == EditMeans::WholeSeries;
+                        && means == EditMeans::WholeSeries
+                        && matches!(done, WhatIsBeingDone::Changing | WhatIsBeingDone::Deleting);
                     assert_eq!(
                         can_be_honoured(done, means, &allows).is_ok(),
                         should_be_allowed,
