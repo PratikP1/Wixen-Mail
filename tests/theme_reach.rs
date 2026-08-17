@@ -776,6 +776,44 @@ fn check_reader(parent: &Frame, a11y: &Arc<Accessibility>, into: &mut Vec<SiteRe
     );
 }
 
+/// Compose's own window: the single most-used window in the application.
+/// Parented directly to `parent`, the same as production: Compose opens
+/// from the main frame, not from inside another dialog, unlike the three
+/// dialogs above that open from inside Compose itself. The account choice
+/// is left to Windows, matching every other `Choice` this round paints
+/// around, and the message body is a `WebView` excluded from painting for
+/// the same reason `check_send_preview` above excludes one: it owns its
+/// colour through its own document's HTML and CSS.
+fn check_compose(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let widgets = wx_compose::build_compose_dialog(
+        parent,
+        "Compose New Message",
+        &["person@example.com".to_string()],
+        0,
+        Some(palette),
+    );
+    check(
+        "compose dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("compose to field", &widgets.to_field),
+        ("compose cc field", &widgets.cc_field),
+        ("compose bcc field", &widgets.bcc_field),
+        ("compose subject field", &widgets.subject_field),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+    check(
+        "compose attachment list",
+        &widgets.attachment_list,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// Every site this round wires that can be reached without a running
 /// application, checked against the real colour a real control reports.
 ///
@@ -817,6 +855,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_confirm_delete(&frame, palette, &mut sites);
             check_search(&frame, palette, &mut sites);
             check_ask_for_a_name(&frame, palette, &mut sites);
+            check_compose(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 

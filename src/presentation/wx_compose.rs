@@ -333,30 +333,56 @@ fn show_format_menu(dialog: &Dialog) {
     dialog.popup_menu(&mut menu, None);
 }
 
-/// The compose dialog, with automatic draft saving.
+/// The compose dialog's widgets: the fields `show_compose_dialog_full`
+/// prefills by mode, the toolbar buttons its handlers bind to, and the body
+/// editor and attachment list its closures capture.
 ///
-/// `autosave` decides how often, and `on_autosave` is handed the fields as
-/// they stand each time. The callback rather than a return value because the
-/// dialog is modal: it does not come back until somebody is finished, and a
-/// draft that is only kept at the end is not a draft that survives a crash.
-#[allow(clippy::too_many_arguments)]
-pub fn show_compose_dialog_full(
+/// Returned from `build_compose_dialog` rather than kept local, the same
+/// reason `EventEditorWidgets` in `wx_calendar.rs` exists: a test can build
+/// the real dialog and read back the real colour a live control holds,
+/// without a human closing a live modal.
+pub struct ComposeDialogWidgets {
+    pub dialog: Dialog,
+    pub account_choice: Choice,
+    pub to_field: TextCtrl,
+    pub cc_label: StaticText,
+    pub cc_field: TextCtrl,
+    pub bcc_label: StaticText,
+    pub bcc_field: TextCtrl,
+    pub subject_field: TextCtrl,
+    pub send_toolbar_btn: Button,
+    pub undo_btn: Button,
+    pub redo_btn: Button,
+    pub bold_btn: Button,
+    pub italic_btn: Button,
+    pub underline_btn: Button,
+    pub format_btn: Button,
+    pub spell_btn: Button,
+    pub attach_btn: Button,
+    pub body_editor: WebView,
+    pub attachment_label: StaticText,
+    pub attachment_list: ListBox,
+    pub draft_btn: Button,
+    pub discard_btn: Button,
+    pub cancel_btn: Button,
+}
+
+/// Build the compose dialog and every control it holds, without showing it
+/// or wiring any behaviour onto it.
+///
+/// Everything `show_compose_dialog_full` used to do before wiring behaviour
+/// and entering its modal loop, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_compose_dialog(
     parent: &Frame,
-    mode: ComposeMode,
+    title: &str,
     account_names: &[String],
     active_account_index: u32,
-    preview_before_send: bool,
-    // `signature` is the account's default, or nothing. It goes above the
-    // quoted original when the window opens, so it can be read and edited
-    // before sending rather than appearing on the way out.
-    signature: &str,
-    autosave: crate::application::autosave::AutosaveInterval,
-    a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
-    on_autosave: impl Fn(&ComposeData) + 'static,
-) -> ComposeResult {
+    palette: Option<theme::Palette>,
+) -> ComposeDialogWidgets {
     // ── Create Dialog ────────────────────────────────────────────────────
-    let title = compose_title(&mode);
-
     let dialog = Dialog::builder(parent, title)
         .with_size(850, 700)
         .with_style(
@@ -373,12 +399,6 @@ pub fn show_compose_dialog_full(
         .with_hgap(8)
         .build();
     fields_sizer.add_growable_col(1, 1);
-
-    // Everything the message will carry. Paths rather than bytes: the file is
-    // read at Send, so a picture edited while the message was being written
-    // goes out as the version that existed when it was sent.
-    let attached: Rc<RefCell<Vec<crate::application::attaching::Chosen>>> =
-        Rc::new(RefCell::new(Vec::new()));
 
     // Account selector
     let account_label = StaticText::builder(&dialog)
@@ -568,9 +588,6 @@ pub fn show_compose_dialog_full(
     // had to return to the list. Here the keys that must escape are bound
     // inside the page and posted back out, and everything else belongs to the
     // editor, which is what somebody writing a message wants.
-    let language = crate::data::config::ConfigManager::load_stored()
-        .map(|config| config.app_config().language.clone())
-        .unwrap_or_else(|_| "en".to_string());
     let body_editor = WebView::builder(&dialog)
         .with_backend(WebViewBackend::Default)
         .build();
@@ -580,24 +597,10 @@ pub fn show_compose_dialog_full(
     // The browser does not get this application's keys.
     body_editor.enable_browser_accelerator_keys(false);
     body_editor.add_script_message_handler(editor_document::CHANNEL);
-    let set_body = {
-        let language = language.clone();
-        // One setting decides both the engine's marking and the sound at the
-        // end of a wrong word. Read once, when the window opens, because the
-        // page is built once and changing it would mean rebuilding the message
-        // underneath somebody.
-        let mark_spelling = crate::data::config::ConfigManager::load_stored()
-            .map(|config| config.app_config().check_spelling_as_you_type)
-            .unwrap_or(true);
-        move |body: &MessageBody| {
-            body_editor.set_page(
-                &editor_document::editor_document(body, &language, mark_spelling),
-                "",
-            );
-        }
-    };
-    set_body(&MessageBody::Plain(String::new()));
-
+    // No page is set here. `show_compose_dialog_full` sets the first one,
+    // immediately after this returns and before the dialog is ever shown,
+    // once it knows the language and the spelling-as-you-type setting;
+    // nothing ever observes the editor unset.
     main_sizer.add(&body_editor, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- What the message will carry --
@@ -659,6 +662,133 @@ pub fn show_compose_dialog_full(
     main_sizer.add_sizer(&button_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
     dialog.set_sizer(main_sizer, true);
+
+    // Painted last. The account Choice is left to Windows, matching every
+    // other Choice this round paints around. The message body above is a
+    // `WebView` that owns its colour through its own document's HTML and
+    // CSS, the same deliberate exclusion this file's own
+    // `build_send_preview_dialog` and the message reader already make.
+    // `None` means high contrast is on, or the system is set up in a way
+    // this application should not paint over, so nothing is set here and
+    // Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+        for field in [&to_field, &cc_field, &bcc_field, &subject_field] {
+            theme::paint(field, palette.main_surface());
+        }
+        theme::paint(&attachment_list, palette.main_surface());
+    }
+
+    ComposeDialogWidgets {
+        dialog,
+        account_choice,
+        to_field,
+        cc_label,
+        cc_field,
+        bcc_label,
+        bcc_field,
+        subject_field,
+        send_toolbar_btn,
+        undo_btn,
+        redo_btn,
+        bold_btn,
+        italic_btn,
+        underline_btn,
+        format_btn,
+        spell_btn,
+        attach_btn,
+        body_editor,
+        attachment_label,
+        attachment_list,
+        draft_btn,
+        discard_btn,
+        cancel_btn,
+    }
+}
+
+/// The compose dialog, with automatic draft saving.
+///
+/// `autosave` decides how often, and `on_autosave` is handed the fields as
+/// they stand each time. The callback rather than a return value because the
+/// dialog is modal: it does not come back until somebody is finished, and a
+/// draft that is only kept at the end is not a draft that survives a crash.
+#[allow(clippy::too_many_arguments)]
+pub fn show_compose_dialog_full(
+    parent: &Frame,
+    mode: ComposeMode,
+    account_names: &[String],
+    active_account_index: u32,
+    preview_before_send: bool,
+    // `signature` is the account's default, or nothing. It goes above the
+    // quoted original when the window opens, so it can be read and edited
+    // before sending rather than appearing on the way out.
+    signature: &str,
+    autosave: crate::application::autosave::AutosaveInterval,
+    a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+    on_autosave: impl Fn(&ComposeData) + 'static,
+) -> ComposeResult {
+    let title = compose_title(&mode);
+    let ComposeDialogWidgets {
+        dialog,
+        account_choice,
+        to_field,
+        cc_label,
+        cc_field,
+        bcc_label,
+        bcc_field,
+        subject_field,
+        send_toolbar_btn,
+        undo_btn,
+        redo_btn,
+        bold_btn,
+        italic_btn,
+        underline_btn,
+        format_btn,
+        spell_btn,
+        attach_btn,
+        body_editor,
+        attachment_label,
+        attachment_list,
+        draft_btn,
+        discard_btn,
+        cancel_btn,
+    } = build_compose_dialog(
+        parent,
+        title,
+        account_names,
+        active_account_index,
+        theme::current_from_stored_config(),
+    );
+
+    // Everything the message will carry. Paths rather than bytes: the file is
+    // read at Send, so a picture edited while the message was being written
+    // goes out as the version that existed when it was sent.
+    let attached: Rc<RefCell<Vec<crate::application::attaching::Chosen>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
+    // The language the first page needs, and the closure that builds every
+    // page after it. Read once, when the window opens, because the page is
+    // built once and changing the language mid-window would mean rebuilding
+    // the message underneath somebody.
+    let language = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().language.clone())
+        .unwrap_or_else(|_| "en".to_string());
+    let set_body = {
+        let language = language.clone();
+        // One setting decides both the engine's marking and the sound at the
+        // end of a wrong word. Read once, when the window opens, for the same
+        // reason the language above is.
+        let mark_spelling = crate::data::config::ConfigManager::load_stored()
+            .map(|config| config.app_config().check_spelling_as_you_type)
+            .unwrap_or(true);
+        move |body: &MessageBody| {
+            body_editor.set_page(
+                &editor_document::editor_document(body, &language, mark_spelling),
+                "",
+            );
+        }
+    };
+    set_body(&MessageBody::Plain(String::new()));
 
     // ── Pre-populate fields based on mode ────────────────────────────────
     // Filled before the copy lines are hidden or kept, because whether a reply

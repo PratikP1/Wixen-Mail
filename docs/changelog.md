@@ -294,6 +294,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   windows that open on top of the main one, still show Windows' own
   colours regardless of the Theme setting.
 
+- **Compose's own window now takes the Theme colours too.** The To, Cc,
+  Bcc and Subject boxes, and the list of attached files, now match the
+  rest of the coloured application instead of showing Windows' own white
+  regardless of what Light or Dark chose. This is the window every reply,
+  forward and new message opens, and the one this round's own entries
+  above kept naming as still left. The account choice is left to Windows,
+  matching every other choice box this round paints around, and the
+  message body is a browser control that renders the message's own HTML
+  and keeps showing that HTML's own colours, the same way the message
+  reader and the preview Compose shows before sending already do.
+
+  Known limitations: roughly thirty other windows that open on top of the
+  main one still show Windows' own colours regardless of the Theme
+  setting.
+
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
   to match whatever Windows itself prefers, the same way Light and Dark match
