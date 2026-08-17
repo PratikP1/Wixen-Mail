@@ -268,6 +268,7 @@ impl Rule {
         let mut how = None;
         let mut every = 1u32;
         let mut byday = None;
+        let mut wkst = None;
         for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()) {
             let (key, value) = part.split_once('=')?;
             match key {
@@ -289,14 +290,10 @@ impl Rule {
                 "BYDAY" => byday = Some(value.to_string()),
                 // Read whole by `repeating::Until`, which is exact.
                 "COUNT" | "UNTIL" => {}
-                // Which day a week starts on only changes the answer for a rule
-                // counting weeks in a way this does not do, so any other answer
-                // is a rule this has no business guessing at.
-                "WKST" => {
-                    if value != "MO" {
-                        return None;
-                    }
-                }
+                // Decided below, once INTERVAL and BYDAY are both known: which
+                // day a week starts on cannot be judged part way through
+                // reading the rule, because either part may come after it.
+                "WKST" => wkst = Some(value.to_string()),
                 _ => return None,
             }
         }
@@ -309,6 +306,22 @@ impl Rule {
             // this does not work out.
             _ => return None,
         };
+        // RFC 5545 3.3.10 says in as many words where WKST can move the
+        // answer: a WEEKLY rule naming two or more weekdays with INTERVAL
+        // greater than one, where it decides which of them share a block with
+        // which, or a YEARLY rule naming BYWEEKNO, which nothing here reads at
+        // all (that key is refused above, on any rule, whatever WKST says).
+        // Every other rule falls on the same days whichever day the week is
+        // counted from, and this module counts every one of them from Monday
+        // regardless, so refusing a rule for naming a different day the
+        // arithmetic never consults was refusing a rule it could read
+        // correctly. Google writes WKST=SU on every rule it exports, on the
+        // overwhelming majority of which it cannot possibly matter, and
+        // refusing it unconditionally refused those too.
+        let wkst_could_move_this = how == How::Weekly && every > 1 && weekdays.len() > 1;
+        if wkst_could_move_this && wkst.is_some_and(|named| named != "MO") {
+            return None;
+        }
         Some(Rule {
             how,
             every,
@@ -2046,6 +2059,42 @@ mod tests {
     // the series' own rule and exclusions are taken.
 
     #[test]
+    fn test_a_real_google_calendar_rule_with_wkst_su_and_three_weekdays_expands_correctly() {
+        // machBar - Öffentlich, a real public Google Calendar (PRODID
+        // "-//Google Inc//Google Calendar 70.9054//EN"), "Open Health
+        // HACKademy - freie Termine".
+        // niccokunzmann/python-recurring-ical-events @ 2ba2510e,
+        // recurring_ical_events/test/calendars/machbar_16_feb_2019.ics.
+        //
+        // Google writes WKST=SU on nearly every rule it exports, whether or
+        // not it can change the answer (RFC 5545 3.3.10: only a WEEKLY rule
+        // naming two or more weekdays with INTERVAL greater than one, or a
+        // YEARLY rule naming BYWEEKNO, which this module never reads at
+        // all). Refusing every WKST but MO refused this rule too, though
+        // nothing here counts a week in a way WKST could alter it: COUNT
+        // stops the series before a second interval could ever come round.
+        let mut event = an_event(
+            "2019-03-04T14:00:00",
+            "2019-03-04T18:00:00",
+            Some("FREQ=WEEKLY;WKST=SU;COUNT=6;BYDAY=MO,TU,WE"),
+        );
+        event.time_zone = Some("Europe/Berlin".to_string());
+        let (from, to) = between("2019-03-01", "2019-03-31");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2019-03-04T14:00:00",
+                "2019-03-05T14:00:00",
+                "2019-03-06T14:00:00",
+                "2019-03-11T14:00:00",
+                "2019-03-12T14:00:00",
+                "2019-03-13T14:00:00",
+            ]
+        );
+    }
+
+    #[test]
     fn test_a_real_weekly_series_excludes_its_real_cancelled_thursday() {
         // Same calendar, "Montessori Schulklasse": a weekly Thursday morning
         // with one real cancellation. EXDATE names the same zone as DTSTART,
@@ -2246,6 +2295,46 @@ mod tests {
     }
 
     #[test]
+    fn test_a_real_google_calendar_series_with_wkst_su_and_eight_exclusions_expands_correctly() {
+        // A real public Google Calendar seminar feed, Boston University
+        // Department of Economics (https://www.bu.edu/econ/research/seminars,
+        // its "International Development & International Economics" series),
+        // fetched directly (PRODID "-//Google Inc//Google Calendar
+        // 70.9054//EN", X-WR-CALNAME "IED Seminar", UID
+        // 73o8qkqc1itj2k3l0cpmkkn4rp@google.com). WKST=SU again, on a rule
+        // with a single BYDAY value, where it changes nothing; the point of
+        // this one is the eight separate EXDATE lines a real half-year of a
+        // weekly seminar accumulates, one of which cancels the series' own
+        // opening week.
+        let mut event = an_event(
+            "2022-09-12T15:30:00",
+            "2022-09-12T17:00:00",
+            Some("FREQ=WEEKLY;WKST=SU;UNTIL=20221230T045959Z;BYDAY=MO"),
+        );
+        event.time_zone = Some("America/New_York".to_string());
+        event.exception_dates = Some(
+            "20221010T153000,20221017T153000,20221219T153000,20221226T153000,\
+             20220912T153000,20220919T153000,20220926T153000,20221121T153000"
+                .to_string(),
+        );
+        let (from, to) = between("2022-09-01", "2023-01-15");
+
+        assert_eq!(
+            starts(&falls_on(&event, from, to)),
+            [
+                "2022-10-03T15:30:00",
+                "2022-10-24T15:30:00",
+                "2022-10-31T15:30:00",
+                "2022-11-07T15:30:00",
+                "2022-11-14T15:30:00",
+                "2022-11-28T15:30:00",
+                "2022-12-05T15:30:00",
+                "2022-12-12T15:30:00",
+            ]
+        );
+    }
+
+    #[test]
     fn test_a_real_google_calendar_series_stops_its_count_before_removing_excluded_days() {
         // Same source, a different real series (UID
         // m2qsuk7npbdn01keauavorg1lo@google.com): eight weekly occurrences by
@@ -2354,5 +2443,81 @@ mod tests {
                 "2015-11-08T13:30:00",
             ]
         );
+    }
+
+    // ── WKST, the exact boundary of the fix above ───────────────────────
+    //
+    // The real fixtures above prove WKST=SU has to be accepted somewhere.
+    // These prove it is accepted exactly where RFC 5545 3.3.10 says it
+    // cannot change the answer, and refused everywhere else, so the fix does
+    // not trade "refuses a rule it could read" for "reads a rule wrongly".
+
+    #[test]
+    fn test_wkst_other_than_monday_is_accepted_wherever_it_cannot_change_the_answer() {
+        // WKST only has a reading in this module's grammar for a WEEKLY rule
+        // naming two or more weekdays with INTERVAL greater than one
+        // (BYWEEKNO, the standard's other case, is not something this reads
+        // at all). Everywhere else, a rule differing only in WKST has to read
+        // as the identical `Rule`, because nothing downstream of `read` ever
+        // looks at what WKST was.
+        for (interval1, interval2) in [
+            // No BYDAY at all, whatever the interval.
+            ("FREQ=WEEKLY;WKST=SU", "FREQ=WEEKLY;WKST=MO"),
+            (
+                "FREQ=WEEKLY;INTERVAL=3;WKST=SU",
+                "FREQ=WEEKLY;INTERVAL=3;WKST=MO",
+            ),
+            // One weekday named, whatever the interval.
+            (
+                "FREQ=WEEKLY;WKST=SU;BYDAY=TU",
+                "FREQ=WEEKLY;WKST=MO;BYDAY=TU",
+            ),
+            (
+                "FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU",
+                "FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=TU",
+            ),
+            // Several weekdays named, at the interval of one Google always
+            // sends, which is the shape the two WKST=SU fixtures above are.
+            (
+                "FREQ=WEEKLY;WKST=SU;BYDAY=MO,TU,WE",
+                "FREQ=WEEKLY;WKST=MO;BYDAY=MO,TU,WE",
+            ),
+            // A monthly or yearly rule: WKST has no reading here at all.
+            (
+                "FREQ=MONTHLY;WKST=SU;BYDAY=2TU",
+                "FREQ=MONTHLY;WKST=MO;BYDAY=2TU",
+            ),
+            ("FREQ=YEARLY;WKST=SU", "FREQ=YEARLY;WKST=MO"),
+        ] {
+            assert_eq!(
+                Rule::read(interval1),
+                Rule::read(interval2),
+                "{interval1} against {interval2}"
+            );
+            assert!(Rule::read(interval1).is_some(), "{interval1}");
+        }
+    }
+
+    #[test]
+    fn test_wkst_other_than_monday_is_still_refused_where_it_could_change_the_answer() {
+        // The one shape RFC 5545 says WKST can move: a WEEKLY rule naming two
+        // or more weekdays with INTERVAL greater than one. The standard's own
+        // worked example is exactly this shape (3.3.10): the same rule with
+        // WKST=MO and WKST=SU visits different Sundays. This module does not
+        // read a week's blocks starting anywhere but Monday, so a rule this
+        // cannot work out correctly is refused, the same as every other rule
+        // it is not prepared for.
+        for two_or_more in [
+            "FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU,SU",
+            "FREQ=WEEKLY;INTERVAL=2;WKST=SA;BYDAY=MO,WE,FR",
+            // An unrecognised WKST value refused for the same reason, not
+            // merely because it fails to equal "MO".
+            "FREQ=WEEKLY;INTERVAL=2;WKST=XX;BYDAY=MO,TU",
+        ] {
+            assert_eq!(Rule::read(two_or_more), None, "{two_or_more}");
+        }
+        // WKST=MO said explicitly still reads, because it is what every one
+        // of those rules already meant.
+        assert!(Rule::read("FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=TU,SU").is_some());
     }
 }

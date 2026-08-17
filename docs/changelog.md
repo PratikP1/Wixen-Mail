@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A repeating event synced from Google Calendar, or from any calendar that
+  writes `WKST=SU`, now shows on every day it actually falls on.** Google's
+  export names Sunday as the day a week starts on almost every rule it sends,
+  whether or not that choice can change which days the series falls on. This
+  reader refused any rule naming a week start other than Monday outright, so
+  a weekly meeting on Monday, Tuesday and Wednesday, or a seminar repeating
+  every second Tuesday, arrived from Google shown once and marked "repeats,
+  in a way this cannot work out," even though which days those rules fall on
+  never depended on which day the week was counted from. A week start other
+  than Monday is now accepted wherever it cannot change the answer, which by
+  RFC 5545 is everywhere except a weekly rule that both names two or more
+  weekdays and repeats at an interval of two weeks or more; that combination
+  is still refused rather than computed wrong.
+
+  Known limitations: that one combination, a weekly rule naming two or more
+  weekdays with a week start other than Monday and an interval of two weeks
+  or more, is still shown once rather than expanded. Nothing found in this
+  fix's own research of real calendars used that combination, but a future
+  one could.
+
 - **Typing in the box above the contact list now narrows which contacts it
   shows, searching within whatever the sidebar already has selected.** The
   search box read what was typed and announced "Searching contacts: ..." and
