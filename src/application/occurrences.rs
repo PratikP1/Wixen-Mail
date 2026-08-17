@@ -732,6 +732,13 @@ fn nth_weekday_of(
     weekday: chrono::Weekday,
 ) -> Option<chrono::NaiveDate> {
     use chrono::Datelike;
+    // nth is never zero: the one place that constructs it,
+    // one_weekday_of_the_month, filters it out while parsing, so `nth > 0`
+    // and `nth >= 0` answer identically for every value this ever actually
+    // receives. Asserted here rather than left to be found by a mutation
+    // test that can never catch it either way, since no input distinguishes
+    // the two: a test can only prove a difference it can observe.
+    debug_assert_ne!(nth, 0, "a rule's own parsing should have refused this");
     let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)?;
     let forward = (7 + weekday.num_days_from_monday() as i64
         - first.weekday().num_days_from_monday() as i64)
@@ -2518,5 +2525,74 @@ mod tests {
         // WKST=MO said explicitly still reads, because it is what every one
         // of those rules already meant.
         assert!(Rule::read("FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=TU,SU").is_some());
+    }
+
+    // ── months_apart, direct: a monthly or yearly rule's fast-forward past a
+    // far-off first date depends on this arithmetic alone, and nothing in the
+    // big walked-vs-stepped comparison above happened to pick dates far
+    // enough apart to tell a correct answer from a wrong one ────────────────
+
+    #[test]
+    fn test_months_apart_counts_signed_month_boundaries_crossed() {
+        fn ymd(year: i32, month: u32, day: u32) -> chrono::NaiveDate {
+            chrono::NaiveDate::from_ymd_opt(year, month, day).expect("a real date")
+        }
+        for (from, to, expected) in [
+            // Same month: no boundary crossed.
+            (ymd(2024, 1, 15), ymd(2024, 1, 20), 0),
+            // Forward within one year.
+            (ymd(2024, 1, 15), ymd(2024, 3, 1), 2),
+            // Forward across exactly one year boundary, same month: this is
+            // the case that tells apart every one of *12, /12, and the two
+            // constants a mutant could replace the whole function with. Were
+            // the year term divided instead of multiplied it would read 1,
+            // not 12; were the two terms subtracted instead of added it
+            // would read -10; a function replaced outright by 0 or by -1
+            // would read one of those instead of 12.
+            (ymd(2024, 1, 1), ymd(2025, 1, 1), 12),
+            // Forward across a year boundary, different months: the same
+            // distinguishing power as above, at a value (3) no single
+            // mutant listed here happens to share.
+            (ymd(2024, 11, 1), ymd(2025, 2, 1), 3),
+            // Backward: negative, which is the sign this function's own doc
+            // comment says tells a series starting after the window from one
+            // starting before it.
+            (ymd(2025, 1, 1), ymd(2024, 1, 1), -12),
+        ] {
+            assert_eq!(
+                months_apart(from, to),
+                expected,
+                "{from} to {to} should be {expected} months apart"
+            );
+        }
+    }
+
+    // ── The block count days_stepping_from reports, direct: the property
+    // test above only asks whether it stayed under the backstop, which a
+    // counter stuck at zero would also satisfy ─────────────────────────────
+
+    #[test]
+    fn test_a_hand_counted_weekly_walk_matches_the_blocks_it_reports() {
+        // Every Monday, four Mondays wide: 2024-01-01 is itself a Monday, so
+        // the window from that day to three weeks later holds exactly the
+        // Mondays of weeks 1 through 4, and nothing on the far side of the
+        // window is ever looked at, so the walk should stop having counted
+        // exactly four blocks, not more and not fewer.
+        let rule = Rule::read("FREQ=WEEKLY;BYDAY=MO").expect("a rule this can read");
+        let first = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).expect("a real date");
+        let to = chrono::NaiveDate::from_ymd_opt(2024, 1, 22).expect("a real date");
+
+        let (walked, blocks) = rule.days_stepping_from(rule.opening(first), 0, first, first, to);
+
+        let walked_as_dates: Vec<String> =
+            walked.iter().map(chrono::NaiveDate::to_string).collect();
+        assert_eq!(
+            walked_as_dates,
+            ["2024-01-01", "2024-01-08", "2024-01-15", "2024-01-22"]
+        );
+        assert_eq!(
+            blocks, 4,
+            "four Mondays, one block each, is four blocks stepped, not {blocks}"
+        );
     }
 }

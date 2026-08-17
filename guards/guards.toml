@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 119 records have arrived since and have not been through it.
+# 121 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6601,4 +6601,43 @@ red = [
     "application::occurrences::tests::test_a_real_google_calendar_rule_with_wkst_su_and_three_weekdays_expands_correctly",
     "application::occurrences::tests::test_a_real_google_calendar_series_with_wkst_su_and_eight_exclusions_expands_correctly",
     "application::occurrences::tests::test_wkst_other_than_monday_is_accepted_wherever_it_cannot_change_the_answer",
+]
+
+# A monthly or yearly rule fast-forwards past a first date far before the
+# window it is asked about rather than stepping one block at a time from the
+# beginning, and months_apart is the only arithmetic that says how far to
+# jump. Nothing in the big walked-vs-stepped comparison happened to pick
+# dates far enough apart, in the right shape, to tell a correct jump from a
+# wrong one, so a whole-tree mutation run found four different ways to break
+# this function with nothing catching any of them.
+#
+# Measured by hand on 2026-08-17, one representative break of the four
+# (replacing the multiplication with a division, cargo-mutants' own finding):
+# exactly this one test failed and nothing else did.
+
+[[guard]]
+name = "months_apart counts a year crossed as twelve months, not one"
+file = "src/application/occurrences.rs"
+before = """    (i64::from(to.year()) - i64::from(from.year())) * 12 + i64::from(to.month())"""
+after = """    (i64::from(to.year()) - i64::from(from.year())) / 12 + i64::from(to.month())"""
+red = [
+    "application::occurrences::tests::test_months_apart_counts_signed_month_boundaries_crossed",
+]
+
+# blocks exists only so a test can watch how much work the stepping loop in
+# days_stepping_from did; nothing in production reads it. The one test that
+# watched it only ever checked an upper bound (did it reach the MOST_STEPS
+# backstop), which a counter stuck at zero also satisfies, so a whole-tree
+# mutation run found that replacing the increment with a no-op survived.
+#
+# Measured by hand on 2026-08-17: exactly this one test failed and nothing
+# else did.
+
+[[guard]]
+name = "the block count days_stepping_from reports is actually counted, not stuck at zero"
+file = "src/application/occurrences.rs"
+before = """            blocks += 1;"""
+after = """            blocks *= 1;"""
+red = [
+    "application::occurrences::tests::test_a_hand_counted_weekly_walk_matches_the_blocks_it_reports",
 ]
