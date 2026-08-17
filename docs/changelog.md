@@ -427,6 +427,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   main one still show Windows' own colours regardless of the Theme
   setting.
 
+- **This closes out the round of standalone-dialog painting that the note
+  above about Which Days named as left: Compose's own window, the
+  account-adjacent managers, and nine more standalone dialogs.** All of it
+  is done. Compose's own window, and the Filter, Tag, Signature and
+  Contact managers together with the two smaller windows they also open,
+  are each recorded in their own entries just above this one. The nine
+  finished alongside them are Add Calendar, Columns, the window that asks
+  where a message or an item should be moved or copied to, First Run's
+  Allowed Changes screen, Folder Choice, Item Form, the Reminder Alert
+  window, the Conversation window, and About.
+
+  Known limitations: the Add and Edit windows each of the Filter, Tag,
+  Signature and Contact managers opens to create or change one row are
+  not painted; that is the next standalone-dialog work still to do.
+  Separately, and true of every round of this work so far though never
+  said plainly until now: the application's own stock Windows dialogs, a
+  confirmation message box, the Open, Save and folder pickers, and the
+  plain text box Compose's Insert Link command opens, are never reached
+  by any of this. wxWidgets hands those to Windows itself to draw, and
+  nothing this project does can put its own colours on one.
+
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
   to match whatever Windows itself prefers, the same way Light and Dark match
