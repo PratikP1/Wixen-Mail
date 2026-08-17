@@ -81,13 +81,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   change to that appointment alone, and the series, and any other changed
   day sharing the same document, are left exactly as they were.
 
-  Known limitations. Deleting a day like this is still refused; the whole
-  series can still be deleted, the same as before this fix. Editing needs
-  the series itself already stored here, which is normally already true by
-  the time a changed day is read at all; the one time it is not is a first
-  sync whose answer names a changed day without the series it belongs to,
-  something some calendar servers do. Editing that day stays refused until a
-  later sync brings the series in as well.
+  Known limitations. Editing needs the series itself already stored here,
+  which is normally already true by the time a changed day is read at all;
+  the one time it is not is a first sync whose answer names a changed day
+  without the series it belongs to, something some calendar servers do.
+  Editing that day stays refused until a later sync brings the series in as
+  well.
+
+- **Fixed: a day a calendar server has already moved or changed out of a
+  repeating meeting could not be deleted here on its own.** The same shared
+  document that stopped editing also stopped deleting: removing that one
+  appointment the ordinary way would have deleted the whole document, the
+  series included, so deleting a day like this was refused outright, with
+  deleting the whole series the only thing that could be done. Deleting the
+  one day now works, and the whole series is never touched: the calendar
+  server is told that one appointment is cancelled, the way this program
+  already reads a day Google or Outlook itself cancelled, rather than being
+  asked to remove the document the series lives in. Every device reading the
+  calendar afterward, not only the one the day was deleted on, stops showing
+  it and stops counting it as part of the series.
+
+  Known limitations. The same one editing has: deleting needs the series
+  itself already stored here, which is normally already true by the time a
+  changed day is read at all; the one time it is not is a first sync whose
+  answer names a changed day without the series it belongs to, something
+  some calendar servers do. Deleting that day stays refused until a later
+  sync brings the series in as well.
 
 - **Choosing a group, Favorites, or All Contacts in the contacts sidebar now
   changes which contacts the list shows.** A contact group could always be
