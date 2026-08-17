@@ -20,6 +20,7 @@ use crate::presentation::accessibility::names::{
 };
 use crate::presentation::first_run::{Choice, INTRODUCTION, READ_MORE, TESTING_PAGE, TITLE};
 use crate::presentation::help_page;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 const ID_CONTINUE: Id = ID_HIGHEST + 300;
@@ -29,6 +30,32 @@ const ID_READ_MORE: Id = ID_HIGHEST + 301;
 ///
 /// Modal, and it does not come back until somebody has chosen.
 pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
+    let (dialog, buttons) = build_first_run_dialog(parent, theme::current_from_stored_config());
+
+    dialog.show_modal();
+    let chosen = buttons
+        .iter()
+        .find(|(_, button)| button.get_value())
+        .map_or(Choice::DEFAULT, |(choice, _)| *choice);
+    dialog.destroy();
+
+    chosen.allows()
+}
+
+/// Build the first-run "what may Wixen Mail change" dialog without showing
+/// it.
+///
+/// Everything `ask_what_is_allowed` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the radio buttons alongside the dialog, the same way the caller
+/// needs them after a real `.show_modal()`: to read which one is ticked.
+pub fn build_first_run_dialog(
+    parent: &Frame,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Vec<(Choice, RadioButton)>) {
     let dialog = Dialog::builder(parent, TITLE)
         .with_size(620, 560)
         .with_style(DialogStyle::Caption | DialogStyle::ResizeBorder)
@@ -152,12 +179,15 @@ pub fn ask_what_is_allowed(parent: &Frame) -> Allowed {
         ticked.set_focus();
     }
 
-    dialog.show_modal();
-    let chosen = buttons
-        .iter()
-        .find(|(_, button)| button.get_value())
-        .map_or(Choice::DEFAULT, |(choice, _)| *choice);
-    dialog.destroy();
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides. No `TextCtrl`, `ListCtrl` or `TreeCtrl`
+    // anywhere in this dialog, so the dialog itself is the only site: the
+    // radio buttons, like every checkbox and button elsewhere in this round,
+    // are left to Windows.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
 
-    chosen.allows()
+    (dialog, buttons)
 }
