@@ -90,6 +90,18 @@ fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
     out.push_str(&format!("{header}: {value}\r\n"));
 }
 
+/// Take a carriage return or line feed out of untrusted header text.
+///
+/// Both are folded to a space rather than dropped, so the text stays
+/// readable instead of running two words together. Every value this builder
+/// writes onto a header line of its own can hold a remote sender's display
+/// name, by way of a Reply pre-fill, and nothing this side of the folder it
+/// gets appended to would otherwise stop a line break in that name from
+/// starting a header of its own.
+fn without_line_breaks(text: &str) -> String {
+    text.replace(['\r', '\n'], " ")
+}
+
 /// The value of the `From` line: an address, with a name in front where there
 /// is one.
 ///
@@ -98,17 +110,17 @@ fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
 /// quotes nothing and folds nothing, so a name holding a comma written raw
 /// would be two senders, one of which does not exist.
 ///
-/// A carriage return or a line feed is taken out first. The library refuses to
-/// write either inside a quoted name, and it refuses from a `Display`
-/// implementation, so handing it one panics. Here it would also be a way to
-/// write arbitrary headers into a message.
+/// The library refuses to write a line break inside a quoted name, and it
+/// refuses from a `Display` implementation, so handing it one panics; that is
+/// the other reason `without_line_breaks` runs first, not only the header
+/// injection it closes off.
 ///
 /// An address the library will not parse falls back to the bare address, which
 /// is what this wrote before there was a name to add. A draft is somebody's
 /// unfinished work and is worth filing even when its sender is odd.
 fn sender_line(from: &str, from_name: Option<&str>) -> String {
     let name = from_name
-        .map(|name| name.replace(['\r', '\n'], " "))
+        .map(without_line_breaks)
         .map(|name| name.trim().to_string())
         .filter(|name| !name.is_empty());
 
@@ -123,6 +135,7 @@ fn sender_line(from: &str, from_name: Option<&str>) -> String {
 
 /// Add a recipient header, unless there is nobody in it.
 fn push_addresses(out: &mut String, name: &str, addresses: &str) {
+    let addresses = without_line_breaks(addresses);
     let addresses = addresses.trim();
     if addresses.is_empty() {
         return;
@@ -133,6 +146,7 @@ fn push_addresses(out: &mut String, name: &str, addresses: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::types::EmailAddress;
 
     fn draft() -> CachedDraft {
         CachedDraft {
@@ -225,6 +239,31 @@ mod tests {
         // Here a line break really would be a header: nothing between this and
         // the bytes appended to the folder folds or escapes anything.
         let raw = built_by(&draft(), "Ada\r\nBcc: sneak@example.com");
+        assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
+    }
+
+    #[test]
+    fn test_a_recipient_name_cannot_write_a_second_header_on_a_filed_draft() {
+        // The same risk the test above guards against on From, on the three
+        // headers `push_addresses` builds instead of `sender_line`. Built
+        // through `EmailAddress`'s own `Display` rather than typed by hand, the
+        // way a real Reply pre-fill or a name typed into To actually produces
+        // this text: `needs_quoting` has no reason to know about a carriage
+        // return, since a comma or a bracket is what corrupts an address list,
+        // not a line break, so this arrives at `push_addresses` exactly as
+        // unguarded as `from_name` arrived at `sender_line` before it stripped
+        // one.
+        let sneaky_recipient = EmailAddress::new(
+            "bob@example.com".to_string(),
+            Some("Bob\r\nBcc: sneak@example.com".to_string()),
+        )
+        .to_string();
+
+        let mut with_sneaky_recipient = draft();
+        with_sneaky_recipient.to_addr = sneaky_recipient;
+
+        let raw = built(&with_sneaky_recipient);
+
         assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
     }
 

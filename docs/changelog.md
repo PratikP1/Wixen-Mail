@@ -328,34 +328,6 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   itself, is handled the old way: that kind of refusal can repeat forever,
   so the address book's copy still wins and you are still told.
 
-- **Fixed: editing or deleting a day a calendar server had already moved or
-  changed out of a repeating meeting could silently delete the whole meeting,
-  or fail forever with a confusing error.** A calendar server stores a moved
-  or changed day at the same address as the meeting it belongs to. Deleting
-  that one day through the ordinary calendar screen sent an unconditional
-  delete to that shared address, removing the whole meeting from the server:
-  every day of it, not just the one that was opened. Editing that one day
-  saved a change that could never actually reach the server, so every sync
-  after that failed the same way again, with a message that did not explain
-  what was wrong. Both are refused now, before anything is sent, with a plain
-  message saying that nothing has changed and that this particular change has
-  to be made at the calendar server directly. This is specific to a calendar
-  server: Google and Outlook already give a moved or changed day an address
-  of its own, so editing or deleting one of those was never affected.
-
-  The refusal also now covers the very first sync of a new account, and any
-  other sync where this program has not yet downloaded the rest of the
-  meeting a moved day belongs to. Until now, the refusal only worked once the
-  rest of the meeting had already been downloaded on an earlier sync: a moved
-  or changed day met for the first time on its own looked like an ordinary
-  meeting, and deleting or editing it could still silently delete the whole
-  meeting from the server. It is caught now the moment such a day is seen,
-  whether or not the rest of the meeting has been downloaded yet.
-
-  Known limitations: this program still cannot send a targeted change to one
-  moved or changed day of a repeating meeting back to a calendar server on
-  its own. Refusing cleanly is the whole fix for now.
-
 - **Fixed: clearing an existing task's description was never sent to Google
   or Microsoft, so the old text could reappear on the next sync.** Sending a
   changed task always left the description out of the request when it had
