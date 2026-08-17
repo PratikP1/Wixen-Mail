@@ -2431,6 +2431,46 @@ pub fn ical_with_the_occurrence_changed(
     Ok(document)
 }
 
+/// The occurrence exception one VEVENT of a document holds, read exactly as
+/// the document holds it: not a change built from something somebody typed,
+/// but the day's own current summary, start, end and every other property
+/// [`the_properties_this_program_owns`] knows how to write, taken straight
+/// off the block.
+///
+/// Locates the VEVENT the same way [`ical_with_the_occurrence_changed`]
+/// locates the one it splices a change into, through [`the_occurrence_named`],
+/// so a caller that reads a day off a document before changing one property
+/// on it and the writer that splices the change back in cannot come to
+/// disagree about which VEVENT either one means. Reads the block the same
+/// way [`parse_ical_vevent`] reads a document's first, through
+/// [`event_from_its_own_lines`], the one block-to-event reader every other
+/// path in this file already trusts, so this adds no parsing of its own.
+///
+/// Built for a delete: taking a day off a series a calendar server has
+/// already split out means marking that one VEVENT `STATUS:CANCELLED` and
+/// changing nothing else about it, and a delete has no typed summary, start
+/// or end to build a document from the way an edit does. Reading the
+/// occurrence's own current properties here, changing `status` on the
+/// result, and splicing it back in through the unmodified
+/// [`ical_with_the_occurrence_changed`] is what keeps everything else about
+/// the VEVENT exactly as the document already held it.
+pub(crate) fn the_occurrence_as_the_document_holds_it(
+    held: &str,
+    uid: &str,
+    recurrence_id: &str,
+) -> std::result::Result<CalDavEvent, WhyTheChangeWasNotMade> {
+    let lines = unfolded(held);
+    let events = events_in(&lines);
+    if events.is_empty() {
+        return Err(WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent);
+    }
+    let its = the_occurrence_named(&events, &lines, uid, recurrence_id)
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)?;
+    let block = lines_at(&lines, &its.its_own).join("\r\n");
+    event_from_its_own_lines(&block, held, "", None)
+        .ok_or(WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument)
+}
+
 /// The document's lines with a change spliced into one event's own lines: the
 /// properties a change owns replaced, and every other line, including every
 /// other event in the document, copied through exactly as it arrived.
@@ -6939,6 +6979,132 @@ pub(crate) mod writing_tests {
         assert_eq!(
             ical_with_the_occurrence_changed(held, &the_occurrence_as_it_was_changed_here()),
             Err(WhyTheChangeWasNotMade::TheEventIsNeverClosed)
+        );
+    }
+
+    // ── Reading an occurrence exception off the document, unchanged ─────────
+    //
+    // Deleting a day the server has already split into its own VEVENT cannot
+    // build a `CalDavEvent` the way an edit does: an edit already knows the
+    // new summary, start and end, because somebody just typed them. A delete
+    // knows only which day is going. The one safe way to leave everything
+    // about that VEVENT untouched except "this no longer happens" is to read
+    // it off the document exactly as the document already holds it, change
+    // `status` alone, and splice the result back in through the same
+    // `ical_with_the_occurrence_changed` an edit already uses.
+
+    #[test]
+    fn test_the_occurrence_is_read_off_the_document_with_its_own_current_properties_intact() {
+        let held = a_series_with_two_occurrences_moved();
+
+        let read = the_occurrence_as_the_document_holds_it(&held, "e-1", "2026-03-12T09:00:00Z")
+            .expect("the occurrence to be found and read");
+
+        assert_eq!(read.uid, "e-1");
+        assert_eq!(
+            read.summary, "Weekly review, the week it moved",
+            "the escaped comma in the document's own title was not read back \
+             the way every other reader in this file reads it"
+        );
+        assert_eq!(read.dtstart, "2026-03-12T14:00:00Z");
+        assert_eq!(read.dtend.as_deref(), Some("2026-03-12T15:00:00Z"));
+        assert_eq!(read.recurrence_id.as_deref(), Some("2026-03-12T09:00:00Z"));
+        assert_eq!(
+            read.status, "CONFIRMED",
+            "a VEVENT naming no STATUS reads as CONFIRMED everywhere else in \
+             this file, and this has to agree"
+        );
+    }
+
+    #[test]
+    fn test_the_occurrence_is_not_found_when_the_document_names_no_such_recurrence_id() {
+        let held = a_series_with_two_occurrences_moved();
+
+        assert_eq!(
+            the_occurrence_as_the_document_holds_it(&held, "e-1", "2026-04-02T09:00:00Z")
+                .unwrap_err(),
+            WhyTheChangeWasNotMade::TheOccurrenceIsNotInTheDocument
+        );
+    }
+
+    #[test]
+    fn test_the_occurrence_is_not_found_in_a_document_with_no_event_at_all() {
+        let held = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+
+        assert_eq!(
+            the_occurrence_as_the_document_holds_it(held, "e-1", "2026-03-12T09:00:00Z")
+                .unwrap_err(),
+            WhyTheChangeWasNotMade::TheDocumentHoldsNoEvent
+        );
+    }
+
+    #[test]
+    fn test_cancelling_the_occurrence_leaves_the_series_and_a_sibling_exception_alone() {
+        // The central proof: reading the occurrence off the document and
+        // writing only its status back has to leave everything else about it,
+        // and everything about the rest of the resource, exactly as it stood.
+        let held = a_series_with_two_occurrences_moved();
+        let lines_before = unfolded(&held);
+        let events_before = events_in(&lines_before);
+        let series_before = lines_at(&lines_before, &events_before[0].its_own).join("\r\n");
+        let sibling_before = lines_at(&lines_before, &events_before[2].its_own).join("\r\n");
+
+        let mut occurrence =
+            the_occurrence_as_the_document_holds_it(&held, "e-1", "2026-03-12T09:00:00Z")
+                .expect("the occurrence to be found and read");
+        occurrence.status = "CANCELLED".to_string();
+
+        let changed = ical_with_the_occurrence_changed(&held, &occurrence)
+            .expect("the cancellation to be written");
+
+        let lines_after = unfolded(&changed);
+        let events_after = events_in(&lines_after);
+        assert_eq!(
+            events_after.len(),
+            3,
+            "an event was lost or gained:\n{changed}"
+        );
+
+        let series_after = lines_at(&lines_after, &events_after[0].its_own).join("\r\n");
+        assert_eq!(
+            series_before, series_after,
+            "the series was changed by cancelling one occurrence:\n{changed}"
+        );
+
+        let sibling_after = lines_at(&lines_after, &events_after[2].its_own).join("\r\n");
+        assert_eq!(
+            sibling_before, sibling_after,
+            "a sibling exception was changed by cancelling a different one:\n{changed}"
+        );
+
+        let target_after = lines_at(&lines_after, &events_after[1].its_own).join("\r\n");
+        assert_eq!(
+            target_after.matches("STATUS:CANCELLED").count(),
+            1,
+            "the occurrence was not marked cancelled, or was marked twice:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("SUMMARY:Weekly review\\, the week it moved"),
+            "the occurrence's own title changed when only its status should \
+             have:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("DTSTART:20260312T140000Z"),
+            "the occurrence's own start changed when only its status should \
+             have:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("DTEND:20260312T150000Z"),
+            "the occurrence's own end changed when only its status should \
+             have:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("RECURRENCE-ID:20260312T090000Z"),
+            "the occurrence lost what says which day it replaces:\n{target_after}"
+        );
+        assert!(
+            target_after.contains("SEQUENCE:2"),
+            "the occurrence's own number was not counted on:\n{target_after}"
         );
     }
 
