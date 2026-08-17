@@ -20,6 +20,7 @@ use crate::application::destinations::{Branch, Moving, nothing_to_offer};
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// What the window is called, and what its tree is described as.
@@ -57,6 +58,52 @@ pub fn ask(
     if branches.is_empty() {
         return None;
     }
+    let (dialog, tree) = build_destination_dialog(
+        parent,
+        moving,
+        copying,
+        branches,
+        last_used,
+        theme::current_from_stored_config(),
+    );
+
+    let answer = dialog.show_modal();
+    // An account row carries no destination, so choosing one gives nothing
+    // rather than the first folder under it. Somebody who meant a folder and
+    // landed on the account gets no move, which they can see, instead of a
+    // move somewhere they did not name.
+    let chosen = if answer == ID_OK {
+        tree.get_selection()
+            .and_then(|selected| tree.get_custom_data(&selected))
+            .and_then(|data| data.downcast_ref::<String>().cloned())
+    } else {
+        None
+    };
+    tree.cleanup_custom_data();
+    dialog.destroy();
+    chosen
+}
+
+/// Build the "where does this go" dialog without showing it.
+///
+/// Everything `ask` used to do up to its own `.show_modal()` call, split out
+/// the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// `branches` must not be empty; `ask` checks that before calling here, since
+/// there is nothing to build a tree out of otherwise.
+///
+/// Returns the tree alongside the dialog, the same way the caller needs it
+/// after a real `.show_modal()`: to read which destination was selected.
+pub fn build_destination_dialog(
+    parent: &Frame,
+    moving: Moving,
+    copying: bool,
+    branches: &[Branch],
+    last_used: Option<&str>,
+    palette: Option<theme::Palette>,
+) -> (Dialog, TreeCtrl) {
     let open_on = crate::application::destinations::open_on(branches, last_used)
         .map(|place| place.id.clone());
 
@@ -132,21 +179,16 @@ pub fn ask(
     }
     tree.set_focus();
 
-    let answer = dialog.show_modal();
-    // An account row carries no destination, so choosing one gives nothing
-    // rather than the first folder under it. Somebody who meant a folder and
-    // landed on the account gets no move, which they can see, instead of a
-    // move somewhere they did not name.
-    let chosen = if answer == ID_OK {
-        tree.get_selection()
-            .and_then(|selected| tree.get_custom_data(&selected))
-            .and_then(|data| data.downcast_ref::<String>().cloned())
-    } else {
-        None
-    };
-    tree.cleanup_custom_data();
-    dialog.destroy();
-    chosen
+    // Painted last. The tree is left to Windows here, the same as every
+    // `Choice`, `ComboBox`, `RadioButton` and `CheckBox` elsewhere in this
+    // round. `None` means high contrast is on, or the system is set up in a
+    // way this application should not paint over, so nothing is set here and
+    // Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+
+    (dialog, tree)
 }
 
 /// What to say when there is nowhere to put it.
