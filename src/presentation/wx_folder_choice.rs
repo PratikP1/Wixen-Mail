@@ -47,6 +47,7 @@
 //! gets downloaded. Those are read whatever happens to the check box.
 
 use crate::presentation::accessibility::names::{set_accessible_checked_rows, set_accessible_name};
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// One folder, and whether it is currently kept up to date.
@@ -102,7 +103,41 @@ pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(
     if folders.is_empty() {
         return None;
     }
+    let (dialog, list) = build_folder_choice_dialog(
+        parent,
+        account,
+        folders,
+        theme::current_from_stored_config(),
+    );
 
+    let answer = dialog.show_modal();
+    let changed = if answer == ID_OK {
+        Some(changes(folders, |index| list.is_checked(index as u32)))
+    } else {
+        None
+    };
+    dialog.destroy();
+    changed
+}
+
+/// Build the folder chooser without showing it.
+///
+/// Everything `ask` used to do up to its own `.show_modal()` call, split out
+/// the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// `folders` must not be empty; `ask` checks that before calling here, since
+/// there is nothing to build a list out of otherwise.
+///
+/// Returns the list alongside the dialog, the same way the caller needs it
+/// after a real `.show_modal()`: to read which rows are ticked.
+pub fn build_folder_choice_dialog(
+    parent: &Frame,
+    account: &str,
+    folders: &[FolderRow],
+    palette: Option<theme::Palette>,
+) -> (Dialog, CheckListBox) {
     let dialog = Dialog::builder(parent, &format!("Folders to keep up to date: {account}"))
         .with_size(560, 460)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -163,14 +198,17 @@ pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(
     // because a list where nothing is selected has no folder to announce.
     list.set_focus();
 
-    let answer = dialog.show_modal();
-    let changed = if answer == ID_OK {
-        Some(changes(folders, |index| list.is_checked(index as u32)))
-    } else {
-        None
-    };
-    dialog.destroy();
-    changed
+    // Painted last. The `CheckListBox` draws its own check marks rather than
+    // going through a control the established pattern paints, so it is left
+    // to Windows here, the same as every `Choice`, `ComboBox`, `RadioButton`
+    // and `CheckBox` elsewhere in this round. `None` means high contrast is
+    // on, or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+
+    (dialog, list)
 }
 
 /// Which answers differ from what they were.
