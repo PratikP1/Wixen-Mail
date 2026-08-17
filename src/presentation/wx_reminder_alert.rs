@@ -12,6 +12,7 @@
 use crate::application::due::{Due, Snooze};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::theme;
 use wxdragon::prelude::*;
 
 /// What was decided about a reminder that went off.
@@ -63,6 +64,49 @@ pub fn raise(
         crate::presentation::accessibility::announcements::Priority::Urgent,
     );
 
+    let (dialog, snooze_choice) = build_reminder_alert_dialog(
+        parent,
+        said,
+        default_snooze,
+        theme::current_from_stored_config(),
+    );
+
+    let answer = dialog.show_modal();
+    let chosen = Snooze::ALL
+        .get(snooze_choice.get_selection().unwrap_or(0) as usize)
+        .copied()
+        .unwrap_or(default_snooze);
+    dialog.destroy();
+
+    match answer {
+        id if id == ID_SNOOZE => Answer::Snoozed(chosen),
+        id if id == ID_DONE => Answer::Done,
+        // Closing the window with Escape or the title bar is the same as
+        // dismissing: the reminder is left as it is and not raised again this
+        // session. Treating a closed window as a snooze would bring it back at
+        // somebody who had just decided they were finished with it.
+        _ => Answer::Dismissed,
+    }
+}
+
+/// Build the reminder alert dialog without showing it.
+///
+/// Everything `raise` used to do from its own window onward, split out the
+/// same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()`, sound an
+/// earcon, or make an announcement at all.
+///
+/// `said` is the sentence `raise` has already spoken and shown once; this
+/// only ever puts it on screen. Returns the snooze choice alongside the
+/// dialog, the same way the caller needs it after a real `.show_modal()`: to
+/// read how long was chosen.
+pub fn build_reminder_alert_dialog(
+    parent: &Frame,
+    said: &str,
+    default_snooze: Snooze,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Choice) {
     let dialog = Dialog::builder(parent, "Reminder")
         .with_size(420, 220)
         .build();
@@ -131,22 +175,18 @@ pub fn raise(
     }
 
     snooze_btn.set_focus();
-    let answer = dialog.show_modal();
-    let chosen = Snooze::ALL
-        .get(snooze_choice.get_selection().unwrap_or(0) as usize)
-        .copied()
-        .unwrap_or(default_snooze);
-    dialog.destroy();
 
-    match answer {
-        id if id == ID_SNOOZE => Answer::Snoozed(chosen),
-        id if id == ID_DONE => Answer::Done,
-        // Closing the window with Escape or the title bar is the same as
-        // dismissing: the reminder is left as it is and not raised again this
-        // session. Treating a closed window as a snooze would bring it back at
-        // somebody who had just decided they were finished with it.
-        _ => Answer::Dismissed,
+    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
+    // dialog (`StaticText`, `Choice` and buttons only), so the dialog itself
+    // is the only site: the snooze `Choice`, like every other `Choice` this
+    // round paints around, is left to Windows. `None` means high contrast is
+    // on, or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
     }
+
+    (dialog, snooze_choice)
 }
 
 #[cfg(test)]
