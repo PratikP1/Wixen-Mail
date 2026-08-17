@@ -10332,6 +10332,20 @@ fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
 // ── Standalone Dialogs ──────────────────────────────────────────────────────
 
 fn show_about_dialog(parent: &Frame) {
+    let dlg = build_about_dialog(parent, theme::current_from_stored_config());
+    dlg.show_modal();
+}
+
+/// Build the About dialog without showing it.
+///
+/// Everything `show_about_dialog` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Nothing is read back from this one: OK just closes it, and there is
+/// nothing else on the dialog to answer with.
+pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Dialog {
     let dlg = Dialog::builder(parent, "About Wixen Mail")
         .with_size(380, 260)
         .build();
@@ -10374,7 +10388,17 @@ fn show_about_dialog(parent: &Frame) {
             d.end_modal(ID_OK);
         }
     });
-    dlg.show_modal();
+
+    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
+    // dialog (four `StaticText` and a button), so the dialog itself is the
+    // only site. `None` means high contrast is on, or the system is set up
+    // in a way this application should not paint over, so nothing is set
+    // here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+    }
+
+    dlg
 }
 
 /// Build the Search dialog without showing it.
