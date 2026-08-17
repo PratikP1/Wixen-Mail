@@ -464,6 +464,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   top of the main one still show Windows' own colours regardless of the
   Theme setting.
 
+- **The Add/Edit windows for a filter rule, a tag and a signature now take
+  the Theme colours too.** The filter editor's rule name, pattern and
+  action-value boxes, the tag editor's name box, and the signature
+  editor's name box and its two boxes for the plain text and HTML
+  signature, now match the rest of the coloured application instead of
+  showing Windows' own white regardless of what Light or Dark chose.
+  Every choice box and checkbox on these three windows is left to
+  Windows, matching every choice box and checkbox elsewhere in this
+  round. This closes out the Filter, Tag, Signature and Contact
+  managers' own Add/Edit windows named as left in the entries above:
+  every window these four managers open is now coloured.
+
+  Known limitations: roughly thirty other windows that open on top of
+  the main one still show Windows' own colours regardless of the Theme
+  setting.
+
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
   to match whatever Windows itself prefers, the same way Light and Dark match

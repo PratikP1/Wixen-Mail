@@ -2051,13 +2051,12 @@ pub fn show_filter_manager_dialog(
     rules: &[FilterRule],
     a11y: &Arc<Accessibility>,
 ) -> FilterManagerAction {
-    let (dialog, sizer, list, status) = make_shell(
-        parent,
-        "Filter Manager",
-        650,
-        450,
-        theme::current_from_stored_config(),
-    );
+    // Read once and reused for the manager shell and every Add/Edit dialog
+    // it opens, rather than a second, independent disk read per dialog (see
+    // `theme::current_from_stored_config`'s own doc comment for why that
+    // matters).
+    let palette = theme::current_from_stored_config();
+    let (dialog, sizer, list, status) = make_shell(parent, "Filter Manager", 650, 450, palette);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 130);
     list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
@@ -2077,8 +2076,8 @@ pub fn show_filter_manager_dialog(
         manager_words::FILTER,
         &mut working,
         populate_filters,
-        |d| show_filter_edit(d, None),
-        |d, r| show_filter_edit(d, Some(r)),
+        |d| show_filter_edit(d, None, palette),
+        |d, r| show_filter_edit(d, Some(r), palette),
         |r| r.name.clone(),
     );
 
@@ -2109,7 +2108,33 @@ fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     }
 }
 
-fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<FilterRule> {
+/// What `show_filter_edit` still needs after construction: the dialog to
+/// run `.show_modal()` on, and every field and Choice to read back once OK
+/// is pressed.
+pub struct FilterEditWidgets {
+    pub dialog: Dialog,
+    pub name_f: TextCtrl,
+    pub field_choice: Choice,
+    pub match_choice: Choice,
+    pub pattern_f: TextCtrl,
+    pub cs_check: CheckBox,
+    pub action_choice: Choice,
+    pub action_value_f: TextCtrl,
+    pub en_check: CheckBox,
+}
+
+/// Build the Add/Edit Filter Rule dialog without showing it.
+///
+/// Everything `show_filter_edit` used to do up to its own `.show_modal()`
+/// call, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+pub fn build_filter_edit_dialog(
+    parent: &Dialog,
+    existing: Option<&FilterRule>,
+    palette: Option<theme::Palette>,
+) -> FilterEditWidgets {
     let title = if existing.is_some() {
         "Edit Filter Rule"
     } else {
@@ -2246,6 +2271,48 @@ fn show_filter_edit(parent: &Dialog, existing: Option<&FilterRule>) -> Option<Fi
         }
     });
 
+    // Painted last. The three Choice controls and the two CheckBox controls
+    // are left to Windows, matching every other Choice and CheckBox this
+    // round paints around. `None` means high contrast is on, or the system
+    // is set up in a way this application should not paint over, so nothing
+    // is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        for field in [&name_f, &pattern_f, &action_value_f] {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    FilterEditWidgets {
+        dialog: dlg,
+        name_f,
+        field_choice,
+        match_choice,
+        pattern_f,
+        cs_check,
+        action_choice,
+        action_value_f,
+        en_check,
+    }
+}
+
+fn show_filter_edit(
+    parent: &Dialog,
+    existing: Option<&FilterRule>,
+    palette: Option<theme::Palette>,
+) -> Option<FilterRule> {
+    let FilterEditWidgets {
+        dialog: dlg,
+        name_f,
+        field_choice,
+        match_choice,
+        pattern_f,
+        cs_check,
+        action_choice,
+        action_value_f,
+        en_check,
+    } = build_filter_edit_dialog(parent, existing, palette);
+
     if dlg.show_modal() == ID_OK {
         Some(FilterRule {
             id: existing
@@ -2298,13 +2365,12 @@ pub fn show_tag_manager_dialog(
     tags: &[TagEntry],
     a11y: &Arc<Accessibility>,
 ) -> TagManagerAction {
-    let (dialog, sizer, list, status) = make_shell(
-        parent,
-        "Tag Manager",
-        450,
-        400,
-        theme::current_from_stored_config(),
-    );
+    // Read once and reused for the manager shell and every Add/Edit dialog
+    // it opens, rather than a second, independent disk read per dialog (see
+    // `theme::current_from_stored_config`'s own doc comment for why that
+    // matters).
+    let palette = theme::current_from_stored_config();
+    let (dialog, sizer, list, status) = make_shell(parent, "Tag Manager", 450, 400, palette);
 
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
     list.insert_column(1, "Color", ListColumnFormat::Left, 100);
@@ -2322,8 +2388,8 @@ pub fn show_tag_manager_dialog(
         manager_words::TAG,
         &mut working,
         populate_tags,
-        |d| show_tag_edit(d, None),
-        |d, t| show_tag_edit(d, Some(t)),
+        |d| show_tag_edit(d, None, palette),
+        |d, t| show_tag_edit(d, Some(t), palette),
         |t| t.name.clone(),
     );
 
@@ -2348,7 +2414,21 @@ fn populate_tags(list: &ListCtrl, tags: &[TagEntry]) {
     }
 }
 
-fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntry> {
+/// Build the Add/Edit Tag dialog without showing it.
+///
+/// Everything `show_tag_edit` used to do up to its own `.show_modal()` call,
+/// split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the name field and the colour choice alongside the dialog, the
+/// same way `show_tag_edit` still needs them after a real `.show_modal()`.
+pub fn build_tag_edit_dialog(
+    parent: &Dialog,
+    existing: Option<&TagEntry>,
+    palette: Option<theme::Palette>,
+) -> (Dialog, TextCtrl, Choice) {
     let title = if existing.is_some() {
         "Edit Tag"
     } else {
@@ -2418,6 +2498,25 @@ fn show_tag_edit(parent: &Dialog, existing: Option<&TagEntry>) -> Option<TagEntr
         }
     });
 
+    // Painted last. The colour Choice is left to Windows, matching every
+    // other Choice this round paints around. `None` means high contrast is
+    // on, or the system is set up in a way this application should not
+    // paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&name_f, palette.main_surface());
+    }
+
+    (dlg, name_f, color_choice)
+}
+
+fn show_tag_edit(
+    parent: &Dialog,
+    existing: Option<&TagEntry>,
+    palette: Option<theme::Palette>,
+) -> Option<TagEntry> {
+    let (dlg, name_f, color_choice) = build_tag_edit_dialog(parent, existing, palette);
+
     if dlg.show_modal() == ID_OK {
         let color_idx = color_choice.get_selection().unwrap_or(0) as usize;
         let color = TAG_COLORS
@@ -2460,13 +2559,12 @@ pub fn show_signature_manager_dialog(
     signatures: &[SignatureEntry],
     a11y: &Arc<Accessibility>,
 ) -> SignatureManagerAction {
-    let (dialog, sizer, list, status) = make_shell(
-        parent,
-        "Signature Manager",
-        550,
-        450,
-        theme::current_from_stored_config(),
-    );
+    // Read once and reused for the manager shell and every Add/Edit dialog
+    // it opens, rather than a second, independent disk read per dialog (see
+    // `theme::current_from_stored_config`'s own doc comment for why that
+    // matters).
+    let palette = theme::current_from_stored_config();
+    let (dialog, sizer, list, status) = make_shell(parent, "Signature Manager", 550, 450, palette);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 200);
     list.insert_column(1, "Default", ListColumnFormat::Centre, 80);
@@ -2485,8 +2583,8 @@ pub fn show_signature_manager_dialog(
         manager_words::SIGNATURE,
         &mut working,
         populate_sigs,
-        |d| show_sig_edit(d, None),
-        |d, s| show_sig_edit(d, Some(s)),
+        |d| show_sig_edit(d, None, palette),
+        |d, s| show_sig_edit(d, Some(s), palette),
         |s| s.name.clone(),
     );
 
@@ -2518,7 +2616,28 @@ fn populate_sigs(list: &ListCtrl, sigs: &[SignatureEntry]) {
     }
 }
 
-fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<SignatureEntry> {
+/// What `show_sig_edit` still needs after construction: the dialog to run
+/// `.show_modal()` on, and every field it reads back once OK is pressed.
+pub struct SigEditWidgets {
+    pub dialog: Dialog,
+    pub name_f: TextCtrl,
+    pub def_check: CheckBox,
+    pub content_f: TextCtrl,
+    pub html_f: TextCtrl,
+}
+
+/// Build the Add/Edit Signature dialog without showing it.
+///
+/// Everything `show_sig_edit` used to do up to its own `.show_modal()` call,
+/// split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+pub fn build_sig_edit_dialog(
+    parent: &Dialog,
+    existing: Option<&SignatureEntry>,
+    palette: Option<theme::Palette>,
+) -> SigEditWidgets {
     let title = if existing.is_some() {
         "Edit Signature"
     } else {
@@ -2605,6 +2724,39 @@ fn show_sig_edit(parent: &Dialog, existing: Option<&SignatureEntry>) -> Option<S
             d.end_modal(ID_CANCEL);
         }
     });
+
+    // Painted last. The default-signature CheckBox is left to Windows, the
+    // same as every checkbox elsewhere in this round. `None` means high
+    // contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        for field in [&name_f, &content_f, &html_f] {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    SigEditWidgets {
+        dialog: dlg,
+        name_f,
+        def_check,
+        content_f,
+        html_f,
+    }
+}
+
+fn show_sig_edit(
+    parent: &Dialog,
+    existing: Option<&SignatureEntry>,
+    palette: Option<theme::Palette>,
+) -> Option<SignatureEntry> {
+    let SigEditWidgets {
+        dialog: dlg,
+        name_f,
+        def_check,
+        content_f,
+        html_f,
+    } = build_sig_edit_dialog(parent, existing, palette);
 
     if dlg.show_modal() == ID_OK {
         let html_val = html_f.get_value();

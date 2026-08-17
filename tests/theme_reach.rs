@@ -1219,6 +1219,66 @@ fn check_custom_field_sub_dialog(
     );
 }
 
+/// The Add/Edit Filter Rule dialog the Filter Manager's own list window
+/// opens. Parented to a throwaway `Dialog`, the same as production: it
+/// always opens from inside the Filter Manager, never from the main frame.
+/// The three `Choice` controls and the two `CheckBox` controls are left to
+/// Windows, matching every other `Choice` and `CheckBox` this round paints
+/// around, so only the dialog and its three `TextCtrl` fields are checked
+/// here.
+fn check_filter_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for filter edit").build();
+    let widgets = wx_managers::build_filter_edit_dialog(&scratch_parent, None, Some(palette));
+    check(
+        "filter edit dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("filter edit name field", &widgets.name_f),
+        ("filter edit pattern field", &widgets.pattern_f),
+        ("filter edit action value field", &widgets.action_value_f),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
+/// The Add/Edit Tag dialog the Tag Manager's own list window opens.
+/// Parented to a throwaway `Dialog`, the same as production. The colour
+/// `Choice` is left to Windows, matching every other `Choice` this round
+/// paints around, so only the dialog and the name field are checked here.
+fn check_tag_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for tag edit").build();
+    let (dialog, name_f, _color_choice) =
+        wx_managers::build_tag_edit_dialog(&scratch_parent, None, Some(palette));
+    check("tag edit dialog", &dialog, palette.main_surface(), into);
+    check("tag edit name field", &name_f, palette.main_surface(), into);
+}
+
+/// The Add/Edit Signature dialog the Signature Manager's own list window
+/// opens. Parented to a throwaway `Dialog`, the same as production. The
+/// default-signature `CheckBox` is left to Windows, the same as every
+/// checkbox elsewhere in this round, so the dialog and its three `TextCtrl`
+/// fields are what is checked here.
+fn check_sig_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for signature edit").build();
+    let widgets = wx_managers::build_sig_edit_dialog(&scratch_parent, None, Some(palette));
+    check(
+        "signature edit dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("signature edit name field", &widgets.name_f),
+        ("signature edit plain text field", &widgets.content_f),
+        ("signature edit html field", &widgets.html_f),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
 /// Every site this round wires that can be reached without a running
 /// application, checked against the real colour a real control reports.
 ///
@@ -1279,6 +1339,9 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_phone_sub_dialog(&frame, palette, &mut sites);
             check_address_sub_dialog(&frame, palette, &mut sites);
             check_custom_field_sub_dialog(&frame, palette, &mut sites);
+            check_filter_edit(&frame, palette, &mut sites);
+            check_tag_edit(&frame, palette, &mut sites);
+            check_sig_edit(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
