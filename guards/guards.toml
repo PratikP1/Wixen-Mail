@@ -6366,14 +6366,18 @@ red = [
 # including a row whose series was never resolved, which has no document
 # locally to change or cancel one VEVENT of.
 #
-# Two tests reliably catch this now, both pure unit tests of `can_be_honoured`
-# walking its full matrix: nothing that reaches a calendar server over the
-# network does, once a write primitive exists for both editing and deleting
-# that is itself safe regardless of what this gate decides, because it routes
-# on the row's own `provider_recurrence_id` rather than on anything the gate
-# computed. That is not a reason to trust the gate less; it is a second,
-# independent layer refusing the same thing this gate refuses, and this
-# guard is what proves the gate's own refusal still holds on its own.
+# Three tests catch this now, and the two that walk `can_be_honoured`'s own
+# matrix directly are the reliable ones: a network-level delete test that
+# used to catch a wrongly widened door no longer can on its own, once a
+# write primitive exists for deleting that is itself safe regardless of
+# what this gate decides, because it routes on the row's own
+# `provider_recurrence_id` rather than on anything the gate computed. That
+# is not a reason to trust the gate less; it is a second, independent
+# layer refusing the same thing this gate refuses. The third test is
+# reliable for a different reason: forcing the door open lets an edit
+# whose series was never resolved through too, and that one still fails
+# downstream, because nothing before this line ever fetched a document to
+# change.
 #
 # Measured by hand on 2026-08-17, against the whole library.
 
