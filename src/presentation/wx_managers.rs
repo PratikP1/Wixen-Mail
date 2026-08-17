@@ -790,7 +790,7 @@ pub fn show_contact_manager_dialog(
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
-                if let Some(item) = show_contact_edit(&dialog, None) {
+                if let Some(item) = show_contact_edit(&dialog, None, palette) {
                     let name = item.name.clone();
                     working.borrow_mut().push(item);
                     changed = true;
@@ -815,7 +815,7 @@ pub fn show_contact_manager_dialog(
                         }
                     };
                     let existing = working.borrow()[working_idx].clone();
-                    if let Some(edited) = show_contact_edit(&dialog, Some(&existing)) {
+                    if let Some(edited) = show_contact_edit(&dialog, Some(&existing), palette) {
                         let name = edited.name.clone();
                         working.borrow_mut()[working_idx] = edited;
                         changed = true;
@@ -962,13 +962,54 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
 
 /// Open the Add Contact dialog directly (for File > New > Contact).
 pub fn show_new_contact_dialog(parent: &Frame) -> Option<ContactEntry> {
-    show_contact_edit(parent, None)
+    show_contact_edit(parent, None, theme::current_from_stored_config())
 }
 
-fn show_contact_edit(
+/// What `show_contact_edit`'s own modal loop still needs after
+/// construction: the dialog to run `.show_modal()` on, every field to read
+/// back once OK is pressed, and the four lists together with the shared
+/// state their own Add/Remove buttons close over.
+pub struct ContactEditDialogHandles {
+    pub dialog: Dialog,
+    pub notebook: Notebook,
+    pub basic_panel: Panel,
+    pub contact_panel: Panel,
+    pub addr_panel: Panel,
+    pub notes_panel: Panel,
+    pub name_f: TextCtrl,
+    pub given_f: TextCtrl,
+    pub family_f: TextCtrl,
+    pub nick_f: TextCtrl,
+    pub company_f: TextCtrl,
+    pub dept_f: TextCtrl,
+    pub title_f: TextCtrl,
+    pub bday_f: TextCtrl,
+    pub web_f: TextCtrl,
+    pub rel_f: TextCtrl,
+    pub avatar_f: TextCtrl,
+    pub notes_f: TextCtrl,
+    pub fav_check: CheckBox,
+    pub email_list: ListCtrl,
+    pub phone_list: ListCtrl,
+    pub addr_list: ListCtrl,
+    pub custom_list: ListCtrl,
+    emails_data: Rc<RefCell<Vec<EmailItem>>>,
+    phones_data: Rc<RefCell<Vec<PhoneItem>>>,
+    addrs_data: Rc<RefCell<Vec<AddressItem>>>,
+    custom_data: Rc<RefCell<Vec<CustomFieldItem>>>,
+}
+
+/// Build the Add/Edit Contact dialog without showing it.
+///
+/// Everything `show_contact_edit` used to do up to its own modal loop, split
+/// out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+pub fn build_contact_edit_dialog(
     parent: &dyn WxWidget,
     existing: Option<&ContactEntry>,
-) -> Option<ContactEntry> {
+    palette: Option<theme::Palette>,
+) -> ContactEditDialogHandles {
     let title = if existing.is_some() {
         "Edit Contact"
     } else {
@@ -1278,11 +1319,95 @@ fn show_contact_edit(
         }
     });
 
+    // Painted last, once every field, both panels and all four lists are
+    // built and populated. The favourite CheckBox is left to Windows, the
+    // same as every checkbox elsewhere in this round. `None` means high
+    // contrast is on, or the system is set up in a way this application
+    // should not paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&notebook, palette.main_surface());
+        for panel in [&basic_panel, &contact_panel, &addr_panel, &notes_panel] {
+            theme::paint(panel, palette.main_surface());
+        }
+        for field in [
+            &name_f, &given_f, &family_f, &nick_f, &company_f, &dept_f, &title_f, &bday_f, &web_f,
+            &rel_f, &avatar_f, &notes_f,
+        ] {
+            theme::paint(field, palette.main_surface());
+        }
+        for list in [&email_list, &phone_list, &addr_list, &custom_list] {
+            theme::paint(list, palette.main_surface());
+        }
+    }
+
+    ContactEditDialogHandles {
+        dialog: dlg,
+        notebook,
+        basic_panel,
+        contact_panel,
+        addr_panel,
+        notes_panel,
+        name_f,
+        given_f,
+        family_f,
+        nick_f,
+        company_f,
+        dept_f,
+        title_f,
+        bday_f,
+        web_f,
+        rel_f,
+        avatar_f,
+        notes_f,
+        fav_check,
+        email_list,
+        phone_list,
+        addr_list,
+        custom_list,
+        emails_data,
+        phones_data,
+        addrs_data,
+        custom_data,
+    }
+}
+
+fn show_contact_edit(
+    parent: &dyn WxWidget,
+    existing: Option<&ContactEntry>,
+    palette: Option<theme::Palette>,
+) -> Option<ContactEntry> {
+    let ContactEditDialogHandles {
+        dialog: dlg,
+        name_f,
+        given_f,
+        family_f,
+        nick_f,
+        company_f,
+        dept_f,
+        title_f,
+        bday_f,
+        web_f,
+        rel_f,
+        avatar_f,
+        notes_f,
+        fav_check,
+        email_list,
+        phone_list,
+        addr_list,
+        custom_list,
+        emails_data,
+        phones_data,
+        addrs_data,
+        custom_data,
+        ..
+    } = build_contact_edit_dialog(parent, existing, palette);
+
     // ── Modal loop (handle sub-list actions before OK/Cancel) ────────────
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD_EMAIL => {
-                if let Some(item) = show_email_sub_dialog(&dlg, None) {
+                if let Some(item) = show_email_sub_dialog(&dlg, None, palette) {
                     emails_data.borrow_mut().push(item);
                     refresh_email_list(&email_list, &emails_data.borrow());
                 }
@@ -1294,7 +1419,7 @@ fn show_contact_edit(
                 }
             }
             r if r == ID_ADD_PHONE => {
-                if let Some(item) = show_phone_sub_dialog(&dlg, None) {
+                if let Some(item) = show_phone_sub_dialog(&dlg, None, palette) {
                     phones_data.borrow_mut().push(item);
                     refresh_phone_list(&phone_list, &phones_data.borrow());
                 }
@@ -1306,7 +1431,7 @@ fn show_contact_edit(
                 }
             }
             r if r == ID_ADD_ADDR => {
-                if let Some(item) = show_address_sub_dialog(&dlg, None) {
+                if let Some(item) = show_address_sub_dialog(&dlg, None, palette) {
                     addrs_data.borrow_mut().push(item);
                     refresh_addr_list(&addr_list, &addrs_data.borrow());
                 }
@@ -1318,7 +1443,7 @@ fn show_contact_edit(
                 }
             }
             r if r == ID_ADD_CUSTOM => {
-                if let Some(item) = show_custom_field_sub_dialog(&dlg, None) {
+                if let Some(item) = show_custom_field_sub_dialog(&dlg, None, palette) {
                     custom_data.borrow_mut().push(item);
                     refresh_custom_list(&custom_list, &custom_data.borrow());
                 }
@@ -1403,7 +1528,21 @@ fn refresh_custom_list(list: &ListCtrl, items: &[CustomFieldItem]) {
 
 // ── Sub-dialogs for adding multi-value entries ───────────────────────────────
 
-fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Option<EmailItem> {
+/// Build the Add Email Address dialog without showing it.
+///
+/// Everything `show_email_sub_dialog` used to do up to its own
+/// `.show_modal()` call, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the type choice and the address field alongside the dialog, the
+/// same way `show_email_sub_dialog` still needs them after a real
+/// `.show_modal()`.
+pub fn build_email_sub_dialog(
+    parent: &Dialog,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Choice, TextCtrl) {
     let dlg = Dialog::builder(parent, "Add Email Address")
         .with_size(400, 200)
         .build();
@@ -1459,6 +1598,25 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
         }
     });
 
+    // Painted last. The type Choice is left to Windows, matching every other
+    // Choice this round paints around. `None` means high contrast is on, or
+    // the system is set up in a way this application should not paint over,
+    // so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&addr_f, palette.main_surface());
+    }
+
+    (dlg, type_choice, addr_f)
+}
+
+fn show_email_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&EmailItem>,
+    palette: Option<theme::Palette>,
+) -> Option<EmailItem> {
+    let (dlg, type_choice, addr_f) = build_email_sub_dialog(parent, palette);
+
     if dlg.show_modal() == ID_OK {
         let addr = addr_f.get_value();
         if addr.trim().is_empty() {
@@ -1473,7 +1631,21 @@ fn show_email_sub_dialog(parent: &Dialog, _existing: Option<&EmailItem>) -> Opti
     }
 }
 
-fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Option<PhoneItem> {
+/// Build the Add Phone Number dialog without showing it.
+///
+/// Everything `show_phone_sub_dialog` used to do up to its own
+/// `.show_modal()` call, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the type choice and the number field alongside the dialog, the
+/// same way `show_phone_sub_dialog` still needs them after a real
+/// `.show_modal()`.
+pub fn build_phone_sub_dialog(
+    parent: &Dialog,
+    palette: Option<theme::Palette>,
+) -> (Dialog, Choice, TextCtrl) {
     let dlg = Dialog::builder(parent, "Add Phone Number")
         .with_size(400, 200)
         .build();
@@ -1529,6 +1701,25 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
         }
     });
 
+    // Painted last. The type Choice is left to Windows, matching every other
+    // Choice this round paints around. `None` means high contrast is on, or
+    // the system is set up in a way this application should not paint over,
+    // so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&num_f, palette.main_surface());
+    }
+
+    (dlg, type_choice, num_f)
+}
+
+fn show_phone_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&PhoneItem>,
+    palette: Option<theme::Palette>,
+) -> Option<PhoneItem> {
+    let (dlg, type_choice, num_f) = build_phone_sub_dialog(parent, palette);
+
     if dlg.show_modal() == ID_OK {
         let num = num_f.get_value();
         if num.trim().is_empty() {
@@ -1543,10 +1734,30 @@ fn show_phone_sub_dialog(parent: &Dialog, _existing: Option<&PhoneItem>) -> Opti
     }
 }
 
-fn show_address_sub_dialog(
+/// What `show_address_sub_dialog` still needs after construction: the
+/// dialog to run `.show_modal()` on, and every field and Choice to read
+/// back once OK is pressed.
+pub struct AddressSubDialogWidgets {
+    pub dialog: Dialog,
+    pub country_choice: Choice,
+    pub type_choice: Choice,
+    pub street_f: TextCtrl,
+    pub city_f: TextCtrl,
+    pub region_f: TextCtrl,
+    pub code_f: TextCtrl,
+}
+
+/// Build the Add Address dialog without showing it.
+///
+/// Everything `show_address_sub_dialog` used to do up to its own
+/// `.show_modal()` call, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+pub fn build_address_sub_dialog(
     parent: &Dialog,
-    _existing: Option<&AddressItem>,
-) -> Option<AddressItem> {
+    palette: Option<theme::Palette>,
+) -> AddressSubDialogWidgets {
     let dlg = Dialog::builder(parent, "Add Address")
         .with_size(440, 380)
         .build();
@@ -1665,6 +1876,43 @@ fn show_address_sub_dialog(
         }
     });
 
+    // Painted last. Both Choice controls are left to Windows, matching every
+    // other Choice this round paints around. `None` means high contrast is
+    // on, or the system is set up in a way this application should not
+    // paint over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        for field in [&street_f, &city_f, &region_f, &code_f] {
+            theme::paint(field, palette.main_surface());
+        }
+    }
+
+    AddressSubDialogWidgets {
+        dialog: dlg,
+        country_choice,
+        type_choice,
+        street_f,
+        city_f,
+        region_f,
+        code_f,
+    }
+}
+
+fn show_address_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&AddressItem>,
+    palette: Option<theme::Palette>,
+) -> Option<AddressItem> {
+    let AddressSubDialogWidgets {
+        dialog: dlg,
+        country_choice,
+        type_choice,
+        street_f,
+        city_f,
+        region_f,
+        code_f,
+    } = build_address_sub_dialog(parent, palette);
+
     if dlg.show_modal() == ID_OK {
         let street = street_f.get_value();
         let city = city_f.get_value();
@@ -1679,17 +1927,28 @@ fn show_address_sub_dialog(
             state: region_f.get_value(),
             zip: code_f.get_value(),
             country: get_choice_string(&country_choice)
-                .unwrap_or_else(|| default_country.to_string()),
+                .unwrap_or_else(|| get_default_country().to_string()),
         })
     } else {
         None
     }
 }
 
-fn show_custom_field_sub_dialog(
+/// Build the Add Custom Field dialog without showing it.
+///
+/// Everything `show_custom_field_sub_dialog` used to do up to its own
+/// `.show_modal()` call, split out the same way
+/// [`crate::presentation::wx_settings::build_settings_dialog`] splits
+/// Settings: a test can build the real dialog and read back the real colour
+/// a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the label and value fields alongside the dialog, the same way
+/// `show_custom_field_sub_dialog` still needs them after a real
+/// `.show_modal()`.
+pub fn build_custom_field_sub_dialog(
     parent: &Dialog,
-    _existing: Option<&CustomFieldItem>,
-) -> Option<CustomFieldItem> {
+    palette: Option<theme::Palette>,
+) -> (Dialog, TextCtrl, TextCtrl) {
     let dlg = Dialog::builder(parent, "Add Custom Field")
         .with_size(400, 200)
         .build();
@@ -1732,6 +1991,25 @@ fn show_custom_field_sub_dialog(
             d.end_modal(ID_CANCEL);
         }
     });
+
+    // Painted last. `None` means high contrast is on, or the system is set
+    // up in a way this application should not paint over, so nothing is set
+    // here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&label_f, palette.main_surface());
+        theme::paint(&value_f, palette.main_surface());
+    }
+
+    (dlg, label_f, value_f)
+}
+
+fn show_custom_field_sub_dialog(
+    parent: &Dialog,
+    _existing: Option<&CustomFieldItem>,
+    palette: Option<theme::Palette>,
+) -> Option<CustomFieldItem> {
+    let (dlg, label_f, value_f) = build_custom_field_sub_dialog(parent, palette);
 
     if dlg.show_modal() == ID_OK {
         let label = label_f.get_value();

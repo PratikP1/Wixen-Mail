@@ -448,6 +448,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   by any of this. wxWidgets hands those to Windows itself to draw, and
   nothing this project does can put its own colours on one.
 
+- **The Add/Edit Contact window, and the four small windows it opens to add
+  an email address, a phone number, a physical address or a custom field,
+  now take the Theme colours too.** Every text box across its Basic Info,
+  Email & Phone, Addresses and Notes & Custom tabs, the notes box, and the
+  four lists of email addresses, phone numbers, addresses and custom
+  fields, now match the rest of the coloured application instead of
+  showing Windows' own white regardless of what Light or Dark chose. The
+  Favorite checkbox, and every choice box the four small windows open
+  with, are left to Windows, matching every checkbox and choice box
+  elsewhere in this round.
+
+  Known limitations: the Filter, Tag and Signature managers' own Add/Edit
+  windows are not coloured yet. Roughly thirty other windows that open on
+  top of the main one still show Windows' own colours regardless of the
+  Theme setting.
+
 - **Fixed: the Default theme setting could not tell whether Windows was set
   to light or dark, so it always drew the light colours.** Default is meant
   to match whatever Windows itself prefers, the same way Light and Dark match

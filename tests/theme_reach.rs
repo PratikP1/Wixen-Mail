@@ -1076,6 +1076,149 @@ fn check_choose_from_list(parent: &Frame, palette: theme::Palette, into: &mut Ve
     );
 }
 
+/// The Add/Edit Contact dialog `show_contact_edit` opens, both directly from
+/// "New Contact" and from inside the Contact Manager's own list window.
+/// `None` prefill is enough: painting the dialog, its notebook, its four
+/// tab panels and every field does not depend on what is already filled in.
+/// The favourite `CheckBox` is left to Windows, the same as every checkbox
+/// elsewhere in this round, so it is not checked here.
+fn check_contact_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let handles = wx_managers::build_contact_edit_dialog(parent, None, Some(palette));
+    check(
+        "contact edit dialog",
+        &handles.dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "contact edit notebook",
+        &handles.notebook,
+        palette.main_surface(),
+        into,
+    );
+    for (name, panel) in [
+        ("contact edit basic info panel", &handles.basic_panel),
+        ("contact edit email and phone panel", &handles.contact_panel),
+        ("contact edit addresses panel", &handles.addr_panel),
+        ("contact edit notes and custom panel", &handles.notes_panel),
+    ] {
+        check(name, panel, palette.main_surface(), into);
+    }
+    for (name, field) in [
+        ("contact edit name field", &handles.name_f),
+        ("contact edit given name field", &handles.given_f),
+        ("contact edit family name field", &handles.family_f),
+        ("contact edit nickname field", &handles.nick_f),
+        ("contact edit company field", &handles.company_f),
+        ("contact edit department field", &handles.dept_f),
+        ("contact edit job title field", &handles.title_f),
+        ("contact edit birthday field", &handles.bday_f),
+        ("contact edit website field", &handles.web_f),
+        ("contact edit relationship field", &handles.rel_f),
+        ("contact edit avatar url field", &handles.avatar_f),
+        ("contact edit notes field", &handles.notes_f),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+    for (name, list) in [
+        ("contact edit email list", &handles.email_list),
+        ("contact edit phone list", &handles.phone_list),
+        ("contact edit address list", &handles.addr_list),
+        ("contact edit custom field list", &handles.custom_list),
+    ] {
+        check(name, list, palette.main_surface(), into);
+    }
+}
+
+/// The Contact editor's own Add Email Address sub-dialog. Parented to a
+/// throwaway `Dialog`, the same as production: it always opens from inside
+/// the Contact editor, never from the main frame. The type `Choice` is left
+/// to Windows, matching every other `Choice` this round paints around, so
+/// only the dialog and the address field are checked here.
+fn check_email_sub_dialog(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for add email").build();
+    let (dialog, _type_choice, addr_f) =
+        wx_managers::build_email_sub_dialog(&scratch_parent, Some(palette));
+    check("add email dialog", &dialog, palette.main_surface(), into);
+    check(
+        "add email address field",
+        &addr_f,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The Contact editor's own Add Phone Number sub-dialog. Parented to a
+/// throwaway `Dialog`, the same as production. The type `Choice` is left to
+/// Windows, matching every other `Choice` this round paints around, so only
+/// the dialog and the number field are checked here.
+fn check_phone_sub_dialog(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for add phone").build();
+    let (dialog, _type_choice, num_f) =
+        wx_managers::build_phone_sub_dialog(&scratch_parent, Some(palette));
+    check("add phone dialog", &dialog, palette.main_surface(), into);
+    check(
+        "add phone number field",
+        &num_f,
+        palette.main_surface(),
+        into,
+    );
+}
+
+/// The Contact editor's own Add Address sub-dialog. Parented to a throwaway
+/// `Dialog`, the same as production. Both `Choice` controls (country and
+/// type) are left to Windows, matching every other `Choice` this round
+/// paints around, so the dialog and its four `TextCtrl` fields are what is
+/// checked here.
+fn check_address_sub_dialog(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for add address").build();
+    let widgets = wx_managers::build_address_sub_dialog(&scratch_parent, Some(palette));
+    check(
+        "add address dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    for (name, field) in [
+        ("add address street field", &widgets.street_f),
+        ("add address city field", &widgets.city_f),
+        ("add address region field", &widgets.region_f),
+        ("add address postal code field", &widgets.code_f),
+    ] {
+        check(name, field, palette.main_surface(), into);
+    }
+}
+
+/// The Contact editor's own Add Custom Field sub-dialog. Parented to a
+/// throwaway `Dialog`, the same as production.
+fn check_custom_field_sub_dialog(
+    parent: &Frame,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) {
+    let scratch_parent = Dialog::builder(parent, "scratch parent for add custom field").build();
+    let (dialog, label_f, value_f) =
+        wx_managers::build_custom_field_sub_dialog(&scratch_parent, Some(palette));
+    check(
+        "add custom field dialog",
+        &dialog,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "add custom field label field",
+        &label_f,
+        palette.main_surface(),
+        into,
+    );
+    check(
+        "add custom field value field",
+        &value_f,
+        palette.main_surface(),
+        into,
+    );
+}
+
 /// Every site this round wires that can be reached without a running
 /// application, checked against the real colour a real control reports.
 ///
@@ -1131,6 +1274,11 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_contact_manager(&frame, palette, &mut sites);
             check_wait_for_an_answer(&frame, palette, &mut sites);
             check_choose_from_list(&frame, palette, &mut sites);
+            check_contact_edit(&frame, palette, &mut sites);
+            check_email_sub_dialog(&frame, palette, &mut sites);
+            check_phone_sub_dialog(&frame, palette, &mut sites);
+            check_address_sub_dialog(&frame, palette, &mut sites);
+            check_custom_field_sub_dialog(&frame, palette, &mut sites);
 
             *results.lock().unwrap() = sites;
 
