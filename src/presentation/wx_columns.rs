@@ -12,6 +12,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
+use crate::presentation::theme;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -70,6 +71,40 @@ pub fn show_column_dialog(
     kind: FolderKind,
     a11y: &Arc<Accessibility>,
 ) -> ColumnDialogResult {
+    let (dlg, working) = build_column_dialog(
+        parent,
+        current,
+        kind,
+        a11y,
+        theme::current_from_stored_config(),
+    );
+
+    if dlg.show_modal() == ID_OK {
+        let layout = working.borrow().clone();
+        ColumnDialogResult::Updated(Box::new(layout))
+    } else {
+        ColumnDialogResult::Cancelled
+    }
+}
+
+/// Build the column chooser without showing it.
+///
+/// Everything `show_column_dialog` used to do up to its own `.show_modal()`
+/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
+/// splits Settings: a test can build the real dialog and read back the real
+/// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Returns the working layout alongside the dialog. It is what
+/// `show_column_dialog` still needs after a real `.show_modal()`: the list
+/// keeps it current as somebody ticks and moves rows, so reading it back is
+/// all that is left to do once the dialog closes.
+pub fn build_column_dialog(
+    parent: &Frame,
+    current: &ColumnLayout,
+    kind: FolderKind,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> (Dialog, std::rc::Rc<std::cell::RefCell<ColumnLayout>>) {
     let dlg = Dialog::builder(parent, "Columns")
         .with_size(460, 460)
         .build();
@@ -219,12 +254,17 @@ pub fn show_column_dialog(
     ok.on_click(move |_| dlg.end_modal(ID_OK));
     cancel.on_click(move |_| dlg.end_modal(ID_CANCEL));
 
-    if dlg.show_modal() == ID_OK {
-        let layout = working.borrow().clone();
-        ColumnDialogResult::Updated(Box::new(layout))
-    } else {
-        ColumnDialogResult::Cancelled
+    // Painted last. The `CheckListBox` draws its own check marks rather than
+    // going through a control the established pattern paints, so it is left
+    // to Windows here, the same as every `Choice`, `ComboBox`, `RadioButton`
+    // and `CheckBox` elsewhere in this round. `None` means high contrast is
+    // on, or the system is set up in a way this application should not paint
+    // over, so nothing is set here and Windows decides.
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
     }
+
+    (dlg, working)
 }
 
 #[cfg(test)]
