@@ -59,7 +59,7 @@ use crate::common::Result;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
 use crate::service::caldav::{
     CalDavClient, CalDavEvent, build_ical_vevent, ical_with_the_event_changed,
-    ical_with_the_occurrence_changed,
+    ical_with_the_occurrence_changed, the_occurrence_as_the_document_holds_it,
 };
 use crate::service::ical_subscription::ICalSubscriptionClient;
 
@@ -147,10 +147,28 @@ async fn push_to_the_calendar_server(
             let _ = cache.forget_deleted_calendar_event(&note.id);
             continue;
         };
-        // No version check on a deletion, deliberately. Somebody asked for the
-        // event to go; a tag that had moved on would make the deletion fail on
-        // every sync from now on with nothing they could do about it.
-        let sent = caldav.delete_event(at, username, password, None).await;
+        // No version check on an ordinary deletion, deliberately. Somebody
+        // asked for the event to go; a tag that had moved on would make the
+        // deletion fail on every sync from now on with nothing they could do
+        // about it. A day a calendar server already split into its own
+        // VEVENT is different: it shares this address with its series and
+        // any sibling exception, so an ordinary DELETE here would remove the
+        // whole resource. `delete_one_occurrence` sends a version-guarded
+        // change marking just that one VEVENT cancelled instead.
+        let sent = match note.provider_recurrence_id.as_deref() {
+            Some(recurrence_id) => {
+                delete_one_occurrence(
+                    caldav,
+                    at,
+                    note.provider_event_id.as_deref().unwrap_or_default(),
+                    recurrence_id,
+                    username,
+                    password,
+                )
+                .await
+            }
+            None => caldav.delete_event(at, username, password, None).await,
+        };
         if sent.is_ok() {
             let _ = cache.the_provider_took_the_deletion_of_an_event(
                 &note.id,
@@ -389,6 +407,98 @@ async fn send_one_occurrence_change(
         .await?;
     settled_here_for_an_occurrence(cache, event, changed.etag)?;
     Ok(going.uid)
+}
+
+/// Delete one day a calendar server has already split into its own VEVENT:
+/// [`send_one_occurrence_change`]'s own sibling for taking the day off
+/// rather than changing it.
+///
+/// A WebDAV DELETE at `at` would remove the whole resource, not just the one
+/// day meant: an occurrence exception shares its resource, and so its
+/// address, with the series it was cut from and any sibling exception beside
+/// it, which is the entire reason a row like this is refused the ordinary
+/// delete path until its series is known here. The RFC 5545-legal way to say
+/// "this VEVENT no longer happens" without touching anything else in the
+/// document is `STATUS:CANCELLED` on that VEVENT alone, so this reads the
+/// occurrence's own current properties straight off the document the server
+/// holds right now, through [`crate::service::caldav::the_occurrence_as_the_document_holds_it`],
+/// changes `status` and nothing else, and splices the result back in through
+/// the unmodified [`ical_with_the_occurrence_changed`] an edit already uses,
+/// written with `If-Match` naming the version just read.
+///
+/// This is the design this program already keeps for Google's and Outlook's
+/// own occurrence-level cancel, in `application::calendar`: cancelling one
+/// day never touches how the series repeats on the wire. Both providers are
+/// never told a repeat rule at all, and the series' own local
+/// `exception_dates` bookkeeping is kept current by the read path,
+/// [`one_caldav_day_kept_out_of_its_series`], on every occurrence this
+/// program has ever synced, rather than by the delete itself. CalDAV differs
+/// from Google and Outlook in one respect that matters elsewhere in this
+/// file: a whole-series write really does send `RRULE` and `EXDATE`, because
+/// CalDAV's own document carries them. It does not force that here: the
+/// series' `exception_dates` is guaranteed to already cover this day, because
+/// `application::calendar::can_be_honoured` cannot let a delete reach this
+/// function at all until the series is known here, which happens no earlier
+/// than the first time this occurrence was read, and that read is what put
+/// the day there. Sending `EXDATE` for it again would be new, purely
+/// defensive machinery with nothing to defend, and would need one write to
+/// touch two VEVENTs, breaking the one-write-one-VEVENT shape this file and
+/// [`ical_with_the_occurrence_changed`] both keep.
+///
+/// `provider_event_id` and `recurrence_id` come from the deletion note rather
+/// than a stored row, because the row itself no longer exists once the
+/// person has deleted it. The bare UID is recovered from them the one way
+/// this file trusts, [`bare_uid_from_the_compound_identity`], rather than by
+/// splitting the compound identity apart by hand here too.
+///
+/// `may_change` is asked before anything leaves, the same reason
+/// [`send_one_occurrence_change`] asks it before its own fetch: an account
+/// open for reading only should not spend a request finding out that the
+/// change it already cannot make would also be refused. There is no
+/// fallback document to build the way that function's own `going` lets it
+/// build one without a fetch, since a deletion note carries no summary,
+/// start or end to build one from, so this answers the refusal directly
+/// rather than reaching for a fetch first.
+async fn delete_one_occurrence(
+    caldav: &CalDavClient,
+    at: &str,
+    provider_event_id: &str,
+    recurrence_id: &str,
+    username: &str,
+    password: &str,
+) -> Result<()> {
+    if !caldav.may_change() {
+        return Err(crate::common::Error::Security(
+            crate::service::outward::refusal("delete one day of a repeating event"),
+        ));
+    }
+    let uid = bare_uid_from_the_compound_identity(provider_event_id, recurrence_id);
+    let held = caldav.fetch_event(at, username, password).await?;
+    let mut occurrence =
+        match the_occurrence_as_the_document_holds_it(&held.document, &uid, recurrence_id) {
+            Ok(occurrence) => occurrence,
+            Err(why) => {
+                return Err(crate::common::Error::Other(format!(
+                    "This deletion was not sent: {why}. The deletion is still \
+                     waiting and will be tried again at the next sync."
+                )));
+            }
+        };
+    occurrence.status = "CANCELLED".to_string();
+    let document = match ical_with_the_occurrence_changed(&held.document, &occurrence) {
+        Ok(document) => document,
+        Err(why) => {
+            return Err(crate::common::Error::Other(format!(
+                "This deletion was not sent: {why}. The deletion is still \
+                 waiting and will be tried again at the next sync."
+            )));
+        }
+    };
+    occurrence.ical_data = document;
+    caldav
+        .update_event(at, username, password, &occurrence, held.tag.as_deref())
+        .await?;
+    Ok(())
 }
 
 /// Write down that the calendar server now holds this change to a day it had
@@ -862,6 +972,46 @@ fn one_caldav_day_kept_out_of_its_series(
     }
 
     let existing = cache.get_event_by_provider_id(account_id, &compound_id)?;
+    let series = cache.get_event_by_provider_id(account_id, &changed.uid)?;
+
+    // A day somebody has called off, recognised the same way Google's and
+    // Outlook's own occurrence-level cancel already is in
+    // `application::calendar`: the standalone appointment kept for that day
+    // goes, and the day comes off the series' own `exception_dates` so the
+    // rule stops drawing it. Unconditionally, whether this computer is the
+    // one that cancelled it through `delete_one_occurrence` or another
+    // device did: without this, every device but the one that deleted it
+    // keeps reading the cancelled VEVENT back as an ordinary occurrence
+    // exception, showing a "Cancelled" appointment that never goes away.
+    //
+    // How the series repeats is never sent to Google or Outlook at all, and
+    // it does not need pushing again here either: `delete_one_occurrence`
+    // never touches RRULE or EXDATE on the wire, on purpose, so there is
+    // nothing this fold owes the server that a later whole-series write
+    // would not already carry.
+    if changed.status.eq_ignore_ascii_case("cancelled") {
+        let mut the_day_went = false;
+        if existing.is_some() {
+            cache.delete_calendar_event_by_provider_id(account_id, &compound_id)?;
+            the_day_went = true;
+        }
+        if let Some(series) = series {
+            let called_off =
+                crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+            let (after, went) =
+                crate::application::calendar::with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&CalendarEventEntry {
+                pending: series.pending,
+                ..after
+            })?;
+            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;
+        }
+        if the_day_went {
+            result.deleted += 1;
+        }
+        return Ok(());
+    }
+
     // A change made here that has not been sent yet is the newer copy.
     // Editing a row like this through the ordinary editor sets `pending`
     // exactly the way editing anything else does, so a read arriving in the
@@ -882,7 +1032,7 @@ fn one_caldav_day_kept_out_of_its_series(
         None => result.created += 1,
     }
 
-    let Some(series) = cache.get_event_by_provider_id(account_id, &changed.uid)? else {
+    let Some(series) = series else {
         // The series is not held here, so there is nothing to take this day
         // off. Stored as the meeting it says it is, the same gap Google's own
         // read leaves when a changed day's series lies outside this window.
@@ -1162,12 +1312,34 @@ fn caldav_event_to_local(
 /// risking a write into the wrong VEVENT.
 fn the_bare_identity_of_an_occurrence_exception(local: &CalendarEventEntry) -> (String, String) {
     let recurrence_id = local.provider_recurrence_id.clone().unwrap_or_default();
-    let whole = local.provider_event_id.clone().unwrap_or_default();
-    let uid = whole
+    let uid = bare_uid_from_the_compound_identity(
+        local.provider_event_id.as_deref().unwrap_or_default(),
+        &recurrence_id,
+    );
+    (uid, recurrence_id)
+}
+
+/// The bare UID a compound identity like `{uid}:{recurrence-id}` shares with
+/// its series, recovered by stripping the exact suffix
+/// [`one_caldav_day_kept_out_of_its_series`] minted it with, rather than by
+/// splitting on the first colon: `normalize_ical_datetime` writes a colon
+/// into the recurrence id itself, so a UID that happened to hold one too
+/// would come apart in the wrong place under a naive split.
+///
+/// Shared by [`the_bare_identity_of_an_occurrence_exception`], which reads
+/// both halves off a stored row, and by [`delete_one_occurrence`], which has
+/// only a deletion note's own two fields once the row itself is gone.
+///
+/// A `provider_event_id` that does not carry the expected suffix, which
+/// should never arise from anything this program writes, is kept whole
+/// rather than guessed at: sent as a UID nothing in the document holds, it
+/// is refused by the document readers' own identity checks rather than
+/// risking a write into the wrong VEVENT.
+fn bare_uid_from_the_compound_identity(provider_event_id: &str, recurrence_id: &str) -> String {
+    provider_event_id
         .strip_suffix(format!(":{recurrence_id}").as_str())
         .map(str::to_string)
-        .unwrap_or(whole);
-    (uid, recurrence_id)
+        .unwrap_or_else(|| provider_event_id.to_string())
 }
 
 /// Convert a local CalendarEventEntry to a CalDavEvent for upload.
@@ -3800,20 +3972,105 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_deleting_a_caldav_occurrence_exception_sends_a_cancellation_rather_than_a_delete()
+    {
+        // The delete's own direct-call proof, the same shape as the edit's
+        // `test_editing_a_caldav_occurrence_exception_sends_if_match_with_the_fetched_tag`
+        // just above: a WebDAV DELETE at this address would remove the whole
+        // resource, the series along with the one day meant, because an
+        // occurrence exception shares its resource with the series it was
+        // cut from. What has to go out instead is a PUT marking just that one
+        // VEVENT `STATUS:CANCELLED`, made against the document the server
+        // holds right now and named by the tag that document just arrived
+        // with, with the series and every other property of the occurrence
+        // itself surviving it.
+        let (address, listening) = answering_in_turn(
+            "200 OK",
+            "text/calendar",
+            vec![
+                Answer::tagged(
+                    "\"tag-e-1\"",
+                    a_document_naming_a_series_and_its_moved_day(),
+                ),
+                Answer::plain(String::new()),
+            ],
+        )
+        .await;
+        let at = format!("http://{address}/cal/e-1.ics");
+
+        delete_one_occurrence(
+            &CalDavClient::allowed_to_change_things(),
+            &at,
+            "e-1:2026-03-12T09:00:00Z",
+            "2026-03-12T09:00:00Z",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the deletion to be sent");
+
+        let requests = heard(listening, "a preflight read and a cancellation")
+            .await
+            .expect("two requests");
+        assert_eq!(asked_for(&requests[0]), "GET /cal/e-1.ics");
+        assert_eq!(
+            asked_for(&requests[1]),
+            "PUT /cal/e-1.ics",
+            "a delete of a shared resource has to go out as a change to the \
+             one VEVENT meant, not a DELETE of the whole resource"
+        );
+        assert_eq!(
+            header_of(&requests[1], "If-Match").as_deref(),
+            Some("\"tag-e-1\""),
+            "the cancellation has to name the version it was made against, \
+             and that is the one the server just answered with"
+        );
+        let put_body = body_of(&requests[1]);
+        assert_eq!(
+            put_body.matches("BEGIN:VEVENT").count(),
+            2,
+            "the series was lost from the document going out: {put_body}"
+        );
+        assert!(
+            put_body.contains("SUMMARY:Weekly review\r\n"),
+            "the series' own title is missing from what went out: {put_body}"
+        );
+        assert!(
+            put_body.contains("SUMMARY:Weekly review\\, the week it moved"),
+            "the occurrence's own title changed when only its status should \
+             have: {put_body}"
+        );
+        assert!(
+            put_body.contains("RECURRENCE-ID:20260312T090000Z"),
+            "the occurrence lost what says which day it replaces: {put_body}"
+        );
+        assert_eq!(
+            put_body.matches("STATUS:CANCELLED").count(),
+            1,
+            "the occurrence was not marked cancelled, or was marked twice: {put_body}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series()
     {
         // The destroy-the-whole-series case. The exception row's web link is
         // the series' own resource, because one CalDAV document holds both.
-        // Before the gate: the generic delete path records a deletion note
-        // carrying that shared address, and the next sync sends an
-        // unconditional DELETE there with no version guard. WebDAV DELETE
-        // removes the whole resource: the entire series goes, silently, not
-        // just the one day somebody opened.
+        // Before this round built anything to send a delete with: the
+        // generic delete path recorded a deletion note carrying that shared
+        // address, and the next sync sent an unconditional DELETE there with
+        // no version guard. WebDAV DELETE removes the whole resource: the
+        // entire series would go, silently, not just the one day somebody
+        // opened.
         //
-        // `test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed`
-        // just above is the positive control: it already proves a real
-        // DELETE against this exact harness is detectable, so this reuses
-        // that proof rather than repeating it.
+        // Two things stand in the way now: the gate below still refuses the
+        // delete until this row's series is known here, the same narrowing
+        // editing already has, and once it does not refuse, the note is
+        // routed by its own `provider_recurrence_id` to
+        // `delete_one_occurrence`, which marks the one VEVENT cancelled
+        // rather than deleting the resource. This proves both: the Err()
+        // branch while the gate still refuses, and, once it does not, that
+        // what goes out is a cancellation and never a DELETE.
         let (cache, series, moved) =
             a_series_and_its_moved_day_synced_once("delete_occurrence_exception").await;
         let allows = what_a_whole_event_change_to_it_allows(&moved, &series);
@@ -3825,10 +4082,18 @@ mod tests {
         ) {
             Ok(()) => {
                 let mut calendar2 = container("cal-occurrence-exception", "acct");
-                let (address2, listening2) = answering(
-                    "207 Multi-Status",
-                    "application/xml; charset=utf-8",
-                    a_multistatus_holding_a_series_and_its_moved_day(),
+                // Three answers for the three requests a successful delete
+                // and read really make: a preflight GET, the cancelling PUT,
+                // and the calendar's own REPORT, the same shape the sibling
+                // edit test above upgraded to once its own gate opened.
+                let (address2, listening2) = answering_in_turn(
+                    "200 OK",
+                    "text/calendar",
+                    vec![
+                        Answer::plain(a_document_naming_a_series_and_its_moved_day()),
+                        Answer::plain(String::new()),
+                        Answer::plain(a_multistatus_holding_a_series_and_its_moved_day()),
+                    ],
                 )
                 .await;
                 calendar2.caldav_url = Some(format!("http://{address2}/cal/"));
@@ -3861,15 +4126,38 @@ mod tests {
                 )
                 .await;
 
-                let request = heard(listening2, "the calendar being read or deleted from")
-                    .await
-                    .expect("one request");
+                let requests = heard(
+                    listening2,
+                    "a preflight read, a cancellation and the calendar read",
+                )
+                .await
+                .expect("three requests");
+                let verbs: Vec<&str> = requests.iter().map(|r| asked_for(r)).collect();
                 assert!(
-                    !asked_for(&request).starts_with("DELETE"),
-                    "deleting one occurrence exception sent {} rather than \
-                     refusing: that reaches the whole series it shares an \
-                     address with, not just the one day that was opened",
-                    asked_for(&request)
+                    verbs.iter().all(|verb| !verb.starts_with("DELETE")),
+                    "deleting one occurrence exception sent a DELETE rather \
+                     than a cancellation: that reaches the whole series it \
+                     shares an address with, not just the one day that was \
+                     opened: {verbs:?}"
+                );
+                assert_eq!(
+                    verbs[1], "PUT /cal/e-1.ics",
+                    "the day was not cancelled with a change to its own \
+                     VEVENT: {verbs:?}"
+                );
+                assert!(
+                    body_of(&requests[1]).contains("STATUS:CANCELLED"),
+                    "the occurrence was not marked cancelled: {}",
+                    body_of(&requests[1])
+                );
+
+                assert!(
+                    cache
+                        .get_event_by_provider_id("acct", "e-1:2026-03-12T09:00:00Z")
+                        .expect("the calendar to be readable")
+                        .is_none(),
+                    "a day this computer deleted came back in the sync that \
+                     deleted it"
                 );
             }
             Err(refused) => {
@@ -4040,6 +4328,196 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── The read-side companion: a cancelled VEVENT closes the loop too ──────
+    //
+    // `delete_one_occurrence` marks a day `STATUS:CANCELLED` rather than
+    // deleting it, which is correct for the device that did the deleting, but
+    // is only half the feature: every other device, and this one again once
+    // its own deletion note expires, has to recognise that status on the next
+    // ordinary read or it shows a "Cancelled" appointment that never goes
+    // away and a series that keeps drawing a day nobody meant to keep.
+
+    /// A CalDAV multistatus carrying one resource: a series and one day of it
+    /// a calendar server itself has called off, told apart by RECURRENCE-ID
+    /// and marked `STATUS:CANCELLED`. Names the same day
+    /// [`a_multistatus_holding_a_series_and_its_moved_day`] does, so the two
+    /// can be answered one after the other as one day first moved and then
+    /// called off.
+    fn a_multistatus_holding_a_series_and_a_cancelled_day() -> String {
+        let document = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "SUMMARY:Weekly review",
+            "DTSTART:20260305T090000Z",
+            "DTEND:20260305T100000Z",
+            "RRULE:FREQ=WEEKLY",
+            "END:VEVENT",
+            "BEGIN:VEVENT",
+            "UID:e-1",
+            "RECURRENCE-ID:20260312T090000Z",
+            "SUMMARY:Weekly review\\, called off",
+            "DTSTART:20260312T090000Z",
+            "DTEND:20260312T100000Z",
+            "STATUS:CANCELLED",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        .join("\r\n");
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/cal/e-1.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>\"tag-e-1\"</d:getetag>\
+             <c:calendar-data>{document}</c:calendar-data>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>"
+        )
+    }
+
+    /// Every meeting the whole calendar draws on one day, from every row it
+    /// holds. The same question `application::calendar`'s own
+    /// `everything_drawn_on` asks, built again here rather than shared:
+    /// fixtures are not shared across files in this project, and neither is
+    /// the scaffolding that reads them.
+    fn everything_drawn_on(cache: &MessageCache, day: chrono::NaiveDate) -> Vec<String> {
+        cache
+            .get_all_events_for_account("acct")
+            .expect("the calendar to be readable")
+            .iter()
+            .flat_map(|row| crate::application::occurrences::falls_on(row, day, day).days)
+            .map(|drawn| drawn.start)
+            .filter(|drawn| drawn.starts_with(&day.to_string()))
+            .collect()
+    }
+
+    /// The one day both fixtures above name.
+    fn the_cancelled_thursday() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 12).expect("a real date")
+    }
+
+    #[tokio::test]
+    async fn test_a_day_cancelled_at_a_calendar_server_is_taken_off_the_series_here() {
+        // Nothing here has read this day before, so it arrives as one
+        // resource naming the series and, in the same document, the day
+        // already marked cancelled. Read as an ordinary occurrence exception
+        // it becomes a standalone "Cancelled" appointment and the day is
+        // never taken off the series, so the rule goes on drawing it.
+        let cache = temp_cache("caldav_day_cancelled_never_seen_before");
+        let mut calendar = container("cal-cancelled-day", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_a_cancelled_day(),
+        )
+        .await;
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+
+        sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &calendar,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "the cancelled day was written down as an appointment of its own: {stored:?}"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day was not taken off the series: {:?}",
+            stored[0].exception_dates
+        );
+        assert!(
+            !stored[0].pending,
+            "the series is waiting to be sent over a day the calendar server \
+             itself called off, so the next push would hand it back its own value"
+        );
+        assert!(
+            everything_drawn_on(&cache, the_cancelled_thursday()).is_empty(),
+            "a day cancelled at the calendar server is still on the diary: {:?}",
+            everything_drawn_on(&cache, the_cancelled_thursday())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_moved_at_a_calendar_server_and_then_cancelled_leaves_nothing_behind() {
+        // Somebody, or another device, moves one day and then calls it off
+        // altogether at the calendar server. Two things have to happen and
+        // only one is obvious: the standalone appointment the moved day
+        // became has to go, and the day has to stay off the series so the
+        // rule does not start drawing it again.
+        //
+        // What this cannot see on its own: the half that takes the day off
+        // the series was already done by the first sync, so a read that only
+        // takes the day off again and never removes the standalone
+        // appointment is what this catches.
+        let cache = temp_cache("caldav_day_moved_then_cancelled");
+        let (address, listening) = answering_several(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            vec![
+                a_multistatus_holding_a_series_and_its_moved_day(),
+                a_multistatus_holding_a_series_and_a_cancelled_day(),
+            ],
+        )
+        .await;
+        let mut calendar = container("cal-moved-then-cancelled", "acct");
+        calendar.caldav_url = Some(format!("http://{address}/cal/"));
+        let caldav = CalDavClient::new();
+
+        sync_caldav_calendar(&cache, &caldav, &calendar, "acct", "user", "secret")
+            .await
+            .expect("the first sync to finish");
+        let result = sync_caldav_calendar(&cache, &caldav, &calendar, "acct", "user", "secret")
+            .await
+            .expect("the second sync to finish");
+
+        heard(listening, "two reads").await.expect("two requests");
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            1,
+            "the day that was moved and then cancelled is still an \
+             appointment of its own: {stored:?}"
+        );
+        assert!(
+            stored[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the day came back onto the series: {:?}",
+            stored[0].exception_dates
+        );
+        assert_eq!(
+            result.deleted, 1,
+            "the standalone appointment going was not counted: {result:?}"
+        );
+        assert!(
+            everything_drawn_on(&cache, the_cancelled_thursday()).is_empty(),
+            "a day moved and then cancelled at the calendar server is still \
+             on the diary: {:?}",
+            everything_drawn_on(&cache, the_cancelled_thursday())
+        );
     }
 
     #[tokio::test]
