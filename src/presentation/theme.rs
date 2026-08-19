@@ -400,6 +400,20 @@ fn palette_for(setting: &str, system_is_dark: bool, high_contrast: bool) -> Opti
 /// [`windows_high_contrast`] exactly: [`ask_windows_about_light_or_dark`]
 /// does the asking and holds no decision, [`dark_mode_from`] does the reading
 /// and is compiled and tested everywhere.
+///
+/// A mutation test that replaces this whole body with a bare `true` survives.
+/// [`ask_windows_about_light_or_dark`] and [`dark_mode_from`] are each tested
+/// on their own, so the only thing left for this function to get wrong is the
+/// composing of the two, and the test that checks the composing asks Windows
+/// again rather than asserting light or dark by name, on purpose: see its own
+/// comment for why. That means it can only ever catch whichever of `true` or
+/// `false` disagrees with however the machine running the suite happens to be
+/// set, never both, on any machine there is. Pinning the other one would mean
+/// asserting a specific answer from Windows, which is the one thing this
+/// project has already decided a test must not do here. [`windows_high_contrast`]
+/// carries the identical shape, and `docs/plans/20260801-mutation-sweep.md`
+/// reasoned through it once already, under this file's older shape, and
+/// reached the same answer.
 fn windows_prefers_dark() -> bool {
     let (status, apps_use_light_theme) = ask_windows_about_light_or_dark();
     dark_mode_from(status, apps_use_light_theme)
@@ -412,6 +426,18 @@ fn windows_prefers_dark() -> bool {
 /// `0` is failure. A refused call has to look like a refused call here too,
 /// so this answers a status [`dark_mode_from`] does not read as success,
 /// rather than the `(0, 0)` a copy of that sibling stub would reach for.
+///
+/// Genuinely unreachable by anything this project's own suite ever builds,
+/// not just untested: every job in `.github/workflows` that builds or tests
+/// this crate (`ci.yml`, `mutants.yml`, `accessibility.yml`, `nvda.yml`) runs
+/// on `windows-latest` with a plain `cargo build` or `cargo test`, never a
+/// cross-compile, so `cfg(not(target_os = "windows"))` strips this function
+/// out of every binary the suite has ever produced. A mutation test that
+/// rewrites the tuple below is reported missed, and it always will be: the
+/// mutated body is excluded from the same build the original body was
+/// excluded from, so there is no build in which the two can be told apart.
+/// The same shape as `credentials`'s tests under `cfg(not(test))`, named in
+/// `docs/plans/20260801-mutation-sweep.md`.
 #[cfg(not(target_os = "windows"))]
 fn ask_windows_about_light_or_dark() -> (i32, u32) {
     (1, 0)
@@ -433,6 +459,19 @@ fn ask_windows_about_light_or_dark() -> (i32, u32) {
 /// Split out so a test can say the call still works. Whatever comes back is
 /// returned untouched, matching [`ask_windows_about_high_contrast`]'s own
 /// doc: interpreting it is [`dark_mode_from`]'s job, not this one's.
+///
+/// A mutation test that replaces this whole body with a bare `(0, 0)` or
+/// `(0, 1)` survives too. Both are answers Microsoft documents as real: a
+/// successful read reporting dark, and a successful read reporting light.
+/// The one direct test of this function checks exactly that shape, that the
+/// call succeeded and the value is one Microsoft documents, on purpose,
+/// rather than pinning which one: see its own comment. Telling a genuine
+/// registry read apart from a stub that happens to answer one of the two
+/// documented values would mean writing to Pratik's own Personalize key
+/// during a test run to watch the answer move, which is the same live-system
+/// mistake `docs/plans/20260801-mutation-sweep.md` already names for the
+/// credentials store: a test leaving a real entry behind in Windows
+/// Credential Manager.
 #[cfg(target_os = "windows")]
 fn ask_windows_about_light_or_dark() -> (i32, u32) {
     #[link(name = "advapi32")]
@@ -516,6 +555,16 @@ const fn dark_mode_from(status: i32, apps_use_light_theme: u32) -> bool {
 /// only one of the two a test on this machine cannot reach. The gate is on the
 /// asking now, so this composition is the same code everywhere and one test
 /// covers it everywhere.
+///
+/// A mutation test that replaces this whole body with a bare `false` survives
+/// for the identical reason [`windows_prefers_dark`] documents in full: the
+/// test that checks the composing asks Windows again rather than asserting on
+/// or off by name, so it can only ever catch whichever constant disagrees
+/// with this machine's own setting at the time. `docs/plans/20260801-mutation-sweep.md`
+/// reasoned through this exact function, under its older undivided shape, and
+/// reached the same answer: do not close it by pinning an answer, because the
+/// suite must stay honest on whatever machine somebody switches high contrast
+/// on to test with, Pratik's included.
 fn windows_high_contrast() -> bool {
     let (ok, flags) = ask_windows_about_high_contrast();
     high_contrast_from(ok, flags)
@@ -527,6 +576,13 @@ fn windows_high_contrast() -> bool {
 /// a refused call as high contrast off. That is the right answer on a platform
 /// with no such mode, and it is reached through the same tested reading rather
 /// than through a `false` written out a second time.
+///
+/// Genuinely unreachable for the identical reason [`ask_windows_about_light_or_dark`]'s
+/// own non-Windows stub documents in full: this project's suite only ever
+/// builds and tests on `windows-latest`, so `cfg(not(target_os = "windows"))`
+/// excludes this body from every binary it has ever produced, and a mutation
+/// to the tuple below can never be exercised, missed or caught, by any build
+/// this project makes.
 #[cfg(not(target_os = "windows"))]
 fn ask_windows_about_high_contrast() -> (i32, u32) {
     (0, 0)
