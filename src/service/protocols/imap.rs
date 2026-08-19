@@ -1213,7 +1213,7 @@ impl ImapSession {
             self.expunge_one(*uid).await?;
             removed += 1;
         }
-        if !uids.is_empty() && !self.abilities.uid_expunge {
+        if removal_fell_back_to_flag_and_leave(uids, &self.abilities) {
             // Flagged and left. Without UIDPLUS the only expunge available
             // removes everything in the mailbox flagged for deletion, which
             // would be other people's mail as well as the old draft.
@@ -1795,6 +1795,18 @@ fn server_refused(doing: &str, status: &Status, said: Option<&str>) -> Error {
     }
 }
 
+/// Whether [`ImapSession::remove_these`] just flagged messages and left them
+/// rather than actually removing them.
+///
+/// Worth telling somebody about only when it changed what really happened:
+/// nothing asked for is not a fallback, and a server with UIDPLUS never takes
+/// this path at all. Split out from the `if` it used to be so the condition
+/// itself can be pinned without opening a socket; the warning it gates has no
+/// effect a test can observe, so nothing did.
+fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() && !abilities.uid_expunge
+}
+
 /// What to say when the connection itself gave out part way through.
 fn connection_failed(doing: &str, error: &impl std::fmt::Display) -> Error {
     Error::Network(format!(
@@ -2270,6 +2282,100 @@ mod tests {
     async fn test_an_operation_that_finishes_in_time_is_passed_through() {
         let result = with_timeout(Duration::from_secs(5), async { 42 }, "counting").await;
         assert_eq!(result.expect("should not time out"), 42);
+    }
+
+    // ── Reading one FETCH response, pure ─────────────────────────────────
+
+    #[test]
+    fn test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them() {
+        // Found by mutation testing: deleting either match arm here left
+        // every existing test passing. The only test that touches Gmail's
+        // own fields checks the request going out (that the query asks for
+        // X-GM-MSGID and X-GM-LABELS); nothing checked what came back.
+        let attributes = vec![
+            AttributeValue::Uid(4),
+            AttributeValue::GmailMsgId(99_887_766),
+            AttributeValue::GmailLabels(vec![
+                std::borrow::Cow::Borrowed("\\Important"),
+                std::borrow::Cow::Borrowed("Work"),
+            ]),
+        ];
+
+        let message = message_from_attributes(&attributes).expect("a UID makes this a message");
+
+        assert_eq!(message.gmail_message_id, Some(99_887_766));
+        assert_eq!(
+            message.labels,
+            vec!["\\Important".to_string(), "Work".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent() {
+        // Whole-function replacement survived seven different canned answers
+        // here (None, and Some((0|1, ...)) with empty, blank or "xyzzy"
+        // flags): nothing calls this function in any test, so nothing could
+        // tell a real answer from a constant one. A UID other than 0 or 1
+        // and flags other than empty, blank or "xyzzy" tells every one of
+        // them apart from the real computation at once.
+        let attributes = vec![
+            AttributeValue::Uid(42),
+            AttributeValue::Flags(vec![
+                std::borrow::Cow::Borrowed(flag::SEEN),
+                std::borrow::Cow::Borrowed(flag::FLAGGED),
+            ]),
+        ];
+
+        assert_eq!(
+            flags_from_attributes(&attributes),
+            Some((42, vec![flag::SEEN.to_string(), flag::FLAGGED.to_string()]))
+        );
+    }
+
+    #[test]
+    fn test_a_bad_status_says_the_server_did_not_understand_rather_than_a_generic_refusal() {
+        // Bad and No are both refusals but not the same one: Bad means the
+        // server could not parse the command at all, which points at this
+        // client rather than at whatever the command was about.
+        let bad = server_refused("selecting a folder", &Status::Bad, None).to_string();
+        let no = server_refused("selecting a folder", &Status::No, None).to_string();
+
+        assert!(bad.contains("did not understand"), "{bad}");
+        assert!(!no.contains("did not understand"), "{no}");
+        assert!(no.contains("refused"), "{no}");
+    }
+
+    // ── The UIDPLUS fallback warning, pure ───────────────────────────────
+
+    #[test]
+    fn test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did() {
+        // The three ways this boolean was found broken: with the empty check
+        // gone it warned about a no-op, with && turned to || it warned even
+        // on a server that removed everything cleanly, and with the
+        // capability check gone it warned on that same clean path. None of
+        // the three change what remove_these returns, only whether it logs,
+        // so nothing had ever pinned the condition directly.
+        let has_uidplus = Abilities {
+            uid_expunge: true,
+            ..Default::default()
+        };
+        let lacks_uidplus = Abilities {
+            uid_expunge: false,
+            ..Default::default()
+        };
+
+        assert!(
+            !removal_fell_back_to_flag_and_leave(&[], &lacks_uidplus),
+            "nothing was asked for, so nothing was flagged and left either"
+        );
+        assert!(
+            !removal_fell_back_to_flag_and_leave(&[7], &has_uidplus),
+            "the server removed it cleanly, it was not left behind"
+        );
+        assert!(
+            removal_fell_back_to_flag_and_leave(&[7], &lacks_uidplus),
+            "asked for, and no UIDPLUS to remove it with, is exactly the fallback"
+        );
     }
 }
 
@@ -3302,6 +3408,46 @@ pub(crate) mod against_a_server_that_answers {
         assert!(batched.contains("reading the message flags"), "{batched}");
         assert!(since.contains("refused"), "{since}");
         assert!(since.contains("reading what changed"), "{since}");
+    }
+
+    #[tokio::test]
+    async fn test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths() {
+        // Companion to the refusal test above, and found the same way: taking
+        // the reading of a FETCH response out of either closure inside
+        // fetch_flags left every existing test passing, because the only
+        // tests around it check a refusal, and "the server refused" reads
+        // exactly like "nothing was ever read" to a caller that only checks
+        // whether an error came back.
+        let server = conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            match said.split_whitespace().nth(1).unwrap_or_default() {
+                "CAPABILITY" => Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 CONDSTORE\r\n{tag} OK done\r\n"
+                )),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "SELECT" | "EXAMINE" => Turn::Say(format!(
+                    "* 0 EXISTS\r\n* OK [UIDVALIDITY 1] valid\r\n{tag} OK [READ-WRITE] open\r\n"
+                )),
+                _ if said.contains("FETCH") => Turn::Say(format!(
+                    "* 1 FETCH (UID 42 FLAGS (\\Seen \\Flagged))\r\n{tag} OK done\r\n"
+                )),
+                _ => Turn::Say(format!("{tag} OK done\r\n")),
+            }
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let since = waiting_for(session.fetch_flags(&[], Some(7)), "the flags")
+            .await
+            .expect("the CONDSTORE reply to be read");
+        let batched = waiting_for(session.fetch_flags(&[1], None), "the flags")
+            .await
+            .expect("the batched reply to be read");
+
+        let expected = vec![(42, vec![flag::SEEN.to_string(), flag::FLAGGED.to_string()])];
+        assert_eq!(since, expected, "the CONDSTORE path");
+        assert_eq!(batched, expected, "the batched path");
     }
 
     #[tokio::test]
