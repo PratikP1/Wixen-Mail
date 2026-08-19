@@ -1137,6 +1137,29 @@ mod tests {
     use super::*;
     use crate::common::answering::{answering, asked_for, heard};
 
+    #[test]
+    fn test_every_progress_word_graph_sends_reads_back_to_the_state_it_named() {
+        // stored and as_word are meant to invert each other, including for
+        // "notStarted": today's two callers happen not to care whether that
+        // one word comes back as `Some(NotStarted)` or as `None`, but the
+        // word is real, Graph sends it, and a caller narrower than either of
+        // today's two should still be able to ask this function what it
+        // means.
+        for progress in [
+            TaskProgress::NotStarted,
+            TaskProgress::InProgress,
+            TaskProgress::Completed,
+            TaskProgress::WaitingOnOthers,
+            TaskProgress::Deferred,
+        ] {
+            assert_eq!(
+                TaskProgress::stored(progress.as_word()),
+                Some(progress),
+                "{progress:?} does not read back from its own word"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_a_task_client_pointed_at_an_address_asks_that_address() {
         // No items and no next page, so exactly one request goes out.
