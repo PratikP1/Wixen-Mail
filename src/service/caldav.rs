@@ -958,7 +958,20 @@ pub(crate) fn events_in(lines: &[String]) -> Vec<EventLines> {
             continue;
         }
         let event = the_event_opened_on(lines, at);
-        at = event.closed_on.map_or(lines.len(), |closed| closed + 1);
+        at = event.closed_on.map_or(lines.len(), |closed| {
+            // `component_opened` and `component_closed` test mutually
+            // exclusive prefixes, `BEGIN:` and `END:`, so the line
+            // `the_event_opened_on` just matched as this event's own close
+            // can never also open one. Landing here instead of one past it
+            // is not a distinguishable mistake: the next spin of this loop
+            // finds nothing to open on that line, skips forward by one, and
+            // lines up with `closed + 1` regardless.
+            debug_assert!(
+                component_opened(&lines[closed]).is_none(),
+                "a line just matched as this event's own close also opened one"
+            );
+            closed + 1
+        });
         found.push(event);
     }
     found
@@ -1535,9 +1548,22 @@ fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<Str
     // Parameters sit between the name and the delimiter colon, so a line
     // whose first punctuation is that colon carries none.
     let (semicolon, colon) = (line.find(';')?, delimiter_colon(line)?);
+    // A byte position holds one character, and `;` and `:` are two different
+    // ones, so these can never name the same position: `semicolon > colon`
+    // and `semicolon >= colon` answer alike for every line that reaches here.
+    debug_assert_ne!(
+        semicolon, colon,
+        "the same byte position was read as both a semicolon and a colon"
+    );
     if semicolon > colon {
         return None;
     }
+    // `semicolon + 1` skips the delimiter itself. Starting at `semicolon`
+    // instead would carry it into the slice below, but that changes nothing
+    // `parameter_among` hands back: splitting on `;` turns a leading one into
+    // an empty first fragment, and an empty fragment never contains `=`, so
+    // it is always skipped the same way a fragment from the property's own
+    // name would be before this delimiter existed.
     parameter_among(&line[semicolon + 1..colon], parameter).map(str::to_string)
 }
 
@@ -2984,6 +3010,12 @@ mod tests {
             ("P2W", Some(1_209_600)),
             ("-PT1H", Some(-3600)),
             ("+PT1H", Some(3600)),
+            // Every unit accumulates onto what came before it rather than
+            // replacing it: nothing above combines a nonzero hours-and-minutes
+            // total with a nonzero seconds, which is the one case that tells
+            // seconds really being added apart from seconds overwriting or
+            // subtracting from the running total.
+            ("PT1H1M1S", Some(3661)),
             // Nothing is guessed at: a value outside the grammar comes back
             // as nothing rather than as a duration of zero.
             ("", None),
@@ -2992,11 +3024,64 @@ mod tests {
             ("PT", None),
             // A week count never mixes with a day or a time part.
             ("P2W3D", None),
+            // The grammar signs the duration once, in front of `P`, never a
+            // second time in front of one of its units: a digit run inside a
+            // unit has to be only digits, not "a digit run a signed integer
+            // parser would also accept".
+            ("P-5W", None),
         ] {
             assert_eq!(
                 ical_duration(value).map(|duration| duration.num_seconds()),
                 seconds,
                 "reading the duration {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_marker_is_refused_unless_what_follows_it_is_a_clean_single_word() {
+        // The doc comment above `events_in` tells the story this guards: a
+        // note reading "Say END:VEVENT when you are done" once ended an event
+        // for the reader and not for the writer, because the reader took any
+        // line starting with the marker for a real one. What follows a marker
+        // has to be one word, with none of `: ; , <tab> <space>` in it, or it
+        // is somebody's sentence rather than a component name.
+        for (line, expected) in [
+            ("BEGIN:VEVENT", Some("VEVENT")),
+            ("begin:vevent", Some("vevent")),
+            ("BEGIN:", None),
+            ("BEGIN: ", None),
+            ("BEGIN:VEVENT:extra", None),
+            ("BEGIN:VEVENT extra", None),
+            ("BEGIN:VEVENT;extra", None),
+            ("BEGIN:VEVENT,extra", None),
+            ("BEGIN:VEVENT\textra", None),
+        ] {
+            assert_eq!(
+                component_named_after(line, "BEGIN:"),
+                expected,
+                "reading the marker off {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_cancelled_day_is_a_whole_day_only_at_exactly_eight_digits() {
+        // RFC 5545's DATE form is exactly eight digits, YYYYMMDD, and nothing
+        // else is. Eight characters that are not all digits, and any other
+        // count of digits, both have to fall through to being read as a
+        // clock face instead.
+        for (value, expected) in [
+            ("20260101", CancelledDayForm::WholeDay),
+            ("birthday", CancelledDayForm::ClockFace),
+            ("2026010", CancelledDayForm::ClockFace),
+            ("202601011", CancelledDayForm::ClockFace),
+            ("20260101T090000", CancelledDayForm::ClockFace),
+        ] {
+            assert_eq!(
+                form_of_a_cancelled_day(value),
+                expected,
+                "classifying {value:?}"
             );
         }
     }
@@ -4310,6 +4395,25 @@ mod tests {
                 "reading the zone off {line}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_property_name_ending_in_more_than_one_octet_does_not_move_the_delimiter_mid_character()
+     {
+        // `time_zones_named_on` reads the property name straight off each
+        // line rather than from a fixed list, so a custom property, an
+        // `X-name` this program never named itself, reaches here carrying
+        // whatever bytes the line had. One that ends in a character taking
+        // more than one octet, immediately before the semicolon that opens
+        // its parameters, puts the boundary this reads from right after a
+        // multi-byte character, which a break counted one octet short of it
+        // would land inside rather than beside.
+        let line = "X-\u{20ac};TZID=Foo:bar";
+        assert_eq!(
+            parameter_named_on(line, "X-\u{20ac}", "TZID").as_deref(),
+            Some("Foo"),
+            "reading the parameter off {line:?}"
+        );
     }
 
     #[test]
@@ -6738,6 +6842,28 @@ pub(crate) mod writing_tests {
     }
 
     #[test]
+    fn test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about() {
+        // A well-formed VTIMEZONE never carries a TZID parameter on a line of
+        // its own: TZID names a zone from outside the block that is defining
+        // one. A document copied through from a server this program does not
+        // control can still hold one, malformed or hand-edited, and asking
+        // about it the way an ordinary event's own lines are asked would
+        // refuse to send a document over a zone name that appears nowhere an
+        // event actually uses it.
+        let a_stray_parameter_inside_the_definition_itself = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/London\r\n\
+             BEGIN:STANDARD\r\nDTSTART;TZID=Nowhere:19701025T020000\r\n\
+             TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0000\r\nEND:STANDARD\r\n\
+             END:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:u-4\r\n\
+             DTSTART;TZID=Europe/London:20260305T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        assert_eq!(
+            zone_left_undefined(a_stray_parameter_inside_the_definition_itself),
+            None,
+            "a parameter on a line inside the timezone block's own definition \
+             was read as the document naming a zone it never defines"
+        );
+    }
+
+    #[test]
     fn test_changing_a_series_leaves_the_occurrence_somebody_moved_out_of_it_alone() {
         // The reader takes the first event in the document and everything after
         // it belongs to something else, so the writer has to answer the same
@@ -6844,6 +6970,67 @@ pub(crate) mod writing_tests {
             recurrence_id: Some("2026-03-12T09:00:00Z".to_string()),
             ..an_event("e-1")
         }
+    }
+
+    #[test]
+    fn test_the_occurrence_change_has_to_come_back_out_of_its_own_vevent() {
+        // The occurrence-specific sibling of
+        // `test_the_change_has_to_come_back_out_of_the_document_going_out`. A
+        // resource holding a series and the occurrence somebody moved out of
+        // it is several VEVENTs sharing one UID, so a defect this check
+        // exists to catch can hide in a place the single-VEVENT sibling
+        // cannot reach at all: the change landing on the wrong VEVENT of the
+        // resource rather than being missing outright.
+        let meant: Vec<String> = vec![
+            "SUMMARY:Weekly review\\, moved again".to_string(),
+            "DTSTART:20260312T150000Z".to_string(),
+            "SEQUENCE:2".to_string(),
+        ];
+        let recurrence_id = "2026-03-12T09:00:00Z";
+        let series_master = "BEGIN:VEVENT\r\nUID:e-1\r\nSUMMARY:Weekly review\r\n\
+            DTSTART:20260305T090000Z\r\nRRULE:FREQ=WEEKLY\r\nSEQUENCE:1\r\nEND:VEVENT\r\n";
+        let occurrence_carrying = |body: &str| {
+            format!(
+                "BEGIN:VEVENT\r\nUID:e-1\r\nRECURRENCE-ID:20260312T090000Z\r\n{body}\r\nEND:VEVENT\r\n"
+            )
+        };
+
+        let going_out = a_document_carrying(&format!(
+            "{series_master}{}",
+            occurrence_carrying(&meant.join("\r\n"))
+        ));
+        assert!(
+            the_occurrence_came_back_out(&going_out, "e-1", recurrence_id, &meant),
+            "a document really carrying the change was refused"
+        );
+
+        // The change landed on the series master, and the occurrence's own
+        // VEVENT still shows what it held before: exactly the corruption
+        // `ical_with_the_occurrence_changed`'s own doc comment names as the
+        // reason a change is located by RECURRENCE-ID and not by UID alone.
+        let landed_on_the_series = a_document_carrying(&format!(
+            "BEGIN:VEVENT\r\nUID:e-1\r\n{}\r\nEND:VEVENT\r\n{}",
+            meant.join("\r\n"),
+            occurrence_carrying(
+                "SUMMARY:Weekly review\\, the week it moved\r\nDTSTART:20260312T140000Z\r\nSEQUENCE:1"
+            )
+        ));
+        assert!(
+            !the_occurrence_came_back_out(&landed_on_the_series, "e-1", recurrence_id, &meant),
+            "the change landed on the series master instead of the occurrence, \
+             and the check said it came back out anyway"
+        );
+
+        // A line the writer meant to put in never reached the occurrence.
+        let missing_a_line = a_document_carrying(&format!(
+            "{series_master}{}",
+            occurrence_carrying("SUMMARY:Weekly review\\, moved again\r\nDTSTART:20260312T150000Z")
+        ));
+        assert!(
+            !the_occurrence_came_back_out(&missing_a_line, "e-1", recurrence_id, &meant),
+            "a line the writer meant to put in never reached the document, \
+             and the check said it came back out anyway"
+        );
     }
 
     #[test]
