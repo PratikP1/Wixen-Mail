@@ -38,7 +38,21 @@ pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle =
 /// because the button labels are Yes and No and this builder cannot change
 /// them, so "Delete Ada Lovelace?" has to be a question those two words answer.
 pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
-    yes_no_where_enter_answers_yes() | ENTER_DOES_NOT_ANSWER_YES
+    let two_answers = yes_no_where_enter_answers_yes();
+    // `|` here could be `^` and nothing would change: `ENTER_DOES_NOT_ANSWER_YES`
+    // is bit 7 (128) and `two_answers` never sets it, the same disjointness
+    // `yes_no_where_enter_answers_yes` checks below for its own two flags. The
+    // assert is what would notice a future wxdragon giving `WXD_NO_DEFAULT`
+    // a bit one of `MessageDialogStyle::YesNo` or `IconQuestion` already uses,
+    // which is the only way `|` and `^` could ever start disagreeing here.
+    debug_assert_eq!(
+        two_answers.bits() & ENTER_DOES_NOT_ANSWER_YES.bits(),
+        0,
+        "yes_no_where_enter_answers_yes now shares a bit with \
+         ENTER_DOES_NOT_ANSWER_YES, so combining them is no longer safe to \
+         read as an OR of two independent flags"
+    );
+    two_answers | ENTER_DOES_NOT_ANSWER_YES
 }
 
 /// A question with two answers, where Enter answers Yes.
@@ -49,6 +63,20 @@ pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
 /// the thing, so it belongs only where the thing can be undone or was asked
 /// for.
 pub fn yes_no_where_enter_answers_yes() -> MessageDialogStyle {
+    // `|` and `^` compute the same value here, always: wxWidgets gives every
+    // style flag its own bit, and `YesNo` (10, bits 1 and 3) and
+    // `IconQuestion` (1024, bit 10) share none of them, which is the one case
+    // where OR and XOR cannot disagree. A mutation test replacing this `|`
+    // with `^` found exactly that: nothing failed, because nothing could.
+    // The assert stands in for that proof at run time, so a future flag value
+    // that starts overlapping fails loudly here instead of quietly changing
+    // what this function returns.
+    debug_assert_eq!(
+        MessageDialogStyle::YesNo.bits() & MessageDialogStyle::IconQuestion.bits(),
+        0,
+        "YesNo and IconQuestion now share a bit, so combining them is no \
+         longer safe to read as an OR of two independent flags"
+    );
     MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion
 }
 
