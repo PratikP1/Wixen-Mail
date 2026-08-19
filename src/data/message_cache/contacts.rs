@@ -1610,6 +1610,24 @@ impl MessageCache {
 
     /// The one label a `TYPE` parameter's value names.
     fn label_a_type_value_names(value: &str) -> String {
+        // Every word this recognises (A_TYPE_WORD_THE_STANDARDS_DEFINE) has
+        // no caret and no white space, so the one word a single-element
+        // quoted list can match here is one caret_unescaped, and the
+        // fallback arm's own .trim(), both leave untouched, and that arm
+        // tidies the identical string the list arm below would have. That is
+        // what makes `listed.len() > 1` answer the same as `listed.len() >=
+        // 1` for every value this can ever receive: split_outside_quotes
+        // never returns an empty list, so the two operators can only
+        // disagree at length 1, and at length 1 they always agree on the
+        // label. Asserted here rather than left to a mutation test that
+        // could never catch it either way, since a test can only prove a
+        // difference it can observe.
+        debug_assert!(
+            Self::A_TYPE_WORD_THE_STANDARDS_DEFINE
+                .iter()
+                .all(|word| word.chars().all(|c| c != '^' && !c.is_whitespace())),
+            "a standards TYPE word needing escaping or trimming would break the > vs >= equivalence below"
+        );
         let listed: Vec<&str> = match Self::quoted_value_inside(value) {
             Some(inside) => match Self::split_outside_quotes(inside, ',') {
                 // A quoted list of type words is a list. Anything else inside
