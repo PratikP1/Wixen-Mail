@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 138 records have arrived since and have not been through it.
+# 158 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6869,3 +6869,190 @@ before = """                    "script" | "style" => {}
                     _ => inline(child, out),"""
 after = """                    _ => inline(child, out),"""
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
+
+# ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
+#
+# A mutation sweep of `data::message_cache::contacts` found 21 misses across
+# five functions. Twenty were untested but already correct; the other,
+# `label_a_type_value_names`'s `>` against `>=`, is genuinely equivalent (no
+# standards TYPE word contains a caret, so the two operators can never
+# disagree at the one length where they could) and is documented with a
+# `debug_assert!` instead, so it gets no guard here.
+#
+# Sixteen of the twenty are `a_card_over_what_is_held`: every field folded in
+# with `from_card.X.or_else(|| held.X.clone())` had no test proving the
+# card's value ever replaced a stale held one, for that field specifically.
+# `company`, `job_title`, `notes` and `emails_json` already had coverage and
+# are not repeated here.
+#
+# Measured by hand on 2026-08-19: each guard applied alone, against
+# `data::message_cache::contacts::tests`, reddened exactly the test named and
+# nothing else in that module (100 tests). Restored and reran green after
+# each; the whole module was green again at the end.
+
+[[guard]]
+name = "a card over what is held replaces a stale name, not just an empty one"
+file = "src/data/message_cache/contacts.rs"
+before = """            name: match from_card.name.is_empty() {
+                true => held.name.clone(),
+                false => from_card.name,
+            },
+            given_name: from_card.given_name.or_else(|| held.given_name.clone()),"""
+after = """            given_name: from_card.given_name.or_else(|| held.given_name.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's given_name over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            given_name: from_card.given_name.or_else(|| held.given_name.clone()),
+            family_name: from_card.family_name.or_else(|| held.family_name.clone()),"""
+after = """            family_name: from_card.family_name.or_else(|| held.family_name.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's family_name over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            family_name: from_card.family_name.or_else(|| held.family_name.clone()),
+            phone: from_card.phone.or_else(|| held.phone.clone()),"""
+after = """            phone: from_card.phone.or_else(|| held.phone.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's phone over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            phone: from_card.phone.or_else(|| held.phone.clone()),
+            company: from_card.company.or_else(|| held.company.clone()),"""
+after = """            company: from_card.company.or_else(|| held.company.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's website over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            website: from_card.website.or_else(|| held.website.clone()),
+            address: from_card.address.or_else(|| held.address.clone()),"""
+after = """            address: from_card.address.or_else(|| held.address.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's address over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            address: from_card.address.or_else(|| held.address.clone()),
+            birthday: from_card.birthday.or_else(|| held.birthday.clone()),"""
+after = """            birthday: from_card.birthday.or_else(|| held.birthday.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's birthday over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            birthday: from_card.birthday.or_else(|| held.birthday.clone()),
+            avatar_url: from_card.avatar_url.or_else(|| held.avatar_url.clone()),"""
+after = """            avatar_url: from_card.avatar_url.or_else(|| held.avatar_url.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's avatar_url over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            avatar_url: from_card.avatar_url.or_else(|| held.avatar_url.clone()),
+            avatar_data_base64: from_card"""
+after = """            avatar_data_base64: from_card"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's inline photo over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            avatar_data_base64: from_card
+                .avatar_data_base64
+                .or_else(|| held.avatar_data_base64.clone()),
+            vcard_raw: from_card.vcard_raw.or_else(|| held.vcard_raw.clone()),"""
+after = """            vcard_raw: from_card.vcard_raw.or_else(|| held.vcard_raw.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_cards_inline_photo_also_replaces_a_stored_one"]
+
+[[guard]]
+name = "a card over what is held carries the card's vcard_raw over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            vcard_raw: from_card.vcard_raw.or_else(|| held.vcard_raw.clone()),
+            notes: from_card.notes.or_else(|| held.notes.clone()),
+            nickname: from_card.nickname.or_else(|| held.nickname.clone()),"""
+after = """            notes: from_card.notes.or_else(|| held.notes.clone()),
+            nickname: from_card.nickname.or_else(|| held.nickname.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's nickname over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            nickname: from_card.nickname.or_else(|| held.nickname.clone()),
+            department: from_card.department.or_else(|| held.department.clone()),"""
+after = """            department: from_card.department.or_else(|| held.department.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's department over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            department: from_card.department.or_else(|| held.department.clone()),
+            relationship: from_card.relationship.or_else(|| held.relationship.clone()),"""
+after = """            relationship: from_card.relationship.or_else(|| held.relationship.clone()),"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's relationship over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            relationship: from_card.relationship.or_else(|| held.relationship.clone()),
+            emails_json: every_address,"""
+after = """            emails_json: every_address,"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's phones_json over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            phones_json: from_card.phones_json.or_else(|| held.phones_json.clone()),
+            addresses_json: from_card"""
+after = """            addresses_json: from_card"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's addresses_json over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            addresses_json: from_card
+                .addresses_json
+                .or_else(|| held.addresses_json.clone()),
+            custom_fields_json: from_card"""
+after = """            custom_fields_json: from_card"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a card over what is held carries the card's custom_fields_json over a stale one"
+file = "src/data/message_cache/contacts.rs"
+before = """            custom_fields_json: from_card
+                .custom_fields_json
+                .or_else(|| held.custom_fields_json.clone()),
+            ..held.clone()"""
+after = """            ..held.clone()"""
+red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
+
+[[guard]]
+name = "a department survives export even with no company recorded"
+file = "src/data/message_cache/contacts.rs"
+before = """            if c.company.is_some() || c.department.is_some() {"""
+after = """            if c.company.is_some() && c.department.is_some() {"""
+red = ["data::message_cache::contacts::tests::test_a_department_survives_export_even_with_no_company_recorded"]
+
+[[guard]]
+name = "a leading indented line with nothing above it stands on its own rather than vanishing"
+file = "src/data/message_cache/contacts.rs"
+before = """                Some(carried_on) if !lines.is_empty() => {"""
+after = """                Some(carried_on) if true => {"""
+red = ["data::message_cache::contacts::tests::test_a_line_indented_with_nothing_above_it_stands_on_its_own"]
+
+[[guard]]
+name = "a card the database refuses is counted upward, not downward"
+file = "src/data/message_cache/contacts.rs"
+before = """                    read.not_written_down += 1;"""
+after = """                    read.not_written_down -= 1;"""
+red = ["data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file"]
+
+[[guard]]
+name = "a card the database refuses is counted by one, not left at zero"
+file = "src/data/message_cache/contacts.rs"
+before = """                    read.not_written_down += 1;"""
+after = """                    read.not_written_down *= 1;"""
+red = ["data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file"]
