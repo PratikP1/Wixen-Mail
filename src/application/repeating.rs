@@ -1163,6 +1163,28 @@ mod tests {
     }
 
     #[test]
+    fn test_every_ending_tells_outlook_the_same_start_date_for_the_range() {
+        // The day the series begins has to reach Outlook whichever way the
+        // series ends, since a range with a blank start date is a series
+        // Outlook cannot place. Only the never-ending shape had a test that
+        // looked at range.start_date before this; the other two endings
+        // fill in the same struct literal but had nothing checking they
+        // carried it too.
+        let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
+        for ending_rule in [
+            "FREQ=WEEKLY",
+            "FREQ=WEEKLY;UNTIL=20260930T235959Z",
+            "FREQ=WEEKLY;COUNT=6",
+        ] {
+            let said = as_outlook_says_it(ending_rule, starts_on).expect("a pattern");
+            assert_eq!(
+                said.range.start_date, A_TUESDAY,
+                "{ending_rule} did not carry the start date on its range"
+            );
+        }
+    }
+
+    #[test]
     fn test_every_choice_reads_as_a_phrase_rather_than_a_word() {
         // Read from a list where every entry otherwise sounds like the one
         // before it.
