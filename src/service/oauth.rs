@@ -588,6 +588,21 @@ fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Re
 
     tracing::info!("OAuth redirect server listening on {}", addr);
 
+    serve_the_redirect(&server, expected_state, timeout_secs)
+}
+
+/// Answer replies on an already-bound listener until the outcome is known or
+/// `timeout_secs` passes.
+///
+/// Split from [`wait_for_redirect_code`] so a test can drive it over a real
+/// loopback listener on an OS-assigned port instead of the one address
+/// providers have registered, which a test cannot rebind while anything else
+/// on the machine, including a real sign-in, holds it.
+fn serve_the_redirect(
+    server: &tiny_http::Server,
+    expected_state: Option<&str>,
+    timeout_secs: u64,
+) -> Result<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
 
     loop {
@@ -918,6 +933,7 @@ pub fn percent_encode(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::answering::answering;
 
     #[test]
     fn test_provider_lookup() {
@@ -1416,6 +1432,29 @@ mod tests {
     }
 
     #[test]
+    fn test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more() {
+        // The boundary itself: nothing anywhere sends text of exactly this
+        // length, so > and >= had always answered alike. One character over
+        // the bound is what tells them apart.
+        let exactly = "a".repeat(MOST_CHARACTERS_FROM_A_REPLY);
+        let one_over = "a".repeat(MOST_CHARACTERS_FROM_A_REPLY + 1);
+
+        assert_eq!(
+            as_one_short_line(&exactly),
+            exactly,
+            "exactly the bound should be left alone"
+        );
+        let cut = as_one_short_line(&one_over);
+        assert_ne!(cut, one_over, "one over the bound should be cut");
+        assert!(cut.ends_with("(cut short)"), "{cut}");
+        assert_eq!(
+            cut.chars().count(),
+            MOST_CHARACTERS_FROM_A_REPLY + " (cut short)".chars().count(),
+            "{cut}"
+        );
+    }
+
+    #[test]
     fn test_a_token_endpoint_that_said_nothing_readable_is_named_by_its_status() {
         // Nothing to quote, so the status is what there is to say. Saying
         // nothing at all sends somebody looking for a broken account.
@@ -1425,6 +1464,53 @@ mod tests {
         );
 
         assert!(refused.to_string().contains("503"), "{refused}");
+    }
+
+    // ── Reading a token endpoint's actual reply, over a real loopback
+    //    listener rather than a live provider ────────────────────────────
+
+    #[tokio::test]
+    async fn test_a_refusal_status_is_read_as_a_refusal_even_when_its_body_would_parse_as_a_token()
+    {
+        // The branch this pins: found by mutation testing, deleting the `!`
+        // that decides this left every existing test passing, because
+        // nothing had ever pointed this function at a real reply of any
+        // kind, success or failure. The body is deliberately a well-formed
+        // token so a mutant that stops checking the status and just parses
+        // whatever came back still has something that would succeed.
+        let (address, _heard) = answering(
+            "400 Bad Request",
+            "application/json",
+            r#"{"access_token":"should-never-be-used","token_type":"Bearer"}"#.to_string(),
+        )
+        .await;
+
+        let result =
+            post_token_request(&format!("http://{address}/token"), &[("grant_type", "x")]).await;
+
+        assert!(
+            result.is_err(),
+            "a 400 status should be read as a refusal, not parsed as a token: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_success_status_is_read_as_the_token_it_carries() {
+        // The other direction of the same branch: a real 200 with a
+        // well-formed body must still come back as the token, not as a
+        // refusal.
+        let (address, _heard) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"access_token":"a-real-token","token_type":"Bearer"}"#.to_string(),
+        )
+        .await;
+
+        let token = post_token_request(&format!("http://{address}/token"), &[("grant_type", "x")])
+            .await
+            .expect("a 200 status with a well-formed body should parse as a token");
+
+        assert_eq!(token.access_token, "a-real-token");
     }
 
     #[test]
@@ -1457,6 +1543,46 @@ mod tests {
                 "{target} ended the sign-in instead of leaving it waiting"
             );
         }
+    }
+
+    #[test]
+    fn test_serve_the_redirect_returns_the_code_a_real_request_carries_not_a_canned_one() {
+        // Whole-function replacement of wait_for_redirect_code survived here
+        // twice (an empty string and a fixed "xyzzy"): nothing exercised the
+        // loop that decides what it hands back, so nothing could tell a
+        // canned answer from a real one. Drives the loop over a real
+        // loopback listener on an OS-assigned port, the same way a browser
+        // reaching the redirect would.
+        //
+        // Deliberately not wait_for_redirect_code itself: that one binds
+        // every interface on the fixed port both providers have registered,
+        // which its own doc comment says has never been run against
+        // anything real. This is the split that lets the part deciding the
+        // answer be driven for real without also being the first thing in
+        // this codebase to open a socket on every interface.
+        let server = tiny_http::Server::http("127.0.0.1:0").expect("a loopback port");
+        let addr = server
+            .server_addr()
+            .to_ip()
+            .expect("a loopback bind is a TCP address");
+
+        let handle = std::thread::spawn(move || serve_the_redirect(&server, None, 5));
+
+        let mut stream =
+            std::net::TcpStream::connect(addr).expect("connect to the loopback listener");
+        use std::io::Write;
+        write!(
+            stream,
+            "GET /oauth/callback?code=a-genuine-authorization-code HTTP/1.1\r\n\
+             Host: localhost\r\nConnection: close\r\n\r\n"
+        )
+        .expect("write the request to the listener");
+
+        let code = handle
+            .join()
+            .expect("the listener thread should not panic")
+            .expect("a well-formed redirect should hand back its code");
+        assert_eq!(code, "a-genuine-authorization-code");
     }
 
     #[test]
