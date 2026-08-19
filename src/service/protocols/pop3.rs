@@ -590,4 +590,15 @@ pub(crate) mod against_a_server_that_answers {
             "a removal reached the server with the gate closed: {transcript:?}"
         );
     }
+
+    #[tokio::test]
+    async fn test_whether_the_gate_is_open_can_be_asked_directly() {
+        // delete() proves the gate through what it refuses to send, which is
+        // real proof but indirect: it reads the field itself, never this
+        // method. Nothing else called may_change() either, so a version that
+        // always answered the same way passed every test above it.
+        let server = a_pop_server().await;
+        assert!(!reading_only_on(&server).await.may_change());
+        assert!(signed_in_to(&server).await.may_change());
+    }
 }
