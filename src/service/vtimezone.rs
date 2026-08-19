@@ -114,6 +114,20 @@ fn changes_within(zone: Tz, first_year: i32, last_year: i32) -> Option<Vec<Chang
     let mut at = start;
     while at < end {
         let next = (at + chrono::Duration::days(7)).min(end);
+        // `next` always lands strictly after `at`: the loop only runs while
+        // `at < end`, and `next` is `at` plus seven days capped at `end`, so
+        // `next` is always somewhere in `(at, end]`. That is not a spare
+        // observation: were this comparison ever `<=` instead of `<`, `at`
+        // would reach `end` exactly, `next` would then also compute to
+        // `end` (the same value `at` already holds), and the loop would
+        // spin on that fixed point forever rather than exiting, since the
+        // condition it was guarding would stay true. Asserted here so a
+        // future edit that reintroduces that off-by-one fails fast, in a
+        // debug or test build, instead of hanging.
+        debug_assert!(
+            next > at,
+            "changes_within must advance past `at` every iteration or the scan never ends"
+        );
         if offset_at(zone, at).0 != offset_at(zone, next).0 {
             changes.push(the_change_between(zone, at, next));
         }
@@ -129,8 +143,25 @@ fn the_change_between(
     mut after: NaiveDateTime,
 ) -> Change {
     let before = offset_at(zone, still_before);
+    // Stops once the gap is a second or less: `still_before` and `after`
+    // always straddle the true transition instant, and a calendar document
+    // only writes onsets to the second, so any `after` within a second of
+    // it formats to the same clock face. Whether this reads `>` or `>=`
+    // only changes anything if the gap is ever exactly one second, and the
+    // only caller (changes_within) only ever hands this a gap that is a
+    // whole number of days, 1 through 7. Halving a whole day in nanoseconds
+    // never lands on exactly one second on the way down, by exhaustive
+    // check over both rounding directions at every step for all seven
+    // starting sizes, so `>` and `>=` are equivalent for every gap this is
+    // ever actually asked to search.
     while after - still_before > chrono::Duration::seconds(1) {
         let middle = still_before + (after - still_before) / 2;
+        // The loop only runs while the gap exceeds a second, so halving it
+        // always moves `middle` strictly inside `(still_before, after)`.
+        debug_assert!(
+            middle > still_before && middle < after,
+            "the search must strictly narrow the interval each step or it can never finish"
+        );
         if offset_at(zone, middle).0 == before.0 {
             still_before = middle;
         } else {
@@ -278,6 +309,12 @@ fn offset_written(seconds: i32) -> String {
 /// one.
 fn days_in_month(year: i32, month: u32) -> u32 {
     let next_month = if month == 12 {
+        // `year + 1` names which January this is, but December holds
+        // thirty-one days in every year the Gregorian calendar has, so the
+        // day this function actually returns cannot tell that year apart
+        // from `year - 1` or `year` itself. Written as `+ 1` because that is
+        // what next January actually is, not because a test could tell it
+        // from another year's January here.
         NaiveDate::from_ymd_opt(year + 1, 1, 1)
     } else {
         NaiveDate::from_ymd_opt(year, month + 1, 1)
@@ -325,6 +362,19 @@ mod tests {
             .find_map(|line| line.strip_prefix(&head))
             .unwrap_or_else(|| panic!("no {name} in {block:?}"))
             .to_string()
+    }
+
+    /// A change of offset at a given local clock face, for testing the
+    /// functions that decide whether a group of changes follows one rule
+    /// directly, without needing a real zone's real history to supply one.
+    fn a_change(when: &str, from_seconds: i32, to_seconds: i32) -> Change {
+        Change {
+            first_second_utc: NaiveDateTime::parse_from_str(when, "%Y-%m-%d %H:%M:%S")
+                .expect("a well-formed test timestamp"),
+            from_seconds,
+            to_seconds,
+            into_summer_time: to_seconds > from_seconds,
+        }
     }
 
     #[test]
@@ -437,6 +487,166 @@ mod tests {
                     "an onset that is not a clock face: {onset}"
                 );
             }
+        }
+    }
+
+    // ── one_yearly_rule, direct: every real zone this file's tests exercise
+    // either agrees across the whole window or disagrees in every field at
+    // once (Casablanca), so nothing above ever isolates one field of the
+    // agreement breaking on its own ─────────────────────────────────────
+
+    #[test]
+    fn test_one_yearly_rule_rejects_a_year_whose_onset_breaks_the_pattern() {
+        // Every one of the four things a rule has to agree on (RFC 5545's
+        // year, month, local clock, weekday), broken one at a time in the
+        // middle of three years, with the other two years left exactly on
+        // the "1st Sunday of March, 01:00" pattern. Every onset here keeps
+        // its day-of-month at 1-7, so a broken year that slipped past its
+        // own check would still find the same "1st" ordinal as the other
+        // two and be accepted anyway. That is what makes each case prove
+        // its own check is the one doing the rejecting, not a later one.
+        let on_pattern = |year, month, day, hour| {
+            a_change(
+                &format!("{year:04}-{month:02}-{day:02} {hour:02}:00:00"),
+                0,
+                3600,
+            )
+        };
+        let first = on_pattern(2024, 3, 3, 1); // a Sunday
+        let last = on_pattern(2026, 3, 1, 1); // a Sunday
+
+        for (why, middle) in [
+            (
+                "a year other than the window's own",
+                on_pattern(2026, 3, 1, 1),
+            ),
+            ("a different month", on_pattern(2025, 4, 6, 1)), // a Sunday
+            ("a different time of day", on_pattern(2025, 3, 2, 2)),
+            ("a different weekday", on_pattern(2025, 3, 3, 1)), // a Monday
+        ] {
+            let group = [&first, &middle, &last];
+            assert!(
+                one_yearly_rule(&group, 2024, 2026).is_none(),
+                "a year with {why} should break the rule, not be waved through"
+            );
+        }
+    }
+
+    #[test]
+    fn test_one_yearly_rule_rejects_a_year_whose_offsets_do_not_match_the_rest() {
+        // TZOFFSETFROM and TZOFFSETTO are written once for the whole rule,
+        // so every year has to agree on both. Each case keeps the same
+        // "1st Sunday of March, 01:00" local onset a real matching rule
+        // would have, so only the offset check can be what rejects it.
+        // Built from the local onset backward through from_seconds,
+        // rather than handed to a_change's first_second_utc directly,
+        // because local_onset() adds from_seconds to it: a changed
+        // from_seconds passed straight through would have shifted the
+        // local time of day right along with the offset, and the
+        // earlier time-of-day check would have been what actually
+        // rejected it, not the one this test means to isolate.
+        let with_local_onset = |local_onset: &str, from: i32, to: i32| {
+            let local = NaiveDateTime::parse_from_str(local_onset, "%Y-%m-%d %H:%M:%S")
+                .expect("a well-formed test timestamp");
+            Change {
+                first_second_utc: local - chrono::Duration::seconds(i64::from(from)),
+                from_seconds: from,
+                to_seconds: to,
+                into_summer_time: to > from,
+            }
+        };
+
+        for (why, from_seconds, to_seconds) in [
+            ("a different starting offset", 100, 3600),
+            ("a different ending offset", 0, 7200),
+        ] {
+            let first = with_local_onset("2024-03-03 01:00:00", 0, 3600); // a Sunday
+            let middle = with_local_onset("2025-03-02 01:00:00", from_seconds, to_seconds); // a Sunday
+            let last = with_local_onset("2026-03-01 01:00:00", 0, 3600); // a Sunday
+            let group = [&first, &middle, &last];
+
+            assert!(
+                one_yearly_rule(&group, 2024, 2026).is_none(),
+                "a year with {why} should break the rule, not be waved through"
+            );
+        }
+    }
+
+    #[test]
+    fn test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month() {
+        // A boundary chosen so the earlier year sits exactly seven days
+        // before its month ends: a genuine last Friday would need one more
+        // week to roll into April, so the 24th is the fourth Friday of
+        // March 2023, not the last, and one_yearly_rule has to refuse a
+        // "last Friday" rule rather than guess one that misses this year.
+        // The later year's Friday is unambiguously last (the month's final
+        // day), which keeps the refusal from being masked by both years
+        // failing the same way.
+        let fourth_but_not_last = a_change("2023-03-24 01:00:00", 0, 3600); // day 24 of 31
+        let genuinely_last = a_change("2024-03-29 01:00:00", 0, 3600); // day 29 of 31
+        let group = [&fourth_but_not_last, &genuinely_last];
+
+        assert!(
+            one_yearly_rule(&group, 2023, 2024).is_none(),
+            "a Friday that is not actually the month's last was accepted as one"
+        );
+    }
+
+    // ── listed_blocks, direct: Casablanca, the only zone above that reaches
+    // this function, only ever carries one pair of offsets on a given side,
+    // so nothing above tells apart a block that requires both offsets to
+    // match from one that is satisfied by either ─────────────────────────
+
+    #[test]
+    fn test_listed_blocks_keeps_each_pair_of_offsets_in_its_own_block() {
+        // Two changes that share a "from" but differ in "to": the case that
+        // tells `&&` (both offsets have to match) apart from `||` (either
+        // matching is enough).
+        let widens_by_an_hour = a_change("2020-06-01 00:00:00", 0, 3600);
+        let widens_by_two_hours = a_change("2021-06-01 00:00:00", 0, 7200);
+
+        let lines = listed_blocks("DAYLIGHT", &[&widens_by_an_hour, &widens_by_two_hours]);
+
+        let opens = lines
+            .iter()
+            .filter(|line| line.as_str() == "BEGIN:DAYLIGHT")
+            .count();
+        assert_eq!(
+            opens, 2,
+            "two distinct pairs of offsets need two blocks: {lines:?}"
+        );
+        let rdates: Vec<&String> = lines
+            .iter()
+            .filter(|line| line.starts_with("RDATE:"))
+            .collect();
+        assert_eq!(
+            rdates,
+            ["RDATE:20200601T000000", "RDATE:20210601T000000"],
+            "each block should list only the onset that actually carries its own pair of \
+             offsets, not one borrowed from the other block: {lines:?}"
+        );
+    }
+
+    // ── days_in_month, direct: this file's own copy, used only by
+    // one_yearly_rule's is_last check, never shared with the identically
+    // named function application::repeating already tests ────────────────
+
+    #[test]
+    fn test_how_many_days_a_month_holds() {
+        for (year, month, expected) in [
+            (2026, 1, 31),
+            (2026, 2, 28),
+            (2028, 2, 29), // a leap year
+            (2026, 4, 30),
+            (2026, 9, 30),
+            (2026, 12, 31), // the only month that rolls the year over to
+                            // find its own length
+        ] {
+            assert_eq!(
+                days_in_month(year, month),
+                expected,
+                "{year}-{month:02} should have {expected} days"
+            );
         }
     }
 }
