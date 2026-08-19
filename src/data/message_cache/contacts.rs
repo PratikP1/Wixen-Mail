@@ -2227,6 +2227,18 @@ mod tests {
     }
 
     #[test]
+    fn test_a_line_indented_with_nothing_above_it_stands_on_its_own() {
+        // The first line in a block has no earlier line to join, whatever its
+        // own leading white space says. Read as a continuation anyway, it has
+        // nowhere to be joined to and is dropped rather than kept: the value
+        // it carried is gone, and nothing after it says so.
+        let unfolded =
+            MessageCache::unfold_vcard_lines(" FN:Grace Hopper\r\nEMAIL:grace@example.com\r\n");
+
+        assert_eq!(unfolded, [" FN:Grace Hopper", "EMAIL:grace@example.com"]);
+    }
+
+    #[test]
     fn test_unfolding_takes_off_one_space_and_leaves_the_rest_of_the_value() {
         // RFC 2426 section 2.6 and RFC 6350 section 3.2: unfolding removes the
         // line break and exactly one white space character. Any further space
