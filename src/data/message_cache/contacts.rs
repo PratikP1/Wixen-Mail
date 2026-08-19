@@ -1978,6 +1978,29 @@ impl MessageCache {
             name => name.to_string(),
         }
     }
+
+    /// Make the next save of a contact at this address fail, so a test can be
+    /// a database that turns one card away.
+    ///
+    /// Here because no card a file can carry makes `save_contact` refuse a
+    /// row: an id, an account and a name are the only columns `contacts`
+    /// requires, and a parsed card always has all three. Named to one address
+    /// rather than reaching for `take_away_the_table`, because the table this
+    /// function would take away is the one `import_contacts_from_vcard` reads
+    /// before it ever reaches a card, and doing that would refuse the read
+    /// the whole import depends on rather than one save partway through it.
+    ///
+    /// Test-only. Prefer a real fixture wherever one can say the same thing.
+    #[cfg(test)]
+    pub(crate) fn refuse_to_save_a_contact_at(&self, email: &str) -> Result<()> {
+        self.conn
+            .execute_batch(&format!(
+                "CREATE TRIGGER refuse_a_save BEFORE INSERT ON contacts
+                 WHEN NEW.email = '{email}'
+                 BEGIN SELECT RAISE(ABORT, 'refused for a test'); END;"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to stage the refusal: {e}")))
+    }
 }
 
 #[cfg(test)]
@@ -2373,6 +2396,37 @@ mod tests {
             read.with_no_email_address, 2,
             "the cards that were turned away were not counted, so nothing can say so"
         );
+    }
+
+    #[test]
+    fn test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file() {
+        // A card this cannot use is passed over, so one bad card in a file of
+        // two hundred does not cost the other hundred and ninety-nine. No
+        // card a file can carry makes the database refuse a row on its own,
+        // so the refusal is staged directly with `refuse_to_save_a_contact_at`.
+        let cache = a_cache("vcard_save_refused");
+        cache
+            .refuse_to_save_a_contact_at("refused@example.com")
+            .expect("the refusal to be staged");
+
+        let file = format!(
+            "{}{}",
+            a_card_naming("Turned Away", "refused@example.com"),
+            a_card_naming("Grace Hopper", "grace@example.com"),
+        );
+        let read = cache
+            .import_contacts_from_vcard("test@example.com", &file)
+            .expect("the import to run");
+
+        assert_eq!(read.not_written_down, 1, "{read:?}");
+        assert_eq!(read.added, 1, "{read:?}");
+        let names: Vec<String> = cache
+            .get_contacts_for_account("test@example.com")
+            .expect("contacts to read back")
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(names, ["Grace Hopper"], "{names:?}");
     }
 
     #[test]
