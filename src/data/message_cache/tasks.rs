@@ -890,6 +890,24 @@ mod tests {
     }
 
     #[test]
+    fn test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there() {
+        // The third answer this signature can give, and the one neither test
+        // above reaches: one exercises the early return for a provider-held
+        // id, the other deletes a note that really is there, and a delete
+        // that matched zero rows had never been asked what it found.
+        let cache = test_cache();
+
+        let removed = cache
+            .forget_deleted_task("task-local-never-deleted")
+            .expect("the deletions to be reachable");
+
+        assert!(
+            !removed,
+            "forgetting a note that was never there reported one was let go"
+        );
+    }
+
+    #[test]
     fn test_a_deletion_the_provider_took_is_kept_and_read_back_as_taken() {
         // The whole rule rests on this column surviving a round trip. A note
         // that goes when the provider takes it leaves nothing to stop the read
