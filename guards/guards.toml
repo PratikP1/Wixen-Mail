@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 121 records have arrived since and have not been through it.
+# 138 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -6641,3 +6641,231 @@ after = """            blocks *= 1;"""
 red = [
     "application::occurrences::tests::test_a_hand_counted_weekly_walk_matches_the_blocks_it_reports",
 ]
+
+# ── long_text.rs's markup walk, tag by tag ──────────────────────────────────
+#
+# A mutation sweep of `application::long_text` found 17 places in `markup`'s
+# tree walk (`blocks`, `list`, `quote`, `inline`) where deleting a tag's own
+# arm, or inverting the guard beside it, left the whole suite green. Every one
+# was pre-existing correct behaviour; the gap was coverage, not a bug.
+# `from_markup`'s own end-to-end tests exercise several tags in one document
+# and check the words survived, which a deleted arm's neighbouring fallback
+# can satisfy by accident. The 17 guards below each go straight at one tag or
+# one guard through `blocks_output`/`inline_output`, which call `blocks` and
+# `inline` directly on a fragment `ammonia::clean` never touched, and assert
+# the exact markdown string, not a substring.
+#
+# Measured by hand on 2026-08-19: each of the 17 applied alone, against
+# `application::long_text::markup::tests`, reddened exactly the test(s) named
+# and nothing else in that module. Restored and reran green after each.
+
+[[guard]]
+name = "blocks reads a bare text node with no tag around it"
+file = "src/application/long_text.rs"
+before = """                Node::Text(text) => {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        out.push_str(trimmed);
+                        out.push_str("\\n\\n");
+                    }
+                }
+                _ => {}"""
+after = """                _ => {}"""
+red = ["application::long_text::markup::tests::test_bare_text_with_no_tag_around_it_becomes_a_paragraph"]
+
+[[guard]]
+name = "blocks joins a p or div's inline content into one line"
+file = "src/application/long_text.rs"
+before = """                    "p" | "div" => push_paragraph("", child, out),
+                    "ul" => list(child, out, None),"""
+after = """                    "ul" => list(child, out, None),"""
+red = [
+    "application::long_text::markup::tests::test_a_paragraph_joins_its_inline_content_into_one_line",
+    "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
+]
+
+[[guard]]
+name = "blocks turns a ul's items into a bulleted list"
+file = "src/application/long_text.rs"
+before = """                    "ul" => list(child, out, None),
+                    "ol" => list(child, out, Some(1)),"""
+after = """                    "ol" => list(child, out, Some(1)),"""
+red = ["application::long_text::markup::tests::test_a_bullet_list_does_not_run_into_the_paragraph_after_it"]
+
+[[guard]]
+name = "blocks counts an ol's items instead of bulleting them"
+file = "src/application/long_text.rs"
+before = """                    "ol" => list(child, out, Some(1)),
+                    "li" => {"""
+after = """                    "li" => {"""
+red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+
+[[guard]]
+name = "blocks still bullets a li with no list around it"
+file = "src/application/long_text.rs"
+before = """                    "li" => {
+                        // A list item with no list around it. Malformed, but a
+                        // bullet is a better answer than silently dropping it.
+                        push_item("- ", child, out);
+                    }
+                    "blockquote" => quote(child, out),"""
+after = """                    "blockquote" => quote(child, out),"""
+red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
+
+[[guard]]
+name = "blocks quotes a blockquote's paragraphs"
+file = "src/application/long_text.rs"
+before = """                    "blockquote" => quote(child, out),
+                    "br" => out.push('\\n'),"""
+after = """                    "br" => out.push('\\n'),"""
+red = [
+    "application::long_text::markup::tests::test_a_blockquote_with_no_paragraph_inside_is_quoted_as_one_line",
+    "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
+]
+
+[[guard]]
+name = "blocks reads a bare line break between blocks as a newline"
+file = "src/application/long_text.rs"
+before = """                    "br" => out.push('\\n'),
+                    // An image reached without a paragraph around it."""
+after = """                    // An image reached without a paragraph around it."""
+red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
+
+[[guard]]
+name = "blocks silently drops a script or style reaching the block walk directly"
+file = "src/application/long_text.rs"
+before = """                    "script" | "style" => {}
+                    // Anything else, a `body`, `span` or `article` this"""
+after = """                    // Anything else, a `body`, `span` or `article` this"""
+red = [
+    "application::long_text::markup::tests::test_a_script_reaching_the_block_walk_directly_is_silently_dropped",
+    "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
+]
+
+[[guard]]
+name = "blocks does not paint whitespace-only text as a paragraph"
+file = "src/application/long_text.rs"
+before = """                    if !trimmed.is_empty() {
+                        out.push_str(trimmed);
+                        out.push_str("\\n\\n");
+                    }
+                }
+                _ => {}"""
+after = """                    if trimmed.is_empty() {
+                        out.push_str(trimmed);
+                        out.push_str("\\n\\n");
+                    }
+                }
+                _ => {}"""
+red = [
+    "application::long_text::markup::tests::test_bare_text_with_no_tag_around_it_becomes_a_paragraph",
+    "application::long_text::markup::tests::test_whitespace_only_text_contributes_nothing",
+]
+
+[[guard]]
+name = "list's numbered counter increments, not decrements, after each item"
+file = "src/application/long_text.rs"
+before = """                        push_item(&format!("{n}. "), child, out);
+                        *n += 1;"""
+after = """                        push_item(&format!("{n}. "), child, out);
+                        *n -= 1;"""
+red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+
+[[guard]]
+name = "list's numbered counter increases by exactly one, not scaled, after each item"
+file = "src/application/long_text.rs"
+before = """                        push_item(&format!("{n}. "), child, out);
+                        *n += 1;"""
+after = """                        push_item(&format!("{n}. "), child, out);
+                        *n *= 1;"""
+red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+
+[[guard]]
+name = "quote is a real walk of the blockquote's paragraphs, not a stub"
+file = "src/application/long_text.rs"
+before = """    fn quote(node: NodeRef<'_, Node>, out: &mut String) {
+        let mut saw_a_paragraph = false;
+        for child in node.children() {
+            if let Node::Element(element) = child.value()
+                && element.name() == "p"
+            {
+                saw_a_paragraph = true;
+                push_paragraph("> ", child, out);
+            }
+        }
+        if !saw_a_paragraph {
+            push_paragraph("> ", node, out);
+        }
+    }"""
+after = """    fn quote(node: NodeRef<'_, Node>, out: &mut String) {
+        ()
+    }"""
+red = [
+    "application::long_text::markup::tests::test_a_blockquote_with_no_paragraph_inside_is_quoted_as_one_line",
+    "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
+]
+
+[[guard]]
+name = "quote only counts a p element as one of the blockquote's paragraphs"
+file = "src/application/long_text.rs"
+before = """            if let Node::Element(element) = child.value()
+                && element.name() == "p"
+            {
+                saw_a_paragraph = true;"""
+after = """            if let Node::Element(element) = child.value()
+                && element.name() != "p"
+            {
+                saw_a_paragraph = true;"""
+red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
+
+[[guard]]
+name = "quote only falls back to quoting the whole node when it saw no paragraph"
+file = "src/application/long_text.rs"
+before = """        if !saw_a_paragraph {
+            push_paragraph("> ", node, out);
+        }"""
+after = """        if saw_a_paragraph {
+            push_paragraph("> ", node, out);
+        }"""
+red = [
+    "application::long_text::markup::tests::test_a_blockquote_with_no_paragraph_inside_is_quoted_as_one_line",
+    "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
+]
+
+[[guard]]
+name = "inline reads a bare line break as a space"
+file = "src/application/long_text.rs"
+before = """                    "br" => out.push(' '),
+                    "img" => {
+                        if let Some(alt) = element.attr("alt") {
+                            out.push_str(alt);
+                        }
+                    }"""
+after = """                    "img" => {
+                        if let Some(alt) = element.attr("alt") {
+                            out.push_str(alt);
+                        }
+                    }"""
+red = ["application::long_text::markup::tests::test_a_line_break_inside_inline_text_becomes_a_space"]
+
+[[guard]]
+name = "inline contributes an image's alt text"
+file = "src/application/long_text.rs"
+before = """                    "img" => {
+                        if let Some(alt) = element.attr("alt") {
+                            out.push_str(alt);
+                        }
+                    }
+                    "script" | "style" => {}
+                    _ => inline(child, out),"""
+after = """                    "script" | "style" => {}
+                    _ => inline(child, out),"""
+red = ["application::long_text::markup::tests::test_an_image_inside_inline_text_contributes_its_alt_text"]
+
+[[guard]]
+name = "inline silently drops a script or style reaching it directly"
+file = "src/application/long_text.rs"
+before = """                    "script" | "style" => {}
+                    _ => inline(child, out),"""
+after = """                    _ => inline(child, out),"""
+red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
