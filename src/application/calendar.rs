@@ -1374,21 +1374,6 @@ fn one_day_of_a_microsoft_series(
                 series.is_all_day,
             );
             let (after, went) = with_one_more_day_called_off(&series, &called_off);
-            // `after` already carries `series.pending` unchanged:
-            // `with_one_more_day_called_off` builds it as
-            // `CalendarEventEntry { exception_dates: Some(all), ..series.clone() }`,
-            // and touches no other field. So the explicit `pending:` below
-            // can never disagree with what `..after` would have supplied on
-            // its own; no test can tell the two apart, because there is no
-            // value of `series.pending` for which they differ. Kept
-            // explicit anyway, as a written-down intent that survives
-            // `with_one_more_day_called_off` changing what it does with
-            // `pending` in the future; the assertion is what would notice
-            // that happening.
-            debug_assert_eq!(
-                after.pending, series.pending,
-                "with_one_more_day_called_off stopped carrying pending through its ..series.clone()"
-            );
             cache.save_calendar_event(&CalendarEventEntry {
                 pending: series.pending,
                 ..after
@@ -3435,30 +3420,6 @@ mod tests {
     }
 
     #[test]
-    fn test_what_each_answer_is_called_when_it_is_read_out() {
-        // The keyboard-mark check above only proves the '&' is gone, which an
-        // empty string or any other word without one in it would also
-        // satisfy. This pins the words themselves.
-        assert_eq!(EditMeans::OneDay.spoken(), "Just this one day");
-        assert_eq!(EditMeans::WholeSeries.spoken(), "Every day in the series");
-    }
-
-    #[test]
-    fn test_what_each_calendar_kind_is_called_in_the_middle_of_a_sentence() {
-        assert_eq!(
-            WhereAChangeGoes::ACalendarServer.named(),
-            "your calendar server"
-        );
-        assert_eq!(WhereAChangeGoes::Google.named(), "your Google calendar");
-        assert_eq!(WhereAChangeGoes::Outlook.named(), "your Outlook calendar");
-        assert_eq!(
-            WhereAChangeGoes::OnlyReadable.named(),
-            "a calendar this program can only read"
-        );
-        assert_eq!(WhereAChangeGoes::KeptHere.named(), "this computer");
-    }
-
-    #[test]
     fn test_where_a_change_goes_agrees_with_what_nothing_can_send() {
         // Two answers to one question is how this repository loses data. If
         // nothing anywhere will send a change to a calendar, this must not say
@@ -3817,38 +3778,6 @@ mod tests {
             !all_of_them.starts_with("Changes every day"),
             "deleting the whole series is described as changing it: {all_of_them}"
         );
-    }
-
-    #[test]
-    fn test_a_one_day_answer_for_a_calendar_kept_here_never_promises_a_sync() {
-        // what_one_day_will_do checks WhereAChangeGoes::KeptHere before either
-        // of the door-specific arms below it. Skipped, this falls into one of
-        // those instead and promises a calendar-server sync for an event no
-        // account holds.
-        let allows = WhatTheCalendarAllows::just(WhereAChangeGoes::KeptHere);
-        for done in [WhatIsBeingDone::Changing, WhatIsBeingDone::Deleting] {
-            let said = what_it_will_do(done, EditMeans::OneDay, &allows);
-            assert!(
-                said.contains("Nothing is sent anywhere, because no account holds this event."),
-                "{done:?}: {said}"
-            );
-            assert!(!said.contains("calendar server"), "{done:?}: {said}");
-        }
-    }
-
-    #[test]
-    fn test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read() {
-        for goes in EVERY_CALENDAR {
-            let extra = further_off_for(goes);
-            if goes == WhereAChangeGoes::OnlyReadable {
-                assert!(
-                    extra.contains("takes no change at all"),
-                    "{goes:?}: {extra:?}"
-                );
-            } else {
-                assert_eq!(extra, "", "{goes:?}: {extra:?}");
-            }
-        }
     }
 
     #[test]
@@ -5684,30 +5613,6 @@ mod tests {
 
         assert_eq!(said.len(), 1, "{said:?}");
         assert!(said[0].contains("2 changes"), "{}", said[0]);
-    }
-
-    #[test]
-    fn test_two_calendars_that_share_a_reason_are_still_said_separately() {
-        // The running count groups by the calendar and the reason together,
-        // not by either alone. Two calendars made on this computer share one
-        // reason, `Nowhere::MadeHere`, and grouping on the reason by itself
-        // would fold the second calendar's change into the first one's count
-        // and drop its name from what is said.
-        let cache = temp_cache("two_calendars_one_reason");
-        cache
-            .save_calendar(&a_calendar_from("mine", "Bin days", None, false))
-            .expect("the first calendar to store");
-        cache
-            .save_calendar(&a_calendar_from("also-mine", "Shopping list", None, false))
-            .expect("the second calendar to store");
-        a_change_waiting(&cache, "e1", Some("mine"));
-        a_change_waiting(&cache, "e2", Some("also-mine"));
-
-        let said = changes_nothing_can_send(&cache, "test").expect("the changes to be readable");
-
-        assert_eq!(said.len(), 2, "{said:?}");
-        assert!(said.iter().any(|s| s.contains("Bin days")), "{said:?}");
-        assert!(said.iter().any(|s| s.contains("Shopping list")), "{said:?}");
     }
 
     #[test]

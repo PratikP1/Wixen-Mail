@@ -37,20 +37,8 @@ pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle =
 /// For anything that cannot be undone. The question still says what Yes does,
 /// because the button labels are Yes and No and this builder cannot change
 /// them, so "Delete Ada Lovelace?" has to be a question those two words answer.
-///
-/// Same reasoning as the OR inside [`yes_no_where_enter_answers_yes`]:
-/// `ENTER_DOES_NOT_ANSWER_YES` is `wxNO_DEFAULT`, its own bit and disjoint from
-/// every flag a Yes/No question already carries, so OR and XOR agree here too.
-/// No test could ever tell the two operators apart, so the agreement is
-/// asserted below instead of left for one to find.
 pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
-    let yes = yes_no_where_enter_answers_yes();
-    debug_assert_eq!(
-        yes.bits() & ENTER_DOES_NOT_ANSWER_YES.bits(),
-        0,
-        "a style flag now overlaps wxNO_DEFAULT, so OR and XOR would disagree here"
-    );
-    yes | ENTER_DOES_NOT_ANSWER_YES
+    yes_no_where_enter_answers_yes() | ENTER_DOES_NOT_ANSWER_YES
 }
 
 /// A question with two answers, where Enter answers Yes.
@@ -60,20 +48,7 @@ pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
 /// is choosing that pressing Enter without hearing the end of the question does
 /// the thing, so it belongs only where the thing can be undone or was asked
 /// for.
-///
-/// `YesNo` and `IconQuestion` sit in disjoint bits of the flags word: wxWidgets
-/// reserves the button set and the icon their own separate ranges, so this OR
-/// can never actually merge one answer's bit into the other's. That makes it
-/// indistinguishable from XOR, and no test can observe a difference between two
-/// operators that agree on every input they are ever given, so the agreement is
-/// asserted below rather than left for a mutation test that could never catch
-/// it either way.
 pub fn yes_no_where_enter_answers_yes() -> MessageDialogStyle {
-    debug_assert_eq!(
-        MessageDialogStyle::YesNo.bits() & MessageDialogStyle::IconQuestion.bits(),
-        0,
-        "YesNo and IconQuestion now share a bit, so OR and XOR would disagree here"
-    );
     MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion
 }
 

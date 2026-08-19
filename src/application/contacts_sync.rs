@@ -8157,6 +8157,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_the_google_address_book_a_sync_uses_really_reads_one_contact_back() {
+        // Asked after a change is turned down for an old marker, and answered
+        // from the same script every other trait method here is proven
+        // against. Left untested, this body could be replaced by
+        // `Ok(Default::default())` and the sync would go on believing
+        // whatever Google last held was an empty contact, without a single
+        // test noticing.
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"resourceName\":\"people/c1\",\"etag\":\"\\\"e-now\\\"\"}".to_string(),
+        )
+        .await;
+        let client = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let now = <GoogleApiClient as GoogleContactBook>::the_copy_it_holds_now(
+            &client,
+            "a token",
+            "people/c1",
+        )
+        .await
+        .expect("the copy Google holds");
+
+        let request = crate::common::answering::heard(listening, "the read of one contact")
+            .await
+            .expect("a request");
+        assert!(
+            crate::common::answering::asked_for(&request).starts_with("GET /people/c1?"),
+            "{request}"
+        );
+        assert_eq!(now.resource_name, "people/c1");
+        assert_eq!(now.etag, "\"e-now\"");
+    }
+
+    #[tokio::test]
     async fn test_the_outlook_address_book_a_sync_uses_really_reads_outlook() {
         let (address, listening) = crate::common::answering::answering(
             "200 OK",
@@ -8248,6 +8283,36 @@ mod tests {
         );
         assert_eq!(changed.id, "AAMkAGI2");
         assert_eq!(changed.odata_etag.as_deref(), Some("W/\"v8\""));
+    }
+
+    #[tokio::test]
+    async fn test_the_outlook_address_book_a_sync_uses_really_reads_one_contact_back() {
+        // The Outlook half of the same gap: this forwarder had never been
+        // called by any test, in either direction.
+        let (address, listening) = crate::common::answering::answering(
+            "200 OK",
+            "application/json",
+            "{\"id\":\"AAMkAGI2\",\"@odata.etag\":\"W/\\\"v9\\\"\"}".to_string(),
+        )
+        .await;
+        let client = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let now = <MsGraphClient as MicrosoftContactBook>::the_copy_it_holds_now(
+            &client, "a token", "AAMkAGI2",
+        )
+        .await
+        .expect("the copy Outlook holds");
+
+        let request = crate::common::answering::heard(listening, "the read of one contact")
+            .await
+            .expect("a request");
+        assert_eq!(
+            crate::common::answering::asked_for(&request),
+            "GET /me/contacts/AAMkAGI2",
+            "{request}"
+        );
+        assert_eq!(now.id, "AAMkAGI2");
+        assert_eq!(now.odata_etag.as_deref(), Some("W/\"v9\""));
     }
 
     #[tokio::test]
@@ -11948,6 +12013,55 @@ mod tests {
             "the summary says a deletion was sent to an address book that says it \
              never had her: {}",
             what_the_contacts_sync_did(&result)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contacts_sync_lets_go_of_a_deletion_it_has_remembered_long_enough() {
+        // The sweep only drains anything if a sync really calls it. Wired
+        // nowhere, it is a rule that says "remembered for ever" and a table
+        // that only grows, and nothing else in the suite would notice, the
+        // same gap calendar.rs's own version of this test closes for events.
+        let cache = a_cache("contacts_sync_drains_old_deletions");
+        let local_id = format!("local-{GOOGLES_NAME_FOR_HER}");
+        a_stored_contact(
+            &cache,
+            "Alice Smith",
+            "alice@example.com",
+            GOOGLES_NAME_FOR_HER,
+            GOOGLE_ADDRESS_BOOK,
+        );
+        cache
+            .delete_contact(&local_id)
+            .expect("the contact to be deleted here");
+        let long_ago = chrono::Utc::now()
+            - crate::application::deletions::HOW_LONG_A_DELETION_IS_REMEMBERED
+            - chrono::Duration::days(1);
+        cache
+            .the_address_book_took_the_deletion(
+                &local_id,
+                &AddressBook::Google,
+                &crate::application::deletions::written(long_ago),
+            )
+            .expect("Google's note to be marked as taken long ago");
+
+        sync_google_contacts(
+            &cache,
+            &ScriptedGoogle::default(),
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            cache
+                .deleted_contacts(AN_ACCOUNT)
+                .expect("the deletions")
+                .is_empty(),
+            "a contacts sync never let go of a deletion it had remembered long \
+             enough, so the table only grows"
         );
     }
 

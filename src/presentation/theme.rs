@@ -412,14 +412,6 @@ fn windows_prefers_dark() -> bool {
 /// `0` is failure. A refused call has to look like a refused call here too,
 /// so this answers a status [`dark_mode_from`] does not read as success,
 /// rather than the `(0, 0)` a copy of that sibling stub would reach for.
-///
-/// Every build and test this project runs targets Windows: `ci.yml` and
-/// `mutants.yml` both say `runs-on: windows-latest`, and there is no macOS or
-/// Linux job. So this half of the `cfg` is never part of the binary any test
-/// here runs against, and a mutation to the literal below cannot be caught by
-/// anything, not because the answer would be wrong but because the question
-/// is never asked. Unreachable under test, not untested, and a mutation
-/// report cannot tell the two apart from its numbers alone.
 #[cfg(not(target_os = "windows"))]
 fn ask_windows_about_light_or_dark() -> (i32, u32) {
     (1, 0)
@@ -441,16 +433,6 @@ fn ask_windows_about_light_or_dark() -> (i32, u32) {
 /// Split out so a test can say the call still works. Whatever comes back is
 /// returned untouched, matching [`ask_windows_about_high_contrast`]'s own
 /// doc: interpreting it is [`dark_mode_from`]'s job, not this one's.
-///
-/// Unlike that sibling, there is no third bit here standing in for "the read
-/// really happened": high contrast's flags word carries one that is set on
-/// any desktop regardless of whether high contrast itself is on, and this
-/// call has nothing equivalent. So a stand-in that always returned `(0, 0)`,
-/// or always `(0, 1)`, would pass every test here too, whichever one matched
-/// the machine at the time: `status == 0` with `value` in `{0, 1}` is the
-/// whole shape of a real answer as well as a fake one. Telling them apart
-/// would mean changing `AppsUseLightTheme` under test, which is Pratik's own
-/// setting and not this suite's to move.
 #[cfg(target_os = "windows")]
 fn ask_windows_about_light_or_dark() -> (i32, u32) {
     #[link(name = "advapi32")]
@@ -545,12 +527,6 @@ fn windows_high_contrast() -> bool {
 /// a refused call as high contrast off. That is the right answer on a platform
 /// with no such mode, and it is reached through the same tested reading rather
 /// than through a `false` written out a second time.
-///
-/// Same blind spot as [`ask_windows_about_light_or_dark`]'s own off-Windows
-/// stub, and for the same reason: every build and test this project runs
-/// targets Windows, so this half of the `cfg` is never part of the binary any
-/// test here runs against, and no mutation to the literal below can ever be
-/// caught. Unreachable under test, not untested.
 #[cfg(not(target_os = "windows"))]
 fn ask_windows_about_high_contrast() -> (i32, u32) {
     (0, 0)
@@ -739,13 +715,6 @@ mod tests {
     ///
     /// It asserts nothing about whether the machine is light or dark, so it
     /// stays green whichever way Pratik's own machine is set.
-    ///
-    /// What it cannot do. It kills only the constant that disagrees with this
-    /// machine right now: whichever of light and dark Windows is actually set
-    /// to, [`windows_prefers_dark`] replaced by that same constant agrees with
-    /// the longhand answer above and survives. Killing the other one needs the
-    /// suite run with Windows actually set the other way, which is a decision
-    /// about somebody's own machine and not one a test may make.
     #[test]
     fn test_the_light_or_dark_answer_is_the_machines_own_and_not_a_constant() {
         let (status, value) = ask_windows_about_light_or_dark();
