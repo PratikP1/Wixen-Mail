@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 184 records have arrived since and have not been through it.
+# 201 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -7423,3 +7423,216 @@ file = "src/application/caldav_sync.rs"
 before = """            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;"""
 after = """            the_day_went |= went != crate::application::calendar::ADayWent::OffTheSeries;"""
 red = ["application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed"]
+
+# ── imap.rs and oauth.rs, from the same scoped sweep ────────────────────────
+#
+# imap.rs: 15 misses in scope, every one untested but already correct.
+# `flags_from_attributes` alone accounts for 7 of them, cargo-mutants' full
+# set of canned replacements for a function returning
+# `Option<(u32, Vec<String>)>`: `None`, and `Some` paired with each of two
+# canned uids and three canned flag lists. `remove_these`'s guard condition
+# was pulled into `removal_fell_back_to_flag_and_leave` specifically so it
+# could be pinned without opening a socket: the warning it used to gate has
+# no effect a test can observe, so nothing ever did.
+#
+# oauth.rs: of its 4 misses, 2 are guarded below and 2
+# (`wait_for_redirect_code`, the one place in this codebase that binds every
+# network interface rather than loopback) are structurally hard to test and
+# stay open; see the round's own report for why forcing a test there was
+# judged worse than the gap.
+#
+# Measured by hand on 2026-08-19: each guard applied alone, against the whole
+# library, reddened exactly the test(s) named and nothing else. Restored and
+# reran green after each.
+
+[[guard]]
+name = "fetch_flags reads the FLAGS a server sends back on its CONDSTORE path"
+file = "src/service/protocols/imap.rs"
+before = """                    format!("UID FETCH 1:* (UID FLAGS) (CHANGEDSINCE {modseq})"),
+                    "reading what changed",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => flags_from_attributes(attributes),
+                        _ => None,
+                    },"""
+after = """                    format!("UID FETCH 1:* (UID FLAGS) (CHANGEDSINCE {modseq})"),
+                    "reading what changed",
+                    |response| match response {
+                        _ => None,
+                    },"""
+red = ["service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths"]
+
+[[guard]]
+name = "fetch_flags reads the FLAGS a server sends back on its batched path"
+file = "src/service/protocols/imap.rs"
+before = """                    format!("UID FETCH {set} (UID FLAGS)"),
+                    "reading the message flags",
+                    |response| match response {
+                        Response::Fetch(_, attributes) => flags_from_attributes(attributes),
+                        _ => None,
+                    },"""
+after = """                    format!("UID FETCH {set} (UID FLAGS)"),
+                    "reading the message flags",
+                    |response| match response {
+                        _ => None,
+                    },"""
+red = ["service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths"]
+
+[[guard]]
+name = "removal only reports falling back to flag-and-leave when something was actually asked for"
+file = "src/service/protocols/imap.rs"
+before = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() && !abilities.uid_expunge
+}"""
+after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    uids.is_empty() && !abilities.uid_expunge
+}"""
+red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
+
+[[guard]]
+name = "removal only reports falling back to flag-and-leave when both conditions hold, not either"
+file = "src/service/protocols/imap.rs"
+before = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() && !abilities.uid_expunge
+}"""
+after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() || !abilities.uid_expunge
+}"""
+red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
+
+[[guard]]
+name = "removal only reports falling back to flag-and-leave when the server really lacks UIDPLUS"
+file = "src/service/protocols/imap.rs"
+before = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() && !abilities.uid_expunge
+}"""
+after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> bool {
+    !uids.is_empty() && abilities.uid_expunge
+}"""
+red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
+
+[[guard]]
+name = "a FETCH reply's Gmail message id reaches the message the server sent"
+file = "src/service/protocols/imap.rs"
+before = """            AttributeValue::GmailMsgId(id) => Some(*id),
+            _ => None,
+        }),"""
+after = """            _ => None,
+        }),"""
+red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
+
+[[guard]]
+name = "a FETCH reply's Gmail labels reach the message the server sent"
+file = "src/service/protocols/imap.rs"
+before = """                AttributeValue::GmailLabels(labels) => Some(
+                    labels
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
+                ),
+                _ => None,"""
+after = """                _ => None,"""
+red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
+
+[[guard]]
+name = "flags_from_attributes is a real computation, not a stub answering nothing"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    None
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with no flags"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((0, vec![]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with one blank flag"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((0, vec!["".into()]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with a made-up flag"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((0, vec!["xyzzy".into()]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with no flags"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((1, vec![]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with one blank flag"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((1, vec!["".into()]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with a made-up flag"
+file = "src/service/protocols/imap.rs"
+before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((uid_of(attributes)?, flag_names(attributes)))
+}"""
+after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
+    Some((1, vec!["xyzzy".into()]))
+}"""
+red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+
+[[guard]]
+name = "a bad status says the server did not understand, rather than a generic refusal"
+file = "src/service/protocols/imap.rs"
+before = """        Status::Bad => Error::Protocol(format!(
+            "The mail server did not understand the request while {doing}, and refused it.{words}"
+        )),
+        _ => Error::Protocol(format!("The mail server refused while {doing}.{words}")),"""
+after = """        _ => Error::Protocol(format!("The mail server refused while {doing}.{words}")),"""
+red = ["service::protocols::imap::tests::test_a_bad_status_says_the_server_did_not_understand_rather_than_a_generic_refusal"]
+
+[[guard]]
+name = "as_one_short_line leaves exactly the bound alone and cuts one more"
+file = "src/service/oauth.rs"
+before = """    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {"""
+after = """    if tidy.chars().count() >= MOST_CHARACTERS_FROM_A_REPLY {"""
+red = ["service::oauth::tests::test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more"]
+
+[[guard]]
+name = "post_token_request reads a refusal status as a refusal, not as success"
+file = "src/service/oauth.rs"
+before = """    if !status.is_success() {"""
+after = """    if status.is_success() {"""
+red = [
+    "service::oauth::tests::test_a_refusal_status_is_read_as_a_refusal_even_when_its_body_would_parse_as_a_token",
+    "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
+]
