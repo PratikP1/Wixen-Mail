@@ -4314,6 +4314,156 @@ END:VCARD";
     }
 
     #[test]
+    fn test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored() {
+        // The same rule as the company and note above, checked for every
+        // other field a card can carry. Each one is folded in by its own
+        // `or_else(|| held...)`, so each one can silently stop winning on its
+        // own and nothing about the fields around it would say so.
+        let cache = a_cache("vcard_wins_on_every_field");
+        let stale_phones = vec![super::super::PhoneEntry {
+            label: "Old".to_string(),
+            number: "+1-000-000-0000".to_string(),
+        }];
+        let stale_addresses = vec![super::super::AddressEntry {
+            label: "Old".to_string(),
+            street: "1 Stale Street".to_string(),
+            city: "Nowhere".to_string(),
+            state: "NA".to_string(),
+            zip: "00000".to_string(),
+            country: "Nowhere Land".to_string(),
+        }];
+        let stale_custom = vec![super::super::CustomFieldEntry {
+            label: "Old field".to_string(),
+            value: "Old value".to_string(),
+        }];
+        let held = ContactEntry {
+            email: "grace@example.com".to_string(),
+            given_name: Some("StaleGiven".to_string()),
+            family_name: Some("StaleFamily".to_string()),
+            phone: Some("+1-000-000-0000".to_string()),
+            website: Some("https://stale.example/old".to_string()),
+            address: Some("1 Stale Street, Nowhere".to_string()),
+            birthday: Some("1900-01-01".to_string()),
+            avatar_url: Some("https://stale.example/avatar-old.png".to_string()),
+            vcard_raw: Some("stale card text".to_string()),
+            nickname: Some("Stale Nickname".to_string()),
+            department: Some("Stale Department".to_string()),
+            relationship: Some("Stale Relationship".to_string()),
+            phones_json: serde_json::to_string(&stale_phones).ok(),
+            addresses_json: serde_json::to_string(&stale_addresses).ok(),
+            custom_fields_json: serde_json::to_string(&stale_custom).ok(),
+            ..a_contact("held-1", "Stale Name")
+        };
+        cache.save_contact(&held).expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\n\
+                 FN:Grace Brewster Hopper\r\nN:Hopper;Grace;;;\r\n\
+                 NICKNAME:Amazing Grace\r\nEMAIL:grace@example.com\r\n\
+                 TEL;TYPE=WORK:+1-202-555-0100\r\nTEL;TYPE=HOME:+1-202-555-0199\r\n\
+                 ORG:US Navy;Computation\r\nURL:https://example.com/grace-new\r\n\
+                 ADR;TYPE=WORK:;;55 New Address;Arlington;VA;22202;USA\r\n\
+                 ADR;TYPE=HOME:;;1 Home Row;Arlington;VA;22203;USA\r\n\
+                 BDAY:1906-12-09\r\nPHOTO:https://example.com/grace-new.png\r\n\
+                 X-RELATIONSHIP:Mentor\r\nX-CUSTOM:Call sign;Amazing Grace\r\n\
+                 END:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert_eq!(grace.name, "Grace Brewster Hopper");
+        assert_eq!(grace.given_name.as_deref(), Some("Grace"));
+        assert_eq!(grace.family_name.as_deref(), Some("Hopper"));
+        assert_eq!(grace.phone.as_deref(), Some("+1-202-555-0100"));
+        assert_eq!(
+            grace.website.as_deref(),
+            Some("https://example.com/grace-new")
+        );
+        assert_eq!(
+            grace.address.as_deref(),
+            Some("55 New Address, Arlington, VA, 22202, USA")
+        );
+        assert_eq!(grace.birthday.as_deref(), Some("1906-12-09"));
+        assert_eq!(
+            grace.avatar_url.as_deref(),
+            Some("https://example.com/grace-new.png")
+        );
+        assert!(
+            grace
+                .vcard_raw
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Grace Brewster Hopper"),
+            "vcard_raw was not replaced with the new card: {:?}",
+            grace.vcard_raw
+        );
+        assert_eq!(grace.nickname.as_deref(), Some("Amazing Grace"));
+        assert_eq!(grace.department.as_deref(), Some("Computation"));
+        assert_eq!(grace.relationship.as_deref(), Some("Mentor"));
+
+        let phones: Vec<super::super::PhoneEntry> =
+            serde_json::from_str(grace.phones_json.as_deref().expect("a phone list"))
+                .expect("the phone list to read back");
+        assert_eq!(
+            phones.iter().map(|p| p.number.as_str()).collect::<Vec<_>>(),
+            ["+1-202-555-0100", "+1-202-555-0199"]
+        );
+
+        let addresses: Vec<super::super::AddressEntry> =
+            serde_json::from_str(grace.addresses_json.as_deref().expect("an address list"))
+                .expect("the address list to read back");
+        assert_eq!(
+            addresses
+                .iter()
+                .map(|a| a.street.as_str())
+                .collect::<Vec<_>>(),
+            ["55 New Address", "1 Home Row"]
+        );
+
+        let custom: Vec<super::super::CustomFieldEntry> = serde_json::from_str(
+            grace
+                .custom_fields_json
+                .as_deref()
+                .expect("a custom field list"),
+        )
+        .expect("the custom field list to read back");
+        assert_eq!(custom.len(), 1, "{custom:?}");
+        assert_eq!(custom[0].label, "Call sign");
+        assert_eq!(custom[0].value, "Amazing Grace");
+    }
+
+    #[test]
+    fn test_a_cards_inline_photo_also_replaces_a_stored_one() {
+        // The other shape `PHOTO` can take. `avatar_url` is pinned above by
+        // way of a card that names an address for its photo; the silent case
+        // for both is pinned by
+        // `test_a_card_with_no_photo_is_not_a_card_asking_for_the_photo_to_go`.
+        // Inline data is read into a different field on `ContactEntry` and
+        // needs its own proof that a card carrying one wins.
+        let cache = a_cache("vcard_wins_on_inline_photo");
+        let held = ContactEntry {
+            email: "grace@example.com".to_string(),
+            avatar_data_base64: Some("c3RhbGUtcGhvdG8=".to_string()),
+            ..a_contact("held-1", "Grace Hopper")
+        };
+        cache.save_contact(&held).expect("the contact to save");
+
+        cache
+            .import_contacts_from_vcard(
+                "test@example.com",
+                "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\n\
+                 EMAIL:grace@example.com\r\nPHOTO;ENCODING=b:bmV3LXBob3Rv\r\n\
+                 END:VCARD\r\n",
+            )
+            .expect("the import to run");
+
+        let grace = the_only_contact(&cache);
+        assert_eq!(grace.avatar_data_base64.as_deref(), Some("bmV3LXBob3Rv"));
+    }
+
+    #[test]
     fn test_a_card_matched_by_address_keeps_the_addresses_it_is_silent_about() {
         // The decision this pins, and it is the reverse of the one that stood
         // here. The list on the card used to be the whole of what got stored,
