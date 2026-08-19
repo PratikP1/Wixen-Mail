@@ -98,6 +98,25 @@ fn name_or_address(address: &str) -> String {
     else {
         return trimmed.to_string();
     };
+    // parsed.name can never be Some("") or Some("   ") here: parse_addresses
+    // builds a name only through mime::addresses, which trims it and turns
+    // an empty or whitespace-only result into None before this function ever
+    // sees it. So the guard below cannot fail for any value this match
+    // actually receives, and no test can tell it apart from `true`: the
+    // input that would, a present but empty name, can never reach this arm.
+    //
+    // A hand-rolled parser fed this function before it and key_of were both
+    // switched to the shared mime::parse_addresses, and the guard caught a
+    // real case then: an address with nothing before the '<'. Kept rather
+    // than removed, so a future change back to a looser source does not
+    // silently start handing out empty display names; the assertion is what
+    // would notice that happening.
+    if let Some(name) = &parsed.name {
+        debug_assert!(
+            !name.trim().is_empty(),
+            "mime::parse_addresses returned a name that was empty or all whitespace"
+        );
+    }
     match parsed.name {
         Some(name) if !name.trim().is_empty() => name,
         _ => parsed.address,
