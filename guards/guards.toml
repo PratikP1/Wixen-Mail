@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 201 records have arrived since and have not been through it.
+# 216 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -7636,3 +7636,198 @@ red = [
     "service::oauth::tests::test_a_refusal_status_is_read_as_a_refusal_even_when_its_body_would_parse_as_a_token",
     "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
 ]
+
+# ── calendar.rs, contacts_sync.rs, tasks_sync.rs, message_cache/tasks.rs, ──
+# ── message_cache/mod.rs and tasks_api.rs, from the same scoped sweep ───────
+#
+# 17 raw mutant lines across these 7 files (calendar.rs, contacts_sync.rs,
+# tasks_sync.rs, reply.rs, message_cache/tasks.rs, message_cache/mod.rs,
+# tasks_api.rs). Two are genuinely equivalent and documented with a
+# `debug_assert!` instead of a test: calendar.rs's
+# `one_day_of_a_microsoft_series` dropping an explicit `pending` field from a
+# struct literal built with `..series.clone()` (the same shape as
+# caldav_sync.rs's version of this), and reply.rs's `name_or_address` guard,
+# which became unreachable when that function moved onto the shared
+# `mime::parse_addresses` (which already turns an empty or whitespace name
+# into `None` before `name_or_address` ever sees it). Neither gets a guard
+# here; reply.rs contributes none at all.
+#
+# Measured by hand on 2026-08-19: each guard applied alone, against the whole
+# library, reddened exactly the test(s) named and nothing else. Restored and
+# reran green after each.
+
+[[guard]]
+name = "changes_nothing_can_send counts two calendars sharing a reason separately, not together"
+file = "src/application/calendar.rs"
+before = """            .find(|(already, was, _)| *already == name && *was == why)"""
+after = """            .find(|(already, was, _)| *already == name || *was == why)"""
+red = ["application::calendar::tests::test_two_calendars_that_share_a_reason_are_still_said_separately"]
+
+[[guard]]
+name = "EditMeans::spoken is the label with its keyboard letter taken off, not a stub returning nothing"
+file = "src/application/calendar.rs"
+before = """    pub fn spoken(self) -> String {
+        self.label().replace('&', "")
+    }"""
+after = """    pub fn spoken(self) -> String {
+        String::new()
+    }"""
+red = ["application::calendar::tests::test_what_each_answer_is_called_when_it_is_read_out"]
+
+[[guard]]
+name = "EditMeans::spoken is the label with its keyboard letter taken off, not a canned word"
+file = "src/application/calendar.rs"
+before = """    pub fn spoken(self) -> String {
+        self.label().replace('&', "")
+    }"""
+after = """    pub fn spoken(self) -> String {
+        "xyzzy".into()
+    }"""
+red = ["application::calendar::tests::test_what_each_answer_is_called_when_it_is_read_out"]
+
+[[guard]]
+name = "WhereAChangeGoes::named says which calendar it is, not a canned word for all five"
+file = "src/application/calendar.rs"
+before = """    const fn named(self) -> &'static str {
+        match self {
+            Self::ACalendarServer => "your calendar server",
+            Self::Google => "your Google calendar",
+            Self::Outlook => "your Outlook calendar",
+            Self::OnlyReadable => "a calendar this program can only read",
+            Self::KeptHere => "this computer",
+        }
+    }"""
+after = """    const fn named(self) -> &'static str {
+        "xyzzy"
+    }"""
+red = ["application::calendar::tests::test_what_each_calendar_kind_is_called_in_the_middle_of_a_sentence"]
+
+[[guard]]
+name = "further_off_for's extra sentence is a real warning, not a stub returning nothing"
+file = "src/application/calendar.rs"
+before = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
+    match goes {
+        WhereAChangeGoes::OnlyReadable => {
+            " A calendar this program can only read takes no change at all, so \\
+             what you type is kept on this computer and the next refresh writes \\
+             over it."
+        }
+        _ => "",
+    }
+}"""
+after = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
+    ""
+}"""
+red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
+
+[[guard]]
+name = "further_off_for's extra sentence is a real warning, not a canned word for every calendar"
+file = "src/application/calendar.rs"
+before = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
+    match goes {
+        WhereAChangeGoes::OnlyReadable => {
+            " A calendar this program can only read takes no change at all, so \\
+             what you type is kept on this computer and the next refresh writes \\
+             over it."
+        }
+        _ => "",
+    }
+}"""
+after = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
+    "xyzzy"
+}"""
+red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
+
+[[guard]]
+name = "further_off_for's extra sentence is said only for a calendar this program can only read, not for none"
+file = "src/application/calendar.rs"
+before = """        WhereAChangeGoes::OnlyReadable => {
+            " A calendar this program can only read takes no change at all, so \\
+             what you type is kept on this computer and the next refresh writes \\
+             over it."
+        }
+        _ => "","""
+after = """        WhereAChangeGoes::OnlyReadable => "",
+        _ => "","""
+red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
+
+[[guard]]
+name = "what_one_day_will_do never promises a sync for a calendar kept only on this computer"
+file = "src/application/calendar.rs"
+before = """        (_, _) if goes == WhereAChangeGoes::KeptHere => {"""
+after = """        (_, _) if false => {"""
+red = ["application::calendar::tests::test_a_one_day_answer_for_a_calendar_kept_here_never_promises_a_sync"]
+
+[[guard]]
+name = "the Google address book a contacts sync uses really reads one contact back"
+file = "src/application/contacts_sync.rs"
+before = """        GoogleApiClient::get_contact(self, token, provider_contact_id).await"""
+after = """        Ok(Default::default())"""
+red = ["application::contacts_sync::tests::test_the_google_address_book_a_sync_uses_really_reads_one_contact_back"]
+
+[[guard]]
+name = "the Outlook address book a contacts sync uses really reads one contact back"
+file = "src/application/contacts_sync.rs"
+before = """        MsGraphClient::get_contact(self, token, provider_contact_id).await"""
+after = """        Ok(Default::default())"""
+red = ["application::contacts_sync::tests::test_the_outlook_address_book_a_sync_uses_really_reads_one_contact_back"]
+
+[[guard]]
+name = "a contacts sync really lets go of a deletion it has remembered long enough, not a stub that does nothing"
+file = "src/application/contacts_sync.rs"
+before = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut SyncResult) {
+    if let Err(unwritten) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+        cache,
+        chrono::Utc::now(),
+    ) {
+        result
+            .errors
+            .push(format!("Old deletions could not be let go of: {unwritten}"));
+    }
+}"""
+after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut SyncResult) {
+    let _ = (cache, result);
+}"""
+red = ["application::contacts_sync::tests::test_a_contacts_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
+
+[[guard]]
+name = "a tasks sync really lets go of a deletion it has remembered long enough, not a stub that does nothing"
+file = "src/application/tasks_sync.rs"
+before = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut TaskSyncResult) {
+    if let Err(e) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+        cache,
+        chrono::Utc::now(),
+    ) {
+        result
+            .errors
+            .push(format!("Old deletions could not be let go of: {e}"));
+    }
+}"""
+after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut TaskSyncResult) {
+    let _ = (cache, result);
+}"""
+red = ["application::tasks_sync::tests::test_a_tasks_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
+
+[[guard]]
+name = "forgetting a deletion that removed no row reports that nothing was there, not that something was"
+file = "src/data/message_cache/tasks.rs"
+before = """        Ok(removed > 0)"""
+after = """        Ok(removed >= 0)"""
+red = ["data::message_cache::tasks::tests::test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there"]
+
+[[guard]]
+name = "a recorded name carried over has to match the address and have one, not either alone"
+file = "src/data/message_cache/mod.rs"
+before = """                        !held.name.trim().is_empty()
+                            && held.address.trim().eq_ignore_ascii_case(looking_for)"""
+after = """                        !held.name.trim().is_empty()
+                            || held.address.trim().eq_ignore_ascii_case(looking_for)"""
+red = ["data::message_cache::tests::test_the_recorded_name_carried_over_has_to_match_the_address_and_have_one"]
+
+[[guard]]
+name = "TaskProgress::stored reads notStarted back to NotStarted, the word Graph actually sends"
+file = "src/service/tasks_api.rs"
+before = """            "notStarted" => Some(Self::NotStarted),
+            "inProgress" => Some(Self::InProgress),"""
+after = """            "inProgress" => Some(Self::InProgress),"""
+red = ["service::tasks_api::tests::test_every_progress_word_graph_sends_reads_back_to_the_state_it_named"]
