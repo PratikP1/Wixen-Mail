@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 172 records have arrived since and have not been through it.
+# 184 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -7256,3 +7256,170 @@ after = """        Until::AfterTimes(times) => MsRecurrenceRange {
             ..Default::default()
         },"""
 red = ["application::repeating::tests::test_every_ending_tells_outlook_the_same_start_date_for_the_range"]
+
+# ── caldav.rs and caldav_sync.rs, from the same scoped sweep ────────────────
+#
+# caldav.rs: 16 misses in scope, including 4 of the round's 5 TIMEOUTs. The
+# four TIMEOUTs (events_in's two, fits_in's two) are hand-confirmed genuine
+# infinite loops that existing tests already reach; nothing needed fixing and
+# nothing here can guard a mutation that never lets the runner finish. Three
+# more misses are genuinely equivalent, each documented with a
+# `debug_assert!`/`debug_assert_ne!` rather than a test: events_in's
+# `closed + 1` against `closed * 1` (an event's own close line can never also
+# be read as opening one, proven structurally); parameter_named_on's
+# `semicolon > colon` against `>=` (a byte position can hold only one
+# character, so the two can never name the same position); and
+# parameter_named_on's slice starting at the semicolon itself rather than
+# past it (an empty leading fragment never contains `=`, so it is always
+# skipped the same way regardless). The other 9 are guarded below.
+#
+# caldav_sync.rs: 4 misses. One, `one_caldav_day_kept_out_of_its_series`
+# dropping the explicit `pending` field from a struct literal built with
+# `..series.clone()`, is genuinely equivalent for the same reason as
+# calendar.rs's own version of this pattern, and is already a
+# `debug_assert_eq!` in the source. The other 3 are guarded below.
+#
+# Measured by hand on 2026-08-19: each guard applied alone, against the whole
+# library, reddened exactly the test named and nothing else. Restored and
+# reran green after each.
+
+[[guard]]
+name = "zone_left_undefined counts entering a timezone block, not scaling the count"
+file = "src/service/caldav.rs"
+before = """    for line in &lines {
+        if names_the_timezone(component_opened(line)) {
+            inside += 1;
+            continue;
+        }"""
+after = """    for line in &lines {
+        if names_the_timezone(component_opened(line)) {
+            inside *= 1;
+            continue;
+        }"""
+red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
+
+[[guard]]
+name = "zone_left_undefined only skips a parameter while still inside a timezone block"
+file = "src/service/caldav.rs"
+before = """        if inside > 0 {
+            continue;
+        }"""
+after = """        if inside < 0 {
+            continue;
+        }"""
+red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
+
+[[guard]]
+name = "a marker is refused unless what follows it is a clean single word"
+file = "src/service/caldav.rs"
+before = """    let is_a_component_name = !named.is_empty() && !named.contains([':', ';', ',', ' ', '\\t']);"""
+after = """    let is_a_component_name = !named.is_empty() || !named.contains([':', ';', ',', ' ', '\\t']);"""
+red = ["service::caldav::tests::test_a_marker_is_refused_unless_what_follows_it_is_a_clean_single_word"]
+
+[[guard]]
+name = "ical_duration's one_unit refuses a run of digits that is empty or carries a non-digit"
+file = "src/service/caldav.rs"
+before = """        (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))"""
+after = """        (!digits.is_empty() || digits.bytes().all(|b| b.is_ascii_digit()))"""
+red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
+
+[[guard]]
+name = "ical_duration's seconds unit adds onto the running total, not subtracts"
+file = "src/service/caldav.rs"
+before = """            if let Some((secs, after)) = one_unit(rest, 'S') {
+                seconds += secs;
+                rest = after;
+                named_something = true;
+            }"""
+after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
+                seconds -= secs;
+                rest = after;
+                named_something = true;
+            }"""
+red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
+
+[[guard]]
+name = "ical_duration's seconds unit adds onto the running total, not multiplies it"
+file = "src/service/caldav.rs"
+before = """            if let Some((secs, after)) = one_unit(rest, 'S') {
+                seconds += secs;
+                rest = after;
+                named_something = true;
+            }"""
+after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
+                seconds *= secs;
+                rest = after;
+                named_something = true;
+            }"""
+red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
+
+[[guard]]
+name = "a property name ending in more than one octet does not move the delimiter mid character"
+file = "src/service/caldav.rs"
+before = """    parameter_among(&line[semicolon + 1..colon], parameter).map(str::to_string)"""
+after = """    parameter_among(&line[semicolon - 1..colon], parameter).map(str::to_string)"""
+red = ["service::caldav::tests::test_a_property_name_ending_in_more_than_one_octet_does_not_move_the_delimiter_mid_character"]
+
+[[guard]]
+name = "a cancelled day is a whole day only at exactly eight digits"
+file = "src/service/caldav.rs"
+before = """    if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {"""
+after = """    if bytes.len() == 8 || bytes.iter().all(u8::is_ascii_digit) {"""
+red = ["service::caldav::tests::test_a_cancelled_day_is_a_whole_day_only_at_exactly_eight_digits"]
+
+[[guard]]
+name = "the occurrence change has to come back out of its own VEVENT, not be assumed"
+file = "src/service/caldav.rs"
+before = """fn the_occurrence_came_back_out(
+    document: &str,
+    uid: &str,
+    recurrence_id: &str,
+    meant: &[String],
+) -> bool {
+    let lines = unfolded(document);
+    let events = events_in(&lines);
+    let Some(its) = the_occurrence_named(&events, &lines, uid, recurrence_id) else {
+        return false;
+    };
+    if its.closed_on.is_none() {
+        return false;
+    }
+    let came_back_out: Vec<&str> = lines_at(&lines, &its.its_own)
+        .into_iter()
+        .filter(|line| a_change_replaces(line))
+        .collect();
+    came_back_out == meant.iter().map(String::as_str).collect::<Vec<&str>>()
+}"""
+after = """fn the_occurrence_came_back_out(
+    document: &str,
+    uid: &str,
+    recurrence_id: &str,
+    meant: &[String],
+) -> bool {
+    let _ = (document, uid, recurrence_id, meant);
+    true
+}"""
+red = ["service::caldav::writing_tests::test_the_occurrence_change_has_to_come_back_out_of_its_own_vevent"]
+
+[[guard]]
+name = "deletions_waiting counts only this calendar's own notes still owed"
+file = "src/application/caldav_sync.rs"
+before = """                note.so_far.still_owed()
+                    && note.calendar_id.as_deref() == Some(calendar.id.as_str())"""
+after = """                note.so_far.still_owed()
+                    || note.calendar_id.as_deref() == Some(calendar.id.as_str())"""
+red = ["application::caldav_sync::tests::test_deletions_waiting_counts_only_this_calendars_own_notes_still_owed"]
+
+[[guard]]
+name = "a cancelled caldav day only counts as deleted when something about it really changed, not always"
+file = "src/application/caldav_sync.rs"
+before = """            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;"""
+after = """            the_day_went &= went == crate::application::calendar::ADayWent::OffTheSeries;"""
+red = ["application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed"]
+
+[[guard]]
+name = "a cancelled caldav day is counted deleted when it really left the series, not when it did not"
+file = "src/application/caldav_sync.rs"
+before = """            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;"""
+after = """            the_day_went |= went != crate::application::calendar::ADayWent::OffTheSeries;"""
+red = ["application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed"]
