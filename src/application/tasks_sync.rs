@@ -2716,6 +2716,41 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_a_tasks_sync_lets_go_of_a_deletion_it_has_remembered_long_enough() {
+        // The clock-driven half of the same rule: a note the provider has
+        // taken is a memory, not work, and the sweep that releases it only
+        // runs if a sync really calls it. Wired nowhere, it is a rule that
+        // says "remembered for ever" and a table that only grows, and
+        // nothing else in the suite would notice.
+        let cache = a_cache("tasks_sync_drains_old_deletions");
+        a_list(&cache, "ms:list");
+        cache.save_task(&task("google:t1")).expect("a task");
+        cache.delete_task("google:t1").expect("the deletion");
+        let long_ago = chrono::Utc::now()
+            - crate::application::deletions::HOW_LONG_A_DELETION_IS_REMEMBERED
+            - chrono::Duration::days(1);
+        cache
+            .the_provider_took_the_deletion_of_a_task(
+                "google:t1",
+                &crate::application::deletions::written(long_ago),
+            )
+            .expect("the deletion to be marked as taken long ago");
+
+        sync_google_tasks(&cache, &Scripted::default(), "token", "acc-1")
+            .await
+            .expect("the sync runs");
+
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .is_empty(),
+            "a tasks sync never let go of a deletion it had remembered long \
+             enough, so the table only grows"
+        );
+    }
+
     #[test]
     fn test_a_list_that_went_is_said_rather_than_left_to_be_noticed() {
         // A list vanishing is a bigger event to the person than a task
