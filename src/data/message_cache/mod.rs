@@ -2627,6 +2627,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_the_recorded_name_carried_over_has_to_match_the_address_and_have_one() {
+        // Both halves of the guard have to hold together: a recorded entry
+        // supplies its name only when its own address is the one being
+        // looked up, and only when it actually has a name to give. A
+        // recorded entry with a name and a different address must not slip
+        // a stranger's name onto this one.
+        let recorded = vec![
+            EmailEntry {
+                label: "Work".to_string(),
+                address: "outlook-only@example.com".to_string(),
+                name: "Maiden Name".to_string(),
+            },
+            EmailEntry {
+                label: "Home".to_string(),
+                address: "unnamed@example.com".to_string(),
+                name: String::new(),
+            },
+        ];
+
+        // The address matches, case and surrounding space aside, and the
+        // recorded entry has a name: filled in.
+        let filled = EmailEntry::with_the_names_already_recorded(
+            vec![EmailEntry {
+                label: "Work".to_string(),
+                address: " Outlook-Only@Example.com ".to_string(),
+                name: String::new(),
+            }],
+            &recorded,
+        );
+        assert_eq!(filled[0].name, "Maiden Name");
+
+        // A different address is recorded with a name, but this address is
+        // not it, so the mismatch has to win. A recorded entry's non-empty
+        // name alone must not be enough on its own.
+        let mismatched = EmailEntry::with_the_names_already_recorded(
+            vec![EmailEntry {
+                label: "Work".to_string(),
+                address: "somebody-else@example.com".to_string(),
+                name: String::new(),
+            }],
+            &recorded,
+        );
+        assert_eq!(mismatched[0].name, "");
+
+        // The address matches, but the recorded entry has no name to give:
+        // also left blank, not filled with an empty string that would then
+        // read as "found and it is blank" instead of "nothing recorded".
+        let nothing_to_give = EmailEntry::with_the_names_already_recorded(
+            vec![EmailEntry {
+                label: "Home".to_string(),
+                address: "unnamed@example.com".to_string(),
+                name: String::new(),
+            }],
+            &recorded,
+        );
+        assert_eq!(nothing_to_give[0].name, "");
+    }
+
+    #[test]
     fn test_message_cache_creation() {
         let temp_dir = tempfile::tempdir().expect("a temporary folder");
         let cache = MessageCache::new(temp_dir.path().to_path_buf(), None);
