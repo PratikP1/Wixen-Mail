@@ -2909,6 +2909,23 @@ mod tests {
     }
 
     #[test]
+    fn test_a_department_survives_export_even_with_no_company_recorded() {
+        // ORG carries the company and the department in one property, and
+        // either half can be missing on its own. A contact with a department
+        // and no company recorded still needs the line written, or importing
+        // this export back loses the department with nothing to say so.
+        let original = ContactEntry {
+            email: "grace@example.com".to_string(),
+            department: Some("Research".to_string()),
+            ..a_contact("dept-only", "Grace Hopper")
+        };
+        let read_back = out_to_a_card_and_back(&original);
+
+        assert_eq!(read_back.department.as_deref(), Some("Research"));
+        assert_eq!(read_back.company, None, "{:?}", read_back.company);
+    }
+
+    #[test]
     fn test_folding_counts_octets_rather_than_characters() {
         // RFC 6350 counts octets. Folding by characters puts a 75 character
         // line of three-byte characters at 225 octets, which other clients
