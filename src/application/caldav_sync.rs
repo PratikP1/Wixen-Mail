@@ -1000,6 +1000,19 @@ fn one_caldav_day_kept_out_of_its_series(
                 crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
             let (after, went) =
                 crate::application::calendar::with_one_more_day_called_off(&series, &called_off);
+            // `with_one_more_day_called_off`'s own doc comment says it: "whether
+            // the change is waiting to be sent is left exactly as the series had
+            // it", built through `..series.clone()`. So `after.pending` already
+            // equals `series.pending` before the line below asks for it again;
+            // named here anyway so this call reads the same as its sibling in
+            // `application::calendar::one_day_called_off`, which does have to
+            // override it, and a reader comparing the two is not left to work
+            // out which of them is the redundant one.
+            debug_assert_eq!(
+                after.pending, series.pending,
+                "with_one_more_day_called_off changed whether the series was \
+                 waiting to be sent, which its own doc comment says it does not"
+            );
             cache.save_calendar_event(&CalendarEventEntry {
                 pending: series.pending,
                 ..after
@@ -1558,6 +1571,175 @@ mod tests {
             exception_dates: None,
             cut_from_event_id: None,
             provider_recurrence_id: None,
+        }
+    }
+
+    #[test]
+    fn test_deletions_waiting_counts_only_this_calendars_own_notes_still_owed() {
+        // `deletions_waiting` is asked once per calendar, on every sync, and
+        // its own doc comment states the one promise: only a note this
+        // calendar owns and the provider has not yet taken. Getting either
+        // half wrong is a real defect and each looks different. A note for a
+        // different calendar in the same account would be sent to a server
+        // that never held it. A note this calendar already sent would be
+        // sent again on every sync from now on, which is exactly what
+        // keeping the note after it is taken exists to prevent.
+        let cache = temp_cache("deletions-waiting-scope");
+        let calendar = container("cal-a", "acct");
+
+        let owed_here = held_event("evt-owed-here", "uid-owed-here", "cal-a", "acct");
+        cache
+            .save_calendar_event(&owed_here)
+            .expect("the event to be saved");
+        cache
+            .delete_calendar_event(&owed_here.id)
+            .expect("the deletion to be noted");
+
+        let owed_elsewhere =
+            held_event("evt-owed-elsewhere", "uid-owed-elsewhere", "cal-b", "acct");
+        cache
+            .save_calendar_event(&owed_elsewhere)
+            .expect("the event to be saved");
+        cache
+            .delete_calendar_event(&owed_elsewhere.id)
+            .expect("the deletion to be noted");
+
+        let already_taken = held_event("evt-taken-here", "uid-taken-here", "cal-a", "acct");
+        cache
+            .save_calendar_event(&already_taken)
+            .expect("the event to be saved");
+        cache
+            .delete_calendar_event(&already_taken.id)
+            .expect("the deletion to be noted");
+        cache
+            .the_provider_took_the_deletion_of_an_event(&already_taken.id, "2026-01-01T00:00:00Z")
+            .expect("the deletion to be marked taken");
+
+        let mut result = CalendarSyncResult::default();
+        let waiting = deletions_waiting(&cache, &calendar, "acct", &mut result);
+
+        assert_eq!(
+            waiting
+                .iter()
+                .map(|note| note.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["evt-owed-here"],
+            "a note for a different calendar, or one the provider already \
+             took, was sent anyway"
+        );
+    }
+
+    #[test]
+    fn test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed() {
+        // `the_day_went` folds two independent signals into the one flag
+        // `result.deleted` is counted from: whether a standalone row for the
+        // day existed and was removed, and whether the day was newly taken
+        // off the series (`ADayWent::OffTheSeries`) rather than already off
+        // it (`ADayWent::ItWasAlreadyOff`). Swapping the `|=` for `&=`, or
+        // trading `==` for `!=`, both survive every other test in this file
+        // because they only disagree with the right answer when exactly one
+        // of the two signals fires. The table below forces every
+        // combination, including the one case, no standalone row and
+        // nothing new in the series, that neither mutation was ever asked
+        // to answer honestly.
+        let cache = temp_cache("caldav-day-kept-out-flag");
+        let account_id = "acct";
+        let calendar_id = "cal-a";
+
+        let cases = [
+            (
+                "a fresh cancellation with a standalone row already here",
+                true,
+                false,
+                1,
+            ),
+            (
+                "a repeat cancellation that still has a standalone row here",
+                true,
+                true,
+                1,
+            ),
+            (
+                "a fresh cancellation reaching the series for the first time",
+                false,
+                false,
+                1,
+            ),
+            (
+                "a repeat cancellation with nothing left here to change",
+                false,
+                true,
+                0,
+            ),
+        ];
+        for (index, (case, standalone_row_exists, already_off_in_the_series, expected_deleted)) in
+            cases.into_iter().enumerate()
+        {
+            let uid = format!("series-{index}");
+            let recurrence_id = "2026-03-12T09:00:00Z";
+            let compound_id = format!("{uid}:{recurrence_id}");
+
+            let mut series = held_event(
+                &format!("series-row-{index}"),
+                &uid,
+                calendar_id,
+                account_id,
+            );
+            if already_off_in_the_series {
+                series.exception_dates = Some(crate::service::caldav::the_called_off_value_for(
+                    recurrence_id,
+                    false,
+                ));
+            }
+            cache
+                .save_calendar_event(&series)
+                .expect("the series to be saved");
+
+            if standalone_row_exists {
+                let mut standalone = held_event(
+                    &format!("standalone-row-{index}"),
+                    &compound_id,
+                    calendar_id,
+                    account_id,
+                );
+                standalone.provider_recurrence_id = Some(recurrence_id.to_string());
+                cache
+                    .save_calendar_event(&standalone)
+                    .expect("the standalone row to be saved");
+            }
+
+            let changed = CalDavEvent {
+                url: String::new(),
+                uid: uid.clone(),
+                etag: None,
+                ical_data: String::new(),
+                summary: "Weekly review".to_string(),
+                description: None,
+                location: None,
+                dtstart: recurrence_id.to_string(),
+                dtend: None,
+                is_all_day: false,
+                status: "CANCELLED".to_string(),
+                time_zone: None,
+                recurrence_rule: None,
+                exception_dates: None,
+                recurrence_id: Some(recurrence_id.to_string()),
+            };
+            let mut seen_uids = std::collections::HashSet::new();
+            let mut result = CalendarSyncResult::default();
+
+            one_caldav_day_kept_out_of_its_series(
+                &cache,
+                (account_id, calendar_id),
+                &changed,
+                recurrence_id,
+                &crate::application::deletions::DeletedHere::default(),
+                &mut seen_uids,
+                &mut result,
+            )
+            .expect("the fold to succeed");
+
+            assert_eq!(result.deleted, expected_deleted, "{case}");
         }
     }
 
