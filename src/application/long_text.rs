@@ -379,6 +379,152 @@ mod markup {
             }
         }
     }
+
+    /// Direct tests of the tree walk, one tag at a time.
+    ///
+    /// [`super::from_markup`]'s own tests exercise a few tags together and
+    /// check the words survived; that misses a tag whose own arm was lost as
+    /// long as some other arm's fallback happens to carry its text along
+    /// anyway. These call [`blocks`] and [`inline`] straight, without
+    /// `ammonia::clean` first, and check the exact markdown each tag is
+    /// supposed to produce.
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn blocks_output(html: &str) -> String {
+            let fragment = scraper::Html::parse_fragment(html);
+            let mut out = String::new();
+            blocks(*fragment.root_element(), &mut out);
+            out
+        }
+
+        fn inline_output(html: &str) -> String {
+            let fragment = scraper::Html::parse_fragment(html);
+            let mut out = String::new();
+            inline(*fragment.root_element(), &mut out);
+            out
+        }
+
+        #[test]
+        fn test_bare_text_with_no_tag_around_it_becomes_a_paragraph() {
+            // A provider does not have to wrap every word in a `<p>`.
+            assert_eq!(blocks_output("Hello world"), "Hello world\n\n");
+        }
+
+        #[test]
+        fn test_whitespace_only_text_contributes_nothing() {
+            // The inter-tag whitespace `scraper` hands back as its own text
+            // node must not turn into a blank paragraph.
+            assert_eq!(blocks_output("   \n  "), "");
+        }
+
+        #[test]
+        fn test_a_paragraph_joins_its_inline_content_into_one_line() {
+            // Without its own arm a `<p>` is walked as a container instead of
+            // read inline, and "See the" and "report" would land as two
+            // separate paragraphs instead of one sentence.
+            assert_eq!(
+                blocks_output(r#"<p>See the <a href="https://example.com/q">report</a></p>"#),
+                "See the report\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph() {
+            assert_eq!(
+                blocks_output(r#"<div>See the <a href="https://example.com/q">report</a></div>"#),
+                "See the report\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_bullet_list_does_not_run_into_the_paragraph_after_it() {
+            // `list` ends with a blank line of its own for exactly this
+            // reason. Without the "ul" arm, `<li>`'s own arm still finds each
+            // item, but that closing blank line is never written, and the
+            // paragraph after the list would be read as a lazy continuation
+            // of the last bullet rather than a sentence of its own.
+            assert_eq!(
+                blocks_output("<ul><li>A</li></ul><p>Next</p>"),
+                "- A\n\nNext\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_numbered_list_counts_its_items_instead_of_bulleting_them() {
+            // Without the "ol" arm, the standalone "li" arm still finds each
+            // item, but always as an unnumbered bullet: the numbers "1.",
+            // "2." are `list`'s own counter, only reached from here.
+            assert_eq!(
+                blocks_output("<ol><li>First</li><li>Second</li></ol>"),
+                "1. First\n2. Second\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_list_item_with_no_list_around_it_still_becomes_a_bullet() {
+            // Malformed, but a bullet is a better answer than dropping it.
+            assert_eq!(blocks_output("<li>Stray</li>"), "- Stray\n");
+        }
+
+        #[test]
+        fn test_a_blockquote_with_no_paragraph_inside_is_quoted_as_one_line() {
+            assert_eq!(
+                blocks_output("<blockquote>Ask about the invoice</blockquote>"),
+                "> Ask about the invoice\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_blockquote_quotes_each_paragraph_on_its_own_line() {
+            // Each `<p>` inside gets its own "> " line. Losing that either
+            // drops the quote marker or runs every paragraph together.
+            assert_eq!(
+                blocks_output("<blockquote><p>First</p><p>Second</p></blockquote>"),
+                "> First\n\n> Second\n\n"
+            );
+        }
+
+        #[test]
+        fn test_a_bare_line_break_between_blocks_is_a_newline() {
+            assert_eq!(blocks_output("<br>"), "\n");
+        }
+
+        #[test]
+        fn test_a_script_reaching_the_block_walk_directly_is_silently_dropped() {
+            // `ammonia::clean` already removes a `<script>` element with its
+            // content before `blocks` ever runs in `from_markup`, so this arm
+            // is not reached that way. It is kept, and tested here against
+            // the tree walk directly, so a future change to that allowlist
+            // fails safe rather than reading a stranger's script aloud.
+            assert_eq!(blocks_output("<script>steal()</script>"), "");
+        }
+
+        #[test]
+        fn test_a_style_reaching_the_block_walk_directly_is_silently_dropped() {
+            assert_eq!(blocks_output("<style>body { color: red }</style>"), "");
+        }
+
+        #[test]
+        fn test_a_line_break_inside_inline_text_becomes_a_space() {
+            // Two words either side of a `<br>` must not run together.
+            assert_eq!(inline_output("A<br>B"), "A B");
+        }
+
+        #[test]
+        fn test_an_image_inside_inline_text_contributes_its_alt_text() {
+            assert_eq!(
+                inline_output(r#"<img alt="Revenue chart">"#),
+                "Revenue chart"
+            );
+        }
+
+        #[test]
+        fn test_a_script_reaching_inline_text_directly_is_silently_dropped() {
+            assert_eq!(inline_output("<script>steal()</script>"), "");
+        }
+    }
 }
 
 /// The first line of a long field, for a list column.
