@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 158 records have arrived since and have not been through it.
+# 172 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -7056,3 +7056,203 @@ file = "src/data/message_cache/contacts.rs"
 before = """                    read.not_written_down += 1;"""
 after = """                    read.not_written_down *= 1;"""
 red = ["data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file"]
+
+# ── vtimezone.rs's yearly-rule detection and repeating.rs's Outlook range ──
+#
+# A scoped sweep of `src/service/vtimezone.rs` found 15 missed mutants and 1
+# TIMEOUT; `src/application/repeating.rs` found 2. Twelve of the fifteen
+# vtimezone.rs misses are guarded below. The rest: `the_change_between`'s `>`
+# against `>=` is genuinely equivalent (its only caller only ever supplies a
+# gap that is a whole number of days, so the two operators can never diverge
+# in what they return) and is documented with a `debug_assert!`; the two
+# December-branch mutants on `year + 1` are equivalent for a different reason
+# (December always holds 31 days, so the function's return value cannot tell
+# `year + 1` apart from `year - 1` or `year` itself); and the TIMEOUT in
+# `changes_within` (`<` against `<=`, a genuine infinite loop once `at`
+# reaches `end`) was closed with a `debug_assert!` on the loop's forward
+# progress, not a test. None of those four get a guard here.
+#
+# The three `one_yearly_rule` onset guards share one `before`: the whole
+# four-line condition, with three `||`. Applying cargo-mutants' actual
+# AST-level swap for the middle and rightmost operators needs explicit
+# parentheses, since `&&` binds tighter than `||` in Rust and a naive
+# in-place substitution would test a different expression than the one the
+# sweep actually reported.
+#
+# Measured by hand on 2026-08-19: each guard applied alone, against the
+# whole library, reddened exactly the test(s) named and nothing else.
+# Restored and reran green after each.
+
+[[guard]]
+name = "one_yearly_rule rejects a year whose onset breaks the pattern on the year itself"
+file = "src/service/vtimezone.rs"
+before = """        if onset.year() != *year
+            || onset.month() != first.month()
+            || onset.time() != first.time()
+            || onset.weekday() != first.weekday()"""
+after = """        if onset.year() != *year
+            && onset.month() != first.month()
+            || onset.time() != first.time()
+            || onset.weekday() != first.weekday()"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_rejects_a_year_whose_onset_breaks_the_pattern"]
+
+[[guard]]
+name = "one_yearly_rule rejects a year whose onset breaks the pattern on the month"
+file = "src/service/vtimezone.rs"
+before = """        if onset.year() != *year
+            || onset.month() != first.month()
+            || onset.time() != first.time()
+            || onset.weekday() != first.weekday()"""
+after = """        if (onset.year() != *year || onset.month() != first.month())
+            && onset.time() != first.time()
+            || onset.weekday() != first.weekday()"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_rejects_a_year_whose_onset_breaks_the_pattern"]
+
+[[guard]]
+name = "one_yearly_rule rejects a year whose onset breaks the pattern on the time or weekday"
+file = "src/service/vtimezone.rs"
+before = """        if onset.year() != *year
+            || onset.month() != first.month()
+            || onset.time() != first.time()
+            || onset.weekday() != first.weekday()"""
+after = """        if (onset.year() != *year || onset.month() != first.month() || onset.time() != first.time())
+            && onset.weekday() != first.weekday()"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_rejects_a_year_whose_onset_breaks_the_pattern"]
+
+[[guard]]
+name = "one_yearly_rule rejects a year whose offsets do not match the rest"
+file = "src/service/vtimezone.rs"
+before = """        change.from_seconds != group[0].from_seconds || change.to_seconds != group[0].to_seconds"""
+after = """        change.from_seconds != group[0].from_seconds && change.to_seconds != group[0].to_seconds"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_rejects_a_year_whose_offsets_do_not_match_the_rest"]
+
+[[guard]]
+name = "one_yearly_rule's is_last is a day-count comparison, not one that never trips early"
+file = "src/service/vtimezone.rs"
+before = """        |onset: &NaiveDateTime| onset.day() + 7 > days_in_month(onset.year(), onset.month());"""
+after = """        |onset: &NaiveDateTime| onset.day() + 7 >= days_in_month(onset.year(), onset.month());"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month"]
+
+[[guard]]
+name = "one_yearly_rule's is_last adds seven days, rather than scaling the day of month"
+file = "src/service/vtimezone.rs"
+before = """        |onset: &NaiveDateTime| onset.day() + 7 > days_in_month(onset.year(), onset.month());"""
+after = """        |onset: &NaiveDateTime| onset.day() * 7 > days_in_month(onset.year(), onset.month());"""
+red = ["service::vtimezone::tests::test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month"]
+
+[[guard]]
+name = "listed_blocks keeps each pair of offsets in its own block"
+file = "src/service/vtimezone.rs"
+before = """            .filter(|change| change.from_seconds == from && change.to_seconds == to)"""
+after = """            .filter(|change| change.from_seconds == from || change.to_seconds == to)"""
+red = ["service::vtimezone::tests::test_listed_blocks_keeps_each_pair_of_offsets_in_its_own_block"]
+
+[[guard]]
+name = "days_in_month is a real computation, not a stub returning nought"
+file = "src/service/vtimezone.rs"
+before = """fn days_in_month(year: i32, month: u32) -> u32 {
+    let next_month = if month == 12 {
+        // `year + 1` names which January this is, but December holds
+        // thirty-one days in every year the Gregorian calendar has, so the
+        // day this function actually returns cannot tell that year apart
+        // from `year - 1` or `year` itself. Written as `+ 1` because that is
+        // what next January actually is, not because a test could tell it
+        // from another year's January here.
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1)
+    };
+    next_month
+        .and_then(|first| first.pred_opt())
+        .map_or(31, |last| last.day())
+}"""
+after = """fn days_in_month(year: i32, month: u32) -> u32 {
+    0
+}"""
+red = [
+    "service::vtimezone::tests::test_how_many_days_a_month_holds",
+    "service::vtimezone::tests::test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month",
+]
+
+[[guard]]
+name = "days_in_month is a real computation, not a stub returning one"
+file = "src/service/vtimezone.rs"
+before = """fn days_in_month(year: i32, month: u32) -> u32 {
+    let next_month = if month == 12 {
+        // `year + 1` names which January this is, but December holds
+        // thirty-one days in every year the Gregorian calendar has, so the
+        // day this function actually returns cannot tell that year apart
+        // from `year - 1` or `year` itself. Written as `+ 1` because that is
+        // what next January actually is, not because a test could tell it
+        // from another year's January here.
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1)
+    };
+    next_month
+        .and_then(|first| first.pred_opt())
+        .map_or(31, |last| last.day())
+}"""
+after = """fn days_in_month(year: i32, month: u32) -> u32 {
+    1
+}"""
+red = [
+    "service::vtimezone::tests::test_how_many_days_a_month_holds",
+    "service::vtimezone::tests::test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month",
+]
+
+[[guard]]
+name = "days_in_month's December check is month == 12, not != 12"
+file = "src/service/vtimezone.rs"
+before = """    let next_month = if month == 12 {"""
+after = """    let next_month = if month != 12 {"""
+red = ["service::vtimezone::tests::test_how_many_days_a_month_holds"]
+
+[[guard]]
+name = "days_in_month's non-December branch looks at next month, not the month before"
+file = "src/service/vtimezone.rs"
+before = """        NaiveDate::from_ymd_opt(year, month + 1, 1)"""
+after = """        NaiveDate::from_ymd_opt(year, month - 1, 1)"""
+red = ["service::vtimezone::tests::test_how_many_days_a_month_holds"]
+
+[[guard]]
+name = "days_in_month's non-December branch adds a month, rather than multiplying it"
+file = "src/service/vtimezone.rs"
+before = """        NaiveDate::from_ymd_opt(year, month + 1, 1)"""
+after = """        NaiveDate::from_ymd_opt(year, month * 1, 1)"""
+red = [
+    "service::vtimezone::tests::test_how_many_days_a_month_holds",
+    "service::vtimezone::tests::test_one_yearly_rule_does_not_call_a_year_last_when_the_same_weekday_recurs_in_the_month",
+]
+
+[[guard]]
+name = "as_outlook_says_it carries the start date on an end-date range, not just the never-ending one"
+file = "src/application/repeating.rs"
+before = """        Until::OnDate(last_day) => MsRecurrenceRange {
+            range_type: "endDate".to_string(),
+            start_date: starts_on.to_string(),
+            end_date: Some(last_day.clone()),
+            ..Default::default()
+        },"""
+after = """        Until::OnDate(last_day) => MsRecurrenceRange {
+            range_type: "endDate".to_string(),
+            end_date: Some(last_day.clone()),
+            ..Default::default()
+        },"""
+red = ["application::repeating::tests::test_every_ending_tells_outlook_the_same_start_date_for_the_range"]
+
+[[guard]]
+name = "as_outlook_says_it carries the start date on a numbered range, not just the never-ending one"
+file = "src/application/repeating.rs"
+before = """        Until::AfterTimes(times) => MsRecurrenceRange {
+            range_type: "numbered".to_string(),
+            start_date: starts_on.to_string(),
+            number_of_occurrences: Some(*times),
+            ..Default::default()
+        },"""
+after = """        Until::AfterTimes(times) => MsRecurrenceRange {
+            range_type: "numbered".to_string(),
+            number_of_occurrences: Some(*times),
+            ..Default::default()
+        },"""
+red = ["application::repeating::tests::test_every_ending_tells_outlook_the_same_start_date_for_the_range"]
