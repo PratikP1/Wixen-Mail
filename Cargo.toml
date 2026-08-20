@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.23.1"
+version = "0.24.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
