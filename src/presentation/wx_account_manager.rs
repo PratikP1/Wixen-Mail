@@ -33,6 +33,8 @@ use crate::presentation::status_line::said_and_shown;
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -57,13 +59,21 @@ pub enum AccountManagerAction {
 /// The Account Manager's own list window, returned so a test can build it
 /// without a human closing a live modal.
 ///
-/// Only the chrome `show_account_manager_dialog`'s own loop still needs after
-/// construction: the buttons are wired to `end_modal` entirely inside
-/// [`build_account_manager_dialog`] and are never referred to again.
+/// `dialog`, `list` and `status` are what `show_account_manager_dialog`'s own
+/// loop still needs after construction; Add, Edit and Close are wired to
+/// `end_modal` entirely inside [`build_account_manager_dialog`] and are
+/// never referred to again. `reauthorize`, `delete`, `set_default` and
+/// `set_active` are handed to [`wire_account_manager_actions`] instead,
+/// which wires each straight to the function that does its work rather than
+/// to `end_modal`; see that function's own doc comment for why.
 pub struct AccountManagerDialogHandles {
     pub dialog: Dialog,
     pub list: ListCtrl,
     pub status: StaticText,
+    reauthorize: Button,
+    delete: Button,
+    set_default: Button,
+    set_active: Button,
 }
 
 pub fn show_account_manager_dialog(
@@ -82,24 +92,26 @@ pub fn show_account_manager_dialog(
         palette,
     );
 
-    let mut state = AccountManagerState {
+    let state = Rc::new(RefCell::new(AccountManagerState {
         working: accounts.to_vec(),
         active_id: active_account_id.map(|s| s.to_string()),
         default_id: default_account_id.map(|s| s.to_string()),
         changed: false,
-    };
+    }));
 
-    run_account_manager_loop(&widgets, &mut state, a11y, palette);
+    wire_account_manager_actions(&widgets, &state, a11y);
+    run_account_manager_loop(&widgets, &state, a11y, palette);
 
-    if state.changed {
+    let outcome = state.borrow();
+    if outcome.changed {
         AccountManagerAction::Updated {
             // Corrected against what is actually configured, in case the
             // default account was the one just deleted.
             default_id: crate::application::new_item::default_after_change(
-                &state.working,
-                state.default_id.as_deref(),
+                &outcome.working,
+                outcome.default_id.as_deref(),
             ),
-            accounts: state.working,
+            accounts: outcome.working.clone(),
         }
     } else {
         AccountManagerAction::None
@@ -213,36 +225,17 @@ pub fn build_account_manager_dialog(
             d.end_modal(ID_EDIT);
         }
     });
-    del.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_DELETE);
-        }
-    });
-    reauth.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_REAUTHORIZE);
-        }
-    });
-    set_default.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_SET_DEFAULT);
-        }
-    });
-    active.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_SET_ACTIVE);
-        }
-    });
     close.on_click({
         let d = dlg;
         move |_| {
             d.end_modal(ID_OK);
         }
     });
+    // Delete, Sign In Again, Set Default and Set Active are deliberately
+    // wired to nothing here. Each used to end this modal with its own ID,
+    // the same as the four buttons above; [`wire_account_manager_actions`]
+    // wires them instead, once this dialog's handles exist, straight to the
+    // function that does the work.
 
     // Painted last, after the list's columns are inserted and its first
     // population has run: nothing in this codebase proves whether a native
@@ -260,27 +253,106 @@ pub fn build_account_manager_dialog(
         dialog: dlg,
         list,
         status,
+        reauthorize: reauth,
+        delete: del,
+        set_default,
+        set_active: active,
     }
 }
 
-/// What one pass through the Account Manager's own loop can change, held
-/// together so the loop that changes it takes one argument for all of it
-/// rather than a handful of separate `&mut` parameters.
-struct AccountManagerState {
-    working: Vec<Account>,
-    active_id: Option<String>,
-    default_id: Option<String>,
-    changed: bool,
+/// What the Account Manager's own working set holds: the accounts as edited
+/// so far, which is active and which is default, and whether anything has
+/// changed. Held together so a single argument carries all of it, rather
+/// than a handful of separate `&mut` parameters.
+///
+/// `run_account_manager_loop` shares one of these, behind `Rc<RefCell<..>>`,
+/// with the four buttons [`wire_account_manager_actions`] wires directly;
+/// see that function's own doc comment for why a button answers its own
+/// `on_click` rather than waiting for a pass through the loop.
+///
+/// `pub`, and every field with it, for the same reason
+/// [`AccountManagerDialogHandles`] is: so a test can build one directly and
+/// call [`reauthorize_selected`], [`delete_selected`],
+/// [`set_default_selected`] or [`set_active_selected`] against it, which is
+/// the only way to prove what one of them does without a human clicking a
+/// real button inside a real modal dialog.
+pub struct AccountManagerState {
+    pub working: Vec<Account>,
+    pub active_id: Option<String>,
+    pub default_id: Option<String>,
+    pub changed: bool,
 }
 
-/// The Add/Edit/Delete/Sign-In-Again/Set-Active/Set-Default modal loop
-/// `show_account_manager_dialog` runs against the dialog
-/// [`build_account_manager_dialog`] built. Unchanged from what
-/// `show_account_manager_dialog` used to do inline; only the construction
-/// above it moved.
+/// Wire Sign In Again, Delete, Set Default and Set Active straight to the
+/// function that does their work, rather than to `end_modal`.
+///
+/// Every button in this dialog used to end the modal with its own ID, the
+/// same as Add, Edit and Close still do below: `on_click` called
+/// `end_modal`, which hides the dialog and returns control to Rust, and only
+/// then did `run_account_manager_loop`'s `match dlg.show_modal()` see the ID
+/// and run the button's own work, including its `said_and_shown`. A live
+/// NVDA run against Sign In Again showed neither of its two sentences is
+/// heard: NVDA jumps straight from the button's name to its own generic
+/// "Wixen Mail, unavailable", because nothing is yielded to the Windows
+/// message pump between `EndModal` hiding the dialog and `show_modal` being
+/// called again to re-show it, and the announcement runs inside that gap.
+///
+/// Add and Edit cannot be wired this way: each has to leave this dialog to
+/// show its own nested Add/Edit dialog, so `run_account_manager_loop` still
+/// answers them. Close has to end the session. These four never leave this
+/// dialog, so calling the function directly keeps the work on the same
+/// message as the click, with the dialog never hidden and re-shown around
+/// it.
+fn wire_account_manager_actions(
+    widgets: &AccountManagerDialogHandles,
+    state: &Rc<RefCell<AccountManagerState>>,
+    a11y: &Arc<Accessibility>,
+) {
+    let list = widgets.list;
+    let status = widgets.status;
+
+    widgets.reauthorize.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            reauthorize_selected(&mut state.borrow_mut(), &list, &status, &a11y);
+        }
+    });
+    widgets.delete.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            delete_selected(&mut state.borrow_mut(), &list, &status, &a11y);
+        }
+    });
+    widgets.set_default.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            set_default_selected(&mut state.borrow_mut(), &list, &status, &a11y);
+        }
+    });
+    widgets.set_active.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            set_active_selected(&mut state.borrow_mut(), &list, &status, &a11y);
+        }
+    });
+}
+
+/// The Add/Edit/Close modal loop `show_account_manager_dialog` runs against
+/// the dialog [`build_account_manager_dialog`] built.
+///
+/// Sign In Again, Delete, Set Default and Set Active used to have arms here
+/// too. [`wire_account_manager_actions`] answers their `on_click` directly
+/// now, so `show_modal()` never returns one of their IDs and an arm for one
+/// here could never be reached; see that function's own doc comment for
+/// why. Add and Edit stay because each has to leave this dialog to show its
+/// own nested Add/Edit dialog; Close stays as the loop's own terminal case.
 fn run_account_manager_loop(
     widgets: &AccountManagerDialogHandles,
-    state: &mut AccountManagerState,
+    state: &Rc<RefCell<AccountManagerState>>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
 ) {
@@ -291,8 +363,8 @@ fn run_account_manager_loop(
         match dlg.show_modal() {
             r if r == ID_ADD => {
                 if let Some(mut a) = show_edit(dlg, None, a11y, palette) {
-                    if state.working.is_empty() {
-                        state.active_id = Some(a.id.clone());
+                    if state.borrow().working.is_empty() {
+                        state.borrow_mut().active_id = Some(a.id.clone());
                     }
 
                     // OAuth is automatic: if this is a Gmail/Microsoft account,
@@ -331,81 +403,21 @@ fn run_account_manager_loop(
                         said_and_shown(status, a11y, "Account added", Priority::Normal);
                     }
 
-                    state.working.push(a);
-                    state.changed = true;
+                    let mut s = state.borrow_mut();
+                    s.working.push(a);
+                    s.changed = true;
                     populate(
                         list,
-                        &state.working,
-                        state.active_id.as_deref(),
-                        state.default_id.as_deref(),
+                        &s.working,
+                        s.active_id.as_deref(),
+                        s.default_id.as_deref(),
                     );
-                }
-            }
-            r if r == ID_REAUTHORIZE => {
-                match get_selected(list) {
-                    Some(idx) if state.working[idx].use_oauth => {
-                        let name = state.working[idx].name.clone();
-                        said_and_shown(
-                            status,
-                            a11y,
-                            &format!("Signing in to {name}. Finish in the browser."),
-                            Priority::Normal,
-                        );
-                        let mut account = state.working[idx].clone();
-                        match run_oauth_flow(&mut account) {
-                            OAuthFlowResult::Authorized => {
-                                state.working[idx] = account;
-                                state.changed = true;
-                                populate(
-                                    list,
-                                    &state.working,
-                                    state.active_id.as_deref(),
-                                    state.default_id.as_deref(),
-                                );
-                                said_and_shown(
-                                    status,
-                                    a11y,
-                                    &format!("{name} is signed in again"),
-                                    Priority::Normal,
-                                );
-                            }
-                            OAuthFlowResult::NoCreds(provider) => {
-                                said_and_shown(
-                                    status,
-                                    a11y,
-                                    &no_sign_in_credentials(&provider),
-                                    Priority::High,
-                                );
-                            }
-                            OAuthFlowResult::Failed(msg) => {
-                                said_and_shown(
-                                    status,
-                                    a11y,
-                                    &format!("Signing in failed: {msg}"),
-                                    Priority::High,
-                                );
-                            }
-                        }
-                    }
-                    // Saying which of the two it is, because they need
-                    // different things done about them.
-                    Some(_) => said_and_shown(
-                        status,
-                        a11y,
-                        "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
-                        Priority::High,
-                    ),
-                    None => said_and_shown(
-                        status,
-                        a11y,
-                        "Select an account to sign in again",
-                        Priority::High,
-                    ),
                 }
             }
             r if r == ID_EDIT => {
                 if let Some(idx) = get_selected(list) {
-                    if let Some(mut u) = show_edit(dlg, Some(&state.working[idx]), a11y, palette) {
+                    let existing = state.borrow().working[idx].clone();
+                    if let Some(mut u) = show_edit(dlg, Some(&existing), a11y, palette) {
                         // Run OAuth if needed and no tokens yet
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
@@ -443,112 +455,227 @@ fn run_account_manager_loop(
                         } else {
                             said_and_shown(status, a11y, "Account updated", Priority::Normal);
                         }
-                        state.working[idx] = u;
-                        state.changed = true;
+                        let mut s = state.borrow_mut();
+                        s.working[idx] = u;
+                        s.changed = true;
                         populate(
                             list,
-                            &state.working,
-                            state.active_id.as_deref(),
-                            state.default_id.as_deref(),
+                            &s.working,
+                            s.active_id.as_deref(),
+                            s.default_id.as_deref(),
                         );
                     }
                 } else {
                     said_and_shown(status, a11y, "Select an account to edit", Priority::High);
                 }
             }
-            r if r == ID_DELETE => {
-                if let Some(idx) = get_selected(list) {
-                    let rid = state.working[idx].id.clone();
-                    let name = state.working[idx].name.clone();
-                    // Revoke keychain tokens
-                    if state.working[idx].use_oauth
-                        && let Some(prov) = OAuthService::detect_provider(&state.working[idx].email)
-                        && let Some(creds) = oauth_credentials::credentials_for(&prov)
-                    {
-                        let mgr = AuthManager::new(
-                            &rid,
-                            &prov,
-                            &creds.client_id,
-                            creds.client_secret.as_deref(),
-                        );
-                        mgr.revoke_stored_tokens();
-                    }
-                    state.working.remove(idx);
-                    state.changed = true;
-                    if state.active_id.as_deref() == Some(&rid) {
-                        state.active_id = state.working.first().map(|a| a.id.clone());
-                    }
-                    populate(
-                        list,
-                        &state.working,
-                        state.active_id.as_deref(),
-                        state.default_id.as_deref(),
-                    );
-                    said_and_shown(
-                        status,
-                        a11y,
-                        &manager_words::deleted(manager_words::ACCOUNT, &name),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(status, a11y, "Select an account to delete", Priority::High);
-                }
-            }
-            r if r == ID_SET_DEFAULT => {
-                if let Some(idx) = get_selected(list) {
-                    state.default_id = Some(state.working[idx].id.clone());
-                    state.changed = true;
-                    populate(
-                        list,
-                        &state.working,
-                        state.active_id.as_deref(),
-                        state.default_id.as_deref(),
-                    );
-                    said_and_shown(
-                        status,
-                        a11y,
-                        &format!(
-                            "New contacts, events, tasks and notes go to {} from now on",
-                            state.working[idx].name
-                        ),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(
-                        status,
-                        a11y,
-                        "Select an account to make it the default",
-                        Priority::High,
-                    );
-                }
-            }
-            r if r == ID_SET_ACTIVE => {
-                if let Some(idx) = get_selected(list) {
-                    state.active_id = Some(state.working[idx].id.clone());
-                    state.changed = true;
-                    populate(
-                        list,
-                        &state.working,
-                        state.active_id.as_deref(),
-                        state.default_id.as_deref(),
-                    );
-                    said_and_shown(
-                        status,
-                        a11y,
-                        &format!("Active: {}", state.working[idx].name),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(
-                        status,
-                        a11y,
-                        "Select an account to make it active",
-                        Priority::High,
-                    );
-                }
-            }
             _ => break,
         }
+    }
+}
+
+/// Sign the selected account in again through OAuth.
+///
+/// Extracted verbatim from what used to be `run_account_manager_loop`'s own
+/// `ID_REAUTHORIZE` arm: same state mutations, same `said_and_shown` calls,
+/// same conditions. [`wire_account_manager_actions`] wires this straight to
+/// the &Sign In Again button's `on_click`; see that function's own doc
+/// comment for why. `pub` so a test can call it directly, which is the only
+/// way to prove what it does without a human clicking a real button inside
+/// a real modal dialog.
+pub fn reauthorize_selected(
+    state: &mut AccountManagerState,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+) {
+    match get_selected(list) {
+        Some(idx) if state.working[idx].use_oauth => {
+            let name = state.working[idx].name.clone();
+            said_and_shown(
+                status,
+                a11y,
+                &format!("Signing in to {name}. Finish in the browser."),
+                Priority::Normal,
+            );
+            let mut account = state.working[idx].clone();
+            match run_oauth_flow(&mut account) {
+                OAuthFlowResult::Authorized => {
+                    state.working[idx] = account;
+                    state.changed = true;
+                    populate(
+                        list,
+                        &state.working,
+                        state.active_id.as_deref(),
+                        state.default_id.as_deref(),
+                    );
+                    said_and_shown(
+                        status,
+                        a11y,
+                        &format!("{name} is signed in again"),
+                        Priority::Normal,
+                    );
+                }
+                OAuthFlowResult::NoCreds(provider) => {
+                    said_and_shown(
+                        status,
+                        a11y,
+                        &no_sign_in_credentials(&provider),
+                        Priority::High,
+                    );
+                }
+                OAuthFlowResult::Failed(msg) => {
+                    said_and_shown(
+                        status,
+                        a11y,
+                        &format!("Signing in failed: {msg}"),
+                        Priority::High,
+                    );
+                }
+            }
+        }
+        // Saying which of the two it is, because they need
+        // different things done about them.
+        Some(_) => said_and_shown(
+            status,
+            a11y,
+            "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
+            Priority::High,
+        ),
+        None => said_and_shown(
+            status,
+            a11y,
+            "Select an account to sign in again",
+            Priority::High,
+        ),
+    }
+}
+
+/// Delete the selected account, revoking its stored OAuth tokens first.
+///
+/// Extracted verbatim from what used to be `run_account_manager_loop`'s own
+/// `ID_DELETE` arm, for the same reason and the same way as
+/// [`reauthorize_selected`]; wired to the &Delete button's `on_click` in
+/// [`wire_account_manager_actions`].
+pub fn delete_selected(
+    state: &mut AccountManagerState,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+) {
+    if let Some(idx) = get_selected(list) {
+        let rid = state.working[idx].id.clone();
+        let name = state.working[idx].name.clone();
+        // Revoke keychain tokens
+        if state.working[idx].use_oauth
+            && let Some(prov) = OAuthService::detect_provider(&state.working[idx].email)
+            && let Some(creds) = oauth_credentials::credentials_for(&prov)
+        {
+            let mgr = AuthManager::new(
+                &rid,
+                &prov,
+                &creds.client_id,
+                creds.client_secret.as_deref(),
+            );
+            mgr.revoke_stored_tokens();
+        }
+        state.working.remove(idx);
+        state.changed = true;
+        if state.active_id.as_deref() == Some(&rid) {
+            state.active_id = state.working.first().map(|a| a.id.clone());
+        }
+        populate(
+            list,
+            &state.working,
+            state.active_id.as_deref(),
+            state.default_id.as_deref(),
+        );
+        said_and_shown(
+            status,
+            a11y,
+            &manager_words::deleted(manager_words::ACCOUNT, &name),
+            Priority::Normal,
+        );
+    } else {
+        said_and_shown(status, a11y, "Select an account to delete", Priority::High);
+    }
+}
+
+/// Make the selected account where new contacts, events, tasks and notes
+/// are filed.
+///
+/// Extracted verbatim from what used to be `run_account_manager_loop`'s own
+/// `ID_SET_DEFAULT` arm, for the same reason and the same way as
+/// [`reauthorize_selected`]; wired to the Set as &Default button's
+/// `on_click` in [`wire_account_manager_actions`].
+pub fn set_default_selected(
+    state: &mut AccountManagerState,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+) {
+    if let Some(idx) = get_selected(list) {
+        state.default_id = Some(state.working[idx].id.clone());
+        state.changed = true;
+        populate(
+            list,
+            &state.working,
+            state.active_id.as_deref(),
+            state.default_id.as_deref(),
+        );
+        said_and_shown(
+            status,
+            a11y,
+            &format!(
+                "New contacts, events, tasks and notes go to {} from now on",
+                state.working[idx].name
+            ),
+            Priority::Normal,
+        );
+    } else {
+        said_and_shown(
+            status,
+            a11y,
+            "Select an account to make it the default",
+            Priority::High,
+        );
+    }
+}
+
+/// Make the selected account the one whose mailbox is being looked at.
+///
+/// Extracted verbatim from what used to be `run_account_manager_loop`'s own
+/// `ID_SET_ACTIVE` arm, for the same reason and the same way as
+/// [`reauthorize_selected`]; wired to the Set Acti&ve button's `on_click` in
+/// [`wire_account_manager_actions`].
+pub fn set_active_selected(
+    state: &mut AccountManagerState,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+) {
+    if let Some(idx) = get_selected(list) {
+        state.active_id = Some(state.working[idx].id.clone());
+        state.changed = true;
+        populate(
+            list,
+            &state.working,
+            state.active_id.as_deref(),
+            state.default_id.as_deref(),
+        );
+        said_and_shown(
+            status,
+            a11y,
+            &format!("Active: {}", state.working[idx].name),
+            Priority::Normal,
+        );
+    } else {
+        said_and_shown(
+            status,
+            a11y,
+            "Select an account to make it active",
+            Priority::High,
+        );
     }
 }
 
@@ -1607,5 +1734,156 @@ mod tests {
             .expect("a sentence that is there to be found");
         assert!(near.contains("aaaa") && near.contains("bbbb"), "{near}");
         assert!(around("nothing here", "Signing in failed:").is_none());
+    }
+
+    /// The body of `wire_account_manager_actions`, the one place the four
+    /// buttons that answer their own `on_click` directly are wired.
+    fn the_wiring(screen: &str) -> Option<String> {
+        let (_, after) = screen.split_once("fn wire_account_manager_actions(")?;
+        let end = after.find("\n}").unwrap_or(after.len());
+        Some(after[..end].to_string())
+    }
+
+    /// Whether `needle` sits on a line of `haystack` that a `//` comment has
+    /// not swallowed.
+    ///
+    /// The same helper, for the same reason, as `tests/theme_reach.rs`'s own
+    /// `appears_live`: `str::contains` cannot tell a live call from a
+    /// commented-out one, because a line commented out with
+    /// `// delete_selected(...)` still holds the call's exact text as a
+    /// literal substring. Proven by hand before this existed: sabotaging
+    /// `wire_account_manager_actions` by commenting out its call to
+    /// `delete_selected` left the plain `.contains` version of the wiring
+    /// test below green, which is the wrong answer for a check whose whole
+    /// point is telling a live call from a dead one.
+    fn appears_live(haystack: &str, needle: &str) -> bool {
+        haystack.lines().any(|line| {
+            line.find(needle)
+                .is_some_and(|at| !line[..at].contains("//"))
+        })
+    }
+
+    #[test]
+    fn test_appears_live_can_tell_a_live_call_from_a_commented_out_one() {
+        // Proving the measurement, the same way
+        // `test_the_account_manager_check_can_tell_the_two_apart` above does
+        // for `what_this_screen_never_says`: a check that finds nothing
+        // passes, and from outside that is indistinguishable from one that
+        // finds everything.
+        assert!(appears_live(
+            "delete_selected(&mut state, &list, &status, &a11y);\n",
+            "delete_selected("
+        ));
+        assert!(!appears_live(
+            "// delete_selected(&mut state, &list, &status, &a11y);\n",
+            "delete_selected("
+        ));
+        assert!(appears_live(
+            "if x { delete_selected(&mut state, &list, &status, &a11y); }\n",
+            "delete_selected("
+        ));
+        assert!(!appears_live(
+            "/// See also `delete_selected(...)` for the pattern this follows.\n",
+            "delete_selected("
+        ));
+    }
+
+    #[test]
+    fn test_the_four_immediate_buttons_are_wired_straight_to_their_own_function() {
+        // Sign In Again, Delete, Set Default and Set Active used to end this
+        // modal with their own ID and run their work only after
+        // `run_account_manager_loop`'s `show_modal()` returned; a live NVDA
+        // run against Sign In Again found neither of its two sentences was
+        // heard. The fix wires each straight to the function that does its
+        // work instead.
+        //
+        // What this cannot see: whether `on_click` really runs synchronously
+        // on the same message as the click, the way this file's own reading
+        // of wxdragon's `EndModal`/`ShowModal` says it does. Only a live
+        // NVDA run answers that. This can only see that the wiring itself
+        // changed: the four buttons call the function that does their work,
+        // and none of them still ends the modal that used to hide the
+        // dialog before that function ran.
+        //
+        // Hand-confirmed, not just trusted: commenting out one of these four
+        // calls inside `wire_account_manager_actions` and running this test
+        // alone turned it red; restoring the call turned it green again. The
+        // first version of this test used plain `.contains` and stayed green
+        // through that same sabotage, which is why it reads `appears_live`
+        // now instead.
+        let screen = the_account_manager();
+        let wiring = the_wiring(&screen).expect(
+            "wire_account_manager_actions to still be the one place these four buttons are wired",
+        );
+
+        assert!(
+            !appears_live(&wiring, "end_modal("),
+            "a button meant to answer on_click directly still ends the modal: {wiring}"
+        );
+        for function in [
+            "reauthorize_selected(",
+            "delete_selected(",
+            "set_default_selected(",
+            "set_active_selected(",
+        ] {
+            assert!(
+                appears_live(&wiring, function),
+                "wire_account_manager_actions no longer calls {function}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_four_immediate_buttons_are_not_also_wired_inside_build() {
+        // The other place these four used to be wired: inside
+        // `build_account_manager_dialog`, alongside Add, Edit and Close,
+        // which still are. If one of them gained an `on_click` back here, it
+        // would silently shadow the one `wire_account_manager_actions` sets
+        // afterward instead of running it.
+        let screen = the_account_manager();
+        let (_, after) = screen
+            .split_once("pub fn build_account_manager_dialog(")
+            .expect("build_account_manager_dialog to still be here");
+        let build_body = &after[..after.find("\n}").unwrap_or(after.len())];
+        for wired in [
+            "del.on_click(",
+            "reauth.on_click(",
+            "set_default.on_click(",
+            "active.on_click(",
+        ] {
+            assert!(
+                !appears_live(build_body, wired),
+                "{wired} is still wired inside build_account_manager_dialog, alongside \
+                 wire_account_manager_actions wiring the same button again"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_outer_loop_no_longer_matches_the_four_immediate_buttons() {
+        // The other half of the same fix: once `on_click` answers these four
+        // directly, `show_modal()` never returns one of their IDs, so a
+        // match arm for one here would be dead code kept "just in case".
+        // Bounded to `run_account_manager_loop`'s own body, because the four
+        // ID constants this checks for are still declared above it and
+        // still named in `wire_account_manager_actions`; this asks only
+        // whether the loop itself still branches on them.
+        let screen = the_account_manager();
+        let (_, after) = screen
+            .split_once("fn run_account_manager_loop(")
+            .expect("run_account_manager_loop to still be here");
+        let loop_body = &after[..after.find("\n}").unwrap_or(after.len())];
+        for id in [
+            "ID_REAUTHORIZE",
+            "ID_DELETE",
+            "ID_SET_DEFAULT",
+            "ID_SET_ACTIVE",
+        ] {
+            assert!(
+                !appears_live(loop_body, id),
+                "the outer loop still matches {id}, so its arm could never be reached now \
+                 that on_click answers it directly"
+            );
+        }
     }
 }
