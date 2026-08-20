@@ -1012,9 +1012,16 @@ fn check_managers_shell(parent: &Frame, palette: theme::Palette, into: &mut Vec<
 
 /// The Contact Manager's own list window, built directly rather than through
 /// `make_shell`. An empty contact list is enough: painting the dialog, the
-/// search field and the list does not depend on what the list holds.
-fn check_contact_manager(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let handles = wx_managers::build_contact_manager_dialog(parent, &[], Some(palette));
+/// search field and the list does not depend on what the list holds. Takes
+/// `a11y` because Delete's own click is wired up inside this same builder
+/// now, and needs somewhere real to send its announcement.
+fn check_contact_manager(
+    parent: &Frame,
+    a11y: &Arc<Accessibility>,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) {
+    let handles = wx_managers::build_contact_manager_dialog(parent, &[], a11y, Some(palette));
     check(
         "contact manager dialog",
         &handles.dialog,
@@ -1331,7 +1338,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_about(&frame, palette, &mut sites);
             check_compose(&frame, palette, &mut sites);
             check_managers_shell(&frame, palette, &mut sites);
-            check_contact_manager(&frame, palette, &mut sites);
+            check_contact_manager(&frame, &a11y, palette, &mut sites);
             check_wait_for_an_answer(&frame, palette, &mut sites);
             check_choose_from_list(&frame, palette, &mut sites);
             check_contact_edit(&frame, palette, &mut sites);

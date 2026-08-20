@@ -78,7 +78,71 @@ struct ManagerChrome<'a> {
     main_sizer: &'a BoxSizer,
     list: &'a ListCtrl,
     status_text: &'a StaticText,
-    a11y: &'a Accessibility,
+    /// Owned rather than borrowed: Delete's own click (see [`delete_selected`])
+    /// runs from a button handler that must outlive this function call, and a
+    /// borrowed `&Accessibility` cannot go into one. Cloning an `Arc` is a
+    /// refcount bump, not a copy of the accessibility layer itself.
+    a11y: Arc<Accessibility>,
+}
+
+/// The rows a manager dialog's Add/Edit/Delete loop is working on, and
+/// whether anything has changed yet. Bundled together, and the bundle
+/// shared once as `Rc<RefCell<...>>`, because Delete's own click (see
+/// [`delete_selected`]) reaches both from outside the loop that used to be
+/// the only place either one changed.
+pub struct ManagerState<T> {
+    pub working: Vec<T>,
+    pub changed: bool,
+}
+
+/// Delete the selected row, immediately: remove it from the working rows,
+/// repaint the list, and say what happened. Runs directly from the Delete
+/// button's own click, never through `end_modal`, because deleting a row
+/// never needed to leave this dialog in the first place.
+///
+/// Moved here, verbatim, from what used to be `run_manager_loop`'s own
+/// `ID_MGR_DELETE` arm. `end_modal` immediately followed by another
+/// `show_modal()` on the same dialog, with nothing yielded to the Windows
+/// message pump in between, is how NVDA lost both a button's own
+/// announcement and the dialog reappearing (confirmed live against Account
+/// Manager's Sign In Again, the one button among these a screen reader has
+/// actually been run against: NVDA jumped straight from the button's own
+/// name to its own generic "Wixen Mail, unavailable"). Add and Edit still
+/// end this dialog's own modal loop, because they genuinely need to: each
+/// opens a real nested Add/Edit dialog of its own.
+///
+/// Public so a test can call it directly with a real list and a real line
+/// of text, without a human closing a live modal.
+pub fn delete_selected<T: Clone>(
+    state: &Rc<RefCell<ManagerState<T>>>,
+    list: &ListCtrl,
+    status_text: &StaticText,
+    a11y: &Accessibility,
+    kind: &str,
+    populate: impl Fn(&ListCtrl, &[T]),
+    name_fn: impl Fn(&T) -> String,
+) {
+    if let Some(idx) = get_selected(list) {
+        let name = name_fn(&state.borrow().working[idx]);
+        let mut s = state.borrow_mut();
+        s.working.remove(idx);
+        s.changed = true;
+        drop(s);
+        populate(list, &state.borrow().working);
+        said_and_shown(
+            status_text,
+            a11y,
+            &manager_words::deleted(kind, &name),
+            Priority::Normal,
+        );
+    } else {
+        said_and_shown(
+            status_text,
+            a11y,
+            &manager_words::nothing_selected(kind, "delete"),
+            Priority::High,
+        );
+    }
 }
 
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
@@ -90,15 +154,19 @@ struct ManagerChrome<'a> {
 /// identically to the mail path's own sentence for a message leaving a
 /// server besides.
 ///
+/// Delete runs from its own button click and never reaches this loop at
+/// all; see [`delete_selected`]. Add and Edit still do, because each opens
+/// a nested dialog of its own and genuinely needs `end_modal` to get there.
+///
 /// Returns `true` if any changes were made.
-fn run_manager_loop<T: Clone>(
+fn run_manager_loop<T: Clone + 'static>(
     chrome: ManagerChrome<'_>,
     kind: &str,
     working: &mut Vec<T>,
-    populate: impl Fn(&ListCtrl, &[T]),
+    populate: impl Fn(&ListCtrl, &[T]) + Copy + 'static,
     add_fn: impl Fn(&Dialog) -> Option<T>,
     edit_fn: impl Fn(&Dialog, &T) -> Option<T>,
-    name_fn: impl Fn(&T) -> String,
+    name_fn: impl Fn(&T) -> String + Copy + 'static,
 ) -> bool {
     let ManagerChrome {
         dialog,
@@ -137,6 +205,16 @@ fn run_manager_loop<T: Clone>(
     main_sizer.add(status_text, 0, SizerFlag::Expand | SizerFlag::All, 4);
     dialog.set_sizer(*main_sizer, true);
 
+    // The working rows and the "did anything change" flag, shared between
+    // this loop and Delete's own button click below. Delete mutates both
+    // from outside this loop entirely now (see `delete_selected`), so a
+    // plain `&mut Vec<T>` and a plain `bool` local, each only ever good for
+    // the length of this call, are no longer enough to hold them.
+    let state: Rc<RefCell<ManagerState<T>>> = Rc::new(RefCell::new(ManagerState {
+        working: std::mem::take(working),
+        changed: false,
+    }));
+
     add_btn.on_click({
         let d = *dialog;
         move |_| {
@@ -150,9 +228,13 @@ fn run_manager_loop<T: Clone>(
         }
     });
     del_btn.on_click({
-        let d = *dialog;
+        let list = *list;
+        let status_text = *status_text;
+        let a11y = a11y.clone();
+        let kind = kind.to_string();
+        let state = state.clone();
         move |_| {
-            d.end_modal(ID_MGR_DELETE);
+            delete_selected(&state, &list, &status_text, &a11y, &kind, populate, name_fn);
         }
     });
     close_btn.on_click({
@@ -162,20 +244,21 @@ fn run_manager_loop<T: Clone>(
         }
     });
 
-    populate(list, working);
-    let mut changed = false;
+    populate(list, &state.borrow().working);
 
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
                 if let Some(item) = add_fn(dialog) {
                     let name = name_fn(&item);
-                    working.push(item);
-                    changed = true;
-                    populate(list, working);
+                    let mut s = state.borrow_mut();
+                    s.working.push(item);
+                    s.changed = true;
+                    drop(s);
+                    populate(list, &state.borrow().working);
                     said_and_shown(
                         status_text,
-                        a11y,
+                        &a11y,
                         &manager_words::added(kind, &name),
                         Priority::Normal,
                     );
@@ -183,14 +266,17 @@ fn run_manager_loop<T: Clone>(
             }
             r if r == ID_MGR_EDIT => {
                 if let Some(idx) = get_selected(list) {
-                    if let Some(edited) = edit_fn(dialog, &working[idx]) {
+                    let current = state.borrow().working[idx].clone();
+                    if let Some(edited) = edit_fn(dialog, &current) {
                         let name = name_fn(&edited);
-                        working[idx] = edited;
-                        changed = true;
-                        populate(list, working);
+                        let mut s = state.borrow_mut();
+                        s.working[idx] = edited;
+                        s.changed = true;
+                        drop(s);
+                        populate(list, &state.borrow().working);
                         said_and_shown(
                             status_text,
-                            a11y,
+                            &a11y,
                             &manager_words::updated(kind, &name),
                             Priority::Normal,
                         );
@@ -198,29 +284,8 @@ fn run_manager_loop<T: Clone>(
                 } else {
                     said_and_shown(
                         status_text,
-                        a11y,
+                        &a11y,
                         &manager_words::nothing_selected(kind, "edit"),
-                        Priority::High,
-                    );
-                }
-            }
-            r if r == ID_MGR_DELETE => {
-                if let Some(idx) = get_selected(list) {
-                    let name = name_fn(&working[idx]);
-                    working.remove(idx);
-                    changed = true;
-                    populate(list, working);
-                    said_and_shown(
-                        status_text,
-                        a11y,
-                        &manager_words::deleted(kind, &name),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(
-                        status_text,
-                        a11y,
-                        &manager_words::nothing_selected(kind, "delete"),
                         Priority::High,
                     );
                 }
@@ -228,7 +293,9 @@ fn run_manager_loop<T: Clone>(
             _ => break,
         }
     }
-    changed
+
+    *working = state.borrow().working.clone();
+    state.borrow().changed
 }
 
 /// Create the standard manager dialog shell: dialog + sizer + list + status.
@@ -599,8 +666,8 @@ pub(crate) fn get_address_field_labels(country: &str) -> (&'static str, &'static
 /// What `show_contact_manager_dialog`'s own loop still needs after
 /// construction: the controls to read from and, for the search field and the
 /// list, to repaint whenever a search narrows what they show, plus the
-/// shared state the live search and the Add/Edit/Delete handlers already
-/// close over.
+/// shared state the live search, Delete's own click, and the Add/Edit arms
+/// still inside the loop all reach into together.
 pub struct ContactManagerDialogHandles {
     pub dialog: Dialog,
     pub search: TextCtrl,
@@ -608,6 +675,7 @@ pub struct ContactManagerDialogHandles {
     pub status: StaticText,
     working: Rc<RefCell<Vec<ContactEntry>>>,
     index_map: Rc<RefCell<Vec<usize>>>,
+    changed: Rc<RefCell<bool>>,
 }
 
 /// Build the Contact Manager's own list window without showing it.
@@ -616,9 +684,14 @@ pub struct ContactManagerDialogHandles {
 /// loop, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
 /// splits Settings: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// Takes `a11y` because Delete's own click (see [`delete_selected_contact`])
+/// answers immediately, from inside this function's own button wiring,
+/// rather than from `show_contact_manager_dialog`'s loop the way it used to.
 pub fn build_contact_manager_dialog(
     parent: &Frame,
     contacts: &[ContactEntry],
+    a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
 ) -> ContactManagerDialogHandles {
     let dialog = Dialog::builder(parent, "Contact Manager")
@@ -695,6 +768,10 @@ pub fn build_contact_manager_dialog(
     // ── Shared state for live search ────────────────────────────────
     let working = Rc::new(RefCell::new(contacts.to_vec()));
     let index_map: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
+    // Whether anything has changed yet, shared the same way `working` and
+    // `index_map` already are: Delete's own click below sets this directly,
+    // outside the loop that used to be the only place anything did.
+    let changed: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
 
     // Initial population
     populate_contacts_filtered(&list, &working.borrow(), "", &mut index_map.borrow_mut());
@@ -725,10 +802,20 @@ pub fn build_contact_manager_dialog(
             d.end_modal(ID_MGR_EDIT);
         }
     });
+    // Delete answers immediately from its own click and never ends this
+    // dialog's modal loop; see `delete_selected_contact`'s own doc comment
+    // for why (the same reason `wx_managers::delete_selected` gives for the
+    // Filter, Tag and Signature managers' shared loop).
     del_btn.on_click({
-        let d = dialog;
+        let search = search_f;
+        let a11y = a11y.clone();
+        let working = working.clone();
+        let index_map = index_map.clone();
+        let changed = changed.clone();
         move |_| {
-            d.end_modal(ID_MGR_DELETE);
+            delete_selected_contact(
+                &list, &search, &status, &a11y, &working, &index_map, &changed,
+            );
         }
     });
     sync_btn.on_click({
@@ -767,6 +854,58 @@ pub fn build_contact_manager_dialog(
         status,
         working,
         index_map,
+        changed,
+    }
+}
+
+/// Delete the selected contact, immediately: remove it from the working
+/// rows, repaint the filtered list, and say what happened. Runs directly
+/// from the Delete button's own click, never through `end_modal`, because
+/// deleting a contact never needed to leave this dialog in the first place.
+///
+/// Moved here, verbatim, from what used to be `show_contact_manager_dialog`'s
+/// own `ID_MGR_DELETE` arm; see [`delete_selected`]'s own doc comment (the
+/// Filter, Tag and Signature managers' shared loop) for the mechanism this
+/// fixes. Add and Edit still end this dialog's own modal loop, because each
+/// opens a real nested Add/Edit Contact dialog of its own.
+///
+/// Public so a test can call it directly with a real list and a real line
+/// of text, without a human closing a live modal.
+pub fn delete_selected_contact(
+    list: &ListCtrl,
+    search: &TextCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+    working: &Rc<RefCell<Vec<ContactEntry>>>,
+    index_map: &Rc<RefCell<Vec<usize>>>,
+    changed: &Rc<RefCell<bool>>,
+) {
+    if let Some(sel) = get_selected(list) {
+        let found = {
+            let map = index_map.borrow();
+            let w = working.borrow();
+            map.get(sel).map(|&idx| (idx, w[idx].name.clone()))
+        };
+        let Some((working_idx, name)) = found else {
+            return;
+        };
+        working.borrow_mut().remove(working_idx);
+        *changed.borrow_mut() = true;
+        let query = search.get_value();
+        populate_contacts_filtered(list, &working.borrow(), &query, &mut index_map.borrow_mut());
+        said_and_shown(
+            status,
+            a11y,
+            &manager_words::deleted(manager_words::CONTACT, &name),
+            Priority::Normal,
+        );
+    } else {
+        said_and_shown(
+            status,
+            a11y,
+            &manager_words::nothing_selected(manager_words::CONTACT, "delete"),
+            Priority::High,
+        );
     }
 }
 
@@ -783,17 +922,23 @@ pub fn show_contact_manager_dialog(
         status,
         working,
         index_map,
-    } = build_contact_manager_dialog(parent, contacts, palette);
+        changed,
+    } = build_contact_manager_dialog(parent, contacts, a11y, palette);
 
     // ── Modal loop ──────────────────────────────────────────────────
-    let mut changed = false;
+    // Delete no longer has an arm here: it answers from its own click (see
+    // `delete_selected_contact`) and never ends this dialog to get here.
+    // Sync does still end it, on purpose, unlike Delete: choosing Sync closes
+    // this dialog for good and hands off to a background sync outside it
+    // (`managers::manage_contacts` in the caller), so `end_modal` here is the
+    // one legitimate way out, the same as Close.
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
                 if let Some(item) = show_contact_edit(&dialog, None, palette) {
                     let name = item.name.clone();
                     working.borrow_mut().push(item);
-                    changed = true;
+                    *changed.borrow_mut() = true;
                     let query = search_f.get_value();
                     let w = working.borrow();
                     populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
@@ -818,7 +963,7 @@ pub fn show_contact_manager_dialog(
                     if let Some(edited) = show_contact_edit(&dialog, Some(&existing), palette) {
                         let name = edited.name.clone();
                         working.borrow_mut()[working_idx] = edited;
-                        changed = true;
+                        *changed.borrow_mut() = true;
                         let query = search_f.get_value();
                         let w = working.borrow();
                         populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
@@ -838,36 +983,6 @@ pub fn show_contact_manager_dialog(
                     );
                 }
             }
-            r if r == ID_MGR_DELETE => {
-                if let Some(sel) = get_selected(&list) {
-                    let (working_idx, name) = {
-                        let map = index_map.borrow();
-                        let w = working.borrow();
-                        match map.get(sel) {
-                            Some(&idx) => (idx, w[idx].name.clone()),
-                            None => continue,
-                        }
-                    };
-                    working.borrow_mut().remove(working_idx);
-                    changed = true;
-                    let query = search_f.get_value();
-                    let w = working.borrow();
-                    populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
-                    said_and_shown(
-                        &status,
-                        a11y,
-                        &manager_words::deleted(manager_words::CONTACT, &name),
-                        Priority::Normal,
-                    );
-                } else {
-                    said_and_shown(
-                        &status,
-                        a11y,
-                        &manager_words::nothing_selected(manager_words::CONTACT, "delete"),
-                        Priority::High,
-                    );
-                }
-            }
             r if r == ID_MGR_SYNC => {
                 return ContactManagerAction::SyncRequested;
             }
@@ -876,7 +991,7 @@ pub fn show_contact_manager_dialog(
     }
 
     let result = working.borrow().clone();
-    if changed {
+    if *changed.borrow() {
         ContactManagerAction::Updated(result)
     } else {
         ContactManagerAction::None
@@ -2071,7 +2186,7 @@ pub fn show_filter_manager_dialog(
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
-            a11y,
+            a11y: a11y.clone(),
         },
         manager_words::FILTER,
         &mut working,
@@ -2383,7 +2498,7 @@ pub fn show_tag_manager_dialog(
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
-            a11y,
+            a11y: a11y.clone(),
         },
         manager_words::TAG,
         &mut working,
@@ -2578,7 +2693,7 @@ pub fn show_signature_manager_dialog(
             main_sizer: &sizer,
             list: &list,
             status_text: &status,
-            a11y,
+            a11y: a11y.clone(),
         },
         manager_words::SIGNATURE,
         &mut working,
@@ -3245,6 +3360,171 @@ mod tests {
             what_these_windows_never_say(&sound, "fn nothing() {}")[0]
                 .contains("every answer they give is silent"),
             "windows with nothing to call were not reported"
+        );
+    }
+
+    /// The body of one function this file declares, bounded by the next
+    /// top-level `fn` or `pub fn`, the same way
+    /// `test_each_manager_window_hands_the_shared_loop_its_own_kind` above
+    /// bounds a manager window's own function: a fixed-width window missed a
+    /// long function's own wiring and reported the right thing as missing.
+    fn body_of<'a>(windows: &'a str, signature: &str) -> &'a str {
+        let start = windows
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature} is not in this file"));
+        let after = &windows[start + signature.len()..];
+        let end = ["\npub fn ", "\nfn "]
+            .iter()
+            .filter_map(|marker| after.find(marker))
+            .min()
+            .unwrap_or(after.len());
+        &windows[start..start + signature.len() + end]
+    }
+
+    /// Whether `needle` sits on a line of `haystack` that a `//` comment has
+    /// not swallowed.
+    ///
+    /// `str::contains` cannot tell a live call from a commented-out one,
+    /// because a line commented out with `// delete_selected(...)` still
+    /// holds the call's exact text as a literal substring.
+    /// `tests/theme_reach.rs` draws the same line, for the same reason, over
+    /// a file this test cannot reach from inside `src/**` (see that file's
+    /// own comment on why a live wxWidgets check cannot live here instead).
+    fn appears_live(haystack: &str, needle: &str) -> bool {
+        haystack.lines().any(|line| {
+            line.find(needle)
+                .is_some_and(|at| !line[..at].contains("//"))
+        })
+    }
+
+    /// What a Delete button gets wrong when it still ends this dialog's own
+    /// modal loop to do work that never needed to leave it.
+    ///
+    /// `end_modal` immediately followed by another `show_modal()` on the same
+    /// dialog, with nothing yielded to the Windows message pump in between,
+    /// is how NVDA lost both a button's own announcement and the dialog
+    /// reappearing: a live run against Account Manager's Sign In Again heard
+    /// neither, only NVDA's own generic "Wixen Mail, unavailable". Delete
+    /// never opens a nested dialog, so it never needed to end this one
+    /// either; Add and Edit do, and keep `end_modal`.
+    fn what_a_delete_button_gets_wrong(function_body: &str, extracted_fn: &str) -> Vec<String> {
+        let mut wrong = Vec::new();
+        let Some((_, after)) = function_body.split_once("del_btn.on_click({") else {
+            return vec!["no Delete button is wired in this function".to_string()];
+        };
+        let click_body = &after[..after.find("\n    });").unwrap_or(after.len())];
+        if !appears_live(click_body, extracted_fn) {
+            wrong.push(format!(
+                "Delete's own click never calls {extracted_fn}, so its work happens nowhere \
+                 a test can reach it"
+            ));
+        }
+        if appears_live(click_body, "end_modal(") {
+            wrong.push(
+                "Delete still ends this dialog's own modal loop, the round-trip NVDA loses \
+                 the next announcement to"
+                    .to_string(),
+            );
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_delete_answers_from_its_own_click_and_never_ends_the_modal_loop() {
+        // Structural, not behavioural: this reads the source rather than
+        // clicking a real button, because nothing in this crate can fire a
+        // real wx click event and observe live NVDA output inside a fast
+        // unit test. `tests/manager_delete_stays_open.rs` proves the logic
+        // in `delete_selected` and `delete_selected_contact` runs correctly
+        // against real widgets; this proves each is actually wired to the
+        // button that used to `end_modal` instead of calling it.
+        let windows = the_manager_windows();
+        for (function, extracted_fn) in [
+            ("fn run_manager_loop", "delete_selected("),
+            (
+                "fn build_contact_manager_dialog",
+                "delete_selected_contact(",
+            ),
+        ] {
+            let body = body_of(&windows, function);
+            let wrong = what_a_delete_button_gets_wrong(body, extracted_fn);
+            assert!(wrong.is_empty(), "{function}: {}", wrong.join("\n  "));
+        }
+
+        // Step 4 of the fix: once end_modal is never called for Delete,
+        // show_modal() can never return with its own ID, so the arm that
+        // used to handle it is dead code, not defensive code worth keeping.
+        for function in ["fn run_manager_loop", "fn show_contact_manager_dialog"] {
+            let body = body_of(&windows, function);
+            assert!(
+                !body.contains("r if r == ID_MGR_DELETE"),
+                "{function} still matches on ID_MGR_DELETE in its own modal loop, which \
+                 show_modal() can never return now that Delete never calls end_modal"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_delete_button_check_can_tell_the_two_apart() {
+        // Proving the measurement, the same way
+        // test_the_manager_check_can_tell_the_two_apart above does for the
+        // shared status line: a source read that finds nothing passes, and
+        // from outside that is indistinguishable from one that finds
+        // everything.
+        let sound = "del_btn.on_click({\n\
+            \x20   let state = state.clone();\n\
+            \x20   move |_| {\n\
+            \x20       delete_selected(&state, &list, &status_text, &a11y, &kind, populate, name_fn);\n\
+            \x20   }\n\
+            \x20});\n";
+        assert!(
+            what_a_delete_button_gets_wrong(sound, "delete_selected(").is_empty(),
+            "a Delete that only calls the extracted function was reported as wrong"
+        );
+
+        let still_ends_modal = "del_btn.on_click({\n\
+            \x20   let d = *dialog;\n\
+            \x20   move |_| {\n\
+            \x20       delete_selected(&state, &list, &status_text, &a11y, &kind, populate, name_fn);\n\
+            \x20       d.end_modal(ID_MGR_DELETE);\n\
+            \x20   }\n\
+            \x20});\n";
+        let wrong = what_a_delete_button_gets_wrong(still_ends_modal, "delete_selected(");
+        assert!(
+            wrong.iter().any(|w| w.contains("round-trip")),
+            "a Delete that still ends this dialog's modal loop was not reported: {wrong:?}"
+        );
+
+        // Commenting the real call out, not deleting it, is what this
+        // project's own "prove the measurement" convention asks for: a check
+        // built on scanning source text can be fooled by a call that is
+        // still there in letters but never runs.
+        let commented_out = "del_btn.on_click({\n\
+            \x20   move |_| {\n\
+            \x20       // delete_selected(&state, &list, &status_text, &a11y, &kind, populate, name_fn);\n\
+            \x20   }\n\
+            \x20});\n";
+        let wrong = what_a_delete_button_gets_wrong(commented_out, "delete_selected(");
+        assert!(
+            wrong.iter().any(|w| w.contains("never calls")),
+            "a call commented out rather than deleted was not reported: {wrong:?}"
+        );
+
+        let no_button = "close_btn.on_click({\n    move |_| {}\n});\n";
+        assert!(
+            what_a_delete_button_gets_wrong(no_button, "delete_selected(")[0]
+                .contains("no Delete button"),
+            "a function with no Delete button at all was not reported"
+        );
+
+        // And that check is awake on the real file, not only on the samples
+        // above: it fires on sabotaged text, so it had better still see the
+        // real, unsabotaged wiring as sound.
+        let windows = the_manager_windows();
+        assert!(
+            appears_live(body_of(&windows, "fn run_manager_loop"), "delete_selected("),
+            "run_manager_loop no longer calls delete_selected live, so the check above is \
+             asleep on the real file"
         );
     }
 
