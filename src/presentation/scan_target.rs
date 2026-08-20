@@ -42,6 +42,12 @@ pub enum ScanTarget {
     Reader,
     Search,
     Filters,
+    /// The window listing the events on a calendar, opened on whatever the
+    /// account being looked at already holds rather than a fixture built for
+    /// the scan: a fresh profile has none, so Edit and Delete are scanned
+    /// with nothing selected, the same shape their own "nothing selected"
+    /// answer is tested against.
+    Calendar,
     /// The screen asking what Wixen Mail may change, which everybody meets
     /// once and which no scan could reach before: it opens by itself on a
     /// fresh profile and never again after the answer is stored.
@@ -56,13 +62,14 @@ pub enum ScanTarget {
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 8] = [
+    pub const ALL: [ScanTarget; 9] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
         ScanTarget::Reader,
         ScanTarget::Search,
         ScanTarget::Filters,
+        ScanTarget::Calendar,
         ScanTarget::FirstRun,
         ScanTarget::AddCalendar,
     ];
@@ -76,6 +83,7 @@ impl ScanTarget {
             Self::Reader => "reader",
             Self::Search => "search",
             Self::Filters => "filters",
+            Self::Calendar => "calendar",
             Self::FirstRun => "first-run",
             Self::AddCalendar => "add-calendar",
         }

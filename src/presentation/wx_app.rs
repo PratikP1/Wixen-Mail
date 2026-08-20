@@ -3625,7 +3625,15 @@ impl WxMailApp {
             // After show, because a dialog parented to a frame that is not on
             // screen yet has nowhere to be modal to.
             if let Some(target) = scan_target {
-                open_for_scanning(target, &frame, &state, &scan_tx, &scan_rt, &a11y);
+                open_for_scanning(
+                    target,
+                    &frame,
+                    &state,
+                    &message_cache,
+                    &scan_tx,
+                    &scan_rt,
+                    &a11y,
+                );
             }
         });
 
@@ -6520,6 +6528,7 @@ fn open_for_scanning(
     target: crate::presentation::scan_target::ScanTarget,
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
@@ -6627,7 +6636,8 @@ fn open_for_scanning(
         ScanTarget::Search => {
             let _ = show_search_dialog(frame);
         }
-        ScanTarget::Filters => managers::manage_filters(state, &None, frame, tx, rt, a11y),
+        ScanTarget::Filters => managers::manage_filters(state, cache, frame, tx, rt, a11y),
+        ScanTarget::Calendar => managers::manage_calendar(state, cache, frame, tx, rt, a11y),
     }
 }
 
@@ -10692,6 +10702,45 @@ mod scan_only_account_tests {
             "a recognised provider would try a real network connection instead of \
              failing at once"
         );
+    }
+
+    /// `manager_account` refuses at once, before opening any window, when its
+    /// `cache` argument is `None`: the Filter Manager scan target hard-coded
+    /// one there once, so `--scan-target filters` silently opened nothing and
+    /// `accessibility.yml` reported a clean pass for a window it never
+    /// scanned, the exact failure mode this module's own doc comment names.
+    /// Pins that the Filters and Calendar arms forward the real cache
+    /// `open_for_scanning` is handed instead of hard-coding a value of their
+    /// own; a source read, since exercising the real refusal needs a window,
+    /// a frame and a running event loop.
+    #[test]
+    fn test_the_scan_targets_that_need_a_message_store_are_given_the_real_one() {
+        let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("this file to be readable");
+
+        for (target, needle) in [
+            ("ScanTarget::Filters", "        ScanTarget::Filters => "),
+            ("ScanTarget::Calendar", "        ScanTarget::Calendar => "),
+        ] {
+            let start = source
+                .find(needle)
+                .unwrap_or_else(|| panic!("no arm for {target} in open_for_scanning"));
+            let line_end = source[start..]
+                .find('\n')
+                .map_or(source.len(), |i| start + i);
+            let arm = &source[start..line_end];
+
+            assert!(
+                arm.contains("cache"),
+                "{target}'s arm does not forward a cache at all: {arm}"
+            );
+            assert!(
+                !arm.contains("&None"),
+                "{target}'s arm hard-codes an empty message store, so it refuses \
+                 before opening anything and the scan sees a window it never \
+                 opened: {arm}"
+            );
+        }
     }
 }
 
