@@ -8,28 +8,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
-- **Sign In Again in the Account Manager, and Delete in the Calendar, Filter,
-  Tag and Signature windows, now say what actually happened.** Each of these
-  used to close its window's own dialog session, run its answer, and reopen
-  the window, all before Windows was ever handed back control in between.
-  Nothing was ever wrong with what the code decided to say; the window
-  closing and reopening around the announcement was what kept it from ever
-  reaching a screen reader. NVDA read the application as unavailable instead
-  of hearing anything, confirmed with a real screen reader run against Sign
-  In Again specifically. Each of these now answers its own button press
-  directly, with the window staying open the whole time.
+- **Sign In Again in the Account Manager now says what actually happened.**
+  It used to close the Account Manager's own dialog session, run its two
+  answers (what it was about to try, then what went wrong), and reopen the
+  window, all before Windows was ever handed back control in between. NVDA
+  read the application as unavailable instead of hearing either sentence,
+  confirmed with a real screen reader run, both before this fix and after
+  it. Sign In Again now answers its own button press directly, with the
+  window staying open the whole time. Delete, Set as Default and Set Active
+  on the same screen were changed the same way as a precaution, since they
+  shared the exact code shape.
 
-  Also fixed in the Calendar window: Sync and Edit answering the same way.
-  Add and Edit still open their own separate window to do their work, and
-  keep doing that the way they always have.
-
-  Known limitations: only Sign In Again has been confirmed by a real
-  screen reader run. Calendar's three buttons and the manager windows'
-  Delete share the identical mechanism and the identical fix, verified the
-  same way in every other respect, but do not yet have their own screen
-  reader run confirming it. The Add/Edit Contact window's own Remove
-  Email/Phone/Address/Custom Field buttons have the same underlying defect
-  and are not fixed by this entry.
+  Delete in the Calendar window, and in the Filter, Tag and Signature
+  windows, were changed the same way too, and now have their own real
+  screen reader tests proving they say what they should. What those tests
+  do not show, honestly: deliberately reverting the fix and asking a real
+  screen reader to press each button, twice, produced the correct
+  announcement both times, not the silence or the "unavailable" Sign In
+  Again's own bug caused. Whatever made Sign In Again's case fail this way
+  did not reproduce here. The most likely difference is that Sign In Again
+  gives two answers in a row from the same button press (what it is about
+  to try, then what happened) where these give one; that was not chased
+  down further, since the actual difference does not change what the right
+  fix looks like, and closing the dialog around an announcement was never
+  correct regardless of how reliably it went wrong. The Add/Edit Contact
+  window's own Remove Email/Phone/Address/Custom Field buttons have the
+  same code shape and are not changed by this entry.
 
 - **A repeating event synced from Google Calendar, or from any calendar that
   writes `WKST=SU`, now shows on every day it actually falls on.** Google's
