@@ -27,6 +27,8 @@ use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
 use crate::presentation::ui_types::CalendarEventItem;
 use crate::presentation::wx_which_days::which_days_are_meant;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 // ── Button IDs ──────────────────────────────────────────────────────────────
@@ -157,13 +159,20 @@ impl CalendarEventData {
 /// The Calendar list window's own controls, returned so a test can build it
 /// without a human closing a live modal.
 ///
-/// Only the chrome `show_calendar_dialog`'s own loop still needs after
-/// construction: the buttons are wired to `end_modal` entirely inside
-/// [`build_calendar_dialog`] and are never referred to again.
+/// `dialog`, `list` and `status` are what `show_calendar_dialog`'s own loop
+/// still needs after construction; New and Close are wired to `end_modal`
+/// entirely inside [`build_calendar_dialog`] and are never referred to
+/// again. `sync`, `edit` and `delete` are handed to
+/// [`wire_calendar_actions`] instead, which wires each straight to the
+/// function that does its work rather than to `end_modal`; see that
+/// function's own doc comment for why.
 pub struct CalendarDialogHandles {
     pub dialog: Dialog,
     pub list: ListCtrl,
     pub status: StaticText,
+    sync: Button,
+    edit: Button,
+    delete: Button,
 }
 
 /// Build the Calendar list window without showing it.
@@ -240,29 +249,15 @@ pub fn build_calendar_dialog(
     dialog.set_sizer(*main_sizer, true);
     dialog.centre();
 
-    // Button handlers
+    // Button handlers. Edit, Delete and Sync are deliberately wired to
+    // nothing here: each used to end this modal with its own ID, the same
+    // as New and Close still do below, but [`wire_calendar_actions`] wires
+    // them instead, once this dialog's handles exist, straight to the
+    // function that does the work.
     new_btn.on_click({
         let d = dialog;
         move |_| {
             d.end_modal(ID_CAL_NEW);
-        }
-    });
-    edit_btn.on_click({
-        let d = dialog;
-        move |_| {
-            d.end_modal(ID_CAL_EDIT);
-        }
-    });
-    del_btn.on_click({
-        let d = dialog;
-        move |_| {
-            d.end_modal(ID_CAL_DELETE);
-        }
-    });
-    sync_btn.on_click({
-        let d = dialog;
-        move |_| {
-            d.end_modal(ID_CAL_SYNC);
         }
     });
     close_btn.on_click({
@@ -280,14 +275,6 @@ pub fn build_calendar_dialog(
     // Account Manager's own list takes). `None` means high contrast is on,
     // or the system is set up in a way this application should not paint
     // over, so nothing is set here and Windows decides.
-    // Painted last, after the list's columns are inserted and its first
-    // population has run: nothing in this codebase proves whether a native
-    // list-view control keeps a manually set background colour across
-    // `InsertColumn`, so the buttons and list are fully built and populated
-    // before either of these calls, never before (the same caution the
-    // Account Manager's own list takes). `None` means high contrast is on,
-    // or the system is set up in a way this application should not paint
-    // over, so nothing is set here and Windows decides.
     if let Some(palette) = palette {
         theme::paint(&dialog, palette.main_surface());
         theme::paint(&list, palette.main_surface());
@@ -297,6 +284,301 @@ pub fn build_calendar_dialog(
         dialog,
         list,
         status,
+        sync: sync_btn,
+        edit: edit_btn,
+        delete: del_btn,
+    }
+}
+
+/// What Sync, Edit and Delete can change, shared with the functions below so
+/// each can be called on its own rather than only from inside
+/// [`run_calendar_loop`].
+///
+/// `allows` sits beside `events_data` rather than being asked of
+/// `where_changes_go` again from inside one of those functions:
+/// [`wire_calendar_actions`] wires each straight to a button's own
+/// `on_click`, which has to outlive `show_calendar_dialog`'s stack frame
+/// since wxdragon's `on_click` requires `'static`, and a borrowed
+/// `where_changes_go` does not. Answering the question once, here, and
+/// carrying the answer alongside the events it is about reads no fresher
+/// and no staler than `events_data` itself already does: both are a
+/// snapshot taken once, when the dialog opens, never read live again.
+///
+/// `pub`, and every field with it, for the same reason
+/// [`CalendarDialogHandles`] is: so a test can build one directly and call
+/// [`request_sync`], [`edit_selected_event`] or [`delete_selected_event`]
+/// against it, which is the only way to prove what one of them does without
+/// a human clicking a real button inside a real modal dialog.
+pub struct CalendarDialogState {
+    pub actions: Vec<CalendarAction>,
+    pub events_data: Vec<CalendarEventItem>,
+    pub allows: Vec<WhatTheCalendarAllows>,
+}
+
+/// Wire Sync, Edit and Delete straight to the function that does their
+/// work, rather than to `end_modal`.
+///
+/// Every button in this dialog used to end the modal with its own ID, the
+/// same as New and Close still do inside [`build_calendar_dialog`]:
+/// `on_click` called `end_modal`, which hides the dialog and returns
+/// control to Rust, and only then did [`run_calendar_loop`]'s `match
+/// dialog.show_modal()` see the ID and run the button's own work, including
+/// its `said_and_shown`. A live NVDA run against the Account Manager's own
+/// Sign In Again, the same shape as these three, found neither of its two
+/// sentences is heard: NVDA jumps straight from the button's name to its
+/// own generic "Wixen Mail, unavailable", because nothing is yielded to the
+/// Windows message pump between `EndModal` hiding the dialog and
+/// `show_modal` being called again to re-show it, and the announcement runs
+/// inside that gap.
+///
+/// New is the one exception: it always shows its own nested event editor
+/// before it can answer anything, so [`run_calendar_loop`] still answers
+/// it, the same reason Account Manager's Add and Edit stay wired to
+/// `end_modal` too. Delete looks similar at first glance: it always shows
+/// Confirm Delete before it can act, but its "nothing is selected" answer
+/// runs before that dialog is ever built, and [`edit_selected_event`]'s own
+/// refusal for a day that does not repeat runs before `which_days_are_meant`
+/// ever shows one either. Both are exactly the shape this bug needs:
+/// `end_modal` hides the dialog, the answer runs with nothing shown,
+/// `show_modal` re-shows it. So Edit and Delete are wired here regardless of
+/// what either can also do once a nested dialog does open.
+fn wire_calendar_actions(
+    widgets: &CalendarDialogHandles,
+    state: &Rc<RefCell<CalendarDialogState>>,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) {
+    let dialog = widgets.dialog;
+    let list = widgets.list;
+    let status = widgets.status;
+
+    widgets.sync.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            request_sync(&mut state.borrow_mut(), &status, &a11y);
+        }
+    });
+    widgets.edit.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            edit_selected_event(
+                &mut state.borrow_mut(),
+                &dialog,
+                &list,
+                &status,
+                &a11y,
+                palette,
+            );
+        }
+    });
+    widgets.delete.on_click({
+        let state = Rc::clone(state);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            delete_selected_event(
+                &mut state.borrow_mut(),
+                &dialog,
+                &list,
+                &status,
+                &a11y,
+                palette,
+            );
+        }
+    });
+}
+
+/// The row selected in the calendar list, and what its calendar allows,
+/// read back from the state both are stored in.
+///
+/// `None` covers both "nothing is selected" and an index that does not
+/// match what was stored, so a caller only has one thing to check either
+/// way, and both existing callers already say the same sentence for the
+/// first of those.
+fn selected_event(
+    state: &CalendarDialogState,
+    list: &ListCtrl,
+) -> Option<(CalendarEventItem, WhatTheCalendarAllows)> {
+    let sel = list.get_first_selected_item();
+    if sel < 0 {
+        return None;
+    }
+    let idx = sel as usize;
+    match (state.events_data.get(idx), state.allows.get(idx)) {
+        (Some(item), Some(allows)) => Some((item.clone(), allows.clone())),
+        _ => None,
+    }
+}
+
+/// What the Sync button answers.
+///
+/// No row to select, so nothing here can go unanswered the way Edit and
+/// Delete can when nothing is chosen first.
+///
+/// Extracted verbatim from what used to be `show_calendar_dialog`'s own
+/// `ID_CAL_SYNC` arm: same state mutation, same `said_and_shown` call.
+/// [`wire_calendar_actions`] wires this straight to the S&ync button's
+/// `on_click`; see that function's own doc comment for why. `pub` so a test
+/// can call it directly, which is the only way to prove what it does
+/// without a human clicking a real button inside a real modal dialog.
+pub fn request_sync(state: &mut CalendarDialogState, status: &StaticText, a11y: &Accessibility) {
+    state.actions.push(CalendarAction::SyncRequested);
+    said_and_shown(status, a11y, "Sync requested...", Priority::Normal);
+}
+
+/// What the Edit Event button answers.
+///
+/// Asks which days are meant, and whether the calendar will allow it,
+/// before the editor opens: filling in a form and being told afterwards
+/// that it cannot be done is the one thing the comment on
+/// [`CalendarAction::UpdateEvent`] has always promised this does not do.
+///
+/// Extracted verbatim from what used to be `show_calendar_dialog`'s own
+/// `ID_CAL_EDIT` arm, for the same reason and the same way as
+/// [`request_sync`]; wired to the &Edit Event button's `on_click` in
+/// [`wire_calendar_actions`].
+pub fn edit_selected_event(
+    state: &mut CalendarDialogState,
+    dialog: &Dialog,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+    palette: Option<theme::Palette>,
+) {
+    let Some((item, allows)) = selected_event(state, list) else {
+        said_and_shown(status, a11y, "Select an event to edit.", Priority::High);
+        return;
+    };
+    let prefill = CalendarEventData::as_shown(&item);
+    // Both asked before the editor opens, so somebody who meant one day is
+    // not made to fill a form in first and then told it cannot be done. The
+    // refusal is the same sentence the manager would give afterwards, from
+    // the same place, because two spellings of that rule is how this window
+    // comes to offer what the manager refuses.
+    if let Some(means) = which_days_are_meant(
+        dialog,
+        &item.summary,
+        &item.repeats,
+        WhatIsBeingDone::Changing,
+        &allows,
+        palette,
+    ) {
+        if let Err(refused) = can_be_honoured(WhatIsBeingDone::Changing, means, &allows) {
+            said_and_shown(status, a11y, &refused, Priority::High);
+        } else if let Some(data) = show_event_editor(dialog, Some(&prefill), palette) {
+            state
+                .actions
+                .push(CalendarAction::UpdateEvent(item, means, data));
+            said_and_shown(
+                status,
+                a11y,
+                what_is_waiting(match means {
+                    EditMeans::OneDay => WrittenDown::OneDayChanged,
+                    EditMeans::WholeSeries => WrittenDown::WholeSeriesChanged,
+                }),
+                Priority::Normal,
+            );
+        }
+    }
+}
+
+/// What the Delete Event button answers.
+///
+/// Confirms, then asks which days are meant and whether the calendar will
+/// allow it, before anything is queued: the same order as
+/// [`edit_selected_event`], and for the same reason.
+///
+/// Extracted verbatim from what used to be `show_calendar_dialog`'s own
+/// `ID_CAL_DELETE` arm, for the same reason and the same way as
+/// [`request_sync`]; wired to the &Delete Event button's `on_click` in
+/// [`wire_calendar_actions`].
+pub fn delete_selected_event(
+    state: &mut CalendarDialogState,
+    dialog: &Dialog,
+    list: &ListCtrl,
+    status: &StaticText,
+    a11y: &Accessibility,
+    palette: Option<theme::Palette>,
+) {
+    let Some((item, allows)) = selected_event(state, list) else {
+        said_and_shown(status, a11y, "Select an event to delete.", Priority::High);
+        return;
+    };
+    let (confirm, _yes_btn, _no_btn) = build_confirm_delete_dialog(dialog, &item.summary, palette);
+
+    // Asked here, where the person is standing, rather than after this
+    // window closes. A calendar that will refuse the answer refuses it now,
+    // instead of saying the day is off and then saying nothing was changed
+    // a moment later.
+    if confirm.show_modal() == ID_OK
+        && let Some(means) = which_days_are_meant(
+            dialog,
+            &item.summary,
+            &item.repeats,
+            WhatIsBeingDone::Deleting,
+            &allows,
+            palette,
+        )
+    {
+        if let Err(refused) = can_be_honoured(WhatIsBeingDone::Deleting, means, &allows) {
+            said_and_shown(status, a11y, &refused, Priority::High);
+        } else {
+            state.actions.push(CalendarAction::DeleteEvent(item, means));
+            // Said as what is waiting to happen. Nothing on this list has
+            // happened yet, and taking one day off a series is not a
+            // deletion either: the event stays and the other days keep
+            // their own values.
+            said_and_shown(
+                status,
+                a11y,
+                what_is_waiting(match means {
+                    EditMeans::OneDay => WrittenDown::OneDayTakenOff,
+                    EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
+                }),
+                Priority::Normal,
+            );
+        }
+    }
+    confirm.destroy();
+}
+
+/// The New/Close modal loop `show_calendar_dialog` runs against the dialog
+/// [`build_calendar_dialog`] built.
+///
+/// Sync, Edit and Delete used to have arms here too.
+/// [`wire_calendar_actions`] answers their `on_click` directly now, so
+/// `show_modal()` never returns one of their IDs and an arm for one here
+/// could never be reached; see that function's own doc comment for why.
+/// New stays because it has to leave this dialog to show its own nested
+/// event editor; the terminal case stays as the loop's own way out.
+fn run_calendar_loop(
+    widgets: &CalendarDialogHandles,
+    state: &Rc<RefCell<CalendarDialogState>>,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) {
+    let dialog = &widgets.dialog;
+    let status = &widgets.status;
+    loop {
+        match dialog.show_modal() {
+            r if r == ID_OK || r == ID_CANCEL => break,
+            r if r == ID_CAL_NEW => {
+                if let Some(data) = show_event_editor(dialog, None, palette) {
+                    state
+                        .borrow_mut()
+                        .actions
+                        .push(CalendarAction::CreateEvent(data));
+                    said_and_shown(
+                        status,
+                        a11y,
+                        what_is_waiting(WrittenDown::Created),
+                        Priority::Normal,
+                    );
+                }
+            }
+            _ => break,
+        }
     }
 }
 
@@ -317,141 +599,19 @@ pub fn show_calendar_dialog(
     a11y: &Arc<Accessibility>,
 ) -> Vec<CalendarAction> {
     let palette = theme::current_from_stored_config();
-    let CalendarDialogHandles {
-        dialog,
-        list,
-        status,
-    } = build_calendar_dialog(parent, events, palette);
+    let widgets = build_calendar_dialog(parent, events, palette);
 
-    // Modal event loop
-    let mut actions = Vec::<CalendarAction>::new();
-    let events_data: Vec<CalendarEventItem> = events.to_vec();
+    let state = Rc::new(RefCell::new(CalendarDialogState {
+        actions: Vec::new(),
+        events_data: events.to_vec(),
+        allows: events.iter().map(where_changes_go).collect(),
+    }));
 
-    loop {
-        match dialog.show_modal() {
-            r if r == ID_OK || r == ID_CANCEL => break,
-            r if r == ID_CAL_SYNC => {
-                actions.push(CalendarAction::SyncRequested);
-                said_and_shown(&status, a11y, "Sync requested...", Priority::Normal);
-            }
-            r if r == ID_CAL_NEW => {
-                if let Some(data) = show_event_editor(&dialog, None, palette) {
-                    actions.push(CalendarAction::CreateEvent(data));
-                    said_and_shown(
-                        &status,
-                        a11y,
-                        what_is_waiting(WrittenDown::Created),
-                        Priority::Normal,
-                    );
-                }
-            }
-            r if r == ID_CAL_EDIT => {
-                let sel = list.get_first_selected_item();
-                if sel >= 0 {
-                    let idx = sel as usize;
-                    if let Some(item) = events_data.get(idx) {
-                        let prefill = CalendarEventData::as_shown(item);
-                        let allows = where_changes_go(item);
-                        // Both asked before the editor opens, so somebody who
-                        // meant one day is not made to fill a form in first and
-                        // then told it cannot be done. The refusal is the same
-                        // sentence the manager would give afterwards, from the
-                        // same place, because two spellings of that rule is how
-                        // this window comes to offer what the manager refuses.
-                        if let Some(means) = which_days_are_meant(
-                            &dialog,
-                            &item.summary,
-                            &item.repeats,
-                            WhatIsBeingDone::Changing,
-                            &allows,
-                            palette,
-                        ) {
-                            if let Err(refused) =
-                                can_be_honoured(WhatIsBeingDone::Changing, means, &allows)
-                            {
-                                said_and_shown(&status, a11y, &refused, Priority::High);
-                            } else if let Some(data) =
-                                show_event_editor(&dialog, Some(&prefill), palette)
-                            {
-                                actions.push(CalendarAction::UpdateEvent(
-                                    item.clone(),
-                                    means,
-                                    data,
-                                ));
-                                said_and_shown(
-                                    &status,
-                                    a11y,
-                                    what_is_waiting(match means {
-                                        EditMeans::OneDay => WrittenDown::OneDayChanged,
-                                        EditMeans::WholeSeries => WrittenDown::WholeSeriesChanged,
-                                    }),
-                                    Priority::Normal,
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    said_and_shown(&status, a11y, "Select an event to edit.", Priority::High);
-                }
-            }
-            r if r == ID_CAL_DELETE => {
-                let sel = list.get_first_selected_item();
-                if sel >= 0 {
-                    let idx = sel as usize;
-                    if let Some(item) = events_data.get(idx) {
-                        let (confirm, _yes_btn, _no_btn) =
-                            build_confirm_delete_dialog(&dialog, &item.summary, palette);
+    wire_calendar_actions(&widgets, &state, a11y, palette);
+    run_calendar_loop(&widgets, &state, a11y, palette);
 
-                        let allows = where_changes_go(item);
-                        if confirm.show_modal() == ID_OK
-                            && let Some(means) = which_days_are_meant(
-                                &dialog,
-                                &item.summary,
-                                &item.repeats,
-                                WhatIsBeingDone::Deleting,
-                                &allows,
-                                palette,
-                            )
-                        {
-                            // Asked here, where the person is standing, rather
-                            // than after this window closes. A calendar that
-                            // will refuse the answer refuses it now, instead of
-                            // saying the day is off and then saying nothing was
-                            // changed a moment later.
-                            if let Err(refused) =
-                                can_be_honoured(WhatIsBeingDone::Deleting, means, &allows)
-                            {
-                                said_and_shown(&status, a11y, &refused, Priority::High);
-                            } else {
-                                actions.push(CalendarAction::DeleteEvent(item.clone(), means));
-                                // Said as what is waiting to happen. Nothing on
-                                // this list has happened yet, and taking one day
-                                // off a series is not a deletion either: the
-                                // event stays and the other days keep their own
-                                // values.
-                                said_and_shown(
-                                    &status,
-                                    a11y,
-                                    what_is_waiting(match means {
-                                        EditMeans::OneDay => WrittenDown::OneDayTakenOff,
-                                        EditMeans::WholeSeries => WrittenDown::WholeSeriesDeleted,
-                                    }),
-                                    Priority::Normal,
-                                );
-                            }
-                        }
-                        confirm.destroy();
-                    }
-                } else {
-                    said_and_shown(&status, a11y, "Select an event to delete.", Priority::High);
-                }
-            }
-            _ => break,
-        }
-    }
-
-    dialog.destroy();
-    actions
+    widgets.dialog.destroy();
+    state.borrow().actions.clone()
 }
 
 /// Build the Confirm Delete dialog `show_calendar_dialog` opens before
@@ -855,19 +1015,53 @@ mod tests {
             .map_or(whole.clone(), |(window, _)| window.to_string())
     }
 
-    /// One arm of the window's loop, from its label to the start of the next.
-    fn the_arm_for(source: &str, id: &str) -> String {
-        let marker = format!("r if r == {id}");
-        let after = source
-            .split_once(marker.as_str())
-            .unwrap_or_else(|| panic!("no arm for {id}"))
-            .1;
-        let end = ["\n            r if r ==", "\n            _ =>"]
+    /// One function's own body, from its signature to the line that starts
+    /// the next top-level item, so a check reading it cannot match a
+    /// similar line that belongs to a different function.
+    ///
+    /// Edit and Delete's own logic used to live in the loop below as two of
+    /// its match arms, which is what this helper's own predecessor,
+    /// `the_arm_for`, once cut out of the window's source. Both now answer
+    /// their own button's `on_click` directly instead of waiting for a pass
+    /// through that loop (see [`super::wire_calendar_actions`]), so their
+    /// logic lives in named functions now, and this is that same idea
+    /// pointed at a function's signature rather than a match arm's label.
+    /// The same idea as `tests/theme_reach.rs`'s own `function_body`,
+    /// generalised to a name that can start with `fn ` or `pub fn `.
+    fn the_function_for(source: &str, signature: &str) -> String {
+        let start = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("no function found for {signature}"));
+        let after = &source[start..];
+        let end = ["\nfn ", "\npub fn "]
             .iter()
-            .filter_map(|next| after.find(next))
+            .filter_map(|next| after[1..].find(next))
             .min()
+            .map(|at| at + 1)
             .unwrap_or(after.len());
         after[..end].to_string()
+    }
+
+    /// A function's own body, with the "nothing is selected" guard clause
+    /// at its top cut away.
+    ///
+    /// Edit and Delete both open the same way: read the row and its
+    /// allowance back, or say "Select an event to ..." and return with
+    /// nothing asked yet. That early return is a separate rule from the one
+    /// `what_the_arm_gets_wrong` checks below, and leaving it in would have
+    /// the guard's own `said_and_shown` read as something that happens
+    /// before `can_be_honoured` is ever reached, which is not what this is
+    /// checking at all.
+    fn after_the_guard(function: &str) -> &str {
+        let marker = "let Some((item, allows)) = selected_event(state, list) else {";
+        let from = function
+            .find(marker)
+            .unwrap_or_else(|| panic!("the guard clause this expects is not here: {function}"));
+        let after = &function[from..];
+        let end = after
+            .find("};\n")
+            .unwrap_or_else(|| panic!("the guard clause's own close was not found"));
+        &after[end + 3..]
     }
 
     /// What one arm gets wrong about asking, and about acting on the answer.
@@ -1048,17 +1242,19 @@ mod tests {
 
     #[test]
     fn test_the_calendar_window_asks_before_it_says_anything() {
-        // What this cannot see. Reaching these arms takes a window on the
-        // screen, a list with a row picked out and somebody clicking through
-        // two dialogs, so nothing here runs a line of the code it is about. It
-        // reads the arms as text.
+        // What this cannot see. Reaching either function's own "something is
+        // selected" branch takes a window on the screen, a list with a row
+        // picked out and somebody clicking through the dialogs each can open,
+        // so nothing here runs a line of the code it is about. It reads the
+        // functions as text.
         //
-        // That means the arm could stop being reachable, the menu line could
-        // lose its binding, the whole branch could go dead, and this stays
-        // green. It cannot say whether the refusal is a true one, whether the
-        // sentence is the right sentence for what was refused, or whether an
-        // announcement raised from inside a modal dialog is heard at all. Only
-        // a screen reader run answers the last of those.
+        // That means either function could stop being reachable, the button's
+        // own `on_click` could lose its call to it, the whole branch could go
+        // dead, and this stays green. It cannot say whether the refusal is a
+        // true one, whether the sentence is the right sentence for what was
+        // refused, or whether an announcement raised from inside a modal
+        // dialog is heard at all. Only a screen reader run answers the last of
+        // those.
         //
         // What it does hold is the order: that the question is asked before
         // anything is queued, and that the refusal and the thing it refuses sit
@@ -1066,21 +1262,27 @@ mod tests {
         // three times.
         let source = the_calendar_window();
 
-        let delete = the_arm_for(&source, "ID_CAL_DELETE");
-        let edit = the_arm_for(&source, "ID_CAL_EDIT");
+        let delete = the_function_for(&source, "pub fn delete_selected_event(");
+        let edit = the_function_for(&source, "pub fn edit_selected_event(");
         assert!(
             delete.len() > 200 && edit.len() > 200,
-            "the arms read as {} and {} characters, so the reading is broken",
+            "the functions read as {} and {} characters, so the reading is broken",
             delete.len(),
             edit.len()
         );
 
-        let mut wrong = what_the_arm_gets_wrong(&delete, &["actions.push(", "said_and_shown("]);
+        let mut wrong = what_the_arm_gets_wrong(
+            after_the_guard(&delete),
+            &["actions.push(", "said_and_shown("],
+        );
         // The editor is a form somebody fills in. Asking after it opens means
         // filling the whole thing in and then being told it cannot be done,
-        // which is what the comment in that arm has always promised it does
-        // not do.
-        wrong.extend(what_the_arm_gets_wrong(&edit, &["show_event_editor("]));
+        // which is what the comment on this function has always promised it
+        // does not do.
+        wrong.extend(what_the_arm_gets_wrong(
+            after_the_guard(&edit),
+            &["show_event_editor("],
+        ));
         for said in [
             "That one day is taken off.",
             "Event deleted.",
@@ -1161,18 +1363,204 @@ mod tests {
             "the tests were not cut off, so the check is reading its own words"
         );
 
-        // And the cutter stops at the next arm rather than running on.
-        let loop_source = "            r if r == ID_CAL_EDIT => {\n\
-            \x20               edit_only();\n\
-            \x20           }\n\
-            \x20           r if r == ID_CAL_DELETE => {\n\
-            \x20               delete_only();\n\
-            \x20           }\n\
-            \x20           _ => break,\n";
-        assert!(the_arm_for(loop_source, "ID_CAL_EDIT").contains("edit_only"));
+        // And the cutter stops at the next function rather than running on.
+        let two_functions = "pub fn edit_only() {\n    edit_only_body();\n}\n\npub fn delete_only() {\n    delete_only_body();\n}\n";
+        let edit_only = the_function_for(two_functions, "pub fn edit_only(");
+        assert!(edit_only.contains("edit_only_body"));
         assert!(
-            !the_arm_for(loop_source, "ID_CAL_EDIT").contains("delete_only"),
-            "the cutter ran on into the next arm"
+            !edit_only.contains("delete_only_body"),
+            "the cutter ran on into the next function"
+        );
+
+        // And the guard-cutter finds the same guard in both real functions
+        // and cuts it away rather than leaving it in or cutting too much.
+        let window = the_calendar_window();
+        for signature in [
+            "pub fn edit_selected_event(",
+            "pub fn delete_selected_event(",
+        ] {
+            let function = the_function_for(&window, signature);
+            let after = after_the_guard(&function);
+            assert!(
+                !after.contains("Select an event to"),
+                "{signature} still carries its own guard clause after cutting"
+            );
+            assert!(
+                after.len() > 50,
+                "{signature} was cut down to {} characters, so the cutter took too much",
+                after.len()
+            );
+        }
+    }
+
+    // ── Sync, Edit and Delete answer their own click, not the loop's ────
+    //
+    // The structural half of the fix this round makes: Sync, Edit and
+    // Delete used to end this dialog's own modal loop with their own ID,
+    // the same as New and Close still do, and the loop's match arm ran
+    // their work only once `show_modal()` returned. A live NVDA run against
+    // the Account Manager's own Sign In Again, which used to be wired the
+    // same way, found neither of its two sentences is heard: `end_modal`
+    // hides the dialog, the work runs and announces entirely
+    // synchronously, and the loop calling `show_modal()` again to re-show
+    // it leaves nothing yielded to the Windows message pump in between.
+    // `wire_calendar_actions` wires these three straight to the button's
+    // own `on_click` instead, so this reads each button's own on_click
+    // block and checks it calls its function directly rather than
+    // `end_modal`.
+    //
+    // What this cannot see: whether NVDA hears the difference. Only a
+    // screen reader run answers that; see the workflow report for this
+    // round for what it found.
+
+    /// The body of one `X.on_click({ ... });` call, from its opening brace
+    /// to the matching close.
+    ///
+    /// Brace-counted rather than a fixed character window: a fixed window
+    /// either misses a call sitting past its edge, or spills into the next
+    /// button's own block and reports its calls as this one's. Every `{`
+    /// and `}` inside one of this file's own `on_click` blocks belongs to
+    /// Rust code, never a string or a comment holding a stray one, so
+    /// counting is exact here.
+    fn the_on_click_for<'a>(source: &'a str, marker: &str) -> &'a str {
+        let start = source
+            .find(marker)
+            .unwrap_or_else(|| panic!("no on_click block found for {marker}"));
+        let body_start = start + marker.len();
+        let mut depth = 1i32;
+        let mut end = body_start;
+        for (i, c) in source[body_start..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = body_start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        &source[body_start..end]
+    }
+
+    /// Whether `needle` sits on a line of `haystack` that a `//` comment
+    /// has not swallowed.
+    ///
+    /// The same idea `tests/theme_reach.rs`'s own `appears_live` proves it
+    /// needs, and for the same reason: `str::contains` cannot tell a live
+    /// call from a commented-out one, because a line commented out with
+    /// `// end_modal(...)` still holds the call's exact text as a literal
+    /// substring.
+    fn appears_live(haystack: &str, needle: &str) -> bool {
+        haystack.lines().any(|line| {
+            line.find(needle)
+                .is_some_and(|at| !line[..at].contains("//"))
+        })
+    }
+
+    #[test]
+    fn test_sync_edit_and_delete_answer_their_own_click_directly() {
+        let source = the_calendar_window();
+        for (marker, function) in [
+            ("widgets.sync.on_click({", "request_sync("),
+            ("widgets.edit.on_click({", "edit_selected_event("),
+            ("widgets.delete.on_click({", "delete_selected_event("),
+        ] {
+            let block = the_on_click_for(&source, marker);
+            assert!(
+                appears_live(block, function),
+                "{marker} no longer calls {function}"
+            );
+            assert!(
+                !appears_live(block, "end_modal("),
+                "{marker} still calls end_modal, which re-triggers the \
+                 end_modal-then-immediate-show_modal round trip NVDA cannot \
+                 hear an announcement across"
+            );
+        }
+
+        // New and Close are the two exceptions: New always opens a real
+        // nested form before it can reach `said_and_shown`, and Close
+        // legitimately ends the session, so both still end this dialog's
+        // own modal loop.
+        for marker in ["new_btn.on_click({", "close_btn.on_click({"] {
+            let block = the_on_click_for(&source, marker);
+            assert!(
+                appears_live(block, "end_modal("),
+                "{marker} no longer calls end_modal, so \
+                 show_calendar_dialog's own loop can never see it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_on_click_reading_can_tell_the_two_apart() {
+        // Proving the measurement, the same way every other check in this
+        // file does: a read that finds nothing passes, and from outside
+        // that is indistinguishable from one that finds everything.
+        let wired = "widgets.sync.on_click({\n\
+            \x20   let state = Rc::clone(state);\n\
+            \x20   move |_| {\n\
+            \x20       request_sync(&mut state.borrow_mut(), &status, &a11y);\n\
+            \x20   }\n\
+            });\n\
+            new_btn.on_click({\n\
+            \x20   let d = dialog;\n\
+            \x20   move |_| {\n\
+            \x20       d.end_modal(ID_CAL_NEW);\n\
+            \x20   }\n\
+            });\n";
+
+        let sync_block = the_on_click_for(wired, "widgets.sync.on_click({");
+        assert!(appears_live(sync_block, "request_sync("));
+        assert!(!appears_live(sync_block, "end_modal("));
+        // And the cutter really does stop at the matching close rather than
+        // running on into the next button's own block: New's `end_modal`
+        // call sits right after Sync's block in this fixture, and must not
+        // turn up in what was read back for Sync.
+        assert!(
+            !sync_block.contains("end_modal"),
+            "the cutter ran on into the next button's own block"
+        );
+
+        // Sabotage: comment the real call out, the way a fix half-applied
+        // by hand might leave it, and confirm the check goes red rather
+        // than reading its own words back.
+        let sabotaged = wired.replace(
+            "request_sync(&mut state.borrow_mut(), &status, &a11y);",
+            "// request_sync(&mut state.borrow_mut(), &status, &a11y);",
+        );
+        let sabotaged_block = the_on_click_for(&sabotaged, "widgets.sync.on_click({");
+        assert!(
+            !appears_live(sabotaged_block, "request_sync("),
+            "commenting the real call out still read as calling it live"
+        );
+
+        // And a comment naming end_modal without calling it does not trip
+        // the negative check either: a doc comment explaining why a button
+        // no longer calls it must not itself read as the call.
+        let mentions_without_calling = "widgets.sync.on_click({\n\
+            \x20   // does not call end_modal(ID_CAL_SYNC) any more\n\
+            \x20   move |_| {\n\
+            \x20       request_sync(&mut state.borrow_mut(), &status, &a11y);\n\
+            \x20   }\n\
+            });\n";
+        let block = the_on_click_for(mentions_without_calling, "widgets.sync.on_click({");
+        assert!(
+            !appears_live(block, "end_modal("),
+            "a comment naming end_modal was read as a live call to it"
+        );
+
+        // And the window really was read, because a read that finds
+        // nothing looks the same from outside as one that finds
+        // everything.
+        let window = the_calendar_window();
+        assert!(
+            window.len() > 5000,
+            "only {} characters of the window were read, so the reading is broken",
+            window.len()
         );
     }
 
