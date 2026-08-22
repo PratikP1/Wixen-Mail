@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 250 records have arrived since and have not been through it.
+# 255 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -8253,3 +8253,64 @@ file = "src/service/safebrowsing/urls.rs"
 before = """.all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))"""
 after = """.all(|p| !p.is_empty() || p.chars().all(|c| c.is_ascii_digit()))"""
 red = ["service::safebrowsing::urls::tests::test_a_part_that_only_looks_numeric_does_not_get_folded_into_an_address"]
+
+# ── notes.rs, from the 2026-08-22 mutation-sweep round ──────────────────────
+#
+# Five misses in application/notes.rs, all untested but already correct, all
+# guarded below. reading_habits.rs and threading.rs, this same builder
+# group's other two files, contribute none: their guard-worthy work landed in
+# commit 3fcd460 bounding DisjointSet::find, whose own diff is the record of
+# what that commit covers.
+#
+# Measured by hand: each guard applied alone, against the whole library,
+# reddened exactly the test(s) named and nothing else. Restored and reran
+# green after each. Two entries name two tests apiece: a folder store that
+# never keeps what it is given also fails the load test, which checks the
+# same folder by content, not only the folder test built to catch it; adding
+# a folder that never gets pushed does not, since nothing there reads it back
+# through the cache.
+
+[[guard]]
+name = "load_notes really reads the folders and notes the cache holds, not a stub returning Ok"
+file = "src/application/notes.rs"
+before = """        self.folders = cache.get_note_folders_for_account(account_id)?;
+        self.notes = cache.get_all_notes_for_account(account_id)?;
+        Ok(())"""
+after = """        let _ = (cache, account_id);
+        Ok(())"""
+red = ["application::notes::tests::test_load_notes_reads_the_folders_and_notes_the_cache_holds"]
+
+[[guard]]
+name = "all_folders reflects what was added, not a permanently empty slice"
+file = "src/application/notes.rs"
+before = """        &self.folders"""
+after = """        Vec::leak(Vec::new())"""
+red = [
+    "application::notes::tests::test_all_folders_reflects_what_was_added",
+    "application::notes::tests::test_load_notes_reads_the_folders_and_notes_the_cache_holds",
+]
+
+[[guard]]
+name = "add_folder really stores the folder it is given, not a no-op"
+file = "src/application/notes.rs"
+before = """        self.folders.push(folder);"""
+after = """        let _ = folder;"""
+red = ["application::notes::tests::test_all_folders_reflects_what_was_added"]
+
+[[guard]]
+name = "remove_note takes only the one asked for, not every other one"
+file = "src/application/notes.rs"
+before = """        self.notes.retain(|n| n.id != note_id);"""
+after = """        self.notes.retain(|n| n.id == note_id);"""
+red = ["application::notes::tests::test_remove_note_takes_only_the_one_asked_for"]
+
+[[guard]]
+name = "adding a note really sorts pinned first then most recently changed, not a no-op"
+file = "src/application/notes.rs"
+before = """        self.notes.sort_by(|a, b| {
+            b.pinned
+                .cmp(&a.pinned)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
+        });"""
+after = """        let _ = &self.notes;"""
+red = ["application::notes::tests::test_adding_a_note_sorts_pinned_first_then_most_recently_changed"]
