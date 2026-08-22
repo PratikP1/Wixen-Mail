@@ -203,12 +203,6 @@ pub struct LanguageChoice {
     pub available: bool,
 }
 
-/// The languages this machine can actually check, and the ones it cannot.
-///
-/// Windows' real list first, in its own order. When Windows has none, the
-/// built-in list is offered instead with everything but English marked
-/// unavailable, because the fallback checker only ships an English word list
-/// however many alphabets it knows.
 /// The language this machine is set to, when something can check it.
 ///
 /// The stored default was "en" for everybody, so anybody writing in anything
@@ -221,9 +215,18 @@ pub struct LanguageChoice {
 /// default stands, because English checked is better than nothing checked.
 pub fn language_of_this_machine() -> Option<String> {
     let wanted = system_language()?.to_ascii_lowercase();
-    let choices = available_languages();
-    // The exact tag first: en-GB should not settle for en-US when both are
-    // there, because the two disagree about half the words somebody types.
+    best_available_match(&wanted, &available_languages())
+}
+
+/// Which of `choices` best answers `wanted`, if any.
+///
+/// The exact tag first: en-GB should not settle for en-US when both are
+/// there, because the two disagree about half the words somebody types. Only
+/// then the language family, because a family member something can check
+/// beats naming nothing at all. Either way the match has to be marked
+/// available, or this would offer a language exactly as uncheckable as the
+/// one that was asked for, in different words.
+fn best_available_match(wanted: &str, choices: &[LanguageChoice]) -> Option<String> {
     if let Some(exact) = choices
         .iter()
         .find(|c| c.available && c.tag.to_ascii_lowercase() == wanted)
@@ -276,6 +279,21 @@ pub fn system_language() -> Option<String> {
     Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize]))
 }
 
+// Not reachable by any test this project runs, and not equivalent to
+// anything either: this compiles only on a target `cfg(not(target_os =
+// "windows"))`, and every check, build, and mutation-testing run this
+// project has (`scripts/check.sh`, `.github/workflows/*.yml`) targets
+// `windows-latest` alone, matching CLAUDE.md's "Windows-first" guardrail. On
+// that build, this whole function is stripped before the compiler ever
+// looks at its body, the same way it would be stripped from the shipped
+// binary; a mutation inside it changes tokens nothing here compiles, so
+// nothing here could ever run the changed and unchanged versions apart to
+// tell them apart. A debug_assert! would not help: there is no runtime
+// state to check, only a build target this codebase does not build for.
+// Proving that means proving a negative about a target nobody here
+// exercises, so it is written down instead of asserted. Testing this for
+// real needs an actual Linux or macOS build of this crate, which is future
+// port work, not a gap in today's coverage.
 #[cfg(not(target_os = "windows"))]
 pub fn system_language() -> Option<String> {
     std::env::var("LANG")
@@ -284,20 +302,51 @@ pub fn system_language() -> Option<String> {
         .filter(|tag| !tag.is_empty() && tag != "C")
 }
 
+/// The languages this machine can actually check, and the ones it cannot.
+///
+/// Windows' real list first, in its own order. When Windows has none, the
+/// built-in list is offered instead with everything but English marked
+/// unavailable, because the fallback checker only ships an English word list
+/// however many alphabets it knows.
 pub fn available_languages() -> Vec<LanguageChoice> {
     #[cfg(windows)]
     {
-        let tags = windows_speller::WindowsSpeller::supported_languages();
-        if !tags.is_empty() {
-            return tags
-                .into_iter()
-                .map(|tag| LanguageChoice {
-                    name: windows_speller::display_name(&tag),
-                    tag,
-                    available: true,
-                })
-                .collect();
-        }
+        let windows_choices = windows_speller::WindowsSpeller::supported_languages()
+            .into_iter()
+            .map(|tag| {
+                let name = windows_speller::display_name(&tag);
+                (tag, name)
+            })
+            .collect();
+        choices_from(windows_choices)
+    }
+    #[cfg(not(windows))]
+    {
+        choices_from(Vec::new())
+    }
+}
+
+/// Turns Windows' own supported (tag, display name) pairs into the language
+/// list, or falls back to the short built-in list when Windows offered
+/// nothing.
+///
+/// Taking `windows_choices` as a plain argument, rather than asking Windows
+/// itself, is what makes the two halves of this decision (which list wins,
+/// and what the fallback list looks like) checkable without a real spell
+/// checking feature installed on the machine running the test. It is also
+/// what keeps this function itself free of any reference to
+/// `windows_speller`, so it compiles on every platform rather than only the
+/// one this project ships for.
+fn choices_from(windows_choices: Vec<(String, String)>) -> Vec<LanguageChoice> {
+    if !windows_choices.is_empty() {
+        return windows_choices
+            .into_iter()
+            .map(|(tag, name)| LanguageChoice {
+                tag,
+                name,
+                available: true,
+            })
+            .collect();
     }
 
     supported_languages()
@@ -373,9 +422,8 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
         // for that language is what stops those people silently dropping to the
         // built-in word list on upgrade. Windows lists them in its own
         // preference order, so the first is the one this machine leans towards.
-        if let Some(regional) = windows_speller::WindowsSpeller::supported_languages()
-            .into_iter()
-            .find(|candidate| short_code(candidate) == short_code(tag))
+        if let Some(regional) =
+            find_regional_variant(tag, &windows_speller::WindowsSpeller::supported_languages())
             && let Some(windows) = windows_speller::WindowsSpeller::for_language(&regional)
         {
             tracing::info!("Spell checking {} as {}", tag, regional);
@@ -396,6 +444,19 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
 /// than the fallback being asked a question it cannot answer.
 fn short_code(tag: &str) -> &str {
     tag.split(['-', '_']).next().unwrap_or(tag)
+}
+
+/// The first of Windows' supported tags that shares `tag`'s language, if any.
+///
+/// Taken as a plain list rather than asking Windows directly, so the rule for
+/// which regional variant wins is checkable without a real spell checking
+/// feature installed on the machine running the test.
+#[cfg(windows)]
+fn find_regional_variant(tag: &str, supported: &[String]) -> Option<String> {
+    supported
+        .iter()
+        .find(|candidate| short_code(candidate) == short_code(tag))
+        .cloned()
 }
 
 impl Speller for SpellChecker {
@@ -598,6 +659,13 @@ impl SpellChecker {
         let mut errors = Vec::new();
         let mut offset = 0;
 
+        // `is_whitespace()` already includes '\n' and '\r' as Unicode
+        // White_Space, so the two explicit checks after it never change
+        // which characters this splits on; they stay so the intent reads
+        // without having to know that fact about Unicode. Because of that,
+        // no input can tell `||` apart from `&&` between the second and
+        // third arms here: whichever one is written, this splits on
+        // whitespace exactly.
         for segment in text.split(|c: char| c.is_whitespace() || c == '\n' || c == '\r') {
             let word = segment.trim_matches(|c: char| !c.is_alphanumeric());
             if word.len() >= 2 && !self.is_correct(word) {
@@ -1071,6 +1139,23 @@ mod tests {
     }
 
     #[test]
+    fn test_exactly_three_words_are_all_named_without_an_and_zero_others() {
+        // Three is NAMED's own limit. It is the one count that could fall
+        // through to the "and N others" arm with N equal to zero, which the
+        // test above would not notice: "and 0 others" still contains every
+        // word's own text, it just reads as nonsense rather than a mistake.
+        let said = before_sending(&[
+            wrong("recieve", &[]),
+            wrong("teh", &[]),
+            wrong("mesage", &[]),
+        ])
+        .expect("something to say");
+
+        assert!(!said.contains("others"), "{said}");
+        assert!(said.contains("recieve, teh and mesage"), "{said}");
+    }
+
+    #[test]
     fn test_a_lot_of_words_are_counted_rather_than_recited() {
         // Past a few, listing them is a paragraph read aloud before somebody
         // can answer a yes or no question.
@@ -1312,5 +1397,413 @@ mod tests {
         assert_eq!(en.direction, TextDirection::LeftToRight);
         let ar = Locale::from_code("ar");
         assert_eq!(ar.direction, TextDirection::RightToLeft);
+    }
+
+    // ── Source::describe ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_every_source_describes_itself_honestly() {
+        assert!(Source::Windows.describe().contains("Windows"));
+        assert!(Source::Hunspell.describe().contains("dictionary"));
+        assert!(Source::Builtin.describe().contains("built-in"));
+    }
+
+    // ── Language matching ────────────────────────────────────────────────
+
+    #[test]
+    fn test_the_exact_tag_is_preferred_over_its_family() {
+        let choices = vec![
+            LanguageChoice {
+                tag: "en-us".into(),
+                name: "English (US)".into(),
+                available: true,
+            },
+            LanguageChoice {
+                tag: "en-gb".into(),
+                name: "English (UK)".into(),
+                available: true,
+            },
+        ];
+
+        assert_eq!(
+            best_available_match("en-gb", &choices),
+            Some("en-gb".to_string())
+        );
+    }
+
+    #[test]
+    fn test_an_unavailable_exact_match_does_not_win_over_an_available_family_member() {
+        let choices = vec![
+            LanguageChoice {
+                tag: "en-gb".into(),
+                name: "English (UK)".into(),
+                available: false,
+            },
+            LanguageChoice {
+                tag: "en-us".into(),
+                name: "English (US)".into(),
+                available: true,
+            },
+        ];
+
+        assert_eq!(
+            best_available_match("en-gb", &choices),
+            Some("en-us".to_string())
+        );
+    }
+
+    #[test]
+    fn test_nothing_answers_when_no_family_member_is_available() {
+        let choices = vec![LanguageChoice {
+            tag: "fr-fr".into(),
+            name: "French".into(),
+            available: false,
+        }];
+
+        assert_eq!(best_available_match("fr-fr", &choices), None);
+    }
+
+    #[test]
+    fn test_the_machines_language_is_exactly_the_best_match_for_its_real_locale() {
+        // Ties language_of_this_machine to the pure matching logic above,
+        // computed independently the same way, so a version that ignores
+        // the machine entirely (always None, or always the stored default)
+        // cannot pass unnoticed. This assumes the machine running the tests
+        // has a resolvable locale, true of every dev machine and CI runner
+        // this project actually uses.
+        let expected = system_language()
+            .map(|tag| tag.to_ascii_lowercase())
+            .and_then(|wanted| best_available_match(&wanted, &available_languages()));
+
+        assert_eq!(language_of_this_machine(), expected);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_system_language_reports_something_real_on_this_machine() {
+        let language = system_language().expect("every real Windows install has a default locale");
+
+        assert!(!language.trim().is_empty());
+        assert!(
+            !language.contains('\u{0}'),
+            "trailing NUL was not trimmed: {language:?}"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_windows_list_falls_back_to_the_built_in_six() {
+        let choices = choices_from(Vec::new());
+
+        assert_eq!(choices.len(), supported_languages().len(), "{choices:?}");
+    }
+
+    #[test]
+    fn test_only_english_is_offered_as_available_in_the_built_in_fallback() {
+        let choices = choices_from(Vec::new());
+
+        let english = choices
+            .iter()
+            .find(|c| c.tag == "en")
+            .expect("english is always in the built-in list");
+        assert!(
+            english.available,
+            "English was marked unavailable in the fallback list"
+        );
+        assert!(
+            choices
+                .iter()
+                .filter(|c| c.tag != "en")
+                .all(|c| !c.available),
+            "{choices:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_real_windows_list_is_used_instead_of_the_fallback() {
+        let choices = choices_from(vec![(
+            "en-US".to_string(),
+            "English (United States)".to_string(),
+        )]);
+
+        assert_eq!(choices.len(), 1, "{choices:?}");
+        assert_eq!(choices[0].tag, "en-US");
+        assert_eq!(choices[0].name, "English (United States)");
+        assert!(
+            choices[0].available,
+            "a tag Windows offered was marked unavailable"
+        );
+    }
+
+    #[test]
+    fn test_available_languages_is_never_empty() {
+        // available_languages() itself, rather than choices_from: it is the
+        // whole function the mutation report names, and the two tests above
+        // only prove choices_from can't be empty for either input it is
+        // given, not that available_languages ever calls it.
+        assert!(!available_languages().is_empty());
+    }
+
+    #[test]
+    fn test_short_code_is_the_language_half_of_a_tag() {
+        assert_eq!(short_code("en-GB"), "en");
+        assert_eq!(short_code("pt_BR"), "pt");
+        assert_eq!(short_code("de"), "de");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_bare_language_matches_the_first_regional_variant_windows_offers() {
+        let supported = vec![
+            "fr-CA".to_string(),
+            "en-GB".to_string(),
+            "en-US".to_string(),
+        ];
+
+        assert_eq!(
+            find_regional_variant("en", &supported),
+            Some("en-GB".to_string())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_language_windows_does_not_support_at_all_matches_nothing() {
+        let supported = vec!["fr-CA".to_string(), "en-GB".to_string()];
+
+        assert_eq!(find_regional_variant("de", &supported), None);
+    }
+
+    // ── The Speller trait, called through a trait object ────────────────
+    //
+    // `checker.suggest(...)` resolves to SpellChecker's own inherent method,
+    // which Rust prefers over a trait method of the same name. Production
+    // code reaches the trait method through `Box<dyn Speller>`, so these go
+    // through `&dyn Speller` too, or the trait impl's own body is never run.
+
+    #[test]
+    fn test_the_speller_trait_object_suggests_the_same_as_the_inherent_method() {
+        let checker = SpellChecker::new();
+        let speller: &dyn Speller = &checker;
+
+        let suggestions = speller.suggest("recieve", 5);
+
+        assert!(
+            suggestions.iter().any(|s| s == "receive"),
+            "{suggestions:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait() {
+        // add_to_dictionary takes &mut self and lasts until the process
+        // ends, so accepting this quietly would look like learning it and
+        // be forgotten by the next message.
+        let checker = SpellChecker::new();
+        let speller: &dyn Speller = &checker;
+
+        let result = speller.add_to_dictionary("wixenite");
+
+        assert!(
+            result.is_err(),
+            "the built-in checker claimed to learn a word"
+        );
+    }
+
+    #[test]
+    fn test_the_speller_trait_object_reports_its_real_language() {
+        let checker = SpellChecker::with_language("es");
+        let speller: &dyn Speller = &checker;
+
+        assert_eq!(speller.language(), "es");
+    }
+
+    // ── SpellChecker's own methods ───────────────────────────────────────
+
+    #[test]
+    fn test_from_hunspell_data_checks_against_the_data_it_was_given() {
+        // Default::default() would fall back to the built-in list, which
+        // knows nothing about a dictionary built from scratch in this test.
+        let checker = SpellChecker::from_hunspell_data("en", "", "1\nzqzblorptest\n")
+            .expect("a minimal hunspell dictionary");
+
+        assert!(checker.has_hunspell(), "did not use the data it was given");
+        assert!(
+            checker.is_correct("zqzblorptest"),
+            "did not know its own word"
+        );
+    }
+
+    #[test]
+    fn test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for() {
+        let es = SpellChecker::from_hunspell_data("es", "", "1\nhola\n")
+            .expect("a minimal hunspell dictionary");
+        assert!(es.alphabet.contains('ñ'), "{}", es.alphabet);
+
+        let unknown = SpellChecker::from_hunspell_data("xx", "", "1\nhola\n")
+            .expect("a minimal hunspell dictionary");
+        assert_eq!(unknown.alphabet, "abcdefghijklmnopqrstuvwxyz");
+    }
+
+    #[test]
+    fn test_a_plain_checker_without_a_real_dictionary_says_so() {
+        // The dev and CI machines this runs on do not have Hunspell
+        // installed at any of the standard locations, so this falls back to
+        // the built-in word list, and has_hunspell has to say that honestly.
+        assert!(!SpellChecker::new().has_hunspell());
+    }
+
+    #[test]
+    fn test_load_dictionary_file_adds_every_nonblank_line() {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let path = dir.path().join("extra.txt");
+        std::fs::write(&path, "zqzblorpfile\n   \nanotherzq\n").expect("write the word list");
+
+        let mut checker = SpellChecker::new();
+        assert!(!checker.is_correct("zqzblorpfile"), "already known somehow");
+
+        let added = checker.load_dictionary_file(&path).expect("read the file");
+
+        assert_eq!(added, 2, "the blank line was counted as a word");
+        assert!(checker.is_correct("zqzblorpfile"));
+        assert!(checker.is_correct("ANOTHERZQ"), "case was not folded");
+    }
+
+    #[test]
+    fn test_suggest_offers_a_real_correction_for_a_common_misspelling() {
+        let checker = SpellChecker::new();
+
+        let suggestions = checker.suggest("recieve", 5);
+
+        assert!(
+            suggestions.iter().any(|s| s == "receive"),
+            "{suggestions:?}"
+        );
+    }
+
+    #[test]
+    fn test_word_count_includes_words_added_this_session() {
+        let mut checker = SpellChecker::new();
+        let before = checker.word_count();
+
+        checker.add_word("wixenite");
+
+        assert_eq!(checker.word_count(), before + 1);
+    }
+
+    #[test]
+    fn test_default_dict_search_paths_includes_the_windows_location() {
+        let paths = default_dict_search_paths();
+
+        assert!(paths.iter().any(|p| p.ends_with("hunspell")), "{paths:?}");
+    }
+
+    #[test]
+    fn test_dict_search_paths_reports_what_this_checker_actually_searched() {
+        let checker = SpellChecker::new();
+
+        assert_eq!(
+            checker.dict_search_paths(),
+            default_dict_search_paths().as_slice()
+        );
+    }
+
+    #[test]
+    fn test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths() {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        std::fs::write(dir.path().join("xx_XX.aff"), "").expect("write aff");
+        std::fs::write(dir.path().join("xx_XX.dic"), "1\nzqzblorpspell\n").expect("write dic");
+
+        let backend = try_load_spellbook("xx_XX", &[dir.path().to_path_buf()])
+            .expect("a dictionary sitting right where it was told to look");
+
+        let Backend::Spellbook(dict) = backend else {
+            panic!("did not load the spellbook backend");
+        };
+        assert!(dict.check("zqzblorpspell"));
+    }
+
+    #[test]
+    fn test_a_single_letter_is_too_short_to_be_worth_checking() {
+        // is_empty() alone would also be true for an empty string, which is
+        // exactly what lets a mutant hide here: is_empty() implies
+        // len() <= 1, so the two conditions give the same answer unless the
+        // input is short but not empty.
+        assert!(is_number_or_special("j"));
+    }
+
+    #[test]
+    fn test_a_dot_alone_is_not_treated_as_an_email() {
+        // Both halves of an email shape have to be there. A period alone
+        // shows up in ordinary abbreviations, and marking every one of them
+        // unworthy of checking would hide a real misspelling next to it.
+        assert!(!is_number_or_special("wixen.mail"));
+    }
+
+    // ── Document locale and i18n ─────────────────────────────────────────
+
+    /// Puts `DOCUMENT_LOCALE` back to what it was, even if the test that
+    /// borrowed it panics first. It is shared with every other test in this
+    /// binary.
+    struct RestoreDocumentLocale(Option<String>);
+
+    impl Drop for RestoreDocumentLocale {
+        fn drop(&mut self) {
+            if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
+                *locale = self.0.take();
+            }
+        }
+    }
+
+    #[test]
+    fn test_set_document_locale_writes_the_code_for_reading_back() {
+        let _restore = RestoreDocumentLocale(DOCUMENT_LOCALE.read().ok().and_then(|g| g.clone()));
+
+        set_document_locale("fr");
+
+        let after = DOCUMENT_LOCALE.read().ok().and_then(|g| g.clone());
+        assert_eq!(after.as_deref(), Some("fr"));
+    }
+
+    #[test]
+    fn test_load_translations_file_reads_every_entry_in_the_table() {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let path = dir.path().join("fr.json");
+        std::fs::write(
+            &path,
+            r#"{"action.send": "Envoyer", "action.cancel": "Annuler"}"#,
+        )
+        .expect("write translations");
+
+        let mut i18n = I18n::with_locale("fr");
+        let count = i18n
+            .load_translations_file("fr", &path)
+            .expect("a well-formed translations file");
+
+        assert_eq!(count, 2, "did not read every entry");
+        assert_eq!(i18n.t("action.send"), "Envoyer");
+        assert_eq!(i18n.t("action.cancel"), "Annuler");
+    }
+
+    #[test]
+    fn test_set_locale_changes_which_language_is_read_back() {
+        let mut i18n = I18n::new();
+        assert_eq!(i18n.locale().language_code, "en");
+
+        i18n.set_locale("fr");
+
+        assert_eq!(i18n.locale().language_code, "fr");
+    }
+
+    #[test]
+    fn test_tf_fills_in_its_placeholders() {
+        let mut i18n = I18n::new();
+        i18n.load_translations(
+            "en",
+            HashMap::from([("greeting.hello".to_string(), "Hello, {0}!".to_string())]),
+        );
+
+        let said = i18n.tf("greeting.hello", &["Pratik"]);
+
+        assert_eq!(said, "Hello, Pratik!");
     }
 }

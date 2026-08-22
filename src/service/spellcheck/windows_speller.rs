@@ -62,6 +62,16 @@ const MAX_SUGGESTIONS: usize = 5;
 /// Nothing here ever calls `CoUninitialize`. This is a library on somebody
 /// else's thread, and tearing down an apartment the host set up would break far
 /// more than spell checking.
+///
+/// Not unit tested. `CoInitializeEx` is a real COM call, and every branch of
+/// the warning below is reached only by an `HRESULT` this project cannot
+/// produce on demand: a fresh test thread gets `S_OK`, calling this again on
+/// the same thread gets `S_FALSE`, and forcing `RPC_E_CHANGED_MODE` or
+/// anything else needs a thread already joined to a different apartment
+/// model, which is state a test would have to fake COM itself to control.
+/// The one thing that ever happens as a result, on the branch that would
+/// need to differ, is a `tracing::warn!` call this codebase has no test
+/// anywhere that captures.
 fn ensure_com_initialised() {
     use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, S_FALSE, S_OK};
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
@@ -105,6 +115,17 @@ impl WindowsSpeller {
     /// a Windows Server build such as a CI runner, where the spell checking
     /// feature is often absent altogether. The caller falls back rather than
     /// failing, because a checker being unavailable is not an error.
+    ///
+    /// Not unit tested, on the same grounds this doc comment just gave: the
+    /// factory this creates is a real COM class that this project's own CI
+    /// runners are, by this paragraph's own account, not guaranteed to have.
+    /// A test that asserted `Some` would be pinned to a feature outside this
+    /// project's control, and one that asserted `None` would break the day
+    /// somebody runs the suite on a desktop build where the feature is
+    /// present, which is every real user's machine. `WindowsSpeller`'s only
+    /// constructor is this one, so the trait methods below inherit the same
+    /// limit: there is no way to hold an instance in a test without first
+    /// getting past this.
     pub fn for_language(tag: &str) -> Option<Self> {
         ensure_com_initialised();
         // Safe: the factory is a documented in-process COM class, the language
@@ -129,6 +150,13 @@ impl WindowsSpeller {
     ///
     /// The real list rather than one written down here, so the setting offers
     /// what will actually work instead of what somebody hoped would.
+    ///
+    /// Not unit tested: the list is real Windows state, out of this
+    /// project's control and different on every machine, including whether
+    /// the COM factory exists at all. `mod.rs` already tests the pure
+    /// decision layered on top of this (`choices_from`, `best_available_match`,
+    /// `find_regional_variant`) against lists it makes up itself, which is
+    /// what actually needed pinning; this is the live data feeding it.
     pub fn supported_languages() -> Vec<String> {
         ensure_com_initialised();
         let mut tags = Vec::new();
@@ -188,6 +216,16 @@ pub fn display_name(tag: &str) -> String {
     String::from_utf16_lossy(&buffer[..written as usize - 1])
 }
 
+// None of the five methods below are unit tested, `language` included even
+// though it is a plain field read with no COM in it: `WindowsSpeller`'s only
+// constructor is `for_language`, and that needs a live COM spell checking
+// factory to succeed, for the same reasons given on that function. There is
+// no way to hold an instance to call any of these on without first getting
+// past it, short of fabricating a COM interface pointer from nothing, which
+// is undefined behaviour rather than a test. `check` and `suggest` decode
+// what a real `ISpellChecker` hands back; `word_at` and `byte_offset_of`
+// just above are the pure parts of that decoding, pulled out on purpose so
+// they could be pinned down without one.
 impl Speller for WindowsSpeller {
     fn check(&self, text: &str) -> Vec<SpellError> {
         // Windows counts in UTF-16 code units and the rest of this application
@@ -333,6 +371,31 @@ fn byte_offset_of(utf16: &[u16], index: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_display_name_reads_a_locale_windows_always_knows() {
+        // en-US ships with every Windows install, unlike a COM spell
+        // checking factory, which is a feature that can be absent. That
+        // makes this deterministic on any machine this project actually
+        // runs its tests on, unlike WindowsSpeller::for_language and
+        // supported_languages just above. LOCALE_SNATIVEDISPLAYNAME answers
+        // "what does en-US call itself", not "translate en-US into the
+        // system's own UI language", so this holds regardless of what
+        // language the test machine itself is running in.
+        let name = display_name("en-US");
+
+        assert_ne!(name, "en-US", "fell back to the tag itself");
+        assert!(name.contains("English"), "{name:?}");
+    }
+
+    #[test]
+    fn test_as_pcwstr_points_at_the_wide_strings_own_buffer() {
+        let wide = Wide::new("hi");
+
+        let pcwstr = wide.as_pcwstr();
+
+        assert_eq!(pcwstr.0, wide.0.as_ptr(), "did not point at its own buffer");
+    }
 
     #[test]
     fn test_a_byte_offset_matches_a_utf16_index_for_plain_text() {
