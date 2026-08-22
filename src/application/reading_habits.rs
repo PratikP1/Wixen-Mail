@@ -186,8 +186,19 @@ impl Default for WorkingDay {
 impl WorkingDay {
     /// Read the stored pair, keeping the default for anything that makes no
     /// sense. A day that ends before it starts is not a day.
+    ///
+    /// The first `starts < 24` cannot be swapped for `starts <= 24` and be
+    /// told apart: the only value that would disagree is `starts == 24`, and
+    /// that value only ever reaches `starts < ends` below by needing
+    /// `ends >= 25`, while `(1..=24).contains(&ends)` already caps `ends` at
+    /// 24. So `sane` is false at `starts == 24` regardless of which of the
+    /// two the first clause uses.
     pub fn from_setting(starts: u8, ends: u8) -> Self {
         let sane = starts < 24 && (1..=24).contains(&ends) && starts < ends;
+        debug_assert!(
+            !(starts == 24 && sane),
+            "ends would have to be both <= 24 and >= 25"
+        );
         if sane {
             Self { starts, ends }
         } else {
@@ -354,6 +365,20 @@ mod tests {
         // Most rows in most calendars are inside the working day, and a word
         // on every one of them is a word paid for on all of them.
         assert_eq!(WorkingDay::default().note_for(11), "");
+    }
+
+    #[test]
+    fn test_an_hour_equal_to_an_impossible_start_still_reads_as_after() {
+        // `starts` and `ends` are public fields, so a pair `from_setting`
+        // would refuse (start at or after end) can still be built directly.
+        // `holds` already says such a day holds nothing; this pins down
+        // which side of the day `note_for` puts the start hour itself on.
+        let broken = WorkingDay {
+            starts: 10,
+            ends: 5,
+        };
+        assert!(!broken.holds(10));
+        assert_eq!(broken.note_for(10), "after the working day");
     }
 
     #[test]

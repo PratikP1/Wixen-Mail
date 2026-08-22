@@ -118,6 +118,13 @@ pub fn thread_messages(messages: &[ThreadInput]) -> Vec<ThreadPlacement> {
                 if message.message_id.as_str() < name.as_str() {
                     *name = message.message_id.clone();
                 }
+                // Whichever of `<` or `<=` guards the assignment above,
+                // `name` ends up the lexicographic minimum of its previous
+                // value and this message's id: at equality the two are the
+                // same string, so replacing one with the other changes
+                // nothing observable. That is why cargo-mutants cannot tell
+                // `<` from `<=` on the line above.
+                debug_assert!(*name <= message.message_id);
             })
             .or_insert_with(|| message.message_id.clone());
     }
@@ -172,22 +179,31 @@ impl DisjointSet {
     }
 
     fn find(&mut self, id: i64) -> i64 {
+        // Bounded by the number of entries rather than trusting the chain to
+        // end on its own, the same reasoning `depth_of` already applies to
+        // this same shape of data: `union` is the only thing supposed to
+        // keep this structure acyclic, and a chain can never need more than
+        // one step per entry, so that bound is never too tight for a real
+        // chain and always enough to stop a corrupted one cold rather than
+        // spin on it.
         let mut root = id;
-        while let Some(&parent) = self.parent.get(&root) {
-            if parent == root {
-                break;
+        for _ in 0..self.parent.len() {
+            match self.parent.get(&root) {
+                Some(&parent) if parent != root => root = parent,
+                _ => break,
             }
-            root = parent;
         }
         // Path compression, so a long chain does not cost the same walk again
         // on the next lookup.
         let mut current = id;
-        while let Some(&parent) = self.parent.get(&current) {
-            if parent == root {
-                break;
+        for _ in 0..self.parent.len() {
+            match self.parent.get(&current) {
+                Some(&parent) if parent != root => {
+                    self.parent.insert(current, root);
+                    current = parent;
+                }
+                _ => break,
             }
-            self.parent.insert(current, root);
-            current = parent;
         }
         root
     }
@@ -202,6 +218,11 @@ impl DisjointSet {
             // in the group rather than from the representative. The rule is
             // here so that `find` gives the same answer twice running, which
             // is worth having while anything debugs against it.
+            //
+            // `root_a < root_b` cannot be swapped for `<=` and be told
+            // apart: the `if` above already rules out root_a == root_b, so
+            // the two comparisons agree on every value that reaches here.
+            debug_assert_ne!(root_a, root_b);
             let (keep, merge) = if root_a < root_b {
                 (root_a, root_b)
             } else {
@@ -503,6 +524,17 @@ mod tests {
     }
 
     #[test]
+    fn test_depth_of_treats_a_parent_pointing_to_itself_as_a_root() {
+        // No real caller can produce this: `thread_messages` never inserts an
+        // entry whose parent is its own id (the `find` there filters out
+        // `candidate == message.id`). Built directly because a self-loop is
+        // exactly the shape the `parent != current` guard exists to stop
+        // cold rather than count as depth.
+        let parents = HashMap::from([(1, Some(1)), (2, Some(3))]);
+        assert_eq!(depth_of(1, &parents), 0);
+    }
+
+    #[test]
     fn test_a_message_referencing_itself_is_not_its_own_parent() {
         let placements = thread_messages(&[message(1, "<a@x>", &["<a@x>"])]);
         assert_eq!(placements[0].parent_id, None);
@@ -570,6 +602,40 @@ mod tests {
                 assert!(level - heading_level(depth - 1) <= 1, "skipped a level");
             }
         }
+    }
+
+    #[test]
+    fn test_find_stops_at_a_parent_pointing_to_itself_rather_than_spinning() {
+        // `union` can never insert an entry that maps a key to itself: the
+        // `if root_a != root_b` guard there rules it out before any insert
+        // happens. This shape only exists here because it is built by hand,
+        // which is the only way to drive `find` at the exact state where a
+        // comparison-operator slip on either of its two loops turns into a
+        // hang instead of a wrong answer.
+        let mut set = DisjointSet::new();
+        set.parent.insert(1, 1);
+
+        assert_eq!(set.find(1), 1);
+    }
+
+    #[test]
+    fn test_find_compresses_a_two_hop_chain_straight_to_the_root() {
+        // `find`'s return value cannot tell this apart on its own: the first
+        // loop in `find` always walks the current chain to the true root
+        // whether or not the second (compression) loop ever ran. Only the
+        // stored parent map shows whether the walk was shortened for the
+        // next lookup, which is the entire point of doing it, so this reads
+        // the map directly rather than only asserting what `find` returns.
+        let mut set = DisjointSet::new();
+        set.union(2, 1); // parent: {2 -> 1}
+        set.union(1, 0); // parent: {2 -> 1, 1 -> 0}
+
+        assert_eq!(set.find(2), 0);
+        assert_eq!(
+            set.parent.get(&2),
+            Some(&0),
+            "the two-hop chain 2 -> 1 -> 0 should now read 2 -> 0 directly"
+        );
     }
 
     #[test]
