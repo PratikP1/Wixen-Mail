@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 231 records have arrived since and have not been through it.
+# 250 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -8005,3 +8005,251 @@ red = [
     "presentation::accessibility::screen_reader::tests::test_registering_with_nothing_waiting_does_not_log_a_waiting_count",
     "presentation::accessibility::screen_reader::tests::test_registering_with_something_waiting_logs_how_many_were_waiting",
 ]
+
+# ── Security and safety subsystem, from the 2026-08-22 mutation-sweep round ─
+#
+# 46 misses and one timeout across credentials.rs, oauth_credentials.rs,
+# safety.rs, security.rs and the four safebrowsing files. Nineteen guarded
+# below.
+#
+# credentials.rs contributes none at all: its real `keyring::Entry`-backed
+# store only runs outside `#[cfg(test)]`, and exercising it for real writes
+# into whoever's running the tests' actual Windows Credential Manager, which
+# is exactly how this file's own comment says an earlier test left an account
+# called "acc-1" behind on a real machine.
+#
+# oauth_credentials.rs's `credentials_for`, `resolve_gmail`, `resolve_outlook`
+# and `load_from_toml`, and safebrowsing's `api_key`, `refresh_lists` and one
+# of `check_links`'s two `339:5` mutants, all need a real environment
+# variable, a real gitignored `oauth.toml`, or a real answer from Google to
+# ever return anything other than what a clean machine already returns, which
+# both module doc comments already say plainly. `security.rs`'s
+# `find_existing_key` is the same shape one layer down: its Windows branch
+# reads the real Credential Manager and its file branch resolves the real
+# per-machine data folder. None of the seven are guarded here.
+#
+# Three are genuinely equivalent and documented in place rather than guarded.
+# `safety.rs`'s `Verdict::ordinary` is `Self::default()` written out, and a
+# mutation swapping it for `Default::default()` calls the identical function;
+# unlike an operator swap there is no external fact left to assert once the
+# whole body is replaced, so this one carries a doc comment and no
+# debug_assert. `safebrowsing/rice.rs`'s `(quotient << parameter) | remainder`
+# cannot be told apart from `^`: the ceiling check just above guarantees the
+# two operands never share a set bit, the same disjoint-bits shape asking.rs
+# already reads with either operator, and this one does carry a
+# debug_assert_eq! proving the operands stay disjoint. `safebrowsing/urls.rs`'s
+# `p.len() > 1` cannot be told apart from `>= 1` either: the surrounding
+# `.all()` guard already requires every part non-empty, so the two operators
+# can only disagree at length one, and "0" reads the same in octal as decimal.
+#
+# One timeout, also in urls.rs's `unescape_once`, is real and already fixed,
+# not guarded. `i += 3` on a genuine escape match, mutated to `i *= 3`, freezes
+# the cursor at zero and grows the output forever; confirmed as a real hang
+# under a 10-second kill, not a slow pass. The fix is two debug_assert!s
+# proving the cursor moves after every branch, the same shape as
+# `common/error.rs`'s pair from this same round: real code always advances by
+# a positive amount, so neither assert ever fires outside the mutation that
+# would have hung, and there is no separately-named test the record could
+# point at.
+#
+# Measured by hand: each guard applied alone, against its own file's test
+# module, reddened exactly the test(s) named and nothing else. Restored and
+# reran green after each. Two entries redden two tests apiece where a second,
+# independent local guard inside the same function also depends on the
+# mutated line.
+
+[[guard]]
+name = "the oauth.toml path names the file it reads, not nothing"
+file = "src/service/oauth_credentials.rs"
+before = """    crate::common::paths::AppPaths::resolve()
+        .ok()
+        .map(|paths| paths.oauth_toml())"""
+after = """    None"""
+red = ["service::oauth_credentials::tests::test_the_oauth_toml_path_names_the_file_it_reads"]
+
+[[guard]]
+name = "the oauth.toml path names the real file, not a made-up default"
+file = "src/service/oauth_credentials.rs"
+before = """    crate::common::paths::AppPaths::resolve()
+        .ok()
+        .map(|paths| paths.oauth_toml())"""
+after = """    Some(Default::default())"""
+red = ["service::oauth_credentials::tests::test_the_oauth_toml_path_names_the_file_it_reads"]
+
+[[guard]]
+name = "an unrecognised OAuth provider never has credentials, not always"
+file = "src/service/oauth_credentials.rs"
+before = """    credentials_for(provider).is_some()"""
+after = """    let _ = provider;
+    true"""
+red = ["service::oauth_credentials::tests::test_an_unrecognised_provider_never_has_credentials"]
+
+[[guard]]
+name = "the security key path names the file the service reads and writes, not a made-up default"
+file = "src/service/security.rs"
+before = """        // The key sits beside the data it unlocks. It used to live in the
+        // roaming profile while the encrypted database stayed local, so the key
+        // crossed the network at every logon and the mail it protects did not.
+        let paths = crate::common::paths::AppPaths::resolve()?;
+        fs::create_dir_all(paths.root()).map_err(|e| {
+            Error::Config(format!("Could not create {}: {e}", paths.root().display()))
+        })?;
+        Ok(paths.security_key())"""
+after = """        Ok(Default::default())"""
+red = ["service::security::tests::test_the_key_path_names_the_file_the_service_reads_and_writes"]
+
+[[guard]]
+name = "a stored key decodes back to its real bytes, not nothing"
+file = "src/service/security.rs"
+before = """        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()"""
+after = """        let _ = encoded;
+        None"""
+red = ["service::security::tests::test_a_key_decodes_back_to_the_exact_bytes_it_was_encoded_from"]
+
+[[guard]]
+name = "a stored key decodes back to its real bytes, not an all-zero one"
+file = "src/service/security.rs"
+before = """        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()"""
+after = """        let _ = encoded;
+        Some([0; 32])"""
+red = [
+    "service::security::tests::test_a_key_decodes_back_to_the_exact_bytes_it_was_encoded_from",
+    "service::security::tests::test_text_that_is_not_base64_is_not_a_key",
+    "service::security::tests::test_a_decoded_value_of_the_wrong_length_is_not_a_key",
+]
+
+[[guard]]
+name = "a stored key decodes back to its real bytes, not a made-up one"
+file = "src/service/security.rs"
+before = """        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()"""
+after = """        let _ = encoded;
+        Some([1; 32])"""
+red = [
+    "service::security::tests::test_a_key_decodes_back_to_the_exact_bytes_it_was_encoded_from",
+    "service::security::tests::test_text_that_is_not_base64_is_not_a_key",
+    "service::security::tests::test_a_decoded_value_of_the_wrong_length_is_not_a_key",
+]
+
+[[guard]]
+name = "the Safe Browsing environment key is trimmed and blank is not a key"
+file = "src/service/safebrowsing/mod.rs"
+before = """    (!trimmed.is_empty()).then_some(trimmed)"""
+after = """    (trimmed.is_empty()).then_some(trimmed)"""
+red = ["service::safebrowsing::tests::test_the_environment_key_is_trimmed_and_blank_is_not_a_key"]
+
+[[guard]]
+name = "the Safe Browsing toml key is trimmed and blank is not a key"
+file = "src/service/safebrowsing/mod.rs"
+before = """        .filter(|key| !key.is_empty())"""
+after = """        .filter(|key| key.is_empty())"""
+red = ["service::safebrowsing::tests::test_the_toml_key_is_trimmed_and_blank_is_not_a_key"]
+
+[[guard]]
+name = "an update response is matched to its list by name, not by whichever name it is not"
+file = "src/service/safebrowsing/mod.rs"
+before = """        .find(|kind| kind.as_api_name() == update.threat_type)"""
+after = """        .find(|kind| kind.as_api_name() != update.threat_type)"""
+red = ["service::safebrowsing::tests::test_an_update_response_is_matched_to_its_list_by_name"]
+
+[[guard]]
+name = "two links that collide on the same prefix are asked about once, not twice"
+file = "src/service/safebrowsing/mod.rs"
+before = """            if !prefixes.contains(prefix) {"""
+after = """            if prefixes.contains(prefix) {"""
+red = ["service::safebrowsing::tests::test_two_links_that_collide_on_the_same_prefix_are_asked_about_once"]
+
+[[guard]]
+name = "check_links really says nothing before a fetch and after no collision, not a made-up verdict"
+file = "src/service/safebrowsing/mod.rs"
+before = """    let held: Vec<database::PrefixSet> = LISTS
+        .iter()
+        .map(|kind| database::PrefixSet::load(&list_path(cache_dir, *kind)))
+        .collect();
+    if held.iter().all(database::PrefixSet::is_empty) {
+        // Nothing has been fetched yet, so every link would "not match" for
+        // the wrong reason. Better to say nothing than to imply a check ran.
+        return None;
+    }
+    let borrowed: Vec<&database::PrefixSet> = held.iter().collect();
+
+    let (prefixes, full_hashes) = collisions_for(urls, &borrowed);
+    if prefixes.is_empty() {
+        // The ordinary case for ordinary mail: nothing collided, so nothing is
+        // sent and Google learns nothing, not even that a message was read.
+        return None;
+    }
+
+    let response = match client::find_full_hashes(api_key, &prefixes, &LISTS).await {
+        Ok(response) => response,
+        Err(e) => {
+            // Not silently absorbed. A check that could not run is a gap, and
+            // reporting the message as unremarkable would hide it.
+            tracing::warn!("Safe Browsing could not be asked: {}", e);
+            return None;
+        }
+    };
+    verdict_for(&client::confirmed(&response, &full_hashes))"""
+after = """    let _ = (api_key, cache_dir, urls);
+    Some(Default::default())"""
+red = [
+    "service::safebrowsing::tests::test_check_links_says_nothing_before_any_list_has_been_fetched",
+    "service::safebrowsing::tests::test_check_links_says_nothing_when_no_link_collides",
+]
+
+[[guard]]
+name = "a list update request asks for the state this copy already holds, not another list's"
+file = "src/service/safebrowsing/client.rs"
+before = """    .find(|(other, _)| *other == kind)"""
+after = """    .find(|(other, _)| *other != kind)"""
+red = ["service::safebrowsing::client::tests::test_each_list_asks_for_the_state_it_already_holds_and_no_other"]
+
+[[guard]]
+name = "a confirmed unwanted-software hash is named, not silently dropped"
+file = "src/service/safebrowsing/client.rs"
+before = """            "UNWANTED_SOFTWARE" => super::ThreatKind::UnwantedSoftware,
+            "POTENTIALLY_HARMFUL_APPLICATION" => super::ThreatKind::PotentiallyHarmfulApplication,"""
+after = """            "POTENTIALLY_HARMFUL_APPLICATION" => super::ThreatKind::PotentiallyHarmfulApplication,"""
+red = ["service::safebrowsing::client::tests::test_every_threat_type_google_sends_names_the_right_list"]
+
+[[guard]]
+name = "a confirmed potentially-harmful-application hash is named, not silently dropped"
+file = "src/service/safebrowsing/client.rs"
+before = """            "UNWANTED_SOFTWARE" => super::ThreatKind::UnwantedSoftware,
+            "POTENTIALLY_HARMFUL_APPLICATION" => super::ThreatKind::PotentiallyHarmfulApplication,"""
+after = """            "UNWANTED_SOFTWARE" => super::ThreatKind::UnwantedSoftware,"""
+red = ["service::safebrowsing::client::tests::test_every_threat_type_google_sends_names_the_right_list"]
+
+[[guard]]
+name = "only a scheme starting with a letter counts as one, not any alphanumeric run"
+file = "src/service/safebrowsing/urls.rs"
+before = """                && !scheme.contains('.')
+                && scheme"""
+after = """                && !scheme.contains('.')
+                || scheme"""
+red = ["service::safebrowsing::urls::tests::test_only_something_starting_with_a_letter_counts_as_a_scheme"]
+
+[[guard]]
+name = "a hash that arrives percent-encoded is escaped back, not let through"
+file = "src/service/safebrowsing/urls.rs"
+before = """byte == b'#' || extra.contains(&byte)"""
+after = """byte == b'#' && extra.contains(&byte)"""
+red = ["service::safebrowsing::urls::tests::test_a_hash_that_arrives_percent_encoded_is_escaped_back"]
+
+[[guard]]
+name = "a non-IP-shaped host is not folded by the octal check, not treated as one anyway"
+file = "src/service/safebrowsing/urls.rs"
+before = """    if parts.len() == 4
+        && parts"""
+after = """    if parts.len() == 4
+        || parts"""
+red = [
+    "service::safebrowsing::urls::tests::test_a_non_ip_shaped_host_is_not_folded_by_the_octal_check",
+    "service::safebrowsing::urls::tests::test_a_part_that_only_looks_numeric_does_not_get_folded_into_an_address",
+]
+
+[[guard]]
+name = "a host part that only looks numeric is not folded into an address, not treated as one anyway"
+file = "src/service/safebrowsing/urls.rs"
+before = """.all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))"""
+after = """.all(|p| !p.is_empty() || p.chars().all(|c| c.is_ascii_digit()))"""
+red = ["service::safebrowsing::urls::tests::test_a_part_that_only_looks_numeric_does_not_get_folded_into_an_address"]
