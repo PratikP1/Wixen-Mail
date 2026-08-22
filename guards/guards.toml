@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 255 records have arrived since and have not been through it.
+# 295 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -8314,3 +8314,520 @@ before = """        self.notes.sort_by(|a, b| {
         });"""
 after = """        let _ = &self.notes;"""
 red = ["application::notes::tests::test_adding_a_note_sorts_pinned_first_then_most_recently_changed"]
+
+# ── Data, common and misc-service, from the 2026-08-22 mutation-sweep round ─
+#
+# 102 misses and two timeouts across attachment_name.rs, pdf.rs,
+# spellcheck/mod.rs, spellcheck/windows_speller.rs, message_cache/bodies.rs
+# and common/error.rs. Forty guarded below, all in pdf.rs and the two
+# spellcheck files.
+#
+# attachment_name.rs's one miss is genuinely equivalent and documented in a
+# comment rather than a debug_assert!: an all-dots name reaches the same
+# `FALLBACK` whether the early return fires or falls through to
+# `trim_end_matches` doing the identical stripping, which is a structural
+# fact about the code shape rather than a runtime invariant, so there is
+# nothing left to assert. message_cache/bodies.rs's three arithmetic misses
+# guard a `tracing::info!` line only; the real return value is already
+# covered elsewhere, and this codebase has no precedent for capturing tracing
+# output in a test. common/error.rs's two timeouts are both real, both
+# already fixed with a pair of debug_assert!s proving forward progress on
+# `redact_provider_message`'s cursor, and neither is guarded, matching this
+# round's other debug_assert-hardened timeout in safebrowsing/urls.rs.
+#
+# spellcheck/mod.rs's own `check_text` has one more genuinely equivalent
+# miss, a `||` that cannot be told from `&&`: `is_whitespace()` already
+# includes `\n` and `\r` as Unicode White_Space, so the two explicit checks
+# after it never change what the split produces either way. Documented in
+# place. `system_language`'s non-Windows body is not reachable by any check
+# this project runs (every workflow targets `windows-latest`), so a mutation
+# inside it changes tokens the compiler never sees on the only platform
+# anything here builds for; written down rather than asserted, since there is
+# no runtime state to check.
+#
+# windows_speller.rs's COM-dependent surface is untested by design and
+# undisturbed here: `ensure_com_initialised`, `for_language`,
+# `supported_languages`, and all five `Speller` trait methods on
+# `WindowsSpeller` (`check`, `suggest`, `add_to_dictionary`, `ignore`, the
+# plain `language` accessor, `source`) all need a live COM spell-checking
+# factory that `WindowsSpeller`'s only constructor requires and that this
+# project's own CI runners are not guaranteed to have. `display_name` and
+# `Wide::as_pcwstr`, in the same file but not COM, are guarded below.
+#
+# Measured by hand: each guard applied alone, against the whole crate's
+# `service::spellcheck` or `service::pdf` scope (broad enough to catch a
+# break reaching outside the file it is in), reddened exactly the test(s)
+# named and nothing else. Restored and reran green after each. Several
+# entries name more than one test where a single local guard, once broken,
+# is also what a sibling test or an integration-level test above it depends
+# on; two arithmetic mutants first suspected of pinning `display_name`
+# turned out not to redden its test at all; the whole-function replacement
+# does, and is what is recorded here instead.
+
+[[guard]]
+name = "a real heading is found and placed correctly in the text, not an empty page"
+file = "src/service/pdf.rs"
+before = """    use pdfpurr::content::structure_detection::BlockRole;
+
+    let Ok(blocks) = document.analyze_page_structure(page) else {
+        return Vec::new();
+    };
+    let characters: Vec<char> = page_text.chars().collect();
+    let mut cursor = 0usize;
+    let mut found = Vec::new();
+
+    for block in blocks {
+        let BlockRole::Heading(level) = block.role else {
+            continue;
+        };
+        let label = block
+            .runs
+            .iter()
+            .map(|run| run.text.as_str())
+            .collect::<String>();
+        let label = label.split_whitespace().collect::<Vec<_>>().join(" ");
+        if label.is_empty() {
+            continue;
+        }
+        let Some(at) = find_from(&characters, &label, cursor) else {
+            // Extraction and detection disagreed about this block's text,
+            // which happens with ligatures and odd encodings. Dropping the
+            // landmark loses a jump target; inventing an offset would put the
+            // caret somewhere arbitrary, which is worse.
+            continue;
+        };
+        cursor = at + label.chars().count();
+        found.push(PdfHeading {
+            // Page markers are level 2, so a document's own headings start at
+            // 3 and never compete with them. Capped at six the same way the
+            // HTML side caps, so the two agree about what a deep heading is.
+            offset: page_start + at,
+            level: (usize::from(level) + 2).min(6),
+            label,
+        });
+    }
+    found"""
+after = """    let _ = (document, page, page_text, page_start);
+    Vec::new()"""
+red = [
+    "service::pdf::tests::test_a_real_heading_is_found_and_placed_correctly_in_the_text",
+    "service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn",
+]
+
+[[guard]]
+name = "the cursor after a heading moves forward by the label's length, not backward"
+file = "src/service/pdf.rs"
+before = """        cursor = at + label.chars().count();"""
+after = """        cursor = at - label.chars().count();"""
+red = ["service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn"]
+
+[[guard]]
+name = "the cursor after a heading moves forward by the label's length, not by its product"
+file = "src/service/pdf.rs"
+before = """        cursor = at + label.chars().count();"""
+after = """        cursor = at * label.chars().count();"""
+red = ["service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn"]
+
+[[guard]]
+name = "a heading's offset is the page's start plus where it sits, not minus"
+file = "src/service/pdf.rs"
+before = """            offset: page_start + at,"""
+after = """            offset: page_start - at,"""
+red = [
+    "service::pdf::tests::test_a_real_heading_is_found_and_placed_correctly_in_the_text",
+    "service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn",
+]
+
+[[guard]]
+name = "a heading's offset is the page's start plus where it sits, not their product"
+file = "src/service/pdf.rs"
+before = """            offset: page_start + at,"""
+after = """            offset: page_start * at,"""
+red = [
+    "service::pdf::tests::test_a_real_heading_is_found_and_placed_correctly_in_the_text",
+    "service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn",
+]
+
+[[guard]]
+name = "a heading's level is two below a page marker's, not two below subtracted"
+file = "src/service/pdf.rs"
+before = """            level: (usize::from(level) + 2).min(6),"""
+after = """            level: (usize::from(level) - 2).min(6),"""
+red = [
+    "service::pdf::tests::test_a_real_heading_is_found_and_placed_correctly_in_the_text",
+    "service::pdf::tests::test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn",
+]
+
+[[guard]]
+name = "a heading's level is two below a page marker's, not their product"
+file = "src/service/pdf.rs"
+before = """            level: (usize::from(level) + 2).min(6),"""
+after = """            level: (usize::from(level) * 2).min(6),"""
+red = ["service::pdf::tests::test_a_real_heading_is_found_and_placed_correctly_in_the_text"]
+
+# ── spellcheck: which language this machine and this word list offer ───────
+
+[[guard]]
+name = "language_of_this_machine really asks the machine, not a stub answering None"
+file = "src/service/spellcheck/mod.rs"
+before = """    let wanted = system_language()?.to_ascii_lowercase();
+    best_available_match(&wanted, &available_languages())"""
+after = """    None"""
+red = ["service::spellcheck::tests::test_the_machines_language_is_exactly_the_best_match_for_its_real_locale"]
+
+[[guard]]
+name = "an exact language match has to be available, not merely spelled the same"
+file = "src/service/spellcheck/mod.rs"
+before = """        .find(|c| c.available && c.tag.to_ascii_lowercase() == wanted)"""
+after = """        .find(|c| c.available || c.tag.to_ascii_lowercase() == wanted)"""
+red = [
+    "service::spellcheck::tests::test_the_exact_tag_is_preferred_over_its_family",
+    "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
+    "service::spellcheck::tests::test_nothing_answers_when_no_family_member_is_available",
+]
+
+[[guard]]
+name = "the exact language match has to spell the tag the same, not differently"
+file = "src/service/spellcheck/mod.rs"
+before = """        .find(|c| c.available && c.tag.to_ascii_lowercase() == wanted)"""
+after = """        .find(|c| c.available && c.tag.to_ascii_lowercase() != wanted)"""
+red = ["service::spellcheck::tests::test_the_exact_tag_is_preferred_over_its_family"]
+
+[[guard]]
+name = "a family language match has to be available, not merely share the family"
+file = "src/service/spellcheck/mod.rs"
+before = """            c.available && c.tag.to_ascii_lowercase().split('-').next() == Some(family.as_str())"""
+after = """            c.available || c.tag.to_ascii_lowercase().split('-').next() == Some(family.as_str())"""
+red = [
+    "service::spellcheck::tests::test_nothing_answers_when_no_family_member_is_available",
+    "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
+]
+
+[[guard]]
+name = "a family language match has to share the family, not differ from it"
+file = "src/service/spellcheck/mod.rs"
+before = """            c.available && c.tag.to_ascii_lowercase().split('-').next() == Some(family.as_str())"""
+after = """            c.available && c.tag.to_ascii_lowercase().split('-').next() != Some(family.as_str())"""
+red = ["service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member"]
+
+[[guard]]
+name = "a real Windows language list is used instead of the built-in fallback, not the other way round"
+file = "src/service/spellcheck/mod.rs"
+before = """    if !windows_choices.is_empty() {"""
+after = """    if windows_choices.is_empty() {"""
+red = [
+    "service::spellcheck::tests::test_an_empty_windows_list_falls_back_to_the_built_in_six",
+    "service::spellcheck::tests::test_a_real_windows_list_is_used_instead_of_the_fallback",
+    "service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback",
+]
+
+[[guard]]
+name = "only English is offered as available in the built-in fallback, not every language but English"
+file = "src/service/spellcheck/mod.rs"
+before = """            available: language.code == "en","""
+after = """            available: language.code != "en","""
+red = ["service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback"]
+
+[[guard]]
+name = "the first regional variant Windows offers shares the language, not differs from it"
+file = "src/service/spellcheck/mod.rs"
+before = """        .find(|candidate| short_code(candidate) == short_code(tag))"""
+after = """        .find(|candidate| short_code(candidate) != short_code(tag))"""
+red = [
+    "service::spellcheck::tests::test_a_bare_language_matches_the_first_regional_variant_windows_offers",
+    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+]
+
+[[guard]]
+name = "the locale Windows reports keeps every code unit GetLocaleInfoW wrote, not one extra"
+file = "src/service/spellcheck/mod.rs"
+before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize]))"""
+after = """    Some(String::from_utf16_lossy(&buffer[..(written + 1) as usize]))"""
+red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
+
+[[guard]]
+name = "the locale Windows reports drops the terminator, not keeps the whole buffer"
+file = "src/service/spellcheck/mod.rs"
+before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize]))"""
+after = """    Some(String::from_utf16_lossy(&buffer[..(written * 1) as usize]))"""
+red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
+
+# ── spellcheck: how a source and a spelling summary describe themselves ────
+
+[[guard]]
+name = "each spelling source describes itself honestly, not with one canned sentence"
+file = "src/service/spellcheck/mod.rs"
+before = """        match self {
+            Self::Windows => "Windows, so it knows the words you have added in Windows Settings",
+            Self::Hunspell => "a dictionary installed on this computer",
+            Self::Builtin => {
+                "a small built-in word list, which will not know names or \\
+                 technical terms"
+            }
+        }"""
+after = """        "xyzzy""""
+red = ["service::spellcheck::tests::test_every_source_describes_itself_honestly"]
+
+[[guard]]
+name = "exactly three misspelled words are all named, not one named and two counted as others"
+file = "src/service/spellcheck/mod.rs"
+before = """        count if count <= NAMED => format!("""
+after = """        count if count < NAMED => format!("""
+red = ["service::spellcheck::tests::test_exactly_three_words_are_all_named_without_an_and_zero_others"]
+
+# ── spellcheck: the Speller trait, reached through a trait object ──────────
+
+[[guard]]
+name = "the trait object's suggest really calls the inherent method, not a stub returning nothing"
+file = "src/service/spellcheck/mod.rs"
+before = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
+        SpellChecker::suggest(self, word, max)
+    }"""
+after = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
+        let _ = (word, max);
+        Vec::new()
+    }"""
+red = ["service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method"]
+
+[[guard]]
+name = "the built-in checker really refuses to learn a word through the trait, not a stub claiming success"
+file = "src/service/spellcheck/mod.rs"
+before = """        Err(Error::Other(
+            "Words can only be learned when Windows is doing the spell \\
+             checking. This computer is using the built-in word list."
+                .into(),
+        ))"""
+after = """        Ok(())"""
+red = ["service::spellcheck::tests::test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait"]
+
+[[guard]]
+name = "the trait object's language really reports the checker's own, not an empty string"
+file = "src/service/spellcheck/mod.rs"
+before = """    fn language(&self) -> &str {
+        SpellChecker::language(self)
+    }"""
+after = """    fn language(&self) -> &str {
+        ""
+    }"""
+red = ["service::spellcheck::tests::test_the_speller_trait_object_reports_its_real_language"]
+
+# ── spellcheck: SpellChecker's own methods ──────────────────────────────────
+
+[[guard]]
+name = "has_hunspell says yes for a checker really built from hunspell data, not always no"
+file = "src/service/spellcheck/mod.rs"
+before = """        matches!(self.backend, Backend::Spellbook(_))"""
+after = """        let _ = &self.backend;
+        false"""
+red = ["service::spellcheck::tests::test_from_hunspell_data_checks_against_the_data_it_was_given"]
+
+[[guard]]
+name = "has_hunspell says no for the plain built-in checker, not always yes"
+file = "src/service/spellcheck/mod.rs"
+before = """        matches!(self.backend, Backend::Spellbook(_))"""
+after = """        let _ = &self.backend;
+        true"""
+red = ["service::spellcheck::tests::test_a_plain_checker_without_a_real_dictionary_says_so"]
+
+[[guard]]
+name = "the alphabet picked for hunspell data matches the language asked for, not any other"
+file = "src/service/spellcheck/mod.rs"
+before = """        let alphabet = supported_languages()
+            .into_iter()
+            .find(|l| l.code == lang_code)"""
+after = """        let alphabet = supported_languages()
+            .into_iter()
+            .find(|l| l.code != lang_code)"""
+red = ["service::spellcheck::tests::test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for"]
+
+[[guard]]
+name = "loading a dictionary file adds every nonblank line, not only the blank ones"
+file = "src/service/spellcheck/mod.rs"
+before = """                let w = line.trim().to_lowercase();
+                if !w.is_empty() {
+                    dict.insert(w);
+                    count += 1;
+                }"""
+after = """                let w = line.trim().to_lowercase();
+                if w.is_empty() {
+                    dict.insert(w);
+                    count += 1;
+                }"""
+red = ["service::spellcheck::tests::test_load_dictionary_file_adds_every_nonblank_line"]
+
+[[guard]]
+name = "a built-in suggestion is filtered down to real dictionary words, not left as every edit"
+file = "src/service/spellcheck/mod.rs"
+before = """                    edits.into_iter().filter(|e| set.contains(e)).collect();"""
+after = """                    edits.into_iter().collect();"""
+red = [
+    "service::spellcheck::tests::test_suggest_offers_a_real_correction_for_a_common_misspelling",
+    "service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method",
+]
+
+[[guard]]
+name = "word_count adds this session's custom words, not subtracts them"
+file = "src/service/spellcheck/mod.rs"
+before = """        base + self.custom_words.len()"""
+after = """        base - self.custom_words.len()"""
+red = ["service::spellcheck::tests::test_word_count_includes_words_added_this_session"]
+
+[[guard]]
+name = "the default dictionary search paths include the Windows location, not skip it"
+file = "src/service/spellcheck/mod.rs"
+before = """    } else if cfg!(target_os = "windows")
+        && let Some(program_data) = std::env::var_os("ProgramData")
+    {
+        paths.push(PathBuf::from(program_data).join("hunspell"));
+    }"""
+after = """    }"""
+red = ["service::spellcheck::tests::test_default_dict_search_paths_includes_the_windows_location"]
+
+[[guard]]
+name = "a checker reports the search paths it actually searched, not a permanently empty slice"
+file = "src/service/spellcheck/mod.rs"
+before = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
+        &self.dict_search_paths
+    }"""
+after = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
+        Vec::leak(Vec::new())
+    }"""
+red = ["service::spellcheck::tests::test_dict_search_paths_reports_what_this_checker_actually_searched"]
+
+[[guard]]
+name = "try_load_spellbook really finds a dictionary sitting on its path, not a stub answering None"
+file = "src/service/spellcheck/mod.rs"
+before = """    for dir in search_paths {
+        let aff_path = dir.join(format!("{}.aff", hunspell_name));
+        let dic_path = dir.join(format!("{}.dic", hunspell_name));
+
+        if aff_path.exists()
+            && dic_path.exists()
+            && let Ok(aff) = std::fs::read_to_string(&aff_path)
+            && let Ok(dic) = std::fs::read_to_string(&dic_path)
+        {
+            let aff_static: &'static str = Box::leak(aff.into_boxed_str());
+            let dic_static: &'static str = Box::leak(dic.into_boxed_str());
+            if let Ok(dict) = spellbook::Dictionary::new(aff_static, dic_static) {
+                tracing::info!(
+                    "Loaded Hunspell dictionary '{}' from {}",
+                    hunspell_name,
+                    dir.display()
+                );
+                return Some(Backend::Spellbook(Box::new(dict)));
+            }
+        }
+    }
+    None"""
+after = """    let _ = (hunspell_name, search_paths);
+    None"""
+red = ["service::spellcheck::tests::test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths"]
+
+[[guard]]
+name = "a single letter is too short to be worth checking, not only an empty string"
+file = "src/service/spellcheck/mod.rs"
+before = """    if s.is_empty() || s.len() <= 1 {"""
+after = """    if s.is_empty() {"""
+red = ["service::spellcheck::tests::test_a_single_letter_is_too_short_to_be_worth_checking"]
+
+[[guard]]
+name = "both an @ and a dot have to be there to read as an email, not either alone"
+file = "src/service/spellcheck/mod.rs"
+before = """    if lower.contains('@') && lower.contains('.') {"""
+after = """    if lower.contains('@') || lower.contains('.') {"""
+red = ["service::spellcheck::tests::test_a_dot_alone_is_not_treated_as_an_email"]
+
+# ── spellcheck: document locale and i18n ────────────────────────────────────
+
+[[guard]]
+name = "set_document_locale really writes the code for reading back, not a no-op"
+file = "src/service/spellcheck/mod.rs"
+before = """    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
+        *locale = Some(code.to_string());
+    }"""
+after = """    let _ = code;"""
+red = ["service::spellcheck::tests::test_set_document_locale_writes_the_code_for_reading_back"]
+
+[[guard]]
+name = "loading a translations file counts every entry in the table, not zero"
+file = "src/service/spellcheck/mod.rs"
+before = """        let count = map.len();"""
+after = """        let count = 0;"""
+red = ["service::spellcheck::tests::test_load_translations_file_reads_every_entry_in_the_table"]
+
+[[guard]]
+name = "set_locale really changes which language is read back, not a no-op"
+file = "src/service/spellcheck/mod.rs"
+before = """        self.active_locale = Locale::from_code(code);"""
+after = """        let _ = code;"""
+red = ["service::spellcheck::tests::test_set_locale_changes_which_language_is_read_back"]
+
+[[guard]]
+name = "tf really fills in its placeholders, not a stub returning the template unfilled"
+file = "src/service/spellcheck/mod.rs"
+before = """        let mut result = template;
+        for (i, arg) in args.iter().enumerate() {
+            result = result.replace(&format!("{{{}}}", i), arg);
+        }
+        result"""
+after = """        let _ = args;
+        template"""
+red = ["service::spellcheck::tests::test_tf_fills_in_its_placeholders"]
+
+# ── spellcheck: windows_speller.rs, the parts that are not COM ─────────────
+
+[[guard]]
+name = "a wide string's PCWSTR points at its own buffer, not a null pointer"
+file = "src/service/spellcheck/windows_speller.rs"
+before = """    fn as_pcwstr(&self) -> PCWSTR {
+        PCWSTR(self.0.as_ptr())
+    }"""
+after = """    fn as_pcwstr(&self) -> PCWSTR {
+        PCWSTR(std::ptr::null())
+    }"""
+red = ["service::spellcheck::windows_speller::tests::test_as_pcwstr_points_at_the_wide_strings_own_buffer"]
+
+[[guard]]
+name = "display_name really asks Windows for the locale's own name, not a canned word"
+file = "src/service/spellcheck/windows_speller.rs"
+before = """    let wide = Wide::new(tag);
+    let mut buffer = [0u16; 128];
+    // Safe: the buffer's length is passed with it, and the return value says
+    // how much was written before any of it is read.
+    let written = unsafe {
+        windows::Win32::Globalization::GetLocaleInfoEx(
+            wide.as_pcwstr(),
+            windows::Win32::Globalization::LOCALE_SNATIVEDISPLAYNAME,
+            Some(&mut buffer),
+        )
+    };
+    if written <= 1 {
+        return tag.to_string();
+    }
+    // The count includes the terminator.
+    String::from_utf16_lossy(&buffer[..written as usize - 1])"""
+after = """    let _ = tag;
+    "xyzzy".to_string()"""
+red = ["service::spellcheck::windows_speller::tests::test_display_name_reads_a_locale_windows_always_knows"]
+
+[[guard]]
+name = "display_name really asks Windows for the locale's own name, not the tag it was given back"
+file = "src/service/spellcheck/windows_speller.rs"
+before = """    let wide = Wide::new(tag);
+    let mut buffer = [0u16; 128];
+    // Safe: the buffer's length is passed with it, and the return value says
+    // how much was written before any of it is read.
+    let written = unsafe {
+        windows::Win32::Globalization::GetLocaleInfoEx(
+            wide.as_pcwstr(),
+            windows::Win32::Globalization::LOCALE_SNATIVEDISPLAYNAME,
+            Some(&mut buffer),
+        )
+    };
+    if written <= 1 {
+        return tag.to_string();
+    }
+    // The count includes the terminator.
+    String::from_utf16_lossy(&buffer[..written as usize - 1])"""
+after = """    tag.to_string()"""
+red = ["service::spellcheck::windows_speller::tests::test_display_name_reads_a_locale_windows_always_knows"]
