@@ -583,7 +583,11 @@ mod tests {
             .iter()
             .take(heading.label.chars().count())
             .collect();
-        assert_eq!(at, heading.label, "landmark is misplaced: {:?}", reading.headings);
+        assert_eq!(
+            at, heading.label,
+            "landmark is misplaced: {:?}",
+            reading.headings
+        );
     }
 
     #[test]
@@ -640,7 +644,11 @@ mod tests {
                 .iter()
                 .take(heading.label.chars().count())
                 .collect();
-            assert_eq!(at, heading.label, "landmark is misplaced: {:?}", reading.headings);
+            assert_eq!(
+                at, heading.label,
+                "landmark is misplaced: {:?}",
+                reading.headings
+            );
         }
     }
 }

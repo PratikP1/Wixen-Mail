@@ -128,12 +128,22 @@ pub fn redact_provider_message(body: &str) -> String {
             // Every entry in SECRETS is non-empty, so this always steps
             // forward by at least key.len(), even when a match sits right at
             // the end of body with nothing after it to find (end == 0). That
-            // guarantee is what keeps this loop from stalling; the assert
-            // makes it visible to the next person who touches this line
-            // rather than leaving it as something only a comment remembers.
+            // guarantee is what keeps this loop from stalling; the asserts
+            // make it visible to the next person who touches this line
+            // rather than leaving it as something only a comment remembers,
+            // and turn a stall into an immediate, diagnosable panic in any
+            // debug or test build rather than a hang nobody can place.
             let advance = key.len() + end;
-            debug_assert!(advance > 0, "a matched key must always move the cursor forward");
+            debug_assert!(
+                advance > 0,
+                "a matched key must always move the cursor forward"
+            );
+            let before = index;
             index += advance;
+            debug_assert!(
+                index > before,
+                "a matched key must always move the cursor forward"
+            );
             continue;
         }
         // Not a key we recognise: copy one character and move on.
