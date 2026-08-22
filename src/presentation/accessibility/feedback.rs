@@ -737,6 +737,16 @@ mod tests {
     }
 
     #[test]
+    fn test_a_channel_displays_as_its_stored_key() {
+        // `Display` exists so a channel can be written into a format string
+        // the way `key()` already writes it into stored preferences; the two
+        // must never drift apart from each other.
+        for channel in Channel::ALL {
+            assert_eq!(channel.to_string(), channel.key());
+        }
+    }
+
+    #[test]
     fn test_a_stored_name_never_contains_the_characters_that_separate_them() {
         // `to_stored` joins groups with a comma, names to values with an
         // equals sign, and values to each other with a plus. A name carrying

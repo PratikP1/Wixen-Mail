@@ -237,12 +237,21 @@ mod native {
         }
     }
 
+    /// Whether the raw count Windows reported means a client is listening.
+    ///
+    /// Split out from the call to Windows so the only real logic here, "any
+    /// count other than zero counts as listening," can be tested without
+    /// asking a real screen reader to attach.
+    fn client_count_means_listening(raw: i32) -> bool {
+        raw != 0
+    }
+
     /// Whether any UI Automation client is listening, for the startup log only.
     ///
     /// Not used to decide whether to announce: it reports false in cases where
     /// a screen reader is running, so acting on it silences everything.
     pub fn clients_are_listening() -> bool {
-        unsafe { UiaClientsAreListening() != 0 }
+        client_count_means_listening(unsafe { UiaClientsAreListening() })
     }
 
     /// Convert to a null-terminated wide string.
@@ -288,6 +297,13 @@ mod native {
         fn test_only_a_result_of_zero_means_the_announcement_went_out() {
             assert!(notification_succeeded(0));
             assert!(!notification_succeeded(-2147024809));
+        }
+
+        #[test]
+        fn test_a_nonzero_client_count_means_something_is_listening() {
+            assert!(!client_count_means_listening(0));
+            assert!(client_count_means_listening(1));
+            assert!(client_count_means_listening(3));
         }
 
         #[test]
@@ -651,6 +667,157 @@ impl Default for ScreenReaderBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `tracing` subscriber that keeps every event's level and message, so a
+    /// test can see which one fired without asking a real screen reader to
+    /// listen for it.
+    ///
+    /// Nothing else in this crate captures what `tracing` emits: every other
+    /// guard in this file pins behaviour through the bridge's own state
+    /// instead. `set_live_region`'s two log lines are the one place here
+    /// where correct and broken code differ only in which line is written, so
+    /// this exists to see that difference.
+    #[derive(Clone, Default)]
+    struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>);
+
+    impl CapturedLogs {
+        fn events(&self) -> Vec<(tracing::Level, String)> {
+            self.0
+                .lock()
+                .expect("a fresh mutex is not poisoned")
+                .clone()
+        }
+
+        fn has(&self, level: tracing::Level, contains: &str) -> bool {
+            self.events()
+                .iter()
+                .any(|(seen, message)| *seen == level && message.contains(contains))
+        }
+    }
+
+    /// Pulls the `message` field out of an event, dropping everything else a
+    /// span could carry. `tracing::warn!`/`tracing::info!` calls in this file
+    /// never carry structured fields beyond that one.
+    struct MessageOnly(String);
+
+    impl tracing::field::Visit for MessageOnly {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.0 = format!("{value:?}");
+            }
+        }
+    }
+
+    impl tracing::Subscriber for CapturedLogs {
+        fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut visitor = MessageOnly(String::new());
+            event.record(&mut visitor);
+            if let Ok(mut log) = self.0.lock() {
+                log.push((*event.metadata().level(), visitor.0));
+            }
+        }
+        fn enter(&self, _span: &tracing::span::Id) {}
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    #[test]
+    fn test_a_failed_registration_is_logged_as_a_warning() {
+        // The report of "nothing was spoken" this code is written for is read
+        // against this line, so a handle of zero has to log as a warning and
+        // not as though a window had been found.
+        let bridge = ScreenReaderBridge::default();
+        let captured = CapturedLogs::default();
+
+        tracing::subscriber::with_default(captured.clone(), || {
+            bridge.set_live_region(0);
+        });
+
+        assert!(
+            captured.has(tracing::Level::WARN, "No window to carry announcements"),
+            "a handle of zero did not log a warning: {:?}",
+            captured.events()
+        );
+        assert!(
+            !captured.has(tracing::Level::INFO, "Announcements will be carried"),
+            "a handle of zero also logged as though a window had been found: {:?}",
+            captured.events()
+        );
+    }
+
+    #[test]
+    fn test_a_working_registration_is_logged_as_routine_info_not_a_warning() {
+        let bridge = ScreenReaderBridge::default();
+        let captured = CapturedLogs::default();
+
+        tracing::subscriber::with_default(captured.clone(), || {
+            bridge.set_live_region(0x1234);
+        });
+
+        assert!(
+            captured.has(tracing::Level::INFO, "Announcements will be carried"),
+            "a real handle did not log as routine info: {:?}",
+            captured.events()
+        );
+        assert!(
+            !captured.has(tracing::Level::WARN, "No window to carry announcements"),
+            "a real handle also logged the failure warning: {:?}",
+            captured.events()
+        );
+    }
+
+    #[test]
+    fn test_registering_with_nothing_waiting_does_not_log_a_waiting_count() {
+        let bridge = ScreenReaderBridge::default();
+        let captured = CapturedLogs::default();
+
+        tracing::subscriber::with_default(captured.clone(), || {
+            bridge.set_live_region(0x1234);
+        });
+
+        assert!(
+            !captured.has(tracing::Level::INFO, "were waiting for a window"),
+            "nothing was waiting, so nothing should have been logged as waiting: {:?}",
+            captured.events()
+        );
+    }
+
+    #[test]
+    fn test_registering_with_something_waiting_logs_how_many_were_waiting() {
+        // The held line is empty on purpose. A non-empty one would leave
+        // `handed_over_together` with real text to hand off, and delivering
+        // it on Windows reaches `native::announce_via_live_region`, which
+        // would set the window text of whatever real window happens to own
+        // the made-up handle below; the doc comment on
+        // `test_a_zero_window_handle_is_refused_rather_than_announced_through`
+        // above explains why that is never worth risking. An empty held line
+        // still counts toward "how many were waiting" and still empties out
+        // of `handed_over_together` as nothing to hand over, so the log this
+        // test is about fires without going anywhere near that path.
+        let bridge = ScreenReaderBridge::default();
+        bridge.announce("").expect("announce");
+        let captured = CapturedLogs::default();
+
+        tracing::subscriber::with_default(captured.clone(), || {
+            bridge.set_live_region(0x1234);
+        });
+
+        assert!(
+            captured.has(
+                tracing::Level::INFO,
+                "1 announcements were waiting for a window"
+            ),
+            "one held line should have been reported as waiting: {:?}",
+            captured.events()
+        );
+    }
 
     #[test]
     fn test_announce_updates_last_value() {

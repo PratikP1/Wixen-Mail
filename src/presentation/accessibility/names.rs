@@ -235,12 +235,36 @@ impl AccessibleImpl for CheckedRows {
         let Some(on) = rows.ticked.get(row) else {
             return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0);
         };
+        // `|` here could be `^` and nothing would change: FOCUSABLE and
+        // SELECTABLE are single, disjoint bits that Windows itself defines
+        // (0x00100000 and 0x00200000 in MSAA's STATE_SYSTEM_* constants), so
+        // combining them can never carry into one another. The assert stands
+        // in for that proof at run time: if a future flag ever starts sharing
+        // a bit, this fails loudly instead of the row silently misreporting
+        // itself.
+        debug_assert_eq!(
+            wxdragon::accessible::acc_state::FOCUSABLE
+                & wxdragon::accessible::acc_state::SELECTABLE,
+            0,
+            "FOCUSABLE and SELECTABLE now share a bit, so combining them is no \
+             longer safe to read as an OR of two independent flags"
+        );
         let mut state = wxdragon::accessible::acc_state::FOCUSABLE
             | wxdragon::accessible::acc_state::SELECTABLE;
         if *on {
             state |= wxdragon::accessible::acc_state::CHECKED;
         }
         if rows.current == Some(row) {
+            // Same reasoning: FOCUSED (0x4) and SELECTED (0x2) are disjoint
+            // MSAA bits, so OR and XOR compute the same value combining them,
+            // always.
+            debug_assert_eq!(
+                wxdragon::accessible::acc_state::FOCUSED
+                    & wxdragon::accessible::acc_state::SELECTED,
+                0,
+                "FOCUSED and SELECTED now share a bit, so combining them is no \
+                 longer safe to read as an OR of two independent flags"
+            );
             state |= wxdragon::accessible::acc_state::FOCUSED
                 | wxdragon::accessible::acc_state::SELECTED;
         }
@@ -254,6 +278,19 @@ impl AccessibleImpl for CheckedRows {
 /// it. Nothing outside this file holds one: the list keeps its own snapshot up
 /// to date, so there is no handle for a caller to forget to write to.
 type RowReports = std::sync::Arc<std::sync::Mutex<RowStates>>;
+
+/// Whether nothing is selected yet and there is a row to put the cursor on.
+///
+/// A list of check boxes with no current row has nothing for a reader to call
+/// the current one, so the first row becomes the cursor's home the first time
+/// the list is wired up, unless something has already put the cursor
+/// somewhere or the list has nothing in it yet. Kept apart from the widget
+/// calls that act on the answer so the decision itself can be tested without
+/// a live `CheckListBox`, which nothing in this crate builds inside `cargo
+/// test`.
+fn should_select_first_row(has_selection: bool, row_count: u32) -> bool {
+    !has_selection && row_count > 0
+}
 
 /// Give a checked list a name and rows that say what they are.
 ///
@@ -282,7 +319,7 @@ pub fn set_accessible_checked_rows(
     name: &str,
     description: &str,
 ) {
-    if list.get_selection().is_none() && list.get_count() > 0 {
+    if should_select_first_row(list.get_selection().is_some(), list.get_count()) {
         list.set_selection(0, true);
     }
     let (rows, reports) = checked_rows(name, description, read_rows(&list));
@@ -411,9 +448,27 @@ pub fn name_from_label(label: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibleImpl, CheckedRows, FixedName, RowStates, name_from_label};
+    use super::{
+        AccessibleImpl, CheckedRows, FixedName, RowStates, name_from_label, should_select_first_row,
+    };
     use wxdragon::accessible::acc_state::{CHECKED, FOCUSABLE, FOCUSED, SELECTABLE, SELECTED};
     use wxdragon::ffi;
+
+    #[test]
+    fn test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists() {
+        assert!(
+            should_select_first_row(false, 3),
+            "an empty selection with rows present should choose the first one"
+        );
+        assert!(
+            !should_select_first_row(true, 3),
+            "a real selection must not be overridden"
+        );
+        assert!(
+            !should_select_first_row(false, 0),
+            "an empty list has no row to put the cursor on"
+        );
+    }
 
     /// A checked list nobody has arrowed into yet.
     ///
