@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 216 records have arrived since and have not been through it.
+# 231 records have arrived since and have not been through it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -7829,3 +7829,179 @@ before = """            "notStarted" => Some(Self::NotStarted),
             "inProgress" => Some(Self::InProgress),"""
 after = """            "inProgress" => Some(Self::InProgress),"""
 red = ["service::tasks_api::tests::test_every_progress_word_graph_sends_reads_back_to_the_state_it_named"]
+
+# ── Accessibility subsystem, from the 2026-08-22 mutation-sweep round ───────
+#
+# 31 misses across accessibility.rs, automation.rs, feedback.rs, names.rs and
+# screen_reader.rs. Fifteen guarded below.
+#
+# Two are genuinely equivalent: names.rs's FOCUSABLE|SELECTABLE and
+# FOCUSED|SELECTED, an OR read as an XOR. Every MSAA STATE_SYSTEM_* constant
+# wxdragon defines is a single, distinct bit, so OR and XOR compute the same
+# value on every input, not just the ones a test happened to try. Documented
+# in place with debug_assert_eq!, the same pattern already used for the two
+# disjoint dialog flags in asking.rs. No guard for these.
+#
+# Fourteen more need a live Windows accessibility control, a real screen
+# reader attached to the machine, or the current foreground window to observe
+# anything: Accessible::new's unconditional FFI call (names.rs's refresh,
+# set_accessible_name, set_accessible_name_and_description, and the whole-
+# function shape of set_accessible_checked_rows), the native:: UI Automation
+# and MSAA calls in screen_reader.rs (announce_via_live_region,
+# raise_notification, notify_name_change, and the whole-function shape of
+# clients_are_listening), and feedback.rs's emit, a direct kernel32::Beep FFI
+# call with no decision left to extract. Each is documented in place rather
+# than guarded here; this project's test fakes construct a null window
+# handle, not a live control, and wx_app.rs's own comment already explains
+# why one process can run wxdragon::main at most once, which the parallel
+# test binary rules out.
+#
+# Measured by hand: each guard applied alone, against the whole library,
+# reddened exactly the test(s) named and nothing else. Restored and reran
+# green after each. AutomationStore::update_state's guard reddens two tests,
+# not one: Accessibility::update_node_state calls straight through to it, so
+# breaking the lower layer breaks the integration test above it too.
+
+[[guard]]
+name = "every node registered at startup carries enabled, not just two of the three"
+file = "src/presentation/accessibility.rs"
+before = """            description: Some("Primary application window".to_string()),
+            state: automation::AutomationState {
+                enabled: true,"""
+after = """            description: Some("Primary application window".to_string()),
+            state: automation::AutomationState {"""
+red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
+
+[[guard]]
+name = "the folder tree is registered enabled, not left to the state default"
+file = "src/presentation/accessibility.rs"
+before = """            description: Some("Folder navigation".to_string()),
+            state: automation::AutomationState {
+                enabled: true,"""
+after = """            description: Some("Folder navigation".to_string()),
+            state: automation::AutomationState {"""
+red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
+
+[[guard]]
+name = "every module panel is registered enabled, not left to the state default"
+file = "src/presentation/accessibility.rs"
+before = """                state: automation::AutomationState {
+                    enabled: true,"""
+after = """                state: automation::AutomationState {"""
+red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
+
+[[guard]]
+name = "update_node_state really reaches the tree and tells the bridge, not a stub returning Ok"
+file = "src/presentation/accessibility.rs"
+before = """        self.automation.update_state(node_id, state)?;
+        self.screen_reader
+            .notify_event(automation::AutomationEvent::NodeUpdated(
+                node_id.to_string(),
+            ))?;
+        Ok(())"""
+after = """        let _ = (node_id, state);
+        Ok(())"""
+red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
+
+[[guard]]
+name = "feedback_settings reports what was just stored, not the type's default"
+file = "src/presentation/accessibility.rs"
+before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"""
+after = """        Default::default()"""
+red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
+
+[[guard]]
+name = "live_region_update really notifies the tree and announces the text, not a stub returning Ok"
+file = "src/presentation/accessibility.rs"
+before = """        self.screen_reader
+            .notify_event(automation::AutomationEvent::LiveRegion(
+                region_id.to_string(),
+                text.to_string(),
+            ))?;
+        self.screen_reader.announce(text)"""
+after = """        let _ = (region_id, text);
+        Ok(())"""
+red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
+
+[[guard]]
+name = "AutomationStore::update_state really replaces the stored state, not a stub returning Ok"
+file = "src/presentation/accessibility/automation.rs"
+before = """    pub fn update_state(&self, node_id: &str, state: AutomationState) -> Result<()> {
+        let mut nodes = self.nodes.write().map_err(|_| {
+            crate::common::Error::Other("Automation tree lock poisoned".to_string())
+        })?;
+        if let Some(node) = nodes.get_mut(node_id) {
+            node.state = state;
+        }
+        Ok(())
+    }"""
+after = """    pub fn update_state(&self, node_id: &str, state: AutomationState) -> Result<()> {
+        let _ = (node_id, state);
+        Ok(())
+    }"""
+red = [
+    "presentation::accessibility::automation::tests::test_updating_a_nodes_state_replaces_what_it_had",
+    "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
+]
+
+[[guard]]
+name = "a Channel displays as its stored key, not an empty default"
+file = "src/presentation/accessibility/feedback.rs"
+before = """        f.write_str(self.key())"""
+after = """        Ok(Default::default())"""
+red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
+
+[[guard]]
+name = "the first row becomes current only without a selection, not with one too"
+file = "src/presentation/accessibility/names.rs"
+before = """!has_selection && row_count > 0"""
+after = """!has_selection || row_count > 0"""
+red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
+
+[[guard]]
+name = "the first row becomes current only when a row exists, not when the count is exactly zero"
+file = "src/presentation/accessibility/names.rs"
+before = """row_count > 0"""
+after = """row_count == 0"""
+red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
+
+[[guard]]
+name = "the first row becomes current only when a row exists, not when the count is negative"
+file = "src/presentation/accessibility/names.rs"
+before = """row_count > 0"""
+after = """row_count < 0"""
+red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
+
+[[guard]]
+name = "the first row becomes current only when a row exists, not whenever the count is non-negative"
+file = "src/presentation/accessibility/names.rs"
+before = """row_count > 0"""
+after = """row_count >= 0"""
+red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
+
+[[guard]]
+name = "a nonzero UI Automation client count means something is listening, not only a nonpositive read"
+file = "src/presentation/accessibility/screen_reader.rs"
+before = """        raw != 0"""
+after = """        raw == 0"""
+red = ["presentation::accessibility::screen_reader::native::tests::test_a_nonzero_client_count_means_something_is_listening"]
+
+[[guard]]
+name = "a failed live-region registration is logged as a warning, not routine info"
+file = "src/presentation/accessibility/screen_reader.rs"
+before = """if handle == 0 {"""
+after = """if handle != 0 {"""
+red = [
+    "presentation::accessibility::screen_reader::tests::test_a_failed_registration_is_logged_as_a_warning",
+    "presentation::accessibility::screen_reader::tests::test_a_working_registration_is_logged_as_routine_info_not_a_warning",
+]
+
+[[guard]]
+name = "registering with something waiting logs how many were waiting, not silence either way"
+file = "src/presentation/accessibility/screen_reader.rs"
+before = """if !waiting.is_empty() {"""
+after = """if waiting.is_empty() {"""
+red = [
+    "presentation::accessibility::screen_reader::tests::test_registering_with_nothing_waiting_does_not_log_a_waiting_count",
+    "presentation::accessibility::screen_reader::tests::test_registering_with_something_waiting_logs_how_many_were_waiting",
+]
