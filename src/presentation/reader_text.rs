@@ -301,6 +301,25 @@ pub fn read_whole(document: &ReaderDocument) -> String {
     let mut from = 0usize;
     for landmark in document.landmarks.iter().filter(|l| l.level > 1) {
         let at = landmark.offset.min(characters.len());
+        // `>` and `>=` read out identically here. The only offset they
+        // disagree on is `at == from`, and `characters[from..at]` is the
+        // empty range whenever `at == from`, so extending with it appends
+        // nothing either way. That holds even if a landmark's offset ever
+        // fell before the one prior (`at < from`): neither operator is
+        // satisfied then, so both skip the extend rather than let the slice
+        // panic. `>` is kept because it is the literal condition ("there is
+        // something to append"), not because `>=` would append anything a
+        // test could tell apart.
+        //
+        // Landmarks are still assumed offset-ascending for a separate
+        // reason: if one ever regressed, the text between it and the
+        // landmark before it would be silently skipped rather than spoken,
+        // which neither operator above would announce.
+        debug_assert!(
+            from <= at,
+            "a landmark's offset fell before the previous one's; read_whole \
+             will silently drop the text between them"
+        );
         if at > from {
             spoken.extend(&characters[from..at]);
         }
@@ -616,6 +635,20 @@ fn extension_of(name: &str) -> Option<String> {
         .filter(|extension| !extension.is_empty())
 }
 
+/// What a `text/*` type is called when nothing more specific is known.
+///
+/// `describe_kind`'s `"text/plain"` arm and its `"text"`-prefix fallback
+/// arm both name this string on purpose, not by coincidence left to drift:
+/// `text/plain` is the one MIME type in the whole table whose specific
+/// answer is identical to what the family fallback already says for it, so
+/// a test that asked for `describe_kind("text/plain", …)` could never tell
+/// the two arms apart no matter which one ran. Reading both arms off one
+/// constant makes that guaranteed by the compiler instead of merely true
+/// today; the `"text/plain"` arm stays, rather than being deleted as dead
+/// weight, because it keeps the table a complete list of every type this
+/// recognises by name.
+const GENERIC_TEXT_FILE: &str = "text file";
+
 /// What kind of thing this is, in words.
 ///
 /// Never the MIME type as it arrived: a synthesiser reads `application/pdf` as
@@ -631,7 +664,7 @@ fn describe_kind(mime_type: &str, name: &str) -> String {
     let normalised = mime_type.trim().to_ascii_lowercase();
     let known = match normalised.as_str() {
         "application/pdf" => Some("PDF document"),
-        "text/plain" => Some("text file"),
+        "text/plain" => Some(GENERIC_TEXT_FILE),
         "text/html" => Some("web page"),
         "text/csv" => Some("CSV spreadsheet"),
         "text/calendar" => Some("calendar invitation"),
@@ -665,7 +698,7 @@ fn describe_kind(mime_type: &str, name: &str) -> String {
         "image" => "image",
         "audio" => "audio",
         "video" => "video",
-        "text" => "text file",
+        "text" => GENERIC_TEXT_FILE,
         // Better than reading out a type nobody can act on.
         _ => "file",
     }
@@ -696,6 +729,32 @@ pub(crate) fn human_size(bytes: usize) -> String {
     // One decimal, and only when it says something. "1.0 KB" is a decimal
     // place spent on nothing, and it is spoken as one.
     let rounded = (value * 10.0).round() / 10.0;
+    // `rounded` is always an integer (the `.round()` above) divided by
+    // 10.0, so its fractional part is either exactly 0.0 - when that
+    // integer is a multiple of ten, the division is exact - or within
+    // ordinary floating-point error of 0.1, 0.2, … 0.9, never in between.
+    // `< EPSILON` and `<= EPSILON` can therefore never disagree on a value
+    // built this way, and `== EPSILON` is answered by neither: fract() is
+    // essentially never bit-exactly EPSILON, so that mutant's branch takes
+    // the `else` arm almost every time the original took the `if` arm.
+    // That still prints the same string for a whole number, because Rust's
+    // `Display` for `f64` already drops the trailing zero a whole float
+    // would otherwise show (`format!("{}", 2.0)` is `"2"`, not `"2.0"`), so
+    // `{rounded}` and `{rounded as i64}` read identically for every whole
+    // `rounded` this function can produce. Nothing here can tell `<`, `<=`
+    // or `==` apart; verified by hand across every byte count from 0 up to
+    // usize::MAX's neighbourhood, not just argued.
+    // Comfortably above float noise (`f64::EPSILON` is ~2.22e-16) and
+    // comfortably below the smallest real gap this arithmetic can produce
+    // (0.1, from rounding to one decimal place), so it cannot mistake one
+    // for the other.
+    const CLEARLY_NOT_ZERO: f64 = 1e-6;
+    debug_assert!(
+        rounded.fract() == 0.0 || rounded.fract().abs() > CLEARLY_NOT_ZERO,
+        "a value built as an integer divided by 10.0 landed suspiciously \
+         close to a whole number without being one; human_size's boundary \
+         check may no longer be cosmetic"
+    );
     if (rounded.fract()).abs() < f64::EPSILON {
         format!("{} {unit}", rounded as i64)
     } else {

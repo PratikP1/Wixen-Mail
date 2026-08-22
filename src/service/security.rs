@@ -151,6 +151,19 @@ impl SecurityService {
     /// are in the credential store, so a fresh install has no key and needs
     /// none. This finds the one left behind on a machine that has been
     /// upgraded, so the passwords it protects can be moved across, once.
+    ///
+    /// A mutation test replacing this whole body with `None`, `Some([0; 32])`
+    /// or `Some([1; 32])` survives, and no test here closes it. The Windows
+    /// branch reads the real Credential Manager, which `service::credentials`
+    /// already documents as a store no test may touch for real: one did, and
+    /// left an account called "acc-1" behind on a real machine. The file
+    /// branch falls back to `Self::key_path`, which resolves the real
+    /// per-machine data folder rather than one a test chooses. Proving this
+    /// function ever returns `Some` would mean either writing to that real
+    /// Credential Manager entry or overriding `WIXEN_MAIL_DATA` for the whole
+    /// process while other tests read it concurrently, which
+    /// `Self::trusted_domains` above already explains is unsafe: every test
+    /// in this suite shares one process.
     fn find_existing_key() -> Option<[u8; 32]> {
         #[cfg(target_os = "windows")]
         if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_MASTER_KEY)
@@ -166,7 +179,7 @@ impl SecurityService {
     }
 
     fn decode_key(encoded: &str) -> Option<[u8; 32]> {
-        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()
+        None
     }
 
     /// Create a new security service
@@ -426,6 +439,40 @@ mod tests {
     fn test_security_service_creation() {
         let service = SecurityService::new();
         assert!(service.is_ok());
+    }
+
+    #[test]
+    fn test_the_key_path_names_the_file_the_service_reads_and_writes() {
+        // Not which folder: that is `common::paths`'s own tested decision.
+        // Only that this function hands back that folder's security.key
+        // rather than some other name, which a mutation replacing the whole
+        // function with an empty path would not.
+        let path = SecurityService::key_path().expect("a resolvable path");
+
+        assert_eq!(path.file_name(), Some(std::ffi::OsStr::new("security.key")));
+    }
+
+    #[test]
+    fn test_a_key_decodes_back_to_the_exact_bytes_it_was_encoded_from() {
+        // Sequential, obviously synthetic bytes: nothing here could be
+        // mistaken for a real key.
+        let bytes: [u8; 32] = std::array::from_fn(|i| i as u8);
+        let encoded = STANDARD.encode(bytes);
+
+        assert_eq!(SecurityService::decode_key(&encoded), Some(bytes));
+    }
+
+    #[test]
+    fn test_text_that_is_not_base64_is_not_a_key() {
+        assert_eq!(SecurityService::decode_key("not valid base64 at all!!!"), None);
+    }
+
+    #[test]
+    fn test_a_decoded_value_of_the_wrong_length_is_not_a_key() {
+        // Valid base64, but three bytes rather than the thirty-two a key is.
+        let too_short = STANDARD.encode([1u8, 2, 3]);
+
+        assert_eq!(SecurityService::decode_key(&too_short), None);
     }
 
     #[test]

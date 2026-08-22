@@ -126,6 +126,40 @@ impl NoteManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::temp_home::TempHome;
+
+    fn test_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_note_manager_test_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).unwrap()
+        })
+    }
+
+    #[test]
+    fn test_load_notes_reads_the_folders_and_notes_the_cache_holds() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "From the cache".to_string(),
+                body: "Loaded rather than typed in".to_string(),
+                format: "plain".to_string(),
+                pinned: false,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                updated_at: "2026-01-01T00:00:00Z".to_string(),
+            })
+            .unwrap();
+
+        let mut mgr = NoteManager::default();
+        mgr.load_notes(&cache, "acct-1").unwrap();
+
+        assert_eq!(mgr.all_folders().len(), 1);
+        assert_eq!(mgr.all_folders()[0].id, folder.id);
+        assert_eq!(mgr.all_notes().len(), 1);
+        assert_eq!(mgr.all_notes()[0].title, "From the cache");
+    }
 
     fn make_folder(id: &str, name: &str) -> NoteFolderEntry {
         NoteFolderEntry {
@@ -200,6 +234,22 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_note_takes_only_the_one_asked_for() {
+        let mut mgr = NoteManager::default();
+        mgr.add_note(make_note("n1", "Keep", "body", "f1", false));
+        mgr.add_note(make_note("n2", "Gone", "body", "f1", false));
+
+        mgr.remove_note("n2");
+
+        let ids: Vec<&str> = mgr.all_notes().iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["n1"],
+            "removed the wrong note, or none, or all of them"
+        );
+    }
+
+    #[test]
     fn test_toggle_pin() {
         let mut mgr = NoteManager::default();
         mgr.add_note(make_note("n1", "Test", "body", "f1", false));
@@ -207,6 +257,45 @@ mod tests {
         assert!(!mgr.get_note("n1").unwrap().pinned);
         mgr.toggle_pin("n1");
         assert!(mgr.get_note("n1").unwrap().pinned);
+    }
+
+    #[test]
+    fn test_all_folders_reflects_what_was_added() {
+        // The existing cascade test only ever checks the count after a
+        // removal, which a folder store that silently drops every add would
+        // also report as zero. This checks the content survives the round
+        // trip, not just that a count changed.
+        let mut mgr = NoteManager::default();
+        mgr.add_folder(make_folder("f1", "Personal"));
+
+        assert_eq!(mgr.all_folders().len(), 1);
+        assert_eq!(mgr.all_folders()[0].id, "f1");
+        assert_eq!(mgr.all_folders()[0].name, "Personal");
+    }
+
+    #[test]
+    fn test_adding_a_note_sorts_pinned_first_then_most_recently_changed() {
+        // Insertion order is deliberately the opposite of the expected order,
+        // so a sort that never ran would leave this exact sequence in place
+        // instead of producing it.
+        let mut older_unpinned = make_note("n1", "Older unpinned", "body", "f1", false);
+        older_unpinned.updated_at = "2026-01-01T00:00:00Z".to_string();
+        let mut newer_unpinned = make_note("n2", "Newer unpinned", "body", "f1", false);
+        newer_unpinned.updated_at = "2026-01-03T00:00:00Z".to_string();
+        let mut pinned = make_note("n3", "Pinned", "body", "f1", true);
+        pinned.updated_at = "2026-01-02T00:00:00Z".to_string();
+
+        let mut mgr = NoteManager::default();
+        mgr.add_note(older_unpinned);
+        mgr.add_note(newer_unpinned);
+        mgr.add_note(pinned);
+
+        let ids: Vec<&str> = mgr.all_notes().iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["n3", "n2", "n1"],
+            "pinned should lead, then most recently changed first"
+        );
     }
 
     #[test]
