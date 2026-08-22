@@ -141,17 +141,44 @@ pub const LISTS: [ThreatKind; 4] = [
 /// This being absent is the ordinary state, not an error. Safe Browsing is an
 /// addition, and without a key the application checks links exactly as it did
 /// before: by what the message's own headers say.
+///
+/// A mutation test replacing this whole body with `None` survives: without a
+/// real `WIXEN_SAFE_BROWSING_KEY` set or a real `oauth.toml` carrying one,
+/// the honest answer already is `None`. Proving the function ever returns
+/// `Some` needs one of those two real, per-machine facts, which is exactly
+/// what `SecurityService::trusted_domains` in `service::security` already
+/// says a test must not arrange: every test here shares one process, and
+/// setting an environment variable is process-wide. The trim-and-check logic
+/// on each source is pulled out below instead, so it can be pinned without
+/// touching either.
 pub fn api_key() -> Option<String> {
-    if let Ok(key) = std::env::var("WIXEN_SAFE_BROWSING_KEY")
-        && !key.trim().is_empty()
-    {
-        return Some(key.trim().to_string());
+    if let Some(key) = usable_env_key(std::env::var("WIXEN_SAFE_BROWSING_KEY")) {
+        return Some(key);
     }
     let path = crate::common::paths::AppPaths::resolve()
         .ok()?
         .config_dir()
         .join("oauth.toml");
     let content = std::fs::read_to_string(path).ok()?;
+    api_key_from_toml(&content)
+}
+
+/// Whether an environment variable's value is a usable key, once trimmed.
+///
+/// Split out from [`api_key`] so it can be tested without setting process
+/// environment: every test in this suite shares one process, and a test that
+/// set `WIXEN_SAFE_BROWSING_KEY` would change what its neighbours see.
+fn usable_env_key(raw: Result<String, std::env::VarError>) -> Option<String> {
+    let trimmed = raw.ok()?.trim().to_string();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+/// Read the key out of an `oauth.toml` file's text.
+///
+/// Split from reading the file, the same shape as
+/// `service::oauth_credentials::credentials_from_toml`, so the parsing can be
+/// tested against a string in memory rather than a file on disk.
+fn api_key_from_toml(content: &str) -> Option<String> {
     #[derive(serde::Deserialize)]
     struct Entry {
         api_key: Option<String>,
@@ -160,7 +187,7 @@ pub fn api_key() -> Option<String> {
     struct File {
         safe_browsing: Option<Entry>,
     }
-    toml::from_str::<File>(&content)
+    toml::from_str::<File>(content)
         .ok()?
         .safe_browsing?
         .api_key
@@ -281,6 +308,17 @@ fn list_path(cache_dir: &std::path::Path, kind: ThreatKind) -> std::path::PathBu
         .join(format!("{}.bin", kind.as_api_name().to_lowercase()))
 }
 
+/// Which of the lists this application asked about one update response names.
+///
+/// Split out from the loop in [`refresh_lists`] so the match can be tested
+/// without a live update to loop over.
+fn list_for_update(update: &client::ListUpdateResponse) -> Option<ThreatKind> {
+    LISTS
+        .iter()
+        .copied()
+        .find(|kind| kind.as_api_name() == update.threat_type)
+}
+
 /// Bring the local copies of the lists up to date.
 ///
 /// The request carries the lists wanted and what this copy already has. It
@@ -290,6 +328,13 @@ fn list_path(cache_dir: &std::path::Path, kind: ThreatKind) -> std::path::PathBu
 /// run asks for it whole. Keeping a list that has drifted is worse than having
 /// none: removal indices then take out the wrong entries, and every update
 /// after it makes the divergence worse without anything saying so.
+///
+/// A mutation test replacing this whole body with `Ok(())` survives. Every
+/// path through it calls [`client::fetch_updates`] unconditionally, which
+/// `client`'s own module doc already names as untested against the live
+/// service, so there is no local-only route through this function for a test
+/// to take. The lookup inside the loop below is pulled out into
+/// [`list_for_update`] so that one piece can still be pinned on its own.
 pub async fn refresh_lists(
     api_key: &str,
     cache_dir: &std::path::Path,
@@ -305,13 +350,10 @@ pub async fn refresh_lists(
     let response = client::fetch_updates(api_key, &LISTS, &states).await?;
 
     for update in &response.list_update_responses {
-        let Some(kind) = LISTS
-            .iter()
-            .find(|kind| kind.as_api_name() == update.threat_type)
-        else {
+        let Some(kind) = list_for_update(update) else {
             continue;
         };
-        let path = list_path(cache_dir, *kind);
+        let path = list_path(cache_dir, kind);
         let held = database::PrefixSet::load(&path);
         match client::apply(&held, update) {
             Ok(updated) => updated.save(&path)?,
@@ -326,11 +368,43 @@ pub async fn refresh_lists(
     Ok(())
 }
 
+/// Every local collision across every link, Google's prefixes and full
+/// hashes kept in step with each other.
+///
+/// Split out from [`check_links`] so the cross-link deduplication can be
+/// tested without an `async` call to drive: two different links in the same
+/// message can hash to the same prefix, and asking about it twice tells
+/// Google nothing new.
+fn collisions_for(urls: &[String], lists: &[&database::PrefixSet]) -> (Vec<u32>, Vec<[u8; 32]>) {
+    let mut prefixes = Vec::new();
+    let mut full_hashes = Vec::new();
+    for url in urls {
+        let question = question_for(url, lists);
+        for (prefix, hash) in question.prefixes.iter().zip(question.full_hashes.iter()) {
+            if !prefixes.contains(prefix) {
+                prefixes.push(*prefix);
+                full_hashes.push(*hash);
+            }
+        }
+    }
+    (prefixes, full_hashes)
+}
+
 /// What the lists say about every link in one message.
 ///
 /// Returns `None` when there is nothing to say, which is the ordinary answer.
 /// Not listed means Google has not listed it, and turning that into "this is
 /// safe" is the claim this application must never make.
+///
+/// A mutation test replacing this whole body with `None` survives: both
+/// guards below already answer `None` on their own, without ever reaching
+/// [`client::find_full_hashes`], so nothing here proves the function can
+/// answer anything else. Proving that needs a real collision followed by a
+/// real answer from Google, which `client`'s own module doc already names as
+/// untested against the live service. Replacing the whole body with
+/// `Some(Default::default())` does not survive: the "nothing fetched yet"
+/// and "nothing collided" guards are both real, local-only decisions, and
+/// either one gives `None` where the hardcoded mutant gives `Some`.
 pub async fn check_links(
     api_key: &str,
     cache_dir: &std::path::Path,
@@ -347,17 +421,7 @@ pub async fn check_links(
     }
     let borrowed: Vec<&database::PrefixSet> = held.iter().collect();
 
-    let mut prefixes = Vec::new();
-    let mut full_hashes = Vec::new();
-    for url in urls {
-        let question = question_for(url, &borrowed);
-        for (prefix, hash) in question.prefixes.iter().zip(question.full_hashes.iter()) {
-            if !prefixes.contains(prefix) {
-                prefixes.push(*prefix);
-                full_hashes.push(*hash);
-            }
-        }
-    }
+    let (prefixes, full_hashes) = collisions_for(urls, &borrowed);
     if prefixes.is_empty() {
         // The ordinary case for ordinary mail: nothing collided, so nothing is
         // sent and Google learns nothing, not even that a message was read.
@@ -638,6 +702,122 @@ mod tests {
         // Google has not listed it, and turning that into "this is safe" is
         // the claim this application must never make.
         assert_eq!(verdict_for(&[]), None);
+    }
+
+    #[test]
+    fn test_the_environment_key_is_trimmed_and_blank_is_not_a_key() {
+        assert_eq!(
+            usable_env_key(Ok("  a-fake-test-key  ".to_string())),
+            Some("a-fake-test-key".to_string())
+        );
+        assert_eq!(usable_env_key(Ok("   ".to_string())), None);
+        assert_eq!(usable_env_key(Ok(String::new())), None);
+        assert_eq!(usable_env_key(Err(std::env::VarError::NotPresent)), None);
+    }
+
+    #[test]
+    fn test_the_toml_key_is_trimmed_and_blank_is_not_a_key() {
+        assert_eq!(
+            api_key_from_toml("[safe_browsing]\napi_key = \"  a-fake-test-key  \"\n"),
+            Some("a-fake-test-key".to_string())
+        );
+        assert_eq!(
+            api_key_from_toml("[safe_browsing]\napi_key = \"\"\n"),
+            None,
+            "a blank key in the file is not a key"
+        );
+        assert_eq!(
+            api_key_from_toml("[gmail]\nclient_id = \"x\"\n"),
+            None,
+            "no safe_browsing section at all"
+        );
+        assert_eq!(
+            api_key_from_toml("[safe_browsing]\n"),
+            None,
+            "a section with no api_key field"
+        );
+        assert_eq!(api_key_from_toml("not toml at all {{{"), None);
+    }
+
+    #[test]
+    fn test_an_update_response_is_matched_to_its_list_by_name() {
+        let for_malware = client::ListUpdateResponse {
+            threat_type: "MALWARE".to_string(),
+            response_type: String::new(),
+            state: String::new(),
+            additions: Vec::new(),
+            removals: Vec::new(),
+            checksum: None,
+        };
+        assert_eq!(list_for_update(&for_malware), Some(ThreatKind::Malware));
+
+        let unknown = client::ListUpdateResponse {
+            threat_type: "SOMETHING_ELSE".to_string(),
+            response_type: String::new(),
+            state: String::new(),
+            additions: Vec::new(),
+            removals: Vec::new(),
+            checksum: None,
+        };
+        assert_eq!(list_for_update(&unknown), None);
+    }
+
+    #[test]
+    fn test_two_links_that_collide_on_the_same_prefix_are_asked_about_once() {
+        // The same collision as test_the_same_prefix_is_only_asked_about_once,
+        // one level up: two different messages links can still share one
+        // prefix, and question_for's own per-link dedup does not see across
+        // the two calls this aggregation makes.
+        let canonical = canonicalise("https://example.com/").expect("a URL");
+        let expression = expressions(&canonical)
+            .into_iter()
+            .next()
+            .expect("at least one expression");
+        let listed = database::PrefixSet::from_prefixes([database::prefix_of(&expression)]);
+        let urls = [
+            "https://example.com/".to_string(),
+            "https://example.com/".to_string(),
+        ];
+
+        let (prefixes, full_hashes) = collisions_for(&urls, &[&listed]);
+
+        assert_eq!(prefixes.len(), 1, "{prefixes:?}");
+        assert_eq!(full_hashes.len(), 1);
+    }
+
+    #[test]
+    fn test_check_links_says_nothing_before_any_list_has_been_fetched() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+
+        let verdict = tokio_test::block_on(check_links(
+            "unused-test-key",
+            dir.path(),
+            &["https://example.com/".to_string()],
+        ));
+
+        assert_eq!(verdict, None);
+    }
+
+    #[test]
+    fn test_check_links_says_nothing_when_no_link_collides() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        // A non-empty list that nothing in the message matches, so the first
+        // guard (nothing fetched yet) does not fire and the second one (no
+        // collision) is what this test is actually pinning.
+        let listed = database::PrefixSet::from_prefixes([0xDEAD_BEEF]);
+        for kind in LISTS {
+            listed
+                .save(&list_path(dir.path(), kind))
+                .expect("write a fake cached list");
+        }
+
+        let verdict = tokio_test::block_on(check_links(
+            "unused-test-key",
+            dir.path(),
+            &["https://example.com/harmless".to_string()],
+        ));
+
+        assert_eq!(verdict, None);
     }
 
     #[test]

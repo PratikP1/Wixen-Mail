@@ -92,6 +92,16 @@ pub struct Verdict {
 
 impl Verdict {
     /// An ordinary message with nothing to say about it.
+    ///
+    /// Written as `Self::default()` on purpose: a mutation test replacing
+    /// this whole body with `Default::default()` survives, and it always
+    /// will, because the two are the same call. This function takes no
+    /// argument to tell them apart by, and the return type fixes what
+    /// `Default::default()` resolves to as `<Verdict as Default>::default()`,
+    /// identically to `Self::default()`. There is no invariant to assert here
+    /// the way there is for an operator swap on disjoint bits elsewhere in
+    /// this sweep: nothing external could ever make the two calls diverge,
+    /// so nothing is asserted, only written down.
     pub fn ordinary() -> Self {
         Self::default()
     }

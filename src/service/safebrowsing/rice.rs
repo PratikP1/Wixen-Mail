@@ -114,6 +114,21 @@ pub fn decode(encoded: &RiceDelta) -> Result<Vec<u32>> {
 
         // Safe because of the ceiling: the shift cannot lose a bit, and the
         // remainder is smaller than the low bits the shift left free.
+        //
+        // That also means `|` and `^` compute the same value here, always.
+        // `remainder` comes from `BitReader::bits(parameter)`, which builds it
+        // one bit at a time over exactly `parameter` positions, so it can
+        // never set a bit at or above `parameter`. The ceiling check above
+        // stops `quotient << parameter` from ever setting one below it. Two
+        // values that never share a set bit combine identically under OR and
+        // XOR, the same fact that lets asking.rs read its two disjoint dialog
+        // flags with either operator.
+        debug_assert_eq!(
+            (quotient << encoded.parameter) & remainder,
+            0,
+            "quotient and remainder now share a bit, so combining them is no \
+             longer safe to read as an OR of two independent ranges"
+        );
         let difference = (quotient << encoded.parameter) | remainder;
         // Wrapping is what Google's own decoder does here, and the values are
         // hash prefixes rather than quantities, so the arithmetic is modular by

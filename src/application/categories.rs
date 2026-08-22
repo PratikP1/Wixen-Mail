@@ -114,13 +114,12 @@ pub fn stored(categories: &[String]) -> String {
 
 /// What is said about an item's categories when it is read out.
 ///
-/// Empty when it has none, so an uncategorised calendar costs nothing.
+/// Empty when it has none, so an uncategorised calendar costs nothing. That
+/// falls out of `join` on its own: joining an empty list produces "" for any
+/// separator, on any list this can ever be given, so no separate empty case
+/// is needed to reach it.
 pub fn spoken(stored_value: &str) -> String {
-    let categories = on(stored_value);
-    match categories.len() {
-        0 => String::new(),
-        _ => categories.join(", "),
-    }
+    on(stored_value).join(", ")
 }
 
 #[cfg(test)]

@@ -281,11 +281,33 @@ pub fn apply(current: &PrefixSet, response: &ListUpdateResponse) -> Result<Prefi
 
 // ── The calls themselves ────────────────────────────────────────────────────
 
+/// What this copy already holds for one list, or nothing if it has never
+/// been fetched.
+///
+/// Split out from the request-building closure below so the lookup can be
+/// tested without an update to loop over: `states` pairs each list with its
+/// token in whatever order they were collected in, not necessarily `kind`'s
+/// own position, so the search is real logic and not just a formality.
+fn state_for(kind: super::ThreatKind, states: &[(super::ThreatKind, String)]) -> String {
+    states
+        .iter()
+        .find(|(other, _)| *other == kind)
+        .map(|(_, state)| state.clone())
+        .unwrap_or_default()
+}
+
 /// Ask Google for changes to one threat list.
 ///
 /// The request carries the list wanted and what this copy already has, and
 /// nothing else. It would be byte-identical on a machine that had never
 /// received a message.
+///
+/// A mutation test replacing this whole body with `Ok(Default::default())`
+/// survives, and the `!response.status().is_success()` check below does too
+/// when its `!` is deleted. Both live in the one call this module's own doc
+/// comment already names as untested against the live service: reaching
+/// either would mean a real response from Google, or from a stand-in this
+/// project's own conventions do not use for network-dependent code.
 pub async fn fetch_updates(
     api_key: &str,
     lists: &[super::ThreatKind],
@@ -302,11 +324,7 @@ pub async fn fetch_updates(
                 threat_type: kind.as_api_name(),
                 platform_type: "WINDOWS",
                 threat_entry_type: "URL",
-                state: states
-                    .iter()
-                    .find(|(other, _)| other == kind)
-                    .map(|(_, state)| state.clone())
-                    .unwrap_or_default(),
+                state: state_for(*kind, states),
                 constraints: Constraints {
                     supported_compressions: vec!["RAW", "RICE"],
                 },
@@ -386,6 +404,15 @@ pub struct ThreatEntryValue {
 /// The rare call, and the only one carrying anything derived from a link. Four
 /// bytes per collision, which are the start of a SHA-256 and stand for billions
 /// of possible URLs. The comparison against the real hash happens back here.
+///
+/// A mutation test replacing this whole body with `Ok(Default::default())`
+/// survives even though `test_asking_about_no_prefixes_asks_google_nothing`
+/// exists: that test only exercises the `prefixes.is_empty()` guard below,
+/// which returns the identical value the mutant hardcodes. Proving this
+/// function returns anything else needs a non-empty `prefixes`, which falls
+/// through to the same untested-against-the-live-service call
+/// `fetch_updates` documents. Deleting the `!` in the status check just below
+/// is the identical case one level down.
 pub async fn find_full_hashes(
     api_key: &str,
     prefixes: &[u32],
@@ -693,6 +720,75 @@ mod tests {
         assert_eq!(
             confirmed(&response, &[hash]),
             vec![super::super::ThreatKind::SocialEngineering]
+        );
+    }
+
+    #[test]
+    fn test_every_threat_type_google_sends_names_the_right_list() {
+        // Each of the four is its own match arm, and two of them
+        // (UNWANTED_SOFTWARE and POTENTIALLY_HARMFUL_APPLICATION) had nothing
+        // exercising them: deleting either arm would still pass every other
+        // test in this file, silently dropping the warning for that list.
+        for (threat_type, expected) in [
+            (
+                "SOCIAL_ENGINEERING",
+                super::super::ThreatKind::SocialEngineering,
+            ),
+            ("MALWARE", super::super::ThreatKind::Malware),
+            (
+                "UNWANTED_SOFTWARE",
+                super::super::ThreatKind::UnwantedSoftware,
+            ),
+            (
+                "POTENTIALLY_HARMFUL_APPLICATION",
+                super::super::ThreatKind::PotentiallyHarmfulApplication,
+            ),
+        ] {
+            let hash = super::super::database::full_hash_of("example.com/");
+            let response = FullHashResponse {
+                matches: vec![FullHashMatch {
+                    threat_type: threat_type.to_string(),
+                    threat: ThreatEntryValue { hash: b64(&hash) },
+                }],
+            };
+
+            assert_eq!(
+                confirmed(&response, &[hash]),
+                vec![expected],
+                "{threat_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_each_list_asks_for_the_state_it_already_holds_and_no_other() {
+        // states pairs a list with its token in whatever order they were
+        // collected in. Matching by the wrong list hands Google a state
+        // token for a different list than the one being asked about, which
+        // reads as corruption on Google's side rather than this client's.
+        let states = [
+            (
+                super::super::ThreatKind::Malware,
+                "malware-state".to_string(),
+            ),
+            (
+                super::super::ThreatKind::SocialEngineering,
+                "phishing-state".to_string(),
+            ),
+        ];
+
+        assert_eq!(
+            state_for(super::super::ThreatKind::Malware, &states),
+            "malware-state"
+        );
+        assert_eq!(
+            state_for(super::super::ThreatKind::SocialEngineering, &states),
+            "phishing-state"
+        );
+        assert_eq!(
+            state_for(super::super::ThreatKind::UnwantedSoftware, &states),
+            "",
+            "a list never fetched before has to ask for the whole thing"
         );
     }
 

@@ -283,6 +283,31 @@ mod tests {
     /// do for the real mail that arrives with them wrong.
     fn one_page_pdf(body: &str) -> Vec<u8> {
         let content = format!("BT /F1 12 Tf 72 700 Td ({body}) Tj ET");
+        pdf_from_content(&content)
+    }
+
+    /// A one-page PDF built from lines that can each choose their own font
+    /// size, so a page can hold a genuine heading next to body text.
+    ///
+    /// `dx`/`dy` are the `Td` operator's own arguments: the first line's are
+    /// an absolute position on the page, since `BT` starts the text matrix at
+    /// the origin, and every line after that moves relative to the one
+    /// before it, the same way `Td` does in a real content stream.
+    fn pdf_with_lines(lines: &[(f64, f64, f64, &str)]) -> Vec<u8> {
+        let mut content = String::from("BT\n");
+        for (size, dx, dy, text) in lines {
+            content.push_str(&format!("/F1 {size} Tf {dx} {dy} Td ({text}) Tj\n"));
+        }
+        content.push_str("ET");
+        pdf_from_content(&content)
+    }
+
+    /// Wraps a content stream in the minimal PDF structure the tests need.
+    ///
+    /// Offsets in the cross-reference table are wrong on purpose: the parser
+    /// rebuilds them, which is what it has to do for the real mail that
+    /// arrives with them wrong.
+    fn pdf_from_content(content: &str) -> Vec<u8> {
         let mut pdf = String::from("%PDF-1.4\n");
         pdf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
         pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
@@ -517,5 +542,105 @@ mod tests {
             reading.note
         );
         assert!(reading.note.contains("scan"), "{}", reading.note);
+    }
+
+    #[test]
+    fn test_a_real_heading_is_found_and_placed_correctly_in_the_text() {
+        // one_page_pdf only ever writes one font size, so a document's own
+        // heading never exists in it: nothing distinguishes a heading line
+        // from a paragraph without at least two sizes on the page. Every
+        // other test in this file reads only page markers through
+        // `headings_in`; this is the one that reads a heading the document
+        // actually wrote.
+        let reading = read(&pdf_with_lines(&[
+            (
+                12.0,
+                72.0,
+                760.0,
+                "A short line sits before the heading on this page.",
+            ),
+            (20.0, 0.0, -30.0, "Quarterly Results"),
+            (
+                12.0,
+                0.0,
+                -30.0,
+                "The numbers below cover the third quarter in detail.",
+            ),
+        ]))
+        .expect("a page with a real heading");
+
+        let heading = reading
+            .headings
+            .iter()
+            .find(|h| h.label == "Quarterly Results")
+            .unwrap_or_else(|| panic!("the document's own heading was not found: {:?}", reading));
+        // Page markers are level 2, so a document's own heading starts at 3.
+        assert_eq!(heading.level, 3, "{:?}", reading.headings);
+
+        // The offset has to point at the label itself, not somewhere near it.
+        let characters: Vec<char> = reading.text.chars().collect();
+        let at: String = characters[heading.offset..]
+            .iter()
+            .take(heading.label.chars().count())
+            .collect();
+        assert_eq!(at, heading.label, "landmark is misplaced: {:?}", reading.headings);
+    }
+
+    #[test]
+    fn test_the_same_heading_twice_on_a_page_is_matched_to_each_occurrence_in_turn() {
+        // headings_in keeps a forward-only cursor precisely so the second
+        // "Overview" is not matched back to the first one's offset. Nothing
+        // before this exercised that cursor: every other test's page has at
+        // most one real heading.
+        let reading = read(&pdf_with_lines(&[
+            (
+                12.0,
+                72.0,
+                760.0,
+                "A short line sits before the first heading.",
+            ),
+            (20.0, 0.0, -30.0, "Overview"),
+            (
+                12.0,
+                0.0,
+                -30.0,
+                "The first section covers what changed this quarter.",
+            ),
+            (
+                12.0,
+                0.0,
+                -20.0,
+                "It continues for a second line of the same paragraph.",
+            ),
+            (20.0, 0.0, -30.0, "Overview"),
+            (
+                12.0,
+                0.0,
+                -20.0,
+                "The second section covers what is planned next.",
+            ),
+        ]))
+        .expect("a page with a repeated heading");
+
+        let overviews: Vec<&PdfHeading> = reading
+            .headings
+            .iter()
+            .filter(|h| h.label == "Overview")
+            .collect();
+        assert_eq!(overviews.len(), 2, "{:?}", reading.headings);
+        assert!(
+            overviews[0].offset < overviews[1].offset,
+            "the second Overview was matched back to the first: {:?}",
+            reading.headings
+        );
+
+        let characters: Vec<char> = reading.text.chars().collect();
+        for heading in &overviews {
+            let at: String = characters[heading.offset..]
+                .iter()
+                .take(heading.label.chars().count())
+                .collect();
+            assert_eq!(at, heading.label, "landmark is misplaced: {:?}", reading.headings);
+        }
     }
 }

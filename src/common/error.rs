@@ -125,7 +125,15 @@ pub fn redact_provider_message(body: &str) -> String {
             // at whatever punctuation the surrounding format uses.
             let rest = &body[index + key.len()..];
             let end = rest.find([',', '&', '}', '\n', '<']).unwrap_or(rest.len());
-            index += key.len() + end;
+            // Every entry in SECRETS is non-empty, so this always steps
+            // forward by at least key.len(), even when a match sits right at
+            // the end of body with nothing after it to find (end == 0). That
+            // guarantee is what keeps this loop from stalling; the assert
+            // makes it visible to the next person who touches this line
+            // rather than leaving it as something only a comment remembers.
+            let advance = key.len() + end;
+            debug_assert!(advance > 0, "a matched key must always move the cursor forward");
+            index += advance;
             continue;
         }
         // Not a key we recognise: copy one character and move on.

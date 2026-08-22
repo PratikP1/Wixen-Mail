@@ -692,9 +692,112 @@ mod tests {
     }
 
     #[test]
+    fn test_feedback_settings_reports_what_was_just_stored_rather_than_the_default() {
+        // Every other test that calls `feedback_settings()` reads it once,
+        // right after `Accessibility::new()`, while the stored value still
+        // happens to equal the default. None of them would notice this getter
+        // ignoring the mutex and handing back `Default::default()` on every
+        // call. This one changes the setting first, so default and stored
+        // disagree, and only reads the getter after that.
+        let a11y = Accessibility::new().expect("accessibility");
+        let mut changed = a11y.feedback_settings();
+        changed.set_channel_enabled(feedback::Channel::Earcon, true);
+        a11y.set_feedback_settings(changed.clone());
+
+        assert_eq!(a11y.feedback_settings(), changed);
+        assert_ne!(
+            a11y.feedback_settings(),
+            feedback::FeedbackSettings::default(),
+            "earcons are off by default, so a settings value with them on must not read back as the default"
+        );
+    }
+
+    #[test]
+    fn test_live_region_update_notifies_the_tree_and_announces_the_text() {
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.live_region_update("message-count", "12 unread")
+            .expect("live_region_update");
+
+        assert_eq!(
+            a11y.screen_reader.last_announcement().unwrap().as_deref(),
+            Some("12 unread")
+        );
+        assert!(
+            a11y.screen_reader
+                .events()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    automation::AutomationEvent::LiveRegion(region, text)
+                        if region == "message-count" && text == "12 unread"
+                )),
+            "no LiveRegion automation event was raised"
+        );
+    }
+
+    #[test]
     fn test_accessibility_creation() {
         let a11y = Accessibility::new();
         assert!(a11y.is_ok());
+    }
+
+    #[test]
+    fn test_every_node_registered_at_startup_is_enabled() {
+        // The main window, the folder tree and every module panel exist for as
+        // long as the application runs, so a screen reader asking whether one
+        // can be interacted with should always hear yes. `AutomationState`
+        // defaults every field to false, `enabled` included, so leaving the
+        // field out of any one of the three registrations here would silently
+        // report that node as disabled.
+        let a11y = Accessibility::new().unwrap();
+        a11y.initialize().unwrap();
+        let snapshot = a11y.automation_snapshot().unwrap();
+        assert!(
+            !snapshot.is_empty(),
+            "initialize registered no nodes at all"
+        );
+        for node in &snapshot {
+            assert!(node.state.enabled, "{} was registered as disabled", node.id);
+        }
+    }
+
+    #[test]
+    fn test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge() {
+        // `update_node_state` promises two things: the automation tree carries
+        // the new state, and the screen reader bridge hears about the change.
+        // Stubbing the function to a bare `Ok(())` would satisfy neither.
+        let a11y = Accessibility::new().unwrap();
+        a11y.initialize().unwrap();
+
+        let ticked = automation::AutomationState {
+            checked: Some(true),
+            ..automation::AutomationState::default()
+        };
+        a11y.update_node_state("folder_tree", ticked.clone())
+            .expect("update_node_state");
+
+        let snapshot = a11y.automation_snapshot().unwrap();
+        let folder_tree = snapshot
+            .iter()
+            .find(|n| n.id == "folder_tree")
+            .expect("folder_tree was registered by initialize");
+        assert_eq!(
+            folder_tree.state, ticked,
+            "the new state never reached the automation tree"
+        );
+
+        assert!(
+            a11y.screen_reader
+                .events()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    automation::AutomationEvent::NodeUpdated(id) if id == "folder_tree"
+                )),
+            "no NodeUpdated event reached the screen reader bridge"
+        );
     }
 
     #[test]

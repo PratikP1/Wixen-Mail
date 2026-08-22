@@ -279,6 +279,14 @@ impl MessageCache {
                 .map_err(|e| Error::Other(format!("Failed to clear inline body: {}", e)))?;
         }
 
+        // This guards a diagnostic log line only; `moved` above is already
+        // the real, well-tested return value, and this comparison changes
+        // nothing else. Nothing in this codebase captures tracing output in
+        // a test, on the established convention that a log line is not part
+        // of a function's contract, so there is no test recorded for the
+        // count comparison itself: the migration's actual effect (rows
+        // moved, inline copies cleared) is what `test_existing_inline_bodies_are_migrated_not_lost`
+        // pins.
         if moved > 0 {
             tracing::info!("Moved {} message bodies out of the messages table", moved);
         }

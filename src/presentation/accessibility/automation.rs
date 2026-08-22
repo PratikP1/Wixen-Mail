@@ -137,4 +137,30 @@ mod tests {
         let node = store.get_node("compose_button").unwrap().unwrap();
         assert_eq!(node.name, "Compose");
     }
+
+    #[test]
+    fn test_updating_a_nodes_state_replaces_what_it_had() {
+        let store = AutomationStore::new().unwrap();
+        store
+            .upsert_node(AutomationNode::new(
+                "compose_button",
+                AutomationRole::Button,
+                "Compose",
+            ))
+            .unwrap();
+
+        let ticked = AutomationState {
+            checked: Some(true),
+            ..AutomationState::default()
+        };
+        store
+            .update_state("compose_button", ticked.clone())
+            .unwrap();
+
+        let node = store.get_node("compose_button").unwrap().unwrap();
+        assert_eq!(
+            node.state, ticked,
+            "the new state did not replace the one the node was created with"
+        );
+    }
 }

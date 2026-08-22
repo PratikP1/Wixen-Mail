@@ -179,7 +179,7 @@ impl SecurityService {
     }
 
     fn decode_key(encoded: &str) -> Option<[u8; 32]> {
-        None
+        STANDARD.decode(encoded.trim()).ok()?.try_into().ok()
     }
 
     /// Create a new security service
@@ -464,7 +464,10 @@ mod tests {
 
     #[test]
     fn test_text_that_is_not_base64_is_not_a_key() {
-        assert_eq!(SecurityService::decode_key("not valid base64 at all!!!"), None);
+        assert_eq!(
+            SecurityService::decode_key("not valid base64 at all!!!"),
+            None
+        );
     }
 
     #[test]

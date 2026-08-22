@@ -78,6 +78,18 @@ fn usable(
 }
 
 /// Return credentials for the given provider, or `None` if unconfigured.
+///
+/// A mutation test replacing this whole body with `None`, or deleting either
+/// match arm below, survives. On a machine with no `WIXEN_GMAIL_CLIENT_ID`
+/// or `WIXEN_OUTLOOK_CLIENT_ID` set and no real `oauth.toml`, which is the
+/// ordinary case this doc's own module comment describes, `resolve_gmail`
+/// and `resolve_outlook` already answer `None`, so a deleted arm and an
+/// intact one that calls through to `None` anyway are indistinguishable.
+/// Proving either arm is really reached needs real credentials from one of
+/// the three real sources named above, which `usable`'s own doc already
+/// says no test can get near: environment variables are process-wide and
+/// `oauth.toml` is gitignored precisely so it never holds anything a test
+/// could read.
 pub fn credentials_for(provider: &str) -> Option<ClientCredentials> {
     let lower = provider.to_lowercase();
     match lower.as_str() {
@@ -87,6 +99,11 @@ pub fn credentials_for(provider: &str) -> Option<ClientCredentials> {
     }
 }
 
+/// A mutation test replacing this whole body with `None` survives for the
+/// same reason [`credentials_for`] documents: every one of the three sources
+/// here is real environment, a real gitignored file, or a compile-time
+/// default baked in at build time, and the ordinary, no-configuration answer
+/// already is `None`.
 fn resolve_gmail() -> Option<ClientCredentials> {
     // 1. Environment variables: Google always requires client_secret
     usable(
@@ -108,6 +125,8 @@ fn resolve_gmail() -> Option<ClientCredentials> {
     })
 }
 
+/// A mutation test replacing this whole body with `None` survives for the
+/// identical reason [`resolve_gmail`] documents.
 fn resolve_outlook() -> Option<ClientCredentials> {
     // 1. Environment variables: client_secret optional for public clients
     usable(
@@ -136,6 +155,13 @@ fn oauth_toml_path() -> Option<PathBuf> {
         .map(|paths| paths.oauth_toml())
 }
 
+/// A mutation test replacing this whole body with `None` survives even
+/// though `oauth_toml_path` itself is pinned: unlike that path lookup, this
+/// also has to read a real file, and a machine with no real `oauth.toml`
+/// (the ordinary case: it is gitignored and developer-supplied) gives the
+/// honest `None` a hardcoded one would too. Proving otherwise needs a real
+/// file at a real per-machine path, which is exactly what
+/// `oauth_toml_path`'s own test avoids depending on.
 fn load_from_toml(provider: &str) -> Option<ClientCredentials> {
     let path = oauth_toml_path()?;
     let content = std::fs::read_to_string(&path).ok()?;
@@ -164,6 +190,13 @@ fn credentials_from_toml(provider: &str, content: &str) -> Option<ClientCredenti
 }
 
 /// Check whether credentials are available for a provider.
+///
+/// A mutation test replacing this whole body with `false` survives for the
+/// same reason [`credentials_for`] documents: the ordinary, no-configuration
+/// answer for a real provider already is `false`, indistinguishable from a
+/// hardcoded one without real credentials to resolve. The `true` mutant does
+/// not survive: an unrecognised provider name is `false` regardless of what
+/// is configured anywhere, which needs no environment or file to prove.
 pub fn has_credentials(provider: &str) -> bool {
     credentials_for(provider).is_some()
 }
@@ -279,6 +312,24 @@ mod tests {
             );
             assert!(cred.tenant_id.is_none(), "Gmail should not have tenant_id");
         }
+    }
+
+    #[test]
+    fn test_the_oauth_toml_path_names_the_file_it_reads() {
+        // Not which folder: that is common::paths's own tested decision.
+        // Only that this hands back that folder's oauth.toml rather than
+        // some other name or an empty path.
+        let path = oauth_toml_path().expect("a resolvable path");
+
+        assert_eq!(path.file_name(), Some(std::ffi::OsStr::new("oauth.toml")));
+    }
+
+    #[test]
+    fn test_an_unrecognised_provider_never_has_credentials() {
+        // True regardless of what is configured anywhere, since
+        // credentials_for's own default arm never looks at the environment
+        // or the file for a name it does not recognise.
+        assert!(!has_credentials("definitely-not-a-real-provider"));
     }
 
     #[test]

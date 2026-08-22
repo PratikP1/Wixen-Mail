@@ -150,16 +150,32 @@ fn unescape_once(value: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
+        // Each branch below has to leave `i` strictly larger than it found it,
+        // or this loop never reaches `bytes.len()`. A mutation test replacing
+        // the `+= 3` below with `*= 3` found exactly that: a string starting
+        // with a valid escape reads as byte zero forever, `i` stays at zero
+        // through every trip around the loop, and `out` grows without bound
+        // rather than the function ever returning. Asserted here rather than
+        // left to be found by a machine running out of memory.
+        let before = i;
         if bytes[i] == b'%' && i + 2 < bytes.len() {
             let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
             if let Some(byte) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
                 out.push(byte);
                 i += 3;
+                debug_assert!(
+                    i > before,
+                    "the escape branch must advance past the byte(s) it consumed"
+                );
                 continue;
             }
         }
         out.push(bytes[i]);
         i += 1;
+        debug_assert!(
+            i > before,
+            "the fallback branch must advance past the byte it consumed"
+        );
     }
     String::from_utf8_lossy(&out).into_owned()
 }
@@ -216,6 +232,20 @@ fn normalise_ip(host: &str) -> String {
         let decoded: Option<Vec<u32>> = parts
             .iter()
             .map(|p| {
+                // A mutation test replacing this `>` with `>=` survives: the
+                // `.all()` just above already required every part to be
+                // non-empty, so the two can only disagree at length one, and
+                // the only single character that starts with '0' is "0"
+                // itself, which reads the same in octal as it does in
+                // decimal. Asserted here rather than assumed, so a future
+                // change to the guard above that let an empty part through
+                // fails loudly here instead of quietly changing what a
+                // one-character host part decodes to.
+                debug_assert!(
+                    !p.is_empty(),
+                    "an empty host part reached the octal check, so the \
+                     all-digit guard above no longer holds"
+                );
                 if p.len() > 1 && p.starts_with('0') {
                     u32::from_str_radix(p, 8).ok()
                 } else {
@@ -622,5 +652,44 @@ mod tests {
         unique.dedup();
 
         assert_eq!(found.len(), unique.len(), "{found:?}");
+    }
+
+    #[test]
+    fn test_only_something_starting_with_a_letter_counts_as_a_scheme() {
+        // RFC 3986 schemes start with a letter. "1x:foo" is not a mailto- or
+        // javascript-style scheme to skip, it is a bare host with a stray
+        // colon in it, and has_other_scheme has to say so or a real link that
+        // happens to start with a digit stops being checked at all.
+        assert!(!has_other_scheme("1x:foo"));
+        assert!(has_other_scheme("mailto:someone@example.com"));
+    }
+
+    #[test]
+    fn test_a_hash_that_arrives_percent_encoded_is_escaped_back() {
+        // The raw fragment split happens before any of this runs, so a
+        // literal '#' can never reach canonical_path. A percent-encoded one
+        // can: it decodes to a real '#' byte here, and if that is not
+        // re-escaped, the canonical form could be misread as introducing a
+        // fragment by anything that parses it as a URL again.
+        let url = canonicalise("http://example.com/a%23b").unwrap();
+
+        assert_eq!(url.path, "/a%23b");
+    }
+
+    #[test]
+    fn test_a_part_that_only_looks_numeric_does_not_get_folded_into_an_address() {
+        // "+5" parses as the number 5, but it is not four plain digits, and
+        // treating a host with a stray sign in it as an IP address folds
+        // something that was never meant to be one into a different string.
+        assert_eq!(canonicalise("http://1.2.3.+5/").unwrap().host, "1.2.3.+5");
+    }
+
+    #[test]
+    fn test_a_non_ip_shaped_host_is_not_folded_by_the_octal_check() {
+        // The dotted-octal rule only applies to something that could be a
+        // real IPv4 address: exactly four parts. "1.2.03" is three, and a
+        // leading zero there is not a disguised octet, it is just a hostname
+        // somebody wrote with a zero in it.
+        assert_eq!(canonicalise("http://1.2.03/").unwrap().host, "1.2.03");
     }
 }

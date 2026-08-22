@@ -62,6 +62,14 @@ pub fn safe_file_name(proposed: &str) -> String {
         .collect();
 
     // A name that is only dots is `.` or `..`, which are directories.
+    //
+    // The `||` cannot be swapped for `&&` and change anything: a non-empty
+    // `cleaned` that is all dots still has to pass through `shorten` and then
+    // `trim_end_matches(['.', ' '])` below, and a string of nothing but dots
+    // is stripped down to empty by that call however long it is, landing on
+    // the same `FALLBACK` this early return would have given. No input can
+    // tell the two operators apart, so there is nothing here for a test to
+    // pin; the paragraph above is the record of that, in place of one.
     let cleaned = cleaned
         .trim_matches(|c: char| c.is_whitespace())
         .to_string();
