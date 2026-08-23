@@ -8,6 +8,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The Add and Edit Account dialog shows only the fields an account can
+  use.** Every IMAP box, every POP box, and the password field used to sit
+  on screen together regardless of which protocol was chosen or whether
+  the account signs in through the browser: the POP server address next
+  to the IMAP one, a password box beside a checkbox that makes it unused.
+  Choosing IMAP now hides the POP server, port, TLS, leave-on-server,
+  remove-after-days, and delete-here controls, and the reverse for POP3;
+  turning on browser sign-in hides the password box and the Get an app
+  password button, since neither applies once OAuth handles it. Switching
+  either choice updates which fields show immediately, without closing
+  the dialog.
 - **A sound scheme can be chosen, imported, and deleted under Settings,
   Feedback.** Every earcon used to be the same synthesized tone, on or off
   together. The Feedback tab now has a Sound scheme picker, starting on

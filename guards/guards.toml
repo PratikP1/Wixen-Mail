@@ -6420,12 +6420,12 @@ red = [
 [[guard]]
 name = "POP's leave-on-server checkbox keeps its spoken consequence"
 file = "src/presentation/wx_account_manager.rs"
-before = """    let pop_leave = cb_with_description(
+before = """    let (pop_leave_label, pop_leave) = cb_with_description(
         "&Leave mail on the server after downloading it",
         true,
         SERVER_REMOVAL_IS_PERMANENT,
     );"""
-after = """    let pop_leave = cb("&Leave mail on the server after downloading it", true);"""
+after = """    let (pop_leave_label, pop_leave) = cb("&Leave mail on the server after downloading it", true);"""
 red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
@@ -6433,12 +6433,12 @@ red = [
 [[guard]]
 name = "POP's local-delete checkbox keeps its spoken consequence"
 file = "src/presentation/wx_account_manager.rs"
-before = """    let allow_deleting = cb_with_description(
+before = """    let (allow_deleting_label, allow_deleting) = cb_with_description(
         "Let me delete mail on this &computer",
         true,
         DELETING_HERE_NEVER_REACHES_THE_SERVER,
     );"""
-after = """    let allow_deleting = cb("Let me delete mail on this &computer", true);"""
+after = """    let (allow_deleting_label, allow_deleting) = cb("Let me delete mail on this &computer", true);"""
 red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]

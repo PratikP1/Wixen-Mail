@@ -720,6 +720,106 @@ fn describe_password_box(field: &TextCtrl, email: &str) {
     }
 }
 
+/// The fields for reading mail over IMAP, shown only when the account does.
+///
+/// Grouped so the whole set hides and shows together: the other protocol's
+/// boxes used to stay on screen regardless of which one was chosen, simply
+/// left blank, which reads the same to a screen reader whether a box does
+/// not apply to this account or nobody has filled it in yet.
+#[derive(Clone, Copy)]
+struct ImapFields {
+    section_heading: StaticText,
+    section_spacer: StaticText,
+    server_label: StaticText,
+    server: TextCtrl,
+    port_label: StaticText,
+    port: TextCtrl,
+    tls_label: StaticText,
+    tls: CheckBox,
+}
+
+impl ImapFields {
+    fn set_visible(&self, visible: bool) {
+        self.section_heading.show(visible);
+        self.section_spacer.show(visible);
+        self.server_label.show(visible);
+        self.server.show(visible);
+        self.port_label.show(visible);
+        self.port.show(visible);
+        self.tls_label.show(visible);
+        self.tls.show(visible);
+    }
+}
+
+/// The fields for reading mail over POP3, shown only when the account does.
+/// See [`ImapFields`] for why they are hidden together rather than left
+/// blank.
+#[derive(Clone, Copy)]
+struct PopFields {
+    section_heading: StaticText,
+    section_spacer: StaticText,
+    server_label: StaticText,
+    server: TextCtrl,
+    port_label: StaticText,
+    port: TextCtrl,
+    tls_label: StaticText,
+    tls: CheckBox,
+    leave_label: StaticText,
+    leave: CheckBox,
+    days_label: StaticText,
+    days: SpinCtrl,
+    allow_deleting_label: StaticText,
+    allow_deleting: CheckBox,
+}
+
+impl PopFields {
+    fn set_visible(&self, visible: bool) {
+        self.section_heading.show(visible);
+        self.section_spacer.show(visible);
+        self.server_label.show(visible);
+        self.server.show(visible);
+        self.port_label.show(visible);
+        self.port.show(visible);
+        self.tls_label.show(visible);
+        self.tls.show(visible);
+        self.leave_label.show(visible);
+        self.leave.show(visible);
+        self.days_label.show(visible);
+        self.days.show(visible);
+        self.allow_deleting_label.show(visible);
+        self.allow_deleting.show(visible);
+    }
+}
+
+/// Show the fields for whichever protocol the account uses, and hide the
+/// other's.
+fn show_protocol_fields(imap: ImapFields, pop: PopFields, protocol: Protocol) {
+    let uses_imap = protocol == Protocol::Imap;
+    imap.set_visible(uses_imap);
+    pop.set_visible(!uses_imap);
+}
+
+/// The fields only a password sign-in needs, shown only when the account
+/// uses one. Signing in through the browser needs no password typed in and
+/// no app password to go and generate, so both used to sit on screen for an
+/// OAuth account with nothing that would ever use them.
+#[derive(Clone, Copy)]
+struct PasswordFields {
+    password_label: StaticText,
+    password: TextCtrl,
+    app_password_spacer: StaticText,
+    get_app_password: Button,
+}
+
+impl PasswordFields {
+    fn set_visible(&self, visible: bool) {
+        self.password_label.show(visible);
+        self.password.show(visible);
+        self.app_password_spacer.show(visible);
+        self.get_app_password.show(visible);
+    }
+}
+
 /// The Add/Edit Account dialog's fields, returned so a test can build it
 /// without a human closing a live modal and so `show_edit` can read every
 /// field back after a real `.show_modal()`.
@@ -857,7 +957,11 @@ pub fn build_account_edit_dialog(
     // The labelled-field factory: every plain text field in this dialog is
     // built and painted here, so a field left unpainted is a missing call to
     // `tf`, not a missing call to `theme::paint` at twenty call sites.
-    let tf = |label: &str, default: &str| -> TextCtrl {
+    //
+    // Returns the label alongside the field, so a caller that needs to hide
+    // the field along with its label can; most call sites discard it with
+    // `_`, since most fields apply to every account and are never hidden.
+    let tf = |label: &str, default: &str| -> (StaticText, TextCtrl) {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let f = TextCtrl::builder(&dlg).with_value(default).build();
         set_accessible_name(&f, &name_from_label(label));
@@ -866,15 +970,16 @@ pub fn build_account_edit_dialog(
         if let Some(palette) = palette {
             theme::paint(&f, palette.main_surface());
         }
-        f
+        (l, f)
     };
-    let section = |label: &str| {
+    let section = |label: &str| -> (StaticText, StaticText) {
         let h = StaticText::builder(&dlg).with_label(label).build();
         let s = StaticText::builder(&dlg).with_label("").build();
         fields.add(&h, 0, SizerFlag::All, 4);
         fields.add(&s, 0, SizerFlag::All, 4);
+        (h, s)
     };
-    let cb = |label: &str, default: bool| -> CheckBox {
+    let cb = |label: &str, default: bool| -> (StaticText, CheckBox) {
         let l = StaticText::builder(&dlg).with_label("").build();
         let c = CheckBox::builder(&dlg).with_label(label).build();
         // Set here as well as carried on the label. A checkbox's own label is
@@ -885,22 +990,23 @@ pub fn build_account_edit_dialog(
         c.set_value(default);
         fields.add(&l, 0, SizerFlag::All, 4);
         fields.add(&c, 0, SizerFlag::All, 4);
-        c
+        (l, c)
     };
     // For a checkbox whose consequence is not obvious from its label alone.
     // One call, not two, same as `describe_password_box` above and for the
     // same reason: attaching an accessible object replaces the last one, so
     // this is `cb` with `set_accessible_name_and_description` in the one spot
     // that call happens, never `cb` followed by a second attach afterward.
-    let cb_with_description = |label: &str, default: bool, description: &str| -> CheckBox {
-        let l = StaticText::builder(&dlg).with_label("").build();
-        let c = CheckBox::builder(&dlg).with_label(label).build();
-        set_accessible_name_and_description(&c, &name_from_label(label), description);
-        c.set_value(default);
-        fields.add(&l, 0, SizerFlag::All, 4);
-        fields.add(&c, 0, SizerFlag::All, 4);
-        c
-    };
+    let cb_with_description =
+        |label: &str, default: bool, description: &str| -> (StaticText, CheckBox) {
+            let l = StaticText::builder(&dlg).with_label("").build();
+            let c = CheckBox::builder(&dlg).with_label(label).build();
+            set_accessible_name_and_description(&c, &name_from_label(label), description);
+            c.set_value(default);
+            fields.add(&l, 0, SizerFlag::All, 4);
+            fields.add(&c, 0, SizerFlag::All, 4);
+            (l, c)
+        };
 
     let choice = |label: &str, options: &[&str]| -> Choice {
         let l = StaticText::builder(&dlg).with_label(label).build();
@@ -913,7 +1019,7 @@ pub fn build_account_edit_dialog(
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
         c
     };
-    let spin = |label: &str, default: i32| -> SpinCtrl {
+    let spin = |label: &str, default: i32| -> (StaticText, SpinCtrl) {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let c = SpinCtrl::builder(&dlg)
             .with_min_value(0)
@@ -923,18 +1029,18 @@ pub fn build_account_edit_dialog(
         set_accessible_name(&c, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
-        c
+        (l, c)
     };
 
-    let name_f = tf("Account &Name:", "");
-    let email_f = tf("&Email Address:", "");
+    let (_, name_f) = tf("Account &Name:", "");
+    let (_, email_f) = tf("&Email Address:", "");
     // The third box in this dialog that could be mistaken for the other two.
     // Account Name is what you call the account, usually "Work"; Username is
     // what signs in to the server; this is the name a recipient reads in their
     // list. The label says what happens rather than naming a header, and the
     // box starts empty, which is what every message sent before it existed
     // carried.
-    let sender_name_f = tf("The na&me people see when your mail arrives:", "");
+    let (_, sender_name_f) = tf("The na&me people see when your mail arrives:", "");
 
     // Auth hint: shown below email, tells user what will happen
     let auth_hint = {
@@ -954,39 +1060,65 @@ pub fn build_account_edit_dialog(
         &Protocol::ALL.map(Protocol::spoken),
     );
 
-    section("── IMAP Settings ──");
-    let imap_f = tf("&IMAP Server:", "");
-    let imap_port_f = tf("IMAP &Port:", "993");
-    let imap_tls = cb("Use &TLS", true);
+    let (imap_section_heading, imap_section_spacer) = section("── IMAP Settings ──");
+    let (imap_label, imap_f) = tf("&IMAP Server:", "");
+    let (imap_port_label, imap_port_f) = tf("IMAP &Port:", "993");
+    let (imap_tls_label, imap_tls) = cb("Use &TLS", true);
+    let imap_fields = ImapFields {
+        section_heading: imap_section_heading,
+        section_spacer: imap_section_spacer,
+        server_label: imap_label,
+        server: imap_f,
+        port_label: imap_port_label,
+        port: imap_port_f,
+        tls_label: imap_tls_label,
+        tls: imap_tls,
+    };
 
-    section("── POP Settings ──");
-    let pop_f = tf("PO&P Server:", "");
-    let pop_port_f = tf("POP P&ort:", "995");
-    let pop_tls = cb("Use TL&S for POP", true);
+    let (pop_section_heading, pop_section_spacer) = section("── POP Settings ──");
+    let (pop_label, pop_f) = tf("PO&P Server:", "");
+    let (pop_port_label, pop_port_f) = tf("POP P&ort:", "995");
+    let (pop_tls_label, pop_tls) = cb("Use TL&S for POP", true);
     // On by default and deliberately. POP3 has one delete and it is permanent,
     // so a client that clears the server as it downloads leaves somebody with
     // one copy, on one computer, with no way back.
-    let pop_leave = cb_with_description(
+    let (pop_leave_label, pop_leave) = cb_with_description(
         "&Leave mail on the server after downloading it",
         true,
         SERVER_REMOVAL_IS_PERMANENT,
     );
-    let pop_days = spin("Then remove it after this many &days (0 for never):", 0);
+    let (pop_days_label, pop_days) = spin("Then remove it after this many &days (0 for never):", 0);
     // What happens, rather than what it is called underneath. On by default,
     // because Delete doing nothing is what somebody meets first and it never
     // touches a server: mail moves to this account's own Trash folder here.
     // Somebody clearing the POP server after downloading has this computer as
     // the only copy, and this is how they say Delete must not lose it.
-    let allow_deleting = cb_with_description(
+    let (allow_deleting_label, allow_deleting) = cb_with_description(
         "Let me delete mail on this &computer",
         true,
         DELETING_HERE_NEVER_REACHES_THE_SERVER,
     );
+    let pop_fields = PopFields {
+        section_heading: pop_section_heading,
+        section_spacer: pop_section_spacer,
+        server_label: pop_label,
+        server: pop_f,
+        port_label: pop_port_label,
+        port: pop_port_f,
+        tls_label: pop_tls_label,
+        tls: pop_tls,
+        leave_label: pop_leave_label,
+        leave: pop_leave,
+        days_label: pop_days_label,
+        days: pop_days,
+        allow_deleting_label,
+        allow_deleting,
+    };
 
     section("── SMTP Settings ──");
-    let smtp_f = tf("&SMTP Server:", "");
-    let smtp_port_f = tf("SM&TP Port:", "465");
-    let smtp_tls = cb("Use TL&S", true);
+    let (_, smtp_f) = tf("&SMTP Server:", "");
+    let (_, smtp_port_f) = tf("SM&TP Port:", "465");
+    let (_, smtp_tls) = cb("Use TL&S", true);
 
     section("── Authentication ──");
     // A choice rather than something worked out from the address. Google
@@ -994,12 +1126,12 @@ pub fn build_account_edit_dialog(
     // application to be through Google verification, so an address is not
     // enough to decide. Deciding it silently left people unable to add their
     // own mail with no control to change it and nothing saying why.
-    let use_oauth_cb = cb("Sign in with the provider in a &browser (OAuth)", false);
-    let user_f = tf("&Username:", "");
+    let (_, use_oauth_cb) = cb("Sign in with the provider in a &browser (OAuth)", false);
+    let (_, user_f) = tf("&Username:", "");
     // Built with a raw `TextCtrl::builder` rather than through `tf`, because
     // it needs the password style `tf` does not offer, so it needs its own
     // paint call rather than getting one from the factory above.
-    let pass_f = {
+    let (password_label, pass_f) = {
         let l = StaticText::builder(&dlg).with_label("Pass&word:").build();
         let f = TextCtrl::builder(&dlg)
             .with_style(TextCtrlStyle::Password)
@@ -1009,12 +1141,12 @@ pub fn build_account_edit_dialog(
         if let Some(palette) = palette {
             theme::paint(&f, palette.main_surface());
         }
-        f
+        (l, f)
     };
     // Opening the page rather than describing where it is. It sits three levels
     // into account settings and does not come up from searching the settings
     // for "app password", so finding it is the whole difficulty of this route.
-    let get_app_password = {
+    let (app_password_spacer, get_app_password) = {
         let l = StaticText::builder(&dlg).with_label("").build();
         let b = Button::builder(&dlg)
             .with_label("&Get an app password in your browser")
@@ -1022,12 +1154,18 @@ pub fn build_account_edit_dialog(
             .build();
         fields.add(&l, 0, SizerFlag::All, 4);
         fields.add(&b, 0, SizerFlag::All, 4);
-        b
+        (l, b)
+    };
+    let password_fields = PasswordFields {
+        password_label,
+        password: pass_f,
+        app_password_spacer,
+        get_app_password,
     };
 
     section("── Settings ──");
-    let interval_f = tf("Check &Interval (min):", "5");
-    let enabled = cb("Ena&ble this account", true);
+    let (_, interval_f) = tf("Check &Interval (min):", "5");
+    let (_, enabled) = cb("Ena&ble this account", true);
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
@@ -1080,6 +1218,12 @@ pub fn build_account_edit_dialog(
         }
     }
     describe_password_box(&pass_f, existing.map(|a| a.email.as_str()).unwrap_or(""));
+    show_protocol_fields(
+        imap_fields,
+        pop_fields,
+        existing.map(|a| a.protocol()).unwrap_or_default(),
+    );
+    password_fields.set_visible(!use_oauth_cb.get_value());
 
     // Auto-detect provider and update hint on email change.
     //
@@ -1141,6 +1285,30 @@ pub fn build_account_edit_dialog(
                 "Enter your email address first, or ask your provider where it hands out app passwords.",
                 Priority::High,
             ),
+        }
+    });
+
+    // Which protocol's fields make sense changes live as the choice does, the
+    // same way `email_f.on_text_changed` above already updates the auth hint
+    // as somebody types. `dlg.layout()` is what makes the boxes that follow
+    // move up to fill the space a hidden section leaves, rather than a gap
+    // where it used to be.
+    protocol_choice.on_selection_changed({
+        let d = dlg;
+        move |_| {
+            let protocol = Protocol::ALL
+                .get(protocol_choice.get_selection().unwrap_or(0) as usize)
+                .copied()
+                .unwrap_or_default();
+            show_protocol_fields(imap_fields, pop_fields, protocol);
+            d.layout();
+        }
+    });
+    use_oauth_cb.on_toggled({
+        let d = dlg;
+        move |_| {
+            password_fields.set_visible(!use_oauth_cb.get_value());
+            d.layout();
         }
     });
 
@@ -1596,9 +1764,12 @@ mod tests {
         let screen = the_account_manager();
 
         for (site, constant) in [
-            ("let pop_leave = ", "SERVER_REMOVAL_IS_PERMANENT"),
             (
-                "let allow_deleting = ",
+                "let (pop_leave_label, pop_leave) = ",
+                "SERVER_REMOVAL_IS_PERMANENT",
+            ),
+            (
+                "let (allow_deleting_label, allow_deleting) = ",
                 "DELETING_HERE_NEVER_REACHES_THE_SERVER",
             ),
         ] {
