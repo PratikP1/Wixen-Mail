@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The Add and Edit Account dialog is now two pages, not one.** Every
+  field used to sit on one screen: the password box beside the account's
+  display name, before anyone had said which provider they were setting
+  up. The dialog now opens on an identity page (account name, the name
+  people see, and the email address) with a Next button; Next moves to a
+  connection and sign-in page holding everything else, showing only the
+  protocol and sign-in fields the account actually uses, and Back returns
+  to the identity page. The step is announced in a heading at the top of
+  the dialog and in the buttons themselves: OK only appears once you have
+  reached the page it submits.
 - **The Add and Edit Account dialog shows only the fields an account can
   use.** Every IMAP box, every POP box, and the password field used to sit
   on screen together regardless of which protocol was chosen or whether

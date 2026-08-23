@@ -46,6 +46,8 @@ const ID_SET_ACTIVE: Id = ID_HIGHEST + 203;
 const ID_REAUTHORIZE: Id = ID_HIGHEST + 205;
 const ID_APP_PASSWORD: Id = ID_HIGHEST + 206;
 const ID_SET_DEFAULT: Id = ID_HIGHEST + 207;
+const ID_NEXT: Id = ID_HIGHEST + 208;
+const ID_BACK: Id = ID_HIGHEST + 209;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
@@ -820,11 +822,122 @@ impl PasswordFields {
     }
 }
 
+/// The fields for naming and identifying the account: who owns it, what to
+/// call it, and where their mail is. Shown on the first page of the dialog;
+/// hidden on the second, where the account's connection and sign-in are set
+/// up. Split from the connection details for the same reason [`ImapFields`]
+/// is split from [`PopFields`]: asking for a password before somebody has
+/// finished saying who the account belongs to is one more field between
+/// them and being done, on a page that has nothing to do with a password.
+#[derive(Clone, Copy)]
+struct IdentityFields {
+    name_label: StaticText,
+    name: TextCtrl,
+    sender_name_label: StaticText,
+    sender_name: TextCtrl,
+    email_label: StaticText,
+    email: TextCtrl,
+}
+
+impl IdentityFields {
+    fn set_visible(&self, visible: bool) {
+        self.name_label.show(visible);
+        self.name.show(visible);
+        self.sender_name_label.show(visible);
+        self.sender_name.show(visible);
+        self.email_label.show(visible);
+        self.email.show(visible);
+    }
+}
+
+/// The fields on the connection and sign-in page that are not specific to
+/// one protocol or one sign-in method. Shown as a block on that page,
+/// alongside whichever of [`ImapFields`], [`PopFields`], and
+/// [`PasswordFields`] currently apply.
+#[derive(Clone, Copy)]
+struct Page2Shell {
+    auth_hint_label: StaticText,
+    auth_hint: StaticText,
+    protocol_label: StaticText,
+    protocol_choice: Choice,
+    smtp_section_heading: StaticText,
+    smtp_section_spacer: StaticText,
+    smtp_label: StaticText,
+    smtp: TextCtrl,
+    smtp_port_label: StaticText,
+    smtp_port: TextCtrl,
+    smtp_tls_label: StaticText,
+    smtp_tls: CheckBox,
+    auth_section_heading: StaticText,
+    auth_section_spacer: StaticText,
+    oauth_label: StaticText,
+    use_oauth: CheckBox,
+    user_label: StaticText,
+    user: TextCtrl,
+    settings_section_heading: StaticText,
+    settings_section_spacer: StaticText,
+    interval_label: StaticText,
+    interval: TextCtrl,
+    enabled_label: StaticText,
+    enabled: CheckBox,
+}
+
+impl Page2Shell {
+    fn set_visible(&self, visible: bool) {
+        self.auth_hint_label.show(visible);
+        self.auth_hint.show(visible);
+        self.protocol_label.show(visible);
+        self.protocol_choice.show(visible);
+        self.smtp_section_heading.show(visible);
+        self.smtp_section_spacer.show(visible);
+        self.smtp_label.show(visible);
+        self.smtp.show(visible);
+        self.smtp_port_label.show(visible);
+        self.smtp_port.show(visible);
+        self.smtp_tls_label.show(visible);
+        self.smtp_tls.show(visible);
+        self.auth_section_heading.show(visible);
+        self.auth_section_spacer.show(visible);
+        self.oauth_label.show(visible);
+        self.use_oauth.show(visible);
+        self.user_label.show(visible);
+        self.user.show(visible);
+        self.settings_section_heading.show(visible);
+        self.settings_section_spacer.show(visible);
+        self.interval_label.show(visible);
+        self.interval.show(visible);
+        self.enabled_label.show(visible);
+        self.enabled.show(visible);
+    }
+}
+
+/// What the step heading reads on each page.
+const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
+const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
+
+/// The protocol a live `Choice`'s current selection names.
+///
+/// A selection wxWidgets has not resolved yet reads as IMAP, the same
+/// default an account with none stored gets.
+fn selected_protocol(choice: &Choice) -> Protocol {
+    Protocol::ALL
+        .get(choice.get_selection().unwrap_or(0) as usize)
+        .copied()
+        .unwrap_or_default()
+}
+
 /// The Add/Edit Account dialog's fields, returned so a test can build it
 /// without a human closing a live modal and so `show_edit` can read every
 /// field back after a real `.show_modal()`.
+///
+/// `Copy`, like every field on it: built once, then closed over by value in
+/// the Next and Back buttons' own `on_click`, which need it to call
+/// [`advance_to_connection_page`] and [`return_to_identity_page`], and
+/// still usable afterward to build the value this function returns.
+#[derive(Clone, Copy)]
 pub struct AccountEditWidgets {
     pub dialog: Dialog,
+    pub step_heading: StaticText,
     pub name_f: TextCtrl,
     pub sender_name_f: TextCtrl,
     pub email_f: TextCtrl,
@@ -846,6 +959,62 @@ pub struct AccountEditWidgets {
     pub pass_f: TextCtrl,
     pub interval_f: TextCtrl,
     pub enabled: CheckBox,
+    pub next: Button,
+    pub back: Button,
+    pub ok: Button,
+    pub cancel: Button,
+    // Groupings used to show and hide a whole page's fields together. Not
+    // `pub`: a test proves which page a control ends up on through
+    // `is_shown()` on the field above, by calling `advance_to_connection_page`
+    // or `return_to_identity_page`, rather than reaching in here.
+    identity_fields: IdentityFields,
+    page_two_shell: Page2Shell,
+    imap_fields: ImapFields,
+    pop_fields: PopFields,
+    password_fields: PasswordFields,
+}
+
+/// Move from the identity page to the connection and sign-in page: hide the
+/// account-identity fields, and show whichever connection fields the
+/// account's protocol and sign-in method call for.
+///
+/// `pub` so a test can call it directly, which is the only way to prove what
+/// it does without a human clicking a real button inside a real modal
+/// dialog.
+pub fn advance_to_connection_page(w: &AccountEditWidgets) {
+    w.step_heading.set_label(STEP_TWO_HEADING);
+    w.identity_fields.set_visible(false);
+    w.page_two_shell.set_visible(true);
+    show_protocol_fields(
+        w.imap_fields,
+        w.pop_fields,
+        selected_protocol(&w.protocol_choice),
+    );
+    w.password_fields.set_visible(!w.use_oauth_cb.get_value());
+    w.next.show(false);
+    w.back.show(true);
+    w.ok.show(true);
+    w.ok.set_default();
+    w.dialog.layout();
+    w.protocol_choice.set_focus();
+}
+
+/// Move from the connection and sign-in page back to the identity page, and
+/// set the whole dialog to that state on first build. See
+/// [`advance_to_connection_page`] for why this is `pub`.
+pub fn return_to_identity_page(w: &AccountEditWidgets) {
+    w.step_heading.set_label(STEP_ONE_HEADING);
+    w.page_two_shell.set_visible(false);
+    w.imap_fields.set_visible(false);
+    w.pop_fields.set_visible(false);
+    w.password_fields.set_visible(false);
+    w.identity_fields.set_visible(true);
+    w.next.show(true);
+    w.back.show(false);
+    w.ok.show(false);
+    w.next.set_default();
+    w.dialog.layout();
+    w.name_f.set_focus();
 }
 
 fn show_edit(
@@ -903,12 +1072,7 @@ fn show_edit(
             oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
             enabled: w.enabled.get_value(),
             check_interval_minutes: interval,
-            protocol: Protocol::ALL
-                .get(w.protocol_choice.get_selection().unwrap_or(0) as usize)
-                .copied()
-                .unwrap_or_default()
-                .as_str()
-                .to_string(),
+            protocol: selected_protocol(&w.protocol_choice).as_str().to_string(),
             pop_server: w.pop_f.get_value(),
             pop_port: w.pop_port_f.get_value(),
             pop_use_tls: w.pop_tls.get_value(),
@@ -948,6 +1112,22 @@ pub fn build_account_edit_dialog(
         .build();
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Which of the two pages this is, said in words rather than only shown
+    // by which fields are on screen: a screen reader user who has just
+    // pressed Next or Back hears it from wherever focus lands next, but
+    // returning to this dialog later, or reading it with a screen review
+    // command, has nothing else here saying which page it is.
+    let step_heading = StaticText::builder(&dlg)
+        .with_label(STEP_ONE_HEADING)
+        .build();
+    sizer.add(
+        &step_heading,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
+
     let fields = FlexGridSizer::builder(0, 2)
         .with_vgap(6)
         .with_hgap(8)
@@ -1008,7 +1188,7 @@ pub fn build_account_edit_dialog(
             (l, c)
         };
 
-    let choice = |label: &str, options: &[&str]| -> Choice {
+    let choice = |label: &str, options: &[&str]| -> (StaticText, Choice) {
         let l = StaticText::builder(&dlg).with_label(label).build();
         let c = Choice::builder(&dlg)
             .with_choices(options.iter().map(|o| o.to_string()).collect())
@@ -1017,7 +1197,7 @@ pub fn build_account_edit_dialog(
         set_accessible_name(&c, &name_from_label(label));
         fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
-        c
+        (l, c)
     };
     let spin = |label: &str, default: i32| -> (StaticText, SpinCtrl) {
         let l = StaticText::builder(&dlg).with_label(label).build();
@@ -1032,30 +1212,40 @@ pub fn build_account_edit_dialog(
         (l, c)
     };
 
-    let (_, name_f) = tf("Account &Name:", "");
-    let (_, email_f) = tf("&Email Address:", "");
+    let (name_label, name_f) = tf("Account &Name:", "");
+    let (email_label, email_f) = tf("&Email Address:", "");
     // The third box in this dialog that could be mistaken for the other two.
     // Account Name is what you call the account, usually "Work"; Username is
     // what signs in to the server; this is the name a recipient reads in their
     // list. The label says what happens rather than naming a header, and the
     // box starts empty, which is what every message sent before it existed
     // carried.
-    let (_, sender_name_f) = tf("The na&me people see when your mail arrives:", "");
+    let (sender_name_label, sender_name_f) = tf("The na&me people see when your mail arrives:", "");
+    let identity_fields = IdentityFields {
+        name_label,
+        name: name_f,
+        sender_name_label,
+        sender_name: sender_name_f,
+        email_label,
+        email: email_f,
+    };
 
-    // Auth hint: shown below email, tells user what will happen
-    let auth_hint = {
+    // Auth hint: shown on the connection page, tells the person what will
+    // happen when they save, before they have gone looking for a password
+    // box that will not be there.
+    let (auth_hint_label, auth_hint) = {
         let l = StaticText::builder(&dlg).with_label("").build();
         let h = StaticText::builder(&dlg).with_label("").build();
         fields.add(&l, 0, SizerFlag::All, 4);
         fields.add(&h, 0, SizerFlag::Expand | SizerFlag::All, 4);
-        h
+        (l, h)
     };
 
     // Which protocol reads the mail. Whichever is not chosen has its own
     // fields below and is simply left blank, rather than the two sharing one
     // set of boxes: switching would then rewrite one server's address into a
     // box labelled for the other, quietly.
-    let protocol_choice = choice(
+    let (protocol_label, protocol_choice) = choice(
         "How to &read your mail:",
         &Protocol::ALL.map(Protocol::spoken),
     );
@@ -1115,19 +1305,19 @@ pub fn build_account_edit_dialog(
         allow_deleting,
     };
 
-    section("── SMTP Settings ──");
-    let (_, smtp_f) = tf("&SMTP Server:", "");
-    let (_, smtp_port_f) = tf("SM&TP Port:", "465");
-    let (_, smtp_tls) = cb("Use TL&S", true);
+    let (smtp_section_heading, smtp_section_spacer) = section("── SMTP Settings ──");
+    let (smtp_label, smtp_f) = tf("&SMTP Server:", "");
+    let (smtp_port_label, smtp_port_f) = tf("SM&TP Port:", "465");
+    let (smtp_tls_label, smtp_tls) = cb("Use TL&S", true);
 
-    section("── Authentication ──");
+    let (auth_section_heading, auth_section_spacer) = section("── Authentication ──");
     // A choice rather than something worked out from the address. Google
     // accounts can sign in either way, and browser sign-in needs this
     // application to be through Google verification, so an address is not
     // enough to decide. Deciding it silently left people unable to add their
     // own mail with no control to change it and nothing saying why.
-    let (_, use_oauth_cb) = cb("Sign in with the provider in a &browser (OAuth)", false);
-    let (_, user_f) = tf("&Username:", "");
+    let (oauth_label, use_oauth_cb) = cb("Sign in with the provider in a &browser (OAuth)", false);
+    let (user_label, user_f) = tf("&Username:", "");
     // Built with a raw `TextCtrl::builder` rather than through `tf`, because
     // it needs the password style `tf` does not offer, so it needs its own
     // paint call rather than getting one from the factory above.
@@ -1163,13 +1353,48 @@ pub fn build_account_edit_dialog(
         get_app_password,
     };
 
-    section("── Settings ──");
-    let (_, interval_f) = tf("Check &Interval (min):", "5");
-    let (_, enabled) = cb("Ena&ble this account", true);
+    let (settings_section_heading, settings_section_spacer) = section("── Settings ──");
+    let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
+    let (enabled_label, enabled) = cb("Ena&ble this account", true);
+
+    let page_two_shell = Page2Shell {
+        auth_hint_label,
+        auth_hint,
+        protocol_label,
+        protocol_choice,
+        smtp_section_heading,
+        smtp_section_spacer,
+        smtp_label,
+        smtp: smtp_f,
+        smtp_port_label,
+        smtp_port: smtp_port_f,
+        smtp_tls_label,
+        smtp_tls,
+        auth_section_heading,
+        auth_section_spacer,
+        oauth_label,
+        use_oauth: use_oauth_cb,
+        user_label,
+        user: user_f,
+        settings_section_heading,
+        settings_section_spacer,
+        interval_label,
+        interval: interval_f,
+        enabled_label,
+        enabled,
+    };
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let back = Button::builder(&dlg)
+        .with_label("&Back")
+        .with_id(ID_BACK)
+        .build();
+    let next = Button::builder(&dlg)
+        .with_label("&Next")
+        .with_id(ID_NEXT)
+        .build();
     let ok = Button::builder(&dlg)
         .with_label("OK")
         .with_id(ID_OK)
@@ -1179,10 +1404,51 @@ pub fn build_account_edit_dialog(
         .with_id(ID_CANCEL)
         .build();
     btn_row.add_spacer(0);
+    btn_row.add(&back, 0, SizerFlag::All, 4);
+    btn_row.add(&next, 0, SizerFlag::All, 4);
     btn_row.add(&ok, 0, SizerFlag::All, 4);
     btn_row.add(&cancel, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
     dlg.set_sizer(sizer, true);
+
+    // Built here, with every field on it now in scope, rather than at the
+    // end: the Next and Back buttons need it below to call
+    // `advance_to_connection_page` and `return_to_identity_page`, and being
+    // `Copy` costs nothing to build early.
+    let w = AccountEditWidgets {
+        dialog: dlg,
+        step_heading,
+        name_f,
+        sender_name_f,
+        email_f,
+        protocol_choice,
+        imap_f,
+        imap_port_f,
+        imap_tls,
+        pop_f,
+        pop_port_f,
+        pop_tls,
+        pop_leave,
+        pop_days,
+        allow_deleting,
+        smtp_f,
+        smtp_port_f,
+        smtp_tls,
+        use_oauth_cb,
+        user_f,
+        pass_f,
+        interval_f,
+        enabled,
+        next,
+        back,
+        ok,
+        cancel,
+        identity_fields,
+        page_two_shell,
+        imap_fields,
+        pop_fields,
+        password_fields,
+    };
 
     if let Some(a) = existing {
         name_f.set_value(&a.name);
@@ -1218,12 +1484,6 @@ pub fn build_account_edit_dialog(
         }
     }
     describe_password_box(&pass_f, existing.map(|a| a.email.as_str()).unwrap_or(""));
-    show_protocol_fields(
-        imap_fields,
-        pop_fields,
-        existing.map(|a| a.protocol()).unwrap_or_default(),
-    );
-    password_fields.set_visible(!use_oauth_cb.get_value());
 
     // Auto-detect provider and update hint on email change.
     //
@@ -1292,15 +1552,12 @@ pub fn build_account_edit_dialog(
     // same way `email_f.on_text_changed` above already updates the auth hint
     // as somebody types. `dlg.layout()` is what makes the boxes that follow
     // move up to fill the space a hidden section leaves, rather than a gap
-    // where it used to be.
+    // where it used to be. Both controls are on the connection page only, so
+    // reaching either handler at all means that page is the one showing.
     protocol_choice.on_selection_changed({
         let d = dlg;
         move |_| {
-            let protocol = Protocol::ALL
-                .get(protocol_choice.get_selection().unwrap_or(0) as usize)
-                .copied()
-                .unwrap_or_default();
-            show_protocol_fields(imap_fields, pop_fields, protocol);
+            show_protocol_fields(imap_fields, pop_fields, selected_protocol(&protocol_choice));
             d.layout();
         }
     });
@@ -1312,6 +1569,12 @@ pub fn build_account_edit_dialog(
         }
     });
 
+    next.on_click(move |_| {
+        advance_to_connection_page(&w);
+    });
+    back.on_click(move |_| {
+        return_to_identity_page(&w);
+    });
     ok.on_click({
         let d = dlg;
         move |_| {
@@ -1336,30 +1599,13 @@ pub fn build_account_edit_dialog(
         theme::paint(&dlg, palette.main_surface());
     }
 
-    AccountEditWidgets {
-        dialog: dlg,
-        name_f,
-        sender_name_f,
-        email_f,
-        protocol_choice,
-        imap_f,
-        imap_port_f,
-        imap_tls,
-        pop_f,
-        pop_port_f,
-        pop_tls,
-        pop_leave,
-        pop_days,
-        allow_deleting,
-        smtp_f,
-        smtp_port_f,
-        smtp_tls,
-        use_oauth_cb,
-        user_f,
-        pass_f,
-        interval_f,
-        enabled,
-    }
+    // Every account, new or existing, opens on the identity page: predictable
+    // beats saving one click on the accounts this dialog already knows
+    // everything about, and it is also what puts every connection field,
+    // shown or hidden correctly for this account's protocol and sign-in
+    // method, into the right starting state.
+    return_to_identity_page(&w);
+    w
 }
 
 // ── Automatic OAuth Flow ────────────────────────────────────────────────────
