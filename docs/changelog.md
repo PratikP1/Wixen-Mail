@@ -8,6 +8,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A flagged message's warning bar could show the wrong reason.** A single
+  folder's own listing read the reason from the column next to it, so a
+  message flagged for one specific reason, a phishing link, say, showed its
+  safety level instead: the single word "phishing" where a sentence
+  explaining what was wrong should be. The combined inbox across every
+  account, and search, already read the right column; only opening one
+  folder on its own had the mismatch.
+
 - **Opening or refreshing a folder no longer asks the database once per
   message just to show its labels.** Attaching each row's labels ran one
   query per message in a loop, so a folder of five hundred messages cost

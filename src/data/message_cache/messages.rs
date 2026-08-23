@@ -855,7 +855,7 @@ impl MessageCache {
                     // Stored one per line, because SQLite has no list type
                     // worth the trouble and the bar reads them as sentences.
                     safety_reasons: row
-                        .get::<_, Option<String>>(18)?
+                        .get::<_, Option<String>>(19)?
                         .unwrap_or_default()
                         .lines()
                         .filter(|line| !line.trim().is_empty())
@@ -2348,6 +2348,39 @@ mod tests {
         assert!(
             !row.safety_reasons.is_empty(),
             "the reason is what the warning bar shows"
+        );
+    }
+
+    #[test]
+    fn test_a_sorted_listing_shows_the_reason_not_the_safety_level() {
+        // `get_message_list_sorted` selects the same column layout as
+        // `unified_inbox`: the safety level, then the safety reasons, then
+        // receipt_to. The test above only checks that some reason came
+        // back, and the safety level is also a non-empty string, so a
+        // row-mapping closure reading the wrong column would pass that
+        // check too. This pins down the actual text, which is what the
+        // warning bar reads aloud.
+        use crate::service::safety::{Safety, Verdict};
+        let (cache, folder_id) = listing_cache();
+        let mut flagged = incoming(folder_id, 14, "Your account is suspended");
+        flagged.safety = Verdict {
+            level: Safety::Phishing,
+            reasons: vec!["The link goes to a different address than it shows".to_string()],
+        };
+        cache.upsert_message(&flagged).unwrap();
+
+        let row = cache
+            .get_message_list_sorted(folder_id, "acc-1", None, None)
+            .unwrap()
+            .into_iter()
+            .find(|r| r.uid == 14)
+            .expect("should be listed");
+
+        assert_eq!(
+            row.safety_reasons,
+            ["The link goes to a different address than it shows"],
+            "the warning bar would read out {:?} instead of the real reason",
+            row.safety_reasons
         );
     }
 
