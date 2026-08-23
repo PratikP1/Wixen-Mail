@@ -67,8 +67,11 @@ unicode-segmentation = "1.12"
 # Open URLs in default browser
 open = "5"
 
-# OAuth 2.0 with PKCE support
-oauth2 = "4"
+# OAuth 2.0 with PKCE support. Default features off: the crate's own bundled
+# HTTP client (an old reqwest/hyper/h2 stack this project never calls) would
+# otherwise sit in the binary unused. Token exchange goes through this
+# project's own reqwest client in service::oauth instead.
+oauth2 = { version = "4", default-features = false }
 
 # Lightweight HTTP server for OAuth redirect capture
 tiny_http = "0.12"
