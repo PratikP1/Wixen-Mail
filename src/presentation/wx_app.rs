@@ -353,6 +353,29 @@ pub struct WxMailApp {
     message_cache: Option<MessageCache>,
 }
 
+// ── AppHandles ──────────────────────────────────────────────────────────────
+
+/// The shared UI state, the update channel, and the async runtime: the three
+/// parameters that travel together almost everywhere, in the same order,
+/// across every function that touches state, tells the window about it, or
+/// does the work off the UI thread.
+///
+/// Accessibility, the message cache, and the frame recur often too, but not
+/// as reliably as these three: plenty of handlers clone this trio in without
+/// otherwise needing them, so folding them in as well would force every
+/// caller to have all six on hand, including ones that only reach for one or
+/// two. Those stay individual parameters, alongside `app`, on the functions
+/// that actually use them.
+///
+/// Built once per handler and reused for every call inside it, so it derives
+/// `Copy`: it is only ever three references, never anything owned.
+#[derive(Clone, Copy)]
+struct AppHandles<'a> {
+    state: &'a Arc<StdMutex<WxUIState>>,
+    tx: &'a Sender<UIUpdate>,
+    rt: &'a Arc<Runtime>,
+}
+
 impl WxMailApp {
     pub fn new() -> Result<Self> {
         let runtime = Arc::new(
@@ -1168,7 +1191,12 @@ impl WxMailApp {
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
                 move |attachment| {
-                    save_attachment(&frame, &state, &ui_tx, &runtime, &a11y, attachment);
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    save_attachment(app, &frame, &a11y, attachment);
                 }
             });
             reader.on_read_attachment({
@@ -1177,7 +1205,12 @@ impl WxMailApp {
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
                 move |attachment| {
-                    read_attachment(&state, &ui_tx, &runtime, &a11y, attachment);
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    read_attachment(app, &a11y, attachment);
                 }
             });
 
@@ -2154,6 +2187,11 @@ impl WxMailApp {
                 let body_cache = message_cache.clone();
                 let runtime = runtime.clone();
                 move |event| {
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
                     let idx = event.get_item_index() as usize;
                     let in_thread = {
                         let mut s = lock_state(&state);
@@ -2210,7 +2248,7 @@ impl WxMailApp {
                                 MessageBody::Plain("Downloading this message...".to_string()),
                             ));
                             if let Some((id, uid)) = selected {
-                                spawn_body_fetch(&state, &ui_tx, &runtime, id, uid);
+                                spawn_body_fetch(app, id, uid);
                             }
                         }
                     }
@@ -2219,7 +2257,7 @@ impl WxMailApp {
                     // opening rather than left in a column, because it is a
                     // fact about the message somebody would want before they
                     // decide what to do with it.
-                    receipt_for_the_open_message(&state, &ui_tx, &runtime);
+                    receipt_for_the_open_message(app);
                 }
             });
 
@@ -2255,7 +2293,12 @@ impl WxMailApp {
                     let Some(option) = option else {
                         return;
                     };
-                    apply_sort(&state, &ui_tx, &runtime, option);
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    apply_sort(app, option);
                     persist_column_layout(&column_layout.borrow());
                     sync_sort_menu(&frame, option);
                     let _ = a11y.announce(
@@ -2411,6 +2454,11 @@ impl WxMailApp {
                 let module_focus = module_focus.clone();
                 move |event| {
                     let id = event.get_id();
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
                     match id {
                         // ── View toggles ──────────────────────────────────
                         _ if id == ID_VIEW_FOLDER_PANE => {
@@ -2495,14 +2543,7 @@ impl WxMailApp {
                         }
                         _ if LABEL_IDS.contains(&id) || id == ID_LABEL_NONE => {
                             let number = LABEL_IDS.iter().position(|held| *held == id);
-                            label_the_message(
-                                &state,
-                                &message_cache,
-                                &a11y,
-                                &ui_tx,
-                                &runtime,
-                                number.map(|at| at + 1),
-                            );
+                            label_the_message(app, &message_cache, &a11y, number.map(|at| at + 1));
                         }
                         _ if id == ID_TOGGLE_STAR => {
                             let toggled = {
@@ -2535,9 +2576,7 @@ impl WxMailApp {
                                     // And the server, so the flag is still
                                     // there on another device.
                                     spawn_server_change(
-                                        &state,
-                                        &ui_tx,
-                                        &runtime,
+                                        app,
                                         cache_id,
                                         uid,
                                         subject,
@@ -2719,32 +2758,17 @@ impl WxMailApp {
                                 &ui_tx,
                                 &runtime,
                             ) {
-                                open_compose(
-                                    &frame,
-                                    &state,
-                                    &ui_tx,
-                                    &runtime,
-                                    &message_cache,
-                                    &a11y,
-                                    ComposeMode::WriteTo { to },
-                                );
+                                open_compose(app, &frame, &message_cache, &a11y, ComposeMode::WriteTo { to });
                             }
                         }
                         _ if id == ID_SEND_RECEIPT => {
-                            send_receipt_for_the_open_message(&state, &ui_tx, &runtime);
+                            send_receipt_for_the_open_message(app);
                         }
                         _ if id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER => {
-                            move_or_copy_message(
-                                &state,
-                                &message_cache,
-                                &frame,
-                                &ui_tx,
-                                &runtime,
-                                id == ID_COPY_TO_FOLDER,
-                            );
+                            move_or_copy_message(app, &message_cache, &frame, id == ID_COPY_TO_FOLDER);
                         }
                         _ if id == ID_CHOOSE_FOLDERS => {
-                            choose_folders(&state, &message_cache, &frame, &ui_tx, &runtime);
+                            choose_folders(app, &message_cache, &frame);
                         }
                         _ if id == ID_CONTEXT_COPY_TO_TASK
                             || id == ID_CONTEXT_COPY_TO_EVENT
@@ -2820,7 +2844,7 @@ impl WxMailApp {
                             match module {
                                 PimModule::Contacts => {
                                     send_status(&ui_tx, &runtime, "Contacts sync requested...");
-                                    spawn_contacts_sync(&state, &ui_tx, &runtime);
+                                    spawn_contacts_sync(app);
                                 }
                                 PimModule::Calendar => {
                                     send_status(&ui_tx, &runtime, "Calendar sync requested...");
@@ -2828,7 +2852,7 @@ impl WxMailApp {
                                 }
                                 PimModule::Tasks => {
                                     send_status(&ui_tx, &runtime, "Tasks sync requested...");
-                                    spawn_tasks_sync(&state, &ui_tx, &runtime);
+                                    spawn_tasks_sync(app);
                                 }
                                 // Notes go nowhere and mail has its own Check
                                 // Mail, so neither is offered this.
@@ -3028,7 +3052,7 @@ impl WxMailApp {
                         _ if id == ID_QUIT => frame.close(false),
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
-                            spawn_mail_sync(&state, &ui_tx, &runtime, None);
+                            spawn_mail_sync(app, None);
                         }
                         // Ctrl+N: the primary action for wherever you are.
                         // A key whose meaning depends on focus is normally a
@@ -3040,8 +3064,9 @@ impl WxMailApp {
                         _ if id == ID_NEW_DEFAULT => {
                             let module = lock_state(&state).active_module;
                             match module {
-                                PimModule::Mail => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::New,
-                                ),
+                                PimModule::Mail => {
+                                    open_compose(app, &frame, &message_cache, &a11y, ComposeMode::New)
+                                }
                                 PimModule::Contacts => managers::new_contact(
                                     &state,
                                     &message_cache,
@@ -3124,12 +3149,7 @@ impl WxMailApp {
                                         &runtime,
                                         "Getting older messages...",
                                     );
-                                    spawn_mail_sync(
-                                        &state,
-                                        &ui_tx,
-                                        &runtime,
-                                        Some(folder),
-                                    );
+                                    spawn_mail_sync(app, Some(folder));
                                 }
                                 None => send_status(
                                     &ui_tx,
@@ -3146,23 +3166,30 @@ impl WxMailApp {
                                 &ui_tx,
                                 &runtime,
                             ) {
-                                open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::Draft(draft),
-                                );
+                                open_compose(app, &frame, &message_cache, &a11y, ComposeMode::Draft(draft));
                             }
                         }
-                        _ if id == ID_NEW_MESSAGE => open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::New),
+                        _ if id == ID_NEW_MESSAGE => {
+                            open_compose(app, &frame, &message_cache, &a11y, ComposeMode::New)
+                        }
                         _ if id == ID_REPLY => {
-                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Default);
+                            start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Default);
                         }
                         _ if id == ID_REPLY_ALL => {
-                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::All);
+                            start_reply(app, &frame, &message_cache, &a11y, ReplyMode::All);
                         }
                         _ if id == ID_REPLY_SENDER => {
-                            start_reply(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ReplyMode::Sender);
+                            start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
                             let (_to, subj, body) = msg_info(&state);
-                            open_compose(&frame, &state, &ui_tx, &runtime, &message_cache, &a11y, ComposeMode::Forward { subject: subj, body });
+                            open_compose(
+                                app,
+                                &frame,
+                                &message_cache,
+                                &a11y,
+                                ComposeMode::Forward { subject: subj, body },
+                            );
                         }
                         // Delete acts on whatever is in front of you. In Mail
                         // that is a message, with server semantics behind it;
@@ -3269,33 +3296,17 @@ impl WxMailApp {
                                 // In the outbox, delete means cancel the send.
                                 // There is no server copy to remove: the
                                 // message has not been anywhere.
-                                if cancel_if_queued(&state, &message_cache, &ui_tx, &runtime, cache_id) {
+                                if cancel_if_queued(app, &message_cache, cache_id) {
                                     return;
                                 }
                                 // A message on this computer. POP mail is all
                                 // of it, and the route below needs a session
                                 // with a server this account has never had.
-                                if delete_if_local(
-                                    &state,
-                                    &message_cache,
-                                    &ui_tx,
-                                    &runtime,
-                                    cache_id,
-                                    &subject,
-                                    asked,
-                                ) {
+                                if delete_if_local(app, &message_cache, cache_id, &subject, asked) {
                                     return;
                                 }
                                 send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
-                                spawn_server_change(
-                                    &state,
-                                    &ui_tx,
-                                    &runtime,
-                                    cache_id,
-                                    uid,
-                                    subject,
-                                    ServerChange::Deleted(asked),
-                                );
+                                spawn_server_change(app, cache_id, uid, subject, ServerChange::Deleted(asked));
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected to delete");
                             }
@@ -3329,9 +3340,7 @@ impl WxMailApp {
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                 );
                                 spawn_server_change(
-                                    &state,
-                                    &ui_tx,
-                                    &runtime,
+                                    app,
                                     cache_id,
                                     uid,
                                     subject,
@@ -3372,7 +3381,7 @@ impl WxMailApp {
                                 &a11y,
                             ) {
                                 send_status(&ui_tx, &runtime, "Contacts sync requested...");
-                                spawn_contacts_sync(&state, &ui_tx, &runtime);
+                                spawn_contacts_sync(app);
                             }
                         }
                         // Each of these used to be handed an empty list and
@@ -3393,7 +3402,7 @@ impl WxMailApp {
                         }
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
-                            spawn_contacts_sync(&state, &ui_tx, &runtime);
+                            spawn_contacts_sync(app);
                         }
                         _ if id == ID_SYNC_CALENDAR => {
                             send_status(&ui_tx, &runtime, "Calendar sync requested...");
@@ -3401,7 +3410,7 @@ impl WxMailApp {
                         }
                         _ if id == ID_SYNC_TASKS => {
                             send_status(&ui_tx, &runtime, "Syncing tasks...");
-                            spawn_tasks_sync(&state, &ui_tx, &runtime);
+                            spawn_tasks_sync(app);
                         }
                         _ if id == ID_SETTINGS => {
                             let palette = handle_settings(&frame, &ui_tx, &runtime, &a11y);
@@ -3475,17 +3484,17 @@ impl WxMailApp {
                         }
                         _ if id == ID_FLUSH_OUTBOX => {
                             send_status(&ui_tx, &runtime, "Flushing outbox queue...");
-                            flush_outbox(&state, &ui_tx, &runtime);
+                            flush_outbox(app);
                         }
                         // Each of these also moves the column layout, so the
                         // headers and the menu never disagree about the order.
-                        _ if id == ID_SORT_DATE_NEWEST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::DateNewestFirst),
-                        _ if id == ID_SORT_DATE_OLDEST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::DateOldestFirst),
-                        _ if id == ID_SORT_SENDER_AZ => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SenderAZ),
-                        _ if id == ID_SORT_SENDER_ZA => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SenderZA),
-                        _ if id == ID_SORT_SUBJECT_AZ => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SubjectAZ),
-                        _ if id == ID_SORT_SUBJECT_ZA => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::SubjectZA),
-                        _ if id == ID_SORT_UNREAD_FIRST => sort_from_menu(&state, &ui_tx, &runtime, &a11y, &column_layout, MailSortOption::UnreadFirst),
+                        _ if id == ID_SORT_DATE_NEWEST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::DateNewestFirst),
+                        _ if id == ID_SORT_DATE_OLDEST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::DateOldestFirst),
+                        _ if id == ID_SORT_SENDER_AZ => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderAZ),
+                        _ if id == ID_SORT_SENDER_ZA => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderZA),
+                        _ if id == ID_SORT_SUBJECT_AZ => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectAZ),
+                        _ if id == ID_SORT_SUBJECT_ZA => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectZA),
+                        _ if id == ID_SORT_UNREAD_FIRST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::UnreadFirst),
                         _ if id == ID_LOAD_SCALE_SAMPLE => {
                             tracing::info!(
                                 "Generating a sample mailbox of {} messages",
@@ -3613,7 +3622,12 @@ impl WxMailApp {
                     // On this poll rather than a timer of its own, for the same
                     // reason the reminders are: a timer event reaches every
                     // handler on the window it belongs to.
-                    mark_the_open_one_read(&state, &ui_tx, &runtime, &a11y, &opened_at, marks_read);
+                    let app = AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    };
+                    mark_the_open_one_read(app, &a11y, &opened_at, marks_read);
 
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
@@ -3676,11 +3690,13 @@ impl WxMailApp {
             if let Some(target) = scan_target {
                 open_for_scanning(
                     target,
+                    AppHandles {
+                        state: &state,
+                        tx: &scan_tx,
+                        rt: &scan_rt,
+                    },
                     &frame,
-                    &state,
                     &message_cache,
-                    &scan_tx,
-                    &scan_rt,
                     &a11y,
                 );
             }
@@ -4486,13 +4502,12 @@ fn wire_read_aloud<F>(
 /// the way, and marking each one would empty the unread count and lose the one
 /// that mattered.
 fn mark_the_open_one_read(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
     a11y: &Arc<Accessibility>,
     opened_at: &RefCell<Option<(i64, std::time::Instant)>>,
     marks_read: crate::application::reading_habits::MarkRead,
 ) {
+    let AppHandles { state, tx, rt } = app;
     if !marks_read.marks_at_all() {
         return;
     }
@@ -4545,9 +4560,7 @@ fn mark_the_open_one_read(
         let _ = sent.send(UIUpdate::MessageReadToggled(row, true)).await;
     });
     spawn_server_change(
-        state,
-        tx,
-        rt,
+        app,
         row,
         uid,
         subject,
@@ -4608,13 +4621,12 @@ fn attach_labels(cache: &MessageCache, items: &mut [MessageItem]) {
 /// working through an inbox by ear, because it decides one thing about a
 /// message without opening it or leaving the row.
 fn label_the_message(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     number: Option<usize>,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::application::tagging;
     use crate::presentation::accessibility::announcements::Priority;
 
@@ -4675,9 +4687,7 @@ fn label_the_message(
                 // which reads as a key that did not work.
                 if let Some(keyword) = tag.keyword.clone() {
                     spawn_server_change(
-                        state,
-                        tx,
-                        rt,
+                        app,
                         message_id,
                         uid,
                         subject.clone(),
@@ -4710,9 +4720,7 @@ fn label_the_message(
             // screen says rather than leaving it to be noticed.
             match label.keyword.clone() {
                 Some(keyword) => spawn_server_change(
-                    state,
-                    tx,
-                    rt,
+                    app,
                     message_id,
                     uid,
                     subject,
@@ -5951,16 +5959,13 @@ fn load_folder_messages(
 /// `apply_sort` alone reorders the list and leaves the layout holding the
 /// previous sort, so the next header click would toggle from a direction that
 /// was no longer in effect and land on the opposite of what was announced.
-#[allow(clippy::too_many_arguments)]
 fn sort_from_menu(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
     a11y: &Arc<Accessibility>,
     layout: &Rc<RefCell<ColumnLayout>>,
     order: MailSortOption,
 ) {
-    apply_sort(state, tx, rt, order);
+    apply_sort(app, order);
     layout.borrow_mut().set_sort_from_option(order);
     persist_column_layout(&layout.borrow());
     let said = layout.borrow().sort.spoken();
@@ -6037,16 +6042,14 @@ pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
 /// a private answer arriving in front of a mailing list. So the mode and the
 /// number of people it reaches are announced before the window takes focus,
 /// rather than left to be discovered from the To field.
-#[allow(clippy::too_many_arguments)]
 fn start_reply(
+    app: AppHandles<'_>,
     frame: &Frame,
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     mode: ReplyMode,
 ) {
+    let AppHandles { state, .. } = app;
     let (selected, own_addresses, preview) = {
         let s = lock_state(state);
         (
@@ -6115,7 +6118,7 @@ fn start_reply(
             answering,
         },
     };
-    open_compose(frame, state, tx, rt, cache, a11y, compose);
+    open_compose(app, frame, cache, a11y, compose);
 }
 
 /// Extract selected message info for reply/forward.
@@ -6141,14 +6144,13 @@ fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
 
 /// Open the compose dialog and handle the result.
 fn open_compose(
+    app: AppHandles<'_>,
     frame: &Frame,
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     mode: ComposeMode,
 ) {
+    let AppHandles { state, tx, rt } = app;
     // Answering something comes from the mailbox it was read in; writing
     // something new comes from the default account. Both used to come from
     // whichever mailbox happened to be open, which is right for a reply and
@@ -6239,7 +6241,12 @@ fn open_compose(
         let rt = rt.clone();
         let draft_id = draft_id.clone();
         move |data: &wx_compose::ComposeData| {
-            match save_as_draft(&state, &cache, &tx, &rt, data, draft_id.borrow().clone()) {
+            let app = AppHandles {
+                state: &state,
+                tx: &tx,
+                rt: &rt,
+            };
+            match save_as_draft(app, &cache, data, draft_id.borrow().clone()) {
                 Ok((id, _)) => {
                     *draft_id.borrow_mut() = Some(id);
                     // Said, not silent. Somebody who relies on this needs to
@@ -6273,7 +6280,7 @@ fn open_compose(
             match queue_for_sending(state, cache, &data) {
                 Ok(recipient) => {
                     send_status(tx, rt, &format!("Sending to {}...", recipient));
-                    flush_outbox(state, tx, rt);
+                    flush_outbox(app);
                 }
                 Err(reason) => {
                     let tx = tx.clone();
@@ -6284,7 +6291,7 @@ fn open_compose(
             }
         }
         ComposeResult::SaveDraft(data) => {
-            match save_as_draft(state, cache, tx, rt, &data, draft_id.borrow().clone()) {
+            match save_as_draft(app, cache, &data, draft_id.borrow().clone()) {
                 Ok((id, subject)) => {
                     *draft_id.borrow_mut() = Some(id);
                     send_status(tx, rt, &format!("Draft saved: {}", subject))
@@ -6316,13 +6323,12 @@ fn open_compose(
 /// unfinished, and refusing to keep one because it has no address yet loses
 /// exactly the work somebody was trying to protect.
 fn save_as_draft(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     data: &wx_compose::ComposeData,
     existing: Option<String>,
 ) -> std::result::Result<(String, String), String> {
+    let AppHandles { state, .. } = app;
     let Some(cache) = cache.as_ref() else {
         return Err("No message store is available, so the draft cannot be saved".to_string());
     };
@@ -6365,7 +6371,7 @@ fn save_as_draft(
     // look rather than only in a table reachable by one menu command. On IMAP
     // that is the server's Drafts folder, so it is on every device; on POP
     // there is no server folder and it goes to the local one.
-    file_draft_copy(state, cache, tx, rt, &draft);
+    file_draft_copy(app, cache, &draft);
     Ok((id, subject))
 }
 
@@ -6376,12 +6382,11 @@ fn save_as_draft(
 /// work. Saying so on every automatic save would be a sentence every minute
 /// somebody spends writing.
 fn file_draft_copy(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Arc<MessageCache>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     draft: &crate::data::message_cache::CachedDraft,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::application::{draft_message, local_folders};
 
     let account = {
@@ -6601,13 +6606,12 @@ fn queue_for_sending(
 /// behind it.
 fn open_for_scanning(
     target: crate::presentation::scan_target::ScanTarget,
+    app: AppHandles<'_>,
     frame: &Frame,
-    state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::presentation::scan_target::ScanTarget;
 
     tracing::info!("Opening {} for the accessibility scan", target.as_name());
@@ -6651,7 +6655,7 @@ fn open_for_scanning(
             let _ = crate::presentation::wx_add_calendar::ask_for_a_calendar(frame);
         }
         ScanTarget::Compose => {
-            open_compose(frame, state, tx, rt, &None, a11y, ComposeMode::New);
+            open_compose(app, frame, &None, a11y, ComposeMode::New);
         }
         ScanTarget::Reader => {
             // Not a dialog: the reader is a frame of its own, so it does not
@@ -7399,7 +7403,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             msg_list.refresh(true, None);
         }
         UIUpdate::MailboxWatchRequested => {
-            spawn_mail_watch(state, tx, rt);
+            spawn_mail_watch(AppHandles { state, tx, rt });
         }
         UIUpdate::MailboxChanged(folder) => {
             // Signalled rather than spoken, so somebody who wants a tone for
@@ -7412,7 +7416,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
-            spawn_mail_sync(state, tx, rt, Some(folder.clone()));
+            spawn_mail_sync(AppHandles { state, tx, rt }, Some(folder.clone()));
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -7459,7 +7463,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
 }
 
 /// Flush all queued outbox messages (attempt to send via SMTP).
-fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn flush_outbox(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
     // The account travels with the task: sending needs its SMTP settings and
     // credentials, and the UI state cannot be locked from inside the runtime.
     let (account_id, account) = {
@@ -7674,13 +7679,12 @@ fn flush_outbox(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Ar
 /// trip on the UI thread is a frozen window and a screen reader with nothing to
 /// read.
 fn move_or_copy_message(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
     frame: &Frame,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     copying: bool,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
 
     let Some(cache) = cache.clone() else {
@@ -7778,7 +7782,7 @@ fn move_or_copy_message(
             if copying { "Copying" } else { "Moving" }
         ),
     );
-    spawn_folder_move(state, tx, rt, row_id, uid, subject, from, into, copying);
+    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -7786,11 +7790,8 @@ fn move_or_copy_message(
 /// A moved message leaves the folder it was in, so the row goes once the server
 /// has agreed and not before. A copy leaves it where it is, so nothing about
 /// the list changes at all.
-#[allow(clippy::too_many_arguments)]
 fn spawn_folder_move(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
@@ -7798,6 +7799,7 @@ fn spawn_folder_move(
     into: String,
     copying: bool,
 ) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let account = {
@@ -7887,12 +7889,11 @@ fn spawn_folder_move(
 /// as a courtesy to whatever else reads this account: a folder somebody
 /// unticked here should read as unwanted in their phone's mail app too.
 fn choose_folders(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<crate::data::message_cache::MessageCache>>,
     frame: &Frame,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::presentation::wx_folder_choice::{FolderRow, ask};
 
     let Some(cache) = cache.clone() else {
@@ -7960,7 +7961,7 @@ fn choose_folders(
             if changed.len() == 1 { "" } else { "s" }
         ),
     );
-    spawn_subscription_writes(state, tx, rt, changed);
+    spawn_subscription_writes(app, changed);
 }
 
 /// Tell the server which folders somebody wants, so other clients agree.
@@ -7968,12 +7969,8 @@ fn choose_folders(
 /// Best effort. The choice is already recorded here and already decides what
 /// syncs, so a server that will not take a subscription change costs nothing
 /// but the courtesy. It is still said out loud rather than swallowed.
-fn spawn_subscription_writes(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    changed: Vec<(String, bool)>,
-) {
+fn spawn_subscription_writes(app: AppHandles<'_>, changed: Vec<(String, bool)>) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let account = {
@@ -8038,13 +8035,8 @@ fn spawn_subscription_writes(
 ///
 /// The one thing worth being able to do to mail that has not gone, and it could
 /// not be done at all before: the queue was a number on the status bar.
-fn cancel_if_queued(
-    state: &Arc<StdMutex<WxUIState>>,
-    cache: &Option<Arc<MessageCache>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    row_id: i64,
-) -> bool {
+fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_id: i64) -> bool {
+    let AppHandles { state, tx, rt } = app;
     let Some(cache) = cache.as_ref() else {
         return false;
     };
@@ -8121,14 +8113,13 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
 /// messages, no network, no credential store. Any of those appearing here means
 /// it moves.
 fn delete_if_local(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     row_id: i64,
     subject: &str,
     asked: Deleting,
 ) -> bool {
+    let AppHandles { state, tx, rt } = app;
     let Some(cache) = cache.as_ref() else {
         return false;
     };
@@ -8193,11 +8184,8 @@ fn delete_if_local(
 /// The middle one matters most. Somebody whose setting is never still deserves
 /// to know a sender wanted to track them, and a client that silently swallows
 /// the request tells them nothing about who is doing it.
-fn receipt_for_the_open_message(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-) {
+fn receipt_for_the_open_message(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
     use crate::application::receipts::{Answer, Policy, Request, answer, noticed};
 
     let open = {
@@ -8244,7 +8232,7 @@ fn receipt_for_the_open_message(
         Answer::Send { notify } => {
             said.push_str(" Sending one, because your settings say to.");
             send_status(tx, rt, &said);
-            spawn_receipt(state, tx, rt, notify, subject, row_id);
+            spawn_receipt(app, notify, subject, row_id);
         }
     }
 }
@@ -8254,11 +8242,8 @@ fn receipt_for_the_open_message(
 /// Refuses when the open message is not the one that was offered. Without that
 /// check the command would acknowledge whatever happens to be selected, which
 /// on a list somebody is arrowing through is a message they never chose.
-fn send_receipt_for_the_open_message(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-) {
+fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
     let open = {
         let s = lock_state(state);
         let offered = s.receipt_offered;
@@ -8280,7 +8265,7 @@ fn send_receipt_for_the_open_message(
         );
     };
     send_status(tx, rt, &format!("Sending a read receipt to {notify}..."));
-    spawn_receipt(state, tx, rt, notify, subject, row_id);
+    spawn_receipt(app, notify, subject, row_id);
 }
 
 /// Send a read receipt for one message.
@@ -8288,16 +8273,10 @@ fn send_receipt_for_the_open_message(
 /// A receipt is mail leaving this machine with somebody's address on it, so it
 /// goes through the same gate as everything else that sends: an account that
 /// may not send mail may not acknowledge it either.
-fn spawn_receipt(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    notify: String,
-    subject: String,
-    message_row_id: i64,
-) {
+fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_row_id: i64) {
     use crate::application::receipts::{About, message};
 
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let account = {
@@ -8607,7 +8586,8 @@ fn ensure_local_folders(
 /// Any watch already running is stopped first. Without that, every check for
 /// mail would leave a connection behind, and a server refuses new ones long
 /// before the count gets interesting.
-fn spawn_mail_watch(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn spawn_mail_watch(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let state_for_task = state.clone();
@@ -8797,14 +8777,13 @@ impl FlagChange {
 /// by sending an update, so the server is asked first and the row only leaves
 /// the list once the server has agreed.
 fn spawn_server_change(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
     change: ServerChange,
 ) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     // The account the message is in, not the one that happens to be open.
@@ -9012,6 +8991,12 @@ fn spawn_server_change(
 /// The recursion is bounded by the person: each turn needs a keypress, and
 /// Escape ends it. Each opened window sets what to do when it closes, and that
 /// is taken out of the cell before it runs, so closing twice cannot open two.
+///
+/// Does not take `AppHandles`: every other borrowed field it needs, the
+/// closure below re-borrows for the next call, but `state` is cloned into it
+/// owned, because the closure outlives this call and a struct of borrows
+/// cannot. Bundling the rest and leaving `state` beside it would be one
+/// argument shorter and two shapes to remember instead of one.
 #[allow(clippy::too_many_arguments)]
 fn open_conversation_again(
     frame: &Frame,
@@ -9366,12 +9351,11 @@ fn spawn_threat_list_refresh(rt: &Arc<Runtime>) {
 /// thread would freeze the window, which a screen reader reports as the
 /// application having stopped responding.
 fn read_attachment(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
     a11y: &Arc<Accessibility>,
     attachment: &reader_text::ReaderAttachment,
 ) {
+    let AppHandles { state, tx, rt } = app;
     use crate::presentation::accessibility::announcements::Priority;
 
     let name = attachment.suggested_file_name();
@@ -9416,13 +9400,12 @@ fn read_attachment(
 /// and the whole message comes down again to take one part out of it, which is
 /// the trade that keeps the database small enough to sit in a profile folder.
 fn save_attachment(
+    app: AppHandles<'_>,
     frame: &Frame,
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
     attachment: &reader_text::ReaderAttachment,
 ) {
+    let AppHandles { state, tx, rt } = app;
     // Already through safe_file_name, because a file dialog handed something
     // that looks like a path will use it as one.
     let suggested = attachment.suggested_file_name();
@@ -9545,13 +9528,8 @@ fn fetch_attachment_bytes(
 /// the check at the end: a body only reaches the preview if its message is
 /// still the selected one, so passing over a message costs a fetch and never a
 /// preview that belongs to a different row.
-fn spawn_body_fetch(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    message_row_id: i64,
-    uid: u32,
-) {
+fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let state = state.clone();
@@ -9721,12 +9699,8 @@ fn spawn_body_fetch(
 /// of a large mailbox takes a while, and silence for a minute is
 /// indistinguishable from the application having stopped for somebody who
 /// cannot see that anything is happening.
-fn spawn_mail_sync(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    only: Option<String>,
-) {
+fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let (accounts, account_id) = {
@@ -9946,7 +9920,8 @@ fn spawn_mail_sync(
 }
 
 /// Spawn contacts sync on a blocking thread (MessageCache is not Send).
-fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn spawn_contacts_sync(app: AppHandles<'_>) {
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
@@ -10060,9 +10035,10 @@ fn spawn_contacts_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, 
 /// and the count of replaced changes is said out loud, because a change that
 /// disappears silently is indistinguishable from one that never saved. See the
 /// note on `application::tasks_sync`.
-fn spawn_tasks_sync(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
+fn spawn_tasks_sync(app: AppHandles<'_>) {
     use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
 
+    let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
@@ -10347,12 +10323,8 @@ pub(crate) fn spawn_calendar_sync(
 }
 
 /// Apply a sort order to the current message list and re-render.
-fn apply_sort(
-    state: &Arc<StdMutex<WxUIState>>,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
-    order: MailSortOption,
-) {
+fn apply_sort(app: AppHandles<'_>, order: MailSortOption) {
+    let AppHandles { state, tx, rt } = app;
     let sorted = {
         let mut s = lock_state(state);
         s.sort_order = order;

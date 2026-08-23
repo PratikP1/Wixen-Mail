@@ -715,6 +715,11 @@ pub fn build_compose_dialog(
 /// they stand each time. The callback rather than a return value because the
 /// dialog is modal: it does not come back until somebody is finished, and a
 /// draft that is only kept at the end is not a draft that survives a crash.
+///
+/// Nine parameters and nine different things: unlike `wx_app.rs`'s free
+/// functions, none of these repeat across this file's other callers, so
+/// there is no recurring cluster here to give a name and bundle. Each is
+/// exactly the one piece of the dialog it fills in.
 #[allow(clippy::too_many_arguments)]
 pub fn show_compose_dialog_full(
     parent: &Frame,
