@@ -103,6 +103,13 @@ pulldown-cmark = { version = "0.13.4", default-features = false, features = ["ht
 # docs/plans/20260823-earcon-sound-schemes.md for the fuller reasoning.
 rodio = "0.22.2"
 
+# Reading an imported sound-scheme pack. Deflate only: the one compression
+# method an ordinary zip tool writes by default, and the only one a handful
+# of short sound files and a manifest have any reason to need. No lzma, no
+# zstd, no bzip2: extra codecs a scheme pack would never use, not extra
+# safety.
+zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
+
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.

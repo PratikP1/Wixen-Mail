@@ -1357,7 +1357,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 40] = [
+    const A_CRATE_THAT_CANNOT: [&str; 41] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1396,6 +1396,10 @@ mod completeness {
         // the OS sound API, Symphonia decodes whatever bytes it is handed.
         // Neither opens a socket.
         "rodio",
+        // Reads bytes already on disk into an archive listing. Nothing here
+        // ever names a socket, a hostname, or a client of anything on
+        // A_WAY_OUT_OF_THIS_PROGRAM.
+        "zip",
         "windows",
         "winresource",
         "boa_engine",
