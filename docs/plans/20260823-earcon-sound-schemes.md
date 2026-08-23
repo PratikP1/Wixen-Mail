@@ -75,7 +75,7 @@ redistribute, not merely free to listen to. That ruled out one popular option.
 
 | Source | License | Redistribution | Verdict |
 |---|---|---|---|
-| [UI SFX](https://uisfx.com/) | CC0 | Yes, no restriction | **Best single source.** 936 sounds across 78 semantic UI cues (hover, press, success, error, notification, delete, toggle...) in 12 switchable "feels," which is close to a ready-made set of sound schemes on its own. WAV/OGG-convertible, no attribution needed. |
+| [UI SFX](https://uisfx.com/) | CC0 | Yes, no restriction | **Best single source.** 936 sounds across 78 semantic UI cues (hover, press, success, error, notification, delete, toggle...) in 12 switchable "feels," which is close to a ready-made set of sound schemes on its own. Distributed as MP3/OGG, so converting to WAV is a curation step, not a blocker. No attribution needed. |
 | [Kenney UI Audio pack](https://kenney.nl/assets/ui-audio) | CC0 | Yes | 50 files, zip download, from a long-trusted CC0 game-asset source. Good second source for anything UI SFX doesn't cover well. |
 | [OpenGameArt CC0 Sounds Library](https://opengameart.org/content/cc0-sounds-library) | CC0 | Yes | Aggregated CC0 collection, useful backup for one-off sounds. |
 | [Freesound.org](https://freesound.org/) | Mixed, filterable | Only the CC0-filtered subset | Huge community library. Filter to `license:"Creative Commons 0"` (the site's own advanced search, or the API filter of the same name) before using anything from here, or attribution has to be tracked per sound in a credits file. Best for a specific sound the curated packs above don't have. |
@@ -88,11 +88,17 @@ sources used in a `CREDITS.md` even though CC0 needs no attribution legally;
 it is a courtesy, and it also gives a future contributor an example of what
 "safe to bundle" looks like.
 
-**Format decision**: officially support WAV and OGG for both the bundled
-schemes and community packs. Not MP3: it is fine, patent concerns are moot
-now, but OGG is the fully open format and this project already treats open
-formats as a value worth keeping (IMAP, SMTP, CalDAV, iCalendar), not a
-technicality. rodio decodes both without extra work either way.
+**Format decision**: WAV is the default. Every bundled scheme ships as WAV,
+every manifest example in this plan uses `.wav`, and it is what a pack
+author should reach for unless they have a reason not to: uncompressed, the
+simplest possible thing to validate on import (a header and raw samples,
+nothing to decode wrong), and exactly as much format as a one-second earcon
+needs. OGG is still accepted for a community pack that wants smaller
+downloads, since rodio decodes it for free either way and this project
+already treats open formats as a value worth keeping, but it is the
+exception a pack author opts into, not what the tooling or the docs lead
+with. Not MP3 at all, default or otherwise: OGG already covers "smaller than
+WAV" without reaching for a format this project has no other use for.
 
 ## New events proposed
 
@@ -161,7 +167,9 @@ version = 1
 [sounds]
 new_mail = "sounds/new_mail.wav"
 message_sent = "sounds/message_sent.wav"
-send_failed = "sounds/send_failed.ogg"
+send_failed = "sounds/send_failed.wav"
+# .ogg is read too, for a pack author who wants a smaller download; .wav is
+# what the docs and the bundled schemes use unless there is a reason not to
 # any event left out falls back to Generated
 ```
 
