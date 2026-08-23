@@ -4587,11 +4587,18 @@ const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60
 /// hundred messages would otherwise be five hundred round trips to answer a
 /// question most of them answer with "none".
 fn attach_labels(cache: &MessageCache, items: &mut [MessageItem]) {
+    let ids: Vec<i64> = items.iter().map(|item| item.message_id).collect();
+    let Ok(by_message) = cache.get_tags_for_messages(&ids) else {
+        return;
+    };
     for item in items.iter_mut() {
-        let Ok(tags) = cache.get_tags_for_message(item.message_id) else {
-            continue;
-        };
-        item.labels = tags.into_iter().map(|tag| tag.name).collect();
+        item.labels = by_message
+            .get(&item.message_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
     }
 }
 
@@ -11676,6 +11683,110 @@ mod tests {
         all.sort_unstable();
         all.dedup();
         assert_eq!(all.len(), count, "two menu ids collided");
+    }
+
+    #[test]
+    fn test_loading_a_folder_gives_each_message_its_own_labels() {
+        // `attach_labels` used to ask the cache once per row in a loop; this
+        // proves the batched replacement still tells messages apart rather
+        // than merging one message's labels onto another's.
+        let cache = test_cache();
+        let (tx, rx) = async_channel::unbounded();
+        let (folder_id, tagged, untagged) = cache
+            .as_ref()
+            .map(|c| {
+                let folder_id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                let tagged = c
+                    .save_message(&crate::data::message_cache::CachedMessage {
+                        id: 0,
+                        uid: 1,
+                        folder_id,
+                        message_id: "<tagged@x>".to_string(),
+                        subject: "Budget".to_string(),
+                        from_addr: "ada@example.com".to_string(),
+                        to_addr: "me@example.com".to_string(),
+                        cc: None,
+                        date: "2026-07-26".to_string(),
+                        body_plain: None,
+                        body_html: None,
+                        read: false,
+                        starred: false,
+                        deleted: false,
+                    })
+                    .expect("seed tagged message");
+                let untagged = c
+                    .save_message(&crate::data::message_cache::CachedMessage {
+                        id: 0,
+                        uid: 2,
+                        folder_id,
+                        message_id: "<untagged@x>".to_string(),
+                        subject: "Newsletter".to_string(),
+                        from_addr: "ada@example.com".to_string(),
+                        to_addr: "me@example.com".to_string(),
+                        cc: None,
+                        date: "2026-07-25".to_string(),
+                        body_plain: None,
+                        body_html: None,
+                        read: false,
+                        starred: false,
+                        deleted: false,
+                    })
+                    .expect("seed untagged message");
+                c.create_tag(&crate::data::message_cache::Tag {
+                    id: "tag-work".to_string(),
+                    account_id: "acct-1".to_string(),
+                    name: "Work".to_string(),
+                    color: "#FF0000".to_string(),
+                    created_at: "2026-08-01T00:00:00Z".to_string(),
+                    keyword: None,
+                })
+                .expect("seed tag");
+                c.add_tag_to_message(tagged, "tag-work")
+                    .expect("label the message");
+                (folder_id, tagged, untagged)
+            })
+            .expect("cache");
+
+        load_folder_messages(
+            &cache,
+            Some(folder_id),
+            Some("acct-1".to_string()),
+            FOLDER_LIST_PAGE_SIZE,
+            &tx,
+        );
+
+        let messages = drain(&rx)
+            .into_iter()
+            .find_map(|u| match u {
+                UIUpdate::MessagesLoaded(items) => Some(items),
+                _ => None,
+            })
+            .expect("messages loaded");
+
+        let tagged_row = messages
+            .iter()
+            .find(|m| m.message_id == tagged)
+            .expect("tagged message");
+        let untagged_row = messages
+            .iter()
+            .find(|m| m.message_id == untagged)
+            .expect("untagged message");
+        assert_eq!(tagged_row.labels, vec!["Work".to_string()]);
+        assert!(
+            untagged_row.labels.is_empty(),
+            "an untagged message picked up a label from another one: {:?}",
+            untagged_row.labels
+        );
     }
 
     #[test]

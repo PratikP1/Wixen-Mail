@@ -8,6 +8,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Opening or refreshing a folder no longer asks the database once per
+  message just to show its labels.** Attaching each row's labels ran one
+  query per message in a loop, so a folder of five hundred messages cost
+  five hundred separate round trips on the interface thread to answer a
+  question most of them answer with nothing. It is now one query for the
+  whole folder, however many labels are on however many messages.
+
 - **Opening a folder that has grown very large no longer freezes the window
   while it loads.** The folder list read every message a folder held in one
   query, which cost nothing at a few hundred messages and became a

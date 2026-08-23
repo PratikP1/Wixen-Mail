@@ -202,6 +202,70 @@ impl MessageCache {
         Ok(tags)
     }
 
+    /// Every one of these messages' tags, in one query.
+    ///
+    /// What `attach_labels` calls instead of asking [`Self::get_tags_for_message`]
+    /// once per row: a page of five hundred messages was five hundred
+    /// prepared statements to answer a question most of them answer with
+    /// "none". Grouped here in Rust rather than in SQL, because a message id
+    /// repeats as a key across several rows and SQLite has no map type to
+    /// build one into directly.
+    ///
+    /// A message with no tag at all is simply absent from the map, so a
+    /// caller reads `by_message.get(&id)` and treats `None` the same as an
+    /// empty list.
+    pub fn get_tags_for_messages(
+        &self,
+        message_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        let mut by_message: std::collections::HashMap<i64, Vec<Tag>> =
+            std::collections::HashMap::new();
+        if message_ids.is_empty() {
+            return Ok(by_message);
+        }
+
+        // Placeholders only, never the ids themselves: what goes into the
+        // query text is a count of `?N` markers, and the values still travel
+        // through `params_from_iter` like any other bound parameter.
+        let placeholders = (1..=message_ids.len())
+            .map(|n| format!("?{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut stmt = self
+            .conn
+            .prepare(&format!(
+                "SELECT mt.message_id, t.id, t.account_id, t.name, t.color, t.created_at, t.keyword
+                 FROM tags t
+                 INNER JOIN message_tags mt ON t.id = mt.tag_id
+                 WHERE mt.message_id IN ({placeholders})
+                 ORDER BY mt.message_id, t.name"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(message_ids), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    Tag {
+                        id: row.get(1)?,
+                        account_id: row.get(2)?,
+                        name: row.get(3)?,
+                        color: row.get(4)?,
+                        created_at: row.get(5)?,
+                        keyword: row.get(6)?,
+                    },
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Failed to query message tags: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect message tags: {}", e)))?;
+
+        for (message_id, tag) in rows {
+            by_message.entry(message_id).or_default().push(tag);
+        }
+        Ok(by_message)
+    }
+
     /// Get all messages with a specific tag
     pub fn get_messages_by_tag(&self, tag_id: &str) -> Result<Vec<CachedMessage>> {
         let mut stmt = self.conn.prepare(
@@ -545,5 +609,110 @@ mod tests {
         let remaining_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(remaining_tags.len(), 1);
         assert_eq!(remaining_tags[0].name, "Important");
+    }
+
+    #[test]
+    fn test_a_batched_fetch_returns_the_right_tags_per_message() {
+        // `attach_labels` used to call `get_tags_for_message` once per row.
+        // This is the one query it should use instead, and the map it
+        // builds has to keep each message's own tags separate from its
+        // neighbours' rather than merging or swapping them.
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+        let folder = CachedFolder {
+            id: 0,
+            account_id: "test@example.com".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        };
+        let folder_id = cache.save_folder(&folder).unwrap();
+
+        let save = |uid: u32, subject: &str| {
+            cache
+                .save_message(&CachedMessage {
+                    id: 0,
+                    uid,
+                    folder_id,
+                    message_id: format!("m{uid}@example.com"),
+                    subject: subject.to_string(),
+                    from_addr: "sender@example.com".to_string(),
+                    to_addr: "recipient@example.com".to_string(),
+                    cc: None,
+                    date: chrono::Utc::now().to_rfc3339(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .unwrap()
+        };
+        let work_msg = save(1, "Budget");
+        let personal_msg = save(2, "Dinner");
+        let untagged_msg = save(3, "Newsletter");
+
+        cache
+            .create_tag(&Tag {
+                id: "tag-work".to_string(),
+                account_id: "test@example.com".to_string(),
+                name: "Work".to_string(),
+                color: "#FF0000".to_string(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                keyword: None,
+            })
+            .unwrap();
+        cache
+            .create_tag(&Tag {
+                id: "tag-personal".to_string(),
+                account_id: "test@example.com".to_string(),
+                name: "Personal".to_string(),
+                color: "#00FF00".to_string(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                keyword: None,
+            })
+            .unwrap();
+        cache.add_tag_to_message(work_msg, "tag-work").unwrap();
+        cache.add_tag_to_message(personal_msg, "tag-work").unwrap();
+        cache
+            .add_tag_to_message(personal_msg, "tag-personal")
+            .unwrap();
+        // untagged_msg is left with nothing on purpose.
+
+        let by_message = cache
+            .get_tags_for_messages(&[work_msg, personal_msg, untagged_msg])
+            .unwrap();
+
+        let names = |id: i64| -> Vec<String> {
+            by_message
+                .get(&id)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|tag| tag.name)
+                .collect()
+        };
+        assert_eq!(names(work_msg), vec!["Work".to_string()]);
+        assert_eq!(
+            names(personal_msg),
+            vec!["Personal".to_string(), "Work".to_string()],
+            "sorted by name, the same order get_tags_for_message already gives"
+        );
+        assert!(
+            !by_message.contains_key(&untagged_msg),
+            "an untagged message should not appear in the map at all"
+        );
+    }
+
+    #[test]
+    fn test_a_batched_fetch_of_no_messages_asks_nothing_and_returns_nothing() {
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+
+        let by_message = cache.get_tags_for_messages(&[]).unwrap();
+
+        assert!(by_message.is_empty());
     }
 }
