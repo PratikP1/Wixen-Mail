@@ -7,10 +7,11 @@
 //! Everything sits under one root, `%LOCALAPPDATA%\wixen-mail` by default:
 //!
 //! ```text
-//! config\      settings, one file per account, oauth.toml
-//! cache\       message_cache.db and its SQLite sidecars
-//! logs\        the running log and crash.log
-//! security.key the fallback key, used when the credential store refuses
+//! config\        settings, one file per account, oauth.toml
+//! cache\         message_cache.db and its SQLite sidecars
+//! logs\          the running log and crash.log
+//! sound_schemes\ imported sound-scheme packs, one subdirectory each
+//! security.key   the fallback key, used when the credential store refuses
 //! ```
 //!
 //! Earlier versions spread these across three profile folders and roamed the
@@ -103,9 +104,21 @@ impl AppPaths {
         self.config_dir().join("oauth.toml")
     }
 
+    /// Imported sound-scheme packs, one subdirectory per scheme. Built-in
+    /// schemes ship inside the application itself and are not stored here;
+    /// this is only ever written to by importing a zip.
+    pub fn sound_schemes_dir(&self) -> PathBuf {
+        self.root.join("sound_schemes")
+    }
+
     /// Make the folders. Safe to call on every start.
     pub fn create(&self) -> Result<()> {
-        for dir in [self.config_dir(), self.cache_dir(), self.logs_dir()] {
+        for dir in [
+            self.config_dir(),
+            self.cache_dir(),
+            self.logs_dir(),
+            self.sound_schemes_dir(),
+        ] {
             fs::create_dir_all(&dir)
                 .map_err(|e| Error::Config(format!("Could not create {}: {e}", dir.display())))?;
         }
@@ -303,6 +316,7 @@ mod tests {
         assert_eq!(paths.logs_dir(), root.join("logs"));
         assert_eq!(paths.security_key(), root.join("security.key"));
         assert_eq!(paths.oauth_toml(), root.join("config").join("oauth.toml"));
+        assert_eq!(paths.sound_schemes_dir(), root.join("sound_schemes"));
     }
 
     #[test]
@@ -360,6 +374,7 @@ mod tests {
         assert!(paths.config_dir().is_dir());
         assert!(paths.cache_dir().is_dir());
         assert!(paths.logs_dir().is_dir());
+        assert!(paths.sound_schemes_dir().is_dir());
     }
 
     #[test]

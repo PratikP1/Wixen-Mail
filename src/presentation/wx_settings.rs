@@ -8,11 +8,13 @@ use crate::application::autosave::AutosaveInterval;
 use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
+use crate::common::paths::AppPaths;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::accessibility::sound_scheme::SoundScheme;
 use crate::presentation::theme;
 use crate::service::spellcheck::available_languages;
 use wxdragon::prelude::*;
@@ -96,6 +98,11 @@ pub struct SettingsWidgets {
     // Feedback channels: each box carries the channel it switches, so a tick
     // cannot be read back against a different one.
     feedback: Vec<(Channel, CheckBox)>,
+    // Which sound plays. Read back by re-running the same discovery that
+    // populated it and indexing by selection, the same shape `sel` already
+    // gives every other Choice, rather than carrying a second, parallel
+    // list of ids that could drift out of position with the widget's own.
+    sound_scheme: Choice,
 }
 
 /// Helper: unwrap get_selection() returning 0 if None.
@@ -207,7 +214,7 @@ pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidg
 
     // ── Tab 6: Feedback
     let feedback_panel = Panel::builder(&notebook).build();
-    let feedback = build_feedback_tab(&feedback_panel, config);
+    let (feedback, sound_scheme) = build_feedback_tab(&feedback_panel, config);
     notebook.add_page(&feedback_panel, "Feedback", false, None);
 
     // ── Tab 7: Advanced
@@ -317,6 +324,7 @@ pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidg
         look_at_message_contents,
         check_links_with_google,
         feedback,
+        sound_scheme,
     }
 }
 
@@ -1409,7 +1417,7 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
 /// Nothing here can produce a sound-only application by accident: the routing
 /// adds a written equivalent unless every text channel is off, and the wording
 /// says so rather than leaving it to be discovered.
-fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<(Channel, CheckBox)> {
+fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> (Vec<(Channel, CheckBox)>, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let settings = FeedbackSettings::from_stored(&config.feedback_channels);
 
@@ -1447,8 +1455,46 @@ fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> Vec<(Channel, CheckB
         .build();
     sizer.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    let scheme_sec = section(panel, "Sound");
+    let scheme_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let scheme_label = StaticText::builder(panel)
+        .with_label("Sound scheme:")
+        .build();
+    let schemes = discovered_schemes();
+    let scheme_choices: Vec<String> = schemes.iter().map(|s| s.name.clone()).collect();
+    let scheme_idx = schemes
+        .iter()
+        .position(|s| s.id == config.sound_scheme_id)
+        .unwrap_or(0) as u32;
+    let scheme_choice = Choice::builder(panel)
+        .with_choices(scheme_choices)
+        .with_selection(Some(scheme_idx))
+        .build();
+    set_accessible_name(&scheme_choice, "Sound scheme");
+    scheme_row.add(
+        &scheme_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        8,
+    );
+    scheme_row.add(&scheme_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    scheme_sec.add_sizer(&scheme_row, 0, SizerFlag::Expand, 0);
+    sizer.add_sizer(&scheme_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     panel.set_sizer(sizer, true);
-    boxes
+    (boxes, scheme_choice)
+}
+
+/// Every sound scheme this installation can currently offer: the built-in
+/// default first, then whatever real packs are sitting in the sound-schemes
+/// folder. Falls back to just the default if the folder itself cannot be
+/// resolved, the same graceful degradation `SoundScheme::discover` already
+/// gives an unreadable or missing folder.
+fn discovered_schemes() -> Vec<SoundScheme> {
+    match AppPaths::resolve() {
+        Ok(paths) => SoundScheme::discover(&paths.sound_schemes_dir()),
+        Err(_) => vec![SoundScheme::generated()],
+    }
 }
 
 // ── Read settings back from widget references ────────────────────────────────
@@ -1464,6 +1510,15 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         feedback.set_channel_enabled(*channel, cb.get_value());
     }
     cfg.feedback_channels = feedback.to_stored();
+
+    // The scheme picker's own order is whatever discovery produced when the
+    // dialog was built; reading it back the same way is what makes the
+    // selection index mean the same scheme it meant a moment ago.
+    let schemes = discovered_schemes();
+    cfg.sound_scheme_id = schemes
+        .get(sel(&w.sound_scheme) as usize)
+        .map(|s| s.id.clone())
+        .unwrap_or_default();
 
     // What may be changed at a server. Read back as two answers, because they
     // are two: sending cannot be undone, a task can be moved back.

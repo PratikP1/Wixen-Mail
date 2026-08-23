@@ -240,6 +240,13 @@ pub struct AppConfig {
     /// office swap a sentence of speech for a short tone.
     #[serde(default)]
     pub feedback_channels: String,
+    /// Which sound scheme plays when the earcon channel is one an event
+    /// reaches. Empty means the built-in "Generated tones", the same
+    /// scheme every installation starts on; anything else is a scheme's own
+    /// stable id, resolved at startup against the built-in list and
+    /// whatever has been imported into the sound-schemes folder.
+    #[serde(default)]
+    pub sound_scheme_id: String,
     /// Which account new items are created in.
     ///
     /// Set to the first account configured, without asking, because for most
@@ -370,6 +377,7 @@ impl Default for AppConfig {
             draft_autosave_minutes: default_autosave_minutes(),
             message_columns: String::new(),
             feedback_channels: String::new(),
+            sound_scheme_id: String::new(),
             enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,

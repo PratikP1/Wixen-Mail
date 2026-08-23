@@ -10,6 +10,7 @@ pub mod focus;
 pub mod keyboard;
 pub mod names;
 pub mod screen_reader;
+pub mod sound_scheme;
 
 use crate::common::Result;
 
@@ -23,6 +24,11 @@ pub struct Accessibility {
     /// Which channels each event reaches, and the thing that plays the tones.
     feedback: std::sync::Mutex<feedback::FeedbackSettings>,
     earcons: feedback::EarconPlayer,
+    /// Which sound plays for each event, when the earcon channel is one of
+    /// the ones an event reaches. A separate setting from `feedback`
+    /// itself: that decides which channels an event reaches at all, this
+    /// decides what the sound channel actually sounds like.
+    scheme: std::sync::Mutex<sound_scheme::SoundScheme>,
     /// The most recent event's written form, for the status line to pick up.
     ///
     /// The visual channel has no API of its own here: the window owns the
@@ -42,6 +48,7 @@ impl Accessibility {
             automation: automation::AutomationStore::new()?,
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
+            scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
             visual: std::sync::Mutex::new(None),
         })
     }
@@ -204,7 +211,8 @@ impl Accessibility {
         if !channels.contains(&feedback::Channel::Earcon) {
             return Ok(false);
         }
-        Ok(self.earcons.play(event.tone()))
+        let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
+        Ok(self.earcons.play(event, &scheme))
     }
 
     /// Signal an event on whichever channels the user has chosen.
@@ -229,7 +237,8 @@ impl Accessibility {
         let text = event.text_with(detail);
 
         if channels.contains(&feedback::Channel::Earcon) {
-            self.earcons.play(event.tone());
+            let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
+            self.earcons.play(event, &scheme);
         }
         // Speech and braille both ride the one screen reader notification, so
         // announcing once serves either. Announcing twice would double the
@@ -264,6 +273,18 @@ impl Accessibility {
     pub fn set_feedback_settings(&self, settings: feedback::FeedbackSettings) {
         if let Ok(mut current) = self.feedback.lock() {
             *current = settings;
+        }
+    }
+
+    /// Read which sound scheme is active.
+    pub fn sound_scheme(&self) -> sound_scheme::SoundScheme {
+        self.scheme.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Switch to a different sound scheme.
+    pub fn set_sound_scheme(&self, scheme: sound_scheme::SoundScheme) {
+        if let Ok(mut current) = self.scheme.lock() {
+            *current = scheme;
         }
     }
 
@@ -384,6 +405,7 @@ impl Default for Accessibility {
             automation: automation::AutomationStore::default(),
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
+            scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
             visual: std::sync::Mutex::new(None),
         })
     }
@@ -561,6 +583,49 @@ mod tests {
                 .earcon(feedback::Event::MisspelledWord)
                 .expect("earcon"),
             "a second tone in the same instant should be held back"
+        );
+    }
+
+    #[test]
+    fn test_the_active_sound_scheme_round_trips() {
+        let a11y = Accessibility::new().expect("accessibility");
+        assert_eq!(a11y.sound_scheme(), sound_scheme::SoundScheme::generated());
+
+        let manifest = "name = \"Soft Chimes\"\n";
+        let custom = sound_scheme::SoundScheme::from_manifest(
+            "soft-chimes",
+            manifest,
+            std::path::Path::new("/x"),
+        )
+        .expect("a valid manifest");
+        a11y.set_sound_scheme(custom.clone());
+        assert_eq!(a11y.sound_scheme(), custom);
+    }
+
+    #[test]
+    fn test_an_earcon_still_plays_when_the_active_schemes_file_is_missing() {
+        // Proves the scheme actually reaches EarconPlayer rather than sitting
+        // unused: a scheme naming a file that is not really there still
+        // counts as played, because the fallback to the built-in tone is
+        // inside play() itself, not a second decision this layer has to make.
+        let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(feedback::Channel::Earcon, true);
+        a11y.set_feedback_settings(settings);
+
+        let manifest = "name = \"Broken Pack\"\n\n[sounds]\nmisspelled_word = \"missing.wav\"\n";
+        let scheme = sound_scheme::SoundScheme::from_manifest(
+            "broken",
+            manifest,
+            std::path::Path::new("/nowhere/that/exists"),
+        )
+        .expect("a valid manifest, even if its file is not real");
+        a11y.set_sound_scheme(scheme);
+
+        assert!(
+            a11y.earcon(feedback::Event::MisspelledWord)
+                .expect("earcon"),
+            "a missing file should still fall back to the tone rather than go silent"
         );
     }
 

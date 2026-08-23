@@ -847,6 +847,24 @@ impl WxMailApp {
                 );
             }
 
+            // Which sound plays is a separate choice from which channels an
+            // event reaches, so it is resolved the same way but kept apart:
+            // an empty id is Generated, the scheme every installation
+            // starts on, and needs no disk read at all.
+            if let Some(id) = stored_config
+                .as_ref()
+                .map(|c| c.sound_scheme_id.as_str())
+                .filter(|s| !s.is_empty())
+                && let Ok(paths) = AppPaths::resolve()
+            {
+                a11y.set_sound_scheme(
+                    crate::presentation::accessibility::sound_scheme::SoundScheme::resolve(
+                        id,
+                        &paths.sound_schemes_dir(),
+                    ),
+                );
+            }
+
             // A restored layout carries a restored sort. Without this the menu
             // came up ticking Date (Newest First) whatever the list was
             // actually doing, and the first header click toggled from the
@@ -6864,6 +6882,17 @@ fn handle_settings(
                     &new_config.feedback_channels,
                 ),
             );
+            // Applied the same way and for the same reason: a scheme
+            // changed in Settings and never reaching the running earcon
+            // player until a restart is a setting that appears not to work.
+            if let Ok(paths) = AppPaths::resolve() {
+                a11y.set_sound_scheme(
+                    crate::presentation::accessibility::sound_scheme::SoundScheme::resolve(
+                        &new_config.sound_scheme_id,
+                        &paths.sound_schemes_dir(),
+                    ),
+                );
+            }
             // Through the same reading every other consumer uses, so the
             // running application never holds a pair the stored copy would
             // have been corrected to.

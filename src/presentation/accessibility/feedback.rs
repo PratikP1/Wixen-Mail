@@ -637,17 +637,23 @@ impl EarconPlayer {
         }
     }
 
-    /// Play a tone if enough time has passed since the last one.
+    /// Play an event's sound, under `scheme`, if enough time has passed
+    /// since the last one.
     ///
     /// Returns whether it played, so a caller can tell the difference between
     /// "sounded" and "suppressed" rather than assuming. Also false, the same
     /// as any other silent outcome, when there is no device to play through.
-    pub fn play(&self, tone: Tone) -> bool {
-        self.play_at(tone, std::time::Instant::now())
+    pub fn play(&self, event: Event, scheme: &super::sound_scheme::SoundScheme) -> bool {
+        self.play_at(event, scheme, std::time::Instant::now())
     }
 
     /// The same decision with the clock passed in, so it can be tested.
-    fn play_at(&self, tone: Tone, now: std::time::Instant) -> bool {
+    fn play_at(
+        &self,
+        event: Event,
+        scheme: &super::sound_scheme::SoundScheme,
+        now: std::time::Instant,
+    ) -> bool {
         let Some(device) = &self.device else {
             return false;
         };
@@ -667,8 +673,53 @@ impl EarconPlayer {
         // calling thread for the tone's own length. A caller that needs the
         // old wait-for-it-to-finish behaviour has to ask for that itself now
         // rather than getting it as a side effect of playing a sound.
-        device.mixer().add(sound_for(tone));
+        if !self.play_file(device, scheme, event) {
+            device.mixer().add(sound_for(event.tone()));
+        }
         true
+    }
+
+    /// Play a scheme's own file for this event, if it names one and the
+    /// file is really there and really a sound. Returns whether it did.
+    ///
+    /// A scheme naming a file that has since moved, been deleted, or never
+    /// was a real sound file falls back to the built-in tone rather than
+    /// going silent: a scheme is a preference about which sound plays, not
+    /// a promise that every file it names still exists on this machine.
+    fn play_file(
+        &self,
+        device: &rodio::MixerDeviceSink,
+        scheme: &super::sound_scheme::SoundScheme,
+        event: Event,
+    ) -> bool {
+        let super::sound_scheme::SoundSource::File(path) = scheme.source_for(event) else {
+            return false;
+        };
+        let file = match std::fs::File::open(&path) {
+            Ok(file) => file,
+            Err(err) => {
+                tracing::warn!(
+                    "{}'s sound for {event:?} could not be opened ({err}); \
+                     playing the built-in tone instead",
+                    path.display()
+                );
+                return false;
+            }
+        };
+        match rodio::Decoder::new(std::io::BufReader::new(file)) {
+            Ok(decoded) => {
+                device.mixer().add(decoded);
+                true
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "{} does not look like a sound {event:?} could play ({err}); \
+                     playing the built-in tone instead",
+                    path.display()
+                );
+                false
+            }
+        }
     }
 }
 
@@ -703,15 +754,18 @@ mod tests {
         // A syncing mailbox can raise the same event forty times a second.
         // Forty overlapping tones is noise, not information.
         let player = EarconPlayer::new();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
         let start = std::time::Instant::now();
-        assert!(player.play_at(Event::NewMail.tone(), start));
-        assert!(!player.play_at(Event::NewMail.tone(), start));
+        assert!(player.play_at(Event::NewMail, &scheme, start));
+        assert!(!player.play_at(Event::NewMail, &scheme, start));
         assert!(!player.play_at(
-            Event::NewMail.tone(),
+            Event::NewMail,
+            &scheme,
             start + std::time::Duration::from_millis(50)
         ));
         assert!(player.play_at(
-            Event::NewMail.tone(),
+            Event::NewMail,
+            &scheme,
             start + std::time::Duration::from_millis(200)
         ));
     }
@@ -726,9 +780,10 @@ mod tests {
         // Named rather than written as a number, so it keeps meaning the
         // boundary if the constant moves.
         let player = EarconPlayer::new();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
         let start = std::time::Instant::now();
-        assert!(player.play_at(Event::MisspelledWord.tone(), start));
-        assert!(player.play_at(Event::MisspelledWord.tone(), start + EARCON_GAP));
+        assert!(player.play_at(Event::MisspelledWord, &scheme, start));
+        assert!(player.play_at(Event::MisspelledWord, &scheme, start + EARCON_GAP));
     }
 
     #[test]
@@ -743,8 +798,26 @@ mod tests {
         // sound, which is why the shortest tone in the set is the one used;
         // the suite already beeps for the burst test above.
         let player = EarconPlayer::new();
-        assert!(player.play(Event::MisspelledWord.tone()));
-        assert!(!player.play(Event::MisspelledWord.tone()));
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        assert!(player.play(Event::MisspelledWord, &scheme));
+        assert!(!player.play(Event::MisspelledWord, &scheme));
+    }
+
+    #[test]
+    fn test_a_scheme_naming_a_file_that_does_not_exist_falls_back_to_the_tone() {
+        // A scheme is a preference about which sound plays, not a promise
+        // that every file it names still exists on this machine: a moved or
+        // deleted file falls back to the built-in tone rather than going
+        // silent, and playing still counts as playing.
+        let manifest = "name = \"Broken Pack\"\n\n[sounds]\nnew_mail = \"missing.wav\"\n";
+        let scheme = super::super::sound_scheme::SoundScheme::from_manifest(
+            "broken",
+            manifest,
+            std::path::Path::new("/nowhere/that/exists"),
+        )
+        .expect("a valid manifest, even if its file is not real");
+        let player = EarconPlayer::new();
+        assert!(player.play(Event::NewMail, &scheme));
     }
 
     #[test]

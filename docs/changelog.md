@@ -6,6 +6,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **A sound scheme can be chosen under Settings, Feedback.** Every earcon
+  used to be the same synthesized tone, on or off together. The Feedback
+  tab now has a Sound scheme picker, starting on "Generated tones," the
+  same tones as before. A scheme can give some or all of the sixteen
+  events a real sound file instead; anything it does not name still plays
+  the built-in tone rather than nothing. Nothing to pick from yet besides
+  the default: importing a scheme, and the schemes to import, are their
+  own separate pieces of work.
+
 ### Fixed
 
 - **Flagging a message, marking it read, marking a task or reminder done,
