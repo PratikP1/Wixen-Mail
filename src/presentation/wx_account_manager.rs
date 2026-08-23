@@ -14,6 +14,7 @@ use crate::common::types::Protocol;
 use crate::data::account::{Account, app_password_url, oauth_is_default, offers_app_passwords};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
@@ -523,6 +524,11 @@ pub fn reauthorize_selected(
                         &no_sign_in_credentials(&provider),
                         Priority::High,
                     );
+                    // Trying again left the account exactly where it was:
+                    // still unable to sign in. Signalled in addition to the
+                    // sentence above, not instead of it, so earcons-only and
+                    // braille-only setups learn this too.
+                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
                 }
                 OAuthFlowResult::Failed(msg) => {
                     said_and_shown(
@@ -531,6 +537,7 @@ pub fn reauthorize_selected(
                         &format!("Signing in failed: {msg}"),
                         Priority::High,
                     );
+                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
                 }
             }
         }
@@ -1857,6 +1864,53 @@ mod tests {
                  wire_account_manager_actions wiring the same button again"
             );
         }
+    }
+
+    /// `reauthorize_selected`'s own body, cut at its closing brace.
+    ///
+    /// The closing brace is the first one sitting in the first column: every
+    /// line inside the function, including its own nested `match`, is
+    /// indented at least four spaces, the same reasoning
+    /// `the_update_handler` in `wx_app.rs`'s `what_the_status_line_says`
+    /// gives for cutting the same way.
+    fn the_reauthorize_function(screen: &str) -> String {
+        let after = screen
+            .split_once("pub fn reauthorize_selected(")
+            .expect("reauthorize_selected to still be defined")
+            .1;
+        let end = after.find("\n}\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel() {
+        // What this cannot see: whether the earcon actually sounds, or
+        // whether either failure branch below is ever reached. It reads
+        // `reauthorize_selected`'s own text and asks that both ways trying
+        // again can still leave an account unauthorised call `signal`, which
+        // routes the fact through every channel the user chose, earcon
+        // included, rather than only the `said_and_shown` sentence next to
+        // it, which speaks and brailles but never sounds a tone.
+        //
+        // Same technique `what_the_status_line_says` uses in wx_app.rs for
+        // `ContactsSyncComplete`/`CalendarSyncComplete`: this dialog has no
+        // live window a test can drive directly, which is why every other
+        // test in this file reads source text instead of clicking a button.
+        let screen = the_account_manager();
+        let function = the_reauthorize_function(&screen);
+        assert!(
+            function.len() > 200,
+            "only {} characters were read, so the reading is broken",
+            function.len()
+        );
+        let calls = function
+            .matches("a11y.signal(FeedbackEvent::AccountNeedsAttention")
+            .count();
+        assert_eq!(
+            calls, 2,
+            "expected both OAuthFlowResult::NoCreds and OAuthFlowResult::Failed to \
+             signal AccountNeedsAttention, found {calls}"
+        );
     }
 
     #[test]

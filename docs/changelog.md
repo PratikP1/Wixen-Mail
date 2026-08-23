@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Flagging a message, marking it read, marking a task or reminder done,
+  and pinning a note can now each play a tone.** All four already said
+  which way they went, in the status line or read aloud, but none of them
+  reached the sound channel, so an earcons-only or braille-only setup heard
+  nothing for any of them. They now share one sound rather than four
+  near-identical ones, since four near-identical "did it" tones is exactly
+  the noise this feedback system exists to avoid. The sentence spoken aloud
+  still says which way it went: flagged or unflagged, marked read or
+  unread, marked done or not done, pinned or unpinned.
+
+- **Trying Sign In Again and still not getting an account signed in can now
+  play its own earcon.** The event has had its own tone, its own wording and
+  its own entry in Settings since the feedback system was built, and nothing
+  that runs called it. An account that could not sign in again, whether this
+  computer has no credentials set up for the provider or the attempt itself
+  failed, used to reach only speech and the status line. Both of those
+  outcomes now go through the same signal every other event uses, so
+  earcons-only and braille-only setups learn this too, distinct from the
+  tone a dropped connection plays: that one asks somebody to wait, this one
+  asks them to act.
+
+- **Landing on a message that has an attachment now plays its own tone.**
+  The event was added with its own pitch, its own wording and its own
+  priority, and nothing that runs called it: opening a message with an
+  attachment sounded exactly like opening one without. It now fires the
+  moment the message is selected, the same way landing on a message that
+  is part of a conversation already does, and alongside that tone rather
+  than instead of it, since a message can carry both facts at once.
+
 - **Earcons no longer play through a Windows-only system beep.** The four
   feedback channels, speech, braille, sound, and the status bar, are meant
   to reach any of them regardless of platform, and the sound channel was
@@ -32,6 +61,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   a sentence when a sync finished never got one. Both now go through the
   same signal every other event uses, so the setting they already chose is
   the setting that applies.
+
+- **A search that finds nothing now plays its own earcon.** `Ctrl+F`'s mail
+  search and the box above the contact list both used to report an empty
+  result as status text only, so anyone who asked for a tone instead of a
+  sentence never got one for a search that came up empty. Both now signal
+  the same way a finished sync does: gentle rather than alarming, and
+  reaching whichever channels are chosen in Settings, sound included.
 
 - **New mail from a background sync now shows up in the open folder without
   a manual refresh.** A sync, whether started from Get Older Messages or
