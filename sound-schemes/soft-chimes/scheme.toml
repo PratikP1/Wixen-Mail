@@ -1,0 +1,23 @@
+name = "Soft Chimes"
+author = "Built from UI SFX (uisfx.com / github.com/romainsimon/uisfx), CC0-1.0"
+license = "CC0-1.0"
+description = "Gentle, professional tones for a quiet office. Sourced from UI SFX's own \"soft\" sound pack, CC0 and free to use without attribution, though credited here anyway."
+version = 1
+
+[sounds]
+thread_landed = "sounds/thread_landed.wav"
+edge_of_list = "sounds/edge_of_list.wav"
+new_mail = "sounds/new_mail.wav"
+message_sent = "sounds/message_sent.wav"
+send_failed = "sounds/send_failed.wav"
+connection_lost = "sounds/connection_lost.wav"
+connection_restored = "sounds/connection_restored.wav"
+sync_complete = "sounds/sync_complete.wav"
+action_refused = "sounds/action_refused.wav"
+unsafe_message = "sounds/unsafe_message.wav"
+misspelled_word = "sounds/misspelled_word.wav"
+reminder = "sounds/reminder.wav"
+has_attachment = "sounds/has_attachment.wav"
+account_needs_attention = "sounds/account_needs_attention.wav"
+confirmed = "sounds/confirmed.wav"
+nothing_found = "sounds/nothing_found.wav"
