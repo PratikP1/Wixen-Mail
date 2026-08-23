@@ -24,7 +24,7 @@
 //! hosts a browser out of process: once focus is inside, `Escape`, `F6` and
 //! every menu accelerator are consumed there and reach nothing.
 
-use crate::presentation::ui_types::PimModule;
+use crate::common::types::PimModule;
 
 /// One of the two places focus rests in the main window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

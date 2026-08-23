@@ -426,7 +426,7 @@ pub fn add_calendar_by_address(
                 ),
             );
             crate::presentation::wx_app::load_module_data(
-                crate::presentation::ui_types::PimModule::Calendar,
+                crate::common::types::PimModule::Calendar,
                 &Some(cache),
                 Some(account.clone()),
                 tx,
@@ -1969,10 +1969,10 @@ fn store_new_container(
 /// So one Delete key and one toggle can act on whatever panel is in front of
 /// somebody, rather than there being six of each.
 pub const fn kind_for(
-    module: crate::presentation::ui_types::PimModule,
+    module: crate::common::types::PimModule,
 ) -> crate::application::new_item::ItemKind {
     use crate::application::new_item::ItemKind;
-    use crate::presentation::ui_types::PimModule;
+    use crate::common::types::PimModule;
     match module {
         PimModule::Mail => ItemKind::Mail,
         PimModule::Contacts => ItemKind::Contact,
@@ -1983,11 +1983,9 @@ pub const fn kind_for(
     }
 }
 
-fn module_for(
-    kind: crate::application::new_item::ItemKind,
-) -> crate::presentation::ui_types::PimModule {
+fn module_for(kind: crate::application::new_item::ItemKind) -> crate::common::types::PimModule {
     use crate::application::new_item::ItemKind;
-    use crate::presentation::ui_types::PimModule;
+    use crate::common::types::PimModule;
     match kind {
         ItemKind::Mail => PimModule::Mail,
         ItemKind::Contact => PimModule::Contacts,
@@ -4962,7 +4960,7 @@ fn active_or_local(state: &Arc<StdMutex<WxUIState>>) -> String {
 /// rename changes a row and putting somebody in a group changes a count.
 fn refill_the_contacts_panel(cache: &Arc<MessageCache>, account_id: &str, tx: &Sender<UIUpdate>) {
     crate::presentation::wx_app::load_module_data(
-        crate::presentation::ui_types::PimModule::Contacts,
+        crate::common::types::PimModule::Contacts,
         &Some(cache.clone()),
         Some(account_id.to_string()),
         tx,

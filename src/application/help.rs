@@ -28,7 +28,7 @@
 //! one of those hands somebody a text editor full of hash signs, which is the
 //! whole reason `help_page` exists.
 
-use crate::presentation::ui_types::PimModule;
+use crate::common::types::PimModule;
 
 /// One page of help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -346,7 +346,11 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
 /// the right thing to keep. It is also the wrong thing to show anybody: a
 /// screen reader says it one character at a time, which is why
 /// [`a_day_in_words`] exists.
-pub const YEAR_LEFT_OUT: &str = "--";
+///
+/// A storage-format constant that belongs to `common`, not to this module;
+/// re-exported here because everything below still recognises the format by
+/// this name.
+pub use crate::common::types::YEAR_LEFT_OUT;
 
 /// One stored day read as words, for a date that may name no year.
 ///

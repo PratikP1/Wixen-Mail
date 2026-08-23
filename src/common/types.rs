@@ -200,6 +200,97 @@ pub fn tree_position(kind: FolderType, name: &str) -> (u8, String) {
     (kind.tree_order(), name.to_lowercase())
 }
 
+/// How a stored day names "no year": the birthday storage format writes
+/// "--03-14" rather than a real date when nobody gave one.
+///
+/// A domain and storage concern rather than a display one, which is why it
+/// lives here rather than with the presentation layer's date formatting.
+/// `application::contacts_sync` reads and writes it as part of the stored
+/// format; `presentation::date_display` uses the same constant to recognise
+/// that format when it turns a stored value into words.
+pub const YEAR_LEFT_OUT: &str = "--";
+
+/// The six integrated PIM modules available in Wixen Mail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PimModule {
+    Mail,
+    Contacts,
+    Calendar,
+    Reminders,
+    Tasks,
+    Notes,
+}
+
+impl PimModule {
+    /// Every module, so a list of them is written once rather than per caller.
+    ///
+    /// In `index()` order, which is the order the panels are built and
+    /// switched in. Anything walking all six should use this: hand-written
+    /// copies of this list in construction order are what once put calendar
+    /// where contacts should have been.
+    pub const ALL: [PimModule; 6] = [
+        PimModule::Mail,
+        PimModule::Contacts,
+        PimModule::Calendar,
+        PimModule::Reminders,
+        PimModule::Tasks,
+        PimModule::Notes,
+    ];
+
+    /// Human-readable label with accelerator hint.
+    pub fn label(&self) -> &'static str {
+        match self {
+            PimModule::Mail => "&Mail",
+            PimModule::Contacts => "&Contacts",
+            PimModule::Calendar => "Ca&lendar",
+            PimModule::Reminders => "&Reminders",
+            PimModule::Tasks => "&Tasks",
+            PimModule::Notes => "&Notes",
+        }
+    }
+
+    /// Keyboard shortcut display string.
+    pub fn shortcut_hint(&self) -> &'static str {
+        match self {
+            PimModule::Mail => "Ctrl+Shift+1",
+            PimModule::Contacts => "Ctrl+Shift+2",
+            PimModule::Calendar => "Ctrl+Shift+3",
+            PimModule::Reminders => "Ctrl+Shift+4",
+            PimModule::Tasks => "Ctrl+Shift+5",
+            PimModule::Notes => "Ctrl+Shift+6",
+        }
+    }
+
+    /// Zero-based index (0..5).
+    pub fn index(&self) -> usize {
+        match self {
+            PimModule::Mail => 0,
+            PimModule::Contacts => 1,
+            PimModule::Calendar => 2,
+            PimModule::Reminders => 3,
+            PimModule::Tasks => 4,
+            PimModule::Notes => 5,
+        }
+    }
+
+    /// All modules in order.
+    pub fn all() -> &'static [PimModule] {
+        &[
+            PimModule::Mail,
+            PimModule::Contacts,
+            PimModule::Calendar,
+            PimModule::Reminders,
+            PimModule::Tasks,
+            PimModule::Notes,
+        ]
+    }
+
+    /// Module from zero-based index.
+    pub fn from_index(idx: usize) -> Option<PimModule> {
+        PimModule::all().get(idx).copied()
+    }
+}
+
 /// Server configuration for email protocols
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -638,6 +729,49 @@ mod tests {
                 other.tree_order() <= FolderType::Custom.tree_order(),
                 "{other:?} sorted below an ordinary folder"
             );
+        }
+    }
+
+    #[test]
+    fn test_pim_module_labels() {
+        assert_eq!(PimModule::Mail.label(), "&Mail");
+        assert_eq!(PimModule::Contacts.label(), "&Contacts");
+        assert_eq!(PimModule::Calendar.label(), "Ca&lendar");
+        assert_eq!(PimModule::Reminders.label(), "&Reminders");
+        assert_eq!(PimModule::Tasks.label(), "&Tasks");
+        assert_eq!(PimModule::Notes.label(), "&Notes");
+    }
+
+    #[test]
+    fn test_pim_module_shortcut_hints() {
+        assert_eq!(PimModule::Mail.shortcut_hint(), "Ctrl+Shift+1");
+        assert_eq!(PimModule::Notes.shortcut_hint(), "Ctrl+Shift+6");
+    }
+
+    #[test]
+    fn test_pim_module_index_roundtrip() {
+        for module in PimModule::all() {
+            let idx = module.index();
+            assert_eq!(PimModule::from_index(idx), Some(*module));
+        }
+    }
+
+    #[test]
+    fn test_pim_module_all_count() {
+        assert_eq!(PimModule::all().len(), 6);
+    }
+
+    #[test]
+    fn test_pim_module_from_index_out_of_bounds() {
+        assert_eq!(PimModule::from_index(6), None);
+        assert_eq!(PimModule::from_index(100), None);
+    }
+
+    #[test]
+    fn test_pim_module_indices_are_contiguous() {
+        let modules = PimModule::all();
+        for (i, module) in modules.iter().enumerate() {
+            assert_eq!(module.index(), i);
         }
     }
 }

@@ -6,38 +6,23 @@
 // ── PIM Module Navigation ───────────────────────────────────────────────────
 
 /// The six integrated PIM modules available in Wixen Mail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PimModule {
-    Mail,
-    Contacts,
-    Calendar,
-    Reminders,
-    Tasks,
-    Notes,
-}
+///
+/// A `common` type: `application::help` tags a topic with the module it
+/// answers questions about, which needs this without needing anything else
+/// the presentation layer owns.
+pub use crate::common::types::PimModule;
 
 impl PimModule {
-    /// Every module, so a list of them is written once rather than per caller.
-    ///
-    /// In `index()` order, which is the order the panels are built and
-    /// switched in. Anything walking all six should use this: hand-written
-    /// copies of this list in construction order are what once put calendar
-    /// where contacts should have been.
-    pub const ALL: [PimModule; 6] = [
-        PimModule::Mail,
-        PimModule::Contacts,
-        PimModule::Calendar,
-        PimModule::Reminders,
-        PimModule::Tasks,
-        PimModule::Notes,
-    ];
-
     /// What this module's list holds.
     ///
     /// The other direction from `managers::module_for`. Both exist because a
     /// command raised from a context menu knows which module is open and has
     /// to work out what it is acting on, and a command that makes something
     /// knows what it is making and has to work out which panel to refresh.
+    ///
+    /// Kept here rather than with the rest of `PimModule` in `common::types`:
+    /// this reaches into `application::new_item` for `ItemKind`, and `common`
+    /// depends on nothing above it.
     pub const fn item_kind(self) -> crate::application::new_item::ItemKind {
         use crate::application::new_item::ItemKind;
         match self {
@@ -56,59 +41,6 @@ impl PimModule {
     /// which are kept per account and not in anything smaller.
     pub const fn container_kind(self) -> Option<crate::application::new_item::ContainerKind> {
         crate::application::new_item::ContainerKind::holding(self.item_kind())
-    }
-
-    /// Human-readable label with accelerator hint.
-    pub fn label(&self) -> &'static str {
-        match self {
-            PimModule::Mail => "&Mail",
-            PimModule::Contacts => "&Contacts",
-            PimModule::Calendar => "Ca&lendar",
-            PimModule::Reminders => "&Reminders",
-            PimModule::Tasks => "&Tasks",
-            PimModule::Notes => "&Notes",
-        }
-    }
-
-    /// Keyboard shortcut display string.
-    pub fn shortcut_hint(&self) -> &'static str {
-        match self {
-            PimModule::Mail => "Ctrl+Shift+1",
-            PimModule::Contacts => "Ctrl+Shift+2",
-            PimModule::Calendar => "Ctrl+Shift+3",
-            PimModule::Reminders => "Ctrl+Shift+4",
-            PimModule::Tasks => "Ctrl+Shift+5",
-            PimModule::Notes => "Ctrl+Shift+6",
-        }
-    }
-
-    /// Zero-based index (0..5).
-    pub fn index(&self) -> usize {
-        match self {
-            PimModule::Mail => 0,
-            PimModule::Contacts => 1,
-            PimModule::Calendar => 2,
-            PimModule::Reminders => 3,
-            PimModule::Tasks => 4,
-            PimModule::Notes => 5,
-        }
-    }
-
-    /// All modules in order.
-    pub fn all() -> &'static [PimModule] {
-        &[
-            PimModule::Mail,
-            PimModule::Contacts,
-            PimModule::Calendar,
-            PimModule::Reminders,
-            PimModule::Tasks,
-            PimModule::Notes,
-        ]
-    }
-
-    /// Module from zero-based index.
-    pub fn from_index(idx: usize) -> Option<PimModule> {
-        PimModule::all().get(idx).copied()
     }
 }
 
@@ -1388,15 +1320,10 @@ mod tests {
         assert_eq!(ContactItem::no_selection_text(), "No contact selected");
     }
 
-    #[test]
-    fn test_pim_module_labels() {
-        assert_eq!(PimModule::Mail.label(), "&Mail");
-        assert_eq!(PimModule::Contacts.label(), "&Contacts");
-        assert_eq!(PimModule::Calendar.label(), "Ca&lendar");
-        assert_eq!(PimModule::Reminders.label(), "&Reminders");
-        assert_eq!(PimModule::Tasks.label(), "&Tasks");
-        assert_eq!(PimModule::Notes.label(), "&Notes");
-    }
+    // PimModule's own label/shortcut_hint/index/all/from_index tests moved to
+    // common::types alongside its definition; test_each_module_knows_what_
+    // kind_of_container_its_sidebar_holds stays here because container_kind
+    // does too, reaching as it does into application::new_item.
 
     #[test]
     fn test_each_module_knows_what_kind_of_container_its_sidebar_holds() {
@@ -1505,39 +1432,6 @@ mod tests {
         );
         // Said once, like the loss it answers.
         assert_eq!(after_a_failure.report(&ConnectionStatus::Connected), None);
-    }
-
-    #[test]
-    fn test_pim_module_shortcut_hints() {
-        assert_eq!(PimModule::Mail.shortcut_hint(), "Ctrl+Shift+1");
-        assert_eq!(PimModule::Notes.shortcut_hint(), "Ctrl+Shift+6");
-    }
-
-    #[test]
-    fn test_pim_module_index_roundtrip() {
-        for module in PimModule::all() {
-            let idx = module.index();
-            assert_eq!(PimModule::from_index(idx), Some(*module));
-        }
-    }
-
-    #[test]
-    fn test_pim_module_all_count() {
-        assert_eq!(PimModule::all().len(), 6);
-    }
-
-    #[test]
-    fn test_pim_module_from_index_out_of_bounds() {
-        assert_eq!(PimModule::from_index(6), None);
-        assert_eq!(PimModule::from_index(100), None);
-    }
-
-    #[test]
-    fn test_pim_module_indices_are_contiguous() {
-        let modules = PimModule::all();
-        for (i, module) in modules.iter().enumerate() {
-            assert_eq!(module.index(), i);
-        }
     }
 
     #[test]
