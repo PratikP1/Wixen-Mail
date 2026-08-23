@@ -14,7 +14,6 @@ pub mod screen_reader;
 use crate::common::Result;
 
 /// Main accessibility manager
-#[allow(dead_code)]
 pub struct Accessibility {
     screen_reader: screen_reader::ScreenReaderBridge,
     keyboard: keyboard::KeyboardHandler,
