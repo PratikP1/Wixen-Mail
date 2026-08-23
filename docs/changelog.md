@@ -51,6 +51,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A field's name and its contents are no longer read as one run-on
+  phrase.** Found in a real screen reader session, and it held across most
+  of the application: every label built from a visible one, "Account
+  Name:", "Email Address:", and the rest, had its trailing colon stripped
+  outright, to stop some screen readers reading the word "colon" aloud.
+  That left nothing between the name and whatever came next, the control's
+  role and then its value, so a screen reader ran the two together with no
+  pause. The colon now becomes a comma instead of disappearing: never read
+  aloud as a word the way "colon" sometimes is, and still a pause to the
+  speech synthesiser underneath. One shared function builds almost every
+  accessible name in the application, so this one change reaches all of
+  them.
 - **Flagging a message, marking it read, marking a task or reminder done,
   and pinning a note can now each play a tone.** All four already said
   which way they went, in the status line or read aloud, but none of them

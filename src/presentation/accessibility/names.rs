@@ -409,9 +409,17 @@ pub fn set_accessible_name_and_description(window: &dyn WxWidget, name: &str, de
 
 /// Turn a visible label into the name a screen reader should announce.
 ///
-/// Drops the mnemonic ampersand and one trailing colon. Both are visual
-/// conventions: spoken, "and Subject colon" is worse than "Subject", and some
-/// screen readers read the ampersand aloud.
+/// Drops the mnemonic ampersand: some screen readers read it aloud, and none
+/// of them should.
+///
+/// A trailing colon, the visual convention marking a field's label, becomes a
+/// trailing comma rather than being dropped outright. Dropping it left
+/// nothing between the name and whatever a screen reader reads next, the
+/// control's role and then its value, and a real NVDA run found exactly
+/// that: no pause, consistently, across most of the fields in the
+/// application. A comma is never read aloud as a word the way "colon"
+/// sometimes is, and it is still a pause to the speech synthesiser
+/// underneath.
 ///
 /// An ampersand means two different things in a wxWidgets label and they have
 /// to be told apart. A lone one marks the letter after it as the mnemonic and
@@ -423,8 +431,10 @@ pub fn set_accessible_name_and_description(window: &dyn WxWidget, name: &str, de
 /// reads it and rewriting it would put a word in the name that is not on the
 /// control.
 ///
-/// One trailing colon is stripped, not a run of them. A single colon after a
-/// field label is the visual convention; a second is something the label says.
+/// One trailing colon becomes one trailing comma, not a run of them. A single
+/// colon after a field label is the visual convention; a second is something
+/// the label says, and is left as a colon rather than turned into something
+/// the label never had.
 pub fn name_from_label(label: &str) -> String {
     let mut spoken = String::with_capacity(label.len());
     let mut rest = label.chars().peekable();
@@ -439,11 +449,11 @@ pub fn name_from_label(label: &str) -> String {
         }
     }
     let trimmed = spoken.trim();
-    trimmed
-        .strip_suffix(':')
-        .unwrap_or(trimmed)
-        .trim()
-        .to_string()
+    match trimmed.strip_suffix(':') {
+        Some(before) if !before.trim().is_empty() => format!("{},", before.trim()),
+        Some(_) => String::new(),
+        None => trimmed.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -902,16 +912,21 @@ mod tests {
     }
 
     #[test]
-    fn test_strips_the_mnemonic_and_colon() {
-        assert_eq!(name_from_label("&Subject:"), "Subject");
+    fn test_strips_the_mnemonic_and_turns_the_colon_into_a_pause() {
+        // Not dropped outright: a real NVDA run found nothing left between
+        // the name and whatever is read next, the field's role and then its
+        // value, ran together with no pause. A comma is never read aloud as
+        // a word, and is still a pause to the synthesiser underneath it.
+        assert_eq!(name_from_label("&Subject:"), "Subject,");
         assert_eq!(
             name_from_label("Start &Date (YYYY-MM-DD):"),
-            "Start Date (YYYY-MM-DD)"
+            "Start Date (YYYY-MM-DD),"
         );
     }
 
     #[test]
     fn test_leaves_a_plain_label_alone() {
+        // No colon on the label, so nothing here to turn into a pause.
         assert_eq!(name_from_label("Accounts"), "Accounts");
     }
 
@@ -939,8 +954,9 @@ mod tests {
 
     #[test]
     fn test_only_one_trailing_colon_is_a_visual_convention() {
-        // One colon after a field label is how a form is written. A second one
-        // is something the label says, and stripping the run takes it away.
-        assert_eq!(name_from_label("Ratio::"), "Ratio:");
+        // One colon after a field label is how a form is written, and becomes
+        // a comma. A second one is something the label says, and is left as
+        // a colon rather than turned into something the label never had.
+        assert_eq!(name_from_label("Ratio::"), "Ratio:,");
     }
 }
