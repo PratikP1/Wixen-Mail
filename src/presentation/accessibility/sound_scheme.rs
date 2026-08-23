@@ -202,6 +202,23 @@ impl SoundScheme {
         schemes.extend(imported);
         schemes
     }
+
+    /// Remove an imported scheme's own folder.
+    ///
+    /// Refuses "generated" and an empty id outright, the same two spellings
+    /// [`Self::resolve`] treats as the built-in default: it has no folder of
+    /// its own to remove, and a machine with nothing else installed must
+    /// never be able to end up with no scheme at all.
+    pub fn delete(id: &str, schemes_dir: &Path) -> Result<()> {
+        if id.is_empty() || id == "generated" {
+            return Err(Error::Config(
+                "Generated tones is the built-in default and cannot be deleted".to_string(),
+            ));
+        }
+        let dir = schemes_dir.join(id);
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| Error::Config(format!("could not remove {}: {e}", dir.display())))
+    }
 }
 
 /// An empty string is the same as the field being absent: TOML has no way
@@ -415,6 +432,40 @@ mod tests {
         // show an empty scheme list.
         let resolved = SoundScheme::discover(Path::new("/this/path/does/not/exist/at/all"));
         assert_eq!(resolved, vec![SoundScheme::generated()]);
+    }
+
+    #[test]
+    fn test_deleting_generated_is_refused_whatever_the_id_looks_like() {
+        // A machine with nothing else installed must never end up with no
+        // scheme at all, so the built-in default has no folder a delete
+        // could remove, empty id or the real one.
+        let dir = tempfile::tempdir().expect("a temp directory");
+        assert!(SoundScheme::delete("generated", dir.path()).is_err());
+        assert!(SoundScheme::delete("", dir.path()).is_err());
+    }
+
+    #[test]
+    fn test_deleting_a_real_import_removes_it_from_discovery() {
+        let dir = tempfile::tempdir().expect("a temp directory");
+        let scheme_dir = dir.path().join("soft-chimes");
+        std::fs::create_dir_all(&scheme_dir).expect("the scheme's own directory");
+        std::fs::write(scheme_dir.join("scheme.toml"), "name = \"Soft Chimes\"\n")
+            .expect("a manifest");
+        assert_eq!(SoundScheme::discover(dir.path()).len(), 2);
+
+        SoundScheme::delete("soft-chimes", dir.path()).expect("delete should succeed");
+
+        assert_eq!(
+            SoundScheme::discover(dir.path()),
+            vec![SoundScheme::generated()]
+        );
+        assert!(!scheme_dir.exists(), "the folder should really be gone");
+    }
+
+    #[test]
+    fn test_deleting_a_scheme_that_was_never_there_is_a_real_error_not_silent_success() {
+        let dir = tempfile::tempdir().expect("a temp directory");
+        assert!(SoundScheme::delete("never-imported", dir.path()).is_err());
     }
 
     #[test]

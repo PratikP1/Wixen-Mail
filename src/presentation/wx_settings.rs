@@ -1495,15 +1495,33 @@ fn build_feedback_tab(
     scheme_row.add(&scheme_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     scheme_sec.add_sizer(&scheme_row, 0, SizerFlag::Expand, 0);
 
+    let scheme_btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     let import_btn = Button::builder(panel)
         .with_label("&Import sound scheme...")
         .build();
     set_accessible_name(&import_btn, "Import sound scheme");
-    scheme_sec.add(&import_btn, 0, SizerFlag::All, 4);
+    scheme_btn_row.add(&import_btn, 0, SizerFlag::Right, 4);
+
+    let delete_btn = Button::builder(panel)
+        .with_label("&Delete sound scheme")
+        .build();
+    set_accessible_name(&delete_btn, "Delete sound scheme");
+    // Disabled the moment there is nothing but the built-in default to act
+    // on: a button that always opens a confirmation only to refuse whatever
+    // was chosen teaches nothing except to stop trying it.
+    delete_btn.enable(schemes.len() > 1);
+    scheme_btn_row.add(&delete_btn, 0, SizerFlag::Left, 4);
+    scheme_sec.add_sizer(&scheme_btn_row, 0, SizerFlag::All, 4);
+
     import_btn.on_click({
         let panel = *panel;
         let a11y = a11y.clone();
-        move |_| import_sound_scheme(&panel, &scheme_choice, &a11y)
+        move |_| import_sound_scheme(&panel, &scheme_choice, &delete_btn, &a11y)
+    });
+    delete_btn.on_click({
+        let panel = *panel;
+        let a11y = a11y.clone();
+        move |_| delete_sound_scheme(&panel, &scheme_choice, &delete_btn, &a11y)
     });
 
     sizer.add_sizer(&scheme_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
@@ -1512,13 +1530,38 @@ fn build_feedback_tab(
     (boxes, scheme_choice)
 }
 
+/// Rebuild the picker's items and the delete button's enabled state from
+/// the real current disk state.
+///
+/// `select_id` is looked for in the freshly discovered list, not assumed
+/// still to be there: the caller may be selecting what it just imported, or
+/// falling back to Generated because what was selected is what just got
+/// deleted. Either way this is the one place that decides which index that
+/// becomes, so the picker and the button can never show one truth while the
+/// disk holds another.
+fn refresh_scheme_controls(scheme_choice: &Choice, delete_btn: &Button, select_id: &str) {
+    let schemes = discovered_schemes();
+    scheme_choice.clear();
+    for candidate in &schemes {
+        scheme_choice.append(&candidate.name);
+    }
+    let index = schemes.iter().position(|s| s.id == select_id).unwrap_or(0);
+    scheme_choice.set_selection(index as u32);
+    delete_btn.enable(schemes.len() > 1);
+}
+
 /// Picking a zip, importing it, and refreshing the picker to include it.
 ///
 /// Announced through `a11y` rather than only shown, the same as everything
 /// else this dialog reports: a picker whose new item appeared with no
 /// sentence to go with it is invisible to anyone not looking at the screen
 /// at the exact moment it changed.
-fn import_sound_scheme(panel: &Panel, scheme_choice: &Choice, a11y: &Arc<Accessibility>) {
+fn import_sound_scheme(
+    panel: &Panel,
+    scheme_choice: &Choice,
+    delete_btn: &Button,
+    a11y: &Arc<Accessibility>,
+) {
     let picker = FileDialog::builder(panel)
         .with_message("Import sound scheme")
         .with_wildcard("Sound scheme packs (*.zip)|*.zip")
@@ -1552,14 +1595,7 @@ fn import_sound_scheme(panel: &Panel, scheme_choice: &Choice, a11y: &Arc<Accessi
 
     match sound_scheme_import::import_zip(zip_path, &id, &paths.sound_schemes_dir()) {
         Ok(scheme) => {
-            let schemes = discovered_schemes();
-            scheme_choice.clear();
-            for candidate in &schemes {
-                scheme_choice.append(&candidate.name);
-            }
-            if let Some(new_index) = schemes.iter().position(|s| s.id == scheme.id) {
-                scheme_choice.set_selection(new_index as u32);
-            }
+            refresh_scheme_controls(scheme_choice, delete_btn, &scheme.id);
             let _ = a11y.announce(
                 &format!(
                     "Imported {}, covers {} of {} events",
@@ -1573,6 +1609,71 @@ fn import_sound_scheme(panel: &Panel, scheme_choice: &Choice, a11y: &Arc<Accessi
         Err(err) => {
             let _ = a11y.announce(
                 &format!("Could not import that sound scheme: {err}"),
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+    }
+}
+
+/// Confirming, deleting, and refreshing the picker to drop what is gone.
+///
+/// The selected scheme is read fresh from `discovered_schemes()` rather
+/// than trusted from whatever was on screen when the dialog was built: an
+/// import earlier in this same dialog session can have changed what index
+/// `scheme_choice`'s selection actually points at.
+fn delete_sound_scheme(
+    panel: &Panel,
+    scheme_choice: &Choice,
+    delete_btn: &Button,
+    a11y: &Arc<Accessibility>,
+) {
+    let schemes = discovered_schemes();
+    let selected = schemes.get(sel(scheme_choice) as usize);
+    let Some(scheme) = selected.filter(|s| s.id != "generated") else {
+        // Reachable even with the button enabled: the picker's own
+        // selection can sit on Generated while an imported scheme exists
+        // alongside it. Said plainly rather than silently doing nothing,
+        // which reads as a broken button.
+        let _ = a11y.announce(
+            "Generated tones is the built-in default and cannot be deleted. \
+             Choose an imported scheme first.",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        return;
+    };
+
+    let question = format!("Delete \"{}\"? This cannot be undone.", scheme.name);
+    // Enter answers No, the same reasoning every other delete confirmation
+    // in this application uses: a key one row away from every other key
+    // somebody might have meant should not be the one that finishes an
+    // irreversible action if pressed early.
+    let asked = MessageDialog::builder(panel, &question, "Delete")
+        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+        .build()
+        .show_modal();
+    if asked != ID_YES {
+        return;
+    }
+
+    let Ok(paths) = AppPaths::resolve() else {
+        let _ = a11y.announce(
+            "The sound-schemes folder could not be found",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        return;
+    };
+    match SoundScheme::delete(&scheme.id, &paths.sound_schemes_dir()) {
+        Ok(()) => {
+            let name = scheme.name.clone();
+            refresh_scheme_controls(scheme_choice, delete_btn, "generated");
+            let _ = a11y.announce(
+                &format!("Deleted {name}"),
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+        Err(err) => {
+            let _ = a11y.announce(
+                &format!("Could not delete that sound scheme: {err}"),
                 crate::presentation::accessibility::announcements::Priority::High,
             );
         }
