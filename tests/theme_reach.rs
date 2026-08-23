@@ -298,12 +298,17 @@ fn check_notes(parent: &Panel, palette: theme::Palette, into: &mut Vec<SiteResul
 /// deliberately reads its palette from the config it already holds rather
 /// than a second, independent disk read that could disagree with it (see the
 /// function's own doc comment).
-fn check_settings(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+fn check_settings(
+    parent: &Frame,
+    palette: theme::Palette,
+    a11y: &Arc<Accessibility>,
+    into: &mut Vec<SiteResult>,
+) {
     let config = AppConfig {
         theme: "light".to_string(),
         ..AppConfig::default()
     };
-    let widgets = wx_settings::build_settings_dialog(parent, &config);
+    let widgets = wx_settings::build_settings_dialog(parent, &config, a11y);
 
     check(
         "settings dialog",
@@ -1316,7 +1321,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
 
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
             check_reader(&frame, &a11y, &mut sites);
-            check_settings(&frame, palette, &mut sites);
+            check_settings(&frame, palette, &a11y, &mut sites);
             check_account_manager(&frame, &a11y, palette, &mut sites);
             check_event_editor(&frame, palette, &mut sites);
             check_which_days(&frame, palette, &mut sites);

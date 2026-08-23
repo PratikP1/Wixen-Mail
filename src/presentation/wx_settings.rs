@@ -10,13 +10,16 @@ use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
 use crate::common::paths::AppPaths;
 use crate::data::config::AppConfig;
+use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::accessibility::sound_scheme::SoundScheme;
+use crate::presentation::accessibility::sound_scheme_import;
 use crate::presentation::theme;
 use crate::service::spellcheck::available_languages;
+use std::sync::Arc;
 use wxdragon::prelude::*;
 
 // ── Result type ──────────────────────────────────────────────────────────────
@@ -120,8 +123,12 @@ fn section(parent: &Panel, label: &str) -> StaticBoxSizer {
 // ── Public entry point ───────────────────────────────────────────────────────
 
 /// Show the Settings dialog and return the (possibly updated) configuration.
-pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResult {
-    let widgets = build_settings_dialog(parent, config);
+pub fn show_settings_dialog(
+    parent: &Frame,
+    config: &AppConfig,
+    a11y: &Arc<Accessibility>,
+) -> SettingsResult {
+    let widgets = build_settings_dialog(parent, config, a11y);
     if widgets.dialog.show_modal() == ID_OK {
         SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
     } else {
@@ -146,7 +153,11 @@ pub fn show_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsResul
 /// independent disk read that could in principle disagree with the config
 /// already in hand, including the very Theme dropdown this dialog is about
 /// to build.
-pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidgets {
+pub fn build_settings_dialog(
+    parent: &Frame,
+    config: &AppConfig,
+    a11y: &Arc<Accessibility>,
+) -> SettingsWidgets {
     let dlg = Dialog::builder(parent, "Settings")
         .with_size(560, 520)
         .build();
@@ -214,7 +225,7 @@ pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidg
 
     // ── Tab 6: Feedback
     let feedback_panel = Panel::builder(&notebook).build();
-    let (feedback, sound_scheme) = build_feedback_tab(&feedback_panel, config);
+    let (feedback, sound_scheme) = build_feedback_tab(&feedback_panel, config, a11y);
     notebook.add_page(&feedback_panel, "Feedback", false, None);
 
     // ── Tab 7: Advanced
@@ -1417,7 +1428,11 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
 /// Nothing here can produce a sound-only application by accident: the routing
 /// adds a written equivalent unless every text channel is off, and the wording
 /// says so rather than leaving it to be discovered.
-fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> (Vec<(Channel, CheckBox)>, Choice) {
+fn build_feedback_tab(
+    panel: &Panel,
+    config: &AppConfig,
+    a11y: &Arc<Accessibility>,
+) -> (Vec<(Channel, CheckBox)>, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let settings = FeedbackSettings::from_stored(&config.feedback_channels);
 
@@ -1479,10 +1494,89 @@ fn build_feedback_tab(panel: &Panel, config: &AppConfig) -> (Vec<(Channel, Check
     );
     scheme_row.add(&scheme_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     scheme_sec.add_sizer(&scheme_row, 0, SizerFlag::Expand, 0);
+
+    let import_btn = Button::builder(panel)
+        .with_label("&Import sound scheme...")
+        .build();
+    set_accessible_name(&import_btn, "Import sound scheme");
+    scheme_sec.add(&import_btn, 0, SizerFlag::All, 4);
+    import_btn.on_click({
+        let panel = *panel;
+        let a11y = a11y.clone();
+        move |_| import_sound_scheme(&panel, &scheme_choice, &a11y)
+    });
+
     sizer.add_sizer(&scheme_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
     (boxes, scheme_choice)
+}
+
+/// Picking a zip, importing it, and refreshing the picker to include it.
+///
+/// Announced through `a11y` rather than only shown, the same as everything
+/// else this dialog reports: a picker whose new item appeared with no
+/// sentence to go with it is invisible to anyone not looking at the screen
+/// at the exact moment it changed.
+fn import_sound_scheme(panel: &Panel, scheme_choice: &Choice, a11y: &Arc<Accessibility>) {
+    let picker = FileDialog::builder(panel)
+        .with_message("Import sound scheme")
+        .with_wildcard("Sound scheme packs (*.zip)|*.zip")
+        .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+        .build();
+    if picker.show_modal() != ID_OK {
+        // Cancelling is a decision, not an outcome to report.
+        return;
+    }
+    let Some(path) = picker.get_path() else {
+        let _ = a11y.announce(
+            "No file was chosen",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        return;
+    };
+    let zip_path = std::path::Path::new(&path);
+    let stem = zip_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("imported");
+    let id = sound_scheme_import::slug_for(stem);
+
+    let Ok(paths) = AppPaths::resolve() else {
+        let _ = a11y.announce(
+            "The sound-schemes folder could not be found",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        return;
+    };
+
+    match sound_scheme_import::import_zip(zip_path, &id, &paths.sound_schemes_dir()) {
+        Ok(scheme) => {
+            let schemes = discovered_schemes();
+            scheme_choice.clear();
+            for candidate in &schemes {
+                scheme_choice.append(&candidate.name);
+            }
+            if let Some(new_index) = schemes.iter().position(|s| s.id == scheme.id) {
+                scheme_choice.set_selection(new_index as u32);
+            }
+            let _ = a11y.announce(
+                &format!(
+                    "Imported {}, covers {} of {} events",
+                    scheme.name,
+                    scheme.covers(),
+                    crate::presentation::accessibility::feedback::Event::ALL.len()
+                ),
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+        Err(err) => {
+            let _ = a11y.announce(
+                &format!("Could not import that sound scheme: {err}"),
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+    }
 }
 
 /// Every sound scheme this installation can currently offer: the built-in

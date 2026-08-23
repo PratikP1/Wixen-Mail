@@ -8,14 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **A sound scheme can be chosen under Settings, Feedback.** Every earcon
-  used to be the same synthesized tone, on or off together. The Feedback
-  tab now has a Sound scheme picker, starting on "Generated tones," the
-  same tones as before. A scheme can give some or all of the sixteen
-  events a real sound file instead; anything it does not name still plays
-  the built-in tone rather than nothing. Nothing to pick from yet besides
-  the default: importing a scheme, and the schemes to import, are their
-  own separate pieces of work.
+- **A sound scheme can be chosen and imported under Settings, Feedback.**
+  Every earcon used to be the same synthesized tone, on or off together.
+  The Feedback tab now has a Sound scheme picker, starting on "Generated
+  tones," the same tones as before, and an Import sound scheme button next
+  to it that reads a `.zip` a scheme's own creator built and shared. A
+  scheme can give some or all of the sixteen events a real sound file
+  instead; anything it does not name still plays the built-in tone rather
+  than nothing. The zip is checked before any of it is trusted: a size
+  limit, no file allowed to write itself outside the scheme's own folder,
+  every sound decoded for real rather than believed because of its file
+  name, and a two-second limit on how long any one of them is allowed to
+  run. A source for a first real scheme to try, "Soft Chimes," is in this
+  repository under `sound-schemes/`, built from CC0 sounds; zip that
+  folder yourself to try importing it until it has a proper home to
+  download from.
 
 ### Fixed
 

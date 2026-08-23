@@ -6872,7 +6872,7 @@ fn handle_settings(
         }
     };
     let config = mgr.app_config().clone();
-    match wx_settings::show_settings_dialog(frame, &config) {
+    match wx_settings::show_settings_dialog(frame, &config, a11y) {
         wx_settings::SettingsResult::Updated(new_config) => {
             // Applied to the running application, not only written to disk.
             // Saving a preference that needs a restart to take effect is a

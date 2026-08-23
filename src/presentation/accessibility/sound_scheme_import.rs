@@ -293,11 +293,69 @@ fn validate_sound(bytes: &[u8]) -> std::result::Result<(), String> {
     }
 }
 
+/// Turn a file name into a directory-safe scheme id.
+///
+/// A zip picked through a file dialog has a name a person chose, not a
+/// stable identifier: spaces, capitals, punctuation, sometimes characters
+/// this filesystem would refuse outright. Lowercased, every run of anything
+/// that is not a letter or digit collapsed to one hyphen, and leading or
+/// trailing hyphens trimmed off. A name that leaves nothing behind (every
+/// character was punctuation, or the string was empty) falls back to
+/// `"imported"` rather than asking `import_zip` to write into a directory
+/// with an empty name.
+pub fn slug_for(file_stem: &str) -> String {
+    let mut slug = String::with_capacity(file_stem.len());
+    let mut last_was_hyphen = true; // starts true so a leading run collapses away
+    for ch in file_stem.chars() {
+        if ch.is_alphanumeric() {
+            slug.extend(ch.to_lowercase());
+            last_was_hyphen = false;
+        } else if !last_was_hyphen {
+            slug.push('-');
+            last_was_hyphen = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        "imported".to_string()
+    } else {
+        slug
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn test_a_plain_name_becomes_lowercase() {
+        assert_eq!(slug_for("Soft Chimes"), "soft-chimes");
+    }
+
+    #[test]
+    fn test_punctuation_collapses_to_one_hyphen_rather_than_one_each() {
+        assert_eq!(slug_for("Pratik's   Pack!!!"), "pratik-s-pack");
+    }
+
+    #[test]
+    fn test_leading_and_trailing_punctuation_is_trimmed_not_hyphenated() {
+        assert_eq!(slug_for("  (Beta) Chimes  "), "beta-chimes");
+    }
+
+    #[test]
+    fn test_a_name_that_is_only_punctuation_falls_back_to_imported() {
+        assert_eq!(slug_for("!!!"), "imported");
+        assert_eq!(slug_for(""), "imported");
+    }
+
+    #[test]
+    fn test_digits_survive_since_they_are_valid_in_a_directory_name() {
+        assert_eq!(slug_for("Pack 2"), "pack-2");
+    }
 
     /// A manifest naming no sounds, valid enough for `from_manifest` to
     /// accept on its own; tests that care about a specific sound file add
