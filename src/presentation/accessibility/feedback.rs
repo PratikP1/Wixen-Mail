@@ -20,8 +20,11 @@
 //!    own tone rather than to a generic "something happened".
 
 use super::announcements::Priority;
+use rodio::Source;
+use rodio::source::SineWave;
 use std::collections::BTreeSet;
 use std::fmt;
+use std::time::Duration;
 
 /// Something worth telling the user about.
 ///
@@ -212,9 +215,7 @@ impl Event {
             // Not lower: everything from 220 to 330 Hz is the failure family,
             // and a reminder must not sound like a send that failed. Not
             // higher: age-related hearing loss takes the top of the range
-            // first, and a reminder is the wrong event to put up there. Not
-            // longer: the sound is played on the thread that then builds the
-            // window, so its length is time the window is not appearing in.
+            // first, and a reminder is the wrong event to put up there.
             //
             // These are proposed numbers. Whether the two are tellable apart
             // by ear is a listening pass, and the test beside this one is
@@ -432,6 +433,102 @@ impl FeedbackSettings {
     }
 }
 
+/// How long the start and end of a tone fades rather than jumping straight
+/// to full volume or straight to silence.
+///
+/// A sine wave starting or stopping at full amplitude is an audible click,
+/// not part of the note. Long enough to remove it, short enough that even
+/// the shortest tone in the set (35ms) still has a real body between the
+/// two fades rather than becoming two fades meeting in the middle.
+const TONE_EDGE: Duration = Duration::from_millis(3);
+
+/// How loud a tone plays, in `amplify_normalized`'s own 0.0-1.0 range.
+///
+/// That range is perceptual, not linear, curved so it matches how loudness
+/// actually sounds to a human ear rather than how a raw sample multiplier
+/// would: 0.5 here is not half volume, it comes out closer to a thirtieth of
+/// full linear amplitude. Chosen for a real, comfortably audible peak rather
+/// than the midpoint of the number line. A proposed number, not a measured
+/// one, the same as every hertz/millis pair on [`Event::tone`]: revisit
+/// alongside a real listening pass.
+const TONE_VOLUME: f32 = 0.85;
+
+/// A hand-written fade, in place of `Source::fade_in`/`fade_out`.
+///
+/// Those two ramp from wherever they are inserted in the chain, not from
+/// the true end of a bounded source underneath them: chaining `fade_in`
+/// straight into `fade_out` fades the first instant twice, at the same
+/// time, and then holds silence for everything after, because `fade_out`
+/// clamps to its own end gain once its own local duration has passed with
+/// no idea the tone continues underneath it. Proven by three of the tests
+/// beside this file's tone tests going red for exactly that reason before
+/// this replaced them.
+///
+/// A tone's own total length is already known here, in a way it might not
+/// be to a general-purpose combinator, which is what makes counting real
+/// samples against it the simpler and the correct answer.
+struct Faded<I> {
+    input: I,
+    edge_samples: u64,
+    total_samples: u64,
+    position: u64,
+}
+
+impl<I: Iterator<Item = f32>> Iterator for Faded<I> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.input.next()?;
+        let from_start = self.position;
+        let from_end = self.total_samples.saturating_sub(self.position + 1);
+        let gain =
+            from_start.min(from_end).min(self.edge_samples) as f32 / self.edge_samples as f32;
+        self.position += 1;
+        Some(sample * gain.clamp(0.0, 1.0))
+    }
+}
+
+impl<I: Source<Item = f32>> Source for Faded<I> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.input.current_span_len()
+    }
+
+    fn channels(&self) -> rodio::ChannelCount {
+        self.input.channels()
+    }
+
+    fn sample_rate(&self) -> rodio::SampleRate {
+        self.input.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.input.total_duration()
+    }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.input.try_seek(pos)
+    }
+}
+
+/// A tone as a real sound rather than a fact about frequency and length.
+///
+/// `SineWave` is fixed at 48kHz mono, which is why nothing here takes a
+/// sample rate as a parameter: there is only the one, and every caller gets
+/// it from here rather than assuming it.
+fn sound_for(tone: Tone) -> impl Source<Item = f32> {
+    const SAMPLE_RATE: u64 = 48_000;
+    let total_samples = SAMPLE_RATE * tone.millis as u64 / 1000;
+    let edge_samples = (SAMPLE_RATE * TONE_EDGE.as_millis() as u64 / 1000).max(1);
+    Faded {
+        input: SineWave::new(tone.hertz as f32)
+            .take_duration(Duration::from_millis(tone.millis as u64))
+            .amplify_normalized(TONE_VOLUME),
+        edge_samples,
+        total_samples,
+        position: 0,
+    }
+}
+
 /// Plays earcons, one at a time and never faster than the ear can separate.
 ///
 /// Guardrail: feedback must be bounded. A syncing mailbox can raise the same
@@ -440,6 +537,11 @@ impl FeedbackSettings {
 #[derive(Debug)]
 pub struct EarconPlayer {
     last_played: std::sync::Mutex<Option<std::time::Instant>>,
+    /// The open output device, or `None` on a machine with no audio device
+    /// to open, or none `rodio`'s own fallback search could find. Held for
+    /// as long as the player exists: `rodio` stops playing the moment this
+    /// is dropped, so there is nowhere shorter-lived it could live.
+    device: Option<rodio::MixerDeviceSink>,
 }
 
 /// Shortest gap between two earcons.
@@ -457,19 +559,28 @@ impl EarconPlayer {
     pub fn new() -> Self {
         Self {
             last_played: std::sync::Mutex::new(None),
+            // A machine with no audio device, or one none of rodio's own
+            // fallback attempts could open, gets a silent player rather
+            // than a construction failure: a missing sound is a smaller
+            // problem than an application that will not start over one.
+            device: rodio::DeviceSinkBuilder::open_default_sink().ok(),
         }
     }
 
     /// Play a tone if enough time has passed since the last one.
     ///
     /// Returns whether it played, so a caller can tell the difference between
-    /// "sounded" and "suppressed" rather than assuming.
+    /// "sounded" and "suppressed" rather than assuming. Also false, the same
+    /// as any other silent outcome, when there is no device to play through.
     pub fn play(&self, tone: Tone) -> bool {
         self.play_at(tone, std::time::Instant::now())
     }
 
     /// The same decision with the clock passed in, so it can be tested.
     fn play_at(&self, tone: Tone, now: std::time::Instant) -> bool {
+        let Some(device) = &self.device else {
+            return false;
+        };
         let Ok(mut last) = self.last_played.lock() else {
             // A poisoned lock means another thread panicked mid-play. Staying
             // silent is the safe answer; a stuck tone is worse than none.
@@ -481,36 +592,15 @@ impl EarconPlayer {
             return false;
         }
         *last = Some(now);
-        emit(tone);
+        // Fire and forget: rodio plays this on its own thread and returns
+        // immediately, unlike the Beep() this replaced, which blocked the
+        // calling thread for the tone's own length. A caller that needs the
+        // old wait-for-it-to-finish behaviour has to ask for that itself now
+        // rather than getting it as a side effect of playing a sound.
+        device.mixer().add(sound_for(tone));
         true
     }
 }
-
-/// Sound one tone.
-///
-/// `Beep` is synchronous and blocks its thread for the tone's duration, so
-/// every earcon here is short by design. It is also the one audio path that
-/// needs no device setup, no extra dependency, and no permission, which
-/// matters for a feature that has to work on a locked-down machine.
-#[cfg(target_os = "windows")]
-fn emit(tone: Tone) {
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn Beep(frequency: u32, duration: u32) -> i32;
-    }
-    // Safety: Beep takes two integers and touches nothing we own.
-    unsafe {
-        Beep(tone.hertz, tone.millis);
-    }
-}
-
-/// No earcons off Windows yet.
-///
-/// Said plainly rather than papered over: on macOS and Linux this is silent,
-/// and the text channels carry the event on their own. A port needs its own
-/// audio path, not a framework change.
-#[cfg(not(target_os = "windows"))]
-fn emit(_tone: Tone) {}
 
 #[cfg(test)]
 mod tests {
@@ -817,6 +907,84 @@ mod tests {
         let channels = settings.channels_for(Event::SendFailed);
         assert!(channels.contains(&Channel::Braille));
         assert!(!channels.contains(&Channel::Speech));
+    }
+
+    #[test]
+    fn test_a_tones_own_samples_run_for_its_stated_length() {
+        // SineWave is fixed at 48kHz, so a tone's own millis says exactly
+        // how many samples it should produce, independent of the fade or
+        // the volume layered on top.
+        let tone = Tone::new(440, 100);
+        let samples: Vec<f32> = sound_for(tone).collect();
+        let expected = 48_000 * tone.millis as usize / 1000;
+        assert_eq!(
+            samples.len(),
+            expected,
+            "100ms at 48kHz should be {expected} samples, not {}",
+            samples.len()
+        );
+    }
+
+    #[test]
+    fn test_a_tones_samples_never_clip() {
+        // Amplified, faded, still bounded: a sample outside [-1.0, 1.0] is
+        // what a speaker reads as distortion, not a louder tone.
+        let tone = Tone::new(660, 90);
+        for sample in sound_for(tone) {
+            assert!(
+                (-1.0..=1.0).contains(&sample),
+                "{sample} is outside what a speaker can play cleanly"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_tone_fades_in_rather_than_starting_at_full_volume() {
+        // A sine wave starting at full amplitude is a click, not a note.
+        // The first sample of a fade-in has to be quieter than a sample
+        // safely inside the tone's body.
+        let tone = Tone::new(440, 100);
+        let samples: Vec<f32> = sound_for(tone).collect();
+        let first = samples[0].abs();
+        let middle = samples[samples.len() / 2].abs();
+        assert!(
+            first < middle,
+            "the first sample ({first}) is not quieter than the middle one ({middle}), so nothing faded in"
+        );
+    }
+
+    #[test]
+    fn test_a_tone_fades_out_rather_than_stopping_at_full_volume() {
+        // The same shape at the other end: the last sample has to be
+        // quieter than the middle, or the tone stops on a click instead of
+        // trailing off.
+        let tone = Tone::new(440, 100);
+        let samples: Vec<f32> = sound_for(tone).collect();
+        let last = samples[samples.len() - 1].abs();
+        let middle = samples[samples.len() / 2].abs();
+        assert!(
+            last < middle,
+            "the last sample ({last}) is not quieter than the middle one ({middle}), so nothing faded out"
+        );
+    }
+
+    #[test]
+    fn test_even_the_shortest_tone_still_has_an_audible_body() {
+        // The fade at each edge has to leave something between them, or a
+        // short tone becomes two fades meeting in the middle with nothing
+        // ever reaching real volume.
+        let shortest = Event::ALL
+            .iter()
+            .map(|e| e.tone())
+            .min_by_key(|t| t.millis)
+            .expect("at least one event exists");
+        let samples: Vec<f32> = sound_for(shortest).collect();
+        let peak = samples.iter().fold(0.0_f32, |a, &b| a.max(b.abs()));
+        assert!(
+            peak > 0.1,
+            "the shortest tone ({}ms) never gets louder than {peak}, so its fades ate the whole thing",
+            shortest.millis
+        );
     }
 
     #[test]

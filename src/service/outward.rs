@@ -1357,7 +1357,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 39] = [
+    const A_CRATE_THAT_CANNOT: [&str; 40] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1392,6 +1392,10 @@ mod completeness {
         "pdfpurr",
         "sha2",
         "pulldown-cmark",
+        // Local audio device output and local decoding only: cpal talks to
+        // the OS sound API, Symphonia decodes whatever bytes it is handed.
+        // Neither opens a socket.
+        "rodio",
         "windows",
         "winresource",
         "boa_engine",

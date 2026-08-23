@@ -8,6 +8,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Earcons no longer play through a Windows-only system beep.** The four
+  feedback channels, speech, braille, sound, and the status bar, are meant
+  to reach any of them regardless of platform, and the sound channel was
+  the one exception: `Beep()` is a Windows call with nothing behind it
+  anywhere else, so a machine that was not Windows got silence for every
+  event with sound switched on, and the changelog said so plainly rather
+  than pretend otherwise. Tones now play through a real, cross-platform
+  audio path instead, with the same distinct pitch and length per event
+  and the same short fade in and out at each tone's edges rather than a
+  click. Development happens on Windows, so this is proven there; it has
+  not yet been run on macOS or Linux to confirm the same path opens a
+  device and plays cleanly on either.
+
 - **A finished contacts or calendar sync can now play its own earcon.**
   Every other event on the Feedback tab, new mail, a sent message, a lost
   connection, could reach all four channels: speech, braille, a short
@@ -5718,7 +5731,6 @@ be added by its address, and an event read aloud says its category.
 ### Known limitations
 
 - Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet.
-- Earcons are Windows-only for now. On macOS and Linux the sound channel is silent and the text channels carry the event on their own; a port needs its own audio path.
 - Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
 - Threading runs over the loaded folder rather than incrementally as mail arrives. The `References` headers are now stored by the sync, so conversations form from real mail; rethreading still happens when a folder is opened rather than as messages arrive.
 - **Check Mail brings down the newest 500 messages in each folder**, not the whole mailbox. Reading further back is Get older messages, `Shift+F9`, a page at a time. The count of what is on the server is reported, so the gap is visible rather than silent.

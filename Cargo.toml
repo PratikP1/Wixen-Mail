@@ -94,6 +94,15 @@ native-tls = "0.2"
 pdfpurr = { version = "0.4.0", default-features = false }
 sha2 = "0.11.0"
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+
+# Earcon playback: cross-platform (Windows, macOS, Linux) rather than a
+# second Windows-only FFI call, since a real audio path is needed at the
+# port and a synthesized tone needs somewhere to play through either way.
+# Decodes WAV, OGG, MP3, and FLAC via Symphonia, which is what lets an
+# imported sound-scheme pack use more than one format. See
+# docs/plans/20260823-earcon-sound-schemes.md for the fuller reasoning.
+rodio = "0.22.2"
+
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.
