@@ -53,6 +53,7 @@ pub mod server_delete;
 pub mod sign_off;
 pub mod spell_session;
 pub mod summing_up;
+pub mod sync_marker;
 pub mod tagging;
 pub mod tasks;
 pub mod tasks_sync;

@@ -37,8 +37,11 @@
 //! None of this has run against a live calendar.
 
 use crate::application::summing_up::SummingUp;
+use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
-use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache, SyncState};
+#[cfg(test)]
+use crate::data::message_cache::SyncState;
+use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
 use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
     GoogleApiClient, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride, GoogleReminders,
@@ -923,25 +926,18 @@ pub async fn sync_google_calendar(
     }
 
     // Save sync state
-    let now = chrono::Utc::now().to_rfc3339();
-    let new_state = SyncState {
-        id: state
-            .as_ref()
-            .map(|s| s.id.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-        account_id: account_id.to_string(),
-        sync_type: "calendar".to_string(),
-        provider: GOOGLE.to_string(),
-        sync_token: new_sync_token,
-        delta_link: None,
-        last_full_sync: if sync_token.is_none() {
-            Some(now.clone())
-        } else {
-            state.as_ref().and_then(|s| s.last_full_sync.clone())
+    remember_this_syncs_marker(
+        cache,
+        state.as_ref(),
+        account_id,
+        "calendar",
+        GOOGLE,
+        SyncMarker {
+            sync_token: new_sync_token,
+            delta_link: None,
         },
-        last_incremental_sync: Some(now),
-    };
-    cache.save_sync_state(&new_state)?;
+        sync_token.is_none(),
+    )?;
 
     Ok(result)
 }
@@ -1266,25 +1262,18 @@ pub async fn sync_microsoft_calendar(
         )?;
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    let new_state = SyncState {
-        id: state
-            .as_ref()
-            .map(|s| s.id.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-        account_id: account_id.to_string(),
-        sync_type: "calendar".to_string(),
-        provider: MICROSOFT.to_string(),
-        sync_token: None,
-        delta_link: new_delta_link,
-        last_full_sync: if delta_link.is_none() {
-            Some(now.clone())
-        } else {
-            state.as_ref().and_then(|s| s.last_full_sync.clone())
+    remember_this_syncs_marker(
+        cache,
+        state.as_ref(),
+        account_id,
+        "calendar",
+        MICROSOFT,
+        SyncMarker {
+            sync_token: None,
+            delta_link: new_delta_link,
         },
-        last_incremental_sync: Some(now),
-    };
-    cache.save_sync_state(&new_state)?;
+        delta_link.is_none(),
+    )?;
 
     Ok(result)
 }
