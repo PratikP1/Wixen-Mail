@@ -211,22 +211,33 @@ Generated tones and whatever else is already installed.
 
 ## Where packs come from
 
-No hosting exists today; this repository has no site, no GitHub Pages, no
-release channel for anything but the application itself. Two shapes for
-"our project site," in order of how much has to be built before the first
-pack can be shared:
+The intended home is **`wixen.app`**, the family's main domain, one site
+meant to host the various Wixen apps rather than a Mail-specific address.
+Audio sound-scheme zips are the first planned use of it for community
+content. It is **not live yet**: no pages, no hosting, as of this plan.
 
-**Start here: a GitHub-only distribution.** A directory in this repository,
-or a small companion one, where a submitted pack is a pull request (a
-directory with a manifest and sounds, reviewed against the same caps and
-checks above before merging), published as a zip attached to a GitHub
-Release. Nothing new to host; GitHub already does it. `docs/` gains a page
-explaining the manifest format for anyone who wants to build one, the same
-way `oauth.toml.example` documents a format today.
+That does not block anything in phases 1 through 4. Local zip import (the
+whole "Importing a zip" section above) works on a file the user already has,
+regardless of where they got it, so it needs no live site to build or to
+ship. Only phase 5, the hosting and pack-author docs, actually depends on
+`wixen.app` existing.
 
-**Later, if it earns it: a small static page.** GitHub Pages, still backed by
-the same GitHub-hosted zips, just with previews and descriptions instead of a
-bare file listing.
+**Until then, bootstrap through GitHub.** A directory in this repository, or
+a small companion one, where a submitted pack is a pull request (a directory
+with a manifest and sounds, reviewed against the same caps and checks above
+before merging), published as a zip attached to a GitHub Release. Nothing
+new to host, and nothing here is wasted once `wixen.app` exists: the same
+reviewed packs move over, and the same pull-request review process can keep
+running against a repository even after a nicer front end sits in front of
+it.
+
+**Once `wixen.app` is live**, the natural shape is a page listing schemes
+with previews and descriptions, backed by the same reviewed zips underneath,
+wherever they end up served from. Worth a line in that site's own plan
+whenever that gets written: whether sound schemes are a Mail-specific path
+on the domain or a shared resource other Wixen apps could someday reuse,
+since the domain is shared across the family and a scheme built for Mail's
+own event set may not mean anything to a different app.
 
 **Deliberately not proposed for the first version: an in-app browser for
 packs**, fetching and offering to install something over the network from
@@ -235,7 +246,7 @@ importing a file the user already chose and already has on disk. It changes
 who initiated the fetch, raises "should this be signed" and "should this be
 rate-limited" questions this plan has not answered, and none of that blocks
 shipping local-file import, which is most of the value on its own. Worth
-its own plan later if there is real demand.
+its own plan later, once `wixen.app` exists to fetch from at all.
 
 ## Settings changes
 
@@ -293,9 +304,14 @@ waiting on the whole plan to be done before anything ships.
 
 ## Open decisions
 
-- Whether "our project site" means the GitHub-only approach above or
-  something more, and if more, what already exists that this plan does not
-  know about.
+- No timeline yet for `wixen.app` going live. Phases 1 through 4 don't need
+  it; phase 5 does. Worth a check-in on that timeline whenever phase 4 is
+  close to done, so phase 5 either lands on the real site or has a clear
+  reason to stay on the GitHub bootstrap a while longer.
+- Whether a sound scheme should be namespaced as Mail-specific on
+  `wixen.app` or built as a shared resource other Wixen apps could reuse.
+  Doesn't block anything here either; the manifest format and the zip
+  itself work the same regardless of what the URL structure ends up being.
 - Whether two bundled schemes is the right number to start with, or one is
   enough until real usage says otherwise.
 - The exact working numbers above (20 MB zip cap, 5 MB/50 MB extraction caps,
