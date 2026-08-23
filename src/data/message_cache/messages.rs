@@ -704,19 +704,9 @@ impl MessageCache {
         folder_id: i64,
         account_id: &str,
     ) -> Result<Vec<MessageListRow>> {
-        self.get_message_list_sorted(folder_id, account_id, None)
+        self.get_message_list_sorted(folder_id, account_id, None, None)
     }
 
-    /// List a folder in a chosen order.
-    ///
-    /// The order goes into the query rather than being applied to the rows
-    /// afterwards. Sorting in memory is fine at five hundred rows and wrong at
-    /// forty thousand, which is reachable now that older mail can be fetched,
-    /// and it means the database does the one thing it is good at.
-    ///
-    /// `order_by` must come from `Sort::order_by_clause`, which builds it from
-    /// fixed strings chosen by matching on an enum. Nothing a user typed
-    /// reaches it, which is what makes interpolating it here safe.
     /// Every account's inbox, newest first, as one list.
     ///
     /// Anybody with more than one account works out of one list rather than
@@ -790,16 +780,37 @@ impl MessageCache {
         Ok(rows)
     }
 
+    /// List a folder in a chosen order, optionally bounded to its newest rows.
+    ///
+    /// The order goes into the query rather than being applied to the rows
+    /// afterwards. Sorting in memory is fine at five hundred rows and wrong at
+    /// forty thousand, which is reachable now that older mail can be fetched,
+    /// and it means the database does the one thing it is good at.
+    ///
+    /// `order_by` must come from `Sort::order_by_clause`, which builds it from
+    /// fixed strings chosen by matching on an enum. Nothing a user typed
+    /// reaches it, which is what makes interpolating it here safe.
+    ///
+    /// `limit` carries [`Self::unified_inbox`]'s own reasoning to a single
+    /// folder: a folder is opened to read one screen of it, and reading a
+    /// folder that has grown to the tens of thousands of messages the rest of
+    /// this module already plans for, in full, synchronously, on every open,
+    /// is the freeze that bound exists to prevent. `None` keeps the whole
+    /// folder, which [`Self::get_message_list`]'s own callers still need: a
+    /// dedup check or a removal policy that misses a row outside the page
+    /// gets its answer wrong rather than merely a slower one.
     pub fn get_message_list_sorted(
         &self,
         folder_id: i64,
         account_id: &str,
         order_by: Option<&str>,
+        limit: Option<usize>,
     ) -> Result<Vec<MessageListRow>> {
         // The uid is the tie-break in every order, so a folder where forty
         // messages share a timestamp does not shuffle between refreshes and
         // move a row out from under somebody's cursor.
         let order = order_by.unwrap_or("m.date DESC");
+        let limit_clause = limit.map(|n| format!(" LIMIT {n}")).unwrap_or_default();
         let query = format!(
             "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
                     m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
@@ -810,7 +821,7 @@ impl MessageCache {
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-             ORDER BY {order}, m.uid DESC"
+             ORDER BY {order}, m.uid DESC{limit_clause}"
         );
         let mut stmt = self
             .conn
@@ -2213,11 +2224,84 @@ mod tests {
         }
 
         let ascending = cache
-            .get_message_list_sorted(folder_id, "acc-1", Some("m.subject COLLATE NOCASE ASC"))
+            .get_message_list_sorted(
+                folder_id,
+                "acc-1",
+                Some("m.subject COLLATE NOCASE ASC"),
+                None,
+            )
             .unwrap();
 
         let subjects: Vec<&str> = ascending.iter().map(|r| r.subject.as_str()).collect();
         assert_eq!(subjects, vec!["Apple", "Mango", "Zebra"]);
+    }
+
+    #[test]
+    fn test_a_bounded_read_returns_only_the_newest_page() {
+        // Unbounded, this read is a UI freeze waiting to happen once a folder
+        // grows past a screenful: `unified_inbox` was already bounded for
+        // exactly this reason, and this listing was not.
+        let (cache, folder_id) = listing_cache();
+        for uid in 1..=7u32 {
+            cache
+                .upsert_message(&incoming(folder_id, uid, "Report"))
+                .unwrap();
+        }
+
+        let page = cache
+            .get_message_list_sorted(folder_id, "acc-1", None, Some(3))
+            .unwrap();
+
+        let uids: Vec<u32> = page.iter().map(|row| row.uid).collect();
+        assert_eq!(uids, vec![7, 6, 5], "{page:#?}");
+    }
+
+    #[test]
+    fn test_asking_again_with_a_bigger_limit_reaches_further_back() {
+        // What "Get Older Messages" leans on: paging is asking again with
+        // more room, not a cursor of its own, so it works whatever order the
+        // folder happens to be sorted in.
+        let (cache, folder_id) = listing_cache();
+        for uid in 1..=7u32 {
+            cache
+                .upsert_message(&incoming(folder_id, uid, "Report"))
+                .unwrap();
+        }
+
+        let first_page = cache
+            .get_message_list_sorted(folder_id, "acc-1", None, Some(3))
+            .unwrap();
+        let next_page = cache
+            .get_message_list_sorted(folder_id, "acc-1", None, Some(6))
+            .unwrap();
+
+        assert_eq!(next_page.len(), 6, "{next_page:#?}");
+        let first_uids: Vec<u32> = first_page.iter().map(|row| row.uid).collect();
+        let next_uids: Vec<u32> = next_page.iter().map(|row| row.uid).collect();
+        assert_eq!(
+            &next_uids[..3],
+            &first_uids[..],
+            "the bigger page did not still hold everything the first page did"
+        );
+    }
+
+    #[test]
+    fn test_get_message_list_stays_unbounded_for_its_own_callers() {
+        // Sent-copy detection, POP dedup and the trash removal policy read
+        // through `get_message_list`, not the folder view, and need the whole
+        // folder rather than a page of it. The bound is new and opt-in
+        // through `get_message_list_sorted`'s own limit, so this convenience
+        // wrapper must keep returning everything it always has.
+        let (cache, folder_id) = listing_cache();
+        for uid in 1..=7u32 {
+            cache
+                .upsert_message(&incoming(folder_id, uid, "Report"))
+                .unwrap();
+        }
+
+        let all = cache.get_message_list(folder_id, "acc-1").unwrap();
+
+        assert_eq!(all.len(), 7, "{all:#?}");
     }
 
     #[test]

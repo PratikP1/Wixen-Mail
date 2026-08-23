@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Opening a folder that has grown very large no longer freezes the window
+  while it loads.** The folder list read every message a folder held in one
+  query, which cost nothing at a few hundred messages and became a
+  multi-second freeze once a folder reached the tens of thousands, because
+  this reads on the interface thread and nothing else can run while it does.
+  It now reads the newest page first, the same way the combined inbox across
+  every account already did. Get Older Messages still fetches more from the
+  server, and now also asks the list to show more of whatever is already
+  stored, so paging back through an old mailbox still reaches every message
+  rather than stopping at the first page for good.
+
+- **A saved draft's Subject, and the note of what it is replying to, can no
+  longer be used to write an extra header into the copy filed at your mail
+  server.** The Drafts folder copy this program builds by hand already
+  stripped an embedded line break out of the From, To, Cc and Bcc lines
+  before writing them, because an address or the name next to one can hold a
+  remote sender's own text. Two more spots wrote sender-controlled text the
+  same unguarded way: the Subject, which for a reply starts as "Re: " plus
+  the original message's own Subject line, and the In-Reply-To and
+  References lines, read straight off the replied-to message's own
+  Message-ID and References headers. A hostile or malformed sender's header
+  value carrying an embedded line break, if it survived that far, could turn
+  into an extra header line in the draft this program appends to your Drafts
+  folder whenever it saves: a spare Bcc line, say, or a broken MIME boundary
+  in the stored copy. All three now go through the same stripping the
+  address lines already had. This never touched outbound mail: the actual
+  send is built through the mail library's own header encoding, which this
+  gap never reached, so only the local, unsent copy of a draft was exposed.
+
 - **Sign In Again in the Account Manager now says what actually happened.**
   It used to close the Account Manager's own dialog session, run its two
   answers (what it was about to try, then what went wrong), and reopen the
