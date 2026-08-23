@@ -167,7 +167,7 @@ pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidg
 
     // ── Tab 3: Reading
     let reading_panel = Panel::builder(&notebook).build();
-    let (
+    let ReadingTabControls {
         sort_order,
         read_receipts,
         read_messages_as,
@@ -178,7 +178,7 @@ pub fn build_settings_dialog(parent: &Frame, config: &AppConfig) -> SettingsWidg
         mark_read_after,
         sort_then,
         copy_lines,
-    ) = build_reading_tab(&reading_panel, config);
+    } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
     // ── Tab 4: Language & Spelling
@@ -517,23 +517,23 @@ const SIGNATURE_LABEL: &str = "Start every message with my &signature";
 const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your signature stays on the account and can \
      still be added by hand.";
 
+/// The controls `build_reading_tab` lays out, one field per choice, named
+/// for what it actually controls rather than by position.
+struct ReadingTabControls {
+    sort_order: Choice,
+    read_receipts: Choice,
+    read_messages_as: Choice,
+    date_style: Choice,
+    date_order: Choice,
+    date_wording: Choice,
+    clock_hours: Choice,
+    mark_read_after: Choice,
+    sort_then: Choice,
+    copy_lines: Choice,
+}
+
 /// Reading settings: how the list is sorted, how a message opens, dates.
-#[allow(clippy::type_complexity)]
-fn build_reading_tab(
-    panel: &Panel,
-    config: &AppConfig,
-) -> (
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-    Choice,
-) {
+fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Message List
@@ -798,18 +798,18 @@ fn build_reading_tab(
     sizer.add_sizer(&date_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (
-        sort_choice,
-        receipt_choice,
-        style_choice,
+    ReadingTabControls {
+        sort_order: sort_choice,
+        read_receipts: receipt_choice,
+        read_messages_as: style_choice,
         date_style,
         date_order,
         date_wording,
         clock_hours,
-        markread_choice,
+        mark_read_after: markread_choice,
         sort_then,
         copy_lines,
-    )
+    }
 }
 
 /// What happens to a picture a message points at, said rather than switched.
