@@ -7175,8 +7175,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::ContactsSyncComplete(result) => {
             let msg = crate::application::contacts_sync::what_the_contacts_sync_did(result);
-            frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Normal);
+            // Signalled rather than shown and spoken by hand, so somebody who
+            // wants a tone for a finished sync gets a tone and the status bar
+            // still gets the sentence through the visual channel. The routing
+            // is a setting, not a decision made here.
+            let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);
             for err in &result.errors {
                 tracing::warn!("Contacts sync error: {}", err);
             }
@@ -7223,8 +7226,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     errors: errors.clone(),
                 },
             );
-            frame.set_status_text(&msg, 0);
-            let _ = a11y.announce(&msg, Priority::Normal);
+            // Signalled rather than shown and spoken by hand, matching how
+            // the contacts sync's own completion is routed just above.
+            let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);
             for err in errors {
                 tracing::warn!("Calendar sync error: {}", err);
             }
@@ -12803,6 +12807,34 @@ mod what_the_status_line_says {
         );
         let wrong = what_is_shown_and_never_said(&arms, quiet_on_purpose());
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_a_completed_contacts_or_calendar_sync_reaches_the_earcon_channel() {
+        // What this cannot see: whether the earcon actually sounds. It reads
+        // the window's own text and asks that the arm calls `signal`, which
+        // routes an event through every channel the user chose, earcon
+        // included, rather than `announce`, which only ever speaks and
+        // brailles whatever text it is given.
+        //
+        // Both arms used to write the status bar directly and call
+        // `a11y.announce` on their own summary. `Event::SyncComplete` has had
+        // its own tone, priority, and settings entry since the feedback
+        // system was built, and nothing here ever named it, so someone who
+        // asked for a tone instead of a sentence on sync completion never
+        // got one.
+        let source = the_window_itself();
+        let arms = every_arm(&the_update_handler(&source));
+        for name in ["ContactsSyncComplete", "CalendarSyncComplete"] {
+            let (_, arm) = arms
+                .iter()
+                .find(|(n, _)| n.as_str() == name)
+                .unwrap_or_else(|| panic!("{name} arm not found, so the reading is broken"));
+            assert!(
+                arm.contains("a11y.signal(FeedbackEvent::SyncComplete"),
+                "{name} does not signal SyncComplete, so it never reaches the earcon channel"
+            );
+        }
     }
 
     #[test]

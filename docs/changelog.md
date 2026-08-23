@@ -8,6 +8,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A finished contacts or calendar sync can now play its own earcon.**
+  Every other event on the Feedback tab, new mail, a sent message, a lost
+  connection, could reach all four channels: speech, braille, a short
+  sound, and the status bar. A sync finishing had its own tone and its own
+  entry in Settings from the day the feedback system was built, and
+  nothing in the running application ever named it: the two handlers wrote
+  the result straight to the status bar and spoke it directly, bypassing
+  the routing that adds a sound. Somebody who asked for a tone instead of
+  a sentence when a sync finished never got one. Both now go through the
+  same signal every other event uses, so the setting they already chose is
+  the setting that applies.
+
 - **New mail from a background sync now shows up in the open folder without
   a manual refresh.** A sync, whether started from Get Older Messages or
   from the background watch that notices mail arriving over IMAP IDLE,
