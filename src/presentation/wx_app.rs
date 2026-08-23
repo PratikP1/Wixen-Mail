@@ -41,7 +41,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::runtime::Runtime;
-use tokio::sync::Mutex as TokioMutex;
 use wxdragon::event::WebViewEvents;
 use wxdragon::event::webview_events::WebViewEventData;
 use wxdragon::event::window_events::WindowEvents;
@@ -349,8 +348,6 @@ pub struct WxMailApp {
     ui_tx: Sender<UIUpdate>,
     ui_rx: Receiver<UIUpdate>,
     state: Arc<StdMutex<WxUIState>>,
-    #[allow(dead_code)]
-    mail_controllers: HashMap<String, Arc<TokioMutex<MailController>>>,
     accessibility: Accessibility,
     #[allow(dead_code)] // Held for lifetime; will be used for cache reads
     message_cache: Option<MessageCache>,
@@ -440,7 +437,6 @@ impl WxMailApp {
             ui_tx,
             ui_rx,
             state: Arc::new(StdMutex::new(state)),
-            mail_controllers: HashMap::new(),
             accessibility,
             message_cache,
         })
