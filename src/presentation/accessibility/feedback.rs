@@ -79,11 +79,39 @@ pub enum Event {
     /// one for new mail, which meant a reminder sent people to an empty inbox,
     /// and meant switching the new mail sound off switched reminders off too.
     Reminder,
+    /// The cursor landed on a message that carries an attachment.
+    ///
+    /// The same shape as [`Event::ThreadLanded`]: a fact a sighted user gets
+    /// at a glance from a paperclip icon, with nothing before this giving an
+    /// equally fast signal without reading the row.
+    HasAttachment,
+    /// An account's sign-in needs attention: an expired token, a revoked
+    /// authorisation, credentials that were never finished.
+    ///
+    /// Deliberately not [`Event::ConnectionLost`]. A dropped connection asks
+    /// somebody to wait; this asks them to act, and conflating the two tells
+    /// the wrong story about what to do next.
+    AccountNeedsAttention,
+    /// A toggle or a small action completed the way it was asked to.
+    ///
+    /// One shared event for flag/unflag, mark done, pin, and anything else
+    /// like them, rather than one event per toggle. Five toggle actions
+    /// could easily become five near-identical "did it" tones, which is
+    /// exactly the failure this module's own rule against an open "signal
+    /// this string" call exists to prevent.
+    Confirmed,
+    /// A search or a filter completed and matched nothing.
+    ///
+    /// Distinct from [`Event::SyncComplete`]'s neutral "an operation
+    /// finished": coming up empty is a meaningfully different fact, gentle
+    /// rather than alarming, and its own tone means somebody does not have
+    /// to listen to a whole sentence to know a search came back empty.
+    NothingFound,
 }
 
 impl Event {
     /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 12] = [
+    pub const ALL: [Event; 16] = [
         Event::ThreadLanded,
         Event::EdgeOfList,
         Event::NewMail,
@@ -96,6 +124,10 @@ impl Event {
         Event::UnsafeMessage,
         Event::MisspelledWord,
         Event::Reminder,
+        Event::HasAttachment,
+        Event::AccountNeedsAttention,
+        Event::Confirmed,
+        Event::NothingFound,
     ];
 
     /// The identifier used when preferences are stored.
@@ -113,6 +145,10 @@ impl Event {
             Event::UnsafeMessage => "unsafe_message",
             Event::MisspelledWord => "misspelled_word",
             Event::Reminder => "reminder",
+            Event::HasAttachment => "has_attachment",
+            Event::AccountNeedsAttention => "account_needs_attention",
+            Event::Confirmed => "confirmed",
+            Event::NothingFound => "nothing_found",
         }
     }
 
@@ -139,6 +175,10 @@ impl Event {
             Event::UnsafeMessage => "Unsafe message",
             Event::MisspelledWord => "Misspelled word",
             Event::Reminder => "Reminder",
+            Event::HasAttachment => "Has attachment",
+            Event::AccountNeedsAttention => "Sign-in needs attention",
+            Event::Confirmed => "Confirmed",
+            Event::NothingFound => "Nothing found",
         }
     }
 
@@ -171,12 +211,25 @@ impl Event {
             // message that is trying to deceive them, and an announcement that
             // waits its turn behind a sync notice arrives after they have
             // started reading it.
-            Event::SendFailed | Event::ConnectionLost | Event::UnsafeMessage | Event::Reminder => {
-                Priority::Urgent
-            }
+            // An account needing re-authorisation sits here too: a dropped
+            // connection asks somebody to wait, this asks them to act, and
+            // the one that needs a person to do something should not lose a
+            // race to the one that does not.
+            Event::SendFailed
+            | Event::ConnectionLost
+            | Event::UnsafeMessage
+            | Event::Reminder
+            | Event::AccountNeedsAttention => Priority::Urgent,
             Event::ActionRefused | Event::ConnectionRestored => Priority::High,
-            Event::NewMail | Event::MessageSent | Event::SyncComplete => Priority::Normal,
-            Event::ThreadLanded | Event::EdgeOfList | Event::MisspelledWord => Priority::Low,
+            Event::NewMail
+            | Event::MessageSent
+            | Event::SyncComplete
+            | Event::Confirmed
+            | Event::NothingFound => Priority::Normal,
+            Event::ThreadLanded
+            | Event::EdgeOfList
+            | Event::MisspelledWord
+            | Event::HasAttachment => Priority::Low,
         }
     }
 
@@ -221,6 +274,23 @@ impl Event {
             // by ear is a listening pass, and the test beside this one is
             // written as separation so that pass can move them.
             Event::Reminder => Tone::new(1320, 200),
+            // A third short navigation tick, alongside ThreadLanded and
+            // EdgeOfList, pitched clearly apart from both so three ticks the
+            // same length still tell apart by ear alone.
+            Event::HasAttachment => Tone::new(1046, 40),
+            // Deliberately not in the 220-330 Hz failure band SendFailed,
+            // ConnectionLost, ActionRefused and UnsafeMessage already
+            // crowd: this is not a failure, it is a specific, actionable
+            // fact, and sounding like one more failure tone would bury it
+            // among them rather than stand apart.
+            Event::AccountNeedsAttention => Tone::new(470, 160),
+            // Short and clean, in the same rising-arrival character as
+            // MessageSent and NewMail without landing on either one.
+            Event::Confirmed => Tone::new(830, 70),
+            // Gentle, not alarming: coming up empty is a different fact
+            // from a failure, and this sits below SyncComplete's neutral
+            // tone rather than beside the failure family under it.
+            Event::NothingFound => Tone::new(300, 130),
         }
     }
 }
@@ -907,6 +977,39 @@ mod tests {
         let channels = settings.channels_for(Event::SendFailed);
         assert!(channels.contains(&Channel::Braille));
         assert!(!channels.contains(&Channel::Speech));
+    }
+
+    #[test]
+    fn test_the_four_new_events_each_round_trip_their_own_key() {
+        // The stored-preference identifier is what a setting is filed under,
+        // so a key that does not round trip through from_key silently
+        // detaches a new event from anything a user chose for it.
+        for (event, key) in [
+            (Event::HasAttachment, "has_attachment"),
+            (Event::AccountNeedsAttention, "account_needs_attention"),
+            (Event::Confirmed, "confirmed"),
+            (Event::NothingFound, "nothing_found"),
+        ] {
+            assert_eq!(event.key(), key);
+            assert_eq!(Event::from_key(key), Some(event));
+        }
+    }
+
+    #[test]
+    fn test_account_needs_attention_outranks_a_dropped_connection() {
+        // A dropped connection asks somebody to wait; an account that needs
+        // re-authorising asks them to act. The one that needs a person to do
+        // something is the one that should not lose a race to the other.
+        assert!(Event::AccountNeedsAttention.priority() >= Event::ConnectionLost.priority());
+    }
+
+    #[test]
+    fn test_confirmed_is_not_the_same_fact_as_action_refused() {
+        // The two are opposites, not variations: one says the toggle you
+        // asked for happened, the other says nothing happened at all.
+        // Sharing a priority is fine; sharing a tone or a sentence is not.
+        assert_ne!(Event::Confirmed.tone(), Event::ActionRefused.tone());
+        assert_ne!(Event::Confirmed.text(), Event::ActionRefused.text());
     }
 
     #[test]
