@@ -124,7 +124,11 @@ impl SoundScheme {
 }
 
 /// The file every scheme's own directory holds its manifest as.
-const MANIFEST_FILE: &str = "scheme.toml";
+///
+/// `pub(crate)` rather than private: `sound_scheme_import` needs the same
+/// name when it writes a freshly imported pack's manifest to disk, and a
+/// second, hand-copied literal is how the two would eventually disagree.
+pub(crate) const MANIFEST_FILE: &str = "scheme.toml";
 
 impl SoundScheme {
     /// Find a scheme by its stored id.

@@ -11,6 +11,7 @@ pub mod keyboard;
 pub mod names;
 pub mod screen_reader;
 pub mod sound_scheme;
+pub mod sound_scheme_import;
 
 use crate::common::Result;
 
