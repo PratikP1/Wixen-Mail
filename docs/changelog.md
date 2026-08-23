@@ -8,6 +8,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **New mail from a background sync now shows up in the open folder without
+  a manual refresh.** A sync, whether started from Get Older Messages or
+  from the background watch that notices mail arriving over IMAP IDLE,
+  wrote new messages into the local cache and kept the sidebar's unread
+  counts current. It never told the open message list to read them: mail
+  that had already arrived, and was sitting in the cache, stayed invisible
+  until the folder was reselected or refreshed by hand. The list now
+  reloads itself once a sync finishes, but only for the folder that
+  actually received new mail, and only when that folder is the one open on
+  screen, so a sync landing mail somewhere else never disturbs whatever is
+  actually being read.
+
 - **A flagged message's warning bar could show the wrong reason.** A single
   folder's own listing read the reason from the column next to it, so a
   message flagged for one specific reason, a phishing link, say, showed its

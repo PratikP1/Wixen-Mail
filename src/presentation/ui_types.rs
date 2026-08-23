@@ -405,6 +405,23 @@ pub enum UIUpdate {
     /// many messages a mailbox now holds and not which ones are new. Finding
     /// out means asking, which is what the handler does.
     MailboxChanged(String),
+    /// A sync wrote new messages into a folder's cache (the folder's
+    /// database id).
+    ///
+    /// Sent once per folder a sync actually added mail to, not once per
+    /// folder it looked at: a watch that wakes for a flag change, or a
+    /// folder with nothing new, sends nothing. Carries the id rather than
+    /// the name or path, because the same sync that raises this can be the
+    /// one that just changed the folder's unread count, and the tree shows
+    /// that count as part of the name; comparing against a label a moment
+    /// before it changed would miss.
+    ///
+    /// The handler re-reads the folder only when this is the one on
+    /// screen. A folder nobody is looking at already has its sidebar count
+    /// current from `FolderIdsLoaded`/`FoldersLoaded`, sent moments later
+    /// in the same sync; re-reading its message list as well would be work
+    /// with nothing to show for it.
+    FolderMessagesArrived(i64),
     /// A message's flagged state changed (cache_id, new_flagged_state)
     ///
     /// Sent when the server accepts the change, and again with the opposite

@@ -6904,6 +6904,52 @@ struct UpdateTargets<'a> {
     focus_home: &'a Rc<std::cell::Cell<FocusHome>>,
 }
 
+/// The database id of whichever folder is open right now, if any.
+///
+/// Resolved by looking the tree's current selection up in the current id
+/// map, both read from the same locked `state` together. The map is keyed
+/// on the label the tree shows, which carries the folder's unread count,
+/// so looking the two up a moment apart, once before and once after a
+/// count changes, could compare a stale label against a freshly rebuilt
+/// map and silently miss.
+fn folder_on_screen(state: &WxUIState) -> Option<i64> {
+    state
+        .selected_folder
+        .as_ref()
+        .and_then(|name| state.folder_ids.get(name).copied())
+}
+
+/// Re-read a folder's messages when, and only when, it is the one open on
+/// screen right now.
+///
+/// "On screen" is resolved fresh from `state` rather than carried from
+/// whatever was true when the sync that calls this began: the reader may
+/// have switched folders, or accounts, while the sync was still running,
+/// and the answer has to be the one true at the moment mail actually
+/// arrived, not the one true when the request for it went out.
+fn reread_folder_if_open(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    folder_id: i64,
+    tx: &Sender<UIUpdate>,
+) {
+    let (open, account_id, limit) = {
+        let s = lock_state(state);
+        (
+            folder_on_screen(&s),
+            s.active_account_id.clone(),
+            s.message_list_limit,
+        )
+    };
+    if open == Some(folder_id) {
+        // Whatever Get Older Messages had already grown the view to, not
+        // reset back to the first page: the same reasoning ID_REFRESH_FOLDER
+        // uses, because this is "is the folder still current", not "start
+        // over".
+        load_folder_messages(cache, Some(folder_id), account_id, limit, tx);
+    }
+}
+
 /// Process a single UIUpdate, updating widgets + accessibility.
 fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     let UpdateTargets {
@@ -7417,6 +7463,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
             spawn_mail_sync(AppHandles { state, tx, rt }, Some(folder.clone()));
+        }
+        UIUpdate::FolderMessagesArrived(folder_id) => {
+            reread_folder_if_open(state, message_cache, *folder_id, tx);
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -9690,6 +9739,21 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
     });
 }
 
+/// Whether a folder's sync brought in enough to tell the UI thread about.
+///
+/// `None` when nothing was fetched, so a watch that wakes for a flag
+/// change, or a folder with nothing new, sends nothing onward. Pulled out
+/// as a plain function over values rather than decided inline, the same
+/// reason `what_the_folder_sync_did` builds the status line's words the
+/// same way: the call site runs inside a closure on a background thread
+/// that a test cannot reach.
+fn folder_arrival_update(
+    folder_id: i64,
+    result: &crate::application::mail_sync::FolderSync,
+) -> Option<UIUpdate> {
+    (result.fetched > 0).then_some(UIUpdate::FolderMessagesArrived(folder_id))
+}
+
 /// Fetch mail from the account's IMAP server into the cache.
 ///
 /// Runs on a blocking thread because the cache holds a SQLite connection that
@@ -9885,6 +9949,9 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                     say(UIUpdate::StatusUpdated(
                         crate::application::mail_sync::what_the_folder_sync_did(&result),
                     ));
+                    if let Some(update) = folder_arrival_update(*folder_id, &result) {
+                        say(update);
+                    }
                 }
                 // One folder that will not open is not a reason to abandon the
                 // rest, and naming it is the difference between a fixable
@@ -12373,6 +12440,202 @@ mod tests {
             &tx,
         );
         assert!(drain(&rx).is_empty());
+    }
+
+    #[test]
+    fn test_folder_arrival_update_is_none_when_nothing_was_fetched() {
+        // A watch that wakes for a flag change, or a folder with nothing
+        // new to it, should tell the UI thread nothing: reloading a list
+        // that has not changed is work with nothing to show for it.
+        let result = crate::application::mail_sync::FolderSync {
+            fetched: 0,
+            ..Default::default()
+        };
+        assert!(folder_arrival_update(7, &result).is_none());
+    }
+
+    #[test]
+    fn test_folder_arrival_update_names_the_folder_that_got_new_mail() {
+        let result = crate::application::mail_sync::FolderSync {
+            fetched: 3,
+            ..Default::default()
+        };
+        assert!(matches!(
+            folder_arrival_update(7, &result),
+            Some(UIUpdate::FolderMessagesArrived(7))
+        ));
+    }
+
+    #[test]
+    fn test_folder_on_screen_resolves_the_selected_folders_id() {
+        let mut state = WxUIState {
+            selected_folder: Some("Inbox, 3 unread".to_string()),
+            ..Default::default()
+        };
+        state.folder_ids.insert("Inbox, 3 unread".to_string(), 42);
+        assert_eq!(folder_on_screen(&state), Some(42));
+    }
+
+    #[test]
+    fn test_folder_on_screen_is_none_when_nothing_is_selected() {
+        assert_eq!(folder_on_screen(&WxUIState::default()), None);
+    }
+
+    #[test]
+    fn test_reread_folder_if_open_reloads_the_folder_that_is_on_screen() {
+        // The behavior the bug report asked for: a sync landing mail in the
+        // folder somebody has open should make it show up without a manual
+        // reselect.
+        let cache = test_cache();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                let id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                c.save_message(&crate::data::message_cache::CachedMessage {
+                    id: 0,
+                    uid: 1,
+                    folder_id: id,
+                    message_id: "m1@example.com".to_string(),
+                    subject: "New mail while you were away".to_string(),
+                    from_addr: "ada@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-08-23".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("seed message");
+                id
+            })
+            .expect("cache");
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        {
+            let mut s = lock_state(&state);
+            s.selected_folder = Some("INBOX".to_string());
+            s.folder_ids.insert("INBOX".to_string(), folder_id);
+            s.active_account_id = Some("acct-1".to_string());
+        }
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id, &tx);
+
+        assert!(drain(&rx).iter().any(|u| matches!(
+            u,
+            UIUpdate::MessagesLoaded(items) if items.len() == 1
+                && items[0].subject == "New mail while you were away"
+        )));
+    }
+
+    #[test]
+    fn test_reread_folder_if_open_leaves_a_folder_nobody_is_looking_at_alone() {
+        // The other half of the same rule: mail landing somewhere other than
+        // the folder on screen must not yank the list out from under
+        // whatever the reader actually has open.
+        let cache = test_cache();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                c.save_folder(&crate::data::message_cache::CachedFolder {
+                    id: 0,
+                    account_id: "acct-1".to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("seed folder")
+            })
+            .expect("cache");
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        {
+            let mut s = lock_state(&state);
+            s.selected_folder = Some("Archive".to_string());
+            s.folder_ids.insert("Archive".to_string(), 999);
+            s.active_account_id = Some("acct-1".to_string());
+        }
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id, &tx);
+
+        assert!(drain(&rx).is_empty());
+    }
+
+    #[test]
+    fn test_reread_folder_if_open_keeps_a_grown_view_instead_of_resetting_it() {
+        // Whatever Get Older Messages had already grown the view to.
+        // Resetting to the first page the moment a background sync lands
+        // mail would quietly shrink a view somebody had deliberately grown.
+        let cache = test_cache();
+        let folder_id = cache
+            .as_ref()
+            .map(|c| {
+                let id = c
+                    .save_folder(&crate::data::message_cache::CachedFolder {
+                        id: 0,
+                        account_id: "acct-1".to_string(),
+                        name: "INBOX".to_string(),
+                        path: "INBOX".to_string(),
+                        folder_type: "Inbox".to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("seed folder");
+                for uid in 1..=3 {
+                    c.save_message(&crate::data::message_cache::CachedMessage {
+                        id: 0,
+                        uid,
+                        folder_id: id,
+                        message_id: format!("m{uid}@example.com"),
+                        subject: format!("Message {uid}"),
+                        from_addr: "ada@example.com".to_string(),
+                        to_addr: "me@example.com".to_string(),
+                        cc: None,
+                        date: "2026-08-23".to_string(),
+                        body_plain: None,
+                        body_html: None,
+                        read: false,
+                        starred: false,
+                        deleted: false,
+                    })
+                    .expect("seed message");
+                }
+                id
+            })
+            .expect("cache");
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        {
+            let mut s = lock_state(&state);
+            s.selected_folder = Some("INBOX".to_string());
+            s.folder_ids.insert("INBOX".to_string(), folder_id);
+            s.active_account_id = Some("acct-1".to_string());
+            s.message_list_limit = 2;
+        }
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id, &tx);
+
+        assert!(
+            drain(&rx)
+                .iter()
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 2))
+        );
     }
 
     #[test]
