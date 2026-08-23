@@ -9,6 +9,16 @@ played, not just where the sound files come from.
 
 Nothing here is built yet. This is the plan to review before any of it is.
 
+**Status, updated as phases land**: Phase 1 (rodio) and Phase 3 (the four
+new events) are done, committed, and verified. Phase 2's data model is
+also done (`SoundScheme`, manifest parsing, `resolve`/`discover`, the
+Settings picker, all wired end to end) and a first real scheme, Soft
+Chimes, is curated and committed under `sound-schemes/`, sourced from
+UI SFX (CC0). Phase 4, zip import, is in progress. Nothing bundled is
+reachable by the running application yet: the picker only ever offers
+Generated tones until import exists to add a second option. Phase 5
+stays blocked on `wixen.app`.
+
 ## Why the playback mechanism has to change now, not later
 
 `emit()` today is two functions: a Windows-only FFI call to `Beep()`, and a
