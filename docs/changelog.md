@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Every date and time entered anywhere in the application, an event's
+  start, a task's due date, a reminder's time, is now three or two real
+  controls, not one packed native picker.** A screen reader session found
+  that picker gave no feedback at all: moving between month, day and year
+  with the arrow keys, or changing one of them, said nothing, neither which
+  part was landed on nor what its new value became. That is a known
+  limitation of Windows' own date and time picker control on any
+  application, not something a style flag fixes, so a date is now a real
+  month choice, a real day spinner and a real year spinner side by side,
+  and a time a real hour and minute spinner, each with its own accessible
+  name such as "Starts, Month," which a screen reader announces correctly
+  because each is a real, separate control the same way every other
+  spinner and choice in the application already is. Picking a day that a
+  later month or year change leaves impossible, the thirty-first, then
+  February, clamps to the nearest real day rather than allowing a date
+  that does not exist. The hour spinner and an AM/PM choice follow
+  whichever clock, twelve hour or twenty-four, is set in Settings or
+  taken from Windows; seconds are left out entirely, since nothing
+  downstream has ever stored them.
+
 - **The Add and Edit Account dialog is now two pages, not one.** Every
   field used to sit on one screen: the password box beside the account's
   display name, before anyone had said which provider they were setting

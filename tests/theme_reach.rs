@@ -742,9 +742,15 @@ fn check_folder_choice(parent: &Frame, palette: theme::Palette, into: &mut Vec<S
 /// location, description), alongside the ones it leaves to Windows (date,
 /// time, choice, spin, category, tick).
 fn check_item_form(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let widgets =
-        wx_item_form::build_item_form_dialog(parent, ItemKind::Event, &[], &[], Some(palette))
-            .expect("an Event has fields to ask for");
+    let widgets = wx_item_form::build_item_form_dialog(
+        parent,
+        ItemKind::Event,
+        &[],
+        &[],
+        Some(palette),
+        wixen_mail::presentation::date_display::DateSettings::default(),
+    )
+    .expect("an Event has fields to ask for");
     check(
         "item form dialog",
         &widgets.dialog,

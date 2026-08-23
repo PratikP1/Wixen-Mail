@@ -4930,7 +4930,9 @@ fn raise_what_is_due(
 /// One mapping rather than one per place that needs it, so a date at the top of
 /// an opened message and the same date in a list column cannot come to disagree
 /// about which order the day and the month go in.
-fn date_settings_from(config: &crate::data::config::AppConfig) -> date_display::DateSettings {
+pub(crate) fn date_settings_from(
+    config: &crate::data::config::AppConfig,
+) -> date_display::DateSettings {
     date_display::DateSettings {
         style: date_display::DateStyle::from_setting(&config.date_style),
         order: date_display::DateOrder::from_setting(&config.date_order),

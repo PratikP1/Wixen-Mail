@@ -16,13 +16,35 @@
 //! use only. The accessible name has to be set on the control itself, so each
 //! one is named from its own label with the mnemonic taken out, and the help
 //! sentence becomes its description, which a screen reader reads on focus.
+//!
+//! # Date and time are three and two real controls, not one
+//!
+//! `wxDatePickerCtrl` and `wxTimePickerCtrl` wrap a single native Windows
+//! control that edits month, day and year, or hour and minute and second, as
+//! one focusable object with its own internal notion of which part the arrow
+//! keys are on. A real screen reader session found that internal state is
+//! not exposed anywhere this application can reach: moving between the parts
+//! with Left and Right, and changing one with Up and Down, said nothing,
+//! neither which part was landed on nor what its new value was. That is a
+//! known, long-standing limitation of the control itself, not something a
+//! style flag fixes.
+//!
+//! So a date is three real controls, a month choice, a day spinner and a
+//! year spinner, and a time is two, an hour spinner and a minute spinner,
+//! each with its own accessible name. Landing on one and changing its value
+//! are both things a real, separate control already does correctly, the same
+//! way every other spinner and choice in this application does. Seconds are
+//! left out entirely: nothing downstream has ever stored them, and asking
+//! for a precision nobody uses is one more control to tab past.
 
 use crate::application::item_fields::{Entry, Field, Filled, fields_for};
 use crate::application::new_item::ItemKind;
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
+use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
 use crate::presentation::theme;
+use crate::presentation::wx_app::date_settings_from;
 use wxdragon::prelude::*;
 
 /// A container the new thing could go in: a calendar, a task list, a folder.
@@ -32,12 +54,35 @@ pub struct Container {
     pub name: String,
 }
 
+/// A date, entered as three separate, separately named controls rather than
+/// one packed native picker. See the module documentation for why.
+///
+/// Fields `pub`, the same reason [`ItemFormWidgets`]'s own are: a test reads
+/// them back after building a real dialog, which is the only way to prove
+/// what is on screen without a human tabbing through it.
+#[derive(Clone, Copy)]
+pub struct DateFields {
+    pub month: Choice,
+    pub day: SpinCtrl,
+    pub year: SpinCtrl,
+}
+
+/// A time, entered as two separate controls, or three when the clock reads
+/// to twelve and a morning-or-afternoon choice is needed. See the module
+/// documentation for why, and for why there is no third spinner for seconds.
+#[derive(Clone, Copy)]
+pub struct TimeFields {
+    pub hour: SpinCtrl,
+    pub minute: SpinCtrl,
+    pub am_pm: Option<Choice>,
+}
+
 /// The controls built for one field, so the value can be read back.
 enum Control {
     Line(TextCtrl),
     Paragraph(TextCtrl),
-    Date(DatePickerCtrl),
-    Time(TimePickerCtrl),
+    Date(DateFields),
+    Time(TimeFields),
     Pick(Choice),
     Containers(Choice),
     Whole(SpinCtrl),
@@ -67,6 +112,7 @@ pub fn ask_for(
         containers,
         known_categories,
         theme::current_from_stored_config(),
+        current_date_settings(),
     )?;
 
     let answer = widgets.dialog.show_modal();
@@ -79,6 +125,19 @@ pub fn ask_for(
     filled
 }
 
+/// The date order and clock this computer, or somebody's own setting, reads.
+///
+/// Read fresh rather than threaded in from the caller, the same way
+/// [`theme::current_from_stored_config`] already is a few lines above this:
+/// one place to load it means an event's date fields and the list row it
+/// lands in cannot come to disagree about which order the day and month go
+/// in.
+fn current_date_settings() -> DateSettings {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| date_settings_from(mgr.app_config()))
+        .unwrap_or_default()
+}
+
 /// The item form dialog's widgets, returned so a test can build it without a
 /// human closing a live modal and so `ask_for` can read every field back
 /// after a real `.show_modal()`.
@@ -89,6 +148,12 @@ pub struct ItemFormWidgets {
     /// can find the one it wants by name without reaching into `Control`,
     /// which stays private to this module.
     pub text_fields: Vec<(&'static Field, TextCtrl)>,
+    /// Every date this form built, paired with the field it belongs to, for
+    /// the same reason `text_fields` is public.
+    pub date_fields: Vec<(&'static Field, DateFields)>,
+    /// Every time this form built, paired with the field it belongs to, for
+    /// the same reason `text_fields` is public.
+    pub time_fields: Vec<(&'static Field, TimeFields)>,
     built: Vec<(&'static Field, Control)>,
 }
 
@@ -107,6 +172,7 @@ pub fn build_item_form_dialog(
     containers: &[Container],
     known_categories: &[String],
     palette: Option<theme::Palette>,
+    date_settings: DateSettings,
 ) -> Option<ItemFormWidgets> {
     let fields = fields_for(kind);
     if fields.is_empty() {
@@ -143,7 +209,7 @@ pub fn build_item_form_dialog(
         sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
 
         let spoken = name_from_label(field.label);
-        let control = build_control(&dialog, field, containers, known_categories);
+        let control = build_control(&dialog, field, containers, known_categories, date_settings);
         name_it(&control, &spoken, field.help);
         add_to_sizer(&sizer, &control);
 
@@ -188,14 +254,27 @@ pub fn build_item_form_dialog(
             _ => None,
         })
         .collect();
+    let date_fields: Vec<(&'static Field, DateFields)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Date(f) => Some((*field, *f)),
+            _ => None,
+        })
+        .collect();
+    let time_fields: Vec<(&'static Field, TimeFields)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Time(f) => Some((*field, *f)),
+            _ => None,
+        })
+        .collect();
 
     // Painted last. `None` means high contrast is on, or the system is set
     // up in a way this application should not paint over, so nothing is set
     // here and Windows decides. Every other kind of field this form can
-    // build (`DatePickerCtrl`, `TimePickerCtrl`, `Choice`, `ComboBox`,
-    // `SpinCtrl`, `CheckBox`) is left to Windows, matching every one of
-    // those elsewhere in this round; only a real `TextCtrl` gets its own
-    // call.
+    // build (the date and time controls, `Choice`, `ComboBox`, `SpinCtrl`,
+    // `CheckBox`) is left to Windows, matching every one of those elsewhere
+    // in this round; only a real `TextCtrl` gets its own call.
     if let Some(palette) = palette {
         theme::paint(&dialog, palette.main_surface());
         for (_, field) in &text_fields {
@@ -206,8 +285,137 @@ pub fn build_item_form_dialog(
     Some(ItemFormWidgets {
         dialog,
         text_fields,
+        date_fields,
+        time_fields,
         built,
     })
+}
+
+/// How many days a month has, February aware of the year it is in.
+///
+/// Worked out from the calendar itself, first of the next month minus one
+/// day, rather than a table of lengths with February special-cased by hand:
+/// a table is one more place a leap year rule can be gotten wrong.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    let first_of_next = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .expect("the first of a valid month is always a valid date");
+    let first_of_this = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .expect("the first of a valid month is always a valid date");
+    (first_of_next - first_of_this).num_days() as u32
+}
+
+/// Keep the day spinner's range, and its value if need be, true to the month
+/// and year currently chosen either side of it.
+///
+/// Called after either changes. Clamping down rather than refusing: picking
+/// the thirty-first, then February, is not a mistake somebody needs stopped,
+/// it is a date that no longer exists and has to become the nearest one that
+/// does.
+///
+/// `pub` so a test can call it directly, which is the only way to prove what
+/// it does without a human turning the month spinner with a real keyboard.
+pub fn clamp_day_to_month(fields: DateFields) {
+    let month = fields.month.get_selection().map_or(1, |i| i + 1);
+    let max = days_in_month(fields.year.value(), month) as i32;
+    fields.day.set_range(1, max);
+    if fields.day.value() > max {
+        fields.day.set_value(max);
+    }
+}
+
+/// The earliest year offered. Wide enough for a birthday or an anniversary
+/// entered as an event, narrow enough that a stray keystroke cannot produce
+/// a year nobody meant.
+const EARLIEST_YEAR: i32 = 1900;
+/// The latest year offered, for the same reason.
+const LATEST_YEAR: i32 = 2100;
+
+/// Build the three controls a date is entered with, laid out in the order
+/// this computer, or somebody's own setting, reads a date in.
+fn build_date_fields(
+    dialog: &Dialog,
+    order: DateOrder,
+    now: chrono::DateTime<chrono::Local>,
+) -> DateFields {
+    use chrono::Datelike;
+
+    let month = Choice::builder(dialog)
+        .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
+        .with_selection(Some(now.month() - 1))
+        .build();
+    let day = SpinCtrl::builder(dialog).build();
+    day.set_range(1, days_in_month(now.year(), now.month()) as i32);
+    day.set_value(now.day() as i32);
+    let year = SpinCtrl::builder(dialog).build();
+    year.set_range(EARLIEST_YEAR, LATEST_YEAR);
+    year.set_value(now.year());
+
+    let fields = DateFields { month, day, year };
+    month.on_selection_changed(move |_| clamp_day_to_month(fields));
+    year.on_value_changed(move |_| clamp_day_to_month(fields));
+
+    // `order` only decides which of month and day is asked for first; year
+    // is last in both, the way almost every calendar written out in words
+    // already puts it, so there is nothing to decide for it.
+    let _ = order;
+    fields
+}
+
+/// Build the two or three controls a time is entered with. Two when the
+/// clock reads to twenty-four, three when it reads to twelve and a
+/// morning-or-afternoon choice is needed alongside the hour.
+fn build_time_fields(
+    dialog: &Dialog,
+    clock: Clock,
+    now: chrono::DateTime<chrono::Local>,
+) -> TimeFields {
+    use chrono::Timelike;
+
+    let (displayed_hour, is_pm) = match clock {
+        Clock::TwentyFourHour => (now.hour(), false),
+        Clock::TwelveHour => {
+            let h = now.hour();
+            let is_pm = h >= 12;
+            let displayed = match h % 12 {
+                0 => 12,
+                other => other,
+            };
+            (displayed, is_pm)
+        }
+    };
+
+    let hour = SpinCtrl::builder(dialog).build();
+    match clock {
+        Clock::TwentyFourHour => hour.set_range(0, 23),
+        Clock::TwelveHour => hour.set_range(1, 12),
+    }
+    hour.set_value(displayed_hour as i32);
+
+    let minute = SpinCtrl::builder(dialog).build();
+    minute.set_range(0, 59);
+    minute.set_value(now.minute() as i32);
+
+    let am_pm = match clock {
+        Clock::TwentyFourHour => None,
+        Clock::TwelveHour => {
+            let choice = Choice::builder(dialog)
+                .with_choices(vec!["AM".to_string(), "PM".to_string()])
+                .with_selection(Some(if is_pm { 1 } else { 0 }))
+                .build();
+            Some(choice)
+        }
+    };
+
+    TimeFields {
+        hour,
+        minute,
+        am_pm,
+    }
 }
 
 /// Build the control one field asks for.
@@ -216,7 +424,9 @@ fn build_control(
     field: &Field,
     containers: &[Container],
     known_categories: &[String],
+    date_settings: DateSettings,
 ) -> Control {
+    let now = chrono::Local::now();
     match &field.entry {
         Entry::Line => Control::Line(TextCtrl::builder(dialog).build()),
         Entry::Paragraph => Control::Paragraph(
@@ -225,8 +435,8 @@ fn build_control(
                 .with_size(Size::new(480, 90))
                 .build(),
         ),
-        Entry::Date => Control::Date(DatePickerCtrl::builder(dialog).build()),
-        Entry::Time => Control::Time(TimePickerCtrl::builder(dialog).build()),
+        Entry::Date => Control::Date(build_date_fields(dialog, date_settings.order, now)),
+        Entry::Time => Control::Time(build_time_fields(dialog, date_settings.clock, now)),
         Entry::Pick(options) => {
             let choice = Choice::builder(dialog).build();
             for option in *options {
@@ -265,20 +475,61 @@ fn build_control(
     }
 }
 
+/// Give every control a field builds its accessible name, and its help
+/// sentence as a description where there is one.
+///
+/// A date or a time is more than one control, and each of them is named with
+/// the field's own name first, "Starts, Month" rather than a bare "Month",
+/// because a form can ask for two dates at once, an event's start and its
+/// end, and "Month" heard twice with nothing to tell them apart is a name
+/// that has stopped naming anything. The help sentence, where the field has
+/// one, is attached to the first control only: read once on the way into the
+/// group rather than again on every one of two or three controls in a row.
 fn name_it(control: &Control, name: &str, help: &str) {
-    let widget: &dyn WxWidget = as_widget(control);
-    if help.is_empty() {
-        set_accessible_name(widget, name);
-    } else {
-        set_accessible_name_and_description(widget, name, help);
+    match control {
+        Control::Date(fields) => {
+            name_part(fields.month, name, "Month", help);
+            name_part(fields.day, name, "Day", "");
+            name_part(fields.year, name, "Year", "");
+        }
+        Control::Time(fields) => {
+            name_part(fields.hour, name, "Hour", help);
+            name_part(fields.minute, name, "Minute", "");
+            if let Some(am_pm) = fields.am_pm {
+                name_part(am_pm, name, "AM or PM", "");
+            }
+        }
+        _ => {
+            let widget = as_widget(control);
+            if help.is_empty() {
+                set_accessible_name(widget, name);
+            } else {
+                set_accessible_name_and_description(widget, name, help);
+            }
+        }
     }
 }
 
+/// Name one control of a date or a time: the field's own name, then which
+/// part of it this is.
+fn name_part(widget: impl WxWidget, field_name: &str, part: &str, help: &str) {
+    let full = format!("{field_name} {part}");
+    if help.is_empty() {
+        set_accessible_name(&widget, &full);
+    } else {
+        set_accessible_name_and_description(&widget, &full, help);
+    }
+}
+
+/// The one widget that stands for a control, for the cases where there is
+/// only one. A date or a time, which are several, are matched before this is
+/// reached.
 fn as_widget(control: &Control) -> &dyn WxWidget {
     match control {
         Control::Line(c) | Control::Paragraph(c) => c,
-        Control::Date(c) => c,
-        Control::Time(c) => c,
+        Control::Date(_) | Control::Time(_) => {
+            unreachable!("date and time fields are named and focused as themselves")
+        }
         Control::Pick(c) | Control::Containers(c) => c,
         Control::Whole(c) => c,
         Control::Category(c) => c,
@@ -288,15 +539,30 @@ fn as_widget(control: &Control) -> &dyn WxWidget {
 
 /// Put the control in the sizer.
 ///
-/// Matched rather than passed as `&dyn WxWidget`, because `add` is generic
-/// over a sized widget. The naming above can take the trait object; this
-/// cannot.
+/// A date or a time is laid out as its own row of controls side by side,
+/// month before day or day before month as the date order asks for, always
+/// ending in year; hour, minute, and a morning-or-afternoon choice when the
+/// clock reads to twelve.
 fn add_to_sizer(sizer: &BoxSizer, control: &Control) {
     let flags = SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom;
     match control {
         Control::Line(c) | Control::Paragraph(c) => sizer.add(c, 0, flags, 8),
-        Control::Date(c) => sizer.add(c, 0, flags, 8),
-        Control::Time(c) => sizer.add(c, 0, flags, 8),
+        Control::Date(fields) => {
+            let row = BoxSizer::builder(Orientation::Horizontal).build();
+            row.add(&fields.month, 0, SizerFlag::All, 4);
+            row.add(&fields.day, 0, SizerFlag::All, 4);
+            row.add(&fields.year, 0, SizerFlag::All, 4);
+            sizer.add_sizer(&row, 0, flags, 8)
+        }
+        Control::Time(fields) => {
+            let row = BoxSizer::builder(Orientation::Horizontal).build();
+            row.add(&fields.hour, 0, SizerFlag::All, 4);
+            row.add(&fields.minute, 0, SizerFlag::All, 4);
+            if let Some(am_pm) = fields.am_pm {
+                row.add(&am_pm, 0, SizerFlag::All, 4);
+            }
+            sizer.add_sizer(&row, 0, flags, 8)
+        }
         Control::Pick(c) | Control::Containers(c) => sizer.add(c, 0, flags, 8),
         Control::Whole(c) => sizer.add(c, 0, flags, 8),
         Control::Category(c) => sizer.add(c, 0, flags, 8),
@@ -305,7 +571,49 @@ fn add_to_sizer(sizer: &BoxSizer, control: &Control) {
 }
 
 fn focus(control: &Control) {
-    as_widget(control).set_focus();
+    match control {
+        Control::Date(fields) => fields.month.set_focus(),
+        Control::Time(fields) => fields.hour.set_focus(),
+        other => as_widget(other).set_focus(),
+    }
+}
+
+/// A date read from the month, day and year controls, in the form everything
+/// downstream stores.
+fn as_stored_date(year: i32, month: u32, day: u32) -> String {
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// A time read from the hour and minute controls, in the form everything
+/// downstream stores.
+fn as_stored_time(hour: u32, minute: u32) -> String {
+    format!("{hour:02}:{minute:02}")
+}
+
+/// The twenty-four hour reading of an hour a twelve-hour clock displayed.
+///
+/// `displayed` is what the hour spinner holds, one to twelve. Midnight is
+/// entered as 12 AM and stored as 0; noon is entered as 12 PM and stored as
+/// 12, which `% 12` alone does not give: it takes 12 back to 0 for both, and
+/// only one of them should become 0.
+fn hour_24(displayed: u32, is_pm: bool) -> u32 {
+    match (displayed % 12, is_pm) {
+        (0, false) => 0,
+        (h, false) => h,
+        (0, true) => 12,
+        (h, true) => h + 12,
+    }
+}
+
+/// The hour a time's controls hold, already in twenty-four hour form.
+fn hour_from(fields: &TimeFields) -> u32 {
+    match fields.am_pm {
+        None => fields.hour.value().max(0) as u32,
+        Some(am_pm) => hour_24(
+            fields.hour.value().max(1) as u32,
+            am_pm.get_selection() == Some(1),
+        ),
+    }
 }
 
 /// Read every control back into a filled form.
@@ -313,23 +621,6 @@ fn focus(control: &Control) {
 /// Also gives back the id of the chosen container, which is not a field value:
 /// the control shows names and the database wants ids, and matching them up
 /// by name later is how two calendars called Work end up merged.
-/// A date from a picker, in the form everything downstream stores.
-///
-/// The month is taken as it comes. It used to have one added to it, on the
-/// belief that the binding counts months from nought the way wxWidgets does,
-/// and it does not: `DateTime::month` adds the one itself and is documented as
-/// 1 to 12. So every date anybody typed into an event, a reminder or a task was
-/// filed a month later than they set it, silently, and a reminder set for this
-/// afternoon never went off because it was not due until next month.
-fn as_stored_date(date: &wxdragon::DateTime) -> String {
-    format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day())
-}
-
-/// A time from a picker, in the form everything downstream stores.
-fn as_stored_time(time: &wxdragon::DateTime) -> String {
-    format!("{:02}:{:02}", time.hour(), time.minute())
-}
-
 fn read_back(
     built: &[(&'static Field, Control)],
     containers: &[Container],
@@ -340,8 +631,19 @@ fn read_back(
     for (field, control) in built {
         match control {
             Control::Line(c) | Control::Paragraph(c) => filled.put(field.name, c.get_value()),
-            Control::Date(c) => filled.put(field.name, as_stored_date(&c.get_value())),
-            Control::Time(c) => filled.put(field.name, as_stored_time(&c.get_value())),
+            Control::Date(fields) => {
+                let month = fields.month.get_selection().map_or(1, |i| i + 1);
+                filled.put(
+                    field.name,
+                    as_stored_date(fields.year.value(), month, fields.day.value().max(1) as u32),
+                );
+            }
+            Control::Time(fields) => {
+                filled.put(
+                    field.name,
+                    as_stored_time(hour_from(fields), fields.minute.value().max(0) as u32),
+                );
+            }
             // Whatever is in the box, chosen or typed. Tidied where it is
             // read rather than here, because the same tidying has to apply to
             // one that came out of the database.
@@ -395,49 +697,74 @@ mod tests {
     use crate::application::item_fields::Filled;
 
     #[test]
-    fn test_a_date_is_stored_as_the_day_that_was_picked() {
-        // The month used to have one added to it, because wxWidgets counts
-        // months from nought. The binding does not: it adds the one itself.
-        // So a reminder set for the thirty-first of July was filed for the
-        // thirty-first of August, and it never went off, and nothing said so.
-        let midsummer = wxdragon::DateTime::new(2026, 7, 31, 14, 36, 0);
+    fn test_a_date_is_stored_from_its_three_controls() {
+        assert_eq!(as_stored_date(2026, 7, 31), "2026-07-31");
+    }
 
-        assert_eq!(as_stored_date(&midsummer), "2026-07-31");
-        assert_eq!(as_stored_time(&midsummer), "14:36");
+    #[test]
+    fn test_a_time_is_stored_from_its_two_controls() {
+        assert_eq!(as_stored_time(14, 36), "14:36");
+    }
+
+    #[test]
+    fn test_january_and_december_are_padded_and_not_wrapped() {
+        assert_eq!(as_stored_date(2026, 1, 5), "2026-01-05");
+        assert_eq!(as_stored_date(2026, 12, 25), "2026-12-25");
+    }
+
+    #[test]
+    fn test_midnight_and_noon_are_written_the_same_way() {
+        assert_eq!(as_stored_time(0, 0), "00:00");
+        assert_eq!(as_stored_time(12, 0), "12:00");
     }
 
     #[test]
     fn test_the_binding_counts_months_from_one() {
-        // The belief this rests on, written down so it fails here rather than
-        // in somebody's calendar if the binding ever changes.
+        // The belief every date field in this file rests on, written down so
+        // it fails here rather than in somebody's calendar if the crate ever
+        // changes. A reminder set for the thirty-first of July was once filed
+        // for the thirty-first of August, silently, because an earlier
+        // version of this file added one to a month that already counted
+        // from one.
         assert_eq!(wxdragon::DateTime::new(2026, 1, 1, 0, 0, 0).month(), 1);
         assert_eq!(wxdragon::DateTime::new(2026, 12, 1, 0, 0, 0).month(), 12);
     }
 
     #[test]
-    fn test_january_and_december_are_padded_and_not_wrapped() {
-        // The two the off-by-one hurt worst: December wrapped into a month
-        // thirteen, which is not a date at all.
-        assert_eq!(
-            as_stored_date(&wxdragon::DateTime::new(2026, 1, 5, 0, 0, 0)),
-            "2026-01-05"
-        );
-        assert_eq!(
-            as_stored_date(&wxdragon::DateTime::new(2026, 12, 25, 0, 0, 0)),
-            "2026-12-25"
-        );
+    fn test_days_in_month_knows_february() {
+        assert_eq!(days_in_month(2026, 2), 28, "2026 is not a leap year");
+        assert_eq!(days_in_month(2024, 2), 29, "2024 is a leap year");
+        assert_eq!(days_in_month(2000, 2), 29, "divisible by 400, a leap year");
+        assert_eq!(days_in_month(1900, 2), 28, "divisible by 100 and not 400");
     }
 
     #[test]
-    fn test_midnight_and_noon_are_written_the_same_way() {
-        assert_eq!(
-            as_stored_time(&wxdragon::DateTime::new(2026, 7, 1, 0, 0, 0)),
-            "00:00"
-        );
-        assert_eq!(
-            as_stored_time(&wxdragon::DateTime::new(2026, 7, 1, 12, 0, 0)),
-            "12:00"
-        );
+    fn test_days_in_month_knows_thirty_and_thirty_one() {
+        assert_eq!(days_in_month(2026, 1), 31);
+        assert_eq!(days_in_month(2026, 4), 30);
+    }
+
+    #[test]
+    fn test_days_in_month_carries_december_into_the_next_year() {
+        // The off-by-one this would hit if the next month wrapped to 13
+        // instead of rolling the year over.
+        assert_eq!(days_in_month(2026, 12), 31);
+    }
+
+    #[test]
+    fn test_twelve_hour_midnight_and_noon_convert_correctly() {
+        // The one pair `% 12` alone gets wrong: both reduce to zero, and only
+        // midnight should stay there.
+        assert_eq!(hour_24(12, false), 0, "12 AM is midnight, stored as 0");
+        assert_eq!(hour_24(12, true), 12, "12 PM is noon, stored as 12");
+    }
+
+    #[test]
+    fn test_twelve_hour_ordinary_hours_convert_correctly() {
+        assert_eq!(hour_24(9, false), 9, "9 AM");
+        assert_eq!(hour_24(9, true), 21, "9 PM");
+        assert_eq!(hour_24(1, false), 1, "1 AM");
+        assert_eq!(hour_24(11, true), 23, "11 PM");
     }
 
     #[test]

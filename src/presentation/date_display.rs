@@ -94,7 +94,10 @@ pub const ENGLISH_ONLY: &str = "Dates are written in English. The order of the d
      and the clock follow this computer, but the month names and wording such as \"2 days ago\" \
      stay in English whatever language this computer is set to.";
 
-const MONTHS: [&str; 12] = [
+/// The twelve month names, January first. `pub(crate)` so the item form can
+/// build a real, named choice of them for entering a date, rather than a
+/// number a screen reader has to translate.
+pub(crate) const MONTHS: [&str; 12] = [
     "January",
     "February",
     "March",
