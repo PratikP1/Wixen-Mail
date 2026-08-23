@@ -398,7 +398,7 @@ group are being written to, so you can tell when somebody has been missed.
 | Preview Pane | `Alt+2` | Show or hide the message preview |
 | Module Buttons | `Alt+3` | Show or hide the module navigation buttons |
 | Columns | `F8` | Choose which message list columns are shown and in what order |
-| Refresh Folder | `F5` | Read the current folder again from the local store |
+| Refresh Folder | `F5` | Read this folder again from the server |
 | Next Pane | `F6` | Move focus between the folder tree and the message list |
 | Thread View Toggle | `Ctrl+T` | Not available yet. It would collapse the list to one row per conversation. To read a conversation now, press `Enter` on a message that belongs to one. |
 | Check Mail | `F9` | Check for new messages |

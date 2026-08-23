@@ -15,9 +15,10 @@ Everything Wixen Mail stores is in one folder on your computer:
 
 ```text
 %LOCALAPPDATA%\wixen-mail\
-    config\        your settings and one file per account
-    cache\         the mail that has been downloaded
-    logs\          the running log and crash.log
+    config\           your settings and one file per account
+    cache\            the mail that has been downloaded
+    sound_schemes\    sound packs you have imported, if any
+    logs\             the running log and crash.log
 ```
 
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential

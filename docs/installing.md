@@ -47,7 +47,7 @@ checkbox to start the application when setup finishes.
 Setup accepts the standard Inno Setup switches.
 
 ```bash
-Wixen-Mail-Setup-0.1.0-alpha.15.exe /SILENT /CURRENTUSER
+Wixen-Mail-Setup-<version>.exe /SILENT /CURRENTUSER
 ```
 
 `/SILENT` shows a progress window and nothing else. `/VERYSILENT` shows nothing at all.
@@ -60,9 +60,10 @@ Everything Wixen Mail stores about you is in one folder:
 
 ```text
 %LOCALAPPDATA%\wixen-mail\
-    config\        your settings and one file per account
-    cache\         the mail that has been downloaded
-    logs\          the running log and crash.log
+    config\           your settings and one file per account
+    cache\            the mail that has been downloaded
+    sound_schemes\    sound packs you have imported, if any
+    logs\             the running log and crash.log
 ```
 
 Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.

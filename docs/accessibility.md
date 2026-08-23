@@ -1,355 +1,201 @@
-# Wixen Mail - Accessibility Guide
+# Accessibility
 
-## Overview
-Wixen Mail is designed from the ground up to be fully accessible to users who rely on assistive technologies, particularly screen readers. This document outlines our accessibility commitments and provides a comprehensive guide to keyboard navigation.
+This page says what Wixen Mail does for accessibility, organised by who each
+part is for, and says plainly where the work is unfinished. Structure being
+present is not the same as the experience being good, so where something has
+not been confirmed by a real run with the assistive technology it is for,
+that is written down too.
 
-## Accessibility Commitments
+## Standards
 
-### Standards Compliance
-- **WCAG 2.1 Level AA**: We aim to meet or exceed Web Content Accessibility Guidelines 2.1 Level AA standards
-- **Section 508**: Compliance with Section 508 of the Rehabilitation Act
-- **Windows Accessibility**: Full integration with Windows accessibility APIs (UIA - UI Automation)
+Wixen Mail targets **WCAG 2.2 Level AA**, applied to a Windows desktop
+application rather than a web page. Automated scanning catches roughly half
+of what WCAG asks for. The rest needs a real person using real assistive
+technology, which is why this page distinguishes what has been checked by a
+scanner from what has been confirmed by a listening pass.
 
-### Screen Reader Support
-Wixen Mail is tested and optimized for the following screen readers:
-- **NVDA (NonVisual Desktop Access)**: Primary testing platform
-- **JAWS (Job Access With Speech)**: Full support
-- **Windows Narrator**: Native Windows screen reader support
-- **Other Screen Readers**: Best effort support for other screen readers that follow Windows accessibility standards
+There is no Section 508 conformance claim here, because nobody has done the
+work of checking against it.
 
-## Keyboard Navigation
+## Blind and low-vision people using a screen reader
 
-### Global Keyboard Shortcuts
+Windows has two accessibility channels, and getting both right matters more
+than it looks like it should. UI Automation (UIA) is what Narrator reads.
+MSAA, through `IAccessible`, is what NVDA reads for native controls, and it
+is the only place this application's own `set_accessible_name` calls write
+to. For a native edit box or button, Windows supplies its own UI Automation
+provider that shadows the MSAA object underneath, so a scan of the UIA tree
+alone can report the system's own name for a control and never notice that
+the name this code set was never read at all. Wixen Mail is checked against
+both, in CI, on every pull request: an Axe.Windows scan of the UIA tree, and
+a script that walks the MSAA tree naming any control with no MSAA name.
 
-#### Application Control
-- `Alt + F4` - Close application
-- `Ctrl + Q` - Quit application
-- `Ctrl + ,` (Comma) - Open preferences/settings
-- `F1` - Open help documentation
-- `Ctrl + Shift + K` - Open keyboard shortcuts reference
+Screen reader support:
 
-#### Window Navigation
-- `F6` - Cycle through main panes (folder tree, message list, reading pane)
-- `Shift + F6` - Cycle through main panes in reverse
-- `Ctrl + Tab` - Switch between tabs (if multiple windows/tabs are open)
-- `Ctrl + Shift + Tab` - Switch between tabs in reverse
-- `Esc` - Close dialog/cancel current operation
+- **NVDA** is the primary target, and the one a small automated suite drives
+  for real in CI. That workflow launches a real copy of NVDA against the
+  running application, presses specific keys, and checks what NVDA actually
+  said aloud, which a structural scan cannot do. It is deliberately narrow,
+  though: it covers only the interactions its own tests touch, runs
+  non-blocking, and says nothing about any control, dialog, or sentence
+  those tests do not reach. Most of the application has not had a full
+  manual pass with NVDA, and that is the honest state of it.
+- **Windows Narrator** is spot-checked, not comprehensively verified.
+- **JAWS** has not been run against this application. Nothing here claims
+  JAWS support until that has actually happened.
 
-### Folder Tree Navigation
+Braille follows speech rather than needing its own path: announcements go
+through `UiaRaiseNotificationEvent`, which is how Windows both speaks a
+notification and sends it to a connected braille display through whichever
+screen reader is running. A braille display should show the same
+announcements a sighted user would hear spoken, without a separate setting.
 
-#### Movement
-- `Up/Down Arrow` - Move between folders
-- `Left Arrow` - Collapse current folder
-- `Right Arrow` - Expand current folder
-- `Home` - Jump to first folder
-- `End` - Jump to last folder
-- `*` (Asterisk) - Expand all subfolders
-- `Ctrl + Up/Down` - Move without changing selection
+Every list, tree, and text field is meant to carry a correct accessible
+Name, Role, Value, and State, and focus is meant to be managed so it is
+never lost when a panel or dialog changes. Long documents, a message opened
+to read or a whole email conversation shown as one page, keep the sender's
+real heading structure, so a screen reader's heading navigation moves
+between them the way it would in any well-structured document. [Keyboard
+shortcuts](KEYBOARD_SHORTCUTS.md) is the complete, current list of every key
+in the application, checked automatically against the real menus so it
+cannot drift the way a second copy of the same list would. This page does
+not repeat it.
 
-#### Actions
-- `Enter` - Open/select folder
-- `Ctrl + N` - Create new folder
-- `F2` - Rename selected folder
-- `Delete` - Delete selected folder (with confirmation)
-- `Ctrl + C` - Copy folder
-- `Ctrl + X` - Cut folder
-- `Ctrl + V` - Paste folder
-- `Alt + Enter` - Show folder properties
-- `Shift + F10` or `Menu Key` - Open context menu
+## Low vision and colour
 
-### Message List Navigation
+- **Contrast.** Text is checked against 4.5:1, and larger text and UI
+  components against 3:1, in both the light and dark themes.
+- **Never colour alone.** Anything meaningful shown with colour, an unread
+  message, a flagged one, a safety warning, also carries text or a distinct
+  shape, so colour blindness or a monochrome display does not lose the
+  information.
+- **Themes.** Settings offers Light, Dark, and a High Contrast choice that
+  hands the colours back to Windows entirely rather than trying to imitate
+  them. When Windows high contrast is switched on, Wixen Mail paints
+  nothing of its own: that is deliberate, because you chose those colours
+  and an application painting over them has taken away the reason you set
+  them. A theme reaches the sidebar and content area of every module, the
+  window a message opens into for reading, and the window that shows a
+  conversation as headings; the rest of the window follows Windows. A
+  change takes effect as soon as Settings closes with OK, with nothing to
+  restart.
+- **Zoom and text size.** `Ctrl+Plus` and `Ctrl+Minus` change the reading
+  size, and the application otherwise follows the font size and display
+  scaling Windows is already set to.
+- **Focus.** A visible focus indicator is meant to be present on every
+  interactive control.
 
-#### Movement
-- `Up/Down Arrow` - Move between messages
-- `Page Up/Page Down` - Scroll one page of messages
-- `Home` - Jump to first message
-- `End` - Jump to last message
-- `Ctrl + Up/Down` - Move without changing selection
-- `Shift + Up/Down` - Extend selection
-- `Ctrl + A` - Select all messages
+## Physical and motor access
 
-#### Message Actions
-- `Enter` - Open message in new window
-- `Space` - Mark message as read/unread (toggle)
-- `Delete` - Move message to trash
-- `Shift + Delete` - Permanently delete message (with confirmation)
-- `Ctrl + R` - Reply to message
-- `Ctrl + Shift + R` - Reply all
-- `Ctrl + L` - Forward message
-- `S` - Star/flag message
-- `M` - Move message to folder
-- `T` - Add tag to message
-- `J` - Mark as junk
-- `Shift + J` - Mark as not junk
+Everything is meant to be reachable and operable by keyboard alone, with no
+mouse-only or drag-only interaction anywhere. Accelerators follow standard
+Windows conventions, `Alt` and an underlined letter for a control in view,
+a menu accelerator for a command from anywhere, and
+[keyboard shortcuts](KEYBOARD_SHORTCUTS.md) is updated in the same commit
+that changes one, which a test checks both ways: every key a menu binds is
+named in that document, and the document names no key the code has never
+heard of.
 
-#### View Control
-- `N` - Jump to next unread message
-- `P` - Jump to previous unread message
-- `Shift + N` - Jump to next unread thread
-- `Shift + P` - Jump to previous unread thread
-- `T` - Toggle thread view
-- `O` - Expand/collapse thread
-- `Shift + O` - Expand/collapse all threads
+Reading an item under the cursor uses `Space`, once for a short summary and
+again for the whole thing, with no timing window between the two presses.
+A timing window that judged how fast you pressed twice would be a timing
+trap, and would lock out anyone who types slowly; the second press does the
+second thing however long it takes.
 
-### Reading Pane Navigation
+There is no keyboard shortcut customisation yet. Shortcuts are currently
+fixed, and this page and [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) agree
+on that rather than one of them promising a feature the other says is not
+built.
 
-#### Movement
-- `Space` - Scroll down one page
-- `Shift + Space` - Scroll up one page
-- `Home` - Jump to top of message
-- `End` - Jump to bottom of message
-- `Tab` - Move to next link/button
-- `Shift + Tab` - Move to previous link/button
+Nothing in the application times out on its own or interrupts you with an
+automatic action.
 
-#### Actions
-- `Ctrl + R` - Reply to message
-- `Ctrl + Shift + R` - Reply all
-- `Ctrl + L` - Forward message
-- `Ctrl + S` - Save message
-- `Ctrl + P` - Print message
-- `A` - Show/hide attachments pane
-- `Ctrl + K` - Open link (when focused on a link)
+## Learning and cognitive access
 
-#### Attachments
-- `Tab` (when in attachment area) - Navigate between attachments
-- `Enter` - Open/view attachment
-- `Ctrl + S` - Save attachment to disk
-- `Shift + F10` or `Menu Key` - Open attachment context menu
+Labels, messages, and errors are written in plain language, and an error
+says what happened, why, and what to do next rather than a code alone.
+Navigation is the same shape in every module: mail, contacts, calendar,
+reminders, tasks, and notes all use the same sidebar, list, and preview
+arrangement, and the same `Space`-to-read pattern works the same way in
+every one of them.
 
-### Message Composition
+A destructive action, deleting a task, a contact, a whole message, always
+asks first and names the specific thing it is about to remove, so answering
+too quickly does not lose the wrong item. Enter answers No on that question
+rather than Yes, on the theory that pressing the key you already know is
+safer than pressing the one that confirms.
 
-#### Composition Window
-- `Ctrl + N` or `Ctrl + M` - New message
-- `Ctrl + Enter` - Send message
-- `Ctrl + S` - Save draft
-- `Ctrl + W` - Close composition window
-- `Alt + S` - Send message (alternative)
-- `Esc` - Close composition window (saves draft)
+## Hearing and non-speech audio
 
-#### Editing
-- `Ctrl + Z` - Undo
-- `Ctrl + Y` - Redo
-- `Ctrl + X` - Cut
-- `Ctrl + C` - Copy
-- `Ctrl + V` - Paste
-- `Ctrl + A` - Select all
-- `Ctrl + F` - Find in message
-- `Ctrl + H` - Replace text
+Every audio cue has a visible or spoken equivalent; nothing here signals
+something by sound alone. Where a message carries audio or video as an
+attachment or embedded media, Wixen Mail surfaces any captions or
+transcript the sender provided, and says plainly when none exists rather
+than presenting the media as though it were accessible when it is not.
 
-#### Formatting (Rich Text Mode)
-- `Ctrl + B` - Bold
-- `Ctrl + I` - Italic
-- `Ctrl + U` - Underline
-- `Ctrl + Shift + L` - Bulleted list
-- `Ctrl + Shift + O` - Numbered list
-- `Ctrl + Shift + >` - Increase font size
-- `Ctrl + Shift + <` - Decrease font size
-- `Ctrl + \` - Clear formatting
+**Earcons and sound schemes.** Short audio cues, an earcon, mark events like
+a message arriving, a message having an attachment, or an account needing
+attention, as a second channel alongside the spoken announcement and the
+status line. They are meant to be distinguishable from each other and
+bounded, so a syncing mailbox cannot flood you with sound the way it must
+not flood you with speech. Under Settings, the Feedback tab, a sound scheme
+picks which set of sounds plays for these events, starting with a
+built-in, synthesised scheme. A sound scheme can be a real audio pack
+instead: choose Import sound scheme to bring in a `.zip` someone else
+packaged, and Delete sound scheme to remove one you no longer want, which
+stays disabled while only the built-in scheme is present, since there must
+always be one. Every feedback channel, speech, earcons, braille, and the
+status line, can be turned on or off independently from the same tab.
 
-#### Recipients and Fields
-- `Tab` - Move between To/Cc/Bcc/Subject/Body fields
-- `Shift + Tab` - Move backwards between fields
-- `Ctrl + Shift + T` - Show/hide Cc field
-- `Ctrl + Shift + B` - Show/hide Bcc field
+## Vestibular and photosensitivity
 
-#### Attachments in Composition
-- `Ctrl + Shift + A` - Add attachment
-- `Delete` (when focused on attachment) - Remove attachment
+Wixen Mail honours the Windows setting for reduced motion, and nothing in
+the application flashes more than three times a second.
 
-### Search and Filtering
+## The message preview and untrusted content
 
-#### Quick Search
-- `Ctrl + F` - Focus quick search box (in message list)
-- `Ctrl + Shift + F` - Advanced search/filter
-- `Enter` - Execute search
-- `Esc` - Clear search/return to full list
-- `F3` - Find next match
-- `Shift + F3` - Find previous match
+The preview pane renders untrusted HTML in a WebView, which is a browser
+embedded in the window. Once focus is inside it, the browser consumes
+`Esc`, `F6`, and every menu accelerator, so the preview never takes focus:
+`F6` moves between the sidebar and whichever list is open, and stops there.
+To read a message, `Space` on the message list reads it without leaving the
+list, and that path works with whatever screen reader you already have
+configured. A full, readable, focusable view of a message body outside the
+preview is the proper long-term answer to this and is not built yet.
 
-#### Search Window
-- `Tab` - Move between search criteria fields
-- `Ctrl + Enter` - Execute search
-- `Ctrl + W` - Close search window
+The HTML itself is sanitised before it is shown, which is a security
+measure, and the sender's heading structure and link text are kept intact
+through that sanitising, which is an accessibility one. Neither excuses
+skipping the other.
 
-### Account and Settings
+## Testing
 
-#### Account Management
-- `Alt + T, A` - Account settings
-- `Ctrl + Shift + A` - Add new account
-- `F9` - Get new messages for all accounts
-- `Ctrl + T` - Get new messages for current account
+Automated checks run on every pull request: an Axe.Windows scan of the UI
+Automation tree, a script walking the MSAA tree for missing names, and the
+small NVDA-driven suite described above. None of the three is a substitute
+for a person using the finished application with the assistive technology
+they actually rely on, and that fuller pass has not been done yet for most
+of the application. [What is built and what is
+not](IMPLEMENTATION_STATUS.md) says exactly how far real screen reader
+testing has gone as of its own last update.
 
-#### Settings and Preferences
-- `Ctrl + ,` (Comma) - Open preferences
-- `Tab` - Navigate between preference categories
-- `Space` - Toggle checkbox/radio options
-- `Enter` - Activate buttons
-- `Esc` - Cancel and close preferences
+### Reporting an accessibility problem
 
-### Context Menus and Dialogs
+1. Open an issue on the GitHub repository.
+2. Tag it with the `accessibility` label.
+3. Say which assistive technology you were using, and its version, your
+   Windows version, the steps that led to the problem, and what you
+   expected to happen instead.
 
-#### General
-- `Shift + F10` or `Menu Key` - Open context menu for selected item
-- `Up/Down Arrow` - Navigate menu items
-- `Enter` - Activate menu item
-- `Esc` - Close menu
-- `Alt + Letter` - Access menu item by underlined letter (when available)
-
-#### Dialog Navigation
-- `Tab` - Move to next control
-- `Shift + Tab` - Move to previous control
-- `Space` - Toggle checkbox/button
-- `Enter` - Activate default button
-- `Esc` - Cancel/close dialog
-- `Alt + Letter` - Access control by underlined letter
-
-## Accessibility Features
-
-### Screen Reader Announcements
-- Real-time announcements for new mail arrival
-- Message status changes (read/unread, flagged)
-- Folder selection changes
-- Progress notifications for long operations
-- Error and warning messages
-
-### High Contrast Support
-- When Windows high contrast is on, Wixen Mail paints no colours of its own.
-  That is deliberate: you chose those colours, and an application that paints
-  over them has taken away the reason you set them.
-- There is no separate high contrast palette inside Wixen Mail, and there is no
-  plan for one. Windows already has the setting and it applies everywhere.
-- The Theme setting offers light and dark palettes. They reach the folder list,
-  the message list and the side panel; the rest of the window follows Windows.
-
-### Keyboard Focus Management
-- Clear visual focus indicators
-- Logical focus order throughout the application
-- Focus trapped in modal dialogs
-- Focus returns to appropriate location after dialog closure
-
-### Text and Display
-- Customizable font sizes
-- Zoom in/out support (`Ctrl + Plus/Minus`)
-- Respect system font settings
-- Line spacing adjustments
-- Support for Windows display scaling
-
-### Language
-
-Wixen Mail speaks English, and this section says where that shows and where it
-is worse than it looks.
-
-The interface is English only. Labels, messages, errors and dates are all
-written in English, and nothing changes them when Windows is set to another
-language. Dates are the place this is easiest to miss, because the order of the
-day and month and the clock do follow Windows. So on a French machine the parts
-of the date come out in French order with an English month in the middle, and
-"2 days ago" stays in English too. That mixture sounds like the screen reader
-misbehaving rather than like the application speaking one language, so the
-settings screen says it under Dates and Times as well.
-
-A message you read carries the language Windows is set to, not the language the
-message was written in. Nothing in a message tells Wixen Mail what language it
-is in: no message reaching here carries a Content-Language header, and a
-sender's own marking on the whole document is removed when the message is made
-safe to display. So the document asks to be read in your language, which is
-right for most of your mail and wrong for the rest. A message in a third
-language is announced with your pronunciation rules.
-
-When Windows will not say what language it is set to, the document says nothing
-about language rather than claiming English. A screen reader then carries on in
-the voice you chose, which is the truthful answer. This is a known gap against
-WCAG 3.1.1 Language of Page, taken deliberately: a wrong claim is acted on, a
-missing one is not.
-
-A marking a sender put on part of a message does survive. A French quotation
-inside an English message keeps its `lang="fr"`, so a reader that switches
-voices switches for that part (WCAG 3.1.2 Language of Parts).
-
-### Timing and Animations
-- No time-sensitive operations without alternatives
-- Option to disable animations
-- Configurable auto-save intervals
-- No automatic timeouts for user interactions
-
-### Navigation Shortcuts
-- Breadcrumb navigation for complex hierarchies
-- Skip links to jump to main content areas
-- Landmarks for major application sections
-- Consistent navigation patterns throughout
-
-## Testing and Feedback
-
-### Accessibility Testing
-We regularly test Wixen Mail with:
-- Automated accessibility testing tools
-- Manual screen reader testing (NVDA, JAWS, Narrator)
-- Keyboard-only navigation testing
-- High contrast and zoom testing
-- Real users with disabilities
-
-### Reporting Accessibility Issues
-If you encounter any accessibility barriers:
-1. Open an issue on our GitHub repository
-2. Tag it with the `accessibility` label
-3. Provide details about:
-   - Your assistive technology (name and version)
-   - Operating system version
-   - Steps to reproduce the issue
-   - Expected vs. actual behavior
-
-We prioritize accessibility issues and aim to address them promptly.
-
-## Customization
-
-### Keyboard Shortcut Customization
-Users can customize keyboard shortcuts through:
-1. Settings → Keyboard Shortcuts
-2. Select action to customize
-3. Press new key combination
-4. Save changes
-
-### Screen Reader Verbosity
-Adjust the level of detail provided by screen readers:
-- **Verbose**: Detailed announcements for all events
-- **Normal**: Standard announcements (default)
-- **Brief**: Minimal announcements for experienced users
-
-### Focus Management Preferences
-- **Auto-focus**: Automatically focus new windows and dialogs
-- **Manual focus**: Keep focus in current location until manually moved
-
-## Resources
-
-### Documentation
-- [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md)
-- [Screen reader support, in the user guide](USER_GUIDE.md#screen-reader-support)
-- [When a screen reader is not announcing something](TROUBLESHOOTING.md#screen-reader-not-announcing)
-
-### External Resources
-- [NVDA Screen Reader](https://www.nvaccess.org/)
-- [JAWS Screen Reader](https://www.freedomscientific.com/products/software/jaws/)
-- [Windows Narrator](https://support.microsoft.com/en-us/windows/complete-guide-to-narrator-e4397a0d-ef4f-b386-d8ae-c172f109bdb1)
-- [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/)
-
-## Contact
-
-For questions or feedback about accessibility:
-
-- [Open an issue](https://github.com/PratikP1/Wixen-Mail/issues) and add the
-  `accessibility` label.
-- [Start a discussion](https://github.com/PratikP1/Wixen-Mail/discussions) if it
-  is a question rather than a fault.
+[Start a discussion](https://github.com/PratikP1/Wixen-Mail/discussions)
+instead if it is a question rather than a fault.
 
 There is no email address yet. One will be listed here when there is one to
 list, rather than a placeholder that bounces.
 
-## Commitment to Continuous Improvement
+## External references
 
-Accessibility is not a one-time effort but an ongoing commitment. We will:
-- Regularly audit our application for accessibility
-- Incorporate user feedback from the disability community
-- Stay updated with accessibility standards and best practices
-- Continuously improve our accessibility features
-
-Thank you for helping us make Wixen Mail accessible to everyone!
+- [NVDA](https://www.nvaccess.org/)
+- [JAWS](https://www.freedomscientific.com/products/software/jaws/)
+- [Windows Narrator](https://support.microsoft.com/en-us/windows/complete-guide-to-narrator-e4397a0d-ef4f-b386-d8ae-c172f109bdb1)
+- [WCAG 2.2](https://www.w3.org/WAI/WCAG22/quickref/)

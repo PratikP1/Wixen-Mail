@@ -9,13 +9,14 @@
 6. [Search Functionality](#search-functionality)
 7. [Thread View](#thread-view)
 8. [Attachments](#attachments)
-9. [Keyboard Shortcuts](#keyboard-shortcuts)
-10. [Accessibility Features](#accessibility-features)
-11. [Troubleshooting](#troubleshooting)
+9. [Other modules: contacts, calendar, reminders, tasks, notes](#other-modules)
+10. [Keyboard Shortcuts](#keyboard-shortcuts)
+11. [Accessibility Features](#accessibility-features)
+12. [Troubleshooting](#troubleshooting)
 
 ## Getting Started
 
-Wixen Mail is a fully accessible email client designed to work seamlessly with screen readers (NVDA, JAWS, Windows Narrator). The application follows WCAG 2.1 Level AA accessibility standards.
+Wixen Mail is designed to work with screen readers (NVDA, JAWS, Windows Narrator), and targets WCAG 2.2 Level AA. [Accessibility](accessibility.md) has the full detail, including what has and has not been confirmed with a real screen reader.
 
 ### System Requirements
 - Windows 10 or later
@@ -27,145 +28,65 @@ When you first launch Wixen Mail, you'll need to configure an email account to g
 
 ## Account Setup
 
-### Quick Setup with Popular Providers
+### Adding an account
 
-Wixen Mail supports automatic configuration for these popular email providers:
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Type your email address. Wixen Mail recognises the domain of the
+   popular providers and fills in the server settings, and turns the
+   browser sign-in checkbox on or off, whichever usually works for that
+   address. You can change either.
+4. Depending on the provider and the checkbox, either sign in through the
+   browser Wixen Mail opens, or enter your password or app password in the
+   password box.
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**.
 
-#### Gmail
-1. Click **File → Connect to Server** or press `Ctrl+O`
-2. Enter your Gmail address (e.g., `user@gmail.com`)
-3. The app will automatically detect Gmail and fill in server settings
-4. Enter your username (usually your full email address)
-5. Enter your **app password** (not your regular Gmail password)
-   - Create an app password at: https://myaccount.google.com/apppasswords
-6. Click **Connect**
+[Setting up your provider](PROVIDER_SETUP.md) has the exact settings and
+app-password steps for Gmail, Outlook.com and Office 365, Yahoo, iCloud, and
+ProtonMail Bridge, and what to do for a provider not listed there.
 
-**Important:** Gmail requires an app password if you have 2-factor authentication enabled (recommended).
+### Managing accounts
 
-#### Outlook.com / Office 365
-1. Click **File → Connect to Server**
-2. Enter your Outlook/Office 365 email address
-3. Settings auto-fill for Outlook
-4. Enter your username and password
-5. Click **Connect**
+The Account Manager (`Ctrl+A`) is also where you manage the accounts you
+have already added:
 
-**Note:** Works with both personal and business Office 365 accounts.
+- **Edit** changes an account's settings.
+- **Delete** removes an account and its stored credentials.
+- **Set Active** switches which account's mail you are looking at.
+- **Sign In Again** re-authorises an account using browser sign-in, for
+  when a token has been revoked or Google's weekly expiry has caught up
+  with you.
+- **Set as Default** chooses which account a new contact, event, task, or
+  note is filed under when you make one from outside that account's own
+  module.
 
-#### Yahoo Mail
-1. Click **File → Connect to Server**
-2. Enter your Yahoo email address
-3. Settings auto-fill for Yahoo
-4. Enter your username and **app password**
-   - Generate at: https://login.yahoo.com/account/security
-5. Click **Connect**
+`Ctrl+1` through `Ctrl+3` switch directly to your first, second, and third
+enabled accounts.
 
-#### iCloud Mail
-1. Click **File → Connect to Server**
-2. Enter your iCloud email address (@icloud.com, @me.com, or @mac.com)
-3. Settings auto-fill for iCloud
-4. Enter your username and **app-specific password**
-   - Generate at: https://appleid.apple.com
-5. Click **Connect**
+### Other tools
 
-#### ProtonMail (via Bridge)
-1. Install and start ProtonMail Bridge on your computer
-2. Click **File → Connect to Server**
-3. Select "ProtonMail (Bridge required)" from the provider dropdown
-4. Enter your Bridge username and password
-5. Click **Connect**
+The Tools menu also opens:
 
-**Note:** ProtonMail requires the Bridge application running locally.
+- **Message Filters**, rules that sort, mark, or move messages as they
+  arrive. Each rule matches on a field such as subject, sender, or date,
+  and can mark a message read, star it, move it, or tag it.
+- **Contact Manager**, a dialog for the contacts stored for the account you
+  are looking at. The [Contacts module](#other-modules) reached with
+  `Ctrl+Shift+2` is the fuller way to work with contacts; this dialog
+  overlaps it.
+- **Signatures**, the text added to the end of messages you send.
+- **Tags**, the labels you can put on a message.
+- **Sync Contacts**, **Sync Calendar**, and **Sync Tasks**, to sync with
+  your provider immediately rather than waiting for the next automatic
+  sync.
 
-### Manual Configuration
+### Offline Mode
 
-For other email providers:
-
-1. Click **File → Connect to Server**
-2. Select "Manual Configuration" from the provider dropdown
-3. Enter the following information:
-
-**IMAP Settings (Incoming Mail):**
-- Server: Your IMAP server address (e.g., `imap.example.com`)
-- Port: Usually 993 for TLS/SSL
-- Use TLS/SSL: Check this box (recommended)
-
-**SMTP Settings (Outgoing Mail):**
-- Server: Your SMTP server address (e.g., `smtp.example.com`)
-- Port: Usually 465 (SSL) or 587 (STARTTLS)
-- Use TLS/SSL: Check this box (recommended)
-
-**Credentials:**
-- Username: Your email address or username
-- Password: Your email password
-
-4. Click **Connect**
-
-### Multiple Accounts
-
-Wixen Mail supports managing multiple email accounts.
-
-- Open **Tools → Manage Accounts** (`Ctrl+M`) to add/edit/delete accounts.
-- Switch active account from the toolbar account dropdown (📧).
-- Keyboard shortcuts:
-  - `Ctrl+1` - Switch to first enabled account
-  - `Ctrl+2` - Switch to second enabled account
-  - `Ctrl+3` - Switch to third enabled account
-
-### Message Rules (Phase 7)
-
-Use **Tools → Manage Rules** (`Ctrl+Shift+E`) to create accessibility-friendly message rules.
-
-Each rule can:
-- Match on fields: `subject`, `from`, `to`, `cc`, `date`, `message_id`, `body_plain`, `body_html`, `read`, `starred`, `deleted`
-- Use match types: `contains`, `not_contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `is_true`, `is_false`, `regex`
-- Choose case-sensitive or case-insensitive matching
-- Perform actions: `mark_as_read`, `mark_as_unread`, `star`, `unstar`, `delete`, `move_to_folder`, `add_tag`
-
-### Contacts (Phase 8)
-
-Use **Tools → Manage Contacts** (`Ctrl+Shift+C`) to manage an account-specific address book.
-
-Features:
-- Create/edit/delete contacts
-- Mark favorite contacts
-- Search by name or email
-- Recipient autocomplete suggestions while composing messages
-- Extended provider-ready fields (phone, company, title, website, address, birthday)
-- Photo/avatar support (URL or embedded uploaded image)
-- Automatic contact import from message history/provider account activity
-- vCard import and export
-
-### OAuth 2.0 (Phase 9)
-
-Use **Tools → OAuth 2.0 Manager** (`Ctrl+Shift+O`) to manage provider tokens.
-The OAuth manager is shown only when at least one configured account requires OAuth (for example Gmail or Outlook).
-
-Capabilities:
-- Generate provider authorization URL (Gmail/Outlook presets)
-- Exchange authorization code for token set
-- Refresh or revoke stored tokens
-- View token expiry status for selected account/provider
-
-### Offline Mode (Phase 10)
-
-Use **View → Offline Mode** to switch to offline-first behavior.
-
-When offline mode is enabled:
-- Sending a composed message queues it to the offline outbox (instead of SMTP send)
-- The queue is kept on this computer, one per account
-
-Use **View → Flush Outbox** to attempt queued sends when back online.
-
-### Beta Readiness Diagnostics (Phase 11)
-
-Use **Help → Beta Readiness Check** to run final release-hardening diagnostics.
-
-The check reports:
-- account/active-account readiness
-- cache availability
-- online/offline status
-- queued outbox backlog warnings
-- OAuth-capable account detection
+**View → Offline Mode** switches to offline-first behaviour. While it is
+on, sending a composed message queues it in a local outbox instead of
+sending it immediately, one queue per account. **View → Flush Outbox**
+attempts every queued send once you are back online.
 
 ## Reading and Managing Email
 
@@ -177,12 +98,11 @@ Wixen Mail uses a classic three-pane layout:
 ┌─────────────┬─────────────────┬─────────────────┐
 │  FOLDERS    │  MESSAGE LIST   │  PREVIEW PANE   │
 │             │                 │                 │
-│ 📁 INBOX    │ ⭐● Subject     │ Message body    │
-│ 📁 Sent     │   From: ...     │ appears here    │
-│ 📁 Drafts   │   Date: ...     │                 │
-│ 📁 Trash    │                 │ Attachments     │
-│             │ 📎 Subject      │ listed below    │
-│             │   From: ...     │                 │
+│  Inbox      │  Subject        │  Message body   │
+│  Sent       │  From           │  appears here   │
+│  Drafts     │  Date           │                 │
+│  Trash      │                 │  Attachments    │
+│             │                 │  listed below   │
 └─────────────┴─────────────────┴─────────────────┘
 ```
 
@@ -191,13 +111,14 @@ Wixen Mail uses a classic three-pane layout:
 - **Keyboard:** Press `F6` to cycle through panes
 - **Mouse:** Click on the desired pane
 
-### Message Indicators
+### Message Status
 
-- **⭐** - Starred/flagged message
-- **●** - Unread message
-- **📎** - Has attachments
-- **↳** - Reply in a thread (when thread view is enabled)
-- **📧** - Thread parent message
+Wixen Mail deliberately avoids icons for status that matters, since an icon
+is something a screen reader user has to be taught to decode. Whether a
+message is read or unread, starred, or has an attachment shows as a real
+column in the message list, and reads as a word: "unread", "starred", "has
+attachment". `Space` on a message reads its full status along with the rest
+of the item, once for a short summary and again for everything.
 
 ### Message Actions
 
@@ -268,70 +189,78 @@ Wixen Mail uses a classic three-pane layout:
 
 ### Search Tips
 
-- Search looks through message subjects, senders, and content
+- Search matches against message subjects, senders, and the message preview
 - Search is case-insensitive
+- Search queries the mail already on this computer, so it works offline and
+  needs no connection
 - Use specific terms for better results
 
 ## Thread View
 
-Thread view groups related messages together in conversations, making it easier to follow email discussions.
+Related messages are grouped into a conversation using the `References` and
+`In-Reply-To` headers rather than subject matching, so "Re: lunch" from two
+strangers years apart is not folded into one conversation by mistake.
 
-### Enabling Thread View
+A `Ctrl+T` toggle to collapse the message list itself to one row per
+conversation is in the View menu, and is not built yet: it is disabled, and
+says so rather than doing nothing silently.
 
-**Method 1: Header Toggle**
-- Look for the **Thread View** checkbox in the message list header
-- Click to toggle thread view on/off
-
-**Method 2: View Menu**
-- Click **View → Thread View**
-- Check or uncheck to toggle
-
-### Understanding Thread View
-
-When thread view is enabled:
-- **📧** indicates the first message in a thread
-- **↳** indicates replies in the thread
-- Replies are indented to show hierarchy
-- Messages are grouped by conversation
-
-### Benefits of Thread View
-
-- See all related messages together
-- Understand conversation context
-- Reduce clutter by grouping replies
+**To read a conversation today**, press `Enter` on a message that belongs to
+one. That opens the conversation as a tree; `Enter` on its first row opens
+the whole conversation as one document, with every message a real heading
+you can move between with `H`, and `Enter` on any other row opens that one
+message alone. `Esc` from the tree goes back to the message list, on the row
+you came from. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md#conversations) has
+the full detail.
 
 ## Attachments
 
 ### Viewing Attachments
 
-When a message has attachments:
-1. The message shows a **📎** icon in the message list
-2. Select the message to view details
-3. Attachments appear below the message body in the preview pane
+A message with attachments is announced as having them, and Wixen Mail does
+not use an icon for this: your screen reader hears it in words rather than
+having to identify a glyph. Select the message to see the attachments listed
+below the message body in the preview pane, or press `F8` from inside the
+reader window to jump straight to the list.
 
 ### Attachment Information
 
-Each attachment shows:
-- **File icon** - Visual indicator of file type
-  - 🖼 Images
-  - 📄 PDF documents
-  - 📝 Word documents
-  - 📊 Spreadsheets
-  - 🎥 Videos
-  - 🎵 Audio files
-  - 📦 Archives
-- **Filename**
-- **MIME type** (e.g., image/jpeg, application/pdf)
-- **File size** in bytes
+Each attachment reads as its name, what kind of file it is in plain words,
+and its size in a readable unit, for example "Report.pdf, PDF document,
+240 KB", rather than as an icon. If an attachment is a program, something
+Windows would run on opening it such as `.exe`, `.msi`, or `.ps1`, it is
+named as a program rather than whatever the message claims it is, since the
+type a message gives its own attachment is written by whoever sent it.
 
 ### Saving Attachments
 
 1. Find the attachment in the preview pane
-2. Click the **Save** button (💾)
+2. Click the **Save** button
 3. Choose a location to save the file
 4. The file will be downloaded
 
 **Keyboard Shortcut:** Tab to the Save button and press `Enter`
+
+## Other modules
+
+Mail is one of six areas Wixen Mail holds in the same window, each with its
+own key that reaches it from anywhere:
+
+| Area | Key |
+| --- | --- |
+| Mail | `Ctrl+Shift+1` |
+| Contacts | `Ctrl+Shift+2` |
+| Calendar | `Ctrl+Shift+3` |
+| Reminders | `Ctrl+Shift+4` |
+| Tasks | `Ctrl+Shift+5` |
+| Notes | `Ctrl+Shift+6` |
+
+Every area shares the same shape: a sidebar, a list, and the same reading
+pattern. `Space` reads the item under the cursor, once for a short summary
+and again for the whole thing; `Ctrl+N` makes a new one of whatever the area
+is for; `Delete` removes the one you are on, asking first and naming what it
+will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
+every module in full.
 
 ## Keyboard Shortcuts
 
@@ -373,41 +302,45 @@ Each attachment shows:
 
 ## Accessibility Features
 
-Wixen Mail is designed to be fully accessible with screen readers and keyboard navigation.
+This is a short summary. [Accessibility](accessibility.md) is the complete
+page, organised by who each part is for, including what has and has not
+been confirmed with real assistive technology.
 
 ### Screen Reader Support
 
-**Supported Screen Readers:**
-- NVDA (free, recommended for testing)
-- JAWS (commercial)
-- Windows Narrator (built-in)
+NVDA is the primary target, and the one a small automated suite drives for
+real in CI. Windows Narrator is spot-checked. JAWS has not been run against
+this application.
 
-**Announcements:**
-Wixen Mail announces:
-- New messages received
-- Message selection changes
-- Folder changes with unread counts
-- Search results
-- Successful actions (sent, deleted, etc.)
-- Errors with helpful recovery tips
+Wixen Mail announces a new message arriving, a change in what is selected, a
+folder change with its unread count, search results, the outcome of an
+action such as sending or deleting something, and errors with what to do
+next.
 
 ### Keyboard Accessibility
 
-**Every function in Wixen Mail can be accessed via keyboard:**
-- All buttons are keyboard accessible
-- All menus support keyboard navigation
-- All dialogs can be navigated with Tab/Shift+Tab
-- Context menus can be opened with Shift+F10 or Menu key
+Every function is meant to be reachable by keyboard: every button, every
+menu, every dialog with `Tab` and `Shift+Tab`, and every context menu with
+`Shift+F10` or the Menu key.
 
-### Focus Indicators
+### Focus and Contrast
 
-- Clear visual focus indicators on all interactive elements
-- High contrast mode support
-- Adjustable font sizes (in Settings)
+Every interactive control is meant to carry a visible focus indicator.
+Settings offers light, dark, and a high contrast choice that hands the
+colours back to Windows entirely, along with adjustable font size and
+zoom with `Ctrl+Plus` and `Ctrl+Minus`.
 
-### ARIA Labels
+## Sound Schemes and Earcons
 
-All UI elements have proper ARIA labels and roles for screen reader compatibility.
+Open Settings (`Ctrl+,`) and the Feedback tab to control the short sounds
+Wixen Mail plays for events like new mail arriving or a message having an
+attachment, alongside speech and the status line. The Sound scheme picker
+chooses which set of sounds plays, starting with a built-in, synthesised
+scheme. Choose **Import sound scheme** to bring in a `.zip` someone else
+packaged; choose **Delete sound scheme** to remove one you no longer want.
+Delete stays disabled while only the built-in scheme is present, since one
+scheme must always exist. [Accessibility](accessibility.md#hearing-and-non-speech-audio)
+has the fuller explanation of what earcons are for.
 
 ## Troubleshooting
 
@@ -495,12 +428,10 @@ All UI elements have proper ARIA labels and roles for screen reader compatibilit
 
 ### Provider-Specific Help
 
-When configuring an account, look for the provider documentation link (ℹ) in the account configuration dialog. This links to official setup guides for:
-- Gmail
-- Outlook/Office 365
-- Yahoo Mail
-- iCloud
-- ProtonMail Bridge
+When you need an app password, the Add Account dialog says so next to the
+password box, and the account dialog points you to
+[Setting up your provider](PROVIDER_SETUP.md), which has the full steps for
+Gmail, Outlook.com and Office 365, Yahoo, iCloud, and ProtonMail Bridge.
 
 ### Report Issues
 
@@ -512,7 +443,7 @@ If you encounter issues not covered in this guide:
 ## Tips for Best Experience
 
 1. **Use app passwords** for providers that support them (Gmail, Yahoo, iCloud)
-2. **Enable thread view** to better organize conversations
+2. **Press `Enter` on a message in a conversation** to read the whole thread as one document
 3. **Use keyboard shortcuts** for faster navigation
 4. **Star important messages** for quick access later
 5. **Use search** to quickly find messages
@@ -522,12 +453,7 @@ If you encounter issues not covered in this guide:
 
 ## Conclusion
 
-Wixen Mail is designed to be a powerful yet accessible email client. Take time to explore the features and customize your experience through the Settings window.
-
-For the best experience:
-- Learn the keyboard shortcuts
-- Enable features that help your workflow (thread view, etc.)
-- Keep your email organized with folders and stars
-- Use search to quickly find what you need
-
-Thank you for using Wixen Mail!
+Learning the keyboard shortcuts pays off quickly, since almost everything in
+Wixen Mail is reachable that way. Folders, stars, and tags keep a growing
+mailbox organised, and search finds a specific message faster than scrolling
+to it.

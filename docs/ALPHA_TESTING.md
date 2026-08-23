@@ -41,6 +41,18 @@ you have signed in, so there is no way to leave one account read only and
 allow everything on another. To use a real account with nothing at risk, start
 Wixen Mail with `--read-only`, which is next.
 
+### Signing in with a browser, and a limit worth knowing before you hit it
+
+Choosing browser sign-in (OAuth) for Gmail during testing carries two limits
+that are Google's, not this project's. Only people added by hand to the
+project's tester list can sign in at all, and that list holds at most a
+hundred people. Once you are on it, Google expires your sign-in after seven
+days, so you sign in again through the browser about once a week. Neither
+limit applies to an app password, which is why an app password is the steadier
+choice if you would rather not repeat that every week. [Choosing a sign-in
+method](PROVIDER_SETUP.md#choosing-a-sign-in-method) has the full detail, and
+what to do if you signed in before this limit applied to you.
+
 ### Turning it off for one run
 
     wixen-mail --read-only

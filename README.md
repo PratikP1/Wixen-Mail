@@ -11,12 +11,12 @@ Read [Status](#status) first. This list describes what the project is for, not
 what is finished.
 
 - Native Windows controls with toolbar, three-pane layout, and modern styling
-- Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator (not yet verified against a live screen reader)
+- Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator. An automated suite drives real NVDA in CI against specific interactions; most of the application has not had a full manual pass
 - Multiple account management with provider auto-detection and OAuth 2.0
 - SMTP sending over TLS, with an outbox that retries rather than losing a failed send
 - Composition with formatting toolbar, attachments, signatures, and preview-before-send
 - Contact management with vCard import/export, groups, and autocomplete
-- Advanced search (FTS), message rules engine, and tag-based filtering
+- Search across subject, sender, and preview text, a message rules engine, and tag-based filtering
 - Offline mode with outbox queue and sync-on-reconnect
 - Passwords and sign-in tokens kept in the Windows credential store, never in a file
 
@@ -96,8 +96,10 @@ server is experimental, has never run against a real account, and is gated by
 a setting called Allow Changes, which
 [the testing guide](docs/ALPHA_TESTING.md) explains before anything else.
 
-Nothing here has been verified with a real screen reader yet, and for this
-project that is the bar that matters. See
+Most of this application has not been verified with a real screen reader yet,
+and for this project that is the bar that matters. An automated suite drives
+real NVDA in CI against specific interactions, but a full manual pass has not
+been done. See
 [what is built and what is not](docs/IMPLEMENTATION_STATUS.md), which is
 written to be believed rather than to sell the project.
 

@@ -215,21 +215,17 @@ verification is on, which is why the direct link is easier.
 
 #### 3. Configure Wixen Mail
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Enter your Gmail address (e.g., `user@gmail.com`)
-4. The settings should auto-fill:
-   - **Provider:** Gmail
-   - **IMAP Server:** imap.gmail.com
-   - **IMAP Port:** 993
-   - **Use TLS/SSL:** ✓ Checked
-   - **SMTP Server:** smtp.gmail.com
-   - **SMTP Port:** 587
-   - **Use TLS/SSL:** ✓ Checked
-5. Enter **Username:** Your full Gmail address
-6. Enter **Password:** the 16-character app password. Your ordinary Google
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Type your Gmail address (e.g., `user@gmail.com`). Wixen Mail recognises
+   the domain and fills in Gmail's server settings for you:
+   - **IMAP Server:** imap.gmail.com, port 993, TLS
+   - **SMTP Server:** smtp.gmail.com, port 587, TLS
+4. The browser sign-in checkbox is off by default for Gmail. Paste the
+   16-character app password into the password box. Your ordinary Google
    password will not work here.
-7. Click **Connect**
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**.
 
 ### How Gmail differs, and what Wixen Mail does about it
 
@@ -306,27 +302,26 @@ it.
 
 ### Requirements
 - Outlook.com, Hotmail, or Office 365 account
-- Regular account password (app password not usually required)
+- A browser to sign in with. Microsoft has withdrawn plain password sign-in
+  for most accounts, so browser sign-in (OAuth) is what Wixen Mail uses here
+  by default
 
 ### Step-by-Step Setup
 
 #### 1. Configure Wixen Mail
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Enter your Outlook email address
-   - Examples: `user@outlook.com`, `user@hotmail.com`, `user@yourcompany.com`
-4. The settings should auto-fill:
-   - **Provider:** Outlook.com / Office 365
-   - **IMAP Server:** outlook.office365.com
-   - **IMAP Port:** 993
-   - **Use TLS/SSL:** ✓ Checked
-   - **SMTP Server:** smtp.office365.com
-   - **SMTP Port:** 587
-   - **Use TLS/SSL:** ✓ Checked
-5. Enter **Username:** Your full email address
-6. Enter **Password:** Your regular account password
-7. Click **Connect**
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Type your Outlook email address (`user@outlook.com`, `user@hotmail.com`,
+   or your work address). Wixen Mail recognises the domain and fills in the
+   server settings for you:
+   - **IMAP Server:** outlook.office365.com, port 993, TLS
+   - **SMTP Server:** smtp.office365.com, port 587, TLS
+4. The browser sign-in checkbox is on by default for Outlook.com addresses.
+   Leave it checked.
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**. The browser opens immediately to sign in; Wixen Mail never
+   sees your password.
 
 ### Notes for Office 365
 
@@ -383,20 +378,16 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Enter your Yahoo email address (e.g., `user@yahoo.com`)
-4. The settings should auto-fill:
-   - **Provider:** Yahoo Mail
-   - **IMAP Server:** imap.mail.yahoo.com
-   - **IMAP Port:** 993
-   - **Use TLS/SSL:** ✓ Checked
-   - **SMTP Server:** smtp.mail.yahoo.com
-   - **SMTP Port:** 587
-   - **Use TLS/SSL:** ✓ Checked
-5. Enter **Username:** Your full Yahoo email address
-6. Enter **Password:** Your generated app password (not your regular password)
-7. Click **Connect**
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Type your Yahoo email address (e.g., `user@yahoo.com`). Wixen Mail fills
+   in Yahoo's server settings:
+   - **IMAP Server:** imap.mail.yahoo.com, port 993, TLS
+   - **SMTP Server:** smtp.mail.yahoo.com, port 587, TLS
+4. The browser sign-in checkbox is off by default for Yahoo. Paste the app
+   password you generated into the password box.
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**.
 
 ### Troubleshooting Yahoo
 
@@ -446,21 +437,16 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Enter your iCloud email address
-   - Can be @icloud.com, @me.com, or @mac.com
-4. The settings should auto-fill:
-   - **Provider:** iCloud Mail
-   - **IMAP Server:** imap.mail.me.com
-   - **IMAP Port:** 993
-   - **Use TLS/SSL:** ✓ Checked
-   - **SMTP Server:** smtp.mail.me.com
-   - **SMTP Port:** 587
-   - **Use TLS/SSL:** ✓ Checked
-5. Enter **Username:** Your full iCloud email address
-6. Enter **Password:** Your app-specific password (with or without dashes)
-7. Click **Connect**
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Type your iCloud email address (@icloud.com, @me.com, or @mac.com).
+   Wixen Mail fills in iCloud's server settings:
+   - **IMAP Server:** imap.mail.me.com, port 993, TLS
+   - **SMTP Server:** smtp.mail.me.com, port 587, TLS
+4. The browser sign-in checkbox is off by default for iCloud. Paste your
+   app-specific password into the password box, with or without the dashes.
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**.
 
 ### Troubleshooting iCloud
 
@@ -514,20 +500,20 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Enter your ProtonMail address (e.g., `user@protonmail.com`)
-4. The settings should auto-fill:
-   - **Provider:** ProtonMail (Bridge required)
-   - **IMAP Server:** 127.0.0.1
-   - **IMAP Port:** 1143
-   - **Use TLS/SSL:** ✗ Unchecked (local connection)
-   - **SMTP Server:** 127.0.0.1
-   - **SMTP Port:** 1025
-   - **Use TLS/SSL:** ✗ Unchecked (local connection)
-5. Enter **Username:** As shown in Bridge
-6. Enter **Password:** As shown in Bridge (not your ProtonMail password)
-7. Click **Connect**
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. Enter the settings Bridge showed you by hand. Bridge runs on this
+   computer rather than at an address Wixen Mail can recognise, so nothing
+   here auto-fills:
+   - **IMAP Server:** 127.0.0.1, port 1143, TLS off (the connection never
+     leaves this computer)
+   - **SMTP Server:** 127.0.0.1, port 1025, TLS off
+   - **Username:** as shown in Bridge
+   - **Password:** as shown in Bridge, not your ProtonMail password
+4. Leave the browser sign-in checkbox unchecked. Bridge handles your
+   ProtonMail sign-in on its own.
+5. Type the name you want people to see when your mail arrives.
+6. Choose **OK**.
 
 ### Important Notes
 
@@ -612,14 +598,13 @@ For email providers not listed above, you'll need to manually configure the sett
 
 ### Manual Configuration
 
-1. Open Wixen Mail
-2. Click **File → Connect to Server**
-3. Select **Manual Configuration** from provider dropdown
-4. Enter your settings:
-   - IMAP Server, Port, TLS/SSL
-   - SMTP Server, Port, TLS/SSL
-   - Username and Password
-5. Click **Connect**
+1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+2. Choose **Add Account**.
+3. If Wixen Mail does not recognise your provider from the email address,
+   enter the settings by hand: IMAP server, port, and TLS; SMTP server,
+   port, and TLS; username and password.
+4. Type the name you want people to see when your mail arrives.
+5. Choose **OK**.
 
 ### Common Provider Examples
 

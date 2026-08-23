@@ -352,9 +352,10 @@ Comprehensive solutions for common issues with Wixen Mail.
    - Restart if running for long time
 
 3. **Message List Size**
-   - Very long message lists can impact performance
-   - Archive old messages to improve speed
-   - Future updates will improve virtualization
+   - The message list, and every other list in the application, only builds
+     the rows currently on screen, so a folder with tens of thousands of
+     messages should not be slower to scroll than a small one. If it is,
+     that is worth reporting rather than working around by archiving
 
 ## Accessibility Issues
 
@@ -480,20 +481,33 @@ Comprehensive solutions for common issues with Wixen Mail.
 
 ### Draft Not Saving
 
+A draft saves to this computer immediately, whether or not you are connected.
+If it looks like a draft is missing, it is worth telling apart two different
+problems.
+
 **Solutions:**
 
-1. **Not Connected**
-   - Must be connected to save drafts
-   - Drafts save to server, not locally
-   - Check connection status
+1. **The draft is not in the composition window or Drafts folder on this computer**
+   - This is the one to treat as a real bug. Check the application logs and
+     report it.
 
-2. **Draft Folder Missing**
-   - Some providers may not have Drafts folder
-   - Check webmail for draft folder name
+2. **The draft is here, but has not shown up on your phone or in webmail**
+   - On an IMAP account, Wixen Mail also files a copy in your account's
+     Drafts folder on the server, as a best-effort background action once a
+     minute while you write. That copy needs a connection, so it can lag or
+     fail without costing the copy on this computer.
+   - On a POP account there is no server-side Drafts folder to file a copy
+     in, so a POP draft only ever lives on this computer.
+   - Some providers name their Drafts folder differently. Check webmail for
+     the actual folder name.
 
 ## Search Problems
 
 ### Search Returns No Results
+
+Search matches against the subject, sender, and preview text of messages
+already on this computer. It queries the local cache, not the server, so it
+works offline and needs no connection.
 
 **Solutions:**
 
@@ -502,13 +516,13 @@ Comprehensive solutions for common issues with Wixen Mail.
    - Try broader search terms
    - Search is case-insensitive
 
-2. **Not Connected**
-   - Must be connected to search
-   - Search queries server, not local cache
-
-3. **Search Not Indexed**
-   - Some providers may have search limitations
-   - Try searching from specific folder
+2. **The message has not been downloaded yet**
+   - A message search cannot find has usually not been synced to this
+     computer yet. Press `F5` to read the folder again from the server, then
+     search again.
+   - Search only matches the subject, sender, and preview text, not the full
+     body, so a term that only appears further down a long message will not
+     find it.
 
 ### Search Very Slow
 

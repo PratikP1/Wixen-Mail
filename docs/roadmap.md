@@ -1,6 +1,6 @@
 # Wixen Mail - Project Roadmap
 
-_Last updated: 2026-03-01_
+_Last updated: 2026-08-23_
 
 ## Vision
 Wixen Mail aims to be a fully accessible, light-weight mail client built with Rust, providing a Thunderbird/Outlook-inspired experience with first-class support for screen readers and keyboard navigation on Windows.
@@ -163,7 +163,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Per-account data isolation
 - [x] 5 provider presets with auto-detection
 - [x] Compose from specific account (dropdown selector)
-- [ ] Unified inbox across accounts
+- [x] Unified inbox across accounts ("All Inboxes")
 
 ## Phase 7: Offline Mode & Polish (Complete)
 
@@ -190,7 +190,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [ ] Desktop shortcuts
 
 ### Performance
-- [ ] Virtual scrolling for large mailboxes
+- [x] Virtual scrolling, for the message list and for every other list in the application
 - [ ] Large mailbox testing (100K+ messages)
 - [ ] Memory profiling and optimization
 - [ ] Startup time optimization (<2 seconds)
@@ -210,11 +210,13 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Future Enhancements (Post 1.0)
 
 ### Additional Features
-- [ ] Theme customization (dark mode, high contrast)
-- [ ] Calendar integration (CalDAV)
+- [x] Theme customization (light, dark, and Windows high contrast)
+- [~] Calendar integration (CalDAV). The client exists and signs in; there is
+      no screen yet for adding a calendar by its own address rather than
+      through an account
 - [ ] Full PGP/S-MIME encryption and decryption
 - [ ] Exchange Web Services (EWS)
-- [ ] Microsoft Graph API
+- [x] Microsoft Graph API, for Outlook and Microsoft 365 contacts and calendars
 - [ ] JMAP protocol
 - [ ] Plugin/extension system
 

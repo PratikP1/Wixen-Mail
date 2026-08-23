@@ -21,7 +21,7 @@ version number that would go stale between updates.
 | Keep contacts, calendar, tasks, notes, reminders | Yes, stored locally and shown in their panels |
 | Sync contacts and calendars with a provider | Built, and never yet run against a live account |
 | Use it entirely from the keyboard | Yes |
-| Use it with a screen reader | Yes for what exists, and not yet verified against NVDA |
+| Use it with a screen reader | Yes for what exists. An automated suite drives real NVDA against specific interactions in CI; most of the application has not had a full manual pass |
 
 ## What works
 
@@ -112,9 +112,14 @@ application's controls.
 
 ## Known gaps in verification
 
-Automated scanning covers roughly half of WCAG. **No part of this application has
-been tested with a real screen reader yet.** Structure being present is not the
-same as the experience being good, and only an NVDA run can tell the difference.
+Automated scanning covers roughly half of WCAG. A separate workflow drives a real
+copy of NVDA against specific keystrokes and checks what it actually said aloud,
+which the structural scan cannot do, since the structural scan never presses a
+key. That workflow is narrow, though: it covers only the interactions its own
+tests touch, and says nothing about any control, dialog, or sentence those tests
+do not reach. **Most of the application has not had a full manual pass with a
+screen reader.** Structure being present is not the same as the experience being
+good, and only a real, wide-ranging run can tell the difference.
 
 The provider sync clients have not been run against live Google, Microsoft, or
 CalDAV accounts.
