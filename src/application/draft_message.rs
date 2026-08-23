@@ -53,7 +53,10 @@ pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Ve
     // and goes to nobody, so nothing is disclosed by keeping them; the header
     // is removed at the point of sending, which is where blindness matters.
     push_addresses(&mut out, "Bcc", draft.bcc.as_deref().unwrap_or_default());
-    out.push_str(&format!("Subject: {}\r\n", draft.subject));
+    out.push_str(&format!(
+        "Subject: {}\r\n",
+        without_line_breaks(&draft.subject)
+    ));
     // A reply saved half written is still a reply, and this copy is what
     // somebody comes back to on another device. Without these it is a copy that
     // has forgotten what it answers, so finishing it there sends something that
@@ -84,7 +87,11 @@ pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Ve
 /// something different from a header absent, and for the threading pair what it
 /// says is malformed.
 fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
-    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+    let Some(value) = value
+        .map(without_line_breaks)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
         return;
     };
     out.push_str(&format!("{header}: {value}\r\n"));
@@ -94,9 +101,11 @@ fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
 ///
 /// Both are folded to a space rather than dropped, so the text stays
 /// readable instead of running two words together. Every value this builder
-/// writes onto a header line of its own can hold a remote sender's display
-/// name, by way of a Reply pre-fill, and nothing this side of the folder it
-/// gets appended to would otherwise stop a line break in that name from
+/// writes onto a header line of its own can be a remote sender's text: a
+/// display name by way of a Reply pre-fill, a Subject by way of "Re: " plus
+/// the original, or a Message-ID or References line read straight off the
+/// message being replied to. Nothing this side of the folder it gets
+/// appended to would otherwise stop a line break in any of them from
 /// starting a header of its own.
 fn without_line_breaks(text: &str) -> String {
     text.replace(['\r', '\n'], " ")
@@ -265,6 +274,40 @@ mod tests {
         let raw = built(&with_sneaky_recipient);
 
         assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
+    }
+
+    #[test]
+    fn test_a_subject_cannot_write_a_second_header_on_a_filed_draft() {
+        // A reply's subject starts as "Re: " plus the original message's own
+        // Subject line, so this arrives at `bytes_for` exactly as unguarded
+        // as a recipient's display name arrived at `push_addresses` before
+        // it stripped one.
+        let mut sneaky_subject = draft();
+        sneaky_subject.subject = "Re: Meeting\r\nBcc: sneak@example.com".to_string();
+
+        let raw = built(&sneaky_subject);
+
+        assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
+    }
+
+    #[test]
+    fn test_the_threading_pair_cannot_write_a_second_header_on_a_filed_draft() {
+        // In-Reply-To and References are read straight from the replied-to
+        // message's own Message-ID and References headers, by way of
+        // `threading::continuing`, which takes them from `mail-parser` with
+        // nothing sanitised in between, so they arrive at `push_if_present`
+        // exactly as unguarded as a recipient's display name arrived at
+        // `push_addresses` before it stripped one.
+        let mut sneaky_reply = draft();
+        sneaky_reply.in_reply_to =
+            Some("<parent@example.com>\r\nBcc: sneak@example.com".to_string());
+        sneaky_reply.references =
+            Some("<first@example.com>\r\nBcc: sneak2@example.com".to_string());
+
+        let raw = built(&sneaky_reply);
+
+        assert!(!raw.contains("\r\nBcc: sneak@example.com"), "{raw}");
+        assert!(!raw.contains("\r\nBcc: sneak2@example.com"), "{raw}");
     }
 
     #[test]
