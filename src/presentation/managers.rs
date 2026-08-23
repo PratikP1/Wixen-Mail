@@ -13,6 +13,8 @@ use crate::application::calendar::EditMeans;
 use crate::application::collection_sync;
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
 use crate::data::message_cache::MessageCache;
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::contact_convert;
 use crate::presentation::ui_types::{CalendarEventItem, UIUpdate};
 use crate::presentation::wx_app::{WxUIState, lock_state, send_refusal, send_status};
@@ -1305,13 +1307,17 @@ fn event_entry(
 /// Results replace the message list, and the status line says how many there
 /// were, because a list that silently changed under you is worse than no
 /// search: with no result count, an empty result and a broken search look the
-/// same.
+/// same. A result of zero is signalled through [`Event::NothingFound`] rather
+/// than said as plain status text, so it reaches the earcon channel too.
+///
+/// [`Event::NothingFound`]: crate::presentation::accessibility::feedback::Event::NothingFound
 pub fn search_messages(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     query: &str,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     /// Enough to be useful, few enough to fill the list without a pause.
     const LIMIT: usize = 500;
@@ -1328,22 +1334,30 @@ pub fn search_messages(
                 .collect();
             let found = items.len();
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
-            send_status(
-                tx,
-                rt,
-                &if found == 0 {
-                    format!("No messages match {}", query)
-                } else if found == LIMIT {
-                    format!("First {} matches for {}", LIMIT, query)
-                } else {
-                    format!(
-                        "{} match{} for {}",
-                        found,
-                        if found == 1 { "" } else { "es" },
-                        query
-                    )
-                },
-            );
+            if found == 0 {
+                // Signalled rather than reported as plain status text, so a
+                // search that comes up empty reaches the earcon channel too,
+                // not just the status bar.
+                let _ = a11y.signal(
+                    crate::presentation::accessibility::feedback::Event::NothingFound,
+                    query,
+                );
+            } else {
+                send_status(
+                    tx,
+                    rt,
+                    &if found == LIMIT {
+                        format!("First {} matches for {}", LIMIT, query)
+                    } else {
+                        format!(
+                            "{} match{} for {}",
+                            found,
+                            if found == 1 { "" } else { "es" },
+                            query
+                        )
+                    },
+                );
+            }
         }
         Err(e) => {
             tracing::error!("Search failed: {}", e);
@@ -1623,12 +1637,14 @@ pub fn pim_command(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     frame: &Frame,
+    a11y: &Arc<Accessibility>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
 ) {
     use crate::application::new_item::ItemKind;
     use crate::application::pim_command::{
-        PimCommand, confirm_delete, deleted, did_not_happen, no_longer_there, toggled,
+        PimCommand, confirm_delete, confirmed_detail, deleted, did_not_happen, no_longer_there,
+        toggled,
     };
 
     let crate::application::pim_command::PimAction { command, kind, row } = action;
@@ -1753,6 +1769,13 @@ pub fn pim_command(
     match outcome {
         Ok(said) => {
             send_status(tx, rt, &said);
+            // Delete and Move say nothing here: a delete already asked
+            // first, and a move is announced by its own destination-naming
+            // sentence above. Neither is the "did the small thing I asked
+            // for happen" fact this event exists for.
+            if let Some(detail) = confirmed_detail(command, now) {
+                let _ = a11y.signal(FeedbackEvent::Confirmed, detail);
+            }
             let account_id = lock_state(state).active_account_id.clone();
             crate::presentation::wx_app::load_module_data(
                 module_for(kind),
@@ -2338,12 +2361,107 @@ mod tests {
         })
     }
 
+    /// A `MessageCache` already wrapped the way `search_messages` and its
+    /// siblings take one.
+    ///
+    /// `MessageCache` wraps a rusqlite connection and is not `Sync`, so the
+    /// `Arc` buys sharing with the function under test rather than thread
+    /// safety. Production holds it the same way, which is what makes this
+    /// the right mirror rather than a lint to silence; the same allow
+    /// `wx_app`'s own `test_cache` carries for the same reason.
+    #[allow(clippy::arc_with_non_send_sync)]
+    fn test_cache_arc() -> TempHome<Option<Arc<MessageCache>>> {
+        TempHome::named("wixen_managers_search_test_", |dir| {
+            let cache =
+                MessageCache::new(dir.to_path_buf(), None).expect("a cache to test against");
+            Some(Arc::new(cache))
+        })
+    }
+
     /// A form with only the title filled in, which is what the old prompt
     /// gave and what the storage still has to cope with.
     fn just_a_title(title: &str) -> crate::application::item_fields::Filled {
         let mut filled = crate::application::item_fields::Filled::default();
         filled.put(crate::application::item_fields::FieldName::Title, title);
         filled
+    }
+
+    #[test]
+    fn test_a_mail_search_that_matches_nothing_reaches_the_earcon_channel() {
+        // What this cannot see: whether a tone actually sounds, the same
+        // boundary this project already draws around every other earcon. What
+        // it does prove is that an empty result goes out through `signal`,
+        // which is earcon-capable, rather than the plain status text
+        // `send_status` alone produces, which can never play a tone.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, _rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(&state, &cache, "acquisition", &tx, &rt, &a11y);
+
+        assert_eq!(
+            a11y.take_visual_feedback().as_deref(),
+            Some("Nothing found, acquisition"),
+            "an empty mail search does not signal NothingFound, so it never \
+             reaches the earcon channel"
+        );
+    }
+
+    #[test]
+    fn test_a_mail_search_that_matches_something_does_not_signal_nothing_found() {
+        // The other half: a real result must keep saying what it always said,
+        // through the status line rather than the NothingFound event, so
+        // wiring the empty case cannot also mute or repurpose the normal one.
+        use crate::data::message_cache::{CachedFolder, CachedMessage};
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let with_cache = cache.as_ref().expect("a cache");
+        let folder_id = with_cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: LOCAL_ACCOUNT_ID.to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to search in");
+        with_cache
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: 1,
+                folder_id,
+                message_id: "m1@example.com".to_string(),
+                subject: "Quarterly figures".to_string(),
+                from_addr: "Hana <hana@example.com>".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-07-30".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+            })
+            .expect("a message to search for");
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, _rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(&state, &cache, "quarterly", &tx, &rt, &a11y);
+
+        assert_eq!(
+            a11y.take_visual_feedback(),
+            None,
+            "a mail search that found a message still signalled NothingFound"
+        );
     }
 
     #[test]
@@ -7000,6 +7118,28 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
         );
         let wrong = what_a_confirmed_delete_gets_wrong(&body);
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_a_toggled_pim_item_reaches_the_earcon_channel() {
+        // What this cannot see: whether the tone actually sounds, the same
+        // boundary every other earcon check in this project draws. It reads
+        // the command's own text and asks that the success branch calls
+        // `signal`, which is earcon-capable, rather than only `send_status`,
+        // which can never play a tone.
+        //
+        // Marking a task or reminder done, and pinning or unpinning a note,
+        // only ever reached `send_status`. `Event::Confirmed` exists so that
+        // flag, mark done and pin all share the one tone rather than each
+        // growing its own.
+        let source = std::fs::read_to_string("src/presentation/managers.rs")
+            .expect("this file to be readable");
+        let body = the_body_of(&source, "pub fn pim_command(");
+        assert!(
+            body.contains("a11y.signal(FeedbackEvent::Confirmed"),
+            "pim_command does not signal Confirmed, so a toggle never \
+             reaches the earcon channel"
+        );
     }
 
     #[test]

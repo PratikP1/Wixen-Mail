@@ -285,6 +285,31 @@ pub fn toggled(command: PimCommand, name: &str, now: bool) -> String {
     }
 }
 
+/// The short word `Event::Confirmed`'s tone carries, when this command is one
+/// of the toggles it covers.
+///
+/// `None` for [`PimCommand::Delete`] and [`PimCommand::Move`]: a delete asks
+/// first and is announced by [`deleted`], and a move needs the destination's
+/// name, which [`moved`] already carries. Neither is the "did the small
+/// thing I asked for happen" fact `Event::Confirmed` exists for.
+///
+/// Deliberately not [`toggled`]'s sentence. That names the item, which
+/// somebody who just acted on the row they were sitting on already knows;
+/// this is the one short word every toggle site shares, so flag, mark done
+/// and pin all sound like the same fact rather than three near-identical
+/// ones.
+pub fn confirmed_detail(command: PimCommand, now: bool) -> Option<&'static str> {
+    match command {
+        PimCommand::ToggleComplete => Some(if now {
+            "Marked done"
+        } else {
+            "Marked not done"
+        }),
+        PimCommand::TogglePin => Some(if now { "Pinned" } else { "Unpinned" }),
+        PimCommand::Delete | PimCommand::Move => None,
+    }
+}
+
 fn capitalise(value: &str) -> String {
     let mut characters = value.chars();
     match characters.next() {
@@ -543,5 +568,39 @@ mod tests {
         ] {
             assert!(PimCommand::Delete.applies_to(kind), "{kind:?}");
         }
+    }
+
+    #[test]
+    fn test_confirmed_detail_names_which_way_a_toggle_went() {
+        // Short and generic on purpose, unlike `toggled`'s sentence: this is
+        // the one word every toggle site shares with `Event::Confirmed`, not
+        // a sentence naming the row, which somebody who just acted on the row
+        // they were sitting on already knows.
+        assert_eq!(
+            confirmed_detail(PimCommand::ToggleComplete, true),
+            Some("Marked done")
+        );
+        assert_eq!(
+            confirmed_detail(PimCommand::ToggleComplete, false),
+            Some("Marked not done")
+        );
+        assert_eq!(
+            confirmed_detail(PimCommand::TogglePin, true),
+            Some("Pinned")
+        );
+        assert_eq!(
+            confirmed_detail(PimCommand::TogglePin, false),
+            Some("Unpinned")
+        );
+    }
+
+    #[test]
+    fn test_confirmed_detail_is_silent_for_delete_and_move() {
+        // Neither is the "did the small thing I asked for happen" fact
+        // `Event::Confirmed` exists for: a delete asks first and is announced
+        // by `deleted`, and a move needs the destination `moved` already
+        // names.
+        assert_eq!(confirmed_detail(PimCommand::Delete, true), None);
+        assert_eq!(confirmed_detail(PimCommand::Move, false), None);
     }
 }

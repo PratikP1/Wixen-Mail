@@ -1579,19 +1579,22 @@ impl WxMailApp {
                     // only helps an entry still waiting, not one already
                     // spoken.
                     if count != before {
-                        let said = if count == 0 {
-                            "No contacts match".to_string()
+                        if count == 0 {
+                            // Signalled rather than announced by hand, so an
+                            // empty result reaches the earcon channel too and
+                            // not just the status bar.
+                            let _ = a11y.signal(FeedbackEvent::NothingFound, "");
                         } else {
-                            format!(
+                            let said = format!(
                                 "{} shown",
                                 crate::service::caldav::how_many(count, "contact")
-                            )
-                        };
-                        let _ = a11y.announce_topic(
-                            &said,
-                            crate::presentation::accessibility::announcements::Priority::Low,
-                            "contacts",
-                        );
+                            );
+                            let _ = a11y.announce_topic(
+                                &said,
+                                crate::presentation::accessibility::announcements::Priority::Low,
+                                "contacts",
+                            );
+                        }
                     }
                 }
             });
@@ -2193,17 +2196,22 @@ impl WxMailApp {
                         rt: &runtime,
                     };
                     let idx = event.get_item_index() as usize;
-                    let in_thread = {
+                    let landing_events = {
                         let mut s = lock_state(&state);
                         s.selected_message_index = Some(idx);
-                        s.messages.get(idx).is_some_and(|m| m.thread_id.is_some())
+                        s.messages
+                            .get(idx)
+                            .map(feedback_events_for_landing)
+                            .unwrap_or_default()
                     };
-                    // Landing on a conversation is signalled rather than
-                    // spoken, so it can be a short tone for anyone who does
-                    // not want another sentence on every row, and words for
-                    // anyone who does. The choice is in Settings, not here.
-                    if in_thread {
-                        let _ = a11y.signal(FeedbackEvent::ThreadLanded, "");
+                    // Landing on a conversation or an attachment is
+                    // signalled rather than spoken, so it can be a short
+                    // tone for anyone who does not want another sentence on
+                    // every row, and words for anyone who does. The choice
+                    // is in Settings, not here. A message can be both at
+                    // once, so every event that applies fires.
+                    for landing_event in landing_events {
+                        let _ = a11y.signal(landing_event, "");
                     }
                     // Load the body. Selecting a message announced "Loading
                     // message 3..." and then loaded nothing: the handler for a
@@ -2565,14 +2573,12 @@ impl WxMailApp {
                                         {
                                             tracing::error!("Flag not saved: {}", e);
                                         }
+                                    let confirmed = if starred { "Flagged" } else { "Unflagged" };
                                     let _ = a11y.announce(
-                                        &format!(
-                                            "{}: {}",
-                                            if starred { "Flagged" } else { "Unflagged" },
-                                            subject
-                                        ),
+                                        &format!("{confirmed}: {subject}"),
                                         crate::presentation::accessibility::announcements::Priority::Normal,
                                     );
+                                    let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
                                     // And the server, so the flag is still
                                     // there on another device.
                                     spawn_server_change(
@@ -2668,6 +2674,7 @@ impl WxMailApp {
                                     &state,
                                     &message_cache,
                                     &frame,
+                                    &a11y,
                                     &ui_tx,
                                     &runtime,
                                 );
@@ -3218,6 +3225,7 @@ impl WxMailApp {
                                 &state,
                                 &message_cache,
                                 &frame,
+                                &a11y,
                                 &ui_tx,
                                 &runtime,
                             );
@@ -3262,6 +3270,7 @@ impl WxMailApp {
                                     &state,
                                     &message_cache,
                                     &frame,
+                                    &a11y,
                                     &ui_tx,
                                     &runtime,
                                 );
@@ -3339,6 +3348,8 @@ impl WxMailApp {
                                     &announce_msg,
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                 );
+                                let confirmed = if new_read { "Marked read" } else { "Marked unread" };
+                                let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
                                 spawn_server_change(
                                     app,
                                     cache_id,
@@ -3360,6 +3371,7 @@ impl WxMailApp {
                                     &q,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 );
                                 msg_list.set_focus();
                             }
@@ -8227,6 +8239,25 @@ fn delete_if_local(
     }
 }
 
+/// Which feedback events landing on this message calls for.
+///
+/// A message can be part of a conversation and carry an attachment at the
+/// same time, so this returns every event that applies rather than the
+/// first match. Pulled out as a plain function over values rather than
+/// decided inline, the same reason `folder_arrival_update` is: the call
+/// site is a closure wxWidgets invokes on a live list control, which a test
+/// cannot construct.
+fn feedback_events_for_landing(message: &MessageItem) -> Vec<FeedbackEvent> {
+    let mut events = Vec::new();
+    if message.thread_id.is_some() {
+        events.push(FeedbackEvent::ThreadLanded);
+    }
+    if message.has_attachments {
+        events.push(FeedbackEvent::HasAttachment);
+    }
+    events
+}
+
 /// Say whether the open message asked to be acknowledged, and act on it.
 ///
 /// Three outcomes, and every one of them says something. Nothing asked, so
@@ -12045,6 +12076,51 @@ mod tests {
     }
 
     #[test]
+    fn test_landing_on_an_ordinary_message_signals_nothing() {
+        let message = MessageItem {
+            thread_id: None,
+            ..threaded(1, 1, "2026-08-23 09:00", 0, "t1")
+        };
+        assert!(feedback_events_for_landing(&message).is_empty());
+    }
+
+    #[test]
+    fn test_landing_on_a_conversation_signals_thread_landed() {
+        let message = threaded(1, 1, "2026-08-23 09:00", 0, "t1");
+        assert_eq!(
+            feedback_events_for_landing(&message),
+            vec![FeedbackEvent::ThreadLanded]
+        );
+    }
+
+    #[test]
+    fn test_landing_on_an_attachment_signals_has_attachment() {
+        let message = MessageItem {
+            thread_id: None,
+            has_attachments: true,
+            ..threaded(1, 1, "2026-08-23 09:00", 0, "t1")
+        };
+        assert_eq!(
+            feedback_events_for_landing(&message),
+            vec![FeedbackEvent::HasAttachment]
+        );
+    }
+
+    #[test]
+    fn test_landing_on_a_conversation_with_an_attachment_signals_both() {
+        // A message can be both at once: it does not have to pick one fact
+        // to announce over the other.
+        let message = MessageItem {
+            has_attachments: true,
+            ..threaded(1, 1, "2026-08-23 09:00", 0, "t1")
+        };
+        assert_eq!(
+            feedback_events_for_landing(&message),
+            vec![FeedbackEvent::ThreadLanded, FeedbackEvent::HasAttachment]
+        );
+    }
+
+    #[test]
     fn test_next_unread_wraps_and_reports_when_there_is_none() {
         // Silence would be indistinguishable from a key that does not work.
         let read = |r: bool| MessageItem {
@@ -12835,6 +12911,117 @@ mod what_the_status_line_says {
                 "{name} does not signal SyncComplete, so it never reaches the earcon channel"
             );
         }
+    }
+
+    /// The body of one `_ if id == ...` guard arm in the command dispatch
+    /// match `run` builds, up to the next arm of the same shape.
+    ///
+    /// That match is thousands of lines inside `run`, wx setup and
+    /// event-binding code nothing here constructs. This reads its own text
+    /// instead, the same way `the_update_handler` reads `handle_update`'s:
+    /// cut at the arm's own heading and at the next arm exactly like it.
+    fn the_id_arm(source: &str, heading: &str) -> String {
+        let start = source
+            .find(heading)
+            .unwrap_or_else(|| panic!("{heading} not found, so the reading is broken"));
+        let after = &source[start + heading.len()..];
+        let end = after.find("_ if id ==").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_flagging_or_marking_a_message_read_reaches_the_earcon_channel() {
+        // Same blind spot as the sync check above: this proves the arm calls
+        // `signal`, not that a speaker makes a sound.
+        //
+        // Both used to only ever call `a11y.announce` on their own sentence,
+        // which speaks and brailles but can never play a tone. `Confirmed`
+        // exists so that flag, mark done and pin all share one recognisable
+        // "did it" tone rather than each growing its own.
+        let source = the_window_itself();
+        for heading in ["_ if id == ID_TOGGLE_STAR =>", "_ if id == ID_MARK_READ =>"] {
+            let arm = the_id_arm(&source, heading);
+            assert!(
+                arm.contains("a11y.signal(FeedbackEvent::Confirmed"),
+                "the arm starting {heading} does not signal Confirmed, so it \
+                 never reaches the earcon channel"
+            );
+        }
+    }
+
+    /// The body of the contacts search box's own text-changed handler.
+    ///
+    /// Cut at the sidebar selection block that follows it in the source,
+    /// which is the next thing in the file with a name of its own. Reaching
+    /// this handler for real needs a live window, a frame, and a running
+    /// event loop, the same gap every other check in this module reads
+    /// around.
+    fn the_contacts_search_handler(source: &str) -> String {
+        let after = source
+            .split_once("contacts_cp.search_input.on_text_changed(")
+            .expect("the contacts search box's own handler")
+            .1;
+        let end = after
+            .find("// ── Contacts sidebar selection")
+            .unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_the_contacts_search_box_reaches_the_earcon_channel_when_nothing_matches() {
+        // What this cannot see: whether the earcon actually sounds, the same
+        // boundary every other check in this module reads around. It reads
+        // the window's own text and asks that the handler calls `signal`,
+        // which routes an event through every channel the user chose, earcon
+        // included, rather than `announce_topic`, which only ever speaks and
+        // brailles the sentence it is given.
+        //
+        // It used to build its own sentence, "No contacts match", and speak
+        // it by hand; that sentence never had a tone of its own and could
+        // never gain one without a second, parallel wording to keep in sync.
+        let source = the_window_itself();
+        let handler = the_contacts_search_handler(&source);
+        assert!(
+            handler.len() > 200,
+            "only {} characters of the handler were read, so the reading is broken",
+            handler.len()
+        );
+        assert!(
+            handler.contains("a11y.signal(FeedbackEvent::NothingFound"),
+            "the contacts search box does not signal NothingFound when nothing \
+             matches, so it never reaches the earcon channel"
+        );
+    }
+
+    #[test]
+    fn test_the_contacts_search_extractor_can_tell_the_two_apart() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything.
+        let signals = "contacts_cp.search_input.on_text_changed({\n    \
+             let _ = a11y.signal(FeedbackEvent::NothingFound, \"\");\n});\n\
+             // ── Contacts sidebar selection ──\n";
+        assert!(
+            the_contacts_search_handler(signals)
+                .contains("a11y.signal(FeedbackEvent::NothingFound"),
+            "a handler that does signal NothingFound was read as though it did not"
+        );
+
+        let announces_by_hand = "contacts_cp.search_input.on_text_changed({\n    \
+             let _ = a11y.announce_topic(&said, Priority::Low, \"contacts\");\n});\n\
+             // ── Contacts sidebar selection ──\n";
+        assert!(
+            !the_contacts_search_handler(announces_by_hand)
+                .contains("a11y.signal(FeedbackEvent::NothingFound"),
+            "a handler that only announces by hand was read as though it signalled"
+        );
+
+        // And the cutter stops at the sidebar selection block rather than
+        // running on into it.
+        assert!(
+            !the_contacts_search_handler(signals).contains("Contacts sidebar selection"),
+            "the cutter ran on past the end of the search handler"
+        );
     }
 
     #[test]
