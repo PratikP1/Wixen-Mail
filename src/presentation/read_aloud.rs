@@ -614,6 +614,8 @@ mod tests {
             reminder_minutes: None,
             repeats: String::new(),
             categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
         }
     }
 
@@ -1292,6 +1294,8 @@ mod tests {
             reminder_minutes: None,
             repeats: String::new(),
             categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
         };
 
         assert!(
@@ -1319,6 +1323,8 @@ mod tests {
             reminder_minutes: None,
             repeats: String::new(),
             categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
         };
         assert!(event.read_full(aloud()).contains("all day"));
         assert!(

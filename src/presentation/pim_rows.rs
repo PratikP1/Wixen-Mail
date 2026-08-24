@@ -363,6 +363,8 @@ mod tests {
             reminder_minutes: None,
             repeats: String::new(),
             categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
         }
     }
 

@@ -62,6 +62,7 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 &[],
                 None,
                 DateSettings::default(),
+                None,
             )
             .expect("an Event has fields to ask for");
             let pages = event
@@ -140,6 +141,7 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 &[],
                 None,
                 DateSettings::default(),
+                None,
             )
             .expect("a Task has fields to ask for");
             expect(

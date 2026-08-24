@@ -91,6 +91,8 @@ fn a_non_repeating_event(id: &str, summary: &str) -> CalendarEventItem {
         reminder_minutes: None,
         repeats: String::new(),
         categories: String::new(),
+        show_as: String::new(),
+        recurrence_rule: None,
     }
 }
 
@@ -162,7 +164,15 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
                 allows: vec![ordinarily_allowed()],
                 ..empty_state()
             };
-            wx_calendar::edit_selected_event(&mut state, dialog, list, status, &a11y, None);
+            wx_calendar::edit_selected_event(
+                &mut state,
+                dialog,
+                list,
+                status,
+                &a11y,
+                None,
+                &|_, _| None,
+            );
             expect(
                 "edit, nothing selected: what is said",
                 &status.get_label(),
@@ -210,7 +220,15 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
                 allows: vec![refuses_a_shared_address()],
                 ..empty_state()
             };
-            wx_calendar::edit_selected_event(&mut state, dialog, list, status, &a11y, None);
+            wx_calendar::edit_selected_event(
+                &mut state,
+                dialog,
+                list,
+                status,
+                &a11y,
+                None,
+                &|_, _| None,
+            );
             let shown = status.get_label();
             if !shown.contains("Changing this day on its own is not something this can do yet") {
                 into.push(("edit, refused: what is said", shown));

@@ -105,7 +105,19 @@ enum Control {
     Tick(CheckBox),
 }
 
-/// Ask for everything needed to make one of these.
+/// What to fill the form with, for something already made, bundled into one
+/// parameter because a container id only ever means anything alongside the
+/// answer it goes with.
+pub struct Prefill<'a> {
+    pub filled: &'a Filled,
+    /// The id of the container `filled` is already in, since a container is
+    /// chosen by name in the box and known by id everywhere else. `None`
+    /// when this kind does not live in a container, or nothing was chosen.
+    pub container: Option<&'a str>,
+}
+
+/// Ask for everything needed to make one of these, or to change one that
+/// already exists.
 ///
 /// `None` when the person cancelled. The containers are the ones this module
 /// has; an empty list is fine and means the choice is left out rather than
@@ -114,11 +126,21 @@ enum Control {
 /// `known_categories` are the ones already in use, offered alongside the
 /// built-in ones. A fixed list of categories is one that is wrong for everybody
 /// eventually.
-pub fn ask_for(
-    parent: &Frame,
+///
+/// `prefill` fills the form from something already made rather than leaving
+/// it blank, and the heading says Edit rather than New. `None` for something
+/// new.
+///
+/// `parent` is generic rather than fixed to the application's own frame so
+/// this can be opened nested under another dialog, the way the Calendar
+/// window's own New and Edit Event buttons do, and not only from the main
+/// window's New menu.
+pub fn ask_for<W: WxWidget>(
+    parent: &W,
     kind: ItemKind,
     containers: &[Container],
     known_categories: &[String],
+    prefill: Option<Prefill>,
 ) -> Option<(Filled, Option<String>)> {
     let widgets = build_item_form_dialog(
         parent,
@@ -127,6 +149,7 @@ pub fn ask_for(
         known_categories,
         theme::current_from_stored_config(),
         current_date_settings(),
+        prefill,
     )?;
 
     let answer = widgets.dialog.show_modal();
@@ -186,10 +209,44 @@ pub struct ItemFormWidgets {
     /// Every time this form built, paired with the field it belongs to, for
     /// the same reason `text_fields` is public.
     pub time_fields: Vec<(&'static Field, TimeFields)>,
+    /// Every `Entry::Pick` field this form built, for the same reason
+    /// `text_fields` is public. Not the one container choice or the one
+    /// category field; those are their own, singular, fields below, because
+    /// a form has at most one of each and a test asking for "the" one does
+    /// not want to search a list to find it.
+    pub pick_fields: Vec<(&'static Field, Choice)>,
+    /// Every `Entry::Whole` field this form built, for the same reason
+    /// `text_fields` is public.
+    pub whole_fields: Vec<(&'static Field, SpinCtrl)>,
+    /// Every `Entry::Tick` field this form built, for the same reason
+    /// `text_fields` is public.
+    pub tick_fields: Vec<(&'static Field, CheckBox)>,
+    /// The one container choice this form built, or `None` when this kind
+    /// does not live in a container or there was nothing to offer.
+    pub container_field: Option<Choice>,
+    /// The one category field this form built, or `None` when this kind has
+    /// no category.
+    pub category_field: Option<ComboBox>,
     /// `Some` for a kind that asks anything about recurrence, `None` for one
     /// that does not. See [`RecurrencePages`].
     pub recurrence: Option<RecurrencePages>,
     built: Vec<(&'static Field, Control)>,
+}
+
+/// Everything every field in one form is built from, bundled so the
+/// functions that build a field do not each grow a parameter for every one
+/// of these; nothing outside this module ever builds one, so none of its
+/// fields need to be `pub`.
+struct FormContext<'a> {
+    containers: &'a [Container],
+    known_categories: &'a [String],
+    date_settings: DateSettings,
+    /// What to fill the form with, for something already made. `None` for
+    /// something new, which is every field left at its ordinary default.
+    existing: Option<&'a Filled>,
+    /// The id of the container `existing` is already in, since a container
+    /// is chosen by name in the box and known by id everywhere else.
+    existing_container: Option<&'a str>,
 }
 
 /// Build the item form dialog without showing it.
@@ -201,20 +258,34 @@ pub struct ItemFormWidgets {
 ///
 /// `None` when `kind` has no fields to ask for, mirroring what `ask_for`
 /// itself used to do on the same case.
-pub fn build_item_form_dialog(
-    parent: &Frame,
+///
+/// `prefill` is `ask_for`'s own prefill parameter, passed straight through;
+/// see its doc comment for what it means.
+pub fn build_item_form_dialog<W: WxWidget>(
+    parent: &W,
     kind: ItemKind,
     containers: &[Container],
     known_categories: &[String],
     palette: Option<theme::Palette>,
     date_settings: DateSettings,
+    prefill: Option<Prefill>,
 ) -> Option<ItemFormWidgets> {
     let fields = fields_for(kind);
     if fields.is_empty() {
         return None;
     }
+    let ctx = FormContext {
+        containers,
+        known_categories,
+        date_settings,
+        existing: prefill.as_ref().map(|p| p.filled),
+        existing_container: prefill.as_ref().and_then(|p| p.container),
+    };
 
-    let heading = format!("New {}", kind.label());
+    let heading = match prefill {
+        Some(_) => format!("Edit {}", kind.label()),
+        None => format!("New {}", kind.label()),
+    };
     // No height here. It is worked out from what goes in the window, by
     // `set_sizer_and_fit` at the bottom of this function.
     //
@@ -242,15 +313,7 @@ pub fn build_item_form_dialog(
         .partition(|field| !field.name.is_about_recurrence());
 
     let recurrence = if recurrence_fields.is_empty() {
-        build_fields_onto(
-            &dialog,
-            &sizer,
-            &main_fields,
-            containers,
-            known_categories,
-            date_settings,
-            &mut built,
-        );
+        build_fields_onto(&dialog, &sizer, &main_fields, &ctx, &mut built);
         None
     } else {
         let notebook = Notebook::builder(&dialog).build();
@@ -261,9 +324,7 @@ pub fn build_item_form_dialog(
             &one_time_page,
             &one_time_sizer,
             &main_fields,
-            containers,
-            known_categories,
-            date_settings,
+            &ctx,
             &mut built,
         );
         one_time_page.set_sizer(one_time_sizer, true);
@@ -275,9 +336,7 @@ pub fn build_item_form_dialog(
             &recurrence_page,
             &recurrence_sizer,
             &recurrence_fields,
-            containers,
-            known_categories,
-            date_settings,
+            &ctx,
             &mut built,
         );
         recurrence_page.set_sizer(recurrence_sizer, true);
@@ -346,6 +405,37 @@ pub fn build_item_form_dialog(
             _ => None,
         })
         .collect();
+    let pick_fields: Vec<(&'static Field, Choice)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Pick(c) => Some((*field, *c)),
+            _ => None,
+        })
+        .collect();
+    let whole_fields: Vec<(&'static Field, SpinCtrl)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Whole(c) => Some((*field, *c)),
+            _ => None,
+        })
+        .collect();
+    let tick_fields: Vec<(&'static Field, CheckBox)> = built
+        .iter()
+        .filter_map(|(field, control)| match control {
+            Control::Tick(c) => Some((*field, *c)),
+            _ => None,
+        })
+        .collect();
+    // At most one of each, so found rather than collected: a form asks for
+    // one container and one category, never two.
+    let container_field: Option<Choice> = built.iter().find_map(|(_, control)| match control {
+        Control::Containers(c) => Some(*c),
+        _ => None,
+    });
+    let category_field: Option<ComboBox> = built.iter().find_map(|(_, control)| match control {
+        Control::Category(c) => Some(*c),
+        _ => None,
+    });
 
     // Painted last. `None` means high contrast is on, or the system is set
     // up in a way this application should not paint over, so nothing is set
@@ -374,6 +464,11 @@ pub fn build_item_form_dialog(
         text_fields,
         date_fields,
         time_fields,
+        pick_fields,
+        whole_fields,
+        tick_fields,
+        container_field,
+        category_field,
         recurrence,
         built,
     })
@@ -391,16 +486,14 @@ fn build_fields_onto<W: WxWidget>(
     parent: &W,
     sizer: &BoxSizer,
     fields: &[&'static Field],
-    containers: &[Container],
-    known_categories: &[String],
-    date_settings: DateSettings,
+    ctx: &FormContext,
     built: &mut Vec<(&'static Field, Control)>,
 ) {
     for &field in fields {
         // A container choice with nothing to choose from is left out rather
         // than shown empty. An empty combo box is a control somebody lands on,
         // hears nothing from, and cannot leave a value in.
-        if field.entry == Entry::PickContainer && containers.is_empty() {
+        if field.entry == Entry::PickContainer && ctx.containers.is_empty() {
             continue;
         }
 
@@ -408,7 +501,7 @@ fn build_fields_onto<W: WxWidget>(
         sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
 
         let spoken = name_from_label(field.label);
-        let control = build_control(parent, field, containers, known_categories, date_settings);
+        let control = build_control(parent, field, ctx);
         name_it(&control, &spoken, field.help);
         add_to_sizer(sizer, &control);
 
@@ -462,23 +555,33 @@ const LATEST_YEAR: i32 = 2100;
 
 /// Build the three controls a date is entered with, laid out in the order
 /// this computer, or somebody's own setting, reads a date in.
+///
+/// `existing` is the stored `YYYY-MM-DD` this date already holds, when it
+/// already holds one. Unparseable or absent, the controls open on `now`, the
+/// same as before there was anything to prefill from.
 fn build_date_fields(
     parent: &dyn WxWidget,
     order: DateOrder,
     now: chrono::DateTime<chrono::Local>,
+    existing: Option<&str>,
 ) -> DateFields {
     use chrono::Datelike;
 
+    let parsed = existing.and_then(|text| chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").ok());
+    let anchor_year = parsed.map_or(now.year(), |d| d.year());
+    let anchor_month = parsed.map_or(now.month(), |d| d.month());
+    let anchor_day = parsed.map_or(now.day(), |d| d.day());
+
     let month = Choice::builder(parent)
         .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
-        .with_selection(Some(now.month() - 1))
+        .with_selection(Some(anchor_month - 1))
         .build();
     let day = SpinCtrl::builder(parent).build();
-    day.set_range(1, days_in_month(now.year(), now.month()) as i32);
-    day.set_value(now.day() as i32);
+    day.set_range(1, days_in_month(anchor_year, anchor_month) as i32);
+    day.set_value(anchor_day as i32);
     let year = SpinCtrl::builder(parent).build();
     year.set_range(EARLIEST_YEAR, LATEST_YEAR);
-    year.set_value(now.year());
+    year.set_value(anchor_year);
 
     let fields = DateFields { month, day, year };
     month.on_selection_changed(move |_| clamp_day_to_month(fields));
@@ -494,19 +597,29 @@ fn build_date_fields(
 /// Build the two or three controls a time is entered with. Two when the
 /// clock reads to twenty-four, three when it reads to twelve and a
 /// morning-or-afternoon choice is needed alongside the hour.
+///
+/// `existing` is the stored `HH:MM` this time already holds, when it already
+/// holds one. Unparseable or absent, the controls open on `now`, the same as
+/// before there was anything to prefill from.
 fn build_time_fields(
     parent: &dyn WxWidget,
     clock: Clock,
     now: chrono::DateTime<chrono::Local>,
+    existing: Option<&str>,
 ) -> TimeFields {
     use chrono::Timelike;
 
+    let parsed = existing.and_then(|text| {
+        let (h, m) = text.split_once(':')?;
+        Some((h.parse::<u32>().ok()?, m.parse::<u32>().ok()?))
+    });
+    let (anchor_hour, anchor_minute) = parsed.unwrap_or((now.hour(), now.minute()));
+
     let (displayed_hour, is_pm) = match clock {
-        Clock::TwentyFourHour => (now.hour(), false),
+        Clock::TwentyFourHour => (anchor_hour, false),
         Clock::TwelveHour => {
-            let h = now.hour();
-            let is_pm = h >= 12;
-            let displayed = match h % 12 {
+            let is_pm = anchor_hour >= 12;
+            let displayed = match anchor_hour % 12 {
                 0 => 12,
                 other => other,
             };
@@ -523,7 +636,7 @@ fn build_time_fields(
 
     let minute = SpinCtrl::builder(parent).build();
     minute.set_range(0, 59);
-    minute.set_value(now.minute() as i32);
+    minute.set_value(anchor_minute as i32);
 
     let am_pm = match clock {
         Clock::TwentyFourHour => None,
@@ -543,41 +656,73 @@ fn build_time_fields(
     }
 }
 
-/// Build the control one field asks for.
-fn build_control(
-    parent: &dyn WxWidget,
-    field: &Field,
-    containers: &[Container],
-    known_categories: &[String],
-    date_settings: DateSettings,
-) -> Control {
+/// Build the control one field asks for, filled from `ctx.existing` when
+/// there is one, otherwise left at the same defaults as before there was
+/// anything to prefill from.
+fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Control {
     let now = chrono::Local::now();
+    // `Some("")` for something being edited whose box happens to be blank,
+    // `None` for something new. The two have to stay different: a blank box
+    // is still a real answer to prefill a `Pick` or a `Tick` from, and only
+    // the second one falls back to this field's ordinary default.
+    let existing_text = ctx.existing.map(|filled| filled.text(field.name));
     match &field.entry {
-        Entry::Line => Control::Line(TextCtrl::builder(parent).build()),
-        Entry::Paragraph => Control::Paragraph(
-            TextCtrl::builder(parent)
+        Entry::Line => {
+            let c = TextCtrl::builder(parent).build();
+            if let Some(text) = existing_text {
+                c.set_value(text);
+            }
+            Control::Line(c)
+        }
+        Entry::Paragraph => {
+            let c = TextCtrl::builder(parent)
                 .with_style(TextCtrlStyle::MultiLine)
                 .with_size(Size::new(480, 90))
-                .build(),
-        ),
-        Entry::Date => Control::Date(build_date_fields(parent, date_settings.order, now)),
-        Entry::Time => Control::Time(build_time_fields(parent, date_settings.clock, now)),
+                .build();
+            if let Some(text) = existing_text {
+                c.set_value(text);
+            }
+            Control::Paragraph(c)
+        }
+        Entry::Date => Control::Date(build_date_fields(
+            parent,
+            ctx.date_settings.order,
+            now,
+            existing_text,
+        )),
+        Entry::Time => Control::Time(build_time_fields(
+            parent,
+            ctx.date_settings.clock,
+            now,
+            existing_text,
+        )),
         Entry::Pick(options) => {
             let choice = Choice::builder(parent).build();
             for option in *options {
                 choice.append(option);
             }
-            // The first is the default, and a choice control with nothing
-            // selected reads as blank.
-            choice.set_selection(0);
+            // The offered word an existing answer matches, case insensitively
+            // since a stored answer is lowercase and the box shows a
+            // capital. The first is the default either way, new or existing:
+            // a choice control with nothing selected reads as blank, and an
+            // answer this list does not offer is not a reason to leave the
+            // box looking unset.
+            let selected = existing_text
+                .and_then(|text| options.iter().position(|o| o.eq_ignore_ascii_case(text)))
+                .unwrap_or(0);
+            choice.set_selection(selected as u32);
             Control::Pick(choice)
         }
         Entry::PickContainer => {
             let choice = Choice::builder(parent).build();
-            for container in containers {
+            for container in ctx.containers {
                 choice.append(&container.name);
             }
-            choice.set_selection(0);
+            let selected = ctx
+                .existing_container
+                .and_then(|id| ctx.containers.iter().position(|c| c.id == id))
+                .unwrap_or(0);
+            choice.set_selection(selected as u32);
             Control::Containers(choice)
         }
         // Chosen or typed. A ComboBox rather than a Choice, because a fixed
@@ -585,18 +730,30 @@ fn build_control(
         // the ones somebody adds are offered back to them afterwards.
         Entry::PickCategory => {
             let box_ = ComboBox::builder(parent).build();
-            for category in crate::application::categories::offered(known_categories) {
+            for category in crate::application::categories::offered(ctx.known_categories) {
                 box_.append(&category);
+            }
+            if let Some(text) = existing_text {
+                box_.set_value(text);
             }
             Control::Category(box_)
         }
         Entry::Whole { least, most } => {
             let spin = SpinCtrl::builder(parent).build();
             spin.set_range(*least, *most);
-            spin.set_value(*least);
+            let value = existing_text
+                .and_then(|text| text.parse::<i32>().ok())
+                .filter(|answered| (*least..=*most).contains(answered))
+                .unwrap_or(*least);
+            spin.set_value(value);
             Control::Whole(spin)
         }
-        Entry::Tick => Control::Tick(CheckBox::builder(parent).with_label("").build()),
+        Entry::Tick => {
+            let c = CheckBox::builder(parent).with_label("").build();
+            let checked = existing_text.is_some_and(|text| matches!(text, "true" | "1" | "yes"));
+            c.set_value(checked);
+            Control::Tick(c)
+        }
     }
 }
 

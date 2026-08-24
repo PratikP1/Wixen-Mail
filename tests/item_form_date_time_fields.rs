@@ -72,6 +72,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 &[],
                 None,
                 twenty_four_hour_settings(),
+                None,
             )
             .expect("an Event has fields to ask for");
 
@@ -174,6 +175,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 &[],
                 None,
                 twelve_hour_settings(),
+                None,
             )
             .expect("an Event has fields to ask for");
             let (_, start_time) = widgets

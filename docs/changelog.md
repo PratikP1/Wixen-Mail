@@ -78,6 +78,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the four repeat fields, reached by moving to it rather than by tabbing
   past them. A task or a note, which has nothing to say about recurrence,
   keeps the single page it always had.
+- **New Event and Edit Event, opened from the Calendar window's own Manage
+  button, now open the same dialog every other New command already used.**
+  A second, older event editor lived only there: plain typed date and time
+  boxes instead of the real controls the rest of the application already
+  had, and no way to set which calendar an event is filed in, its category,
+  how it repeats, or whether it shows as busy or free. Editing an event now
+  opens on what it already holds, the same way a new one is prefilled, and
+  Save only changes a box that was actually retyped: one shown and left
+  alone is carried over exactly as stored, so an unusual value a calendar
+  server sent and this dialog does not offer as a choice is never quietly
+  replaced by a default.
 
 ### Fixed
 

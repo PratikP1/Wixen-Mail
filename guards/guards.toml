@@ -3971,10 +3971,8 @@ red = [
 name = "the day cut out of a series is stored naming the series it came from"
 file = "src/presentation/managers.rs"
 before = """        categories: series.categories.clone(),
-        cut_from_event_id: Some(series.id.clone()),
-        ..entry"""
-after = """        categories: series.categories.clone(),
-        ..entry"""
+        cut_from_event_id: Some(series.id.clone()),"""
+after = """        categories: series.categories.clone(),"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_day_kept_on_its_own_names_the_series_it_was_cut_from",
 ]
@@ -4144,9 +4142,9 @@ red = [
 [[guard]]
 name = "the day cut out of a series carries none of the days the series calls off"
 file = "src/presentation/managers.rs"
-before = """        cut_from_event_id: Some(series.id.clone()),
+before = """        recurrence_rule: None,
         ..entry"""
-after = """        cut_from_event_id: Some(series.id.clone()),
+after = """        recurrence_rule: None,
         exception_dates: series.exception_dates.clone(),
         ..entry"""
 red = [

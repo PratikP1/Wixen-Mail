@@ -619,6 +619,14 @@ fn the_day_kept_on_its_own(
         status: series.status.clone(),
         categories: series.categories.clone(),
         cut_from_event_id: Some(series.id.clone()),
+        // A day kept on its own carries none of the series' identity, this
+        // function's own doc comment says, and a repeat rule is exactly
+        // that: a day standing alone cannot also be the start of a new
+        // series nobody asked for. `event_entry` reads a real one now,
+        // where it never could before there was a box to read it from, so
+        // this has to say so explicitly rather than relying on `entry`
+        // never carrying one.
+        recurrence_rule: None,
         ..entry
     }
 }
@@ -753,10 +761,46 @@ pub fn manage_calendar(
     // The events already on screen, rather than an empty list. The dialog used
     // to be handed nothing whatever the calendar held.
     let events = lock_state(state).events.clone();
+
+    // New and Edit Event both open the same item form dialog `new_pim_item`
+    // does, nested under the Calendar window's own dialog rather than the
+    // main frame. Owned rather than borrowed: `show_calendar_dialog` wires
+    // this straight to a button's own `on_click`, which wxdragon requires to
+    // outlive this function's stack frame.
+    let open_event_editor_cache = Arc::clone(&cache);
+    let open_event_editor_account = account.clone();
+    let open_event_editor = move |dialog: &Dialog, existing: Option<&CalendarEventItem>| {
+        let (containers, known_categories) = item_form_ingredients(
+            &open_event_editor_cache,
+            crate::application::new_item::ItemKind::Event,
+            &open_event_editor_account,
+        );
+        let existing_filled = existing.map(filled_from_calendar_item);
+        let existing_container = existing.and_then(|item| item.calendar_id.clone());
+        let prefill =
+            existing_filled
+                .as_ref()
+                .map(|filled| crate::presentation::wx_item_form::Prefill {
+                    filled,
+                    container: existing_container.as_deref(),
+                });
+        crate::presentation::wx_item_form::ask_for(
+            dialog,
+            crate::application::new_item::ItemKind::Event,
+            &containers,
+            &known_categories,
+            prefill,
+        )
+        .map(|(filled, container_id)| {
+            wx_calendar::CalendarEventData::from_filled(&filled, container_id)
+        })
+    };
+
     let actions = wx_calendar::show_calendar_dialog(
         frame,
         &events,
         &|row| what_this_rows_calendar_allows(&cache, row),
+        open_event_editor,
         a11y,
     );
 
@@ -918,12 +962,24 @@ pub fn manage_calendar(
 /// The stored event with what the editor changed folded into it, or the stored
 /// event exactly as it is when the editor changed nothing.
 ///
-/// The editor asks about the summary, the dates and times, whether it is all
-/// day, the place, the notes and the alert. An event carries more than that:
-/// which calendar it is filed in, its category, how it repeats, who is coming,
-/// and the identity the server that sent it knows it by. Rebuilding the event
-/// from the editor alone threw all of that away every time somebody corrected
-/// a spelling.
+/// The item form dialog asks about the summary, the dates and times, whether
+/// it is all day, the place, the notes, the alert, which calendar this is
+/// filed in, its category, how it repeats, whether it is shown as busy or
+/// free, and its status. An event carries more than even that: who is coming,
+/// and the identity the server that sent it knows it by. Rebuilding the
+/// event from the dialog alone threw all of it away every time somebody
+/// corrected a spelling.
+///
+/// Everything the dialog asks about is taken from `data` only where `data`
+/// actually differs from what the dialog showed when it opened; a box
+/// nobody touched is carried over from `stored` byte for byte instead,
+/// the same rule the date and time boxes already follow below. Two reasons:
+/// an unusual value a provider sent and this program's own Pick controls do
+/// not offer, a status they invented, say, would otherwise be quietly
+/// replaced by whichever option a form with nothing real to show fell back
+/// to; and a real but complex `RECURRENCE-RULE` this module cannot fully
+/// read is not reduced to the nearest of nine canned shapes on every
+/// unrelated edit.
 ///
 /// `opened` is the row the editor was really filled from, which for a
 /// repeating event is the day somebody was standing on and not the day the
@@ -949,6 +1005,42 @@ fn event_with_edits(
     let in_the_series_frame = as_if_the_series_start_had_been_shown(opened, &stored, data);
     let edited = event_entry(stored.id.clone(), &stored.account_id, &in_the_series_frame);
     let alerts = alerts_with_the_first_at(stored.reminders_json.as_deref(), data.reminder_minutes);
+
+    // What the dialog was shown when it opened, to tell an edited box from
+    // one carried over untouched, field group by field group: see this
+    // function's own doc comment for why that is not the same question
+    // `holds_a_change` above already answered for the row as a whole.
+    let data_as_shown = wx_calendar::CalendarEventData::as_shown(opened);
+    let calendar_id = if data.calendar_id == data_as_shown.calendar_id {
+        stored.calendar_id.clone()
+    } else {
+        edited.calendar_id.clone()
+    };
+    let status = if data.status == data_as_shown.status {
+        stored.status.clone()
+    } else {
+        edited.status.clone()
+    };
+    let categories = if data.category == data_as_shown.category {
+        stored.categories.clone()
+    } else {
+        edited.categories.clone()
+    };
+    let show_as = if data.show_as == data_as_shown.show_as {
+        stored.show_as.clone()
+    } else {
+        edited.show_as.clone()
+    };
+    let recurrence_rule = if data.repeat == data_as_shown.repeat
+        && data.repeat_until == data_as_shown.repeat_until
+        && data.repeat_until_date == data_as_shown.repeat_until_date
+        && data.repeat_times == data_as_shown.repeat_times
+    {
+        stored.recurrence_rule.clone()
+    } else {
+        edited.recurrence_rule.clone()
+    };
+
     // What the two date boxes were filled from, which is not always the column
     // they are written back to: a whole-day event fills them from its date
     // columns and keeps midnight in the other pair.
@@ -976,18 +1068,18 @@ fn event_with_edits(
         start_datetime: start,
         end_datetime: end,
         provider_event_id: stored.provider_event_id,
-        calendar_id: stored.calendar_id,
+        calendar_id,
         time_zone: stored.time_zone,
-        status: stored.status,
-        recurrence_rule: stored.recurrence_rule,
+        status,
+        recurrence_rule,
         // Both halves of how a series repeats, or correcting a spelling would
         // put every day the series had called off back on the calendar.
         exception_dates: stored.exception_dates,
-        categories: stored.categories,
+        categories,
         source_provider: stored.source_provider,
         etag: stored.etag,
         web_link: stored.web_link,
-        show_as: stored.show_as,
+        show_as,
         last_modified_remote: stored.last_modified_remote,
         last_synced_at: stored.last_synced_at,
         attendees_json: stored.attendees_json,
@@ -1235,6 +1327,88 @@ fn alerts_with_the_first_at(stored: Option<&str>, minutes: i32) -> Option<String
     (!kept.is_empty()).then(|| serde_json::Value::Array(kept).to_string())
 }
 
+/// The item form's own answer a calendar event, opened to edit, would give
+/// back if nobody touched anything: what `ask_for`'s own `existing`
+/// parameter is filled from, so the Calendar window's Edit Event button
+/// opens on what the event already holds rather than a blank form.
+///
+/// The reverse of [`event_entry`]: that one turns a filled form into a
+/// stored row, this turns a stored row's own display item into a filled
+/// form. Kept beside it rather than sharing a struct, because nothing this
+/// reads needs the database or the account, and threading either in just to
+/// hand a `Filled` back would ask the presentation layer this window sits in
+/// for something only the data layer has.
+fn filled_from_calendar_item(item: &CalendarEventItem) -> crate::application::item_fields::Filled {
+    use crate::application::item_fields::FieldName;
+    use crate::application::repeating::{Repeat, Until};
+
+    let mut filled = crate::application::item_fields::Filled::default();
+    filled.put(FieldName::Title, item.summary.clone());
+    filled.put(
+        FieldName::AllDay,
+        if item.is_all_day { "true" } else { "false" },
+    );
+    filled.put(
+        FieldName::StartDate,
+        item.start.get(..10).unwrap_or_default(),
+    );
+    filled.put(
+        FieldName::StartTime,
+        item.start.get(11..16).unwrap_or_default(),
+    );
+    filled.put(FieldName::EndDate, item.end.get(..10).unwrap_or_default());
+    filled.put(FieldName::EndTime, item.end.get(11..16).unwrap_or_default());
+    filled.put(FieldName::Location, item.location.clone());
+    filled.put(FieldName::Notes, item.description.clone());
+    filled.put(
+        FieldName::AlertMinutes,
+        item.reminder_minutes.unwrap_or(0).to_string(),
+    );
+    filled.put(FieldName::Category, item.categories.clone());
+    // Lowercase, the same as every choice this program stores, and matched
+    // case insensitively when the item form's Pick controls are filled: see
+    // `wx_item_form::build_control`'s own prefill matching for why that
+    // does not need a second table mapping each stored word to its label.
+    filled.put(FieldName::ShowAs, item.show_as.clone());
+    filled.put(FieldName::Status, item.status.clone());
+
+    let rule = item.recurrence_rule.as_deref().unwrap_or("");
+    let until = Until::from_rule(rule);
+    filled.put(FieldName::Repeat, Repeat::from_rule(rule).label());
+    filled.put(FieldName::RepeatUntil, until.label());
+    match until {
+        Until::OnDate(date) => filled.put(FieldName::RepeatUntilDate, date),
+        Until::AfterTimes(times) => filled.put(FieldName::RepeatTimes, times.to_string()),
+        Until::Forever => {}
+    }
+
+    filled
+}
+
+/// The RFC 5545 rule the item form's own Repeat, Repeat for, Last day and How
+/// many times boxes describe, or `None` for "Does not repeat".
+///
+/// One function rather than two copies of this reading, so a brand new event
+/// or reminder (`store_new_item`'s own `repeat` closure) and one already
+/// stored (`event_entry`, reached from the Calendar window's own New and Edit
+/// Event buttons) cannot come to read the same four boxes two different ways.
+fn recurrence_rule_from(
+    repeat: &str,
+    until_word: &str,
+    until_date: &str,
+    times: &str,
+    starts_on: &str,
+) -> Option<String> {
+    use crate::application::repeating::{Repeat, Until, rule, weekday_of_month};
+    let how_often = Repeat::from_label(repeat);
+    let until = match until_word {
+        "On a date" => Until::OnDate(until_date.to_string()),
+        "After a number of times" => Until::AfterTimes(times.parse::<u32>().unwrap_or(1)),
+        _ => Until::Forever,
+    };
+    rule(how_often, &until, weekday_of_month(starts_on).as_deref())
+}
+
 /// Turn what the editor captured into what the cache stores.
 ///
 /// An all-day event keeps its dates and drops its times rather than storing
@@ -1256,7 +1430,7 @@ fn event_entry(
         id,
         account_id: account.to_string(),
         provider_event_id: None,
-        calendar_id: None,
+        calendar_id: data.calendar_id.clone(),
         summary: data.summary.clone(),
         description: Some(data.description.clone()).filter(|d| !d.trim().is_empty()),
         location: Some(data.location.clone()).filter(|l| !l.trim().is_empty()),
@@ -1269,16 +1443,24 @@ fn event_entry(
         end_date: data.is_all_day.then(|| data.end_date.trim().to_string()),
         is_all_day: data.is_all_day,
         time_zone: None,
-        status: "confirmed".to_string(),
-        recurrence_rule: None,
-        // Nothing to leave out. The editor here cannot set a repeat at all, and
-        // an event with no repeat has no days to call off.
+        status: data.status.clone(),
+        recurrence_rule: recurrence_rule_from(
+            &data.repeat,
+            &data.repeat_until,
+            &data.repeat_until_date,
+            &data.repeat_times,
+            &data.start_date,
+        ),
+        // Nothing to leave out. A brand new event has no days to call off
+        // yet, and an event this merge rebuilds from scratch is handled by
+        // `event_with_edits`, which restores this from the row it is
+        // replacing rather than asking this function to.
         exception_dates: None,
-        categories: String::new(),
+        categories: crate::application::categories::tidy(&data.category).unwrap_or_default(),
         source_provider: Some("local".to_string()),
         etag: None,
         web_link: None,
-        show_as: "busy".to_string(),
+        show_as: data.show_as.clone(),
         last_modified_remote: None,
         last_synced_at: None,
         attendees_json: None,
@@ -1513,6 +1695,51 @@ fn reload_contacts(cache: &Arc<MessageCache>, account: &str, tx: &Sender<UIUpdat
 
 // ── Making a new PIM item ───────────────────────────────────────────────────
 
+/// What the item form dialog needs beyond the fields themselves, for one
+/// kind and one account: the containers it could be filed in, and the
+/// categories already in use.
+///
+/// One function rather than two copies of this gathering, so New (through
+/// this module's own [`new_pim_item`]) and Edit (through the Calendar
+/// window's own Edit Event button) cannot come to offer two different lists
+/// for the same account.
+fn item_form_ingredients(
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    account_id: &str,
+) -> (
+    Vec<crate::presentation::wx_item_form::Container>,
+    Vec<String>,
+) {
+    // Which calendar, list or folder it could go in. Offered rather than
+    // chosen silently: a task with no list can never leave this computer and
+    // a note with no folder is filed nowhere, and both used to happen without
+    // anybody being asked.
+    let holders = match crate::application::new_item::ContainerKind::holding(kind) {
+        Some(container_kind) => containers_in(cache, container_kind, account_id)
+            .into_iter()
+            .map(|(id, name, _)| crate::presentation::wx_item_form::Container { id, name })
+            .collect(),
+        None => Vec::new(),
+    };
+
+    // The categories already in use, so somebody's own are offered back to
+    // them. Read from the events themselves rather than kept in a list of
+    // their own, which would be a second place for the same fact and would go
+    // stale the moment an event was deleted.
+    let known_categories = cache
+        .get_all_events_for_account(account_id)
+        .map(|events| {
+            events
+                .iter()
+                .flat_map(|event| crate::application::categories::on(&event.categories))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    (holders, known_categories)
+}
+
 /// Create an event, reminder, task or note and store it.
 ///
 /// This used to be a dialog that took a title, wrote a log line, announced
@@ -1547,35 +1774,10 @@ pub fn new_pim_item(
 
     let account_id = destination.account_id().to_string();
 
-    // Which calendar, list or folder it could go in. Offered rather than
-    // chosen silently: a task with no list can never leave this computer and
-    // a note with no folder is filed nowhere, and both used to happen without
-    // anybody being asked.
-    let holders: Vec<crate::presentation::wx_item_form::Container> =
-        match crate::application::new_item::ContainerKind::holding(kind) {
-            Some(container_kind) => containers_in(&cache, container_kind, &account_id)
-                .into_iter()
-                .map(|(id, name, _)| crate::presentation::wx_item_form::Container { id, name })
-                .collect(),
-            None => Vec::new(),
-        };
-
-    // The categories already in use, so somebody's own are offered back to
-    // them. Read from the events themselves rather than kept in a list of
-    // their own, which would be a second place for the same fact and would go
-    // stale the moment an event was deleted.
-    let known_categories: Vec<String> = cache
-        .get_all_events_for_account(&account_id)
-        .map(|events| {
-            events
-                .iter()
-                .flat_map(|event| crate::application::categories::on(&event.categories))
-                .collect()
-        })
-        .unwrap_or_default();
+    let (holders, known_categories) = item_form_ingredients(&cache, kind, &account_id);
 
     let Some((filled, container_id)) =
-        crate::presentation::wx_item_form::ask_for(frame, kind, &holders, &known_categories)
+        crate::presentation::wx_item_form::ask_for(frame, kind, &holders, &known_categories, None)
     else {
         return;
     };
@@ -2060,25 +2262,17 @@ fn store_new_item(
     };
     // The repeat choice as an RFC 5545 rule, which is what both providers
     // take. "Does not repeat" is no rule at all rather than a rule saying so.
-    // How often it comes round, and when it stops. Both from the one module
-    // that also writes the rule, so the words offered and the rule stored
-    // cannot come apart, and the ending is written into the same rule rather
-    // than kept beside it, because that is where every other reader of an
-    // .ics file looks for it.
+    // Read by `recurrence_rule_from`, which `event_entry` also reads the
+    // same four boxes through, so the words offered and the rule stored
+    // cannot come apart wherever they are read from.
     let repeat = |field: FieldName, starts_on: &str| {
-        use crate::application::repeating::{Repeat, Until, rule, weekday_of_month};
-        let how_often = Repeat::from_label(filled.text(field));
-        let until = match filled.text(FieldName::RepeatUntil) {
-            "On a date" => Until::OnDate(filled.text(FieldName::RepeatUntilDate).to_string()),
-            "After a number of times" => Until::AfterTimes(
-                filled
-                    .text(FieldName::RepeatTimes)
-                    .parse::<u32>()
-                    .unwrap_or(1),
-            ),
-            _ => Until::Forever,
-        };
-        rule(how_often, &until, weekday_of_month(starts_on).as_deref())
+        recurrence_rule_from(
+            filled.text(field),
+            filled.text(FieldName::RepeatUntil),
+            filled.text(FieldName::RepeatUntilDate),
+            filled.text(FieldName::RepeatTimes),
+            starts_on,
+        )
     };
 
     match kind {
@@ -3386,6 +3580,14 @@ mod tests {
             location: "  ".to_string(),
             description: String::new(),
             reminder_minutes: 15,
+            calendar_id: None,
+            repeat: "Does not repeat".to_string(),
+            repeat_until: "Never".to_string(),
+            repeat_until_date: String::new(),
+            repeat_times: String::new(),
+            category: String::new(),
+            show_as: "busy".to_string(),
+            status: "confirmed".to_string(),
         }
     }
 
@@ -3417,7 +3619,11 @@ mod tests {
     }
 
     #[test]
-    fn test_editing_an_event_keeps_what_the_dialog_never_asked_about() {
+    fn test_editing_an_event_only_changes_what_was_actually_retyped() {
+        // Built from the row itself, the way the dialog really is, rather
+        // than from independent defaults: retyping only the summary must
+        // leave every other box exactly where it was shown, whether or not
+        // the item form dialog can ask about that box at all.
         let mut stored = event_entry("e1".to_string(), "acct", &data(false));
         stored.provider_event_id = Some("uid-1".to_string());
         stored.calendar_id = Some("cal-1".to_string());
@@ -3425,12 +3631,12 @@ mod tests {
         stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
         stored.attendees_json = Some("[{\"email\":\"sam@example.com\"}]".to_string());
         stored.status = "tentative".to_string();
+        stored.show_as = "free".to_string();
         // A second alert, because one is the case where dropping the rest and
         // keeping them look exactly the same.
         stored.reminders_json = Some(TWO_ALERTS.to_string());
 
-        let mut renamed = data(false);
-        renamed.summary = "Renamed".to_string();
+        let renamed = only_the_summary_retyped(&stored, "Renamed");
         let edited = edited_from_its_own_row(stored, &renamed);
 
         assert_eq!(edited.summary, "Renamed", "the change asked for happens");
@@ -3443,11 +3649,46 @@ mod tests {
             Some("[{\"email\":\"sam@example.com\"}]")
         );
         assert_eq!(edited.status, "tentative");
+        assert_eq!(edited.show_as, "free");
         assert_eq!(
             alerts_on(&edited),
             vec![(15, "popup".to_string()), (1440, "email".to_string())],
             "correcting a spelling took an alert off the event"
         );
+    }
+
+    #[test]
+    fn test_editing_an_event_can_now_change_its_calendar_category_repeat_and_status() {
+        // The other half: these five used to be kept no matter what only
+        // because the old editor had no box for any of them. The item form
+        // dialog does now, so an actual edit to one has to reach storage
+        // rather than being silently kept at whatever the event already
+        // held.
+        let mut stored = event_entry("e1".to_string(), "acct", &data(false));
+        stored.calendar_id = Some("cal-1".to_string());
+        stored.categories = "Birthday".to_string();
+        stored.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        stored.status = "tentative".to_string();
+        stored.show_as = "free".to_string();
+
+        let mut changed =
+            wx_calendar::CalendarEventData::as_shown(&CalendarEventItem::from_entry(&stored));
+        changed.calendar_id = Some("cal-2".to_string());
+        changed.category = "Work".to_string();
+        changed.repeat = "Every day".to_string();
+        changed.repeat_until = "Never".to_string();
+        changed.repeat_until_date = String::new();
+        changed.repeat_times = String::new();
+        changed.status = "confirmed".to_string();
+        changed.show_as = "busy".to_string();
+
+        let edited = edited_from_its_own_row(stored, &changed);
+
+        assert_eq!(edited.calendar_id.as_deref(), Some("cal-2"));
+        assert_eq!(edited.categories, "Work");
+        assert_eq!(edited.recurrence_rule.as_deref(), Some("FREQ=DAILY"));
+        assert_eq!(edited.status, "confirmed");
+        assert_eq!(edited.show_as, "busy");
     }
 
     #[test]

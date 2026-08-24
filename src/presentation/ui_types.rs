@@ -470,6 +470,21 @@ pub struct CalendarEventItem {
     ///
     /// Comma separated, as stored. Empty for most events.
     pub categories: String,
+    /// Busy or free, as stored.
+    ///
+    /// The item form dialog asks about this when an event is opened to
+    /// edit, so the row it is opened from has to carry it: without it,
+    /// opening Edit and pressing Save without touching the box would read
+    /// back as "busy" regardless of what the event actually held.
+    pub show_as: String,
+    /// The stored RFC 5545 rule, if the event has one, rather than the
+    /// words it reads out as in [`Self::repeats`].
+    ///
+    /// A sentence cannot be read back into a rule: "every week, until the
+    /// thirtieth" does not say whether the day it stops on is the thirtieth
+    /// itself or the ending is a count that happens to read the same. The
+    /// item form's Recurrence page is filled from this, not from `repeats`.
+    pub recurrence_rule: Option<String>,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -790,6 +805,8 @@ impl CalendarEventItem {
             // which window is being shown and therefore how the series reads.
             repeats: String::new(),
             categories: entry.categories.clone(),
+            show_as: entry.show_as.clone(),
+            recurrence_rule: entry.recurrence_rule.clone(),
         }
     }
 
@@ -1030,6 +1047,8 @@ mod tests {
             reminder_minutes: None,
             repeats: String::new(),
             categories: String::new(),
+            show_as: String::new(),
+            recurrence_rule: None,
         }
     }
 
@@ -1791,6 +1810,20 @@ mod tests {
         assert_eq!(item.location, "Room 2");
         assert!(!item.is_all_day);
         assert_eq!(item.calendar_id.as_deref(), Some("cal-1"));
+        // Both needed to fill in the item form's Show As and Recurrence
+        // pages when an event is opened to edit: the row on screen has to
+        // carry what the stored row carries, or opening Edit and pressing
+        // Save without touching either box would silently reset it.
+        assert_eq!(item.show_as, "busy");
+        assert_eq!(item.recurrence_rule, None);
+    }
+
+    #[test]
+    fn test_a_repeating_events_row_carries_its_own_rule() {
+        let mut entry = calendar_event();
+        entry.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        let item = CalendarEventItem::from_entry(&entry);
+        assert_eq!(item.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
     }
 
     #[test]

@@ -56,16 +56,29 @@ pub enum CalendarAction {
     /// far side knows which Tuesday was open, and the save reads the difference
     /// between the day shown and the day the series starts from as a date
     /// somebody typed.
-    UpdateEvent(CalendarEventItem, EditMeans, CalendarEventData),
+    ///
+    /// Boxed: `CalendarEventData` grew past the point where an unboxed
+    /// `CalendarEventItem` beside it left every other variant of this enum
+    /// paying for the largest one's size.
+    UpdateEvent(Box<CalendarEventItem>, EditMeans, CalendarEventData),
     /// User deleted an event: which day was open, and which days they meant.
     DeleteEvent(CalendarEventItem, EditMeans),
 }
 
-/// Data captured from the event editor dialog.
+/// What opens the item form dialog for a new event, when asked with `None`,
+/// or for an existing one, when asked with `Some(&item)`. See
+/// [`show_calendar_dialog`]'s own doc comment for why this is an `Rc` rather
+/// than a plain reference.
+type OpenEventEditor = Rc<dyn Fn(&Dialog, Option<&CalendarEventItem>) -> Option<CalendarEventData>>;
+
+/// Data captured from the item form dialog for an event: New Event's answer,
+/// or Edit Event's, read into the shape this window's own merge functions
+/// use.
 ///
 /// Compared as a whole to answer "did anybody change anything?", which is why
-/// it carries `PartialEq`. The editor is filled from [`Self::as_shown`] and
-/// hands back one of these, so the two are equal exactly when nothing was
+/// it carries `PartialEq`. The dialog is filled from [`Self::as_shown`] and
+/// hands back a `Filled` this reads into one of these through
+/// [`Self::from_filled`], so the two are equal exactly when nothing was
 /// typed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalendarEventData {
@@ -78,22 +91,56 @@ pub struct CalendarEventData {
     pub location: String,
     pub description: String,
     pub reminder_minutes: i32,
+    /// Which calendar this is filed in, by id. `None` when there was nothing
+    /// to choose from, or when nothing was chosen.
+    pub calendar_id: Option<String>,
+    /// How often this repeats, in the item form's own words ("Every week"),
+    /// not as an RFC 5545 rule: `application::repeating` is the one place
+    /// that turns one into the other, in both directions, and the merge
+    /// that writes this to storage asks it rather than repeating that work
+    /// here.
+    pub repeat: String,
+    /// Whether the repeat ever stops, in the item form's own words ("Never",
+    /// "On a date", "After a number of times").
+    pub repeat_until: String,
+    /// The last day it happens, when `repeat_until` is "On a date".
+    pub repeat_until_date: String,
+    /// How many times in all, when `repeat_until` is "After a number of
+    /// times".
+    pub repeat_times: String,
+    /// What kind of day this is, as typed or chosen in the one Category box.
+    pub category: String,
+    /// Busy or free, lowercased the way every other choice this program
+    /// stores is.
+    pub show_as: String,
+    /// Confirmed, tentative or cancelled, lowercased the same way.
+    pub status: String,
 }
 
 impl CalendarEventData {
-    /// What the editor is filled with for an event already stored.
+    /// What the dialog is filled with for an event already stored.
     ///
     /// Written once rather than at the dialog and again wherever the answer is
-    /// compared with what came back. Two copies of these nine assignments
+    /// compared with what came back. Two copies of these assignments
     /// drift, and the moment they do an event nobody touched reads as edited
     /// and the whole record goes back to the provider.
     ///
     /// The row is the list's, not the stored event's, so a repeating event
     /// fills the boxes with the day somebody was standing on rather than the
-    /// day the series starts from. That is what the editor shows and therefore
+    /// day the series starts from. That is what the dialog shows and therefore
     /// what it writes back, and it is why a repeating event opened on its
     /// fortieth day reads as changed even when nothing was typed.
     pub fn as_shown(item: &CalendarEventItem) -> Self {
+        use crate::application::repeating::{Repeat, Until};
+
+        let rule = item.recurrence_rule.as_deref().unwrap_or("");
+        let until = Until::from_rule(rule);
+        let (repeat_until_date, repeat_times) = match &until {
+            Until::OnDate(date) => (date.clone(), String::new()),
+            Until::AfterTimes(times) => (String::new(), times.to_string()),
+            Until::Forever => (String::new(), String::new()),
+        };
+
         Self {
             summary: item.summary.clone(),
             // Ten characters of date, a separator, then five of time. A stored
@@ -111,6 +158,55 @@ impl CalendarEventData {
             // edit.
             description: item.description.clone(),
             reminder_minutes: item.reminder_minutes.unwrap_or(0),
+            calendar_id: item.calendar_id.clone(),
+            repeat: Repeat::from_rule(rule).label().to_string(),
+            repeat_until: until.label().to_string(),
+            repeat_until_date,
+            repeat_times,
+            category: item.categories.clone(),
+            show_as: item.show_as.clone(),
+            status: item.status.clone(),
+        }
+    }
+
+    /// What the item form dialog handed back, read into the shape this
+    /// window's own merge functions use.
+    ///
+    /// `container_id` is `ask_for`'s own second answer: which container was
+    /// chosen, by id, since the field itself only carries a name.
+    ///
+    /// Status and Show As are read through [`Filled::chosen`] rather than as
+    /// plain text, the same way a brand new event already is in
+    /// `store_new_item`: lowercased, and never something the dialog did not
+    /// offer. Repeat and its ending are read as plain text instead, because
+    /// [`crate::application::repeating::Repeat::from_label`] already falls
+    /// back the same way and the merge that writes this to storage is the
+    /// one place that decision belongs.
+    pub fn from_filled(
+        filled: &crate::application::item_fields::Filled,
+        container_id: Option<String>,
+    ) -> Self {
+        use crate::application::item_fields::FieldName;
+        use crate::application::new_item::ItemKind;
+
+        Self {
+            summary: filled.text(FieldName::Title).to_string(),
+            start_date: filled.text(FieldName::StartDate).to_string(),
+            start_time: filled.text(FieldName::StartTime).to_string(),
+            end_date: filled.text(FieldName::EndDate).to_string(),
+            end_time: filled.text(FieldName::EndTime).to_string(),
+            is_all_day: filled.ticked(FieldName::AllDay),
+            location: filled.text(FieldName::Location).to_string(),
+            description: filled.text(FieldName::Notes).to_string(),
+            reminder_minutes: filled.whole(FieldName::AlertMinutes, 0),
+            calendar_id: container_id,
+            repeat: filled.text(FieldName::Repeat).to_string(),
+            repeat_until: filled.text(FieldName::RepeatUntil).to_string(),
+            repeat_until_date: filled.text(FieldName::RepeatUntilDate).to_string(),
+            repeat_times: filled.text(FieldName::RepeatTimes).to_string(),
+            category: filled.text(FieldName::Category).to_string(),
+            show_as: filled.chosen(ItemKind::Event, FieldName::ShowAs),
+            status: filled.chosen(ItemKind::Event, FieldName::Status),
         }
     }
 
@@ -347,6 +443,7 @@ fn wire_calendar_actions(
     state: &Rc<RefCell<CalendarDialogState>>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
+    open_event_editor: OpenEventEditor,
 ) {
     let dialog = widgets.dialog;
     let list = widgets.list;
@@ -362,6 +459,7 @@ fn wire_calendar_actions(
     widgets.edit.on_click({
         let state = Rc::clone(state);
         let a11y = Arc::clone(a11y);
+        let open_event_editor = Rc::clone(&open_event_editor);
         move |_| {
             edit_selected_event(
                 &mut state.borrow_mut(),
@@ -370,6 +468,7 @@ fn wire_calendar_actions(
                 &status,
                 &a11y,
                 palette,
+                open_event_editor.as_ref(),
             );
         }
     });
@@ -445,12 +544,12 @@ pub fn edit_selected_event(
     status: &StaticText,
     a11y: &Accessibility,
     palette: Option<theme::Palette>,
+    open_event_editor: &dyn Fn(&Dialog, Option<&CalendarEventItem>) -> Option<CalendarEventData>,
 ) {
     let Some((item, allows)) = selected_event(state, list) else {
         said_and_shown(status, a11y, "Select an event to edit.", Priority::High);
         return;
     };
-    let prefill = CalendarEventData::as_shown(&item);
     // Both asked before the editor opens, so somebody who meant one day is
     // not made to fill a form in first and then told it cannot be done. The
     // refusal is the same sentence the manager would give afterwards, from
@@ -466,10 +565,10 @@ pub fn edit_selected_event(
     ) {
         if let Err(refused) = can_be_honoured(WhatIsBeingDone::Changing, means, &allows) {
             said_and_shown(status, a11y, &refused, Priority::High);
-        } else if let Some(data) = show_event_editor(dialog, Some(&prefill), palette) {
+        } else if let Some(data) = open_event_editor(dialog, Some(&item)) {
             state
                 .actions
-                .push(CalendarAction::UpdateEvent(item, means, data));
+                .push(CalendarAction::UpdateEvent(Box::new(item), means, data));
             said_and_shown(
                 status,
                 a11y,
@@ -556,7 +655,7 @@ fn run_calendar_loop(
     widgets: &CalendarDialogHandles,
     state: &Rc<RefCell<CalendarDialogState>>,
     a11y: &Arc<Accessibility>,
-    palette: Option<theme::Palette>,
+    open_event_editor: &dyn Fn(&Dialog, Option<&CalendarEventItem>) -> Option<CalendarEventData>,
 ) {
     let dialog = &widgets.dialog;
     let status = &widgets.status;
@@ -564,7 +663,7 @@ fn run_calendar_loop(
         match dialog.show_modal() {
             r if r == ID_OK || r == ID_CANCEL => break,
             r if r == ID_CAL_NEW => {
-                if let Some(data) = show_event_editor(dialog, None, palette) {
+                if let Some(data) = open_event_editor(dialog, None) {
                     state
                         .borrow_mut()
                         .actions
@@ -592,10 +691,23 @@ fn run_calendar_loop(
 /// here, because answering it needs the stored calendar and this window has
 /// none, and because there is one place that question is answered for the whole
 /// program.
+///
+/// `open_event_editor` opens the item form dialog for a new event, when
+/// asked with `None`, or for an existing one, when asked with `Some(&item)`;
+/// this window has neither the containers nor the categories that dialog
+/// also asks for, both of which need the stored calendar the same way
+/// `where_changes_go` does. Taken by value rather than by reference, unlike
+/// `where_changes_go`: New, Edit and Delete are wired straight to a button's
+/// own `on_click`, which wxdragon requires to outlive this function's own
+/// stack frame, and a borrowed closure does not. Wrapped in one `Rc` here so
+/// every closure that needs it clones the wrapper rather than the callback
+/// itself.
 pub fn show_calendar_dialog(
     parent: &Frame,
     events: &[CalendarEventItem],
     where_changes_go: &dyn Fn(&CalendarEventItem) -> WhatTheCalendarAllows,
+    open_event_editor: impl Fn(&Dialog, Option<&CalendarEventItem>) -> Option<CalendarEventData>
+    + 'static,
     a11y: &Arc<Accessibility>,
 ) -> Vec<CalendarAction> {
     let palette = theme::current_from_stored_config();
@@ -606,9 +718,16 @@ pub fn show_calendar_dialog(
         events_data: events.to_vec(),
         allows: events.iter().map(where_changes_go).collect(),
     }));
+    let open_event_editor: OpenEventEditor = Rc::new(open_event_editor);
 
-    wire_calendar_actions(&widgets, &state, a11y, palette);
-    run_calendar_loop(&widgets, &state, a11y, palette);
+    wire_calendar_actions(
+        &widgets,
+        &state,
+        a11y,
+        palette,
+        Rc::clone(&open_event_editor),
+    );
+    run_calendar_loop(&widgets, &state, a11y, open_event_editor.as_ref());
 
     widgets.dialog.destroy();
     state.borrow().actions.clone()
@@ -697,290 +816,141 @@ fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {
     }
 }
 
-// ── Event Editor Dialog ─────────────────────────────────────────────────────
-
-/// Show the event editor dialog with optional prefill data.
-///
-/// Returns `Some(data)` if the user clicked OK, `None` if cancelled.
-/// The New/Edit Event dialog's fields, returned so a test can build it
-/// without a human closing a live modal and so `show_event_editor` can read
-/// every field back after a real `.show_modal()`.
-pub struct EventEditorWidgets {
-    pub dialog: Dialog,
-    pub txt_summary: TextCtrl,
-    pub txt_start_date: TextCtrl,
-    pub txt_start_time: TextCtrl,
-    pub txt_end_date: TextCtrl,
-    pub txt_end_time: TextCtrl,
-    pub chk_allday: CheckBox,
-    pub txt_location: TextCtrl,
-    pub txt_desc: TextCtrl,
-    pub txt_reminder: TextCtrl,
-}
-
-fn show_event_editor(
-    parent: &Dialog,
-    prefill: Option<&CalendarEventData>,
-    palette: Option<theme::Palette>,
-) -> Option<CalendarEventData> {
-    let w = build_event_editor_dialog(parent, prefill, palette);
-    if w.dialog.show_modal() == ID_OK {
-        let result = CalendarEventData {
-            summary: w.txt_summary.get_value(),
-            start_date: w.txt_start_date.get_value(),
-            start_time: w.txt_start_time.get_value(),
-            end_date: w.txt_end_date.get_value(),
-            end_time: w.txt_end_time.get_value(),
-            is_all_day: w.chk_allday.get_value(),
-            location: w.txt_location.get_value(),
-            description: w.txt_desc.get_value(),
-            reminder_minutes: w.txt_reminder.get_value().parse().unwrap_or(15),
-        };
-        w.dialog.destroy();
-        Some(result)
-    } else {
-        w.dialog.destroy();
-        None
-    }
-}
-
-/// Build the New/Edit Event dialog without showing it.
-///
-/// Everything `show_event_editor` used to do up to its own `.show_modal()`
-/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
-/// splits Settings: a test can build the real dialog and read back the real
-/// colour a live control holds, and never call `.show_modal()` at all.
-pub fn build_event_editor_dialog(
-    parent: &Dialog,
-    prefill: Option<&CalendarEventData>,
-    palette: Option<theme::Palette>,
-) -> EventEditorWidgets {
-    let title = if prefill.is_some() {
-        "Edit Event"
-    } else {
-        "New Event"
-    };
-    let editor = Dialog::builder(parent, title)
-        .with_size(500, 450)
-        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
-        .build();
-
-    let sizer = FlexGridSizer::builder(0, 2)
-        .with_vgap(4)
-        .with_hgap(8)
-        .build();
-    sizer.add_growable_col(1, 1);
-
-    // Summary
-    let lbl_summary = StaticText::builder(&editor).with_label("&Summary:").build();
-    let txt_summary = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_summary, "Summary");
-    sizer.add(
-        &lbl_summary,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_summary, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Start Date
-    let lbl_start_date = StaticText::builder(&editor)
-        .with_label("Start &Date (YYYY-MM-DD):")
-        .build();
-    let txt_start_date = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_start_date, "Start date");
-    sizer.add(
-        &lbl_start_date,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_start_date, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Start Time
-    let lbl_start_time = StaticText::builder(&editor)
-        .with_label("Start &Time (HH:MM):")
-        .build();
-    let txt_start_time = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_start_time, "Start time");
-    sizer.add(
-        &lbl_start_time,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_start_time, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // End Date
-    let lbl_end_date = StaticText::builder(&editor)
-        .with_label("&End Date (YYYY-MM-DD):")
-        .build();
-    let txt_end_date = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_end_date, "End date");
-    sizer.add(
-        &lbl_end_date,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_end_date, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // End Time
-    let lbl_end_time = StaticText::builder(&editor)
-        .with_label("End Ti&me (HH:MM):")
-        .build();
-    let txt_end_time = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_end_time, "End time");
-    sizer.add(
-        &lbl_end_time,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_end_time, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // All Day checkbox
-    let lbl_allday = StaticText::builder(&editor).with_label("").build();
-    let chk_allday = CheckBox::builder(&editor)
-        .with_label("All &day event")
-        .build();
-    sizer.add(&lbl_allday, 0, SizerFlag::All, 4);
-    sizer.add(&chk_allday, 0, SizerFlag::All, 4);
-
-    // Location
-    let lbl_location = StaticText::builder(&editor)
-        .with_label("&Location:")
-        .build();
-    let txt_location = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_location, "Location");
-    sizer.add(
-        &lbl_location,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_location, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Description
-    let lbl_desc = StaticText::builder(&editor)
-        .with_label("D&escription:")
-        .build();
-    let txt_desc = TextCtrl::builder(&editor)
-        .with_style(TextCtrlStyle::MultiLine)
-        .build();
-    set_accessible_name(&txt_desc, "Description");
-    sizer.add(
-        &lbl_desc,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_desc, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Reminder
-    let lbl_reminder = StaticText::builder(&editor)
-        .with_label("&Reminder (minutes):")
-        .build();
-    let txt_reminder = TextCtrl::builder(&editor).build();
-    set_accessible_name(&txt_reminder, "Reminder in minutes");
-    sizer.add(
-        &lbl_reminder,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    sizer.add(&txt_reminder, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Prefill
-    if let Some(data) = prefill {
-        txt_summary.set_value(&data.summary);
-        txt_start_date.set_value(&data.start_date);
-        txt_start_time.set_value(&data.start_time);
-        txt_end_date.set_value(&data.end_date);
-        txt_end_time.set_value(&data.end_time);
-        chk_allday.set_value(data.is_all_day);
-        txt_location.set_value(&data.location);
-        txt_desc.set_value(&data.description);
-        txt_reminder.set_value(&data.reminder_minutes.to_string());
-    } else {
-        // Defaults for new event
-        let now = chrono::Local::now();
-        txt_start_date.set_value(&now.format("%Y-%m-%d").to_string());
-        txt_start_time.set_value(&now.format("%H:00").to_string());
-        let end = now + chrono::Duration::hours(1);
-        txt_end_date.set_value(&end.format("%Y-%m-%d").to_string());
-        txt_end_time.set_value(&end.format("%H:00").to_string());
-        txt_reminder.set_value("15");
-    }
-
-    // OK / Cancel buttons
-    let btn_sizer = BoxSizer::builder(Orientation::Horizontal).build();
-    let ok = Button::builder(&editor)
-        .with_label("OK")
-        .with_id(ID_OK)
-        .build();
-    let cancel = Button::builder(&editor)
-        .with_label("Cancel")
-        .with_id(ID_CANCEL)
-        .build();
-    btn_sizer.add(&ok, 0, SizerFlag::All, 4);
-    btn_sizer.add(&cancel, 0, SizerFlag::All, 4);
-
-    let outer = BoxSizer::builder(Orientation::Vertical).build();
-    outer.add_sizer(&sizer, 1, SizerFlag::Expand | SizerFlag::All, 8);
-    outer.add_sizer(&btn_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
-    editor.set_sizer(*outer, true);
-    editor.centre();
-
-    ok.on_click({
-        let d = editor;
-        move |_| {
-            d.end_modal(ID_OK);
-        }
-    });
-    cancel.on_click({
-        let d = editor;
-        move |_| {
-            d.end_modal(ID_CANCEL);
-        }
-    });
-
-    // Painted last, once every field is built. `None` means high contrast is
-    // on, or the system is set up in a way this application should not paint
-    // over, so nothing is set here and Windows decides.
-    if let Some(palette) = palette {
-        theme::paint(&editor, palette.main_surface());
-        for field in [
-            &txt_summary,
-            &txt_start_date,
-            &txt_start_time,
-            &txt_end_date,
-            &txt_end_time,
-            &txt_location,
-            &txt_desc,
-            &txt_reminder,
-        ] {
-            theme::paint(field, palette.main_surface());
-        }
-    }
-
-    EventEditorWidgets {
-        dialog: editor,
-        txt_summary,
-        txt_start_date,
-        txt_start_time,
-        txt_end_date,
-        txt_end_time,
-        chk_allday,
-        txt_location,
-        txt_desc,
-        txt_reminder,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::item_fields::{FieldName, Filled};
+
+    // ── CalendarEventData, both directions ────────────────────────────────
+    //
+    // `as_shown` and `from_filled` are what let this window's New and Edit
+    // Event buttons open the item form dialog instead of the one this round
+    // removes: `as_shown` is what an event already stored is turned into to
+    // fill that dialog, and `from_filled` is what the dialog hands back once
+    // read into the shape this window's own merge functions still use.
+
+    #[test]
+    fn test_from_filled_reads_every_field_the_item_form_asks_an_event_for() {
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Standup");
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "09:00");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "09:15");
+        filled.put(FieldName::AllDay, "false");
+        filled.put(FieldName::Location, "Room 2");
+        filled.put(FieldName::Notes, "Bring the numbers");
+        filled.put(FieldName::AlertMinutes, "30");
+        filled.put(FieldName::Repeat, "Every week");
+        filled.put(FieldName::RepeatUntil, "On a date");
+        filled.put(FieldName::RepeatUntilDate, "2026-09-30");
+        filled.put(FieldName::Category, "Work");
+        filled.put(FieldName::ShowAs, "Free");
+        filled.put(FieldName::Status, "Tentative");
+
+        let data = CalendarEventData::from_filled(&filled, Some("cal-2".to_string()));
+
+        assert_eq!(data.summary, "Standup");
+        assert_eq!(data.start_date, "2026-03-12");
+        assert_eq!(data.start_time, "09:00");
+        assert_eq!(data.end_date, "2026-03-12");
+        assert_eq!(data.end_time, "09:15");
+        assert!(!data.is_all_day);
+        assert_eq!(data.location, "Room 2");
+        assert_eq!(data.description, "Bring the numbers");
+        assert_eq!(data.reminder_minutes, 30);
+        assert_eq!(data.calendar_id.as_deref(), Some("cal-2"));
+        assert_eq!(data.repeat, "Every week");
+        assert_eq!(data.repeat_until, "On a date");
+        assert_eq!(data.repeat_until_date, "2026-09-30");
+        assert_eq!(data.category, "Work");
+        // Lowercased, the same as every other choice this program stores:
+        // the box shows a capital and the column holds one word without one.
+        assert_eq!(data.show_as, "free");
+        assert_eq!(data.status, "tentative");
+    }
+
+    #[test]
+    fn test_as_shown_and_from_filled_round_trip_an_untouched_event() {
+        // The rule `holds_a_change` rests on: opening the dialog on a stored
+        // event and pressing Save without typing anything has to read back
+        // as exactly what was shown, or every unedited save would look like
+        // a change and mark the row pending.
+        let mut entry = a_stored_event();
+        entry.recurrence_rule = Some("FREQ=WEEKLY;UNTIL=20260930T235959Z".to_string());
+        entry.calendar_id = Some("cal-2".to_string());
+        entry.categories = "Work".to_string();
+        entry.show_as = "free".to_string();
+        entry.status = "tentative".to_string();
+        let item = CalendarEventItem::from_entry(&entry);
+
+        let shown = CalendarEventData::as_shown(&item);
+        assert_eq!(shown.repeat, "Every week");
+        assert_eq!(shown.repeat_until, "On a date");
+        assert_eq!(shown.repeat_until_date, "2026-09-30");
+        assert_eq!(shown.category, "Work");
+        assert_eq!(shown.show_as, "free");
+        assert_eq!(shown.status, "tentative");
+        assert_eq!(shown.calendar_id.as_deref(), Some("cal-2"));
+    }
+
+    #[test]
+    fn test_a_series_that_never_stops_carries_no_ending() {
+        let mut entry = a_stored_event();
+        entry.recurrence_rule = Some("FREQ=DAILY".to_string());
+        let shown = CalendarEventData::as_shown(&CalendarEventItem::from_entry(&entry));
+
+        assert_eq!(shown.repeat, "Every day");
+        assert_eq!(shown.repeat_until, "Never");
+        assert_eq!(shown.repeat_until_date, "");
+        assert_eq!(shown.repeat_times, "");
+    }
+
+    #[test]
+    fn test_a_series_counted_by_times_carries_the_count_and_not_a_date() {
+        let mut entry = a_stored_event();
+        entry.recurrence_rule = Some("FREQ=WEEKLY;COUNT=6".to_string());
+        let shown = CalendarEventData::as_shown(&CalendarEventItem::from_entry(&entry));
+
+        assert_eq!(shown.repeat_until, "After a number of times");
+        assert_eq!(shown.repeat_times, "6");
+        assert_eq!(shown.repeat_until_date, "");
+    }
+
+    fn a_stored_event() -> crate::data::message_cache::CalendarEventEntry {
+        crate::data::message_cache::CalendarEventEntry {
+            id: "e1".to_string(),
+            account_id: "a1".to_string(),
+            provider_event_id: None,
+            calendar_id: None,
+            summary: "Standup".to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-03-12T09:00:00".to_string(),
+            end_datetime: "2026-03-12T09:15:00".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: Some("local".to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        }
+    }
 
     // ── The window that asks which days somebody means ──────────────────
     //
@@ -1720,6 +1690,14 @@ mod tests {
             location: String::new(),
             description: String::new(),
             reminder_minutes: 15,
+            calendar_id: None,
+            repeat: "Does not repeat".to_string(),
+            repeat_until: "Never".to_string(),
+            repeat_until_date: String::new(),
+            repeat_times: String::new(),
+            category: String::new(),
+            show_as: "busy".to_string(),
+            status: "confirmed".to_string(),
         }
     }
 

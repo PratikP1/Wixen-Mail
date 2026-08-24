@@ -435,30 +435,31 @@ fn check_account_manager(
     }
 }
 
-/// The calendar's New/Edit Event dialog. Parented to a throwaway `Dialog`
-/// rather than to `parent` directly, the same as production: the real
-/// event editor is always opened from inside the Calendar list window, not
-/// from the main frame.
+/// The calendar's New/Edit Event dialog: the item form dialog, opened
+/// nested under a throwaway `Dialog` rather than under `parent` directly,
+/// the same as production, since the Calendar window's own New and Edit
+/// Event buttons open this dialog from inside its own agenda dialog rather
+/// than from the main frame.
 fn check_event_editor(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let scratch_parent = Dialog::builder(parent, "scratch parent for the event editor").build();
-    let editor = wx_calendar::build_event_editor_dialog(&scratch_parent, None, Some(palette));
+    let widgets = wx_item_form::build_item_form_dialog(
+        &scratch_parent,
+        ItemKind::Event,
+        &[],
+        &[],
+        Some(palette),
+        wixen_mail::presentation::date_display::DateSettings::default(),
+        None,
+    )
+    .expect("an Event has fields to ask for");
     check(
         "event editor dialog",
-        &editor.dialog,
+        &widgets.dialog,
         palette.main_surface(),
         into,
     );
-    for (name, field) in [
-        ("event editor summary field", &editor.txt_summary),
-        ("event editor start date field", &editor.txt_start_date),
-        ("event editor start time field", &editor.txt_start_time),
-        ("event editor end date field", &editor.txt_end_date),
-        ("event editor end time field", &editor.txt_end_time),
-        ("event editor location field", &editor.txt_location),
-        ("event editor description field", &editor.txt_desc),
-        ("event editor reminder field", &editor.txt_reminder),
-    ] {
-        check(name, field, palette.main_surface(), into);
+    for (field, control) in &widgets.text_fields {
+        check(field.label, control, palette.main_surface(), into);
     }
 }
 
@@ -749,6 +750,7 @@ fn check_item_form(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteR
         &[],
         Some(palette),
         wixen_mail::presentation::date_display::DateSettings::default(),
+        None,
     )
     .expect("an Event has fields to ask for");
     check(

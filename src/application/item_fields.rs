@@ -443,7 +443,7 @@ static NOTE: &[Field] = &[
 /// what the database columns hold. The typed readers below are where a wrong
 /// assumption about the shape of one shows up, rather than three layers later
 /// as a row nobody can explain.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Filled {
     values: Vec<(FieldName, String)>,
 }
@@ -813,6 +813,26 @@ mod tests {
             Some("Room 2".to_string())
         );
         assert_eq!(filled.filled_in(FieldName::Title), None);
+    }
+
+    #[test]
+    fn test_two_forms_filled_in_the_same_way_are_equal() {
+        // What the calendar's edit merge asks: is this box the same as what
+        // it was shown, or did somebody type in it? That question is a
+        // `Filled` compared against another `Filled`, so equality has to mean
+        // what it says here rather than being derived and never checked.
+        let mut one = Filled::default();
+        one.put(FieldName::Title, "Standup");
+        one.put(FieldName::Repeat, "Every week");
+        let mut same = Filled::default();
+        same.put(FieldName::Title, "Standup");
+        same.put(FieldName::Repeat, "Every week");
+        assert_eq!(one, same);
+
+        let mut different = Filled::default();
+        different.put(FieldName::Title, "Standup");
+        different.put(FieldName::Repeat, "Every day");
+        assert_ne!(one, different);
     }
 
     #[test]

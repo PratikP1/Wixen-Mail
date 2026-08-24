@@ -176,6 +176,19 @@ impl Until {
         }
     }
 
+    /// What the item form's Repeat for field calls this ending.
+    ///
+    /// The three words that field offers, matched to the three shapes here so
+    /// an event opened to edit shows what it already does rather than always
+    /// opening back on "Never".
+    pub fn label(&self) -> &'static str {
+        match self {
+            Until::Forever => "Never",
+            Until::OnDate(_) => "On a date",
+            Until::AfterTimes(_) => "After a number of times",
+        }
+    }
+
     /// Read the ending out of a stored rule.
     pub fn from_rule(rule: &str) -> Self {
         let rule = rule.trim().to_ascii_uppercase();
@@ -564,6 +577,20 @@ pub fn spoken(repeat: Repeat, until: &Until) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_an_endings_label_is_one_of_the_three_the_form_offers() {
+        // The item form's Repeat for field offers exactly these three words,
+        // in this order, and stores none of them: reading an ending back
+        // into the box it came from is what lets an event opened to edit
+        // show what it already does, and this is the one place both the
+        // form's words and this module's own three shapes are named
+        // together, so a fourth shape added to one and not the other is
+        // caught here rather than as a blank box.
+        assert_eq!(Until::Forever.label(), "Never");
+        assert_eq!(Until::OnDate("2026-09-30".to_string()).label(), "On a date");
+        assert_eq!(Until::AfterTimes(6).label(), "After a number of times");
+    }
 
     #[test]
     fn test_not_repeating_is_no_rule_at_all() {
