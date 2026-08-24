@@ -133,6 +133,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **A rule, tag or signature cannot be saved without a name.** Leaving the
+  name empty was accepted, and the manager then announced "Added the rule:"
+  and stopped mid-sentence.
+- **Every window in the manager screens is now closed properly.** None of
+  them were, so each one opened stayed in memory for as long as the program
+  was running. The contact editor was the heaviest, carrying four tabbed
+  pages and four lists each time it was opened.
 - **A working day ending at midnight is kept.** Midnight is offered in the
   list and was refused, so choosing it put nine to five back with nothing
   said. A day that runs past midnight, such as a night shift, still cannot be

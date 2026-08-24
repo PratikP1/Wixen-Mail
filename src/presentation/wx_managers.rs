@@ -334,6 +334,12 @@ fn run_manager_loop<T: Clone + 'static>(
     }
 
     *working = state.borrow().working.clone();
+    // Taken down once the loop is out. wxWidgets does not free a dialog when
+    // the Rust value goes, so every manager window ever opened stayed for the
+    // life of the session; `wx_compose` hit the same thing and says so where
+    // it fixed it. After the state is read, because the list belongs to the
+    // dialog.
+    dialog.destroy();
     state.borrow().changed
 }
 
@@ -1029,6 +1035,9 @@ pub fn show_contact_manager_dialog(
                 }
             }
             r if r == ID_MGR_SYNC => {
+                // Taken down on this way out too. Syncing leaves the window,
+                // and a return that skipped this would leak one per sync.
+                dialog.destroy();
                 return ContactManagerAction::SyncRequested;
             }
             _ => break,
@@ -1036,6 +1045,10 @@ pub fn show_contact_manager_dialog(
     }
 
     let result = working.borrow().clone();
+    // Read first, then taken down: the list belongs to the dialog. wxWidgets
+    // does not free one when the Rust value goes, so every contact manager
+    // ever opened stayed for the life of the session.
+    dialog.destroy();
     if *changed.borrow() {
         ContactManagerAction::Updated(result)
     } else {
@@ -1675,7 +1688,7 @@ fn show_contact_edit(
                 // name is still empty, so there is nothing left to check on
                 // this side of it.
                 let contact_name = name_f.get_value();
-                return Some(ContactEntry {
+                let answer = ContactEntry {
                     id: existing
                         .map(|c| c.id.clone())
                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
@@ -1696,9 +1709,19 @@ fn show_contact_edit(
                     phones: phones_data.borrow().clone(),
                     addresses: addrs_data.borrow().clone(),
                     custom_fields: custom_data.borrow().clone(),
-                });
+                };
+                // Read first, then taken down. wxWidgets does not free a
+                // dialog when the Rust value goes, so every contact editor
+                // ever opened stayed for the life of the session, and this
+                // one holds a notebook with four panels and four lists.
+                dlg.destroy();
+                return Some(answer);
             }
-            _ => return None, // Cancel or close
+            // Cancel or close.
+            _ => {
+                dlg.destroy();
+                return None;
+            }
         }
     }
 }
@@ -1897,7 +1920,13 @@ fn show_email_sub_dialog(
 ) -> Option<EmailItem> {
     let (dlg, type_choice, addr_f) = build_email_sub_dialog(parent, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let addr = addr_f.get_value();
         // Whatever comes back already held together: OK's own handler, in
         // the window that has just closed, refuses to close at all while a
@@ -1909,7 +1938,9 @@ fn show_email_sub_dialog(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 /// Build the Add Phone Number dialog without showing it.
@@ -2009,7 +2040,13 @@ fn show_phone_sub_dialog(
 ) -> Option<PhoneItem> {
     let (dlg, type_choice, num_f) = build_phone_sub_dialog(parent, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let num = num_f.get_value();
         // Whatever comes back already held together: OK's own handler, in
         // the window that has just closed, refuses to close at all while a
@@ -2021,7 +2058,9 @@ fn show_phone_sub_dialog(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 /// What `show_address_sub_dialog` still needs after construction: the
@@ -2214,7 +2253,13 @@ fn show_address_sub_dialog(
         code_f,
     } = build_address_sub_dialog(parent, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let street = street_f.get_value();
         let city = city_f.get_value();
         // Whatever comes back already held together: OK's own handler, in
@@ -2232,7 +2277,9 @@ fn show_address_sub_dialog(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 /// Build the Add Custom Field dialog without showing it.
@@ -2323,7 +2370,13 @@ fn show_custom_field_sub_dialog(
 ) -> Option<CustomFieldItem> {
     let (dlg, label_f, value_f) = build_custom_field_sub_dialog(parent, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let label = label_f.get_value();
         let value = value_f.get_value();
         // Whatever comes back already held together: OK's own handler, in
@@ -2333,7 +2386,9 @@ fn show_custom_field_sub_dialog(
         Some(CustomFieldItem { label, value })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2604,7 +2659,16 @@ pub fn build_filter_edit_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment. Without a name the
+            // manager's own sentence reads "Added the rule: " and stops.
+            event.event.skip(false);
+            if name_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                name_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -2657,7 +2721,13 @@ fn show_filter_edit(
         en_check,
     } = build_filter_edit_dialog(parent, existing, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         Some(FilterRule {
             id: existing
                 .map(|r| r.id.clone())
@@ -2673,7 +2743,9 @@ fn show_filter_edit(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2831,7 +2903,16 @@ pub fn build_tag_edit_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment. Without a name the
+            // manager's own sentence reads "Added the tag: " and stops.
+            event.event.skip(false);
+            if name_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                name_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -2861,7 +2942,13 @@ fn show_tag_edit(
 ) -> Option<TagEntry> {
     let (dlg, name_f, color_choice) = build_tag_edit_dialog(parent, existing, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let color_idx = color_choice.get_selection().unwrap_or(0) as usize;
         let color = TAG_COLORS
             .get(color_idx)
@@ -2876,7 +2963,9 @@ fn show_tag_edit(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3058,7 +3147,16 @@ pub fn build_sig_edit_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment. Without a name the
+            // manager's own sentence reads "Added the signature: " and stops.
+            event.event.skip(false);
+            if name_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                name_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -3102,7 +3200,13 @@ fn show_sig_edit(
         html_f,
     } = build_sig_edit_dialog(parent, existing, palette);
 
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         let html_val = html_f.get_value();
         Some(SignatureEntry {
             id: existing
@@ -3119,7 +3223,9 @@ fn show_sig_edit(
         })
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 /// How often the waiting window looks to see whether the answer has arrived.
@@ -3345,11 +3451,19 @@ pub fn choose_from_list(
     palette: Option<theme::Palette>,
 ) -> Option<usize> {
     let (dlg, list) = build_choose_from_list_dialog(parent, title, label, confirm, items, palette);
-    if dlg.show_modal() == ID_OK {
+    // Read first, then destroy: the fields belong to the dialog.
+    // wxWidgets does not free a dialog when the Rust value goes, and
+    // nothing in this file did, so every one of these little windows
+    // stayed for the life of the session. `wx_compose` hit the same
+    // thing and says so where it fixed it.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
         list.get_selection().map(|chosen| chosen as usize)
     } else {
         None
-    }
+    };
+    dlg.destroy();
+    chosen
 }
 
 #[cfg(test)]
