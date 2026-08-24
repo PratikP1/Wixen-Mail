@@ -639,8 +639,14 @@ impl Rule {
 
         let weekday = repeating::weekday_of_month(start);
         for repeat in Repeat::ALL {
-            if repeating::rule(repeat, &self.stops, weekday.as_deref())
-                .is_some_and(|offered| offered.eq_ignore_ascii_case(written.trim()))
+            // Both shapes offered, because this is comparing against a rule
+            // already written and either kind of series can have produced it.
+            if [repeating::AllDay::No, repeating::AllDay::Yes]
+                .iter()
+                .any(|shape| {
+                    repeating::rule(repeat, &self.stops, weekday.as_deref(), *shape)
+                        .is_some_and(|offered| offered.eq_ignore_ascii_case(written.trim()))
+                })
             {
                 return repeating::spoken(repeat, &self.stops);
             }

@@ -133,6 +133,38 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **A reminder set for the hour the clocks change still goes off.** On the
+  Sunday the clocks go back, one hour of the day happens twice, and a
+  reminder set inside it was skipped entirely and read aloud as a raw
+  timestamp. The hour the clocks skip forward over was the same. Both now
+  have an answer: the earlier of the two when an hour repeats, and the moment
+  the clock jumps to when an hour is missed.
+- **Deleting a calendar event that the provider has already lost no longer
+  jams every later sync.** Deleting it on a phone first is enough. The
+  removal was refused, never settled, and re-sent on every sync from then on.
+- **A meeting that takes too long to create is no longer created several
+  times.** A slow answer was treated as a failure and sent again, up to four
+  times, with an invitation going to the guests each time.
+- **Outlook contacts and calendars start syncing again after a long gap.**
+  The marker from the last sync expires, and that was passed on as a plain
+  failure without clearing it, so every later sync failed the same way and
+  nothing moved in either direction again. Both now start over from scratch
+  the way the Google side always has.
+- **An all-day repeating event that stops on a date now reaches the
+  calendar.** The last day was written in a form only a timed event may use,
+  which makes the whole repeat invalid, and a calendar server that checks
+  refused the event outright. So a birthday set to stop after a few years
+  never arrived.
+- **Setting an event to Free keeps it free.** The next sync put it back to
+  Busy, every time, with nothing said, because busy or free is not something
+  a calendar server was being asked about. Bank holidays from a subscribed
+  feed were blocking out the day for the same reason.
+- **A priority set on a new Google task is kept.** Google Tasks has no
+  priority of its own, and the sync that sent the task read that back as
+  Normal and overwrote what had just been chosen.
+- **A postal address deleted at Google or Outlook stays deleted.** It came
+  back, was read aloud, and was sent out again on the next change, because
+  an older copy of it was left behind when the sync cleared the new one.
 - **Set Active in the Account Manager now changes which account is active.**
   It said it had worked and changed nothing: the choice was tracked inside
   the window and dropped on the way out, so anybody with more than one

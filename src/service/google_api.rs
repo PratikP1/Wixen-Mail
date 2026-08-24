@@ -607,7 +607,14 @@ impl GoogleApiClient {
     /// Create a new contact.
     pub async fn create_contact(&self, token: &str, person: &GooglePerson) -> Result<GooglePerson> {
         let url = format!("{}/people:createContact", self.people_base);
-        with_retry(3, || self.api_post(&url, token, person)).await
+        // No retry: this creates something. A create is not idempotent, and
+        // every network failure counts as retryable, including this client's
+        // own timeout, which fires while the server may be committing. Google
+        // accepts the post, answers slowly, the client gives up and sends it
+        // again, and one meeting becomes as many as four with an invitation
+        // going to the guests each time. The task service deliberately has no
+        // retry on its own create for this reason.
+        self.api_post(&url, token, person).await
     }
 
     /// Read one contact back, with the version marker Google holds for it now.
@@ -699,7 +706,14 @@ impl GoogleApiClient {
         event: &GoogleEvent,
     ) -> Result<GoogleEvent> {
         let url = calendar_events_url(&self.calendar_base, calendar_id);
-        with_retry(3, || self.api_post(&url, token, event)).await
+        // No retry: this creates something. A create is not idempotent, and
+        // every network failure counts as retryable, including this client's
+        // own timeout, which fires while the server may be committing. Google
+        // accepts the post, answers slowly, the client gives up and sends it
+        // again, and one meeting becomes as many as four with an invitation
+        // going to the guests each time. The task service deliberately has no
+        // retry on its own create for this reason.
+        self.api_post(&url, token, event).await
     }
 
     /// Change a calendar event, leaving alone whatever the change does not name.
@@ -799,7 +813,14 @@ impl GoogleApiClient {
             .await
             .map_err(|e| Error::Network(format!("Google API DELETE failed: {}", e)))?;
         let status = resp.status().as_u16();
-        if status == 204 || status == 200 {
+        // Gone and Not Found both count as done: the event is not there, which
+        // is the state that was asked for. Treating either as a failure meant
+        // the tombstone never settled and the deletion was re-sent on every
+        // sync for ever. Google Calendar answers 410 for an event already
+        // deleted and Graph answers 404, and deleting on a phone first makes
+        // both routine. The task service three files away already does this
+        // and says why.
+        if status == 204 || status == 200 || status == 404 || status == 410 {
             return Ok(());
         }
         let body = resp.text().await.unwrap_or_default();

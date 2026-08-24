@@ -1400,6 +1400,7 @@ fn recurrence_rule_from(
     until_date: &str,
     times: &str,
     starts_on: &str,
+    all_day: crate::application::repeating::AllDay,
 ) -> Option<String> {
     use crate::application::repeating::{Repeat, Until, rule, weekday_of_month};
     let how_often = Repeat::from_label(repeat);
@@ -1408,7 +1409,12 @@ fn recurrence_rule_from(
         "After a number of times" => Until::AfterTimes(times.parse::<u32>().unwrap_or(1)),
         _ => Until::Forever,
     };
-    rule(how_often, &until, weekday_of_month(starts_on).as_deref())
+    rule(
+        how_often,
+        &until,
+        weekday_of_month(starts_on).as_deref(),
+        all_day,
+    )
 }
 
 /// Turn what the editor captured into what the cache stores.
@@ -1452,6 +1458,14 @@ fn event_entry(
             &data.repeat_until_date,
             &data.repeat_times,
             &data.start_date,
+            // An all-day series writes its last day as a bare date, which is
+            // what RFC 5545 requires against an all-day start; a date-time
+            // there makes the rule invalid and a checking server refuses the
+            // whole event.
+            match data.is_all_day {
+                true => crate::application::repeating::AllDay::Yes,
+                false => crate::application::repeating::AllDay::No,
+            },
         ),
         // Nothing to leave out. A brand new event has no days to call off
         // yet, and an event this merge rebuilds from scratch is handled by
@@ -2277,6 +2291,10 @@ fn store_new_item(
             filled.text(FieldName::RepeatUntilDate),
             filled.text(FieldName::RepeatTimes),
             starts_on,
+            match filled.ticked(FieldName::AllDay) {
+                true => crate::application::repeating::AllDay::Yes,
+                false => crate::application::repeating::AllDay::No,
+            },
         )
     };
 

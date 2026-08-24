@@ -127,6 +127,38 @@ fn clock_face(stored: &str) -> Option<NaiveDateTime> {
         .find_map(|shape| NaiveDateTime::parse_from_str(trimmed, shape).ok())
 }
 
+/// Where a clock face falls on this computer's clock, on every day of the year.
+///
+/// Two days a year have no single answer and both used to come back as no
+/// answer at all.
+///
+/// On the day the clocks go back, an hour of clock face happens twice. Asking
+/// for "the" instant that matches it has two answers, and a reminder set for
+/// one of them was filtered out of what is due and never went off, while the
+/// same question asked for reading it aloud fell through to speaking the raw
+/// stored text. The earlier of the two is taken, which is the one somebody
+/// setting a reminder that morning meant.
+///
+/// On the day they go forward, an hour of clock face does not happen at all.
+/// A reminder already set for it, or one carried in from a calendar in
+/// another zone, is due when the clock reaches the hour it jumped to, rather
+/// than never.
+pub fn on_this_computer(clock: NaiveDateTime) -> Option<chrono::DateTime<chrono::Local>> {
+    use chrono::TimeZone;
+
+    if let Some(found) = chrono::Local.from_local_datetime(&clock).earliest() {
+        return Some(found);
+    }
+    // Skipped by the clocks going forward. The jump is an hour almost
+    // everywhere and half an hour in a few places, so this walks forward in
+    // small steps rather than assuming which.
+    (1..=8).find_map(|quarters| {
+        chrono::Local
+            .from_local_datetime(&(clock + chrono::Duration::minutes(15 * quarters)))
+            .earliest()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

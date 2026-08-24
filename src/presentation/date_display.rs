@@ -9,7 +9,7 @@
 //! want to know whether it is recent, and "2 days ago" answers that in three
 //! syllables where "July 24, 2026 at 9:15 AM" takes a dozen.
 
-use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, Local, Timelike};
 
 /// Which way round the day and month are written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -552,7 +552,7 @@ fn parse(stored: &str) -> Option<DateTime<Local>> {
 fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
     use crate::common::moment::Moment;
 
-    let here = |clock: NaiveDateTime| Local.from_local_datetime(&clock).single();
+    let here = crate::common::moment::on_this_computer;
     match moment {
         Moment::Fixed(at) => Some(at.with_timezone(&Local)),
         Moment::ClockFace(clock) => here(clock),

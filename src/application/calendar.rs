@@ -1177,7 +1177,11 @@ pub async fn sync_microsoft_calendar(
 
     let at_microsoft = calendar_at_microsoft(cache, &filed_under.id)?;
 
-    let (remote_events, new_delta_link) = ms_client
+    // A delta link that has aged out is answered with Gone. Passing that on
+    // left the dead link stored, so every later sync failed the same way and
+    // the Outlook calendar stopped syncing for good. The Google side has had
+    // this fallback all along.
+    let first = ms_client
         .list_events(
             token,
             start.as_deref(),
@@ -1185,7 +1189,19 @@ pub async fn sync_microsoft_calendar(
             delta_link,
             &at_microsoft,
         )
-        .await?;
+        .await;
+    let (remote_events, new_delta_link) = match first {
+        Ok(answer) => answer,
+        Err(crate::common::Error::Api { status: 410, .. }) => {
+            tracing::warn!(
+                "The marker from the last Outlook calendar sync was too old, so the whole window is being read again"
+            );
+            ms_client
+                .list_events(token, start.as_deref(), end.as_deref(), None, &at_microsoft)
+                .await?
+        }
+        Err(other) => return Err(other),
+    };
 
     // Whole events first, the changed days of a series afterwards. A calendar
     // view promises no order, so a day met before the series it belongs to
@@ -3102,6 +3118,10 @@ pub fn ms_event_to_local(
             crate::application::repeating::what_outlook_said(
                 repeats,
                 crate::application::repeating::the_day_a_graph_start_names(event.start.as_ref()?)?,
+                match event.is_all_day.unwrap_or(false) {
+                    true => crate::application::repeating::AllDay::Yes,
+                    false => crate::application::repeating::AllDay::No,
+                },
             )
         }),
         // Nothing to fill it from. Graph names the days it left out inside the
@@ -7985,7 +8005,12 @@ mod tests {
             status: "tentative".to_string(),
             categories: "Birthday".to_string(),
             reminders_json: Some("[{\"minutes\":15}]".to_string()),
-            recurrence_rule: crate::application::repeating::rule(Repeat::Weekly, &stops, None),
+            recurrence_rule: crate::application::repeating::rule(
+                Repeat::Weekly,
+                &stops,
+                None,
+                crate::application::repeating::AllDay::No,
+            ),
             ..an_event_stored_here()
         }
     }

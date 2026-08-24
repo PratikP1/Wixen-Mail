@@ -191,9 +191,8 @@ pub fn what_is_due<'a>(
 /// Outlook or from the event editor was read as nothing and never went off.
 fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
     use crate::common::moment::Moment;
-    use chrono::TimeZone;
 
-    let here = |clock: chrono::NaiveDateTime| Local.from_local_datetime(&clock).single();
+    let here = crate::common::moment::on_this_computer;
     match moment {
         Moment::Fixed(at) => Some(at.with_timezone(&Local)),
         Moment::ClockFace(clock) => here(clock),
@@ -571,5 +570,50 @@ mod tests {
 
         assert!(held.is_err(), "the panic should have escaped");
         assert!(gate.take().is_some(), "the turn was never given back");
+    }
+}
+
+#[cfg(test)]
+mod a_time_that_happens_twice {
+    use super::*;
+
+    #[test]
+    fn test_a_reminder_on_the_hour_the_clocks_go_back_still_has_a_moment() {
+        // On the Sunday the clocks go back, one hour of clock face happens
+        // twice, and asking for "the" instant that matches has no single
+        // answer. That came back as no answer at all, so the reminder was
+        // filtered out of what is due and never went off, and the same
+        // question asked for reading it aloud fell through to speaking the
+        // raw stored text: "2026-11-01 01:30:00", which is the exact failure
+        // the reading module says it exists to prevent.
+        //
+        // Written against whatever this machine's zone is rather than a fixed
+        // one, so it asserts the property, that every clock face has a
+        // moment, rather than a zone the test machine may not be in.
+        use chrono::{Datelike, Duration, Local, TimeZone};
+
+        let start = Local
+            .with_ymd_and_hms(2026, 1, 1, 0, 30, 0)
+            .single()
+            .expect("the first of January is not ambiguous anywhere");
+
+        let mut day = start.date_naive();
+        let mut checked = 0;
+        while day.year() == 2026 {
+            for hour in 0..24 {
+                let clock = day.and_hms_opt(hour, 30, 0).expect("a real clock face");
+                assert!(
+                    local_instant(crate::common::moment::Moment::ClockFace(clock)).is_some(),
+                    "{clock} has no moment on this computer, so a reminder set \
+                     for it would never go off"
+                );
+                checked += 1;
+            }
+            day += Duration::days(1);
+        }
+        assert!(
+            checked > 8_000,
+            "the sweep did not cover the year: {checked}"
+        );
     }
 }

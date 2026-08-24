@@ -161,15 +161,24 @@ impl Until {
     /// The one writer of it. Every `UNTIL` and every `COUNT` this program puts
     /// in a rule comes from here, so a series read back from a provider and one
     /// typed into the form cannot disagree about whether the last day counts.
-    pub(crate) fn ending(&self) -> Option<String> {
+    pub(crate) fn ending(&self, all_day: AllDay) -> Option<String> {
         match self {
             Until::Forever => None,
-            // UNTIL is a date-time in UTC in the form RFC 5545 wants, and the
-            // end of the day rather than the start, so a series ending "on the
-            // thirtieth" includes the thirtieth.
+            // RFC 5545 section 3.3.10: UNTIL has to match the value type of
+            // DTSTART. An all-day series writes DTSTART as a bare date, so its
+            // UNTIL is a bare date too; writing a date-time against one made
+            // the whole rule invalid, and a server that checks refuses the
+            // event outright, so a birthday set to stop on a date never
+            // reached the calendar.
+            //
+            // A timed series ends at the end of its last day rather than the
+            // start, so one ending "on the thirtieth" includes the thirtieth.
             Until::OnDate(date) => {
                 let digits: String = date.chars().filter(char::is_ascii_digit).collect();
-                (digits.len() == 8).then(|| format!("UNTIL={digits}T235959Z"))
+                (digits.len() == 8).then(|| match all_day {
+                    AllDay::Yes => format!("UNTIL={digits}"),
+                    AllDay::No => format!("UNTIL={digits}T235959Z"),
+                })
             }
             Until::AfterTimes(0) => None,
             Until::AfterTimes(times) => Some(format!("COUNT={times}")),
@@ -220,7 +229,23 @@ impl Until {
 /// `None` for something that does not repeat. An ending on its own is not a
 /// rule: "until the thirtieth" says nothing about how often, so it is dropped
 /// rather than written out as a rule that means nothing.
-pub fn rule(repeat: Repeat, until: &Until, weekday: Option<&str>) -> Option<String> {
+/// Whether the series being written is an all-day one.
+///
+/// A named pair rather than a bare `bool`, because it decides the shape of a
+/// value in a document a server validates, and `true` at a call site says
+/// nothing about which shape that is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllDay {
+    Yes,
+    No,
+}
+
+pub fn rule(
+    repeat: Repeat,
+    until: &Until,
+    weekday: Option<&str>,
+    all_day: AllDay,
+) -> Option<String> {
     let frequency = repeat.frequency()?;
     let mut parts = match (repeat, weekday) {
         // The weekday has to come from the date the series starts, because
@@ -231,7 +256,7 @@ pub fn rule(repeat: Repeat, until: &Until, weekday: Option<&str>) -> Option<Stri
         (Repeat::MonthlyByWeekday, None) => "FREQ=MONTHLY".to_string(),
         _ => frequency.to_string(),
     };
-    if let Some(ending) = until.ending() {
+    if let Some(ending) = until.ending(all_day) {
         parts.push(';');
         parts.push_str(&ending);
     }
@@ -474,6 +499,7 @@ fn the_week_outlook_named(said: &str) -> Option<i32> {
 pub fn what_outlook_said(
     said: &MsPatternedRecurrence,
     starts_on: chrono::NaiveDate,
+    all_day: AllDay,
 ) -> Option<String> {
     use chrono::Datelike;
 
@@ -551,7 +577,7 @@ pub fn what_outlook_said(
             days => format!("{frequency};INTERVAL={every};{days}"),
         };
     }
-    if let Some(ending) = stops.ending() {
+    if let Some(ending) = stops.ending(all_day) {
         written.push(';');
         written.push_str(&ending);
     }
@@ -596,14 +622,14 @@ mod tests {
     fn test_not_repeating_is_no_rule_at_all() {
         // Rather than a rule that says it does not repeat, which every reader
         // of an .ics file would then have to interpret.
-        assert_eq!(rule(Repeat::Never, &Until::Forever, None), None);
+        assert_eq!(rule(Repeat::Never, &Until::Forever, None, AllDay::No), None);
     }
 
     #[test]
     fn test_every_weekday_is_a_pattern_daily_gets_wrong() {
         // This is the one that makes a reminder go off on Sunday.
         assert_eq!(
-            rule(Repeat::Weekdays, &Until::Forever, None),
+            rule(Repeat::Weekdays, &Until::Forever, None, AllDay::No),
             Some("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".to_string())
         );
     }
@@ -613,11 +639,16 @@ mod tests {
         // Nothing could say this before, so anything set to repeat repeated
         // for ever and a six week course had to be entered six times.
         assert_eq!(
-            rule(Repeat::Weekly, &Until::OnDate("2026-09-30".into()), None),
+            rule(
+                Repeat::Weekly,
+                &Until::OnDate("2026-09-30".into()),
+                None,
+                AllDay::No
+            ),
             Some("FREQ=WEEKLY;UNTIL=20260930T235959Z".to_string())
         );
         assert_eq!(
-            rule(Repeat::Weekly, &Until::AfterTimes(6), None),
+            rule(Repeat::Weekly, &Until::AfterTimes(6), None, AllDay::No),
             Some("FREQ=WEEKLY;COUNT=6".to_string())
         );
     }
@@ -626,7 +657,13 @@ mod tests {
     fn test_the_last_day_is_included_in_the_series() {
         // Until the thirtieth means the thirtieth counts. Ending at midnight
         // would quietly drop the last one.
-        let written = rule(Repeat::Daily, &Until::OnDate("2026-09-30".into()), None).unwrap();
+        let written = rule(
+            Repeat::Daily,
+            &Until::OnDate("2026-09-30".into()),
+            None,
+            AllDay::No,
+        )
+        .unwrap();
 
         assert!(written.contains("T235959Z"), "{written}");
     }
@@ -638,7 +675,7 @@ mod tests {
             Until::OnDate("2026-09-30".to_string()),
             Until::AfterTimes(6),
         ] {
-            let written = rule(Repeat::Weekly, &ending, None).expect("a rule");
+            let written = rule(Repeat::Weekly, &ending, None, AllDay::No).expect("a rule");
 
             assert_eq!(Until::from_rule(&written), ending);
         }
@@ -647,7 +684,7 @@ mod tests {
     #[test]
     fn test_every_frequency_survives_the_trip() {
         for repeat in Repeat::ALL {
-            let Some(written) = rule(repeat, &Until::Forever, Some("2TU")) else {
+            let Some(written) = rule(repeat, &Until::Forever, Some("2TU"), AllDay::No) else {
                 assert_eq!(repeat, Repeat::Never);
                 continue;
             };
@@ -672,7 +709,8 @@ mod tests {
             rule(
                 Repeat::MonthlyByWeekday,
                 &Until::Forever,
-                weekday_of_month("2026-07-09").as_deref()
+                weekday_of_month("2026-07-09").as_deref(),
+                AllDay::No
             ),
             Some("FREQ=MONTHLY;BYDAY=2TH".to_string())
         );
@@ -763,7 +801,7 @@ mod tests {
     #[test]
     fn test_a_monthly_weekday_with_no_date_falls_back_rather_than_writing_nonsense() {
         // A rule ending in BYDAY= is not a rule.
-        let written = rule(Repeat::MonthlyByWeekday, &Until::Forever, None).unwrap();
+        let written = rule(Repeat::MonthlyByWeekday, &Until::Forever, None, AllDay::No).unwrap();
 
         assert_eq!(written, "FREQ=MONTHLY");
         assert!(!written.ends_with('='), "{written}");
@@ -774,7 +812,12 @@ mod tests {
         assert_eq!(weekday_of_month("not a date"), None);
         assert_eq!(weekday_of_month(""), None);
         assert_eq!(
-            rule(Repeat::Weekly, &Until::OnDate("nonsense".into()), None),
+            rule(
+                Repeat::Weekly,
+                &Until::OnDate("nonsense".into()),
+                None,
+                AllDay::No
+            ),
             Some("FREQ=WEEKLY".to_string())
         );
     }
@@ -902,8 +945,12 @@ mod tests {
                 Until::OnDate("2026-09-30".to_string()),
                 Until::AfterTimes(6),
             ] {
-                let Some(written) = rule(repeat, &ending, weekday_of_month(A_TUESDAY).as_deref())
-                else {
+                let Some(written) = rule(
+                    repeat,
+                    &ending,
+                    weekday_of_month(A_TUESDAY).as_deref(),
+                    AllDay::No,
+                ) else {
                     assert_eq!(repeat, Repeat::Never, "{repeat:?} has no rule");
                     continue;
                 };
@@ -927,7 +974,7 @@ mod tests {
                      Tuesday before; the Tuesday is what Outlook is told the meeting is on, so \
                      it is what the repeat has to be counted from"
                 );
-                let back = what_outlook_said(&said, starts_on)
+                let back = what_outlook_said(&said, starts_on, AllDay::No)
                     .unwrap_or_else(|| panic!("{written} came back from Outlook unreadable"));
 
                 assert_eq!(
@@ -975,7 +1022,7 @@ mod tests {
         // of them removed. What is refused here is a series arriving from
         // Outlook that falls on days a rule written here would not.
         let starts_on = chrono::NaiveDate::parse_from_str(A_TUESDAY, "%Y-%m-%d").expect("a day");
-        let said = |shape: &MsPatternedRecurrence| what_outlook_said(shape, starts_on);
+        let said = |shape: &MsPatternedRecurrence| what_outlook_said(shape, starts_on, AllDay::No);
 
         // The one it is all about: a fortnightly series counted from Sunday
         // lands in different weeks from one counted from Monday, and a rule can
@@ -1222,5 +1269,44 @@ mod tests {
                 repeat
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod what_an_all_day_series_says_about_its_last_day {
+    use super::*;
+
+    #[test]
+    fn test_an_all_day_series_ends_on_a_date_not_a_time() {
+        // RFC 5545 section 3.3.10 requires UNTIL to match the value type of
+        // DTSTART. An all-day event writes DTSTART;VALUE=DATE:20260727, so its
+        // UNTIL has to be a bare date too. Writing a date-time against it made
+        // the whole rule invalid, and a CalDAV server that checks refuses the
+        // entire event, so a birthday set to stop on a date never reached the
+        // calendar at all.
+        let stops = Until::OnDate("2026-09-30".to_string());
+
+        assert_eq!(stops.ending(AllDay::Yes).as_deref(), Some("UNTIL=20260930"));
+    }
+
+    #[test]
+    fn test_a_timed_series_still_ends_at_the_end_of_its_last_day() {
+        // Unchanged, and it has to stay that way: a timed series ending "on
+        // the thirtieth" includes the whole of the thirtieth.
+        let stops = Until::OnDate("2026-09-30".to_string());
+
+        assert_eq!(
+            stops.ending(AllDay::No).as_deref(),
+            Some("UNTIL=20260930T235959Z")
+        );
+    }
+
+    #[test]
+    fn test_counting_and_never_are_the_same_either_way() {
+        assert_eq!(Until::Forever.ending(AllDay::Yes), None);
+        assert_eq!(
+            Until::AfterTimes(6).ending(AllDay::Yes).as_deref(),
+            Some("COUNT=6")
+        );
     }
 }

@@ -5116,6 +5116,13 @@ file = "src/application/contacts_sync.rs"
 before = """        emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
         phones_json: remote.phones_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()"""
 after = """        emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
         phones_json: remote.phones_json.clone(),
@@ -5141,6 +5148,13 @@ file = "src/application/contacts_sync.rs"
 before = """        emails_json: remote.emails_json.clone(),
         phones_json: remote.phones_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()"""
 after = """        emails_json: remote.emails_json.clone(),
         phones_json: remote.phones_json.clone(),
@@ -5165,9 +5179,23 @@ file = "src/application/contacts_sync.rs"
 before = """        emails_json: remote.emails_json.clone(),
         phones_json: remote.phones_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()"""
 after = """        emails_json: remote.emails_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()"""
 red = [
     "application::contacts_sync::tests::test_a_microsoft_merge_names_every_field_it_takes_and_every_field_it_keeps",

@@ -778,7 +778,13 @@ async fn push_one<S: TaskService>(
             } else {
                 service.google_update_task(token, list_id, &body).await?
             };
-            let entry = google_task_to_entry(&stored, &task.account_id, list_id);
+            let mut entry = google_task_to_entry(&stored, &task.account_id, list_id);
+            // Google Tasks has no priority, so its reader always answers
+            // "normal", and writing that back over the row wiped a priority
+            // somebody had just set: a new task made High reached Google and
+            // reverted here on the sync that sent it. The pull path already
+            // carries this over; the push path did not.
+            carry_over_local_only(&mut entry, task, ThePriority::OnlyHere);
             settle(cache, task, entry, new_here)
         }
         Provider::Microsoft => {

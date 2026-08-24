@@ -1230,6 +1230,14 @@ fn carry_over_local_only(merged: &mut CalendarEventEntry, held: &CalendarEventEn
     merged.categories = held.categories.clone();
     merged.attendees_json = held.attendees_json.clone();
     merged.reminders_json = held.reminders_json.clone();
+    // Busy or free. A calendar document carries this as TRANSP and nothing
+    // here reads it, so every event coming back from the server was rebuilt
+    // as busy. Left out of this list, that overwrote the answer somebody had
+    // just chosen: setting an event to Free and saving it put it back to Busy
+    // on the next pull of the same sync run, every time, with nothing said.
+    // A subscribed feed's own TRANSP:TRANSPARENT was lost the same way, so
+    // bank holidays blocked out the day.
+    merged.show_as = held.show_as.clone();
 }
 
 /// How a whole-day date is written.

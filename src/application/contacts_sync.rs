@@ -1309,6 +1309,13 @@ fn google_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> Cont
         emails_json: emails_json.and_then(|list| serde_json::to_string(&list).ok()),
         phones_json: remote.phones_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()
     }
 }
@@ -1343,6 +1350,13 @@ fn microsoft_fields_over_local(local: &ContactEntry, remote: &ContactEntry) -> C
         emails_json: remote.emails_json.clone(),
         phones_json: remote.phones_json.clone(),
         addresses_json: remote.addresses_json.clone(),
+        // The older one-line column, kept in step with the list above.
+        // Leaving it out meant `..local` supplied the stored one, and two
+        // readers fall back to it when the list is empty, so an address
+        // deleted at the provider was still shown, still read aloud, and
+        // still sent back out on the next change. Both doc comments already
+        // claimed the postal address was covered here.
+        address: remote.address.clone(),
         ..local.clone()
     }
 }
@@ -2417,8 +2431,20 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     let state = cache.get_sync_state(account_id, CONTACTS_SYNC, MICROSOFT_ADDRESS_BOOK)?;
     let delta_link = state.as_ref().and_then(|s| s.delta_link.as_deref());
 
-    // Fetch remote contacts
-    let (remote_contacts, new_delta_link) = ms_client.list_contacts(token, delta_link).await?;
+    // Fetch remote contacts. A delta link that has aged out is answered with
+    // Gone, and passing that on left the dead link stored, so every later sync
+    // failed the same way and Outlook contacts stopped syncing for good, in
+    // both directions. The Google side has had this fallback all along.
+    let (remote_contacts, new_delta_link) = match ms_client.list_contacts(token, delta_link).await {
+        Ok(answer) => answer,
+        Err(too_old) if is_expired_sync_token(&too_old) => {
+            tracing::warn!(
+                "The marker from the last Outlook contacts sync was too old, so the whole address book is being read again"
+            );
+            ms_client.list_contacts(token, None).await?
+        }
+        Err(other) => return Err(other),
+    };
 
     for ms_contact in &remote_contacts {
         if ms_contact.id.is_empty() {
@@ -3002,7 +3028,13 @@ fn ms_contact_to_contact(ms: &MsGraphContact, account_id: &str) -> ContactEntry 
         } else {
             Some(ms.business_home_page.clone())
         },
-        address: None,
+        // The one-line copy of the primary address, composed from the parts
+        // the same way the Google reader composes its own, so this and the
+        // list below cannot give two answers about the same address. It used
+        // to be left empty here, which meant the merge could not take it from
+        // Outlook and had to keep whatever was stored, and an address deleted
+        // at Outlook stayed visible and was sent back out.
+        address: addresses.first().map(AddressEntry::on_one_line),
         birthday: birthday_from_microsoft(ms.birthday.as_deref()),
         avatar_url: None,
         avatar_data_base64: None,
@@ -5181,10 +5213,18 @@ mod tests {
         assert_eq!(emails_json, google.emails_json);
         assert_eq!(phones_json, google.phones_json);
         assert_eq!(addresses_json, google.addresses_json);
+        assert_eq!(address, google.address);
 
+        // The one-line copy of the primary address moved from the list of
+        // fields this keeps to the list it takes, because it has to answer
+        // the same way as `addresses_json` beside it. Kept from here, an
+        // address deleted at the provider came back: the sync cleared the
+        // list and left this behind, two readers fall back to it when the
+        // list is empty, so it was still shown, still read aloud, and still
+        // sent out again on the next change. Both providers' readers now
+        // compose it from the parts they were given.
         assert_eq!(id, local.id);
         assert_eq!(account_id, local.account_id);
-        assert_eq!(address, local.address);
         assert_eq!(avatar_data_base64, local.avatar_data_base64);
         assert_eq!(vcard_raw, local.vcard_raw);
         assert_eq!(favorite, local.favorite);
@@ -5257,10 +5297,18 @@ mod tests {
         assert_eq!(emails_json, outlook.emails_json);
         assert_eq!(phones_json, outlook.phones_json);
         assert_eq!(addresses_json, outlook.addresses_json);
+        assert_eq!(address, outlook.address);
 
+        // The one-line copy of the primary address moved from the list of
+        // fields this keeps to the list it takes, because it has to answer
+        // the same way as `addresses_json` beside it. Kept from here, an
+        // address deleted at the provider came back: the sync cleared the
+        // list and left this behind, two readers fall back to it when the
+        // list is empty, so it was still shown, still read aloud, and still
+        // sent out again on the next change. Both providers' readers now
+        // compose it from the parts they were given.
         assert_eq!(id, local.id);
         assert_eq!(account_id, local.account_id);
-        assert_eq!(address, local.address);
         assert_eq!(avatar_url, local.avatar_url);
         assert_eq!(avatar_data_base64, local.avatar_data_base64);
         assert_eq!(vcard_raw, local.vcard_raw);
