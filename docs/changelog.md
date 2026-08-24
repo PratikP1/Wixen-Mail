@@ -133,6 +133,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **The sidebar keeps your place when a sync finishes.** Folders, calendars,
+  reminders, task lists, note folders and contact groups were all emptied and
+  rebuilt whenever a sync finished, which happens on a timer rather than
+  because you asked. That left nothing selected, so anybody arrowing through
+  a list had their place taken away mid-list with only a count spoken, and
+  the next arrow key started them at the top again. The cursor now goes back
+  to the row it was on, found by what the row says rather than where it sat.
+- **Manager windows keep your place after a delete.** Deleting a rule, tag,
+  signature or contact repainted the list with nothing selected, so pressing
+  Delete again said "select a filter to delete", which sounds like a refusal
+  and was really the repaint. Getting back meant tabbing to the list and
+  arrowing down to where you already were.
+- **Bold, italic and underline say which way they went.** All three are
+  switches, and all three said "applied" whichever way you pressed them, so
+  ending a bold run told you bold had been applied. They now say on or off,
+  as do the two list buttons.
+- **The Calendar's Previous and Next buttons no longer claim to have done
+  something.** They announced that the period had changed and changed
+  nothing, which is worse than a button that cannot be used. Moving between
+  weeks and months is not built, so both now say so and are switched off,
+  which a screen reader reports when you reach them rather than after you
+  press. Today, which does work, now says where it went instead of changing
+  the heading silently.
+- **Alt+C, Alt+D and Alt+S each mean one thing again.** Three windows gave
+  the same Alt key to two different controls, which makes Windows move
+  between them rather than press either. The sharpest was the window asking
+  whether you mean one day or a whole repeating series, where Alt+C was both
+  Continue and Cancel and Continue is the one that can change every day of
+  the series.
 - **Mail collected over POP no longer stops the account working when one
   message contains an unusual character.** A message whose text is not stored
   the way this program expected made the connection lose its place partway

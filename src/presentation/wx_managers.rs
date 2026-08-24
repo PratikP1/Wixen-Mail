@@ -113,6 +113,40 @@ pub struct ManagerState<T> {
 ///
 /// Public so a test can call it directly with a real list and a real line
 /// of text, without a human closing a live modal.
+/// Which row to put the cursor on after removing one, out of however many
+/// are left.
+///
+/// Repainting a list leaves nothing selected. So deleting a rule took the
+/// cursor away, and pressing Delete again said "select a filter to delete",
+/// which sounds like a refusal and is really the repaint; getting back meant
+/// tabbing to the list and arrowing down to where you already were.
+///
+/// The row that moved up into the gap, which is the next one along and the
+/// one somebody deleting several in a row wants. At the end of the list there
+/// is no such row, so it is the new last one instead.
+fn the_row_to_select_after_removing(removed: usize, left: usize) -> Option<usize> {
+    if left == 0 {
+        return None;
+    }
+    Some(removed.min(left - 1))
+}
+
+/// Put the cursor back on a list that has just been repainted.
+///
+/// Selected and focused together, and made visible: selecting alone leaves
+/// the screen reader's own cursor where it was, so the person hears nothing
+/// move.
+fn land_the_row_cursor(list: &ListCtrl, at: Option<usize>) {
+    let Some(at) = at else { return };
+    let at = at as i64;
+    list.set_item_state(
+        at,
+        ListItemState::Selected | ListItemState::Focused,
+        ListItemState::Selected | ListItemState::Focused,
+    );
+    list.ensure_visible(at);
+}
+
 pub fn delete_selected<T: Clone>(
     state: &Rc<RefCell<ManagerState<T>>>,
     list: &ListCtrl,
@@ -128,7 +162,12 @@ pub fn delete_selected<T: Clone>(
         s.working.remove(idx);
         s.changed = true;
         drop(s);
+        let left = state.borrow().working.len();
         populate(list, &state.borrow().working);
+        // Back on the row that moved up into the gap. Without this the
+        // repaint leaves nothing selected, so a second Delete says to select
+        // something and sounds like a refusal.
+        land_the_row_cursor(list, the_row_to_select_after_removing(idx, left));
         said_and_shown(
             status_text,
             a11y,
@@ -893,6 +932,11 @@ pub fn delete_selected_contact(
         *changed.borrow_mut() = true;
         let query = search.get_value();
         populate_contacts_filtered(list, &working.borrow(), &query, &mut index_map.borrow_mut());
+        // The row that moved up into the gap. Counted against what the list
+        // is showing rather than everything held, because a search may be
+        // narrowing it and the cursor belongs on a row somebody can see.
+        let showing = index_map.borrow().len();
+        land_the_row_cursor(list, the_row_to_select_after_removing(sel, showing));
         said_and_shown(
             status,
             a11y,
@@ -3751,5 +3795,32 @@ mod tests {
             assert!(!region.is_empty(), "Empty region for {}", country);
             assert!(!code.is_empty(), "Empty code for {}", country);
         }
+    }
+}
+
+#[cfg(test)]
+mod where_the_row_cursor_lands_after_a_delete {
+    use super::*;
+
+    #[test]
+    fn test_the_row_that_moved_up_takes_the_place_of_the_one_removed() {
+        // Delete rule twenty of fifty and the list is repainted with nothing
+        // selected. Pressing Delete again then says "select a filter to
+        // delete", which sounds like a refusal and is really the repaint, and
+        // getting back to where you were means tabbing to the list and
+        // arrowing down nineteen times.
+        assert_eq!(the_row_to_select_after_removing(20, 49), Some(20));
+    }
+
+    #[test]
+    fn test_removing_the_last_row_lands_on_the_new_last_one() {
+        // There is no row twenty once twenty rows are left, so landing on the
+        // index just removed would be landing on nothing.
+        assert_eq!(the_row_to_select_after_removing(19, 19), Some(18));
+    }
+
+    #[test]
+    fn test_removing_the_only_row_leaves_nothing_to_land_on() {
+        assert_eq!(the_row_to_select_after_removing(0, 0), None);
     }
 }

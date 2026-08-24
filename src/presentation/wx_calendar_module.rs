@@ -43,8 +43,19 @@ pub fn build_calendar_panel(
     // Toolbar row
     let toolbar_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let btn_today = Button::builder(&panel).with_label("&Today").build();
+    // Moving between weeks and months is not built: nothing here holds a
+    // period to move, and the event list is loaded by the account rather than
+    // by a date range. Both buttons used to announce "previous period" and
+    // "next period" and change nothing at all, which is worse than a button
+    // that says it cannot be used: a screen reader reports a disabled button
+    // as unavailable on arrival, so nobody presses it and waits for an answer
+    // that is not coming.
     let btn_prev = Button::builder(&panel).with_label("&< Prev").build();
     let btn_next = Button::builder(&panel).with_label("&Next >").build();
+    btn_prev.enable(false);
+    btn_next.enable(false);
+    set_accessible_name(&btn_prev, "Previous period, not built yet");
+    set_accessible_name(&btn_next, "Next period, not built yet");
     toolbar_sizer.add(&btn_today, 0, SizerFlag::All, 4);
     toolbar_sizer.add(&btn_prev, 0, SizerFlag::All, 4);
     toolbar_sizer.add(&btn_next, 0, SizerFlag::All, 4);

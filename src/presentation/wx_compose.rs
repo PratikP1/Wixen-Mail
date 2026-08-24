@@ -349,7 +349,9 @@ fn show_format_menu(dialog: &Dialog) {
         menu = menu.append_item(
             ID_FORMAT_FIRST + index as Id,
             &format.label(),
-            format.spoken(),
+            // A menu's help text describes what the item does, so it says
+            // what would be asked for rather than a state nothing has read.
+            &format.spoken(None),
         );
     }
     let mut menu = menu
@@ -934,9 +936,14 @@ pub fn show_compose_dialog_full(
     let apply_format = {
         let a11y = a11y.clone();
         move |format: editor_document::Format| {
-            run_in_editor(&body_editor, &editor_document::format_script(format));
+            // The page says what the state became, so a toggle can say which
+            // way it went. An answer that does not arrive leaves `None`, and
+            // the sentence falls back to what was asked for.
+            let answer = body_editor.run_script(&editor_document::format_script(format));
+            body_editor.set_focus();
+            let now_on = answer.and_then(|said| editor_document::switch_state_from(&said));
             let _ = a11y.announce(
-                format.spoken(),
+                &format.spoken(now_on),
                 crate::presentation::accessibility::announcements::Priority::Normal,
             );
         }
@@ -1443,8 +1450,11 @@ pub fn show_compose_dialog_full(
                 Some(editor_document::EditorMessage::Save) => dialog.end_modal(ID_SAVE_DRAFT),
                 Some(editor_document::EditorMessage::Cancel) => dialog.end_modal(ID_CANCEL),
                 Some(editor_document::EditorMessage::Formatted(format)) => {
+                    // Applied in the page already, so this only says so. The
+                    // page does not report the state on this route, and
+                    // guessing one would be worse than saying what was done.
                     let _ = a11y.announce(
-                        format.spoken(),
+                        &format.spoken(None),
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
                 }

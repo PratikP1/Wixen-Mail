@@ -1497,26 +1497,26 @@ impl WxMailApp {
             }
 
             // ── Calendar panel button handlers ──────────────────────────
+            // Today writes the date onto the heading, and said nothing while
+            // doing it: the one place in this window where something visible
+            // changed with no word spoken, so a screen reader user pressing it
+            // could not tell it from a button that did nothing.
+            //
+            // Prev and Next are disabled where they are built, because they
+            // move nothing. They used to announce "previous period" and "next
+            // period" and change nothing at all, which is the worst of the
+            // three: an answer saying the thing happened.
             cal_cp.btn_today.on_click({
                 let label = cal_cp.date_label;
+                let a11y = a11y.clone();
                 move |_| {
                     let today = chrono::Local::now().format("%A, %B %e, %Y").to_string();
-                    label.set_label(&format!("Today, {}", today));
-                    tracing::info!("Calendar: jumped to today");
-                }
-            });
-            cal_cp.btn_prev.on_click({
-                let ui_tx = ui_tx.clone();
-                let runtime = runtime.clone();
-                move |_| {
-                    send_status(&ui_tx, &runtime, "Calendar: previous period");
-                }
-            });
-            cal_cp.btn_next.on_click({
-                let ui_tx = ui_tx.clone();
-                let runtime = runtime.clone();
-                move |_| {
-                    send_status(&ui_tx, &runtime, "Calendar: next period");
+                    let said = format!("Today, {today}");
+                    label.set_label(&said);
+                    let _ = a11y.announce(
+                        &said,
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
                 }
             });
 
@@ -6817,6 +6817,85 @@ fn scan_only_account() -> crate::data::account::Account {
     account
 }
 
+/// What a tree's cursor was on, so it can be put back after a rebuild.
+///
+/// Read before `delete_all_items`, given back to [`land_the_cursor`] after
+/// the rows have been added again.
+fn what_the_cursor_was_on(tree: &TreeCtrl) -> Option<String> {
+    tree.get_selection()
+        .and_then(|item| tree.get_item_text(&item))
+}
+
+/// Put the cursor back where it was, on a tree that has just been rebuilt.
+///
+/// Selecting and making visible together. Selecting alone leaves the screen
+/// reader's own cursor where it was and the person hears nothing move, which
+/// is the reasoning the next-unread jump already carries.
+///
+/// Every row under the root is walked, not only the top ones, because the
+/// contacts tree keeps its groups on a branch of their own and somebody
+/// arrowing through them is exactly as entitled to keep their place.
+fn land_the_cursor(tree: &TreeCtrl, root: &TreeItemId, was: Option<&str>) {
+    let mut items = Vec::new();
+    let mut labels = Vec::new();
+    collect_rows(tree, root, &mut items, &mut labels);
+
+    let Some(at) = the_row_to_land_on(was, &labels) else {
+        return;
+    };
+    if let Some(item) = items.get(at) {
+        tree.select_item(item);
+        tree.ensure_visible(item);
+    }
+}
+
+/// Every row under one item, in the order somebody arrowing down meets them.
+///
+/// Depth first, because that is the order a tree reads: a branch, then what
+/// is on it, then the next branch.
+fn collect_rows(
+    tree: &TreeCtrl,
+    parent: &TreeItemId,
+    items: &mut Vec<TreeItemId>,
+    labels: &mut Vec<String>,
+) {
+    let mut child = tree.get_first_child(parent).map(|(child, _)| child);
+    while let Some(current) = child {
+        if let Some(text) = tree.get_item_text(&current) {
+            items.push(current.clone());
+            labels.push(text);
+        }
+        collect_rows(tree, &current, items, labels);
+        child = tree.get_next_sibling(&current);
+    }
+}
+
+/// Which row of a rebuilt tree the cursor should land on.
+///
+/// A sidebar tree is emptied and rebuilt whenever a sync finishes, which
+/// happens on a timer rather than because anybody asked for it. The rebuild
+/// left nothing selected, so somebody arrowing through their folders had the
+/// cursor taken out from under them mid-list, with only a count spoken and
+/// nothing saying the place had gone; the next arrow key started them at the
+/// top again.
+///
+/// Matched on what the row says rather than on its position, because the
+/// position is exactly what a rebuild can change: a folder added above the
+/// one somebody was on would otherwise move them without their asking.
+///
+/// Nothing selected before means nothing forced after, because the cursor may
+/// well be somewhere else entirely and moving it into this tree would take
+/// somebody out of what they were reading.
+fn the_row_to_land_on(was: Option<&str>, now: &[String]) -> Option<usize> {
+    let was = was?;
+    if now.is_empty() {
+        return None;
+    }
+    // Somewhere real beats nowhere when the row has genuinely gone:
+    // unsubscribed, renamed at the server, or on an account just removed.
+    Some(now.iter().position(|row| row == was).unwrap_or(0))
+}
+
 /// The account a message row belongs to, which is not always the one on screen.
 ///
 /// In All Inboxes every row can come from a different account, so a command
@@ -7122,6 +7201,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let mut s = lock_state(state);
                 s.folders = folders.clone();
             }
+            let was_on = what_the_cursor_was_on(folder_tree);
             folder_tree.delete_all_items();
             if let Some(root) = folder_tree.add_root("Mail Folders", None, None) {
                 // First, because it is where somebody with more than one
@@ -7133,6 +7213,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     folder_tree.append_item(&root, f, None, None);
                 }
                 folder_tree.expand(&root);
+                // Back where it was. A sync finishing on a timer used to take
+                // the cursor away mid-list with only a count spoken.
+                land_the_cursor(folder_tree, &root, was_on.as_deref());
             }
             let msg = how_many_loaded(folders.len(), "folder");
             frame.set_status_text(&msg, 0);
@@ -7386,17 +7469,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             frame.set_status_text(&label, 2);
         }
         UIUpdate::CalendarContainersLoaded(containers) => {
+            let was_on = what_the_cursor_was_on(&pim.cal_tree);
             pim.cal_tree.delete_all_items();
             if let Some(root) = pim.cal_tree.add_root("All Calendars", None, None) {
-                for c in containers {
-                    let label = if c.is_visible {
-                        format!("[x] {}", c.name)
-                    } else {
-                        format!("[ ] {}", c.name)
-                    };
-                    pim.cal_tree.append_item(&root, &label, None, None);
+                let rows: Vec<String> = containers
+                    .iter()
+                    .map(|c| match c.is_visible {
+                        true => format!("[x] {}", c.name),
+                        false => format!("[ ] {}", c.name),
+                    })
+                    .collect();
+                for label in &rows {
+                    pim.cal_tree.append_item(&root, label, None, None);
                 }
                 pim.cal_tree.expand(&root);
+                land_the_cursor(&pim.cal_tree, &root, was_on.as_deref());
             }
             let msg = how_many_loaded(containers.len(), "calendar");
             frame.set_status_text(&msg, 0);
@@ -7415,17 +7502,24 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Sidebar groups reminders by urgency, matching how the tasks and
             // notes sidebars group their own items.
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let was_on = what_the_cursor_was_on(&pim.reminders_tree);
             pim.reminders_tree.delete_all_items();
             if let Some(root) = pim.reminders_tree.add_root("Reminders", None, None) {
-                for bucket in ReminderBucket::ALL {
-                    let count = reminders
-                        .iter()
-                        .filter(|r| r.bucket(&today) == bucket)
-                        .count();
-                    let label = format!("{} ({})", bucket.label(), count);
-                    pim.reminders_tree.append_item(&root, &label, None, None);
+                let rows: Vec<String> = ReminderBucket::ALL
+                    .iter()
+                    .map(|bucket| {
+                        let count = reminders
+                            .iter()
+                            .filter(|r| r.bucket(&today) == *bucket)
+                            .count();
+                        format!("{} ({})", bucket.label(), count)
+                    })
+                    .collect();
+                for label in &rows {
+                    pim.reminders_tree.append_item(&root, label, None, None);
                 }
                 pim.reminders_tree.expand(&root);
+                land_the_cursor(&pim.reminders_tree, &root, was_on.as_deref());
             }
 
             let msg = how_many_loaded(reminders.len(), "reminder");
@@ -7433,13 +7527,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "reminders");
         }
         UIUpdate::TaskListsLoaded(lists) => {
+            let was_on = what_the_cursor_was_on(&pim.tasks_tree);
             pim.tasks_tree.delete_all_items();
             if let Some(root) = pim.tasks_tree.add_root("Task Lists", None, None) {
-                for l in lists {
-                    let label = format!("{} ({})", l.name, l.task_count);
-                    pim.tasks_tree.append_item(&root, &label, None, None);
+                let rows: Vec<String> = lists
+                    .iter()
+                    .map(|l| format!("{} ({})", l.name, l.task_count))
+                    .collect();
+                for label in &rows {
+                    pim.tasks_tree.append_item(&root, label, None, None);
                 }
                 pim.tasks_tree.expand(&root);
+                land_the_cursor(&pim.tasks_tree, &root, was_on.as_deref());
             }
             let msg = how_many_loaded(lists.len(), "task list");
             frame.set_status_text(&msg, 0);
@@ -7461,13 +7560,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce_topic(&msg, Priority::Low, "tasks");
         }
         UIUpdate::NoteFoldersLoaded(folders) => {
+            let was_on = what_the_cursor_was_on(&pim.notes_tree);
             pim.notes_tree.delete_all_items();
             if let Some(root) = pim.notes_tree.add_root("Note Folders", None, None) {
-                for f in folders {
-                    let label = format!("{} ({})", f.name, f.note_count);
-                    pim.notes_tree.append_item(&root, &label, None, None);
+                let rows: Vec<String> = folders
+                    .iter()
+                    .map(|f| format!("{} ({})", f.name, f.note_count))
+                    .collect();
+                for label in &rows {
+                    pim.notes_tree.append_item(&root, label, None, None);
                 }
                 pim.notes_tree.expand(&root);
+                land_the_cursor(&pim.notes_tree, &root, was_on.as_deref());
             }
             // The fourth sidebar, and the only one that filled itself without
             // saying or showing anything. Calendars, reminders and task lists
@@ -7512,6 +7616,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::ContactGroupsLoaded(groups) => {
             use crate::application::contact_groups;
 
+            let was_on = what_the_cursor_was_on(&pim.contacts_tree);
             pim.contacts_tree.delete_all_items();
             if let Some(root) = pim.contacts_tree.add_root("Contacts", None, None) {
                 pim.contacts_tree
@@ -7540,6 +7645,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     pim.contacts_tree.expand(&branch);
                 }
                 pim.contacts_tree.expand(&root);
+                land_the_cursor(&pim.contacts_tree, &root, was_on.as_deref());
             }
             // Kept alongside the tree text built just above, from the same
             // `groups` list, so a lookup by that text can never name a group
@@ -14356,5 +14462,51 @@ mod the_account_a_message_belongs_to {
             owner_of(&messages, &accounts, 1, None).is_none(),
             "an unnamed account was resolved to whichever one came first"
         );
+    }
+}
+
+#[cfg(test)]
+mod where_the_cursor_lands_after_a_rebuild {
+    use super::*;
+
+    #[test]
+    fn test_the_same_row_is_found_again_by_what_it_says() {
+        // A sidebar tree is emptied and rebuilt whenever a sync finishes,
+        // which happens on a timer rather than because anybody asked. The
+        // rebuild left nothing selected, so somebody arrowing through their
+        // folders had the cursor taken away mid-list with only a count
+        // spoken, and the next arrow key started them back at the top.
+        let now = [
+            "All Inboxes".to_string(),
+            "Archive".to_string(),
+            "Work".to_string(),
+        ];
+
+        assert_eq!(the_row_to_land_on(Some("Archive"), &now), Some(1));
+    }
+
+    #[test]
+    fn test_a_row_that_has_gone_lands_on_the_first_one() {
+        // The folder somebody was on can genuinely disappear: unsubscribed,
+        // renamed at the server, or belonging to an account just removed.
+        // Somewhere real beats nowhere, and nowhere is what this had.
+        let now = ["All Inboxes".to_string(), "Work".to_string()];
+
+        assert_eq!(the_row_to_land_on(Some("Archive"), &now), Some(0));
+    }
+
+    #[test]
+    fn test_nothing_selected_before_means_nothing_forced_after() {
+        // Opening for the first time, or a rebuild while the cursor was
+        // somewhere else entirely. Moving it here would take somebody out of
+        // the message list they were reading.
+        let now = ["All Inboxes".to_string()];
+
+        assert_eq!(the_row_to_land_on(None, &now), None);
+    }
+
+    #[test]
+    fn test_an_empty_tree_has_nowhere_to_land() {
+        assert_eq!(the_row_to_land_on(Some("Archive"), &[]), None);
     }
 }

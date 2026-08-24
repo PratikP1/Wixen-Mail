@@ -199,7 +199,11 @@ pub fn build_account_manager_dialog(
     // where a new contact, event or note is filed, and browsing another
     // account should not quietly move it.
     let set_default = Button::builder(&dlg)
-        .with_label("Set as &Default")
+        // Alt+U rather than Alt+D, which Delete already claims in this
+        // window. Two controls sharing a letter make Windows cycle between
+        // them rather than press one, and the other of these two removes an
+        // account.
+        .with_label("Set as Defa&ult")
         .with_id(ID_SET_DEFAULT)
         .build();
     let close = Button::builder(&dlg)

@@ -1052,7 +1052,11 @@ fn build_language_tab(
     let contacts_sec = section(panel, "Contacts");
 
     let send_contact_changes_everywhere = CheckBox::builder(panel)
-        .with_label("&Send a change to a contact to every address book that has that contact")
+        .with_label(
+            // Alt+V rather than Alt+S, which the mail setting above already
+            // claims on this page.
+            "Send a change to a contact to e&very address book that has that contact",
+        )
         .build();
     set_accessible_name(
         &send_contact_changes_everywhere,

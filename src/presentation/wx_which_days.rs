@@ -152,8 +152,13 @@ pub fn build_which_days_dialog(
     }
     sizer.add_sizer(&group, 1, SizerFlag::Expand | SizerFlag::All, 10);
 
+    // Both used to claim Alt+C. Windows cycles between controls that share a
+    // letter rather than pressing one, so Alt+C landed on Continue instead of
+    // Cancel, and Continue is the button whose answer can act on every day of
+    // a series. Continue takes Alt+O, which is the letter it carries in a
+    // stock dialog, and Cancel keeps its own.
     let carry_on = Button::builder(&dialog)
-        .with_label("&Continue")
+        .with_label("C&ontinue")
         .with_id(ID_OK)
         .build();
     let cancel = Button::builder(&dialog)

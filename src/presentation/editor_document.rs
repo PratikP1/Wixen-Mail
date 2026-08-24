@@ -1137,11 +1137,31 @@ pub fn format_script(command: Format) -> String {
         Some(argument) => format!("{argument:?}"),
         None => "null".to_string(),
     };
+    // The state after the command is the last thing the script evaluates, so
+    // the page hands it back as the answer. Without it a toggle could only
+    // say what was asked for, and "Bold applied" is wrong exactly half the
+    // time: it is what somebody hears when they press Ctrl+B to end a bold
+    // run. `queryCommandState` answers false for a command that is not a
+    // switch, which is why the sentence only uses this for the five that are.
     format!(
         "window.{BLOCK_FUNCTION}(); \
          document.execCommand({name:?}, false, {value}); \
-         document.getElementById({BODY_ID:?}).focus();"
+         document.getElementById({BODY_ID:?}).focus(); \
+         document.queryCommandState({name:?}) ? \"on\" : \"off\";"
     )
+}
+
+/// What the page said the state of a switch became.
+///
+/// `None` for anything else it may hand back, so an answer this does not
+/// recognise leaves the sentence saying what was asked for rather than
+/// claiming a state nothing established.
+pub fn switch_state_from(answer: &str) -> Option<bool> {
+    match answer.trim().trim_matches('"') {
+        "on" => Some(true),
+        "off" => Some(false),
+        _ => None,
+    }
 }
 
 /// The script that puts a link on the selection.
@@ -1346,10 +1366,48 @@ impl Format {
     /// What is announced when it is applied.
     ///
     /// A formatting change nobody is told about is one that happened to
-    /// somebody rather than one they made. The state is not read back from the
-    /// engine, so this says what was asked for rather than what is now true,
-    /// which is honest and is why it does not say "bold on".
-    pub const fn spoken(self) -> &'static str {
+    /// somebody rather than one they made.
+    ///
+    /// `now_on` is what the page said the state was after the command, for
+    /// the five commands that are switches rather than states. Bold, italic,
+    /// underline and both lists all turn off again when asked twice, and this
+    /// used to be a constant: pressing Ctrl+B to end a bold run said "Bold
+    /// applied" and left somebody believing bold was on. Nothing else says
+    /// otherwise either, since the toolbar buttons are plain buttons with no
+    /// pressed state to read.
+    ///
+    /// `None` means the page did not answer, and then this says what was
+    /// asked for rather than guessing, which is what it always did.
+    pub fn spoken(self, now_on: Option<bool>) -> String {
+        if let Some(on) = now_on
+            && let Some(name) = self.the_name_of_a_switch()
+        {
+            return match on {
+                true => format!("{name} on"),
+                false => format!("{name} off"),
+            };
+        }
+        self.asked_for().to_string()
+    }
+
+    /// What this command is called when it is a switch, and nothing when it
+    /// is not.
+    ///
+    /// A heading level is a state: applying it twice leaves it applied, so
+    /// there is no "off" to report.
+    const fn the_name_of_a_switch(self) -> Option<&'static str> {
+        match self {
+            Self::Bold => Some("Bold"),
+            Self::Italic => Some("Italic"),
+            Self::Underline => Some("Underline"),
+            Self::BulletList => Some("Bulleted list"),
+            Self::NumberedList => Some("Numbered list"),
+            _ => None,
+        }
+    }
+
+    /// What was asked for, said without claiming to know the result.
+    const fn asked_for(self) -> &'static str {
         match self {
             Self::Bold => "Bold applied",
             Self::Italic => "Italic applied",
@@ -1895,7 +1953,7 @@ mod tests {
         for format in Format::ALL {
             let (name, argument) = format.as_command();
             let script = format_script(format);
-            assert!(!format.spoken().is_empty(), "{format:?}");
+            assert!(!format.spoken(None).is_empty(), "{format:?}");
             assert!(script.contains(name), "{format:?}");
             if let Some(argument) = argument {
                 assert!(script.contains(argument), "{format:?}");
@@ -1908,7 +1966,7 @@ mod tests {
         // Announcements are how somebody knows which one they got. Two that
         // say the same thing are worse than one, because the person now has to
         // check what happened rather than trust what they heard.
-        let mut spoken: Vec<&str> = Format::ALL.iter().map(|f| f.spoken()).collect();
+        let mut spoken: Vec<String> = Format::ALL.iter().map(|f| f.spoken(None)).collect();
         spoken.sort_unstable();
         let before = spoken.len();
         spoken.dedup();
@@ -2345,5 +2403,44 @@ mod tests {
                 "{format:?} leaves the caret wherever the command put it: {script}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod what_a_toggle_says_it_did {
+    use super::*;
+
+    #[test]
+    fn test_bold_says_which_way_it_went() {
+        // Bold, italic, underline and both list commands are toggles: the
+        // same key turns them off again. The sentence was a constant, so
+        // pressing Ctrl+B to end a bold run said "Bold applied" and left
+        // somebody believing bold was on when they had just turned it off.
+        // Nothing else exposes the state either: the toolbar buttons are
+        // plain buttons with no pressed state.
+        assert_eq!(Format::Bold.spoken(Some(true)), "Bold on");
+        assert_eq!(Format::Bold.spoken(Some(false)), "Bold off");
+    }
+
+    #[test]
+    fn test_a_toggle_whose_state_the_page_did_not_say_falls_back_to_what_was_asked() {
+        // The page answers with the state after the command, and an answer
+        // that does not arrive must not become a wrong one: saying what was
+        // asked for is what this did before, and it is honest.
+        assert_eq!(Format::Italic.spoken(None), "Italic applied");
+    }
+
+    #[test]
+    fn test_a_command_that_is_not_a_toggle_says_the_same_thing_either_way() {
+        // Heading level 1 is a state, not a switch: applying it twice leaves
+        // it applied, so there is no "off" to report.
+        assert_eq!(Format::Heading1.spoken(Some(true)), "Heading level 1");
+        assert_eq!(Format::Heading1.spoken(None), "Heading level 1");
+    }
+
+    #[test]
+    fn test_both_list_commands_are_toggles_too() {
+        assert_eq!(Format::BulletList.spoken(Some(false)), "Bulleted list off");
+        assert_eq!(Format::NumberedList.spoken(Some(true)), "Numbered list on");
     }
 }

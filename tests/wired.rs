@@ -1298,3 +1298,139 @@ fn test_set_active_reaches_the_main_window() {
         "the main window ignores the active account the dialog chose"
     );
 }
+
+/// One dialog, one meaning for each Alt key.
+///
+/// Windows cycles between controls that share a mnemonic rather than pressing
+/// one, so two controls claiming the same letter turn a shortcut into a
+/// guess. The recurring-event dialog had Alt+C on both Continue and Cancel,
+/// and Continue is the button whose answer can act on every day of a series.
+///
+/// Nothing covered this: the menu check in this file parses "Text\tShortcut"
+/// out of menu labels and cannot see a `with_label("&X")` mnemonic, so no
+/// dialog shortcut in the project was checked by anything at all.
+///
+/// What this cannot see: controls built in a loop, whose label is a variable
+/// rather than a literal, and pages of a notebook, where two letters may
+/// safely repeat because only one page shows at a time. It reads the literal
+/// labels of one builder function at a time, which is where the collisions
+/// found so far have been.
+#[test]
+fn test_no_two_controls_in_one_dialog_claim_the_same_alt_key() {
+    let mut clashes = Vec::new();
+
+    for path in fs::read_dir("src/presentation").expect("the presentation layer") {
+        let path = path.expect("a directory entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        // Test code builds throwaway dialogs whose labels are not a person's
+        // to press, and a notebook page is a scope of its own.
+        let production = text.split("#[cfg(test)]").next().unwrap_or_default();
+        for (name, body) in builder_bodies(production) {
+            let mut claimed: std::collections::HashMap<char, Vec<String>> =
+                std::collections::HashMap::new();
+            for label in mnemonic_labels(body) {
+                if let Some(key) = alt_key_of(&label) {
+                    claimed.entry(key).or_default().push(label);
+                }
+            }
+            for (key, labels) in claimed {
+                if labels.len() > 1 {
+                    clashes.push(format!(
+                        "{}: {name} gives Alt+{} to {}",
+                        path.display(),
+                        key.to_ascii_uppercase(),
+                        labels.join(" and ")
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        clashes.is_empty(),
+        "{} dialog shortcut(s) mean two things at once:\n  {}",
+        clashes.len(),
+        clashes.join("\n  ")
+    );
+}
+
+/// Each top-level function in a file, by name, with its body.
+fn builder_bodies(text: &str) -> Vec<(String, &str)> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    // The nearer of the two, not the first that matches. Asking for `\nfn `
+    // and falling back to `\npub fn ` only when that found nothing skipped
+    // every public builder in any file that still had a private function
+    // later in it, which is most of them: the check ran and read almost none
+    // of what it claimed to. It went green while the Account Manager gave
+    // Alt+D to both Delete and Set as Default.
+    while let Some(at) = [text[from..].find("\nfn "), text[from..].find("\npub fn ")]
+        .into_iter()
+        .flatten()
+        .min()
+    {
+        let start = from + at + 1;
+        let name: String = text[start..]
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim_start_matches("pub ")
+            .trim_start_matches("fn ")
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        let end = text[start..]
+            .find("\n}\n")
+            .map_or(text.len(), |offset| start + offset);
+        found.push((name, &text[start..end]));
+        from = start + 1;
+    }
+    found
+}
+
+/// Every `with_label("...")` literal in one body that carries a mnemonic.
+///
+/// A page of a notebook is its own scope, so a body that builds one is split
+/// on the call that adds a page and each page read separately.
+fn mnemonic_labels(body: &str) -> Vec<String> {
+    let mut labels = Vec::new();
+    let scope = body.split("add_page").next().unwrap_or(body);
+    let mut from = 0;
+    while let Some(at) = scope[from..].find("with_label(\"") {
+        let start = from + at + "with_label(\"".len();
+        let Some(len) = scope[start..].find('"') else {
+            break;
+        };
+        labels.push(scope[start..start + len].to_string());
+        from = start + len;
+    }
+    labels
+}
+
+/// The letter a label claims, when it claims one.
+///
+/// `&&` is a literal ampersand rather than a mnemonic, the same rule Windows
+/// itself follows.
+fn alt_key_of(label: &str) -> Option<char> {
+    let bytes: Vec<char> = label.chars().collect();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == '&' {
+            match bytes.get(at + 1) {
+                Some('&') => at += 2,
+                Some(letter) if letter.is_alphanumeric() => {
+                    return Some(letter.to_ascii_lowercase());
+                }
+                _ => at += 1,
+            }
+        } else {
+            at += 1;
+        }
+    }
+    None
+}
