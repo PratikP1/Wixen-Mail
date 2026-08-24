@@ -299,6 +299,29 @@ fn why_it_cannot_be_sent(data: &ComposeData) -> Option<&'static str> {
     None
 }
 
+/// Whether the word being asked about is one somebody typed twice.
+///
+/// A named pair rather than a bare `bool`, because the two cases mean
+/// opposite things about an empty box and reading `true` at a call site says
+/// neither of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repeat {
+    Yes,
+    No,
+}
+
+/// Whether what is in the box is something that can replace the word.
+///
+/// For a word typed twice, nothing in the box is the answer: the button says
+/// Delete and its label says to leave it empty. For a misspelling it is not
+/// an answer at all, and it used to be taken as one. A surname the dictionary
+/// does not know has no suggestions, so the box opened empty while the button
+/// still said Change, and pressing it deleted the word and the space before
+/// it and counted it as corrected.
+fn is_a_real_replacement(typed: &str, repeated: Repeat) -> bool {
+    repeated == Repeat::Yes || !typed.trim().is_empty()
+}
+
 /// Show a message that has one thing to say and nothing to decide.
 ///
 /// Beside the announcement rather than instead of it. The announcement is the
@@ -1111,6 +1134,41 @@ pub fn show_compose_dialog_full(
         }
     };
 
+    // A reopened draft brings its files back with it. Done here rather than
+    // beside the other prefilling above, because the list has to be repainted
+    // and the closure that repaints it is built just above.
+    //
+    // A path that no longer reads is said rather than dropped. A draft that
+    // quietly loses a file between saving and reopening is the same silent
+    // loss this whole change is about, and finding out at Send is finding out
+    // after the rest of the message has gone.
+    if let ComposeMode::Draft(data) = &mode {
+        let mut lost = Vec::new();
+        for path in &data.attachments {
+            match crate::application::attaching::Chosen::at(path) {
+                Ok(file) => attached.borrow_mut().push(file),
+                Err(_) => lost.push(
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string()),
+                ),
+            }
+        }
+        if !data.attachments.is_empty() {
+            refresh_attachments(false, &a11y);
+        }
+        if !lost.is_empty() {
+            let _ = a11y.announce(
+                &format!(
+                    "{} could not be found, so {} not attached any more.",
+                    lost.join(", "),
+                    if lost.len() == 1 { "it is" } else { "they are" }
+                ),
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+    }
+
     let attach_files = {
         let attached = attached.clone();
         let refresh = refresh_attachments.clone();
@@ -1880,7 +1938,13 @@ fn check_spelling(
         let _ = a11y.announce(&finding.spoken(), Priority::High);
 
         match ask_about_word(dialog, finding, palette) {
-            SpellChoice::Stop => return,
+            // Out of the walk, not out of the function. Returning here skipped
+            // both the line that puts the keyboard back in the message and the
+            // sentence that says the check is over, so pressing Stop left
+            // somebody with nothing said and the keyboard on a dialog that had
+            // just been destroyed. Every other way out of this walk reaches
+            // both.
+            SpellChoice::Stop => break,
             SpellChoice::Ignore => resume_from = Some(past),
             SpellChoice::IgnoreAll => {
                 ignored.add(&finding.word);
@@ -2062,13 +2126,44 @@ pub fn build_check_spelling_dialog(
         button.on_click(move |_| asker.end_modal(id));
         buttons.add(&button, 0, SizerFlag::All, 4);
     };
-    add_button(
+    // Change and Change All refuse an empty box rather than acting on it.
+    // Replacing a misspelling with nothing deleted the word and the space
+    // before it and counted it as corrected, which is what happened every
+    // time the dictionary had no suggestion to offer, so the box opened empty
+    // and the button still said Change.
+    //
+    // Consuming the click is what makes the refusal stick: left unconsumed it
+    // carries on to wxWidgets' own handler for the dialog. See
+    // `wx_item_form.rs`'s module doc comment.
+    let asks_for_a_word = |id: Id, text: &str, name: &str| {
+        let button = Button::builder(&asker).with_id(id).with_label(text).build();
+        set_accessible_name(&button, name);
+        let repeat = if repeated { Repeat::Yes } else { Repeat::No };
+        button.on_click(move |event| {
+            event.event.skip(false);
+            if !is_a_real_replacement(&replacement.get_value(), repeat) {
+                // Through a message box rather than an announcement: this
+                // dialog is built without an accessibility handle, and a
+                // message box is read out by a screen reader on its own.
+                say_so(
+                    &asker,
+                    "Nothing to change it to",
+                    "Type what the word should be, or choose a suggestion.",
+                );
+                replacement.set_focus();
+                return;
+            }
+            asker.end_modal(id);
+        });
+        buttons.add(&button, 0, SizerFlag::All, 4);
+    };
+    asks_for_a_word(
         ID_SPELL_CHANGE,
         if repeated { "&Delete" } else { "&Change" },
         if repeated { "Delete" } else { "Change" },
     );
     if !repeated {
-        add_button(ID_SPELL_CHANGE_ALL, "Change &All", "Change all");
+        asks_for_a_word(ID_SPELL_CHANGE_ALL, "Change &All", "Change all");
     }
     add_button(ID_SPELL_IGNORE, "&Ignore", "Ignore");
     add_button(ID_SPELL_IGNORE_ALL, "I&gnore All", "Ignore all");
@@ -2788,5 +2883,33 @@ mod tests {
     #[test]
     fn test_forward_subject_empty_string() {
         assert_eq!(format_forward_subject(""), "Fwd: ");
+    }
+}
+
+#[cfg(test)]
+mod what_counts_as_a_replacement {
+    use super::*;
+
+    #[test]
+    fn test_an_empty_box_is_not_a_change_to_a_misspelled_word() {
+        // A surname the dictionary does not know has no suggestions, so the
+        // box opens empty while the button still says Change. Pressing it
+        // replaced the word with nothing: the word and the space before it
+        // were deleted, and it was counted as corrected.
+        assert!(!is_a_real_replacement("", Repeat::No));
+        assert!(!is_a_real_replacement("   ", Repeat::No));
+    }
+
+    #[test]
+    fn test_an_empty_box_really_does_delete_a_word_typed_twice() {
+        // The other half, and it must keep working: for a word typed twice
+        // the button says Delete and its own label tells somebody to leave
+        // the box empty to do it.
+        assert!(is_a_real_replacement("", Repeat::Yes));
+    }
+
+    #[test]
+    fn test_a_word_typed_into_the_box_is_a_change() {
+        assert!(is_a_real_replacement("Pratik", Repeat::No));
     }
 }

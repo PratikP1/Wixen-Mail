@@ -1215,3 +1215,44 @@ fn test_an_account_that_was_added_or_edited_reaches_the_database() {
          behind for the uninstall to miss"
     );
 }
+
+/// A draft that has been sent stops being a draft.
+///
+/// Nothing removed one. Sending did not, and the Open Draft dialog only
+/// opens, so every draft ever saved stayed in the list for ever, the sent
+/// ones alongside the unfinished ones. Automatic saving means one is written
+/// every few minutes, so the list only ever grew.
+///
+/// What this cannot see: whether the removal succeeds, or whether the right
+/// draft is named. It asks that sending removes one at all, and that it
+/// happens after the message is queued rather than before, because a draft
+/// removed first and a queue that then refused would lose the message.
+#[test]
+fn test_sending_a_draft_stops_it_being_a_draft() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let sending = app
+        .split_once("ComposeResult::Send(data) => {")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| {
+            rest.split_once("ComposeResult::SaveDraft")
+                .map(|(arm, _)| arm)
+        })
+        .expect("the main window still handles Send");
+
+    assert!(
+        sending.contains("delete_draft"),
+        "sending never removes the draft it was written in, so every draft \
+         ever saved stays in the list, sent ones included"
+    );
+
+    let queued = sending
+        .find("queue_for_sending")
+        .expect("sending still queues the message");
+    let removed = sending.find("delete_draft").expect("checked just above");
+    assert!(
+        queued < removed,
+        "the draft is removed before the message is queued, so a queue that \
+         refuses would lose the message altogether"
+    );
+}

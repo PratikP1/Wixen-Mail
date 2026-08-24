@@ -732,6 +732,8 @@ mod tests {
                     body: "Body".to_string(),
                     in_reply_to: None,
                     references: None,
+                    body_html: None,
+                    attachments: Vec::new(),
                     created_at: "2026-08-01".to_string(),
                     updated_at: "2026-08-01".to_string(),
                 })

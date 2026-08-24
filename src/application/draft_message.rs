@@ -68,17 +68,49 @@ pub fn bytes_for(draft: &CachedDraft, from: &str, from_name: Option<&str>) -> Ve
     push_if_present(&mut out, "References", draft.references.as_deref());
     out.push_str(&format!("Date: {}\r\n", draft.updated_at));
     out.push_str("MIME-Version: 1.0\r\n");
-    out.push_str("Content-Type: text/plain; charset=utf-8\r\n");
-    out.push_str("\r\n");
 
-    // Line endings normalised to what a message uses. A body carrying bare
-    // newlines is not a message, and a server that accepts it stores something
-    // the next client reads as one long line.
-    for line in draft.body.replace("\r\n", "\n").split('\n') {
+    // Both halves when there is a formatted one, the way the send path has
+    // always done it. The body used to be whatever the editor held, which is
+    // markup the moment anybody presses Enter or a signature goes on, and it
+    // was declared plain text regardless: the copy filed in the Drafts folder
+    // held tags where the words should be, and the drafts list read them out.
+    match draft.body_html.as_deref().filter(|html| !html.is_empty()) {
+        Some(html) => {
+            // Fixed rather than random, because the identifier of a draft is
+            // derived for the same reason: saving again has to replace the
+            // copy already filed, and a boundary that changed every time
+            // would make each save a different message.
+            let boundary = format!("wixen-draft-{}", draft.id);
+            out.push_str(&format!(
+                "Content-Type: multipart/alternative; boundary=\"{boundary}\"\r\n\r\n"
+            ));
+            out.push_str(&format!("--{boundary}\r\n"));
+            out.push_str("Content-Type: text/plain; charset=utf-8\r\n\r\n");
+            push_body(&mut out, &draft.body);
+            out.push_str(&format!("\r\n--{boundary}\r\n"));
+            out.push_str("Content-Type: text/html; charset=utf-8\r\n\r\n");
+            push_body(&mut out, html);
+            out.push_str(&format!("\r\n--{boundary}--\r\n"));
+        }
+        // One alternative in a multipart is a shape nothing needs and some
+        // clients show as an attachment rather than as the message.
+        None => {
+            out.push_str("Content-Type: text/plain; charset=utf-8\r\n\r\n");
+            push_body(&mut out, &draft.body);
+        }
+    }
+    out.into_bytes()
+}
+
+/// Write a body with the line endings a message uses.
+///
+/// A body carrying bare newlines is not a message, and a server that accepts
+/// one stores something the next client reads as a single long line.
+fn push_body(out: &mut String, body: &str) {
+    for line in body.replace("\r\n", "\n").split('\n') {
         out.push_str(line);
         out.push_str("\r\n");
     }
-    out.into_bytes()
 }
 
 /// Write a header, or nothing at all when there is no value for it.
@@ -166,6 +198,8 @@ mod tests {
             bcc: None,
             subject: "Notes on the engine".to_string(),
             body: "Half a thought".to_string(),
+            body_html: None,
+            attachments: Vec::new(),
             in_reply_to: None,
             references: None,
             created_at: "2026-07-30T10:00:00+00:00".to_string(),
@@ -385,5 +419,80 @@ mod tests {
 
         assert!(headers.contains("Subject:"), "{headers}");
         assert!(body.starts_with("Half a thought"), "{body:?}");
+    }
+}
+
+#[cfg(test)]
+mod what_the_filed_copy_says_it_is {
+    use super::*;
+
+    fn written(plain: &str, html: Option<&str>) -> CachedDraft {
+        CachedDraft {
+            id: "abc-123".to_string(),
+            account_id: "acc".to_string(),
+            to_addr: "ada@example.com".to_string(),
+            cc: None,
+            bcc: None,
+            subject: "Notes on the engine".to_string(),
+            body: plain.to_string(),
+            body_html: html.map(str::to_string),
+            attachments: Vec::new(),
+            in_reply_to: None,
+            references: None,
+            created_at: "2026-07-30T10:00:00+00:00".to_string(),
+            updated_at: "2026-07-30T10:05:00+00:00".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_draft_with_formatting_is_filed_as_both_halves_and_not_as_tags() {
+        // The editor holds HTML, so pressing Enter once, or having a
+        // signature, or replying, makes the body markup. That markup went into
+        // the draft whole and was declared text/plain, so the copy filed in
+        // the Drafts folder held "<div>Hi Ada</div><div><br></div>" as though
+        // it were what somebody typed, and the drafts list read the tags
+        // aloud. The send path has always got this right, so this was one
+        // question with two answers.
+        let filed = String::from_utf8(bytes_for(
+            &written("Hi Ada", Some("<div>Hi Ada</div>")),
+            "me@example.com",
+            None,
+        ))
+        .expect("the filed copy is text");
+
+        assert!(
+            filed.contains("multipart/alternative"),
+            "a draft with formatting was not filed as both halves:\n{filed}"
+        );
+        assert!(
+            filed.contains("Content-Type: text/html"),
+            "the formatted half is not declared as html:\n{filed}"
+        );
+        assert!(
+            filed.contains("Content-Type: text/plain"),
+            "the plain half is missing:\n{filed}"
+        );
+        let body = filed.split_once("\r\n\r\n").expect("headers end").1;
+        assert!(
+            !body.starts_with("<div>"),
+            "the markup is still the whole body:\n{filed}"
+        );
+    }
+
+    #[test]
+    fn test_a_draft_with_no_formatting_is_filed_as_plain_text_alone() {
+        // No second half to offer, so no multipart wrapper: a message with one
+        // alternative in it is a shape nothing needs and some clients render
+        // as an attachment.
+        let filed = String::from_utf8(bytes_for(
+            &written("Half a thought", None),
+            "me@x.com",
+            None,
+        ))
+        .expect("the filed copy is text");
+
+        assert!(!filed.contains("multipart"), "{filed}");
+        assert!(filed.contains("Content-Type: text/plain"), "{filed}");
+        assert!(filed.contains("Half a thought"), "{filed}");
     }
 }

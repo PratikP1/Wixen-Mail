@@ -133,6 +133,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Save Draft keeps the files attached to it.** They were thrown away
+  without a word: the announcement said the draft was saved, reopening it
+  showed nothing attached, and sending it went without them. A draft now
+  keeps its files, and a file that has been moved or deleted since is named
+  out loud when the draft is reopened rather than quietly missing.
+- **A saved draft is filed as the message it is, not as a page of tags.**
+  The copy kept in the Drafts folder held the editor's markup while saying
+  it was plain text, so pressing Enter once was enough to make the drafts
+  list read out tags. A draft with formatting is now filed with both a plain
+  and a formatted version, the same way a sent message is, and reopening one
+  gives the formatting back.
+- **A draft is removed once its message has been sent.** Nothing ever removed
+  one: sending did not, and the Open Draft window only opens. Drafts save
+  themselves every few minutes, so the list only ever grew, with sent
+  messages sitting in it alongside unfinished ones.
+- **Change in the spelling check no longer deletes the word when the box is
+  empty.** A name the dictionary does not know has no suggestions, so the box
+  opened empty while the button still said Change. Pressing it removed the
+  word and the space before it, and counted it as corrected. It now says what
+  it needs and waits.
+- **Stopping a spelling check puts the keyboard back in the message.** It
+  said nothing and left the keyboard behind on a window that had just closed.
 - **Pressing Send with the To box empty no longer destroys the message.**
   It ended the message outright: the window was already closing by the
   time anything checked, nothing was said, no draft was kept, and the only

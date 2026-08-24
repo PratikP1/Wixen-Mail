@@ -6334,6 +6334,21 @@ fn open_compose(
             // means a send that fails is retried rather than lost.
             match queue_for_sending(state, cache, &data) {
                 Ok(recipient) => {
+                    // The draft this was written in is finished with. Nothing
+                    // removed one: sending did not, and the Open Draft dialog
+                    // only opens, so every draft ever saved stayed in the list
+                    // for ever, including the ones already sent.
+                    //
+                    // After the message is safely queued, never before: a
+                    // draft removed first and a queue that then refused would
+                    // lose the message outright.
+                    if let Some(id) = draft_id.borrow().as_deref()
+                        && let Some(cache) = cache
+                        && let Err(why) = cache.delete_draft(id)
+                    {
+                        tracing::warn!("The sent draft {id} could not be removed: {why}");
+                    }
+                    *draft_id.borrow_mut() = None;
                     send_status(tx, rt, &format!("Sending to {}...", recipient));
                     flush_outbox(app);
                 }
@@ -6411,7 +6426,17 @@ fn save_as_draft(
         cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
         bcc: Some(data.bcc.trim().to_string()).filter(|bcc| !bcc.is_empty()),
         subject: subject.clone(),
-        body: data.body.clone(),
+        // The plain half is the body; the markup goes beside it rather than
+        // into it. This used to put the editor's markup in `body`, which the
+        // filed copy then declared as plain text, so the Drafts folder held
+        // tags where the words should be. The send path two hundred lines
+        // down has always kept the two apart.
+        body: data.body_plain.clone(),
+        body_html: data.html_mode.then(|| data.body.clone()),
+        // A draft without the files is not the message somebody wrote. These
+        // were dropped without a word: the announcement said it was saved,
+        // and reopening it showed nothing attached.
+        attachments: data.attachments.clone(),
         in_reply_to: data.answering.as_ref().map(|c| c.in_reply_to.clone()),
         references: data.answering.as_ref().map(|c| c.references.clone()),
         created_at: chrono::Local::now().to_rfc3339(),

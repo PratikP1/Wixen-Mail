@@ -279,6 +279,12 @@ pub struct CompositionData {
     pub bcc: String,
     pub subject: String,
     pub body: String,
+    /// The files it was saved with, where they are on this computer.
+    ///
+    /// A draft without them is not the message somebody wrote. Reopening one
+    /// used to show an empty list, because nothing had kept them in the first
+    /// place and nothing here could have carried them back.
+    pub attachments: Vec<std::path::PathBuf>,
     /// The conversation this is an answer to, when it is one.
     ///
     /// Finished header values, worked out once when the reply was started.

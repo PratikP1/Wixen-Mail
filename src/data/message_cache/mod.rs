@@ -106,7 +106,25 @@ pub struct CachedDraft {
     pub cc: Option<String>,
     pub bcc: Option<String>,
     pub subject: String,
+    /// The message as plain text, which is what a draft's body is.
+    ///
+    /// This used to hold whatever the editor had, which is HTML the moment
+    /// anybody presses Enter or a signature goes on. Declared as plain text
+    /// and filed that way, so the copy in the Drafts folder held tags where
+    /// the words should be and the drafts list read them aloud.
     pub body: String,
+    /// The same message as markup, when there is any.
+    ///
+    /// `None` for a draft with no formatting, so a message with one
+    /// alternative in it is never built: some clients show that as an
+    /// attachment rather than as the message.
+    pub body_html: Option<String>,
+    /// The files to send with it, where they are on this computer.
+    ///
+    /// Kept because a draft without them is not the message somebody wrote.
+    /// Save Draft used to drop them silently: the announcement said it was
+    /// saved, and reopening it showed an empty list and sent without them.
+    pub attachments: Vec<std::path::PathBuf>,
     /// The `Message-ID` of the message this draft answers, brackets and all.
     ///
     /// Kept so a reply saved half-written and reopened tomorrow still goes out
@@ -1866,6 +1884,13 @@ impl MessageCache {
         // NULL on a draft saved by an older build, which is what it was.
         self.ensure_column_exists("drafts", "in_reply_to", "TEXT")?;
         self.ensure_column_exists("drafts", "references_header", "TEXT")?;
+        // The formatted half of a draft, and the files that go with it.
+        // Neither had anywhere to live: the body column held the editor's
+        // markup while claiming to be plain text, and attachments were
+        // dropped without a word. A draft written before these existed has
+        // no markup and no files, which is what the absent values say.
+        self.ensure_column_exists("drafts", "body_html", "TEXT")?;
+        self.ensure_column_exists("drafts", "attachments", "TEXT NOT NULL DEFAULT ''")?;
         // The other recipients. The composer collected them, the preview
         // displayed them and Reply All announced a count that included them,
         // and then there was nowhere here to put them, so only the To

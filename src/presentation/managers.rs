@@ -2517,7 +2517,16 @@ pub fn open_draft(
         cc: draft.cc.clone().unwrap_or_default(),
         bcc: draft.bcc.clone().unwrap_or_default(),
         subject: draft.subject.clone(),
-        body: draft.body.clone(),
+        // The markup when it was saved with any, so reopening gives back the
+        // formatting rather than the plain text of it. The editor is handed
+        // markup either way, so a draft with no formatted half has its plain
+        // text escaped into one below rather than being read as tags.
+        body: draft
+            .body_html
+            .clone()
+            .filter(|html| !html.is_empty())
+            .unwrap_or_else(|| html_escape::encode_text(&draft.body).into_owned()),
+        attachments: draft.attachments.clone(),
         answering: match (&draft.in_reply_to, &draft.references) {
             (Some(parent), chain) => Some(crate::application::threading::Continuing {
                 in_reply_to: parent.clone(),

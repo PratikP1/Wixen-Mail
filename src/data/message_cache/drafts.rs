@@ -10,9 +10,9 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header)
+            "INSERT OR REPLACE INTO drafts (id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11)",
+                     COALESCE((SELECT created_at FROM drafts WHERE id = ?1), ?8), ?9, ?10, ?11, ?12, ?13)",
             params![
                 draft.id,
                 draft.account_id,
@@ -25,6 +25,8 @@ impl MessageCache {
                 now,
                 draft.in_reply_to,
                 draft.references,
+                draft.body_html,
+                crate::application::attaching::joined(&draft.attachments),
             ],
         ).map_err(|e| Error::Other(format!("Failed to save draft: {}", e)))?;
 
@@ -36,7 +38,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments
              FROM drafts
              WHERE account_id = ?1
              ORDER BY updated_at DESC",
@@ -57,6 +59,8 @@ impl MessageCache {
                     updated_at: row.get(8)?,
                     in_reply_to: row.get(9)?,
                     references: row.get(10)?,
+                    body_html: row.get(11)?,
+                    attachments: crate::application::attaching::split(&row.get::<_, String>(12)?),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query drafts: {}", e)))?;
@@ -74,7 +78,7 @@ impl MessageCache {
         let result = self
             .conn
             .query_row(
-                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header
+                "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments
              FROM drafts
              WHERE id = ?1",
                 params![draft_id],
@@ -91,6 +95,10 @@ impl MessageCache {
                         updated_at: row.get(8)?,
                         in_reply_to: row.get(9)?,
                         references: row.get(10)?,
+                        body_html: row.get(11)?,
+                        attachments: crate::application::attaching::split(
+                            &row.get::<_, String>(12)?,
+                        ),
                     })
                 },
             )
@@ -134,6 +142,67 @@ mod tests {
     }
 
     #[test]
+    fn test_the_files_and_the_formatting_come_back_with_the_draft() {
+        // Save Draft threw the files away without a word: it announced that
+        // the draft was saved, and reopening it showed nothing attached and
+        // sent without them. The formatted half had nowhere to live either,
+        // so the editor's markup went into the plain-text body and the filed
+        // copy declared tags as though somebody had typed them.
+        let cache = a_cache("draft_files_and_formatting");
+        let mut draft = CachedDraft {
+            id: "draft-with-things".to_string(),
+            account_id: "acc-1".to_string(),
+            to_addr: "ada@example.com".to_string(),
+            cc: None,
+            bcc: None,
+            subject: "Notes".to_string(),
+            body: "Hi Ada".to_string(),
+            body_html: Some("<div>Hi Ada</div>".to_string()),
+            attachments: vec![
+                std::path::PathBuf::from("C:/notes/one.pdf"),
+                std::path::PathBuf::from("C:/notes/two.png"),
+            ],
+            in_reply_to: None,
+            references: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+        cache.save_draft(&draft).expect("the draft to save");
+
+        let back = cache
+            .load_drafts("acc-1")
+            .expect("the drafts to load")
+            .into_iter()
+            .find(|d| d.id == draft.id)
+            .expect("the draft is there");
+
+        assert_eq!(
+            back.attachments, draft.attachments,
+            "the files did not come back with the draft"
+        );
+        assert_eq!(
+            back.body_html.as_deref(),
+            Some("<div>Hi Ada</div>"),
+            "the formatted half did not come back"
+        );
+        assert_eq!(back.body, "Hi Ada", "the plain half is not the plain text");
+
+        // And taking them off is kept too, rather than the older values
+        // surviving because nothing was written over them.
+        draft.attachments.clear();
+        draft.body_html = None;
+        cache.save_draft(&draft).expect("the draft to save again");
+        let back = cache
+            .load_drafts("acc-1")
+            .expect("the drafts to load")
+            .into_iter()
+            .find(|d| d.id == draft.id)
+            .expect("the draft is still there");
+        assert!(back.attachments.is_empty(), "a removed file came back");
+        assert_eq!(back.body_html, None, "removed formatting came back");
+    }
+
+    #[test]
     fn test_a_reply_saved_as_a_draft_still_knows_what_it_answers() {
         // Otherwise Save Draft on a reply loses its place in the thread
         // silently: it comes back looking complete and goes out as the start of
@@ -150,6 +219,8 @@ mod tests {
             body: "Half a thought".to_string(),
             in_reply_to: Some("<c@x>".to_string()),
             references: Some("<a@x> <c@x>".to_string()),
+            body_html: None,
+            attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -184,6 +255,8 @@ mod tests {
                     body: "Body".to_string(),
                     in_reply_to: None,
                     references: None,
+                    body_html: None,
+                    attachments: Vec::new(),
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 })
@@ -221,6 +294,8 @@ mod tests {
             body: "Draft body content".to_string(),
             in_reply_to: None,
             references: None,
+            body_html: None,
+            attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -254,6 +329,8 @@ mod tests {
             body: "Original body".to_string(),
             in_reply_to: None,
             references: None,
+            body_html: None,
+            attachments: Vec::new(),
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
