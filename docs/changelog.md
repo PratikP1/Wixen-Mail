@@ -133,6 +133,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Sent and Drafts no longer read out a column that says the same thing on
+  every row.** Both were given the Inbox's columns, so the Unread column was
+  spoken on every row where it is identical, and the date shown was when a
+  message arrived rather than when it was sent. A layout for those two
+  folders had been written and tested since these columns existed and nothing
+  ever asked for it.
 - **Removing an email, phone number, address or custom field from a contact
   says so, and can be done twice.** All four Remove buttons said nothing at
   all, and because the list came back with nothing selected, pressing Remove

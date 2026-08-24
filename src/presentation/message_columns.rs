@@ -352,6 +352,28 @@ pub enum FolderKind {
     Drafts,
 }
 
+impl FolderKind {
+    /// Which of the three a stored folder is read as.
+    ///
+    /// Junk, Trash, Archive and anything somebody made themselves all hold
+    /// mail that arrived, so they are read the way an inbox is: it is the
+    /// correspondent and when it turned up that matter.
+    ///
+    /// Nothing asked this before. Every call site named `Inbox`, so the Sent
+    /// and Drafts layout, which drops the Unread column and sorts by when a
+    /// message was sent, was written and tested and never once used: the
+    /// Unread column was read out on every row in Sent, where it says the
+    /// same thing every time.
+    pub fn for_folder(folder: crate::common::types::FolderType) -> Self {
+        use crate::common::types::FolderType;
+        match folder {
+            FolderType::Sent => FolderKind::Sent,
+            FolderType::Drafts => FolderKind::Drafts,
+            _ => FolderKind::Inbox,
+        }
+    }
+}
+
 /// Something the caller asked for that cannot be done.
 ///
 /// The sentence inside it is announced as it stands, by the column chooser
@@ -367,6 +389,13 @@ pub struct ColumnLayout {
     /// Visible columns in display order. Hidden columns are simply absent.
     order: Vec<MessageColumn>,
     pub sort: Sort,
+    /// Which sort of folder this layout was built for.
+    ///
+    /// Carried so the window can tell when moving to another folder means a
+    /// different set of columns, and leave the layout alone when it does
+    /// not: rebuilding on every folder change would throw away whatever
+    /// somebody had just sorted by.
+    pub kind: FolderKind,
 }
 
 impl ColumnLayout {
@@ -401,6 +430,7 @@ impl ColumnLayout {
         };
 
         Self {
+            kind,
             order,
             sort: Sort {
                 column: sort_column,
@@ -599,7 +629,7 @@ impl ColumnLayout {
             })
             .unwrap_or(default.sort);
 
-        Self { order, sort }
+        Self { kind, order, sort }
     }
 }
 
@@ -1063,5 +1093,55 @@ mod the_sort_somebody_asked_for {
         // A settings file from a later version, or edited by hand.
         assert_eq!(Sort::from_setting("by_moon_phase"), None);
         assert_eq!(Sort::from_setting(""), None);
+    }
+}
+
+#[cfg(test)]
+mod which_columns_a_folder_gets {
+    use super::*;
+    use crate::common::types::FolderType;
+
+    #[test]
+    fn test_sent_and_drafts_are_told_apart_from_everything_else() {
+        // A layout that drops the Unread column and sorts by when a message
+        // was sent has been written and tested since these columns existed,
+        // and nothing ever asked for it: every call site named Inbox. So in
+        // Sent and Drafts the Unread column was read out on every row, where
+        // it is identical on all of them, and the date shown was when the
+        // message arrived rather than when it went.
+        assert_eq!(FolderKind::for_folder(FolderType::Sent), FolderKind::Sent);
+        assert_eq!(
+            FolderKind::for_folder(FolderType::Drafts),
+            FolderKind::Drafts
+        );
+    }
+
+    #[test]
+    fn test_every_other_folder_is_read_like_an_inbox() {
+        // Junk, Trash, Archive and anything somebody made themselves all hold
+        // mail that arrived, so they are read the way an inbox is.
+        for kind in [
+            FolderType::Inbox,
+            FolderType::Trash,
+            FolderType::Spam,
+            FolderType::Archive,
+            FolderType::Custom,
+        ] {
+            assert_eq!(
+                FolderKind::for_folder(kind),
+                FolderKind::Inbox,
+                "{kind:?} should be read like an inbox"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_sent_layout_leaves_out_the_column_that_is_the_same_on_every_row() {
+        let sent = ColumnLayout::defaults_for(FolderKind::Sent);
+
+        assert!(
+            !sent.visible().contains(&MessageColumn::Unread),
+            "Unread is identical on every row in Sent and is pure verbosity spoken"
+        );
     }
 }

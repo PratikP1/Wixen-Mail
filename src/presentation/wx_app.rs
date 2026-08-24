@@ -2179,6 +2179,7 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let folder_cache = message_cache.clone();
+                let column_layout = column_layout.clone();
                 move |event| {
                     if let Some(item) = event.get_item()
                         && let Some(name) = folder_tree.get_item_text(&item)
@@ -2215,6 +2216,25 @@ impl WxMailApp {
                                 .send(UIUpdate::StatusUpdated(format!("Loading {}...", name)))
                                 .await;
                         });
+                        // Sent and Drafts are read differently from a folder
+                        // of mail that arrived: the Unread column says the
+                        // same thing on every row there, which is pure
+                        // verbosity spoken, and the date that matters is when
+                        // a message went rather than when it turned up. The
+                        // layout for that has existed and been tested since
+                        // these columns did, and nothing ever asked for it,
+                        // because every call site named Inbox.
+                        if let Some(folder_id) = folder_id
+                            && let Some(cache) = folder_cache.as_ref()
+                            && let Ok(Some(stored_kind)) = cache.folder_kind(folder_id)
+                        {
+                            let kind = message_columns::FolderKind::for_folder(stored_kind);
+                            let mut layout = column_layout.borrow_mut();
+                            if layout.kind != kind {
+                                *layout = ColumnLayout::defaults_for(kind);
+                                apply_columns(&msg_list, &layout);
+                            }
+                        }
                         // Selecting a folder used to announce "Loading
                         // INBOX..." and then load nothing at all. This is
                         // the read that makes the status true.

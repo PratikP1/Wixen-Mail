@@ -47,16 +47,6 @@ pub use urls::{Canonical, canonicalise, expressions};
 
 use crate::service::safety::{Safety, Verdict};
 
-/// What Google's lists said about the links in one message.
-///
-/// A separate source from the header verdicts, merged with them the same way
-/// the others are, worst winning.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkVerdict {
-    pub level: Safety,
-    pub reasons: Vec<String>,
-}
-
 /// Which of Google's lists a hash was found on.
 ///
 /// The names are Google's. What matters here is the last one: a URL on the

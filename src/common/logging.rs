@@ -7,28 +7,6 @@ use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt, layer::SubscriberExt};
 
-/// Privacy-aware string wrapper that masks sensitive data in logs
-#[derive(Debug)]
-pub struct SensitiveString(String);
-
-impl SensitiveString {
-    /// Create a new sensitive string
-    pub fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    /// Get the actual value (use sparingly)
-    pub fn reveal(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for SensitiveString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "***REDACTED***")
-    }
-}
-
 /// Log level configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
@@ -169,11 +147,6 @@ pub fn mask_email(email: &str) -> String {
     }
 }
 
-/// Mask password for privacy
-pub fn mask_password(_password: &str) -> &'static str {
-    "***REDACTED***"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,13 +188,6 @@ mod tests {
 
         assert!(dir.is_absolute(), "the log folder is not an absolute path");
         assert!(dir.ends_with("logs"), "{dir:?} is not a logs folder");
-    }
-
-    #[test]
-    fn test_sensitive_string() {
-        let sensitive = SensitiveString::new("secret-password".to_string());
-        assert_eq!(sensitive.reveal(), "secret-password");
-        assert_eq!(format!("{}", sensitive), "***REDACTED***");
     }
 
     #[test]
@@ -276,11 +242,5 @@ mod tests {
         ] {
             let _ = mask_email(address);
         }
-    }
-
-    #[test]
-    fn test_mask_password() {
-        assert_eq!(mask_password("secret123"), "***REDACTED***");
-        assert_eq!(mask_password(""), "***REDACTED***");
     }
 }
