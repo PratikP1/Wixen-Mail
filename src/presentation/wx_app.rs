@@ -780,8 +780,16 @@ impl WxMailApp {
             if let Some(palette) = palette {
                 theme::paint(&msg_list, palette.main_surface());
             }
+            // The size somebody chose, not a number written here. Settings has
+            // offered a font size since it existed and nothing read it, which
+            // matters more than most of the settings that were ignored: it is
+            // the one somebody with low vision reaches for first, and the list
+            // is where mail is read.
+            let chosen_size = crate::data::config::ConfigManager::load_stored()
+                .map(|stored| stored.app_config().font_size)
+                .unwrap_or(12);
             if let Some(list_font) = Font::new_with_details(
-                10,
+                chosen_size as i32,
                 FontFamily::Swiss.as_i32(),
                 FontStyle::Normal.as_i32(),
                 FontWeight::Normal.as_i32(),
@@ -822,14 +830,29 @@ impl WxMailApp {
                     crate::application::reading_habits::MarkRead::from_setting(&cfg.mark_read_after)
                 })
                 .unwrap_or_default();
-            let column_layout = Rc::new(RefCell::new(
+            let mut starting_layout =
                 match stored_config.as_ref().map(|c| c.message_columns.as_str()) {
                     Some(stored) if !stored.is_empty() => {
                         ColumnLayout::from_stored(stored, message_columns::FolderKind::Inbox)
                     }
                     _ => ColumnLayout::defaults_for(message_columns::FolderKind::Inbox),
-                },
-            ));
+                };
+            // The order somebody asked for in Settings. Offered there since
+            // Settings existed and read by nothing, so a list always opened
+            // newest first and anybody wanting otherwise sorted by hand every
+            // time. Only when a layout has not been saved: a saved layout
+            // carries its own sort, and that is the more recent answer.
+            if stored_config
+                .as_ref()
+                .map(|c| c.message_columns.as_str())
+                .is_none_or(str::is_empty)
+                && let Some(asked_for) = stored_config
+                    .as_ref()
+                    .and_then(|c| message_columns::Sort::from_setting(&c.default_sort_order))
+            {
+                starting_layout.sort = asked_for;
+            }
+            let column_layout = Rc::new(RefCell::new(starting_layout));
             apply_columns(&msg_list, &column_layout.borrow());
 
             // Feedback channels are a per-person setting more than a
@@ -9766,11 +9789,20 @@ fn save_attachment(
     // Already through safe_file_name, because a file dialog handed something
     // that looks like a path will use it as one.
     let suggested = attachment.suggested_file_name();
-    let dialog = FileDialog::builder(frame)
+    // Opening where somebody said to save things. Settings has offered a
+    // download folder since it existed and nothing read it, so the picker
+    // opened wherever Windows last left it and the answer was ignored.
+    let opens_in = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().download_folder.clone())
+        .unwrap_or_default();
+    let mut picker = FileDialog::builder(frame)
         .with_message("Save attachment")
         .with_default_file(&suggested)
-        .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt)
-        .build();
+        .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt);
+    if opens_in.is_dir() {
+        picker = picker.with_default_dir(&opens_in.to_string_lossy());
+    }
+    let dialog = picker.build();
     if dialog.show_modal() != ID_OK {
         // Cancelling is a decision, and saying nothing after it is right:
         // there is no outcome to report.

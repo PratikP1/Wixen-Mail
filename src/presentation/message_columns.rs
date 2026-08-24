@@ -234,6 +234,58 @@ pub struct Sort {
 }
 
 impl Sort {
+    /// The sort a stored setting asks for.
+    ///
+    /// Settings has offered a starting sort order since it existed and
+    /// nothing read it, so somebody who asked for oldest first, or for unread
+    /// at the top, got newest first every time and had to sort by hand on
+    /// every folder.
+    ///
+    /// `None` for a word this does not know, which is what a settings file
+    /// written by a later version or edited by hand can hold: the built-in
+    /// order is a better answer than a guess.
+    pub fn from_setting(stored: &str) -> Option<Self> {
+        let (column, direction) = match stored.trim() {
+            "date_newest" => (MessageColumn::Received, SortDirection::Descending),
+            "date_oldest" => (MessageColumn::Received, SortDirection::Ascending),
+            "sender_az" => (MessageColumn::Correspondent, SortDirection::Ascending),
+            "sender_za" => (MessageColumn::Correspondent, SortDirection::Descending),
+            "subject_az" => (MessageColumn::Subject, SortDirection::Ascending),
+            "subject_za" => (MessageColumn::Subject, SortDirection::Descending),
+            // Unread at the top, and newest first among the rest, because
+            // "unread first" says nothing about the order within either group
+            // and the answer people expect underneath it is the ordinary one.
+            "unread_first" => {
+                return Some(
+                    Self {
+                        column: MessageColumn::Received,
+                        direction: SortDirection::Descending,
+                        then: None,
+                    }
+                    .with_unread_first(),
+                );
+            }
+            _ => return None,
+        };
+        Some(Self {
+            column,
+            direction,
+            then: None,
+        })
+    }
+
+    /// The same sort, with unread rows brought to the top.
+    fn with_unread_first(self) -> Self {
+        Self {
+            column: MessageColumn::Unread,
+            direction: SortDirection::Ascending,
+            then: Some(By {
+                column: self.column,
+                direction: self.direction,
+            }),
+        }
+    }
+
     /// The first level on its own, as a value.
     pub fn first(&self) -> By {
         By {
@@ -952,5 +1004,64 @@ mod tests {
             restored.visible(),
             vec![MessageColumn::Unread, MessageColumn::Subject]
         );
+    }
+}
+
+#[cfg(test)]
+mod the_sort_somebody_asked_for {
+    use super::*;
+
+    #[test]
+    fn test_each_offered_order_maps_to_a_real_sort() {
+        // The Settings list offers seven, and every one of them was ignored:
+        // nothing read the setting, so the list always opened newest first
+        // and anybody who wanted otherwise sorted by hand on every folder.
+        for stored in [
+            "date_newest",
+            "date_oldest",
+            "sender_az",
+            "sender_za",
+            "subject_az",
+            "subject_za",
+            "unread_first",
+        ] {
+            assert!(
+                Sort::from_setting(stored).is_some(),
+                "{stored} is offered in Settings and means nothing here"
+            );
+        }
+    }
+
+    #[test]
+    fn test_oldest_and_newest_are_the_same_column_the_other_way_round() {
+        let newest = Sort::from_setting("date_newest").expect("newest first");
+        let oldest = Sort::from_setting("date_oldest").expect("oldest first");
+
+        assert_eq!(newest.column, MessageColumn::Received);
+        assert_eq!(oldest.column, MessageColumn::Received);
+        assert_ne!(newest.direction, oldest.direction);
+    }
+
+    #[test]
+    fn test_unread_first_still_puts_the_newest_at_the_top_of_each_group() {
+        // "Unread first" says nothing about the order inside either group, and
+        // the answer people expect underneath it is the ordinary one.
+        let sort = Sort::from_setting("unread_first").expect("unread first");
+
+        assert_eq!(sort.column, MessageColumn::Unread);
+        assert_eq!(
+            sort.then,
+            Some(By {
+                column: MessageColumn::Received,
+                direction: SortDirection::Descending,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_word_this_does_not_know_leaves_the_built_in_order_alone() {
+        // A settings file from a later version, or edited by hand.
+        assert_eq!(Sort::from_setting("by_moon_phase"), None);
+        assert_eq!(Sort::from_setting(""), None);
     }
 }

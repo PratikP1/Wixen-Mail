@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
 use wixen_mail::application::running::Claim;
-use wixen_mail::common::logging::{LoggerConfig, init_logging};
+use wixen_mail::common::logging::{LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::common::version;
 use wixen_mail::presentation::WxMailApp;
@@ -59,7 +59,20 @@ fn main() {
     // Before anything opens a file, including the log the next line writes.
     let migration = prepare_data_folder();
 
-    let _log_guard = init_logging(LoggerConfig::default()).ok();
+    // The level somebody chose, not the built-in one. Settings has offered
+    // this since it existed and nothing read it, so anybody asked to turn on
+    // debug logging for a bug report turned it on and sent an ordinary log.
+    // Read straight from the stored settings rather than through the config
+    // manager's usual path, because this runs before anything else opens a
+    // file and the log is what would record a failure to read it.
+    let chosen_level = wixen_mail::data::config::ConfigManager::load_stored()
+        .ok()
+        .and_then(|stored| LogLevel::parse(&stored.app_config().log_level));
+    let _log_guard = init_logging(LoggerConfig {
+        level: chosen_level.unwrap_or(LoggerConfig::default().level),
+        ..LoggerConfig::default()
+    })
+    .ok();
     // The build identifier is part of this on purpose: a bug report arrives
     // with a log, and several builds can share a version now.
     tracing::info!("Starting Wixen Mail v{}", version::current());

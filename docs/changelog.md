@@ -133,6 +133,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Five settings that did nothing now do what they say.** Each had a real
+  label, saved, and survived a restart, and nothing read any of them. The
+  font size now sets the message list's font, which matters most of the five:
+  it is what somebody with low vision reaches for first. The download folder
+  is where Save Attachment opens. The log level is the level actually
+  recorded, so being asked to turn on detailed logging for a bug report now
+  works. The default sort order is the order a message list opens in, when no
+  column layout has been saved. And the default alert is filled in on a new
+  event or reminder instead of every one opening with no alert.
+- **Five settings that could not do anything have been taken out.** New-mail
+  notifications and checking for updates were switches for machinery that
+  does not exist. The calendar's default view offered Day, Week and Month,
+  three views this program cannot draw, alongside showing weekends and the
+  first day of the week, which need those views. Taking somebody's answer and
+  ignoring it is worse than not asking. Existing settings files are
+  unaffected: the leftover entries are simply ignored.
 - **The sidebar keeps your place when a sync finishes.** Folders, calendars,
   reminders, task lists, note folders and contact groups were all emptied and
   rebuilt whenever a sync finished, which happens on a timer rather than

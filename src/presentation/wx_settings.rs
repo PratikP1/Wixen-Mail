@@ -61,8 +61,6 @@ pub struct SettingsWidgets {
     // General
     theme: Choice,
     pub font_size: TextCtrl,
-    notifications: CheckBox,
-    check_updates: CheckBox,
     // Compose
     preview_before_send: CheckBox,
     keep_sent_mail_on_this_computer: CheckBox,
@@ -87,9 +85,6 @@ pub struct SettingsWidgets {
     send_contact_changes_everywhere: CheckBox,
     check_spelling_as_you_type: CheckBox,
     // Calendar & PIM
-    cal_default_view: Choice,
-    cal_show_weekends: CheckBox,
-    cal_first_day: Choice,
     pub default_reminder: TextCtrl,
     day_starts: Choice,
     day_ends: Choice,
@@ -169,8 +164,7 @@ pub fn build_settings_dialog(
 
     // ── Tab 1: General
     let general_panel = Panel::builder(&notebook).build();
-    let (theme, font_size, notifications, check_updates) =
-        build_general_tab(&general_panel, config);
+    let (theme, font_size) = build_general_tab(&general_panel, config);
     notebook.add_page(&general_panel, "General", true, None);
 
     // ── Tab 2: Compose
@@ -213,14 +207,7 @@ pub fn build_settings_dialog(
 
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
-    let (
-        cal_default_view,
-        cal_show_weekends,
-        cal_first_day,
-        default_reminder,
-        day_starts,
-        day_ends,
-    ) = build_calendar_pim_tab(&pim_panel, config);
+    let (default_reminder, day_starts, day_ends) = build_calendar_pim_tab(&pim_panel, config);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
     // ── Tab 6: Feedback
@@ -302,8 +289,6 @@ pub fn build_settings_dialog(
         advanced_panel,
         theme,
         font_size,
-        notifications,
-        check_updates,
         preview_before_send,
         keep_sent_mail_on_this_computer,
         draft_autosave,
@@ -324,9 +309,6 @@ pub fn build_settings_dialog(
         allow_mail,
         allow_pim,
         send_contact_changes_everywhere,
-        cal_default_view,
-        cal_show_weekends,
-        cal_first_day,
         default_reminder,
         day_starts,
         day_ends,
@@ -341,8 +323,8 @@ pub fn build_settings_dialog(
 
 // ── Tab builders ─────────────────────────────────────────────────────────────
 
-/// General settings: theme, font size, notifications, check-for-updates.
-fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox, CheckBox) {
+/// General settings: theme and font size.
+fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Appearance
@@ -400,28 +382,13 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, Ch
 
     sizer.add_sizer(&app_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-    // -- Notifications
-    let notif_sec = section(panel, "Notifications");
-    let notif_cb = CheckBox::builder(panel)
-        .with_label("Enable &new-mail notifications")
-        .build();
-    set_accessible_name(&notif_cb, "Enable new-mail notifications");
-    notif_cb.set_value(config.enable_notifications);
-    notif_sec.add(&notif_cb, 0, SizerFlag::All, 4);
-    sizer.add_sizer(&notif_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
-
-    // -- Updates
-    let upd_sec = section(panel, "Updates");
-    let update_cb = CheckBox::builder(panel)
-        .with_label("Check for &updates on startup")
-        .build();
-    set_accessible_name(&update_cb, "Check for updates on startup");
-    update_cb.set_value(config.check_updates);
-    upd_sec.add(&update_cb, 0, SizerFlag::All, 4);
-    sizer.add_sizer(&upd_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    // New-mail notifications and checking for updates were both offered here
+    // and read by nothing: there is no notification path and no update check
+    // in this program. A control that takes an answer and ignores it is worse
+    // than no control, so they are gone rather than sitting switched off.
 
     panel.set_sizer(sizer, true);
-    (theme_choice, font_field, notif_cb, update_cb)
+    (theme_choice, font_field)
 }
 
 /// Compose settings: preview before sending, what Sent keeps, drafts, signature.
@@ -1127,76 +1094,16 @@ fn build_language_tab(
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
-fn build_calendar_pim_tab(
-    panel: &Panel,
-    config: &AppConfig,
-) -> (Choice, CheckBox, Choice, TextCtrl, Choice, Choice) {
+fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Calendar View
     let view_sec = section(panel, "Calendar");
 
-    let view_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let view_label = StaticText::builder(panel)
-        .with_label("Default &view:")
-        .build();
-    let view_choices: Vec<String> = ["Agenda", "Day", "Week", "Month"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let view_idx: u32 = match config.calendar_default_view.as_str() {
-        "day" => 1,
-        "week" => 2,
-        "month" => 3,
-        _ => 0,
-    };
-    let view_choice = Choice::builder(panel)
-        .with_choices(view_choices)
-        .with_selection(Some(view_idx))
-        .build();
-    set_accessible_name(&view_choice, "Default view");
-    view_row.add(
-        &view_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    view_row.add(&view_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    view_sec.add_sizer(&view_row, 0, SizerFlag::Expand, 0);
-
-    let weekends_cb = CheckBox::builder(panel)
-        .with_label("Show &weekends")
-        .build();
-    set_accessible_name(&weekends_cb, "Show weekends");
-    weekends_cb.set_value(config.calendar_show_weekends);
-    view_sec.add(&weekends_cb, 0, SizerFlag::All, 4);
-
-    let first_day_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let first_day_label = StaticText::builder(panel)
-        .with_label("&First day of week:")
-        .build();
-    let day_choices: Vec<String> = ["Sunday", "Monday", "Saturday"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let day_idx: u32 = match config.calendar_first_day_of_week {
-        1 => 1,
-        6 => 2,
-        _ => 0,
-    };
-    let first_day_choice = Choice::builder(panel)
-        .with_choices(day_choices)
-        .with_selection(Some(day_idx))
-        .build();
-    set_accessible_name(&first_day_choice, "First day of week");
-    first_day_row.add(
-        &first_day_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    first_day_row.add(&first_day_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    view_sec.add_sizer(&first_day_row, 0, SizerFlag::Expand, 0);
+    // A default view, showing weekends, and the first day of the week were
+    // all offered here and read by nothing. The view picker was the worst of
+    // them: it offered Day, Week and Month, three views this program cannot
+    // draw at all. There is one agenda view and no week to start.
 
     sizer.add_sizer(&view_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -1250,14 +1157,7 @@ fn build_calendar_pim_tab(
     sizer.add_sizer(&day_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (
-        view_choice,
-        weekends_cb,
-        first_day_choice,
-        rem_field,
-        day_starts,
-        day_ends,
-    )
+    (rem_field, day_starts, day_ends)
 }
 
 /// Every hour of the day, named rather than numbered.
@@ -1741,8 +1641,6 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .parse::<u32>()
         .unwrap_or(base.font_size)
         .clamp(8, 72);
-    cfg.enable_notifications = w.notifications.get_value();
-    cfg.check_updates = w.check_updates.get_value();
 
     // Compose
     cfg.preview_before_send = w.preview_before_send.get_value();
@@ -1828,19 +1726,6 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.check_spelling_as_you_type = w.check_spelling_as_you_type.is_checked();
 
     // Calendar & PIM
-    cfg.calendar_default_view = match sel(&w.cal_default_view) {
-        1 => "day",
-        2 => "week",
-        3 => "month",
-        _ => "agenda",
-    }
-    .to_string();
-    cfg.calendar_show_weekends = w.cal_show_weekends.get_value();
-    cfg.calendar_first_day_of_week = match sel(&w.cal_first_day) {
-        1 => 1,
-        2 => 6,
-        _ => 0,
-    };
     // Kept through the same check the calendar reads it through, so a day
     // that ends before it starts never reaches the file.
     let day = WorkingDay::from_setting(sel(&w.day_starts) as u8, sel(&w.day_ends) as u8);

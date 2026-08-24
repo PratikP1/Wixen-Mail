@@ -16,8 +16,6 @@ pub struct AppConfig {
     pub version: String,
     /// Default folder for downloads
     pub download_folder: PathBuf,
-    /// Check for updates on startup
-    pub check_updates: bool,
     /// Whether to check links against Google Safe Browsing.
     ///
     /// Off unless somebody turns it on, and inert without an API key. What it
@@ -45,8 +43,6 @@ pub struct AppConfig {
     pub theme: String,
     /// Font size
     pub font_size: u32,
-    /// Enable notifications
-    pub enable_notifications: bool,
     /// Log level
     pub log_level: String,
     /// Show preview dialog before sending emails
@@ -260,15 +256,6 @@ pub struct AppConfig {
     /// at ten.
     #[serde(default = "default_autosave_minutes")]
     pub draft_autosave_minutes: u32,
-    /// Calendar default view: "agenda", "day", "week", "month"
-    #[serde(default = "default_calendar_view")]
-    pub calendar_default_view: String,
-    /// Show weekends in calendar views
-    #[serde(default = "default_true")]
-    pub calendar_show_weekends: bool,
-    /// First day of week: 0 = Sunday, 1 = Monday
-    #[serde(default)]
-    pub calendar_first_day_of_week: u8,
     /// Default reminder lead-time in minutes (e.g. 15 = remind 15 min before)
     #[serde(default = "default_reminder_minutes")]
     pub default_reminder_minutes: u32,
@@ -343,9 +330,6 @@ fn default_date_order() -> String {
     "auto".to_string()
 }
 
-fn default_calendar_view() -> String {
-    "agenda".to_string()
-}
 fn default_reminder_minutes() -> u32 {
     15
 }
@@ -359,7 +343,6 @@ impl Default for AppConfig {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             download_folder: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
-            check_updates: true,
             check_links_with_google: false,
             look_at_message_contents: default_true(),
             theme: "default".to_string(),
@@ -378,7 +361,6 @@ impl Default for AppConfig {
             message_columns: String::new(),
             feedback_channels: String::new(),
             sound_scheme_id: String::new(),
-            enable_notifications: true,
             log_level: "info".to_string(),
             preview_before_send: true,
             // The safe answer is the one that changes nothing: the server's own
@@ -400,9 +382,6 @@ impl Default for AppConfig {
             told_about_the_alpha: false,
             check_spelling_as_you_type: default_true(),
             default_sort_order: default_sort_order(),
-            calendar_default_view: default_calendar_view(),
-            calendar_show_weekends: default_true(),
-            calendar_first_day_of_week: 0,
             default_reminder_minutes: default_reminder_minutes(),
         }
     }
@@ -804,7 +783,6 @@ mod tests {
         let config = AppConfig::default();
         assert_eq!(config.theme, "default");
         assert_eq!(config.font_size, 12);
-        assert!(config.enable_notifications);
     }
 
     #[test]
@@ -868,13 +846,9 @@ mod tests {
             config.language
         );
         assert_eq!(config.default_sort_order, "date_newest");
-        assert_eq!(config.calendar_default_view, "agenda");
-        assert!(config.calendar_show_weekends);
-        assert_eq!(config.calendar_first_day_of_week, 0);
         assert_eq!(config.default_reminder_minutes, 15);
         assert!(config.preview_before_send);
         assert_eq!(config.log_level, "info");
-        assert!(config.check_updates);
     }
 
     #[test]
@@ -933,10 +907,6 @@ mod tests {
         assert_eq!(deserialized.theme, config.theme);
         assert_eq!(deserialized.font_size, config.font_size);
         assert_eq!(deserialized.language, config.language);
-        assert_eq!(
-            deserialized.calendar_default_view,
-            config.calendar_default_view
-        );
     }
 }
 
@@ -1015,8 +985,6 @@ mod permission_tests {
             "date_wording",
             "clock_hours",
             "draft_autosave_minutes",
-            "calendar_default_view",
-            "calendar_show_weekends",
             "default_reminder_minutes",
         ] {
             assert!(
@@ -1033,15 +1001,10 @@ mod permission_tests {
         assert_eq!(parsed.date_wording, "verbal");
         assert_eq!(parsed.clock_hours, "auto");
         assert_eq!(parsed.default_sort_order, "date_newest");
-        assert_eq!(parsed.calendar_default_view, "agenda");
         assert_eq!(parsed.default_reminder_minutes, 15);
         assert!(
             parsed.check_spelling_as_you_type,
             "spelling would stop being checked for everybody upgrading"
-        );
-        assert!(
-            parsed.calendar_show_weekends,
-            "weekends would disappear from the calendar"
         );
 
         // These belong to the module that owns the setting. What matters here
@@ -1197,5 +1160,92 @@ mod permission_tests {
         // message here and sends nothing, the other can put four bytes of a
         // link on the wire. They cannot share a switch.
         assert!(!AppConfig::default().check_links_with_google);
+    }
+}
+
+#[cfg(test)]
+mod every_setting_is_acted_on {
+    /// The stored settings this application keeps, read out of the struct
+    /// itself so a field added later is covered without anybody remembering.
+    fn stored_setting_names(source: &str) -> Vec<String> {
+        let start = source
+            .find("pub struct AppConfig {")
+            .expect("the settings struct");
+        let body = &source[start..];
+        let end = body.find("\n}").expect("the struct ends");
+
+        body[..end]
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub "))
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, _)| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+
+    /// Every source file that ships, except the two that own a setting rather
+    /// than acting on one.
+    fn files_that_act() -> Vec<std::path::PathBuf> {
+        fn walk(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    let shown = path.display().to_string().replace('\\', "/");
+                    // `config.rs` defines and stores a setting and
+                    // `wx_settings.rs` offers it. Neither is anybody acting
+                    // on the answer.
+                    if !shown.ends_with("data/config.rs") && !shown.ends_with("wx_settings.rs") {
+                        into.push(path);
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(std::path::Path::new("src"), &mut found);
+        found
+    }
+
+    #[test]
+    fn test_every_setting_somebody_can_change_is_read_by_something() {
+        // Ten settings had a real labelled control, saved, survived a
+        // restart, and were read by nothing: notifications, checking for
+        // updates, the list font size, the download folder, the log level,
+        // the default sort order, and four calendar ones. That is worse than
+        // dead code. Dead code does nothing and says nothing; these took
+        // somebody's answer, told them it was kept, and ignored it. The sort
+        // one was sharpest, because the box beside it is live, so the panel
+        // half-worked.
+        //
+        // This lives here rather than in `tests/` because it has to read the
+        // half of each file that ships, and `what_ships` is the one answer to
+        // that question and is not compiled into a release. Cutting at the
+        // first `#[cfg(test)]` instead is the exact mistake that module was
+        // written to end: the main window has test modules sitting between
+        // stretches of code, and two settings are read below the first one.
+        let config = std::fs::read_to_string("src/data/config.rs").expect("the settings");
+        let mut ignored = Vec::new();
+
+        for name in stored_setting_names(&config) {
+            let read_somewhere = files_that_act().into_iter().any(|path| {
+                std::fs::read_to_string(&path)
+                    .is_ok_and(|text| crate::common::what_ships::what_ships(&text).contains(&name))
+            });
+            if !read_somewhere {
+                ignored.push(name);
+            }
+        }
+
+        assert!(
+            ignored.is_empty(),
+            "{} setting(s) can be changed and are read by nothing, so the \
+             answer is taken and ignored:\n  {}",
+            ignored.len(),
+            ignored.join("\n  ")
+        );
     }
 }

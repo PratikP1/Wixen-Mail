@@ -1394,6 +1394,31 @@ fn filled_from_calendar_item(item: &CalendarEventItem) -> crate::application::it
 /// or reminder (`store_new_item`'s own `repeat` closure) and one already
 /// stored (`event_entry`, reached from the Calendar window's own New and Edit
 /// Event buttons) cannot come to read the same four boxes two different ways.
+/// A new event or reminder, opened with the alert somebody asked Settings for.
+///
+/// Nothing for the other kinds, which have no alert to set, and nothing when
+/// the answer is no alert at all, since that is what an untouched form
+/// already says.
+fn starting_alert_for(
+    kind: crate::application::new_item::ItemKind,
+) -> Option<crate::application::item_fields::Filled> {
+    use crate::application::item_fields::{FieldName, Filled};
+    use crate::application::new_item::ItemKind;
+
+    if !matches!(kind, ItemKind::Event | ItemKind::Reminder) {
+        return None;
+    }
+    let minutes = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().default_reminder_minutes)
+        .unwrap_or(0);
+    if minutes == 0 {
+        return None;
+    }
+    let mut filled = Filled::default();
+    filled.put(FieldName::AlertMinutes, minutes.to_string());
+    Some(filled)
+}
+
 fn recurrence_rule_from(
     repeat: &str,
     until_word: &str,
@@ -1801,12 +1826,22 @@ pub fn new_pim_item(
     // the dialog is already gone, used to be the only one there was, and
     // could only ever refuse by throwing away everything just typed and
     // asking the person to start over; now it would never even run.
+    // The alert somebody chose in Settings, filled in ahead of them. It has
+    // been offered there since Settings existed and read by nothing, so every
+    // new event and reminder opened with no alert whatever the answer said,
+    // and anybody who wanted one typed it in every time.
+    let starts_with = starting_alert_for(kind);
     let Some((filled, container_id)) = crate::presentation::wx_item_form::ask_for(
         frame,
         kind,
         &holders,
         &known_categories,
-        None,
+        starts_with
+            .as_ref()
+            .map(|filled| crate::presentation::wx_item_form::Prefill {
+                filled,
+                container: None,
+            }),
         a11y,
     ) else {
         return;
