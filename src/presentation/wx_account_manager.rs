@@ -186,15 +186,6 @@ pub fn build_account_manager_dialog(
         .with_label("Set Acti&ve")
         .with_id(ID_SET_ACTIVE)
         .build();
-    // Signing in again is a thing people have to do, not an error they have to
-    // read about. A token can be revoked, a password can change, and Google
-    // expires browser sign-in weekly until the application is verified. Without
-    // a control, the only way back was to edit the account and clear a field
-    // that is not shown.
-    let reauth = Button::builder(&dlg)
-        .with_label("&Sign In Again")
-        .with_id(ID_REAUTHORIZE)
-        .build();
     // Separate from Active, which is the mailbox being looked at. This is
     // where a new contact, event or note is filed, and browsing another
     // account should not quietly move it.
@@ -205,6 +196,21 @@ pub fn build_account_manager_dialog(
         // account.
         .with_label("Set as Defa&ult")
         .with_id(ID_SET_DEFAULT)
+        .build();
+    // Built here rather than beside Set Active, because wxWidgets gives a
+    // window its place in the tab order when it is created and this is where
+    // it is shown. It used to be made before Set as Default and shown after
+    // it, so Tab from Set Active landed here while the button beside it on
+    // screen was Set as Default.
+    //
+    // Signing in again is a thing people have to do, not an error they have to
+    // read about. A token can be revoked, a password can change, and Google
+    // expires browser sign-in weekly until the application is verified. Without
+    // a control, the only way back was to edit the account and clear a field
+    // that is not shown.
+    let reauth = Button::builder(&dlg)
+        .with_label("&Sign In Again")
+        .with_id(ID_REAUTHORIZE)
         .build();
     let close = Button::builder(&dlg)
         .with_label("&Close")

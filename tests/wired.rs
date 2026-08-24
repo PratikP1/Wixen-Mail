@@ -1434,3 +1434,56 @@ fn alt_key_of(label: &str) -> Option<char> {
     }
     None
 }
+
+/// The Account Manager's buttons tab in the order they are shown in.
+///
+/// wxWidgets gives a window its place in the tab order when it is created,
+/// not when it is added to a sizer. Sign In Again was built before Set as
+/// Default and shown after it, so Tab from Set Active landed on Sign In Again
+/// while the button beside it on screen was Set as Default. Nothing says so
+/// out loud: the window looks right, and only somebody moving through it by
+/// keyboard meets the mismatch.
+///
+/// Written for this one window rather than as a rule over all of them. The
+/// general version was tried and is not honest: a panel or a notebook has to
+/// be built before the controls that go inside it, so building out of display
+/// order is ordinary and correct for a container, and these buttons are
+/// placed in a loop that a reading of the source cannot follow back to the
+/// order they were made in. A check that reports the wrong answer in both
+/// directions is worse than none.
+#[test]
+fn test_the_account_manager_buttons_tab_in_the_order_they_are_shown() {
+    let manager =
+        fs::read_to_string("src/presentation/wx_account_manager.rs").expect("the account manager");
+
+    let built: Vec<usize> = ["ID_SET_ACTIVE", "ID_SET_DEFAULT", "ID_REAUTHORIZE"]
+        .iter()
+        .map(|id| {
+            manager
+                .find(&format!(".with_id({id})"))
+                .unwrap_or_else(|| panic!("{id} is no longer a button here"))
+        })
+        .collect();
+
+    let shown = manager
+        .split_once("for b in [")
+        .map(|(_, rest)| rest.split_once(']').map(|(row, _)| row).unwrap_or(""))
+        .expect("the buttons are still placed as a row");
+    let placed: Vec<usize> = ["&active", "&set_default", "&reauth"]
+        .iter()
+        .map(|name| {
+            shown
+                .find(name)
+                .unwrap_or_else(|| panic!("{name} is no longer in the button row"))
+        })
+        .collect();
+
+    let ordered = |v: &[usize]| v.windows(2).all(|pair| pair[0] < pair[1]);
+    assert_eq!(
+        ordered(&built),
+        ordered(&placed),
+        "Set Active, Set as Default and Sign In Again are built in one order \
+         and shown in another, so Tab goes somewhere other than the button \
+         beside the one you are on"
+    );
+}

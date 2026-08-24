@@ -258,6 +258,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **Rules run on mail collected over POP.** They never had. The Rules window
   does not ask which kind of account you have, so a rule could be written,
   named and switched on, and never once looked at the mail.
+- **In the Account Manager, Tab goes to the button beside the one you are
+  on.** Sign In Again was built before Set as Default and shown after it, and
+  the keyboard follows the order buttons are made in, so Tab from Set Active
+  went to Sign In Again while the button next to it on screen was Set as
+  Default.
 - **A rule that files mail into a folder now files it.** Naming a folder in
   a rule had never moved anything, and the message was counted as sorted
   anyway, so the status could say mail had been filed when none had. Arriving
