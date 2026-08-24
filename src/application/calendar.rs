@@ -100,6 +100,19 @@ pub struct CalendarSyncResult {
     /// because the calendar's name is the useful part and a number cannot
     /// carry it.
     pub changes_that_cannot_be_saved: Vec<String>,
+    /// Days of a repeating Outlook meeting that may now be shown twice.
+    ///
+    /// Outlook does not say which day of the pattern a moved occurrence
+    /// stands in for in a way this program can safely read, so the day cannot
+    /// be taken off the series and the meeting appears both where it was and
+    /// where it went. Nothing here can fix that without guessing, and
+    /// guessing risks hiding a meeting nobody moved.
+    ///
+    /// Counted so somebody is told. This was a line in a log, which this
+    /// project's own rule calls a warning nobody gets: a calendar quietly
+    /// showing a meeting twice looks like a fault in this program rather than
+    /// a limit of what the provider says.
+    pub days_that_may_be_shown_twice: usize,
     pub errors: Vec<String>,
 }
 
@@ -281,7 +294,30 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
     for cannot in &result.changes_that_cannot_be_saved {
         said.sentence(cannot);
     }
+    // Said rather than logged. Outlook does not say which day of a repeating
+    // meeting a moved occurrence stands in for in a way this program can
+    // safely read, so the day cannot be taken off the series and the meeting
+    // shows both where it was and where it went. A calendar quietly showing
+    // something twice looks like a fault here rather than a limit of what the
+    // provider says, and this used to be a line in a log.
+    if result.days_that_may_be_shown_twice > 0 {
+        said.sentence(a_day_moved_in_outlook(result.days_that_may_be_shown_twice));
+    }
     said.spoken()
+}
+
+/// What to say about a moved day of a repeating Outlook meeting.
+///
+/// Named here rather than written inline so the wording is in one place and
+/// can be read by a test.
+pub fn a_day_moved_in_outlook(how_many: usize) -> String {
+    match how_many {
+        1 => "One day of a repeating meeting was moved in Outlook. Outlook does               not say which day it replaces, so it may be listed twice"
+            .to_string(),
+        many => format!(
+            "{many} days of repeating meetings were moved in Outlook. Outlook              does not say which days they replace, so each may be listed twice"
+        ),
+    }
 }
 
 // ── Sending what was changed here ───────────────────────────────────────────
@@ -1084,6 +1120,7 @@ fn one_day_of_a_google_series(
              series is {at_google}.",
             event.id
         );
+        result.days_that_may_be_shown_twice += 1;
         return cache.save_calendar_event(&that_day);
     };
     one_day_kept_out_of_the_series(
@@ -1458,6 +1495,7 @@ fn one_day_of_a_microsoft_series(
              is {} and the series is {series_id}.",
             event.id
         );
+        result.days_that_may_be_shown_twice += 1;
         return cache.save_calendar_event(&that_day);
     };
     one_day_kept_out_of_the_series(
@@ -11129,6 +11167,7 @@ mod tests {
             deleted: 0,
             sent: 2,
             waiting_on_the_setting: 3,
+            days_that_may_be_shown_twice: 0,
             changes_that_cannot_be_saved: vec![
                 "Term dates: 1 change made here cannot be saved, because this \
                  is a calendar this program can only read."
@@ -11208,5 +11247,43 @@ mod tests {
             which_calendar_at_the_provider(&make_calendar("cal-1", "Google Calendar", true)),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod a_day_moved_in_outlook_is_said_rather_than_logged {
+    use super::*;
+
+    #[test]
+    fn test_a_sync_that_could_not_take_a_day_off_a_series_says_so() {
+        // Outlook does not say which day of a repeating meeting a moved
+        // occurrence stands in for in a way this program can safely read, so
+        // the day cannot be taken off the series and the meeting shows both
+        // where it was and where it went. Nothing here can fix that without
+        // guessing, and guessing risks hiding a meeting nobody moved.
+        //
+        // What was wrong is that only a log said so. A calendar quietly
+        // listing something twice reads as a fault in this program rather
+        // than a limit of what the provider says, and this project's own rule
+        // is that a warning nobody gets is not a warning.
+        let said = what_the_calendar_sync_did(&CalendarSyncResult {
+            created: 1,
+            days_that_may_be_shown_twice: 2,
+            ..CalendarSyncResult::default()
+        });
+
+        assert!(said.contains("Outlook"), "{said}");
+        assert!(said.contains("twice"), "{said}");
+    }
+
+    #[test]
+    fn test_a_sync_with_none_of_them_says_nothing_about_it() {
+        // A sentence on every sync is one people stop hearing.
+        let said = what_the_calendar_sync_did(&CalendarSyncResult {
+            created: 1,
+            ..CalendarSyncResult::default()
+        });
+
+        assert!(!said.contains("twice"), "{said}");
     }
 }

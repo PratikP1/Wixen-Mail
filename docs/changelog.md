@@ -133,6 +133,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **A working day ending at midnight is kept.** Midnight is offered in the
+  list and was refused, so choosing it put nine to five back with nothing
+  said. A day that runs past midnight, such as a night shift, still cannot be
+  kept, but Settings now says so plainly instead of quietly overwriting it.
+- **A sync says when a moved day of a repeating Outlook meeting may show
+  twice.** Outlook does not say which day of the pattern a moved occurrence
+  replaces in a way this program can safely read, so the day cannot be taken
+  off the series and the meeting appears both where it was and where it went.
+  That is a limit rather than something fixable here, but it was only
+  recorded in a log file, so a calendar quietly listing something twice
+  looked like a fault.
 - **Sent and Drafts no longer read out a column that says the same thing on
   every row.** Both were given the Inbox's columns, so the Unread column was
   spoken on every row where it is identical, and the date shown was when a

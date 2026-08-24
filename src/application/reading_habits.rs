@@ -194,16 +194,41 @@ impl WorkingDay {
     /// 24. So `sane` is false at `starts == 24` regardless of which of the
     /// two the first clause uses.
     pub fn from_setting(starts: u8, ends: u8) -> Self {
+        // Midnight at the end of a day is hour twenty-four, not hour nought.
+        // The settings list offers "Midnight, 00" as an ending and it was
+        // refused, so choosing it wrote nine to five back with nothing said.
+        let ends = match ends {
+            0 => 24,
+            other => other,
+        };
+        // A day that runs past midnight is still refused, and that is a real
+        // limit rather than an oversight: `note_for` puts an hour outside the
+        // day on one side or the other of it, and a day wrapping round the
+        // clock has no such sides. The settings screen says so now instead of
+        // writing nine to five back without a word, which is what it did.
         let sane = starts < 24 && (1..=24).contains(&ends) && starts < ends;
-        debug_assert!(
-            !(starts == 24 && sane),
-            "ends would have to be both <= 24 and >= 25"
-        );
         if sane {
             Self { starts, ends }
         } else {
             Self::default()
         }
+    }
+
+    /// Whether a pair of hours is one this cannot keep.
+    ///
+    /// Asked by the settings screen so it can say so. It used to write the
+    /// built-in day back over an answer it could not use and say nothing at
+    /// all, so somebody choosing a night shift set it, was told nothing, and
+    /// found nine to five again the next time they looked.
+    pub fn could_not_be_used(starts: u8, ends: u8) -> bool {
+        Self::from_setting(starts, ends) == Self::default()
+            && (starts, ends) != Self::default_pair()
+    }
+
+    /// The built-in day, as the pair of hours somebody would have chosen.
+    fn default_pair() -> (u8, u8) {
+        let day = Self::default();
+        (day.starts, day.ends)
     }
 
     /// Whether an hour is inside the working day.
@@ -390,5 +415,54 @@ mod tests {
         assert!(night.holds(23));
         assert!(!night.holds(9));
         assert_eq!(night.note_for(9), "before the working day");
+    }
+}
+
+#[cfg(test)]
+mod a_working_day_that_is_not_nine_to_five {
+    use super::*;
+
+    #[test]
+    fn test_a_day_that_ends_at_midnight_is_kept() {
+        // "Midnight, 00" is offered in the settings list as the end of the
+        // day, and it was refused and quietly written back as nine to five.
+        // Midnight is the end of the day rather than the start of it here,
+        // which is what an end hour means everywhere else in this type.
+        let day = WorkingDay::from_setting(9, 0);
+
+        assert_eq!(day.starts, 9);
+        assert_eq!(day.ends, 24, "midnight at the end of a day is hour 24");
+        assert!(
+            day.holds(23),
+            "eleven at night is inside a day ending at midnight"
+        );
+    }
+
+    #[test]
+    fn test_a_day_running_past_midnight_is_still_refused_and_says_which() {
+        // Ten at night until six in the morning is a real working day and is
+        // not supported: an hour outside the day is described as before it or
+        // after it, and a day wrapping round the clock has no such sides.
+        // That is a limit worth keeping honest rather than half-supporting.
+        //
+        // What was wrong was the silence. The settings screen wrote nine to
+        // five back over it with nothing said, so the answer was thrown away
+        // every time it was set. `could_not_be_used` is what the screen asks
+        // so it can say so.
+        assert_eq!(WorkingDay::from_setting(22, 6), WorkingDay::default());
+        assert!(WorkingDay::could_not_be_used(22, 6));
+        assert!(!WorkingDay::could_not_be_used(9, 17));
+        assert!(
+            !WorkingDay::could_not_be_used(9, 0),
+            "a day ending at midnight is used, so nothing is refused"
+        );
+    }
+
+    #[test]
+    fn test_an_answer_that_says_nothing_is_still_refused() {
+        // The same hour twice is not a day, it is an instant, and there is no
+        // reading of it that holds any hour at all.
+        assert_eq!(WorkingDay::from_setting(9, 9), WorkingDay::default());
+        assert_eq!(WorkingDay::from_setting(25, 30), WorkingDay::default());
     }
 }

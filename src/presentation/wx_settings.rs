@@ -124,11 +124,23 @@ pub fn show_settings_dialog(
     a11y: &Arc<Accessibility>,
 ) -> SettingsResult {
     let widgets = build_settings_dialog(parent, config, a11y);
-    if widgets.dialog.show_modal() == ID_OK {
-        SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
-    } else {
-        SettingsResult::Cancelled
+    if widgets.dialog.show_modal() != ID_OK {
+        return SettingsResult::Cancelled;
     }
+    // An answer this cannot keep is said rather than written over in
+    // silence. A working day that runs past midnight is refused, which is a
+    // real limit, and the screen used to put nine to five back with nothing
+    // said at all: somebody choosing a night shift set it, heard nothing, and
+    // found the built-in day again the next time they looked.
+    let starts = sel(&widgets.day_starts) as u8;
+    let ends = sel(&widgets.day_ends) as u8;
+    if WorkingDay::could_not_be_used(starts, ends) {
+        let _ = a11y.announce(
+            "A working day that runs past midnight cannot be kept, so the              working day is unchanged. Everything else you changed is saved.",
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+    }
+    SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
 }
 
 /// Build the Settings dialog without showing it.

@@ -7486,6 +7486,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             deleted,
             sent,
             waiting_on_the_setting,
+            days_that_may_be_shown_twice,
             changes_that_cannot_be_saved,
             errors,
         } => {
@@ -7496,6 +7497,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     deleted: *deleted,
                     sent: *sent,
                     waiting_on_the_setting: *waiting_on_the_setting,
+                    days_that_may_be_shown_twice: *days_that_may_be_shown_twice,
                     changes_that_cannot_be_saved: changes_that_cannot_be_saved.clone(),
                     errors: errors.clone(),
                 },
@@ -10583,6 +10585,7 @@ pub(crate) fn spawn_calendar_sync(
         let mut total_deleted = 0usize;
         let mut total_sent = 0usize;
         let mut total_waiting = 0usize;
+        let mut total_shown_twice = 0usize;
         // A calendar that can only be read holds a change made here. Carried
         // as sentences rather than a count, because the calendar's name and
         // what to do instead are the useful part, and spoken rather than
@@ -10614,6 +10617,7 @@ pub(crate) fn spawn_calendar_sync(
                             total_deleted += result.deleted;
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
+                            total_shown_twice += result.days_that_may_be_shown_twice;
                             total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
@@ -10644,6 +10648,7 @@ pub(crate) fn spawn_calendar_sync(
                             total_deleted += result.deleted;
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
+                            total_shown_twice += result.days_that_may_be_shown_twice;
                             total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
@@ -10689,6 +10694,7 @@ pub(crate) fn spawn_calendar_sync(
                     total_deleted += result.deleted;
                     total_sent += result.sent;
                     total_waiting += result.waiting_on_the_setting;
+                    total_shown_twice += result.days_that_may_be_shown_twice;
                     total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                     total_errors.extend(result.errors);
                 }
@@ -10741,6 +10747,7 @@ pub(crate) fn spawn_calendar_sync(
                     deleted: total_deleted,
                     sent: total_sent,
                     waiting_on_the_setting: total_waiting,
+                    days_that_may_be_shown_twice: total_shown_twice,
                     changes_that_cannot_be_saved: total_cannot_be_saved,
                     errors: total_errors,
                 })

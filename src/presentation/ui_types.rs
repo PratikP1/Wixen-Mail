@@ -365,6 +365,8 @@ pub enum UIUpdate {
         sent: usize,
         /// Changes still here because the account is open for reading only.
         waiting_on_the_setting: usize,
+        /// Days of a repeating Outlook meeting that may now be listed twice.
+        days_that_may_be_shown_twice: usize,
         /// Calendars that can only be read and hold a change made here, one
         /// sentence each. Spoken, not logged: nothing else in the sync
         /// mentions them and nothing will ever send them.

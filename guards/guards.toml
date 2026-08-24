@@ -5418,6 +5418,7 @@ before = """    let Some(the_day_it_was) = the_day_a_google_instance_replaces(ev
              series is {at_google}.",
             event.id
         );
+        result.days_that_may_be_shown_twice += 1;
         return cache.save_calendar_event(&that_day);
     };
     one_day_kept_out_of_the_series(
@@ -5438,6 +5439,7 @@ after = """    let Some(the_day_it_was) = the_day_a_google_instance_replaces(eve
              series is {at_google}.",
             event.id
         );
+        result.days_that_may_be_shown_twice += 1;
         return cache.save_calendar_event(&that_day);
     };
     one_day_kept_out_of_the_series(
