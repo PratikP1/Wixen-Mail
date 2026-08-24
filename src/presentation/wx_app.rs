@@ -3410,7 +3410,7 @@ impl WxMailApp {
                                 msg_list.set_focus();
                             }
                         }
-                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state, &a11y),
+                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state, &message_cache, &a11y),
                         _ if id == ID_NEW_CONTACT => {
                             managers::new_contact(
                                 &state,
@@ -3421,7 +3421,7 @@ impl WxMailApp {
                                 &a11y,
                             )
                         }
-                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state, &a11y),
+                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state, &message_cache, &a11y),
                         _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),
                         _ if id == ID_SAVE_AS => send_status(&ui_tx, &runtime, "Save As: no message selected"),
                         _ if id == ID_CONTACT_MGR => {
@@ -6792,8 +6792,39 @@ fn scan_only_account() -> crate::data::account::Account {
     account
 }
 
+/// The account a message row belongs to, which is not always the one on screen.
+///
+/// In All Inboxes every row can come from a different account, so a command
+/// aimed at a row has to be sent to that row's own server. Taking the open
+/// account instead sends it to the wrong one, against the other account's
+/// folder path, where a message that happens to share a UID is a different
+/// message entirely.
+///
+/// Nothing is answered when no account can be named. The version this replaces
+/// fell back to whichever account came first in the list, which is how a
+/// command aimed at nothing in particular still reached a real server.
+fn owner_of(
+    messages: &[MessageItem],
+    accounts: &[crate::data::account::Account],
+    row_id: i64,
+    open: Option<&str>,
+) -> Option<crate::data::account::Account> {
+    messages
+        .iter()
+        .find(|m| m.message_id == row_id)
+        .map(|m| m.account_id.clone())
+        .filter(|id| !id.is_empty())
+        .or_else(|| open.map(str::to_string))
+        .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
+}
+
 /// Handle Account Manager dialog result.
-fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>, a11y: &Arc<Accessibility>) {
+fn handle_account_mgr(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+) {
     let (accounts, active_id, default_id) = {
         let s = lock_state(state);
         (
@@ -6830,6 +6861,25 @@ fn handle_account_mgr(frame: &Frame, state: &Arc<StdMutex<WxUIState>>, a11y: &Ar
         }
         s.default_account_id = chosen;
         tracing::info!("Accounts updated: {}", new.len());
+        // Written here, not only held in memory. Nothing wrote an account at
+        // all until this line: startup read a table nothing filled in, so
+        // every account was gone on the next start, and the uninstall, which
+        // decides what to erase from the credential store by walking that
+        // table, found none of them and left every OAuth token behind.
+        //
+        // Said rather than swallowed. An account that looks saved and is not
+        // is the case where somebody most needs to know, because they will
+        // close the program believing it is set up.
+        if let Some(cache) = cache
+            && let Err(why) = cache.replace_accounts(&new)
+        {
+            tracing::error!("The accounts could not be saved: {why}");
+            let _ = a11y.announce(
+                "The accounts could not be saved, so they will not be here next time. \
+                 The reason is in the log.",
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
         s.accounts = new;
     }
 }
@@ -7921,12 +7971,19 @@ fn spawn_folder_move(
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
+    // The account this row is in, not the one that happens to be open. In All
+    // Inboxes those differ routinely, and this used to take the open account
+    // and then fall back to whichever came first, so the move went to the
+    // wrong server against the other account's folder path and took whatever
+    // message there happened to share the UID.
     let account = {
         let s = lock_state(state);
-        s.active_account_id
-            .as_ref()
-            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
-            .or_else(|| s.accounts.first().cloned())
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            message_row_id,
+            s.active_account_id.as_deref(),
+        )
     };
 
     rt.spawn_blocking(move || {
@@ -8247,16 +8304,12 @@ fn delete_if_local(
     // whether deleting is allowed.
     let account = {
         let s = lock_state(state);
-        let owner = s
-            .messages
-            .iter()
-            .find(|m| m.message_id == row_id)
-            .map(|m| m.account_id.clone())
-            .filter(|id| !id.is_empty())
-            .or_else(|| s.active_account_id.clone());
-        owner
-            .as_ref()
-            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            row_id,
+            s.active_account_id.as_deref(),
+        )
     };
     let Some(account) = account else {
         return false;
@@ -8930,21 +8983,15 @@ fn spawn_server_change(
     // folder. Flagging a row in a list drawn from several accounts would
     // otherwise send that flag to a different server, where the same uid names
     // a different message entirely.
-    let (accounts, account_id) = {
+    let account = {
         let s = lock_state(state);
-        let owner = s
-            .messages
-            .iter()
-            .find(|m| m.message_id == message_row_id)
-            .map(|m| m.account_id.clone())
-            .filter(|id| !id.is_empty())
-            .or_else(|| s.active_account_id.clone());
-        (s.accounts.clone(), owner)
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            message_row_id,
+            s.active_account_id.as_deref(),
+        )
     };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -14176,6 +14223,72 @@ mod reply_recipients_reach_the_wire {
         assert!(
             bytes.contains("To: \"Charles Babbage\" <charles@example.com>"),
             "the recipient's name never reached the message that went out: {bytes}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod the_account_a_message_belongs_to {
+    use super::*;
+
+    fn a_message(row_id: i64, account_id: &str) -> MessageItem {
+        MessageItem {
+            message_id: row_id,
+            account_id: account_id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn an_account(id: &str) -> crate::data::account::Account {
+        let mut account =
+            crate::data::account::Account::new(id.to_string(), format!("{id}@example.com"));
+        account.id = id.to_string();
+        account
+    }
+
+    #[test]
+    fn test_a_message_is_acted_on_through_the_account_it_is_in() {
+        // In All Inboxes the open account and the account a row belongs to are
+        // routinely different. Moving a message used to be sent to whichever
+        // account happened to be open, against the other account's folder
+        // path, so an unrelated message that happened to share a UID was moved
+        // out of the open account's inbox while the chosen one stayed where it
+        // was and its row here was marked deleted.
+        let accounts = [an_account("first"), an_account("second")];
+        let messages = [a_message(1, "first"), a_message(2, "second")];
+
+        let owner = owner_of(&messages, &accounts, 2, Some("first"))
+            .expect("a row naming its own account resolves to it");
+
+        assert_eq!(
+            owner.id, "second",
+            "the open account was used, not the row's"
+        );
+    }
+
+    #[test]
+    fn test_a_row_that_names_no_account_falls_back_to_the_one_that_is_open() {
+        // Not every list fills this in, and a single-account mailbox has only
+        // one answer anyway.
+        let accounts = [an_account("first")];
+        let messages = [a_message(1, "")];
+
+        let owner = owner_of(&messages, &accounts, 1, Some("first")).expect("the open account");
+
+        assert_eq!(owner.id, "first");
+    }
+
+    #[test]
+    fn test_nothing_is_acted_on_when_no_account_can_be_named() {
+        // The old fallback took whichever account happened to be first in the
+        // list, which is how a command aimed at nothing in particular reached
+        // a real server. Refusing is the only safe answer.
+        let accounts = [an_account("first"), an_account("second")];
+        let messages = [a_message(1, "")];
+
+        assert!(
+            owner_of(&messages, &accounts, 1, None).is_none(),
+            "an unnamed account was resolved to whichever one came first"
         );
     }
 }

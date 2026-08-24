@@ -45,7 +45,7 @@ impl PimModule {
 }
 
 /// Message item for display in the message list
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct MessageItem {
     pub uid: u32,
     pub message_id: i64,

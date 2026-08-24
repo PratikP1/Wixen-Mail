@@ -63,6 +63,28 @@ impl ICalSubscriptionClient {
 /// both used to come back as the same empty list, and a subscribed calendar
 /// that quietly shows nothing is a calendar somebody trusts and should not.
 pub(crate) fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
+    // Whether this is a calendar at all, asked before anything is counted.
+    // A captive portal, a sign-in page or a host's own error page arrives
+    // with an ordinary 200 and opens no event, so nothing counted as
+    // unreadable and the answer below came back as a calendar with nothing on
+    // it. The sync believes that and removes every event the calendar has.
+    //
+    // A real calendar with nothing on it still says it is one, which is what
+    // keeps the honest empty case working: taking the last event off a feed
+    // has to reach here, or the one that was deleted shows for ever.
+    // Through the same helper the rest of this file's marker matching uses,
+    // so a feed written in small letters throughout is still a calendar.
+    if !ical_data
+        .lines()
+        .any(|line| caldav::opens_with_ignoring_case(line.trim_start(), "BEGIN:VCALENDAR"))
+    {
+        return Err(Error::Protocol(
+            "That address did not answer with a calendar. Nothing on this \
+             calendar was changed here."
+                .to_string(),
+        ));
+    }
+
     let mut events = Vec::new();
     let mut unreadable = 0_usize;
 
@@ -103,6 +125,39 @@ pub(crate) fn parse_ics(ical_data: &str) -> Result<Vec<CalDavEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_an_answer_that_is_not_a_calendar_at_all_is_refused() {
+        // A captive portal, a sign-in page, or a feed host serving its own
+        // error page, any of which can arrive with a perfectly ordinary 200.
+        // None of them opens an event, so nothing counted as unreadable and
+        // the whole thing came back as a calendar with nothing on it. What
+        // happens next is that the sync removes every event this calendar
+        // has, because it was told the calendar is empty.
+        for not_a_calendar in [
+            "<html><body>Sign in to continue</body></html>",
+            "Not Found",
+            "",
+        ] {
+            assert!(
+                parse_ics(not_a_calendar).is_err(),
+                "an answer that is not a calendar came back as an empty one: {not_a_calendar:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_with_nothing_on_it_is_still_a_calendar() {
+        // The other half, and the one that would be broken by refusing every
+        // empty answer. A real calendar somebody has taken the last event off
+        // is empty, says so properly, and has to keep working: refusing it
+        // would leave the event that was deleted showing here for ever.
+        let empty = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\nEND:VCALENDAR";
+
+        let events = parse_ics(empty).expect("a real calendar with no events on it");
+
+        assert!(events.is_empty());
+    }
 
     #[test]
     fn test_parse_ics_single_event() {

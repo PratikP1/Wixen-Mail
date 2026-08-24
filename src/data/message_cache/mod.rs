@@ -1781,6 +1781,13 @@ impl MessageCache {
         // How an account reads its mail, and where from when that is POP.
         // Every account stored before these existed is IMAP, which is what the
         // defaults say and is correct: nothing could configure a POP account.
+        // Which of the two sign-ins an account uses. Every account stored
+        // before this column existed was set up when a password was the only
+        // answer on offer, so a password is what it has, and that is what the
+        // default says. Reading it as a browser sign-in instead would leave
+        // somebody unable to sign in at all: an account this way round has no
+        // password and cannot be given one.
+        self.ensure_column_exists("accounts", "use_oauth", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column_exists("accounts", "protocol", "TEXT NOT NULL DEFAULT 'imap'")?;
         self.ensure_column_exists("accounts", "pop_server", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("accounts", "pop_port", "TEXT NOT NULL DEFAULT '995'")?;

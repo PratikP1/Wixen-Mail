@@ -699,6 +699,22 @@ fn resolved_against(href: &str, base_url: &str) -> String {
 /// of sends the series and one VEVENT per changed day in the same document, so
 /// every event a resource holds is read, not only its first.
 fn parse_report_events(xml: &str, calendar_url: &str) -> Result<Vec<CalDavEvent>> {
+    // Whether this is a calendar report at all, asked before anything is
+    // counted. A captive portal, a sign-in page or a proxy's error page
+    // arrives with an ordinary 200 and holds no response block, so nothing
+    // counted as unreadable and the answer read as a calendar with nothing on
+    // it. The sync believes that and removes every event in the window.
+    //
+    // A server saying a calendar really is empty says it with a multistatus,
+    // which is what keeps the honest empty answer working.
+    if !xml.to_ascii_lowercase().contains("multistatus") {
+        return Err(Error::Protocol(
+            "That address did not answer with a calendar. Nothing on this \
+             calendar was changed here."
+                .to_string(),
+        ));
+    }
+
     let mut events = Vec::new();
     let mut unreadable = 0_usize;
 
@@ -1137,7 +1153,7 @@ pub(crate) fn one_event_as_a_document(lines: &[String]) -> String {
 /// The marker is a literal written in this file, never anything a server sends,
 /// and it is all ASCII, so comparing bytes cannot cut a longer character in
 /// half.
-fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
+pub(crate) fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
     line.as_bytes()
         .get(..marker.len())
         .is_some_and(|head| head.eq_ignore_ascii_case(marker.as_bytes()))
@@ -5964,6 +5980,39 @@ mod tests {
         }
         assert_eq!(events[0].dtstart, "2018-10-12T19:00:00Z");
         assert_eq!(events[4].dtstart, "2018-09-14T19:00:00Z");
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_a_calendar_report_is_refused() {
+        // A captive portal, a sign-in page, or a proxy's own error page, any
+        // of which arrives with an ordinary 200. None of them holds a
+        // response block, so nothing counted as unreadable and the answer
+        // came back as a calendar with nothing on it. The sync believes that
+        // and removes every event in the window it asked about.
+        for not_a_report in [
+            "<html><body>Sign in to continue</body></html>",
+            "Forbidden",
+            "",
+        ] {
+            assert!(
+                parse_report_events(not_a_report, "https://cal.example.com/dav/sam/work/").is_err(),
+                "an answer that is not a calendar report came back empty: {not_a_report:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_the_server_says_is_empty_is_still_a_calendar() {
+        // The honest empty answer, which has to keep working: a calendar
+        // somebody has taken the last event off says so with a real, empty
+        // multistatus, and refusing it would leave the deleted event showing
+        // here for ever.
+        let empty = "<d:multistatus xmlns:d=\"DAV:\"></d:multistatus>";
+
+        let events = parse_report_events(empty, "https://cal.example.com/dav/sam/work/")
+            .expect("a real calendar the server says is empty");
+
+        assert!(events.is_empty());
     }
 
     #[test]

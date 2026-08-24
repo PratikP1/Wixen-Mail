@@ -27,9 +27,9 @@ impl MessageCache {
               created_at, updated_at,
               protocol, pop_server, pop_port, pop_use_tls,
               pop_leave_on_server, pop_remove_after_days, sender_name,
-              allow_deleting_here)
+              allow_deleting_here, use_oauth)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 params![
                     &account.id,
                     &account.name,
@@ -59,11 +59,46 @@ impl MessageCache {
                     &account.pop_leave_on_server,
                     &account.pop_remove_after_days,
                     &account.sender_name,
-                    &account.allow_deleting_here
+                    &account.allow_deleting_here,
+                    // Whether this account signs in through the browser. The
+                    // tokens themselves stay in the credential store; this is
+                    // only which of the two sign-ins it uses, and without it
+                    // an OAuth account reads back as a password account with
+                    // no password and asks for one that cannot exist.
+                    &account.use_oauth
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
 
+        Ok(())
+    }
+
+    /// Make the stored accounts be exactly these, saving each and removing
+    /// any that is no longer among them.
+    ///
+    /// One call rather than a save loop beside a delete loop, because the
+    /// caller cannot then get the removals wrong by passing the wrong "before"
+    /// list, or forget them entirely. What is already there is read here, so
+    /// the only thing a caller has to be right about is what the person ended
+    /// up with.
+    ///
+    /// An account removed here has its mail and its password removed with it,
+    /// through [`MessageCache::delete_account`], so nothing of it is left for
+    /// the uninstall to miss.
+    pub fn replace_accounts(&self, accounts: &[crate::data::account::Account]) -> Result<()> {
+        let gone: Vec<String> = self
+            .load_accounts()?
+            .into_iter()
+            .map(|stored| stored.id)
+            .filter(|id| !accounts.iter().any(|account| &account.id == id))
+            .collect();
+
+        for id in &gone {
+            self.delete_account(id)?;
+        }
+        for account in accounts {
+            self.save_account(account)?;
+        }
         Ok(())
     }
 
@@ -77,7 +112,7 @@ impl MessageCache {
                     enabled, check_interval_minutes, provider, last_sync, color,
                     protocol, pop_server, pop_port, pop_use_tls,
                     pop_leave_on_server, pop_remove_after_days, sender_name,
-                    allow_deleting_here
+                    allow_deleting_here, use_oauth
              FROM accounts
              ORDER BY created_at",
             )
@@ -111,7 +146,7 @@ impl MessageCache {
                         provider: row.get(13)?,
                         last_sync: last_sync_time,
                         color: row.get(15)?,
-                        use_oauth: false,
+                        use_oauth: row.get(24)?,
                         oauth_access_token: String::new(),
                         oauth_refresh_token: String::new(),
                         oauth_token_expires_at: None,
@@ -260,6 +295,139 @@ mod tests {
         account.imap_server = "imap.example.com".to_string();
         account.smtp_server = "smtp.example.com".to_string();
         account
+    }
+
+    #[test]
+    fn test_the_account_list_a_person_ends_up_with_is_the_one_that_is_stored() {
+        // Nothing wrote an account at all: every call to `save_account` was a
+        // test calling it, the Account Manager ended by assigning to the
+        // in-memory list, and startup read a table nothing had ever written.
+        // So every account was gone on the next start, and the uninstall,
+        // which works out which credential-store entries to remove by walking
+        // this table, found none of them and left every OAuth token behind.
+        let cache = a_cache("account_list_replaces");
+        cache
+            .save_account(&an_account("gone", "gone@example.com", "one"))
+            .expect("the account that is about to be removed saves");
+        cache
+            .save_account(&an_account("kept", "kept@example.com", "two"))
+            .expect("the account that stays saves");
+
+        let mut renamed = an_account("kept", "kept@example.com", "two");
+        renamed.name = "Renamed".to_string();
+        let added = an_account("added", "added@example.com", "three");
+
+        cache
+            .replace_accounts(&[renamed, added])
+            .expect("the new list is stored");
+
+        let mut stored: Vec<String> = cache
+            .load_accounts()
+            .expect("the accounts load")
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
+        stored.sort();
+        assert_eq!(stored, vec!["added".to_string(), "kept".to_string()]);
+
+        let kept = cache.load_accounts().expect("the accounts load");
+        let kept = kept.iter().find(|a| a.id == "kept").expect("kept is there");
+        assert_eq!(kept.name, "Renamed", "an edit did not reach the database");
+    }
+
+    #[test]
+    fn test_removing_every_account_leaves_the_table_empty() {
+        // The empty list is the case a diff written the obvious way gets
+        // wrong, and it is the one that matters most: an account removed and
+        // not really removed is a password and a token left behind.
+        let cache = a_cache("account_list_empties");
+        cache
+            .save_account(&an_account("only", "only@example.com", "one"))
+            .expect("the account saves");
+
+        cache
+            .replace_accounts(&[])
+            .expect("the empty list is stored");
+
+        assert!(
+            cache.load_accounts().expect("the accounts load").is_empty(),
+            "an account survived being removed"
+        );
+    }
+
+    #[test]
+    fn test_whether_an_account_signs_in_through_the_browser_survives_the_database() {
+        // Both ways round, for the reason the delete round trip below gives.
+        // This one is sharper: an account that signs in through the browser
+        // has no password and cannot be given one, so reading it back as a
+        // password account leaves somebody staring at a sign-in they cannot
+        // complete, being asked for a password that does not exist.
+        let cache = a_cache("oauth_round_trip");
+        let mut browser = an_account("browser", "browser@example.com", "");
+        browser.use_oauth = true;
+        let mut password = an_account("password", "password@example.com", "secret");
+        password.use_oauth = false;
+
+        cache
+            .save_account(&browser)
+            .expect("the first account saves");
+        cache
+            .save_account(&password)
+            .expect("the second account saves");
+
+        let stored = cache.load_accounts().expect("the accounts load");
+        let find = |id: &str| {
+            stored
+                .iter()
+                .find(|a| a.id == id)
+                .unwrap_or_else(|| panic!("{id} was not stored"))
+                .use_oauth
+        };
+        assert!(
+            find("browser"),
+            "an account that signs in through the browser came back as a password account"
+        );
+        assert!(
+            !find("password"),
+            "a password account came back signing in through the browser"
+        );
+    }
+
+    #[test]
+    fn test_an_account_stored_before_browser_sign_in_was_recorded_is_a_password_account() {
+        // An older database has no column for it. Every account in one was set
+        // up before this program could record the answer, and the setting it
+        // was offered at the time was a password, so that is what it is.
+        let cache = a_cache("oauth_older_database");
+        cache
+            .conn
+            .execute("ALTER TABLE accounts DROP COLUMN use_oauth", [])
+            .expect("the column comes off");
+        cache
+            .conn
+            .execute(
+                "INSERT INTO accounts
+                 (id, name, email, imap_server, imap_port, imap_use_tls,
+                  smtp_server, smtp_port, smtp_use_tls, username, password,
+                  enabled, check_interval_minutes, color, created_at, updated_at)
+                 VALUES ('old', 'Old', 'old@example.com', 'imap.example.com', '993', 1,
+                         'smtp.example.com', '587', 1, 'old@example.com', '',
+                         1, 15, '#000000', '', '')",
+                [],
+            )
+            .expect("a row from before the column existed");
+
+        let reopened = MessageCache::new(cache.path().to_path_buf(), None).expect("it reopens");
+        let stored = reopened.load_accounts().expect("the accounts load");
+        let old = stored
+            .iter()
+            .find(|a| a.id == "old")
+            .expect("the older row is still there");
+
+        assert!(
+            !old.use_oauth,
+            "an account from before the column existed came back signing in through the browser"
+        );
     }
 
     #[test]

@@ -1175,3 +1175,43 @@ fn test_typing_in_the_contacts_search_box_changes_what_the_list_shows() {
          stub sentence this was meant to replace"
     );
 }
+
+/// An account somebody adds or edits reaches the database.
+///
+/// Nothing wrote one. Every call to `save_account` in the whole tree was a
+/// test calling it; the Account Manager ended by assigning to the in-memory
+/// list and never touched the cache; and startup read a table nothing had
+/// ever written. So every account was gone on the next start.
+///
+/// The second failure is worse and follows from the first. The uninstall and
+/// the erase-all-data command work out which credential-store entries to
+/// remove by walking that table, so it found nothing, and every OAuth refresh
+/// token ever written stayed on the machine, one per sign-in, carrying full
+/// mail, contacts, calendar and tasks scope.
+///
+/// Why nothing caught it is the reason this test is in this file rather than
+/// beside either half. The data layer proves the round trip against itself,
+/// the Account Manager's own tests deliberately scope to the in-memory state
+/// and say so in their file comment, and no test spanned the join. The
+/// missing call sat exactly in the gap, invisible from both sides.
+///
+/// What this cannot see: whether the list handed over is the right one, or
+/// whether the write succeeds. It asks that the handler calls the one method
+/// that stores a whole list, which is the half nothing asked before.
+#[test]
+fn test_an_account_that_was_added_or_edited_reaches_the_database() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let handler = app
+        .split_once("fn handle_account_mgr")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once("\n}\n").map(|(body, _)| body))
+        .expect("the main window still handles the Account Manager");
+
+    assert!(
+        handler.contains("replace_accounts"),
+        "the Account Manager changes the accounts in memory and nothing writes \
+         them, so they are gone on the next start and their tokens are left \
+         behind for the uninstall to miss"
+    );
+}

@@ -109,6 +109,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Accounts are saved.** Nothing ever wrote one. The Account Manager changed
+  the list held in memory, startup read a table nothing had filled in, and
+  every account was gone on the next start. The same gap meant uninstalling,
+  and Erase All Data, could not find the sign-in tokens to remove: they work
+  out what to erase by reading that table, so every browser sign-in token
+  ever granted stayed on the machine, one for each time anybody signed in.
+  Accounts now reach the database when they are added, edited or removed,
+  whether an account signs in through the browser is remembered along with
+  it, and an account that cannot be saved says so rather than looking saved.
+- **Moving or copying a message in All Inboxes no longer acts on the wrong
+  account.** The command was sent to whichever account was open rather than
+  the one the message is in. Against another account's mailbox the same
+  number means a different message, so an unrelated message was moved out of
+  the open account while the chosen one stayed where it was and disappeared
+  from the list here. Flagging a message had the same fault. Both now act on
+  the account the message is actually in, and refuse rather than guess when
+  that cannot be worked out.
+- **A calendar that answers with something that is not a calendar no longer
+  empties itself.** A hotel or airport sign-in page, or a host serving its
+  own error page, arrives looking like an ordinary successful answer with no
+  events in it. That was taken at face value, and every event on the calendar
+  was removed to match. Such an answer is now refused and the calendar is
+  left alone. A calendar that really is empty still says so properly and
+  still works.
 - **Pressing Send with the To box empty no longer destroys the message.**
   It ended the message outright: the window was already closing by the
   time anything checked, nothing was said, no draft was kept, and the only
