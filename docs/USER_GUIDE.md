@@ -155,6 +155,8 @@ of the item, once for a short summary and again for everything.
 - Click **Save Draft** button or press `Ctrl+S`
 - The draft will be saved to your Drafts folder
 - You can return to edit it later
+- Files you attached and any formatting are kept with it. If a file has been
+  moved or deleted by the time you reopen the draft, it says which one
 
 ### Replying to Messages
 

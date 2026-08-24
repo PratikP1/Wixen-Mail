@@ -1007,6 +1007,11 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // The editor's key handler, which posts Send back out of the document.
         // src/presentation/editor_document.rs.
         "Ctrl+Enter",
+        // The same handler, posting back a request to move to the toolbar.
+        // A web view keeps every key once it has focus, so the page binds the
+        // ones that have to leave and hands them over; there is no wx-side
+        // binding for this source to find.
+        "Ctrl+\\",
         // The column list's key handler, which moves the selected column.
         // src/presentation/wx_columns.rs, the `key.alt_down()` arm.
         "Alt+Up",

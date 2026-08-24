@@ -491,11 +491,20 @@ from somebody spelling their way to a message about invoice 4021.
 |--------|----------|-------------|
 | Send Message | `Ctrl+Enter` | Send the current message |
 | Save Draft | `Ctrl+S` | Save message as draft |
+| Go to the toolbar | `Ctrl+\` | Move to the Send button at the top of the window. The arrow keys move along the toolbar from there |
 | Close Window | `Esc` | Close composition window without sending |
+
+**Moving around the window.** The toolbar is at the top, above the From line,
+so `Tab` runs From, To, Cc, Bcc, Subject, and then the message itself. It does
+not stop at the nine toolbar buttons on the way, and `Shift+Tab` out of the
+message goes back to Subject. To reach the toolbar, press `Ctrl+\` from
+anywhere, or `Shift+Tab` from the From line. Each button says what it is and
+which key does the same thing, so you can hear your way along it.
 
 **Formatting.** Every one of these is also on the Format menu, which the Format
 button opens, so none of them has to be memorised to be used. Each says what it
-applied when you use it.
+did. Bold, italic, underline and the two list keys are switches, so they say
+which way they went: pressing `Ctrl+B` to end a run of bold says "Bold off".
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
