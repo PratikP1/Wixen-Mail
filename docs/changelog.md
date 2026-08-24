@@ -133,6 +133,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Contacts exported from Google or iCloud import properly.** Anybody whose
+  email or phone number carried a custom label was skipped entirely, and the
+  count blamed the wrong thing, saying the card named no email address. For a
+  contact already here it was worse: the shortened list replaced the stored
+  one and was then sent back out. Labels are also read correctly now, instead
+  of every imported address coming back labelled "Internet".
+- **Selecting a message waiting to be sent shows that message.** The Outbox
+  numbered its rows in a way that collided with received mail, so arrowing
+  onto a queued message filled the preview with somebody else's message
+  entirely, opened it on Enter, and read it aloud under the queued message's
+  subject.
 - **Searching finds names that are not spelled in plain English.** Typing a
   colleague's name exactly as it appears in the From column found nothing at
   all if it carried an accent, which made searching by the name on screen the

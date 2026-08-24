@@ -1219,6 +1219,24 @@ impl MessageCache {
     /// reader that only accepts capitals is a reader that disagrees with every
     /// writer but its own.
     fn vcard_named<'a>(line: &'a str, property: &str) -> Option<(&'a str, &'a str)> {
+        // A group in front of the name, which RFC 6350 section 3.3 allows and
+        // which Google and Apple both write on every property carrying a
+        // custom label: `item1.EMAIL` with an `item1.X-ABLabel` beside it.
+        // Matching from the start of the line only made the whole property
+        // invisible, so a contact whose only email had a label was skipped on
+        // import and the count gave the wrong reason for it.
+        //
+        // Only a real group is stepped over: a group is letters, digits and
+        // hyphens, so a dot inside a value cannot be mistaken for one.
+        let line = match line.split_once('.') {
+            Some((group, after))
+                if !group.is_empty()
+                    && group.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') =>
+            {
+                after
+            }
+            _ => line,
+        };
         let (name, rest) = line.split_at_checked(property.len())?;
         if !name.eq_ignore_ascii_case(property) {
             return None;
@@ -1596,6 +1614,16 @@ impl MessageCache {
     ///
     /// [`A_TYPE_WORD_THE_STANDARDS_DEFINE`]: MessageCache::A_TYPE_WORD_THE_STANDARDS_DEFINE
     fn extract_vcard_type_param(prefix: &str) -> String {
+        // Every `TYPE`, not the first. `EMAIL;TYPE=INTERNET;TYPE=HOME` is the
+        // near-universal real line, and reading only the first labelled every
+        // address on a fresh import as "Internet", which says what kind of
+        // value it is rather than what the address is for. Exporting wrote
+        // that back, so it stuck.
+        //
+        // The first one that says what the address is for wins, and a
+        // value-kind word is only used when there is nothing better, so a
+        // card that really does say nothing else is unchanged.
+        let mut a_kind_of_value = None;
         for part in Self::split_outside_quotes(prefix, ';') {
             let Some((name, value)) = part.split_once('=') else {
                 continue;
@@ -1603,9 +1631,28 @@ impl MessageCache {
             if !name.eq_ignore_ascii_case("TYPE") {
                 continue;
             }
-            return Self::label_a_type_value_names(value.trim());
+            let label = Self::label_a_type_value_names(value.trim());
+            if Self::says_what_kind_of_value_it_is(&label) {
+                a_kind_of_value.get_or_insert(label);
+                continue;
+            }
+            if label != Self::NO_LABEL {
+                return label;
+            }
         }
-        Self::NO_LABEL.to_string()
+        a_kind_of_value.unwrap_or_else(|| Self::NO_LABEL.to_string())
+    }
+
+    /// Whether a `TYPE` word says what kind of value this is rather than what
+    /// it is for.
+    ///
+    /// RFC 2426 defines these alongside the ones that are really labels, and
+    /// a card commonly carries one of each. "Internet" is not a place
+    /// somebody keeps an address.
+    fn says_what_kind_of_value_it_is(label: &str) -> bool {
+        ["internet", "x400", "pref", "dom", "intl"]
+            .iter()
+            .any(|kind| label.eq_ignore_ascii_case(kind))
     }
 
     /// The one label a `TYPE` parameter's value names.
@@ -4220,6 +4267,87 @@ mod tests {
                 .expect("the contacts to read back")
                 .len(),
             3
+        );
+    }
+
+    #[test]
+    fn test_a_card_google_or_icloud_exported_keeps_its_labelled_addresses() {
+        // RFC 6350 lets a property carry a group in front of it, and Google
+        // and Apple both write one on every property that has a custom label:
+        // "item1.EMAIL" with an "item1.X-ABLabel" beside it. Matching the
+        // property name at the start of the line only, the whole property was
+        // invisible, so a contact whose only email carried a label was skipped
+        // and the count reported the wrong reason: "named no email address".
+        //
+        // Worse for a contact already held, because the card's shortened
+        // lists replace the stored ones and the row is then sent back out.
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+
+        let vcard = "BEGIN:VCARD
+VERSION:3.0
+FN:Ada Lovelace
+item1.EMAIL;TYPE=INTERNET:ada@example.com
+item1.X-ABLabel:Analytical Engine
+item2.TEL:+1-555-0002
+item2.X-ABLabel:Workshop
+END:VCARD";
+
+        let outcome = cache
+            .import_contacts_from_vcard("test@example.com", vcard)
+            .unwrap();
+
+        assert_eq!(outcome.added, 1, "the card was skipped: {outcome:?}");
+        let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
+        let ada = contacts
+            .iter()
+            .find(|c| c.name == "Ada Lovelace")
+            .expect("the contact was imported");
+        assert_eq!(
+            ada.email.as_str(),
+            "ada@example.com",
+            "the labelled email was not read"
+        );
+        assert_eq!(
+            ada.phone.as_deref(),
+            Some("+1-555-0002"),
+            "the labelled phone number was not read"
+        );
+    }
+
+    #[test]
+    fn test_a_card_naming_the_kind_and_then_the_label_is_labelled_by_the_label() {
+        // `EMAIL;TYPE=INTERNET;TYPE=HOME` is the near-universal real line, and
+        // only the first was read. INTERNET says what kind of value it is,
+        // not what the address is for, so every address on a fresh import was
+        // labelled and read out as "Internet". Exporting again wrote that
+        // back, so it stuck.
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+
+        let vcard = "BEGIN:VCARD
+VERSION:3.0
+FN:Grace Hopper
+EMAIL;TYPE=INTERNET;TYPE=HOME:grace@example.com
+END:VCARD";
+
+        cache
+            .import_contacts_from_vcard("test@example.com", vcard)
+            .unwrap();
+
+        let contacts = cache.get_contacts_for_account("test@example.com").unwrap();
+        let grace = contacts
+            .iter()
+            .find(|c| c.name == "Grace Hopper")
+            .expect("the contact was imported");
+        let emails = grace.emails_json.as_deref().unwrap_or_default();
+        assert!(
+            emails.to_lowercase().contains("home"),
+            "the label was taken from the value kind rather than the label: {emails}"
+        );
+        assert!(
+            !emails.to_lowercase().contains("internet"),
+            "\"Internet\" is what kind of address it is, not what it is for: {emails}"
         );
     }
 

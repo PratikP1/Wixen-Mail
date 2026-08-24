@@ -110,7 +110,16 @@ impl MessageCache {
                 let last_error: Option<String> = row.get(6)?;
                 let snippet: String = row.get(3)?;
                 Ok(super::MessageListRow {
-                    id: row.get(0)?,
+                    // Negative, so it cannot be mistaken for a message id.
+                    // Both count from one, and every reader of a list row
+                    // takes this number to be a message in the `messages`
+                    // table, so arrowing onto a queued message filled the
+                    // preview with an unrelated received one and read it
+                    // aloud under the queued message's subject. Nothing else
+                    // in this application uses a negative row id, so a lookup
+                    // that reaches one finds nothing rather than somebody
+                    // else's mail. `cancel_queued` negates it back.
+                    id: -row.get::<_, i64>(0)?,
                     uid: 0,
                     account_id: account_id.to_string(),
                     message_id: String::new(),
@@ -151,9 +160,15 @@ impl MessageCache {
     /// message that has not gone yet and could not be done at all before: the
     /// queue was a number on the status bar.
     pub fn cancel_queued(&self, rowid: i64) -> Result<bool> {
+        // Listed negative so it cannot be mistaken for a message id, and
+        // turned back here. Taking the absolute value rather than requiring
+        // one sign, so a caller holding either reaches the same row.
         let removed = self
             .conn
-            .execute("DELETE FROM outbox_queue WHERE rowid = ?1", params![rowid])
+            .execute(
+                "DELETE FROM outbox_queue WHERE rowid = ?1",
+                params![rowid.abs()],
+            )
             .map_err(|e| Error::Other(format!("Failed to cancel the message: {}", e)))?;
         Ok(removed > 0)
     }
@@ -184,6 +199,52 @@ impl MessageCache {
 mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
+
+    #[test]
+    fn test_a_queued_row_cannot_be_mistaken_for_a_received_message() {
+        // The Outbox listed each waiting message with the row's own database
+        // number, and every reader of a list row takes that number to be a
+        // message id. Both count from one, so arrowing onto a queued message
+        // filled the preview with a completely unrelated received message,
+        // Enter opened it, and read-aloud spoke it under the queued message's
+        // subject.
+        let temp_dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+
+        cache
+            .queue_outbox_message(&QueuedOutboxMessage {
+                id: "outbox-1".to_string(),
+                account_id: "acc-1".to_string(),
+                to_addr: "user@example.com".to_string(),
+                cc_addr: String::new(),
+                bcc_addr: String::new(),
+                subject: "Waiting".to_string(),
+                body: "Body".to_string(),
+                in_reply_to: None,
+                references: None,
+                attempt_count: 0,
+                last_error: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                body_html: None,
+                attachments: String::new(),
+            })
+            .unwrap();
+
+        let rows = cache.outbox_rows("acc-1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].id < 0,
+            "a queued row carries {}, which a reader will look up as a              received message and find somebody else's mail",
+            rows[0].id
+        );
+
+        // And cancelling still finds the row it names.
+        assert!(
+            cache.cancel_queued(rows[0].id).unwrap(),
+            "the row could not be cancelled by the number it was listed with"
+        );
+        assert!(cache.outbox_rows("acc-1").unwrap().is_empty());
+    }
 
     #[test]
     fn test_offline_outbox_queue_operations() {
