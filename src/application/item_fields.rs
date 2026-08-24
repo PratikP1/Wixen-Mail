@@ -573,10 +573,19 @@ impl Filled {
         if !start_date.is_empty() && !end_date.is_empty() {
             let start_time = self.text(FieldName::StartTime);
             let end_time = self.text(FieldName::EndTime);
-            // Neither time is required, so a box either one left blank is
-            // not itself a clash; only date order can be judged then. Both
-            // filled in lets a same-day clash be caught too.
-            let (start, end) = if start_time.is_empty() || end_time.is_empty() {
+            // All day means the times are not part of the answer, which is
+            // what the field's own help text promises, so they are not part
+            // of this either. Judging them anyway refused an event over two
+            // boxes the form had just said it would ignore, and through the
+            // real dialog those boxes are never empty: every time control
+            // opens on a clock time whether or not anybody meant it as one.
+            //
+            // Otherwise, neither time is required, so a box either one left
+            // blank is not itself a clash and only date order can be judged.
+            // Both filled in lets a same-day clash be caught too.
+            let by_date_alone =
+                self.ticked(FieldName::AllDay) || start_time.is_empty() || end_time.is_empty();
+            let (start, end) = if by_date_alone {
                 (start_date.to_string(), end_date.to_string())
             } else {
                 (
@@ -962,6 +971,40 @@ mod tests {
         filled.put(FieldName::EndTime, "");
 
         assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_an_all_day_event_is_ordered_by_date_alone_even_with_times_in_the_boxes() {
+        // What the real dialog actually hands over. A time box is never
+        // empty through it: every one opens on a clock time and reads back
+        // as one, so the case above, which empties both, is a state only a
+        // test can build. Tick All day after setting a start time and the
+        // boxes hold 17:00 and whatever the end box opened on, which is
+        // very often earlier. The field's own help text says the times are
+        // ignored when this is ticked, so refusing the answer over them
+        // stops somebody saving an event for a reason the form told them
+        // did not apply.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::AllDay, "true");
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "17:00");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "09:30");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_an_all_day_event_is_still_refused_when_its_last_day_is_before_its_first() {
+        // Ignoring the times is not ignoring the dates.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::AllDay, "true");
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::EndDate, "2026-03-11");
+
+        let problems = filled.problems(ItemKind::Event);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].field.name, FieldName::EndDate);
     }
 
     #[test]

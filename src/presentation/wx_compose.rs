@@ -287,6 +287,18 @@ fn worth_keeping(data: &ComposeData) -> bool {
         || !data.body_plain.trim().is_empty()
 }
 
+/// What stops a message going, if anything does.
+///
+/// A sentence rather than a flag, because the answer is read out and shown, and
+/// somebody who is told only that it did not go has to work out the rest for
+/// themselves. Nothing to say means nothing is wrong.
+fn why_it_cannot_be_sent(data: &ComposeData) -> Option<&'static str> {
+    if data.to.trim().is_empty() {
+        return Some("A message needs somebody to send it to. Fill in the To box.");
+    }
+    None
+}
+
 /// Show a message that has one thing to say and nothing to decide.
 ///
 /// Beside the announcement rather than instead of it. The announcement is the
@@ -1600,18 +1612,43 @@ pub fn show_compose_dialog_full(
         // was, and trying again is the whole recovery.
         let Some(data) = read_compose_data() else {
             tracing::error!("The editor did not answer, so nothing was sent or saved");
+            let said = "The message could not be read. Nothing was sent or saved. Try again.";
             let _ = a11y.announce(
-                "The message could not be read. Nothing was sent or saved. Try again.",
+                said,
                 crate::presentation::accessibility::announcements::Priority::High,
             );
+            // Shown as well as said, for the same reason as the refusal below:
+            // the window is down at this moment and goes back up on the next
+            // turn of the loop, so an announcement on its own is raised into a
+            // gap with nothing pumping the message queue and is not heard.
+            say_so(&dialog, "Nothing was sent", said);
             continue;
         };
 
         match result {
             _ if result == ID_SEND => {
-                if data.to.trim().is_empty() {
-                    tracing::warn!("Send attempted with empty To field");
-                    break 'compose ComposeResult::Cancelled;
+                // Hand the window back rather than end the message. Breaking
+                // here with Cancelled threw away everything that had been
+                // written: the window was already down by the time this ran,
+                // the caller does nothing with Cancelled, and no draft was
+                // kept. Somebody who filled in a subject and a body and had
+                // not got to the To box yet lost all of it, and the only
+                // record was a line in a log file.
+                //
+                // Said out loud and shown, the same pair the attachment
+                // complaints use. The message box is what makes the sentence
+                // reach a screen reader at all here: the compose window is
+                // hidden at this moment and goes straight back up on the next
+                // turn of this loop, and an announcement raised in that gap
+                // with nothing pumping the message queue is one nobody hears.
+                if let Some(why) = why_it_cannot_be_sent(&data) {
+                    tracing::warn!("Not sent: {why}");
+                    let _ = a11y.announce(
+                        why,
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
+                    say_so(&dialog, "Not sent", why);
+                    continue;
                 }
                 // Before the preview rather than after it. Somebody who has
                 // already confirmed a message is somebody who has decided, and
@@ -2529,6 +2566,48 @@ mod tests {
 
             assert!(worth_keeping(&data), "{data:?}");
         }
+    }
+
+    #[test]
+    fn test_a_message_with_nobody_to_send_it_to_says_so_instead_of_being_sent() {
+        let mut no_recipient = written("Hello", "Hello");
+        no_recipient.to = String::new();
+
+        let why = why_it_cannot_be_sent(&no_recipient).expect("a message with no To cannot go");
+        assert!(
+            why.contains("To"),
+            "the sentence has to name the box: {why}"
+        );
+        assert!(why.ends_with('.'), "read aloud, so it ends: {why}");
+    }
+
+    #[test]
+    fn test_a_box_holding_only_spaces_is_still_nobody() {
+        let mut spaces = written("Hello", "Hello");
+        spaces.to = "   ".to_string();
+
+        assert!(why_it_cannot_be_sent(&spaces).is_some());
+    }
+
+    #[test]
+    fn test_a_message_with_somewhere_to_go_has_nothing_stopping_it() {
+        assert!(why_it_cannot_be_sent(&written("Hello", "Hello")).is_none());
+    }
+
+    #[test]
+    fn test_a_message_that_cannot_be_sent_yet_is_still_worth_keeping() {
+        // The two answers have to agree, because the one that refuses to send
+        // hands the window back rather than throwing the message away, and a
+        // message it would not keep is one it would be right to lose. Sending
+        // with the To box empty used to end the message: the window was already
+        // down, the loop broke with Cancelled, the caller does nothing with
+        // that, and a message written over ten minutes was gone with nothing
+        // said and no draft kept.
+        let mut no_recipient = written("Hello", "Hello");
+        no_recipient.to = String::new();
+
+        assert!(why_it_cannot_be_sent(&no_recipient).is_some());
+        assert!(worth_keeping(&no_recipient));
     }
 
     #[test]

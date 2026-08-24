@@ -100,9 +100,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   attention. This covers the Event, Task, Reminder, and Note dialog, and
   Calendar's own New Event and Edit Event, since they all open the same
   dialog; Contact's dialog, which is separate, had the identical problem, a
-  blank name silently reopened it, and is fixed the same way.
+  blank name silently reopened it, and is fixed the same way. Ticking "All
+  day" means the times really are ignored, as that box has always said:
+  they are left out of the check rather than being compared anyway. When
+  the thing to fix is on the Recurrence page, that page comes forward
+  before the cursor moves there, so nobody is sent to a box behind a tab
+  they cannot see.
 
 ### Fixed
+
+- **Pressing Send with the To box empty no longer destroys the message.**
+  It ended the message outright: the window was already closing by the
+  time anything checked, nothing was said, no draft was kept, and the only
+  record was a line in a log file. Somebody who had written a subject and
+  several paragraphs and had not filled in the address yet lost all of it.
+  Send now says what is missing, on screen and out loud, and hands the
+  window back with everything still in it.
+- **"The message could not be read" is now shown as well as spoken.** It
+  was raised at the one moment the compose window is down, between closing
+  and reopening, which is exactly when an announcement on its own is not
+  heard. Somebody pressed Send, the window blinked, and nothing told them
+  why nothing had been sent.
 
 - **A field's name and its contents are no longer read as one run-on
   phrase.** Found in a real screen reader session, and it held across most

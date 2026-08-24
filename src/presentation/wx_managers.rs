@@ -1398,7 +1398,12 @@ pub fn build_contact_edit_dialog(
     ok.on_click({
         let d = dlg;
         let a11y = Arc::clone(a11y);
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal below stick.
+            // Left unconsumed it carries on to wxWidgets' own handler for an
+            // affirmative button, which closes the dialog regardless of what
+            // this decided. See `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
             if name_f.get_value().trim().is_empty() {
                 said_and_shown(
                     &problem_line,

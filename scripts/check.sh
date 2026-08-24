@@ -26,7 +26,13 @@ echo "== clippy =="
 cargo clippy --all-targets --all-features -- -D warnings
 
 echo "== tests =="
-cargo test --all-targets
+# --no-fail-fast because without it cargo stops at the first target that fails,
+# and the library is the first target. One failing test there means none of the
+# fourteen files under tests/ run at all: not reported as skipped, never
+# started. That is how a broken guard record once reached main while this gate
+# looked like it had checked it. The run still fails; it just says everything
+# that is wrong rather than the first thing.
+cargo test --all-targets --no-fail-fast
 
 echo "== release build =="
 cargo build --release

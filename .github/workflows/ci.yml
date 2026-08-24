@@ -45,8 +45,14 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     
+    # --no-fail-fast because without it cargo stops at the first target that
+    # fails, and the library is the first target. One failing test there means
+    # none of the fourteen files under tests/ run at all, so this job could go
+    # red for one reason while saying nothing about the fourteen it never
+    # reached. --all-targets to match scripts/check.sh, which is meant to be
+    # this job run locally.
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --all-targets --verbose --no-fail-fast
 
   fmt:
     name: Rustfmt

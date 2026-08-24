@@ -4806,3 +4806,237 @@ fn test_the_reading_of_what_the_windows_say_can_tell_the_two_apart() {
         "a line with no literal on it was read as having one"
     );
 }
+
+// ── One failing target must not hide the other fourteen ─────────────────────
+
+/// Whether a line that runs the test suite also asks for every target to be
+/// run, rather than stopping at the first one that fails.
+///
+/// Matching on the whole line rather than just the flag, because the flag is
+/// only wanted where the suite is actually being run: a comment mentioning it,
+/// or a line that runs one named target on purpose, is not the thing this is
+/// about.
+fn runs_the_suite(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    !trimmed.starts_with('#')
+        && trimmed.contains("cargo test")
+        && !trimmed.contains("--doc")
+        && !trimmed.contains("--test ")
+        && !trimmed.contains("--lib ")
+}
+
+fn stops_at_the_first_failure(line: &str) -> bool {
+    runs_the_suite(line) && !line.contains("--no-fail-fast")
+}
+
+#[test]
+fn test_one_failing_target_does_not_hide_the_rest() {
+    // `cargo test` runs each target in turn and stops at the first one that
+    // fails, so a single failing test in the library means all fourteen files
+    // under `tests/` never run at all. Not "run and reported": never started,
+    // and absent from the output rather than listed as skipped. That is how a
+    // broken guard record reached `main` while CI looked like it had checked
+    // it, and it is this project's own guardrail four, a check nobody reads
+    // being worse than no check.
+    //
+    // `--no-fail-fast` still fails the run. It just runs the rest first, so
+    // the output says everything that is wrong instead of the first thing.
+    let mut stopping = Vec::new();
+
+    for path in ["scripts/check.sh", ".github/workflows/ci.yml"] {
+        let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        for (number, line) in text.lines().enumerate() {
+            if stops_at_the_first_failure(line) {
+                stopping.push(format!("{path}:{}: {}", number + 1, line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        stopping.is_empty(),
+        "{} place(s) run the suite in a way that hides every target after the \
+         first failure:\n  {}",
+        stopping.len(),
+        stopping.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_fail_fast_check_can_tell_the_two_apart() {
+    // Without this the check above passes by matching nothing, which is the
+    // failure mode it exists to prevent somewhere else.
+    assert!(stops_at_the_first_failure("cargo test --all-targets"));
+    assert!(stops_at_the_first_failure(
+        "      run: cargo test --verbose"
+    ));
+
+    // What both were changed to.
+    assert!(!stops_at_the_first_failure(
+        "cargo test --all-targets --no-fail-fast"
+    ));
+    assert!(!stops_at_the_first_failure(
+        "      run: cargo test --verbose --no-fail-fast"
+    ));
+
+    // A commented-out line is not something that runs.
+    assert!(!stops_at_the_first_failure("# cargo test --all-targets"));
+    // Running one target on purpose is not running the suite, so it does not
+    // need the flag: there is nothing after it to hide.
+    assert!(!stops_at_the_first_failure("cargo test --doc"));
+    assert!(!stops_at_the_first_failure("cargo test --test house_style"));
+    // A line that runs no tests at all.
+    assert!(!stops_at_the_first_failure("cargo build --release"));
+}
+
+// ── A handler that can refuse has to consume the click ──────────────────────
+
+/// Every `on_click(...)` closure body in one file, as text.
+///
+/// Brace-matched from the `on_click(` that opens it, because the bodies being
+/// asked about are nested several levels deep and a line-based read would stop
+/// at the first inner `}`.
+fn on_click_bodies(text: &str) -> Vec<String> {
+    // Byte offsets throughout. These files hold box-drawing characters in
+    // their comments, so a byte offset from `find` used to index a `Vec<char>`
+    // lands somewhere else entirely, and the first version of this did exactly
+    // that: it walked off into the middle of a comment and subtracted past
+    // zero. Every bracket counted here is ASCII, so a byte slice between two
+    // of them is always on a character boundary.
+    let mut bodies = Vec::new();
+    let bytes = text.as_bytes();
+    let mut from = 0;
+
+    while let Some(found) = text[from..].find("on_click(") {
+        let opens = from + found + "on_click(".len() - 1;
+        let mut depth = 0usize;
+        let mut at = opens;
+        while at < bytes.len() {
+            match bytes[at] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            at += 1;
+        }
+        bodies.push(text[opens..(at + 1).min(text.len())].to_string());
+        from = opens + 1;
+    }
+    bodies
+}
+
+/// Whether a handler decides for itself whether the dialog closes.
+///
+/// Both halves matter. One that always closes is not at risk: wxWidgets'
+/// own answer for an affirmative button is the same answer, so running it
+/// twice changes nothing. One that can leave without closing is the whole
+/// problem.
+fn can_refuse_to_close(body: &str) -> bool {
+    body.contains("end_modal(ID_OK)") && body.contains("return")
+}
+
+fn refuses_without_consuming(body: &str) -> bool {
+    can_refuse_to_close(body) && !body.contains("skip(false)")
+}
+
+#[test]
+fn test_a_handler_that_can_refuse_to_close_consumes_the_click() {
+    // wxdragon sets Skip(true) before it calls a bound handler and only
+    // clears it if the handler says otherwise (wxdragon-sys cpp/src/event.cpp,
+    // "Reset skip to true before each handler call", then
+    // `if (!event.GetSkipped()) event_consumed = true;` and a final
+    // `else { event.Skip(true); }`). A plain button event is not vetoable, so
+    // a handler that returns without touching skip lets the click carry on to
+    // wxDialogBase::OnButton, which sees wxID_OK, calls AcceptAndClose, and
+    // ends the dialog anyway.
+    //
+    // So a Save that decides not to close is overruled, and the answer it
+    // just refused is stored. This shipped: the whole point of the check was
+    // to keep the window open, the window closed regardless, and the older
+    // checks that used to catch it after the fact had been taken out in the
+    // same change. Reading wxWidgets' own source was not enough to see it,
+    // because it is wxdragon's dispatch in between that decides.
+    let mut overruled = Vec::new();
+
+    for path in test_sources() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for body in on_click_bodies(&text) {
+            if refuses_without_consuming(&body) {
+                overruled.push(path.display().to_string());
+            }
+        }
+    }
+
+    assert!(
+        overruled.is_empty(),
+        "{} handler(s) refuse to close and are then overruled by wxWidgets' \
+         own handler, because they never consume the click:\n  {}",
+        overruled.len(),
+        overruled.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_consuming_check_can_tell_the_three_apart() {
+    // Written out rather than taken from the tree, because the shape this is
+    // about is the one that must never be in the tree again.
+    let refusing = r#"({
+        move |event| {
+            if wrong { say(); return; }
+            d.end_modal(ID_OK);
+        }
+    })"#;
+    assert!(refuses_without_consuming(refusing));
+
+    let consuming = r#"({
+        move |event| {
+            event.skip(false);
+            if wrong { say(); return; }
+            d.end_modal(ID_OK);
+        }
+    })"#;
+    assert!(!refuses_without_consuming(consuming));
+
+    // The common shape, and not at risk: it always closes, so wxWidgets'
+    // own answer for an affirmative button is the same answer.
+    let always_closes = r#"({
+        move |_| {
+            d.end_modal(ID_OK);
+        }
+    })"#;
+    assert!(!refuses_without_consuming(always_closes));
+    assert!(!can_refuse_to_close(always_closes));
+}
+
+#[test]
+fn test_the_body_reader_reaches_the_end_of_a_nested_handler() {
+    // A line-based read stopped at the first inner brace and saw none of
+    // this, which would have let the check above pass by reading nothing.
+    let source = r#"
+    save.on_click(move |event| {
+        if problems.is_empty() {
+            dialog.end_modal(ID_OK);
+            return;
+        }
+        if let Some(first) = problems.first() {
+            focus(first);
+        }
+    });
+    other.on_click(move |_| dlg.end_modal(ID_CANCEL));
+    "#;
+
+    let bodies = on_click_bodies(source);
+    assert_eq!(bodies.len(), 2, "{bodies:#?}");
+    assert!(
+        bodies[0].contains("focus(first)"),
+        "the reader stopped early: {}",
+        bodies[0]
+    );
+    assert!(bodies[1].contains("ID_CANCEL"), "{}", bodies[1]);
+}

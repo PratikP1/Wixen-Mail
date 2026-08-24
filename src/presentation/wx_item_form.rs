@@ -58,10 +58,23 @@
 //! affirmative button, with nothing asking whether the answer made sense
 //! first. Save now has a real handler: it reads every field back, asks
 //! [`Filled::problems`] what is wrong, and only closes the dialog when
-//! nothing is. Bad currency in a field is not a way through this: the
-//! handler intercepts the click before wxWidgets' own default handling ever
-//! runs, and calling `end_modal` is the only thing that closes the dialog at
-//! all, so simply not calling it is enough to refuse the answer.
+//! nothing is.
+//!
+//! Refusing means consuming the click, not merely declining to close.
+//! Wiring a handler is not enough on its own, and the first version of this
+//! shipped believing it was. wxdragon sets `Skip(true)` before it calls a
+//! bound handler and only treats the event as consumed if the handler clears
+//! it (`wxdragon-sys`, `cpp/src/event.cpp`: "Reset skip to true before each
+//! handler call", then `if (!event.GetSkipped()) event_consumed = true;`, and
+//! a final `else { event.Skip(true); }`). A plain button event cannot be
+//! vetoed, so a handler that returns without saying otherwise lets the click
+//! carry on to `wxDialogBase::OnButton`, which sees `wxID_OK`, calls
+//! `AcceptAndClose`, and ends the dialog regardless of what the handler just
+//! decided. `event.skip(false)` is what makes the refusal real. Reading
+//! wxWidgets' own source was not enough to see this: what happens in between
+//! is wxdragon's dispatch, and it is the opposite of what wx alone implies.
+//! `tests/house_style.rs` guards it now, since nothing here can fire a real
+//! click to find out.
 //!
 //! What refusing looks like: the reason is set as this dialog's own visible
 //! problem line and spoken through the accessibility announcement queue at
@@ -452,15 +465,19 @@ pub fn build_item_form_dialog<W: WxWidget>(
     // is Escape, which every dialog already understands.
     save.set_default();
 
-    // Intercepts the click (and Enter, which reaches a default button the
-    // same way) before wxWidgets' own default handling for `ID_OK` ever
-    // runs, so refusing to call `end_modal` below is the whole of refusing
-    // the answer: nothing else stands ready to close this dialog instead.
-    // See the module doc comment for the fuller reasoning.
+    // Takes the click (and Enter, which reaches a default button the same
+    // way) away from wxWidgets' own default handling for `ID_OK`. Consuming
+    // it is what makes a refusal stick: left unconsumed, the click carries on
+    // to `wxDialogBase::OnButton` and the dialog closes whatever this decides.
+    // See the module doc comment for the fuller reasoning, and
+    // `tests/house_style.rs` for the check that keeps it.
     let built_for_save = built.clone();
     let containers_for_save: Vec<Container> = containers.to_vec();
     let a11y_for_save = Arc::clone(chrome.a11y);
-    save.on_click(move |_| {
+    save.on_click(move |event| {
+        // `.event.` because a button event wraps the command event that
+        // carries the flag; wxdragon exposes it as a plain field.
+        event.event.skip(false);
         let (filled, _) = read_back(&built_for_save, &containers_for_save);
         let problems = filled.problems(kind);
         if problems.is_empty() {
@@ -478,6 +495,16 @@ pub fn build_item_form_dialog<W: WxWidget>(
                 .iter()
                 .find(|(field, _)| field.name == first.field.name)
         {
+            // Bring the page the field is on forward first. Recurrence lives
+            // behind a tab, so moving focus without this puts the keyboard on
+            // a control nobody can see while the other page is still the one
+            // showing: the person is told what to fix and then landed
+            // somewhere that looks like nowhere.
+            if let Some(pages) = recurrence {
+                pages
+                    .notebook
+                    .set_selection(usize::from(first.field.name.is_about_recurrence()));
+            }
             focus(control);
         }
     });
