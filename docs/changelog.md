@@ -133,6 +133,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Ctrl+backslash in the message window says it cannot move to the toolbar,
+  instead of doing nothing.** Moving around the toolbar with the arrow keys
+  was described in the code and never worked: the buttons are deliberately
+  kept out of the tab order so that writing a message does not cost nine
+  stops on the way to the body, and a button kept out that way cannot be
+  moved to at all. Making it work means either accepting those nine stops or
+  dropping the idea, which is a decision about how people write mail rather
+  than a bug to fix quietly. Every one of those buttons still has its own
+  shortcut, which is what the message now says.
 - **A rule, tag or signature cannot be saved without a name.** Leaving the
   name empty was accepted, and the manager then announced "Added the rule:"
   and stopped mid-sentence.

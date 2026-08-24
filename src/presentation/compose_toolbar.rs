@@ -10,11 +10,23 @@
 //! reader already knows, and it means the nine buttons cost one keystroke to
 //! reach and two arrows to cross rather than nine presses of Tab.
 //!
-//! Escape leaves and puts the caret back where it was, because a toolbar
-//! somebody cannot get out of is worse than one they cannot get into.
+//! # Entering the toolbar is not built, and the reason is a trade
 //!
-//! What is here is the part that can be decided without a window: which button
-//! a key lands on, and what is said when it does.
+//! Seven of the nine buttons are given `set_can_focus(false)` so that writing
+//! a message does not cost nine tab stops between the subject line and the
+//! body. A control that cannot take focus cannot be given it, so nothing
+//! could ever move the keyboard onto them: Ctrl+backslash moved focus nowhere
+//! and said nothing, which reads exactly like a shortcut nobody bound.
+//!
+//! The two ways out are a trade nobody has chosen. Make all nine focusable
+//! and accept the tab stops, or drop this and keep the shortcut each button
+//! already has. Both need a keyboard to settle and one is a judgement about
+//! how people write mail, so the shortcut says it is not available rather
+//! than pretending, and the movement rules that were written for it are gone
+//! rather than sitting here reached by nothing.
+//!
+//! What is left is what still runs: which button a position is, and what is
+//! said when one of the two still-reachable buttons takes focus.
 
 /// One button on the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,44 +150,6 @@ impl At {
         None
     }
 
-    /// Along this group, wrapping at each end.
-    ///
-    /// Wrapping rather than stopping, because a group of two that stops is a
-    /// key press that does nothing, and silence is the one answer somebody
-    /// working by ear cannot tell from a key that is not bound.
-    pub fn along(self, forward: bool) -> Self {
-        let Some(group) = GROUPS.get(self.group) else {
-            return Self::default();
-        };
-        let count = group.keys.len();
-        if count == 0 {
-            return Self::default();
-        }
-        let key = if forward {
-            (self.key + 1) % count
-        } else {
-            (self.key + count - 1) % count
-        };
-        Self {
-            group: self.group,
-            key,
-        }
-    }
-
-    /// To the next group, landing on its first button, wrapping at each end.
-    pub fn across(self, forward: bool) -> Self {
-        let count = GROUPS.len();
-        if count == 0 {
-            return Self::default();
-        }
-        let group = if forward {
-            (self.group + 1) % count
-        } else {
-            (self.group + count - 1) % count
-        };
-        Self { group, key: 0 }
-    }
-
     /// What is said when the cursor arrives here.
     ///
     /// The group name comes first only when the group has changed, because
@@ -211,87 +185,6 @@ mod tests {
         let arrived = At { group: 2, key: 0 };
 
         assert_eq!(arrived.spoken(None), "Formatting, Bold, Ctrl+B, 1 of 4");
-    }
-
-    #[test]
-    fn test_moving_inside_a_group_does_not_repeat_the_group() {
-        // "Formatting" before each of four buttons is three repetitions of
-        // something already known, on a key pressed to move quickly.
-        let from = At { group: 2, key: 0 };
-
-        let next = from.along(true);
-
-        assert_eq!(next, At { group: 2, key: 1 });
-        assert_eq!(next.spoken(Some(from)), "Italic, Ctrl+I, 2 of 4");
-    }
-
-    #[test]
-    fn test_crossing_into_a_group_names_it() {
-        let from = At { group: 2, key: 3 };
-
-        let next = from.across(true);
-
-        assert_eq!(next, At { group: 3, key: 0 });
-        assert!(
-            next.spoken(Some(from)).starts_with("Tools,"),
-            "{}",
-            next.spoken(Some(from))
-        );
-    }
-
-    #[test]
-    fn test_a_group_wraps_rather_than_stopping_silently() {
-        // A key press that does nothing is the one answer somebody working by
-        // ear cannot tell from a key that is not bound at all.
-        let last = At { group: 1, key: 1 };
-
-        assert_eq!(last.along(true), At { group: 1, key: 0 });
-        assert_eq!(At { group: 1, key: 0 }.along(false), last);
-    }
-
-    #[test]
-    fn test_the_left_arrow_moves_back_along_a_group_rather_than_forward() {
-        // In a group of two, back and forward land on the same button, so the
-        // wrapping test above cannot tell the two directions apart. Formatting
-        // has four, where walking the wrong way means arrowing back from
-        // Underline lands on the menu button instead of on Italic.
-        let from = At { group: 2, key: 2 };
-
-        let back = from.along(false);
-
-        assert_eq!(back, At { group: 2, key: 1 });
-        assert_eq!(back.spoken(Some(from)), "Italic, Ctrl+I, 2 of 4");
-    }
-
-    #[test]
-    fn test_the_toolbar_wraps_too() {
-        let last_group = GROUPS.len() - 1;
-
-        assert_eq!(
-            At {
-                group: last_group,
-                key: 0
-            }
-            .across(true),
-            At { group: 0, key: 0 }
-        );
-        assert_eq!(
-            At { group: 0, key: 0 }.across(false),
-            At {
-                group: last_group,
-                key: 0
-            }
-        );
-    }
-
-    #[test]
-    fn test_crossing_lands_on_the_first_button_of_the_group() {
-        // Not on the same offset. A group of two crossed into from the fourth
-        // button of another would land nowhere.
-        let deep = At { group: 2, key: 3 };
-
-        assert_eq!(deep.across(true).key, 0);
-        assert_eq!(deep.across(false).key, 0);
     }
 
     #[test]
@@ -334,16 +227,6 @@ mod tests {
 
         assert_eq!(At::at_position(all), None);
         assert_eq!(At::at_position(all + 5), None);
-    }
-
-    #[test]
-    fn test_a_cursor_pointing_at_nothing_says_nothing() {
-        let nowhere = At { group: 99, key: 99 };
-
-        assert_eq!(nowhere.spoken(None), "");
-        assert_eq!(nowhere.position(), None);
-        assert_eq!(nowhere.along(true), At::default());
-        assert_eq!(nowhere.across(true), At { group: 0, key: 0 });
     }
 
     #[test]

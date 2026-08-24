@@ -269,8 +269,6 @@ enum Deferred {
     Spelling,
     /// Leave the message body. `back` is Shift+Tab.
     Leaving { back: bool },
-    /// Go to the toolbar.
-    Toolbar,
 }
 
 /// Whether a half-written message is worth keeping as a draft.
@@ -594,7 +592,24 @@ pub fn build_compose_dialog(
     set_accessible_name(&attach_btn, "Attach a file, Alt+A");
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
 
-    // Remove all toolbar buttons from tab order: accessible via keyboard shortcuts
+    // Seven of the nine are taken out of the tab order so that writing a
+    // message does not cost nine stops between the subject line and the body.
+    //
+    // That contradicts the toolbar navigation `compose_toolbar` describes and
+    // `go_to` implements, and the contradiction is why none of it works: a
+    // control that cannot take focus cannot be given it, so Ctrl+backslash
+    // moves focus nowhere, the announcements bound to these buttons' focus
+    // never fire, and `At::along` and `At::across` are reached by nothing.
+    // `format_btn` and `spell_btn` are not in this list, so two of the nine
+    // are tab-reachable and seven are not, which is the inconsistency the
+    // module comment says the design exists to avoid.
+    //
+    // Not resolved here, because the two ways out are a trade nobody has
+    // chosen: make all nine focusable and accept the tab stops, or drop the
+    // toolbar navigation and keep the shortcuts each button already has.
+    // Both need a keyboard to settle and one of them is a judgement about how
+    // people write mail. Ctrl+backslash says it is not available rather than
+    // doing nothing, which is what it did.
     send_toolbar_btn.set_can_focus(false);
     undo_btn.set_can_focus(false);
     redo_btn.set_can_focus(false);
@@ -1064,20 +1079,6 @@ pub fn show_compose_dialog_full(
     // Going to the toolbar: forget where focus was, then focus the button. The
     // saying is left to the handler below, which is the one place that does it,
     // so arriving does not announce twice.
-    let go_to = {
-        let toolbar_at = toolbar_at.clone();
-        move |to: Option<compose_toolbar::At>| {
-            let at = to.unwrap_or_default();
-            let Some(position) = at.position() else {
-                return;
-            };
-            let Some(button) = toolbar_buttons.get(position) else {
-                return;
-            };
-            toolbar_at.set(None);
-            button.set_focus();
-        }
-    };
 
     // Say where each button is when it takes focus, however it was reached.
     //
@@ -1394,8 +1395,6 @@ pub fn show_compose_dialog_full(
     // until a third timer made it obvious.
     later.on_tick({
         let waiting = waiting.clone();
-        let go_to = go_to.clone();
-        let toolbar_at = toolbar_at.clone();
         let a11y = a11y.clone();
         move |_| {
             match waiting.take() {
@@ -1403,7 +1402,6 @@ pub fn show_compose_dialog_full(
                 // Where the toolbar was left, so leaving and coming back lands
                 // where somebody was. The group is named on arrival, always,
                 // because arriving is the moment nobody knows where they are.
-                Some(Deferred::Toolbar) => go_to(toolbar_at.get()),
                 // The two directions are not done the same way, and each is
                 // the one that was measured to land where it should.
                 //
@@ -1562,8 +1560,15 @@ pub fn show_compose_dialog_full(
                 // moves focus too and the browser does its own focus work
                 // after the message is handed over.
                 Some(editor_document::EditorMessage::ToToolbar) => {
-                    waiting.set(Some(Deferred::Toolbar));
-                    later.start(1, true);
+                    // Said rather than done. The buttons this would move to
+                    // cannot take focus, so this used to move the keyboard
+                    // nowhere and say nothing, which is indistinguishable
+                    // from a shortcut that is not bound at all. See the
+                    // comment beside `set_can_focus(false)` above.
+                    let _ = a11y.announce(
+                        "Moving to the toolbar is not available yet.                          Each button has its own shortcut.",
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
                 }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command
