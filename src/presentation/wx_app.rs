@@ -6861,6 +6861,7 @@ fn handle_account_mgr(
     if let AccountManagerAction::Updated {
         accounts: new,
         default_id: chosen,
+        active_id: chosen_active,
     } = wx_account_manager::show_account_manager_dialog(
         frame,
         &accounts,
@@ -6869,6 +6870,12 @@ fn handle_account_mgr(
         a11y,
     ) {
         let mut s = lock_state(state);
+        // What Set Active chose, when it named an account that is still
+        // there. This used to be dropped on the way out of the dialog and
+        // only ever corrected when it named nothing or named a deleted
+        // account, so Set Active announced that it had worked and changed
+        // nothing at all.
+        s.active_account_id = chosen_active.filter(|id| new.iter().any(|a| &a.id == id));
         if !new.is_empty() {
             if s.active_account_id
                 .as_ref()
@@ -8495,11 +8502,19 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
+    // The account the message being acknowledged is in, not the one that
+    // happens to be open. In All Inboxes those differ routinely, and taking
+    // the open one sent the receipt out through the wrong server, with the
+    // wrong address on it as sender and as Final-Recipient, and asked the
+    // wrong account's Allowed Changes whether sending was permitted at all.
     let account = {
         let s = lock_state(state);
-        s.active_account_id
-            .as_ref()
-            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            message_row_id,
+            s.active_account_id.as_deref(),
+        )
     };
     // The original's own `Message-ID`, so the receipt is filed against the
     // message rather than arriving as loose mail with a subject line. Read off
@@ -8567,7 +8582,13 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
             read_at: chrono::Utc::now().to_rfc2822(),
         });
 
-        match handle.block_on(client.send_raw(&account.email, &notify, &raw, &auth)) {
+        // The bare address for the envelope. The header value can carry a
+        // display name, which Thunderbird writes by default, and an envelope
+        // address is a bare address and nothing else: handing it the whole
+        // value made every such receipt fail before it left the machine. The
+        // full value still goes on the To line inside the message.
+        let envelope = crate::application::receipts::address_of(&notify);
+        match handle.block_on(client.send_raw(&account.email, &envelope, &raw, &auth)) {
             Ok(()) => say(UIUpdate::StatusUpdated(format!(
                 "Read receipt sent to {notify}"
             ))),

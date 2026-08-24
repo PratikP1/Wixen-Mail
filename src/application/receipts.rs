@@ -115,7 +115,13 @@ fn same_party(notify: &str, from: &str) -> bool {
 }
 
 /// The bare address out of a header value that may carry a display name.
-fn address_of(value: &str) -> String {
+///
+/// What goes in the envelope when a receipt is sent, as well as what the
+/// same-party check compares. The raw header value used to be handed to the
+/// envelope, and a sender who wrote a display name, which Thunderbird does by
+/// default, made every receipt fail with "Invalid email user": an envelope
+/// address is a bare address and nothing else.
+pub fn address_of(value: &str) -> String {
     let value = value.trim();
     if let Some(open) = value.rfind('<')
         && let Some(close) = value[open..].find('>')
@@ -217,16 +223,29 @@ const PART_BOUNDARY: &str = "wixen-mail-disposition-notification";
 /// `automatic-action` would be telling the sender their message triggered
 /// something, which is the thing this application does not do.
 pub fn message(about: &About) -> Vec<u8> {
+    // Every value below except the reader's own address is a stranger's text,
+    // read off the message being answered: the subject, the address to notify,
+    // and the message's own identifier. All three reach here decoded, so an
+    // encoded word carrying a carriage return and line feed arrives as real
+    // ones, and written onto a header line straight that starts a header of
+    // the sender's choosing on mail going out of the reader's account.
+    //
+    // Through the same stripper the ordinary message builder uses, which has
+    // a regression test on this exact shape. This builder never got it.
+    use crate::application::draft_message::without_line_breaks;
     let mut out = String::new();
 
     out.push_str(&format!("From: {}\r\n", about.reader));
-    out.push_str(&format!("To: {}\r\n", about.notify));
-    out.push_str(&format!("Subject: Read: {}\r\n", about.subject));
+    out.push_str(&format!("To: {}\r\n", without_line_breaks(&about.notify)));
+    out.push_str(&format!(
+        "Subject: Read: {}\r\n",
+        without_line_breaks(&about.subject)
+    ));
     // Its own, which is a different thing from the two headers below that
     // name the message it is about.
     out.push_str(&format!("Message-ID: {}\r\n", about.own_id));
     out.push_str(&format!("Date: {}\r\n", about.read_at));
-    if let Some(id) = about.message_id.as_deref() {
+    if let Some(id) = about.message_id.as_deref().map(without_line_breaks) {
         // So the sender's client files it against the message it is about
         // rather than as loose mail.
         out.push_str(&format!("In-Reply-To: {id}\r\n"));
@@ -508,5 +527,72 @@ mod tests {
             let said = policy.spoken();
             assert!(said.len() > 30, "{policy:?}: {said}");
         }
+    }
+}
+
+#[cfg(test)]
+mod nothing_a_stranger_wrote_starts_a_header {
+    use super::*;
+
+    fn about(subject: &str, notify: &str, message_id: Option<&str>) -> About {
+        About {
+            own_id: "<receipt@wixen-mail.invalid>".to_string(),
+            notify: notify.to_string(),
+            reader: "me@example.com".to_string(),
+            subject: subject.to_string(),
+            message_id: message_id.map(str::to_string),
+            read_at: "Mon, 24 Aug 2026 10:00:00 +0000".to_string(),
+        }
+    }
+
+    /// Every line of the built receipt down to the blank line that ends the
+    /// headers.
+    fn header_lines(built: &[u8]) -> Vec<String> {
+        let text = String::from_utf8(built.to_vec()).expect("the receipt is text");
+        let (headers, _) = text.split_once("\r\n\r\n").expect("headers end");
+        headers.lines().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn test_a_subject_carrying_a_line_break_does_not_become_a_header() {
+        // The subject is a stranger's text, and it reaches here decoded: an
+        // encoded word carrying =0D=0A is legal and mail-parser turns it into
+        // a real carriage return and line feed. Written onto a header line
+        // straight, that starts a header of the sender's choosing on mail
+        // going out of the reader's own account. The builder that makes
+        // ordinary mail strips these and has a test using this exact shape;
+        // this one never got it.
+        let built = message(&about(
+            "Invoice\r\nBcc: harvest@evil.example",
+            "sam@example.com",
+            None,
+        ));
+
+        assert!(
+            !header_lines(&built)
+                .iter()
+                .any(|line| line.to_ascii_lowercase().starts_with("bcc:")),
+            "a subject started a header of its own:\n{}",
+            String::from_utf8_lossy(&built)
+        );
+    }
+
+    #[test]
+    fn test_neither_the_address_nor_the_message_id_can_start_one_either() {
+        // Both are read straight off the message being answered, so both are
+        // the sender's text as much as the subject is.
+        let built = message(&about(
+            "Ordinary",
+            "sam@example.com\r\nBcc: harvest@evil.example",
+            Some("<m1@x>\r\nBcc: also@evil.example"),
+        ));
+
+        assert!(
+            !header_lines(&built)
+                .iter()
+                .any(|line| line.to_ascii_lowercase().starts_with("bcc:")),
+            "a header was smuggled in:\n{}",
+            String::from_utf8_lossy(&built)
+        );
     }
 }

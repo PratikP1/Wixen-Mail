@@ -133,6 +133,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Set Active in the Account Manager now changes which account is active.**
+  It said it had worked and changed nothing: the choice was tracked inside
+  the window and dropped on the way out, so anybody with more than one
+  account was stuck on whichever came first when the program started. That
+  is also what made the two mix-ups above ordinary rather than rare, since
+  there was no way to correct which account was open.
+- **A read receipt goes out from the account the message is in.** It went
+  through whichever account was open, with that account's address on it as
+  the sender, and asked that account's Allowed Changes for permission rather
+  than the right one's. Receipts also failed outright whenever the sender had
+  written their name beside their address, which is what several mail
+  programs do by default.
+- **Nothing a sender writes can add headers to a read receipt.** The
+  subject, the address to notify and the message's own identifier all come
+  from the message being answered and went onto header lines untouched, so a
+  subject carrying a line break could add a header of the sender's choosing
+  to mail leaving the reader's own account. They now go through the same
+  check the ordinary message builder has always used.
 - **Save Draft keeps the files attached to it.** They were thrown away
   without a word: the announcement said the draft was saved, reopening it
   showed nothing attached, and sending it went without them. A draft now

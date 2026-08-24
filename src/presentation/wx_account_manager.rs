@@ -56,6 +56,13 @@ pub enum AccountManagerAction {
         accounts: Vec<Account>,
         /// Which account new items are created in.
         default_id: Option<String>,
+        /// Which account's mailbox is being worked in.
+        ///
+        /// Carried out of the dialog rather than left behind in it. Set
+        /// Active tracked the choice and announced it, and this was dropped
+        /// on the way out, so a multi-account user stayed pinned to whichever
+        /// account came first at startup.
+        active_id: Option<String>,
     },
 }
 
@@ -115,6 +122,7 @@ pub fn show_account_manager_dialog(
                 outcome.default_id.as_deref(),
             ),
             accounts: outcome.working.clone(),
+            active_id: outcome.active_id.clone(),
         }
     } else {
         AccountManagerAction::None

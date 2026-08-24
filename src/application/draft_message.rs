@@ -139,7 +139,7 @@ fn push_if_present(out: &mut String, header: &str, value: Option<&str>) {
 /// message being replied to. Nothing this side of the folder it gets
 /// appended to would otherwise stop a line break in any of them from
 /// starting a header of its own.
-fn without_line_breaks(text: &str) -> String {
+pub(crate) fn without_line_breaks(text: &str) -> String {
     text.replace(['\r', '\n'], " ")
 }
 

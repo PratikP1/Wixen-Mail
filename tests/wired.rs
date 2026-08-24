@@ -1256,3 +1256,45 @@ fn test_sending_a_draft_stops_it_being_a_draft() {
          refuses would lose the message altogether"
     );
 }
+
+/// Set Active in the Account Manager changes which account is active.
+///
+/// The dialog tracked the choice, announced it, and handed back only the
+/// account list and the default. The active account was dropped on the way
+/// out, and the main window only ever touches it when it names nothing or
+/// names a deleted account, so a multi-account user was pinned to whichever
+/// account came first at startup with no way to change it.
+///
+/// That is what made two other faults ordinary rather than exotic: commands
+/// that took the open account instead of the message's own were reaching for
+/// a value the person could not correct.
+///
+/// What this cannot see: whether the value carried is the one chosen. It asks
+/// that it is carried at all and that the main window applies it.
+#[test]
+fn test_set_active_reaches_the_main_window() {
+    let manager =
+        fs::read_to_string("src/presentation/wx_account_manager.rs").expect("the account manager");
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let handed_back = manager
+        .split_once("AccountManagerAction::Updated {")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once("\n    } else").map(|(arm, _)| arm))
+        .expect("the account manager still hands back an update");
+    assert!(
+        handed_back.contains("active_id"),
+        "the account manager drops the active account on the way out, so \
+         Set Active says it worked and changes nothing"
+    );
+
+    let handler = app
+        .split_once("fn handle_account_mgr")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once("\n}\n").map(|(body, _)| body))
+        .expect("the main window still handles the Account Manager");
+    assert!(
+        handler.contains("active_id: chosen_active"),
+        "the main window ignores the active account the dialog chose"
+    );
+}
