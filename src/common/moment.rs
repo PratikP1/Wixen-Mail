@@ -76,6 +76,20 @@ impl Moment {
             Moment::WholeDay(day) => day,
         }
     }
+
+    /// Where this falls on this computer's clock.
+    ///
+    /// One answer for all three shapes, so the two readers that had a copy of
+    /// this each and the calendar's own ordering all agree. A whole day starts
+    /// at midnight, which is what a day with nothing said about the time of
+    /// day means everywhere else in this program.
+    pub fn on_this_computer(self) -> Option<chrono::DateTime<chrono::Local>> {
+        match self {
+            Moment::Fixed(at) => Some(at.with_timezone(&chrono::Local)),
+            Moment::ClockFace(clock) => on_this_computer(clock),
+            Moment::WholeDay(day) => on_this_computer(day.and_hms_opt(0, 0, 0)?),
+        }
+    }
 }
 
 /// Read a stored moment, in every shape the cache holds one.

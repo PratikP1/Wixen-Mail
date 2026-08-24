@@ -550,14 +550,9 @@ fn parse(stored: &str) -> Option<DateTime<Local>> {
 
 /// Where a parsed moment falls on this computer's clock.
 fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
-    use crate::common::moment::Moment;
-
-    let here = crate::common::moment::on_this_computer;
-    match moment {
-        Moment::Fixed(at) => Some(at.with_timezone(&Local)),
-        Moment::ClockFace(clock) => here(clock),
-        Moment::WholeDay(day) => here(day.and_hms_opt(0, 0, 0)?),
-    }
+    // One answer, in `common::moment`, shared with what decides whether a
+    // reminder is due and with the order a calendar lists its days in.
+    moment.on_this_computer()
 }
 
 #[cfg(test)]

@@ -47,6 +47,13 @@ fn twenty_four_hour_settings() -> DateSettings {
     }
 }
 
+fn day_first_settings() -> DateSettings {
+    DateSettings {
+        order: DateOrder::DayFirst,
+        ..twenty_four_hour_settings()
+    }
+}
+
 fn twelve_hour_settings() -> DateSettings {
     DateSettings {
         clock: Clock::TwelveHour,
@@ -85,6 +92,50 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 .date_fields
                 .first()
                 .expect("an Event asks when it starts");
+
+            // ── Day before month when that is how somebody reads a date.
+            // ── Built in that order and not only shown in it: wxWidgets
+            // ── gives a control its place in the tab order when it is
+            // ── created, so a form that reads one way and tabs the other is
+            // ── worse than one that does neither. The setting was read,
+            // ── carried through three layers and thrown away, while two doc
+            // ── comments and a commit message said it was honoured. ────────
+            let day_first = build_item_form_dialog(
+                &frame,
+                ItemKind::Event,
+                &[],
+                &[],
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
+                day_first_settings(),
+                None,
+            )
+            .expect("an Event has fields to ask for");
+            let (_, day_first_starts) = day_first
+                .date_fields
+                .first()
+                .expect("an Event asks when it starts");
+            expect(
+                "day first: the day is asked for before the month",
+                i32::from(day_first_starts.day_first),
+                1,
+                &mut wrong,
+            );
+            expect(
+                "day first: the day control is created before the month one",
+                i32::from(day_first_starts.day.get_id() < day_first_starts.month.get_id()),
+                1,
+                &mut wrong,
+            );
+            expect(
+                "month first: the month control is still created first",
+                i32::from(starts.month.get_id() < starts.day.get_id()),
+                1,
+                &mut wrong,
+            );
+            day_first.dialog.destroy();
             expect(
                 "starts: month defaults to this month",
                 starts

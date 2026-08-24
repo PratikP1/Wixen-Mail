@@ -190,16 +190,11 @@ pub fn what_is_due<'a>(
 /// two of them and neither had a `T` in it, so a reminder whose time came from
 /// Outlook or from the event editor was read as nothing and never went off.
 fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
-    use crate::common::moment::Moment;
-
-    let here = crate::common::moment::on_this_computer;
-    match moment {
-        Moment::Fixed(at) => Some(at.with_timezone(&Local)),
-        Moment::ClockFace(clock) => here(clock),
-        // A date with no time is due at the start of that day, which is what a
-        // reminder set for a day means.
-        Moment::WholeDay(day) => here(day.and_hms_opt(0, 0, 0)?),
-    }
+    // One answer, in `common::moment`, so this and the reading module and the
+    // calendar's own ordering cannot drift apart about what a stored time
+    // means. A date with no time is due at the start of that day, which is
+    // what a reminder set for a day means and what that answer says.
+    moment.on_this_computer()
 }
 
 /// The stored form of a moment, for writing a snooze back.

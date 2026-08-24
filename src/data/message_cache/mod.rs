@@ -49,6 +49,34 @@ pub fn like_pattern(query: &str) -> String {
     format!("%{}%", escaped)
 }
 
+/// Teach this connection to fold case the way the rest of the program does.
+///
+/// SQLite's own `LOWER` folds ASCII and nothing else, while every search here
+/// lowers its query with Rust's Unicode rules. So a name with an accent could
+/// never match what was stored: searching for a colleague by their name,
+/// typed exactly as it appears in the From column, was the one search
+/// guaranteed to return nothing.
+///
+/// Replacing the built-in rather than adding a differently named one, so
+/// every query already written picks this up and there is no second spelling
+/// of the same question to keep in step.
+fn fold_case_the_way_rust_does(conn: &Connection) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+
+    conn.create_scalar_function(
+        "lower",
+        1,
+        // Deterministic and reading nothing outside its argument, which lets
+        // SQLite use it in an index expression and skip repeated calls.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            let text: String = context.get(0)?;
+            Ok(text.to_lowercase())
+        },
+    )
+    .map_err(|e| Error::Other(format!("Failed to prepare text comparison: {e}")))
+}
+
 /// Message cache using SQLite
 pub struct MessageCache {
     conn: Connection,
@@ -1070,6 +1098,7 @@ impl MessageCache {
         let db_path = cache_dir.join("message_cache.db");
         let conn = Connection::open(db_path)
             .map_err(|e| Error::Other(format!("Failed to open database: {}", e)))?;
+        fold_case_the_way_rust_does(&conn)?;
 
         // Performance pragmas for large mailboxes
         conn.execute_batch(

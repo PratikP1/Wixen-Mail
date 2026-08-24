@@ -133,6 +133,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Searching finds names that are not spelled in plain English.** Typing a
+  colleague's name exactly as it appears in the From column found nothing at
+  all if it carried an accent, which made searching by the name on screen the
+  one search guaranteed to fail. Capital and small letters now match each
+  other in every language, not just in English.
+- **Events typed here sort by their time, not above everything else.** An
+  appointment written on this computer listed above every event that came
+  from a calendar server on the same day, whatever the times were, so a five
+  o'clock dentist appointment sat above an eight o'clock meeting. Anybody
+  going down the list by ear had only that order to go on.
+- **Dates are asked for in the order you read them.** The day-first setting
+  was saved and ignored, so everybody got month, day, year whatever they
+  chose. The boxes are now built in the order they are shown in, so tabbing
+  through them follows what is on screen.
 - **Five settings that did nothing now do what they say.** Each had a real
   label, saved, and survived a restart, and nothing read any of them. The
   font size now sets the message list's font, which matters most of the five:

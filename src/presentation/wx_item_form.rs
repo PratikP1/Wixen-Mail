@@ -121,6 +121,14 @@ pub struct DateFields {
     pub month: Choice,
     pub day: SpinCtrl,
     pub year: SpinCtrl,
+    /// Whether the day is asked for before the month.
+    ///
+    /// Carried on the fields rather than looked up again where they are laid
+    /// out, so what was built and what is shown cannot disagree. The setting
+    /// was read, threaded through three layers, and thrown away with a
+    /// `let _ = order;`, while two doc comments and a commit message all said
+    /// the order was honoured.
+    pub day_first: bool,
 }
 
 /// A time, entered as two separate controls, or three when the clock reads
@@ -710,25 +718,45 @@ fn build_date_fields(
     let anchor_month = parsed.map_or(now.month(), |d| d.month());
     let anchor_day = parsed.map_or(now.day(), |d| d.day());
 
-    let month = Choice::builder(parent)
-        .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
-        .with_selection(Some(anchor_month - 1))
-        .build();
-    let day = SpinCtrl::builder(parent).build();
-    day.set_range(1, days_in_month(anchor_year, anchor_month) as i32);
-    day.set_value(anchor_day as i32);
+    // Built in the order they are asked for, not only laid out in it.
+    // wxWidgets gives a window its place in the tab order when it is created,
+    // so building month first and showing day first would read one way and
+    // tab the other.
+    let day_first = order == DateOrder::DayFirst;
+    let a_month = || {
+        Choice::builder(parent)
+            .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
+            .with_selection(Some(anchor_month - 1))
+            .build()
+    };
+    let a_day = || {
+        let day = SpinCtrl::builder(parent).build();
+        day.set_range(1, days_in_month(anchor_year, anchor_month) as i32);
+        day.set_value(anchor_day as i32);
+        day
+    };
+    let (month, day) = match day_first {
+        true => {
+            let day = a_day();
+            (a_month(), day)
+        }
+        false => (a_month(), a_day()),
+    };
     let year = SpinCtrl::builder(parent).build();
     year.set_range(EARLIEST_YEAR, LATEST_YEAR);
     year.set_value(anchor_year);
 
-    let fields = DateFields { month, day, year };
+    let fields = DateFields {
+        month,
+        day,
+        year,
+        day_first,
+    };
     month.on_selection_changed(move |_| clamp_day_to_month(fields));
     year.on_value_changed(move |_| clamp_day_to_month(fields));
 
-    // `order` only decides which of month and day is asked for first; year
-    // is last in both, the way almost every calendar written out in words
-    // already puts it, so there is nothing to decide for it.
-    let _ = order;
+    // Year is last either way, the way almost every calendar written out in
+    // words already puts it, so there is nothing to decide for it.
     fields
 }
 
@@ -969,8 +997,16 @@ fn add_to_sizer(sizer: &BoxSizer, control: &Control) {
         Control::Line(c) | Control::Paragraph(c) => sizer.add(c, 0, flags, 8),
         Control::Date(fields) => {
             let row = BoxSizer::builder(Orientation::Horizontal).build();
-            row.add(&fields.month, 0, SizerFlag::All, 4);
-            row.add(&fields.day, 0, SizerFlag::All, 4);
+            match fields.day_first {
+                true => {
+                    row.add(&fields.day, 0, SizerFlag::All, 4);
+                    row.add(&fields.month, 0, SizerFlag::All, 4);
+                }
+                false => {
+                    row.add(&fields.month, 0, SizerFlag::All, 4);
+                    row.add(&fields.day, 0, SizerFlag::All, 4);
+                }
+            }
             row.add(&fields.year, 0, SizerFlag::All, 4);
             sizer.add_sizer(&row, 0, flags, 8)
         }

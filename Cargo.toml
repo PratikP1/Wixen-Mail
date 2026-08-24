@@ -47,7 +47,10 @@ reqwest = { version = "0.13", features = ["json", "rustls", "form"] }
 wxdragon = { version = "=0.9.17", features = ["aui", "richtext", "webview"] }
 
 # Database for persistent caching
-rusqlite = { version = "0.40", features = ["bundled"] }
+# `functions` so `LOWER` in a query can be this project's own, folding
+# case the same way Rust does. SQLite's built-in one folds ASCII only, so a
+# search for a name with an accent in it could never match what was stored.
+rusqlite = { version = "0.40", features = ["bundled", "functions"] }
 
 # Encoding / security
 base64 = "0.23"

@@ -2498,6 +2498,32 @@ mod tests {
     }
 
     #[test]
+    fn test_searching_finds_a_name_that_is_not_spelled_in_ascii() {
+        // A colleague whose name carries accents, typed exactly as it appears
+        // in the From column, found nothing at all. The query was lowercased
+        // with Rust's Unicode rules and the database folds ASCII only, so the
+        // stored capital never matched the lowered one, and searching by the
+        // name as shown was the one thing guaranteed to fail.
+        let (cache, folder_id) = listing_cache();
+        let mut message = listing_message(folder_id, 21, "\u{00C9}cole Primaire", "2026-07-26");
+        message.from_addr = "\u{00D6}zt\u{00FC}rk <o@example.com>".to_string();
+        cache.save_message(&message).unwrap();
+
+        for query in [
+            // As it appears on screen.
+            "\u{00C9}cole",
+            // As somebody would type it in a hurry.
+            "\u{00E9}cole",
+            // And the sender, both ways round.
+            "\u{00D6}zt\u{00FC}rk",
+            "\u{00F6}zt\u{00FC}rk",
+        ] {
+            let found = cache.search_messages("acc-1", query, 50).unwrap();
+            assert_eq!(found.len(), 1, "searching for {query} found nothing");
+        }
+    }
+
+    #[test]
     fn test_searching_is_bounded() {
         // A search returning the whole mailbox is a search nobody can use.
         let (cache, folder_id) = listing_cache();

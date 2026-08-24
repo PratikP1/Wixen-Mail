@@ -854,7 +854,21 @@ impl CalendarEventItem {
             .iter()
             .flat_map(|entry| Self::shown_days(entry, from, to))
             .collect();
-        rows.sort_by(|one, other| one.start.cmp(&other.start));
+        // By the moment each one names, not by the text of it. The editor
+        // writes a space between the date and the time and every sync writes
+        // a T, and a space sorts before a T, so an afternoon appointment
+        // typed here listed above a morning one that came from a provider, on
+        // the same day, every time. Falling back to the text keeps two rows
+        // this cannot read in a stable order rather than an arbitrary one.
+        rows.sort_by(|one, other| {
+            let moment = |shown: &str| {
+                crate::common::moment::read(shown)
+                    .and_then(crate::common::moment::Moment::on_this_computer)
+            };
+            moment(&one.start)
+                .cmp(&moment(&other.start))
+                .then_with(|| one.start.cmp(&other.start))
+        });
         rows
     }
 
@@ -1740,6 +1754,39 @@ mod tests {
         assert_eq!(rows[0].repeats, "");
         assert_eq!(rows[0].summary, "Standup");
         assert_eq!(rows[0].location, "Room 2");
+    }
+
+    #[test]
+    fn test_an_event_typed_here_sorts_by_its_time_and_not_by_its_punctuation() {
+        // The editor writes "2026-07-27 17:00" and every sync writes
+        // "2026-07-27T08:00:00Z". Compared as text, a space sorts before a T,
+        // so a five o'clock appointment typed here listed above an eight
+        // o'clock standup that came from Google, on the same day, every time.
+        // Somebody arrowing down a calendar has only the order to go on.
+        let typed_here = CalendarEventEntry {
+            id: "typed".into(),
+            summary: "Dentist".into(),
+            start_datetime: "2026-07-27 17:00".into(),
+            end_datetime: "2026-07-27 18:00".into(),
+            ..calendar_event()
+        };
+        let from_google = CalendarEventEntry {
+            id: "synced".into(),
+            summary: "Standup".into(),
+            start_datetime: "2026-07-27T08:00:00Z".into(),
+            end_datetime: "2026-07-27T08:15:00Z".into(),
+            ..calendar_event()
+        };
+        let (from, to) = three_weeks_from("2026-07-27");
+
+        let rows = CalendarEventItem::every_day_shown(&[typed_here, from_google], from, to);
+        let order: Vec<&str> = rows.iter().map(|row| row.summary.as_str()).collect();
+
+        assert_eq!(
+            order,
+            vec!["Standup", "Dentist"],
+            "the morning meeting was listed after the afternoon one"
+        );
     }
 
     #[test]
