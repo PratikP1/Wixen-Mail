@@ -146,6 +146,13 @@ pub struct Filtered {
     /// into a folder and does not, on a build where writing to the server is
     /// off, is a rule somebody believes is working.
     pub held_back: usize,
+    /// How many asked for something this program cannot do yet.
+    ///
+    /// Only moving to a folder, so far. Kept apart from `changed` because
+    /// that count is what says how much the rules sorted, and counting a rule
+    /// that did nothing as having sorted a message tells somebody their rules
+    /// are working when they are not.
+    pub not_built_yet: usize,
 }
 
 /// Which messages to fetch headers for, newest first, bounded.
@@ -426,7 +433,11 @@ impl Mailbox for MailController {
 /// carried out on one message is not a reason to stop filtering the rest, and
 /// the alternative, stopping the whole sync, would turn a bad rule into a
 /// mailbox that no longer updates.
-fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i64]) -> Filtered {
+pub(crate) fn apply_rules(
+    cache: &MessageCache,
+    filtering: &Filtering<'_>,
+    arrived: &[i64],
+) -> Filtered {
     let mut done = Filtered::default();
     for id in arrived {
         let Ok(Some(message)) = cache.get_message(*id) else {
@@ -448,7 +459,8 @@ fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i64])
             continue;
         }
         match carry_out(cache, &message, &outcome) {
-            Ok(()) => done.changed += 1,
+            Ok(Carried::Something) => done.changed += 1,
+            Ok(Carried::NothingBuiltYet) => done.not_built_yet += 1,
             Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
         }
     }
@@ -460,13 +472,13 @@ fn carry_out(
     cache: &MessageCache,
     message: &CachedMessage,
     outcome: &crate::application::filters::Outcome,
-) -> Result<()> {
+) -> Result<Carried> {
     let id = message.id;
     if outcome.delete {
         // Locally. Taking it off the server is the move-to-trash path, which
         // is somebody's own deliberate action rather than a rule's.
         cache.delete_message(id)?;
-        return Ok(());
+        return Ok(Carried::Something);
     }
     if outcome.read.is_some() || outcome.starred.is_some() {
         cache.update_message_flags(
@@ -478,6 +490,8 @@ fn carry_out(
     for tag in &outcome.tags {
         cache.add_tag_to_message(id, tag)?;
     }
+    let did_something =
+        outcome.read.is_some() || outcome.starred.is_some() || !outcome.tags.is_empty();
     if let Some(folder) = &outcome.move_to {
         // Named rather than done. Moving needs the folder's id and a write to
         // the server, and doing half of it, in the cache only, would show
@@ -488,7 +502,21 @@ fn carry_out(
             folder
         );
     }
-    Ok(())
+    Ok(match did_something {
+        true => Carried::Something,
+        false => Carried::NothingBuiltYet,
+    })
+}
+
+/// Whether carrying out a message's rules actually changed anything.
+///
+/// A rule whose only action is one this program cannot do yet leaves the
+/// message exactly as it was, and saying so is the difference between a count
+/// that means "your rules sorted this much" and one that does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Carried {
+    Something,
+    NothingBuiltYet,
 }
 
 pub(crate) async fn sync_folder<M: Mailbox>(
@@ -902,6 +930,96 @@ mod tests {
                 .expect("there")
                 .read,
             "the message is still unread"
+        );
+    }
+
+    /// A rule whose only action is one this program cannot carry out is not
+    /// counted as having sorted anything.
+    ///
+    /// Moving to a folder is named in the Rules Manager and does nothing: it
+    /// needs the folder's id and a write to the server, and doing half of it
+    /// in the cache alone would show somebody a message in a folder it is not
+    /// in until the next sync put it back. That part is deliberate. Counting
+    /// it as done was not, and it is the worse half: the count is what says
+    /// how much the rules sorted, so a rule that files invoices and does not
+    /// reported that it had.
+    #[test]
+    fn test_a_rule_that_only_moves_is_not_counted_as_having_done_anything() {
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let id = cache
+            .upsert_message(&IncomingMessage {
+                folder_id,
+                uid: 1,
+                message_id: "inv-1@example.com".into(),
+                subject: "Invoice #4021".into(),
+                from_addr: "billing@example.com".into(),
+                to_addr: "me@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: "2026-07-31T09:00:00+00:00".into(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "File the invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "move_to_folder".into(),
+            action_value: Some("Invoices".into()),
+            enabled: true,
+            created_at: "2026-07-31T00:00:00Z".into(),
+        }]);
+
+        let done = apply_rules(
+            &cache,
+            &Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::EVERYTHING,
+            },
+            &[id],
+        );
+
+        assert_eq!(
+            done.changed, 0,
+            "a rule that could not be carried out was counted as having sorted the message"
+        );
+        assert_eq!(
+            done.not_built_yet, 1,
+            "nothing recorded that a rule was left undone"
         );
     }
 
@@ -2112,6 +2230,7 @@ mod tests {
             filtered: Filtered {
                 changed: 4,
                 held_back: 5,
+                not_built_yet: 0,
             },
             ..FolderSync::default()
         });

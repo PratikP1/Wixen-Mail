@@ -8696,6 +8696,25 @@ fn check_pop_mail(
     let look_at_the_body = crate::data::config::ConfigManager::load_stored()
         .map(|stored| stored.app_config().look_at_message_contents)
         .unwrap_or(true);
+    // The rules this account has, read the same way the IMAP path reads them.
+    // Nothing passed any here, so somebody collecting mail over POP could
+    // write rules, name them and switch them on, and never have one run.
+    let engine = cache
+        .get_filter_rules_for_account(&account.id)
+        .map(|stored| {
+            let mut engine = crate::application::filters::FilterEngine::default();
+            engine.load_from_persisted(&stored);
+            engine
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!("Rules could not be read: {e}");
+            crate::application::filters::FilterEngine::default()
+        });
+    let filtering =
+        (!engine.get_rules().is_empty()).then(|| crate::application::mail_sync::Filtering {
+            rules: &engine,
+            allowed: crate::application::allowed::allowed_for(&account.id),
+        });
     match handle.block_on(pop_sync::sync(
         &controller,
         &pop_sync::Landing {
@@ -8707,6 +8726,7 @@ fn check_pop_mail(
         false,
         look_at_the_body,
         chrono::Utc::now(),
+        filtering.as_ref(),
     )) {
         Ok(result) => {
             say(UIUpdate::ConnectionStatusChanged(

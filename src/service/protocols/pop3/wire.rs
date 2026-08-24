@@ -51,6 +51,11 @@ pub fn unstuff(line: &str) -> &str {
     line.strip_prefix('.').unwrap_or(line)
 }
 
+/// The same, for a line still held as the bytes it arrived as.
+pub fn unstuff_bytes(line: &[u8]) -> &[u8] {
+    line.strip_prefix(b".").unwrap_or(line)
+}
+
 /// One line of a UIDL listing: the message's number and its identifier.
 ///
 /// The identifier is what makes POP3 usable at all. Message numbers are

@@ -2243,6 +2243,44 @@ pub fn show_filter_manager_dialog(
     }
 }
 
+/// What a rule can do, as it is stored and as it is read out.
+///
+/// The stored names used to be shown as they are written down, so the Action
+/// list read out "mark_as_read" and "move_to_folder": machine names, spoken
+/// to somebody choosing between them.
+///
+/// Moving to a folder says what it is. It is offered because a rule that
+/// files mail is the one most people write first, and it is not built: it
+/// needs the folder's id and a write to the server, and doing half of it here
+/// would show a message in a folder it is not in until the next sync put it
+/// back. Saying so where the choice is made is the difference between a
+/// limitation and a rule somebody believes is working.
+const RULE_ACTIONS: &[(&str, &str)] = &[
+    ("mark_as_read", "Mark as read"),
+    ("mark_as_unread", "Mark as unread"),
+    ("star", "Flag it"),
+    ("delete", "Delete it"),
+    ("move_to_folder", "Move to a folder (not built yet)"),
+    ("add_tag", "Add a label"),
+];
+
+/// The words for a stored action, or the stored name when it is not one of
+/// these, so a rule written by a later version is shown rather than blanked.
+fn shown_action(stored: &str) -> &str {
+    RULE_ACTIONS
+        .iter()
+        .find(|(name, _)| *name == stored)
+        .map_or(stored, |(_, shown)| *shown)
+}
+
+/// The stored name for what a person picked.
+fn stored_action(shown: &str) -> String {
+    RULE_ACTIONS
+        .iter()
+        .find(|(_, offered)| *offered == shown)
+        .map_or_else(|| shown.to_string(), |(name, _)| (*name).to_string())
+}
+
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     list.delete_all_items();
     for (i, r) in rules.iter().enumerate() {
@@ -2356,17 +2394,10 @@ pub fn build_filter_edit_dialog(
     fields.add(&cs_check, 0, SizerFlag::All, 4);
 
     let action_label = StaticText::builder(&dlg).with_label("&Action:").build();
-    let action_choices: Vec<String> = [
-        "mark_as_read",
-        "mark_as_unread",
-        "star",
-        "delete",
-        "move_to_folder",
-        "add_tag",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let action_choices: Vec<String> = RULE_ACTIONS
+        .iter()
+        .map(|(_, shown)| (*shown).to_string())
+        .collect();
     let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();
     set_accessible_name(&action_choice, "Action");
     fields.add(
@@ -2408,7 +2439,7 @@ pub fn build_filter_edit_dialog(
         select_choice_by_string(&match_choice, &r.match_type);
         pattern_f.set_value(&r.pattern);
         cs_check.set_value(r.case_sensitive);
-        select_choice_by_string(&action_choice, &r.action_type);
+        select_choice_by_string(&action_choice, shown_action(&r.action_type));
         action_value_f.set_value(&r.action_value);
         en_check.set_value(r.enabled);
     }
@@ -2478,7 +2509,7 @@ fn show_filter_edit(
             match_type: get_choice_string(&match_choice).unwrap_or_default(),
             pattern: pattern_f.get_value(),
             case_sensitive: cs_check.get_value(),
-            action_type: get_choice_string(&action_choice).unwrap_or_default(),
+            action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
             action_value: action_value_f.get_value(),
             enabled: en_check.get_value(),
         })

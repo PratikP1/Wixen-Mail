@@ -304,7 +304,7 @@ impl Pop3Session {
     pub async fn listing(&mut self) -> Result<Vec<Pop3MessageInfo>> {
         self.command("LIST", &[]).await?;
         let sizes: Vec<(u32, usize)> = self
-            .read_data()
+            .read_text_data()
             .await?
             .iter()
             .filter_map(|line| wire::list_line(line))
@@ -318,7 +318,7 @@ impl Pop3Session {
             )
         })?;
         let identifiers: std::collections::HashMap<u32, String> = self
-            .read_data()
+            .read_text_data()
             .await?
             .iter()
             .filter_map(|line| wire::uidl_line(line))
@@ -340,12 +340,12 @@ impl Pop3Session {
     pub async fn retrieve(&mut self, id: u32) -> Result<Vec<u8>> {
         self.command("RETR", &[&id.to_string()]).await?;
         let lines = self.read_data().await?;
-        let mut out = String::new();
+        let mut out = Vec::new();
         for line in &lines {
-            out.push_str(wire::unstuff(line));
-            out.push_str("\r\n");
+            out.extend_from_slice(wire::unstuff_bytes(line));
+            out.extend_from_slice(b"\r\n");
         }
-        Ok(out.into_bytes())
+        Ok(out)
     }
 
     /// Mark a message for deletion. It goes when the session ends politely.
@@ -431,13 +431,23 @@ impl Pop3Session {
     /// here and undone by whoever knows whether they are looking at a body: a
     /// listing has no stuffed dots and running it through the same step would
     /// be a step that can only do harm.
-    async fn read_data(&mut self) -> Result<Vec<String>> {
+    async fn read_data(&mut self) -> Result<Vec<Vec<u8>>> {
         let mut lines = Vec::new();
         loop {
-            let mut line = String::new();
+            // Bytes, not characters. A message is bytes: a body declared 8bit
+            // in Latin-1 or Shift-JIS, or an unencoded accent in a display
+            // name, is ordinary mail and is not valid UTF-8. Read into a
+            // `String` and the decode fails, and the reader underneath
+            // discards the bytes it had already taken off the socket, so the
+            // stream is left out of step in the middle of a message. Every
+            // later sync then died on the same message, the session never quit
+            // politely so nothing committed, and the sentence somebody saw
+            // named the wrong cause: "stream did not contain valid UTF-8",
+            // about a mailbox that was working.
+            let mut line = Vec::new();
             let read = with_timeout(
                 COMMAND_TIMEOUT,
-                self.stream.read_line(&mut line),
+                self.stream.read_until(b'\n', &mut line),
                 "reading an answer",
             )
             .await?
@@ -448,11 +458,29 @@ impl Pop3Session {
                     "The mail server closed the connection partway through an answer".into(),
                 ));
             }
-            if wire::is_end_of_data(&line) {
+            while matches!(line.last(), Some(b'\r' | b'\n')) {
+                line.pop();
+            }
+            if line == b"." {
                 return Ok(lines);
             }
-            lines.push(line.trim_end_matches(['\r', '\n']).to_string());
+            lines.push(line);
         }
+    }
+
+    /// The same answer where it is known to be text: a listing, never a body.
+    ///
+    /// Decoded loosely on purpose. A listing is ASCII on every server, and a
+    /// byte that is not cannot be a reason to give up on the whole mailbox:
+    /// this is past the point where the stream could go out of step, so the
+    /// worst a stray byte does here is one replacement character in one line.
+    async fn read_text_data(&mut self) -> Result<Vec<String>> {
+        Ok(self
+            .read_data()
+            .await?
+            .into_iter()
+            .map(|line| String::from_utf8_lossy(&line).into_owned())
+            .collect())
     }
 }
 
@@ -536,6 +564,70 @@ pub(crate) mod against_a_server_that_answers {
         let mut session = reading_only_on(server).await;
         session.allow_changes();
         session
+    }
+
+    #[tokio::test]
+    async fn test_a_message_carrying_a_byte_that_is_not_text_still_reads() {
+        // Real mail is bytes, not characters. A body declared 8bit in Latin-1
+        // or Shift-JIS, or an unencoded accent in a display name, is ordinary
+        // and is not valid UTF-8. Read a line at a time into a String, the
+        // decode fails, and the reader underneath discards the bytes it had
+        // already taken off the socket, so the stream is left out of step in
+        // the middle of a message. The sync then died on that message and on
+        // every later attempt, the session never quit politely, nothing
+        // committed, and the sentence somebody saw named the wrong cause.
+        //
+        // 0xE9 is a lone Latin-1 e-acute: one byte, and not valid UTF-8 on
+        // its own, which is exactly what an 8bit body carries.
+        const E_ACUTE: u8 = 0xE9;
+        let mut answer = b"+OK 42 octets
+"
+        .to_vec();
+        answer.extend_from_slice(b"From: Jos");
+        answer.push(E_ACUTE);
+        answer.extend_from_slice(
+            b" <jose@example.com>
+Subject: Hola
+
+",
+        );
+        answer.extend_from_slice(
+            b"Buenos dias
+.
+",
+        );
+
+        let server = conversing(
+            "+OK loopback ready
+",
+            move |said: &str| {
+                if said.starts_with("RETR") {
+                    Turn::SayBytes(answer.clone())
+                } else {
+                    Turn::Say(
+                        "+OK done
+"
+                        .to_string(),
+                    )
+                }
+            },
+        )
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let raw = tokio::time::timeout(LONG_ENOUGH, session.retrieve(1))
+            .await
+            .expect("the server never answered")
+            .expect("a message with a byte that is not text still has to read");
+
+        assert!(
+            raw.contains(&E_ACUTE),
+            "the byte that is not text did not survive the read"
+        );
+        assert!(
+            raw.windows(11).any(|w| w == b"Buenos dias"),
+            "the read stopped before the end of the message"
+        );
     }
 
     #[tokio::test]

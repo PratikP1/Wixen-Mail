@@ -133,6 +133,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Mail collected over POP no longer stops the account working when one
+  message contains an unusual character.** A message whose text is not stored
+  the way this program expected made the connection lose its place partway
+  through, so that sync and every one after it failed on the same message and
+  nothing at all was collected. The reason given named the wrong thing
+  entirely. Messages are now read exactly as they arrive.
+- **Rules run on mail collected over POP.** They never had. The Rules window
+  does not ask which kind of account you have, so a rule could be written,
+  named and switched on, and never once looked at the mail.
+- **The Rules window says what each action does, in words.** It listed the
+  names used inside the program, so the choices read out as "mark_as_read"
+  and "move_to_folder". Moving to a folder now says plainly that it is not
+  built yet, which it never has been, and mail it would have moved is no
+  longer counted as sorted.
 - **A reminder set for the hour the clocks change still goes off.** On the
   Sunday the clocks go back, one hour of the day happens twice, and a
   reminder set inside it was skipped entirely and read aloud as a raw

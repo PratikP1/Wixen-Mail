@@ -37,6 +37,8 @@ pub struct PopSync {
     pub waiting_on_the_setting: usize,
     /// How many are on the server in total.
     pub on_server: usize,
+    /// What the rules did to the mail that just arrived.
+    pub filtered: crate::application::mail_sync::Filtered,
     /// The rows this check wrote, oldest first.
     ///
     /// So anything that has to look at each new message can find them without
@@ -198,6 +200,7 @@ pub(crate) async fn sync<M: PopMailbox>(
     in_junk_folder: bool,
     look_at_the_body: bool,
     now: chrono::DateTime<chrono::Utc>,
+    filtering: Option<&crate::application::mail_sync::Filtering<'_>>,
 ) -> Result<PopSync> {
     let Landing {
         cache,
@@ -265,8 +268,19 @@ pub(crate) async fn sync<M: PopMailbox>(
     // without it is a connection somebody's server holds open for nothing.
     server.finish().await?;
 
+    // Rules, on what has just arrived and nothing else, the same rule the
+    // IMAP path follows. Nothing ran them here at all: the Rules Manager has
+    // no protocol gate, so somebody on POP could write rules, name them,
+    // enable them, and never have one evaluated, while the changelog said
+    // rules run on arriving mail with no exception written down.
+    let filtered = match filtering {
+        Some(rules) => crate::application::mail_sync::apply_rules(cache, rules, &written),
+        None => crate::application::mail_sync::Filtered::default(),
+    };
+
     Ok(PopSync {
         fetched: written.len(),
+        filtered,
         removed_from_server: removed,
         waiting_on_the_setting: waiting,
         on_server: on_server.len(),
@@ -558,7 +572,70 @@ mod tests {
                 false,
                 true,
                 now,
+                None,
             ))
+    }
+
+    #[test]
+    fn test_mail_collected_over_pop_is_sorted_by_the_rules() {
+        // Nothing ran the rules on POP mail at all. The Rules Manager has no
+        // protocol gate, so somebody collecting mail this way could write a
+        // rule, name it, switch it on, and never have it evaluated, while the
+        // changelog said rules run on arriving mail with no exception written
+        // down anywhere.
+        let (cache, folder_id) = a_cache();
+        let raw = raw_message(
+            "From: news@example.com
+Subject: Weekly roundup",
+            "Body",
+        );
+        let server = Scripted::holding(&[(1, "aaa", &raw)]);
+
+        let mut engine = crate::application::filters::FilterEngine::default();
+        engine.load_from_persisted(&[crate::data::message_cache::MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "Newsletters are read".into(),
+            field: "from".into(),
+            match_type: "contains".into(),
+            pattern: "news@example.com".into(),
+            case_sensitive: false,
+            action_type: "mark_as_read".into(),
+            action_value: None,
+            enabled: true,
+            created_at: String::new(),
+        }]);
+        let filtering = crate::application::mail_sync::Filtering {
+            rules: &engine,
+            allowed: crate::application::allowed::Allowed {
+                mail: true,
+                personal_information: true,
+            },
+        };
+
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync(
+                &server,
+                &Landing {
+                    cache: &cache,
+                    account_id: "acct",
+                    folder_id,
+                },
+                Housekeeping::CAUTIOUS,
+                false,
+                true,
+                Utc::now(),
+                Some(&filtering),
+            ))
+            .expect("the sync to finish");
+
+        assert_eq!(outcome.fetched, 1);
+        assert_eq!(
+            outcome.filtered.changed, 1,
+            "a rule that matches the arriving message did not run"
+        );
     }
 
     fn server() -> Vec<(u32, String)> {
@@ -1364,6 +1441,7 @@ X-Spam-Flag: YES\r\n\r\nbody";
                 false,
                 true,
                 Utc::now(),
+                None,
             ));
 
         assert!(outcome.is_err(), "a failed sync reported as a done one");

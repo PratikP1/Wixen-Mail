@@ -330,6 +330,14 @@ fn content_length(head: &str) -> usize {
 pub enum Turn {
     /// Answer with these bytes, verbatim, and go back to reading lines.
     Say(String),
+    /// The same, for an answer that is not text.
+    ///
+    /// Real mail carries bytes, not characters: a body declared 8bit in
+    /// Latin-1 or Shift-JIS, or an unencoded accent in a display name, is
+    /// ordinary and is not valid UTF-8. A helper that could only send a
+    /// `String` could not reproduce that, which is why a reader that fell
+    /// over on it went unnoticed.
+    SayBytes(Vec<u8>),
     /// Take the counted block of bytes the line just read asked to send.
     ///
     /// How a saved copy of a message reaches a mail server. Answers `+`, reads
@@ -471,6 +479,15 @@ async fn hold_one(
 
         let reply = match answer(&said) {
             Turn::Say(reply) => reply,
+            // Written out here rather than joining the path below, which
+            // works in `String` because every other answer is text.
+            Turn::SayBytes(raw) => {
+                if writing.write_all(&raw).await.is_err() {
+                    return;
+                }
+                awaiting_sasl_response = false;
+                continue;
+            }
             // Returning drops both halves of the socket, so the client sees the
             // connection go away with the command unanswered.
             Turn::HangUp => return,
