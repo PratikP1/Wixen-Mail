@@ -1474,9 +1474,19 @@ pub fn build_contact_edit_dialog(
         }
     });
     del_email_btn.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_DEL_EMAIL);
+        let held = emails_data.clone();
+        let a11y = Arc::clone(a11y);
+        move |event| {
+            event.event.skip(false);
+            remove_from_a_contact_list(
+                &email_list,
+                &held,
+                &problem_line,
+                &a11y,
+                "email",
+                |item: &EmailItem| item.address.clone(),
+                refresh_email_list,
+            );
         }
     });
     add_phone_btn.on_click({
@@ -1486,9 +1496,19 @@ pub fn build_contact_edit_dialog(
         }
     });
     del_phone_btn.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_DEL_PHONE);
+        let held = phones_data.clone();
+        let a11y = Arc::clone(a11y);
+        move |event| {
+            event.event.skip(false);
+            remove_from_a_contact_list(
+                &phone_list,
+                &held,
+                &problem_line,
+                &a11y,
+                "phone number",
+                |item: &PhoneItem| item.number.clone(),
+                refresh_phone_list,
+            );
         }
     });
     add_addr_btn.on_click({
@@ -1498,9 +1518,19 @@ pub fn build_contact_edit_dialog(
         }
     });
     del_addr_btn.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_DEL_ADDR);
+        let held = addrs_data.clone();
+        let a11y = Arc::clone(a11y);
+        move |event| {
+            event.event.skip(false);
+            remove_from_a_contact_list(
+                &addr_list,
+                &held,
+                &problem_line,
+                &a11y,
+                "address",
+                |item: &AddressItem| item.street.clone(),
+                refresh_addr_list,
+            );
         }
     });
     add_custom_btn.on_click({
@@ -1510,9 +1540,19 @@ pub fn build_contact_edit_dialog(
         }
     });
     del_custom_btn.on_click({
-        let d = dlg;
-        move |_| {
-            d.end_modal(ID_DEL_CUSTOM);
+        let held = custom_data.clone();
+        let a11y = Arc::clone(a11y);
+        move |event| {
+            event.event.skip(false);
+            remove_from_a_contact_list(
+                &custom_list,
+                &held,
+                &problem_line,
+                &a11y,
+                "custom field",
+                |item: &CustomFieldItem| item.label.clone(),
+                refresh_custom_list,
+            );
         }
     });
 
@@ -1610,21 +1650,9 @@ fn show_contact_edit(
                     refresh_email_list(&email_list, &emails_data.borrow());
                 }
             }
-            r if r == ID_DEL_EMAIL => {
-                if let Some(idx) = get_selected(&email_list) {
-                    emails_data.borrow_mut().remove(idx);
-                    refresh_email_list(&email_list, &emails_data.borrow());
-                }
-            }
             r if r == ID_ADD_PHONE => {
                 if let Some(item) = show_phone_sub_dialog(&dlg, None, palette) {
                     phones_data.borrow_mut().push(item);
-                    refresh_phone_list(&phone_list, &phones_data.borrow());
-                }
-            }
-            r if r == ID_DEL_PHONE => {
-                if let Some(idx) = get_selected(&phone_list) {
-                    phones_data.borrow_mut().remove(idx);
                     refresh_phone_list(&phone_list, &phones_data.borrow());
                 }
             }
@@ -1634,21 +1662,9 @@ fn show_contact_edit(
                     refresh_addr_list(&addr_list, &addrs_data.borrow());
                 }
             }
-            r if r == ID_DEL_ADDR => {
-                if let Some(idx) = get_selected(&addr_list) {
-                    addrs_data.borrow_mut().remove(idx);
-                    refresh_addr_list(&addr_list, &addrs_data.borrow());
-                }
-            }
             r if r == ID_ADD_CUSTOM => {
                 if let Some(item) = show_custom_field_sub_dialog(&dlg, None, palette) {
                     custom_data.borrow_mut().push(item);
-                    refresh_custom_list(&custom_list, &custom_data.borrow());
-                }
-            }
-            r if r == ID_DEL_CUSTOM => {
-                if let Some(idx) = get_selected(&custom_list) {
-                    custom_data.borrow_mut().remove(idx);
                     refresh_custom_list(&custom_list, &custom_data.borrow());
                 }
             }
@@ -1688,6 +1704,48 @@ fn show_contact_edit(
 }
 
 // ── List refresh helpers ─────────────────────────────────────────────────────
+
+/// Take the selected row off one of the contact editor's own lists.
+///
+/// Done here, with the window still open and still pumping, rather than by
+/// closing the dialog and reopening it. All four Remove buttons used to close
+/// it: the loop then removed the row in silence, with nothing announced and
+/// no answer at all when nothing was selected, and a repaint that left
+/// nothing selected meant a second press did nothing and said nothing about
+/// why. That is the same shape this file's own `delete_selected` was fixed
+/// for, and these four were never brought along.
+fn remove_from_a_contact_list<T: Clone>(
+    list: &ListCtrl,
+    held: &Rc<RefCell<Vec<T>>>,
+    problem_line: &StaticText,
+    a11y: &Accessibility,
+    what: &str,
+    name_of: impl Fn(&T) -> String,
+    repaint: impl Fn(&ListCtrl, &[T]),
+) {
+    let Some(at) = get_selected(list) else {
+        said_and_shown(
+            problem_line,
+            a11y,
+            &manager_words::nothing_selected(what, "remove"),
+            Priority::High,
+        );
+        return;
+    };
+    let name = held.borrow().get(at).map(&name_of).unwrap_or_default();
+    held.borrow_mut().remove(at);
+    let left = held.borrow().len();
+    repaint(list, &held.borrow());
+    // Back on the row that moved up, so removing several in a row does not
+    // mean finding the list again each time.
+    land_the_row_cursor(list, the_row_to_select_after_removing(at, left));
+    said_and_shown(
+        problem_line,
+        a11y,
+        &manager_words::deleted(what, &name),
+        Priority::Normal,
+    );
+}
 
 fn refresh_email_list(list: &ListCtrl, items: &[EmailItem]) {
     list.delete_all_items();
@@ -1738,6 +1796,21 @@ fn refresh_custom_list(list: &ListCtrl, items: &[CustomFieldItem]) {
 /// Returns the type choice and the address field alongside the dialog, the
 /// same way `show_email_sub_dialog` still needs them after a real
 /// `.show_modal()`.
+/// Say what a sub-dialog needs before it can close, and keep it open.
+///
+/// Through a message box rather than an announcement: these four little
+/// windows are built without an accessibility handle, and a message box is
+/// read out by a screen reader on its own. They used to close and let the
+/// caller discover the empty field, which then returned nothing at all, so
+/// filling in a custom field's value and leaving its label blank destroyed
+/// both with no word said.
+fn a_sub_dialog_needs(parent: &Dialog, said: &str) {
+    let box_ = MessageDialog::builder(parent, said, "Not added")
+        .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+        .build();
+    box_.show_modal();
+}
+
 pub fn build_email_sub_dialog(
     parent: &Dialog,
     palette: Option<theme::Palette>,
@@ -1786,7 +1859,15 @@ pub fn build_email_sub_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
+            if addr_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "An email address is needed before this can be added.");
+                addr_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -1818,9 +1899,10 @@ fn show_email_sub_dialog(
 
     if dlg.show_modal() == ID_OK {
         let addr = addr_f.get_value();
-        if addr.trim().is_empty() {
-            return None;
-        }
+        // Whatever comes back already held together: OK's own handler, in
+        // the window that has just closed, refuses to close at all while a
+        // needed box is empty. The check that used to be here ran after the
+        // window was gone and could only throw away everything typed.
         Some(EmailItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             address: addr,
@@ -1889,7 +1971,15 @@ pub fn build_phone_sub_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
+            if num_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "A phone number is needed before this can be added.");
+                num_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -1921,9 +2011,10 @@ fn show_phone_sub_dialog(
 
     if dlg.show_modal() == ID_OK {
         let num = num_f.get_value();
-        if num.trim().is_empty() {
-            return None;
-        }
+        // Whatever comes back already held together: OK's own handler, in
+        // the window that has just closed, refuses to close at all while a
+        // needed box is empty. The check that used to be here ran after the
+        // window was gone and could only throw away everything typed.
         Some(PhoneItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             number: num,
@@ -2064,7 +2155,18 @@ pub fn build_address_sub_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
+            // Street or city, which is the same rule the caller used to
+            // apply after this window had already closed, throwing away the
+            // state, postcode and country somebody had filled in with it.
+            if street_f.get_value().trim().is_empty() && city_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(&d, "A street or a town is needed before this can be added.");
+                street_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -2115,10 +2217,10 @@ fn show_address_sub_dialog(
     if dlg.show_modal() == ID_OK {
         let street = street_f.get_value();
         let city = city_f.get_value();
-        // Allow at least street or city
-        if street.trim().is_empty() && city.trim().is_empty() {
-            return None;
-        }
+        // Whatever comes back already held together: OK's own handler, in
+        // the window that has just closed, refuses to close at all while a
+        // needed box is empty. The check that used to be here ran after the
+        // window was gone and could only throw away everything typed.
         Some(AddressItem {
             label: get_choice_string(&type_choice).unwrap_or_else(|| "Other".to_string()),
             street,
@@ -2180,7 +2282,18 @@ pub fn build_custom_field_sub_dialog(
 
     ok.on_click({
         let d = dlg;
-        move |_| {
+        move |event| {
+            // Consuming the click is what makes the refusal stick; see
+            // `wx_item_form.rs`'s module doc comment.
+            event.event.skip(false);
+            if label_f.get_value().trim().is_empty() {
+                a_sub_dialog_needs(
+                    &d,
+                    "A name for the field is needed before this can be added.",
+                );
+                label_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -2213,9 +2326,10 @@ fn show_custom_field_sub_dialog(
     if dlg.show_modal() == ID_OK {
         let label = label_f.get_value();
         let value = value_f.get_value();
-        if label.trim().is_empty() {
-            return None;
-        }
+        // Whatever comes back already held together: OK's own handler, in
+        // the window that has just closed, refuses to close at all while a
+        // needed box is empty. The check that used to be here ran after the
+        // window was gone and could only throw away everything typed.
         Some(CustomFieldItem { label, value })
     } else {
         None

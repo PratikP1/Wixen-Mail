@@ -133,6 +133,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
+- **Removing an email, phone number, address or custom field from a contact
+  says so, and can be done twice.** All four Remove buttons said nothing at
+  all, and because the list came back with nothing selected, pressing Remove
+  again did nothing and said nothing about why. Each now says what it removed
+  and leaves the cursor on the next row, and says so plainly when nothing is
+  selected instead of ignoring the press.
+- **Adding an email, phone number, address or custom field no longer throws
+  away what you typed.** Leaving the one needed box empty closed the window
+  and discarded everything in it without a word. The worst was a custom
+  field: filling in the value and leaving the name blank destroyed both. Each
+  now says what it needs and waits.
 - **Contacts exported from Google or iCloud import properly.** Anybody whose
   email or phone number carried a custom label was skipped entirely, and the
   count blamed the wrong thing, saying the card named no email address. For a
