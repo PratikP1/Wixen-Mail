@@ -18,10 +18,11 @@
 use chrono::Datelike;
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::{
     Clock, DateOrder, DateSettings, DateStyle, DateWording,
 };
-use wixen_mail::presentation::wx_item_form::{build_item_form_dialog, clamp_day_to_month};
+use wixen_mail::presentation::wx_item_form::{Chrome, build_item_form_dialog, clamp_day_to_month};
 use wxdragon::prelude::*;
 
 /// One outcome this file checked: its name, and why it was wrong. Empty
@@ -62,6 +63,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let now = chrono::Local::now();
+            let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
             // ── Opens on today, twenty-four hour clock: no AM/PM choice,
             // ── the hour spinner reads nought to twenty-three. ─────────────
@@ -70,7 +72,10 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 ItemKind::Event,
                 &[],
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 twenty_four_hour_settings(),
                 None,
             )
@@ -173,7 +178,10 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 ItemKind::Event,
                 &[],
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 twelve_hour_settings(),
                 None,
             )

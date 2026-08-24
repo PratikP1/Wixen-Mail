@@ -50,15 +50,44 @@
 //! fields most people never set. A kind with nothing to say about
 //! recurrence, a task or a note, keeps the single page it always had: an
 //! empty second page is not a courtesy, it is a tab stop that goes nowhere.
+//!
+//! # Save refuses what it should, in the dialog it was refused in
+//!
+//! Save used to be a bare button carrying `ID_OK`, closing on either a click
+//! or Enter through wxWidgets' own default handling for a dialog's
+//! affirmative button, with nothing asking whether the answer made sense
+//! first. Save now has a real handler: it reads every field back, asks
+//! [`Filled::problems`] what is wrong, and only closes the dialog when
+//! nothing is. Bad currency in a field is not a way through this: the
+//! handler intercepts the click before wxWidgets' own default handling ever
+//! runs, and calling `end_modal` is the only thing that closes the dialog at
+//! all, so simply not calling it is enough to refuse the answer.
+//!
+//! What refusing looks like: the reason is set as this dialog's own visible
+//! problem line and spoken through the accessibility announcement queue at
+//! once, through [`crate::presentation::status_line::said_and_shown`], the
+//! same pairing every other status line in this application already uses.
+//! Focus moves to the first field named, so the person who just pressed Save
+//! lands where the fix belongs rather than having to find it by ear or by
+//! tabbing back through everything already answered correctly. Nothing here
+//! closes and reopens the dialog: that shape has already cost this
+//! application a real NVDA announcement once, documented at length in
+//! `wx_managers.rs`'s own `delete_selected`, because hiding a window and
+//! showing it again with nothing pumped in between drops whatever tried to
+//! announce itself in the gap. Refusing a Save never hides anything at all.
 
-use crate::application::item_fields::{Entry, Field, Filled, fields_for};
+use crate::application::item_fields::{Entry, Field, Filled, Problem, fields_for};
 use crate::application::new_item::ItemKind;
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
+use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
 use crate::presentation::wx_app::date_settings_from;
+use std::sync::Arc;
 use wxdragon::prelude::*;
 
 /// A container the new thing could go in: a calendar, a task list, a folder.
@@ -92,6 +121,12 @@ pub struct TimeFields {
 }
 
 /// The controls built for one field, so the value can be read back.
+///
+/// `Clone, Copy`, the same as every variant it holds: Save's own handler
+/// keeps its own copy of the whole built list to read back from, so the one
+/// this function goes on building the rest of the dialog from is never
+/// moved out from under it.
+#[derive(Clone, Copy)]
 enum Control {
     Line(TextCtrl),
     Paragraph(TextCtrl),
@@ -114,6 +149,17 @@ pub struct Prefill<'a> {
     /// chosen by name in the box and known by id everywhere else. `None`
     /// when this kind does not live in a container, or nothing was chosen.
     pub container: Option<&'a str>,
+}
+
+/// How this dialog paints itself, and how it reaches the accessibility
+/// announcement queue to say a Save was refused while the dialog stays open.
+/// Bundled into one parameter for the same reason `Prefill` is: neither
+/// travels anywhere without the other, and `build_item_form_dialog` had
+/// already reached clippy's own limit on how many separate parameters one
+/// function may carry before this was added.
+pub struct Chrome<'a> {
+    pub palette: Option<theme::Palette>,
+    pub a11y: &'a Arc<Accessibility>,
 }
 
 /// Ask for everything needed to make one of these, or to change one that
@@ -141,18 +187,27 @@ pub fn ask_for<W: WxWidget>(
     containers: &[Container],
     known_categories: &[String],
     prefill: Option<Prefill>,
+    a11y: &Arc<Accessibility>,
 ) -> Option<(Filled, Option<String>)> {
     let widgets = build_item_form_dialog(
         parent,
         kind,
         containers,
         known_categories,
-        theme::current_from_stored_config(),
+        Chrome {
+            palette: theme::current_from_stored_config(),
+            a11y,
+        },
         current_date_settings(),
         prefill,
     )?;
 
     let answer = widgets.dialog.show_modal();
+    // `ID_OK` only happens at all once Save's own handler has already found
+    // nothing wrong with what `read_back` would give back, so this second
+    // read is never the one telling somebody their answer was refused; it
+    // is the same read done once more because its first result was never
+    // kept.
     let filled = if answer == ID_OK {
         Some(read_back(&widgets.built, containers))
     } else {
@@ -233,6 +288,18 @@ pub struct ItemFormWidgets {
     built: Vec<(&'static Field, Control)>,
 }
 
+impl ItemFormWidgets {
+    /// Read every field back into a filled form, the same way Save's own
+    /// handler does before deciding whether to accept it.
+    ///
+    /// `pub` so a test can read back what a live dialog really holds, and
+    /// ask [`Filled::problems`] the same question Save does, without a
+    /// human clicking a real Save button to find out.
+    pub fn filled(&self, containers: &[Container]) -> (Filled, Option<String>) {
+        read_back(&self.built, containers)
+    }
+}
+
 /// Everything every field in one form is built from, bundled so the
 /// functions that build a field do not each grow a parameter for every one
 /// of these; nothing outside this module ever builds one, so none of its
@@ -266,7 +333,7 @@ pub fn build_item_form_dialog<W: WxWidget>(
     kind: ItemKind,
     containers: &[Container],
     known_categories: &[String],
-    palette: Option<theme::Palette>,
+    chrome: Chrome,
     date_settings: DateSettings,
     prefill: Option<Prefill>,
 ) -> Option<ItemFormWidgets> {
@@ -351,6 +418,20 @@ pub fn build_item_form_dialog<W: WxWidget>(
         })
     };
 
+    // Where Save says why it refused an answer, both on screen and, through
+    // `said_and_shown` below, to the accessibility announcement queue.
+    // Empty until then: there is nothing wrong with a form nobody has tried
+    // to save yet. Built before the buttons so tab order meets it right
+    // before the row that can fill it in, the same order a sighted person
+    // reading top to bottom would meet it in too.
+    let problem_line = StaticText::builder(&dialog).with_label("").build();
+    sizer.add(
+        &problem_line,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
+
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let save = Button::builder(&dialog)
         .with_label("&Save")
@@ -370,6 +451,36 @@ pub fn build_item_form_dialog<W: WxWidget>(
     // find a button. It is safe as the default here because the other answer
     // is Escape, which every dialog already understands.
     save.set_default();
+
+    // Intercepts the click (and Enter, which reaches a default button the
+    // same way) before wxWidgets' own default handling for `ID_OK` ever
+    // runs, so refusing to call `end_modal` below is the whole of refusing
+    // the answer: nothing else stands ready to close this dialog instead.
+    // See the module doc comment for the fuller reasoning.
+    let built_for_save = built.clone();
+    let containers_for_save: Vec<Container> = containers.to_vec();
+    let a11y_for_save = Arc::clone(chrome.a11y);
+    save.on_click(move |_| {
+        let (filled, _) = read_back(&built_for_save, &containers_for_save);
+        let problems = filled.problems(kind);
+        if problems.is_empty() {
+            dialog.end_modal(ID_OK);
+            return;
+        }
+        said_and_shown(
+            &problem_line,
+            &a11y_for_save,
+            &complaint_about(&problems),
+            Priority::High,
+        );
+        if let Some(first) = problems.first()
+            && let Some((_, control)) = built_for_save
+                .iter()
+                .find(|(field, _)| field.name == first.field.name)
+        {
+            focus(control);
+        }
+    });
 
     // Sized by what is in it. Anything else is a guess that is wrong on a
     // display it was not guessed on, and the part that falls off the bottom is
@@ -447,7 +558,7 @@ pub fn build_item_form_dialog<W: WxWidget>(
     // `wx_settings::build_settings_dialog` paints its own tabs: a `Panel`
     // does not inherit a colour set on its parent, so left alone it would
     // stay the one colour this dialog no longer is.
-    if let Some(palette) = palette {
+    if let Some(palette) = chrome.palette {
         theme::paint(&dialog, palette.main_surface());
         if let Some(pages) = recurrence {
             theme::paint(&pages.notebook, palette.main_surface());
@@ -953,24 +1064,19 @@ fn read_back(
     (filled, chosen_container)
 }
 
-/// What to say when a required field was left empty.
+/// What Save says when it refuses an answer: every problem in one sentence.
 ///
-/// Here rather than in the dialog so the wording can be tested. It names the
-/// field, because "some required fields are empty" makes somebody go hunting
-/// through a form they cannot see.
-pub fn complaint_about(missing: &[&Field]) -> String {
-    let names: Vec<String> = missing
-        .iter()
-        .map(|field| name_from_label(field.label))
-        .collect();
-    match names.len() {
-        0 => String::new(),
-        1 => format!("{} is needed before this can be saved", names[0]),
-        _ => format!(
-            "These are needed before this can be saved: {}",
-            names.join(", ")
-        ),
+/// Here rather than in the dialog so the wording can be tested. Each
+/// `Problem` already carries its own full reason; this only joins them, one
+/// sentence per problem, because somebody who got three things wrong
+/// deserves to hear all three at once rather than trying Save three times to
+/// find out about each in turn.
+pub fn complaint_about(problems: &[Problem]) -> String {
+    if problems.is_empty() {
+        return String::new();
     }
+    let said: Vec<&str> = problems.iter().map(|p| p.said.as_str()).collect();
+    format!("{}.", said.join(". "))
 }
 
 #[cfg(test)]
@@ -1051,9 +1157,9 @@ mod tests {
 
     #[test]
     fn test_the_complaint_names_the_field() {
-        let missing = Filled::default().missing(ItemKind::Task);
+        let problems = Filled::default().problems(ItemKind::Task);
 
-        let said = complaint_about(&missing);
+        let said = complaint_about(&problems);
 
         assert!(said.contains("Title"), "{said}");
         assert!(
@@ -1063,15 +1169,15 @@ mod tests {
     }
 
     #[test]
-    fn test_nothing_missing_says_nothing() {
+    fn test_nothing_wrong_says_nothing() {
         assert_eq!(complaint_about(&[]), "");
     }
 
     #[test]
-    fn test_two_missing_are_both_named() {
-        let missing = Filled::default().missing(ItemKind::Event);
+    fn test_several_problems_are_all_named() {
+        let problems = Filled::default().problems(ItemKind::Event);
 
-        let said = complaint_about(&missing);
+        let said = complaint_about(&problems);
 
         // An event needs a title and both dates.
         assert!(said.contains("Title"), "{said}");

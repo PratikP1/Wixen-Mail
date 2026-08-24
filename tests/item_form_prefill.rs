@@ -15,8 +15,9 @@
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::item_fields::{FieldName, Filled};
 use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::DateSettings;
-use wixen_mail::presentation::wx_item_form::{Container, Prefill, build_item_form_dialog};
+use wixen_mail::presentation::wx_item_form::{Chrome, Container, Prefill, build_item_form_dialog};
 use wxdragon::prelude::*;
 
 /// One outcome this file checked: its name, and why it was wrong. Empty
@@ -46,6 +47,7 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
         wxdragon::main(move |app| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
+            let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
             // ── A blank form still says "New", the same as before this
             // ── existed. ─────────────────────────────────────────────────
@@ -54,7 +56,10 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
                 ItemKind::Event,
                 &[],
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 DateSettings::default(),
                 None,
             )
@@ -98,7 +103,10 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
                 ItemKind::Event,
                 &containers,
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 DateSettings::default(),
                 Some(Prefill {
                     filled: &existing,

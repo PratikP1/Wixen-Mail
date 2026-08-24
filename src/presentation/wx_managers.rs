@@ -935,7 +935,7 @@ pub fn show_contact_manager_dialog(
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
-                if let Some(item) = show_contact_edit(&dialog, None, palette) {
+                if let Some(item) = show_contact_edit(&dialog, None, palette, a11y) {
                     let name = item.name.clone();
                     working.borrow_mut().push(item);
                     *changed.borrow_mut() = true;
@@ -960,7 +960,8 @@ pub fn show_contact_manager_dialog(
                         }
                     };
                     let existing = working.borrow()[working_idx].clone();
-                    if let Some(edited) = show_contact_edit(&dialog, Some(&existing), palette) {
+                    if let Some(edited) = show_contact_edit(&dialog, Some(&existing), palette, a11y)
+                    {
                         let name = edited.name.clone();
                         working.borrow_mut()[working_idx] = edited;
                         *changed.borrow_mut() = true;
@@ -1076,8 +1077,8 @@ fn add_panel_field(parent: &Panel, sizer: &FlexGridSizer, label: &str) -> TextCt
 }
 
 /// Open the Add Contact dialog directly (for File > New > Contact).
-pub fn show_new_contact_dialog(parent: &Frame) -> Option<ContactEntry> {
-    show_contact_edit(parent, None, theme::current_from_stored_config())
+pub fn show_new_contact_dialog(parent: &Frame, a11y: &Arc<Accessibility>) -> Option<ContactEntry> {
+    show_contact_edit(parent, None, theme::current_from_stored_config(), a11y)
 }
 
 /// What `show_contact_edit`'s own modal loop still needs after
@@ -1124,6 +1125,7 @@ pub fn build_contact_edit_dialog(
     parent: &dyn WxWidget,
     existing: Option<&ContactEntry>,
     palette: Option<theme::Palette>,
+    a11y: &Arc<Accessibility>,
 ) -> ContactEditDialogHandles {
     let title = if existing.is_some() {
         "Edit Contact"
@@ -1323,6 +1325,17 @@ pub fn build_contact_edit_dialog(
 
     root.add(&notebook, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // Where OK says why it refused to save, on screen and, through
+    // `said_and_shown` below, to the accessibility announcement queue.
+    // Empty until then.
+    let problem_line = StaticText::builder(&dlg).with_label("").build();
+    root.add(
+        &problem_line,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
+        8,
+    );
+
     // ── OK / Cancel ──────────────────────────────────────────────────────
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     btn_row.add_spacer(0);
@@ -1373,9 +1386,29 @@ pub fn build_contact_edit_dialog(
     refresh_custom_list(&custom_list, &custom_data.borrow());
 
     // ── Button handlers (use end_modal with custom IDs) ──────────────────
+    // OK checks the one thing this dialog requires before it closes at all:
+    // intercepting the click (and Enter, which reaches a default button the
+    // same way) ahead of wxWidgets' own default handling for `ID_OK` means
+    // not calling `end_modal` is the whole of refusing to close, the same
+    // reasoning `wx_item_form.rs`'s own Save handler is built on. This used
+    // to be checked after the dialog had already closed, by re-showing it
+    // with nothing said and nothing pumped in between: exactly the gap this
+    // file's own `delete_selected_contact` was fixed for elsewhere, just
+    // never caught here.
     ok.on_click({
         let d = dlg;
+        let a11y = Arc::clone(a11y);
         move |_| {
+            if name_f.get_value().trim().is_empty() {
+                said_and_shown(
+                    &problem_line,
+                    &a11y,
+                    "Name is needed before this can be saved.",
+                    Priority::High,
+                );
+                name_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -1491,6 +1524,7 @@ fn show_contact_edit(
     parent: &dyn WxWidget,
     existing: Option<&ContactEntry>,
     palette: Option<theme::Palette>,
+    a11y: &Arc<Accessibility>,
 ) -> Option<ContactEntry> {
     let ContactEditDialogHandles {
         dialog: dlg,
@@ -1516,7 +1550,7 @@ fn show_contact_edit(
         addrs_data,
         custom_data,
         ..
-    } = build_contact_edit_dialog(parent, existing, palette);
+    } = build_contact_edit_dialog(parent, existing, palette, a11y);
 
     // ── Modal loop (handle sub-list actions before OK/Cancel) ────────────
     loop {
@@ -1570,11 +1604,12 @@ fn show_contact_edit(
                 }
             }
             r if r == ID_OK => {
+                // Whatever this loop just closed on already held together:
+                // OK's own handler, inside the dialog `show_modal` just
+                // returned from, refuses to end the modal at all while the
+                // name is still empty, so there is nothing left to check on
+                // this side of it.
                 let contact_name = name_f.get_value();
-                if contact_name.trim().is_empty() {
-                    // Name is required: re-show dialog
-                    continue;
-                }
                 return Some(ContactEntry {
                     id: existing
                         .map(|c| c.id.clone())

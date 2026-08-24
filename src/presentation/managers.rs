@@ -769,6 +769,7 @@ pub fn manage_calendar(
     // outlive this function's stack frame.
     let open_event_editor_cache = Arc::clone(&cache);
     let open_event_editor_account = account.clone();
+    let open_event_editor_a11y = Arc::clone(a11y);
     let open_event_editor = move |dialog: &Dialog, existing: Option<&CalendarEventItem>| {
         let (containers, known_categories) = item_form_ingredients(
             &open_event_editor_cache,
@@ -790,6 +791,7 @@ pub fn manage_calendar(
             &containers,
             &known_categories,
             prefill,
+            &open_event_editor_a11y,
         )
         .map(|(filled, container_id)| {
             wx_calendar::CalendarEventData::from_filled(&filled, container_id)
@@ -1558,12 +1560,13 @@ pub fn new_contact(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
         Err(reason) => return send_refusal(tx, rt, reason),
     };
-    let Some(mut edited) = wx_managers::show_new_contact_dialog(frame) else {
+    let Some(mut edited) = wx_managers::show_new_contact_dialog(frame, a11y) else {
         return;
     };
     // The dialog does not know which account it is for, and a contact saved
@@ -1758,6 +1761,7 @@ pub fn new_pim_item(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     use crate::application::new_item;
 
@@ -1776,23 +1780,24 @@ pub fn new_pim_item(
 
     let (holders, known_categories) = item_form_ingredients(&cache, kind, &account_id);
 
-    let Some((filled, container_id)) =
-        crate::presentation::wx_item_form::ask_for(frame, kind, &holders, &known_categories, None)
-    else {
+    // Whatever comes back here already held together: Save's own handler,
+    // inside the dialog `ask_for` just closed, refuses to end the dialog at
+    // all while `Filled::problems` still finds something wrong, so there is
+    // nothing left to check on this side of it. A second check here, after
+    // the dialog is already gone, used to be the only one there was, and
+    // could only ever refuse by throwing away everything just typed and
+    // asking the person to start over; now it would never even run.
+    let Some((filled, container_id)) = crate::presentation::wx_item_form::ask_for(
+        frame,
+        kind,
+        &holders,
+        &known_categories,
+        None,
+        a11y,
+    ) else {
         return;
     };
 
-    // An empty title makes a row nothing can identify in a list read aloud,
-    // so it is refused rather than stored as a blank line. Named, so nobody
-    // has to hunt through a form they cannot see for the one that is empty.
-    let missing = filled.missing(kind);
-    if !missing.is_empty() {
-        return send_status(
-            tx,
-            rt,
-            &crate::presentation::wx_item_form::complaint_about(&missing),
-        );
-    }
     let title = filled
         .text(crate::application::item_fields::FieldName::Title)
         .to_string();

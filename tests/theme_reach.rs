@@ -440,14 +440,22 @@ fn check_account_manager(
 /// the same as production, since the Calendar window's own New and Edit
 /// Event buttons open this dialog from inside its own agenda dialog rather
 /// than from the main frame.
-fn check_event_editor(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+fn check_event_editor(
+    parent: &Frame,
+    palette: theme::Palette,
+    a11y: &Arc<Accessibility>,
+    into: &mut Vec<SiteResult>,
+) {
     let scratch_parent = Dialog::builder(parent, "scratch parent for the event editor").build();
     let widgets = wx_item_form::build_item_form_dialog(
         &scratch_parent,
         ItemKind::Event,
         &[],
         &[],
-        Some(palette),
+        wx_item_form::Chrome {
+            palette: Some(palette),
+            a11y,
+        },
         wixen_mail::presentation::date_display::DateSettings::default(),
         None,
     )
@@ -742,13 +750,21 @@ fn check_folder_choice(parent: &Frame, palette: theme::Palette, into: &mut Vec<S
 /// every `Entry::Line` and `Entry::Paragraph` field this round paints (title,
 /// location, description), alongside the ones it leaves to Windows (date,
 /// time, choice, spin, category, tick).
-fn check_item_form(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+fn check_item_form(
+    parent: &Frame,
+    palette: theme::Palette,
+    a11y: &Arc<Accessibility>,
+    into: &mut Vec<SiteResult>,
+) {
     let widgets = wx_item_form::build_item_form_dialog(
         parent,
         ItemKind::Event,
         &[],
         &[],
-        Some(palette),
+        wx_item_form::Chrome {
+            palette: Some(palette),
+            a11y,
+        },
         wixen_mail::presentation::date_display::DateSettings::default(),
         None,
     )
@@ -1102,8 +1118,13 @@ fn check_choose_from_list(parent: &Frame, palette: theme::Palette, into: &mut Ve
 /// tab panels and every field does not depend on what is already filled in.
 /// The favourite `CheckBox` is left to Windows, the same as every checkbox
 /// elsewhere in this round, so it is not checked here.
-fn check_contact_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let handles = wx_managers::build_contact_edit_dialog(parent, None, Some(palette));
+fn check_contact_edit(
+    parent: &Frame,
+    palette: theme::Palette,
+    a11y: &Arc<Accessibility>,
+    into: &mut Vec<SiteResult>,
+) {
+    let handles = wx_managers::build_contact_edit_dialog(parent, None, Some(palette), a11y);
     check(
         "contact edit dialog",
         &handles.dialog,
@@ -1331,7 +1352,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_reader(&frame, &a11y, &mut sites);
             check_settings(&frame, palette, &a11y, &mut sites);
             check_account_manager(&frame, &a11y, palette, &mut sites);
-            check_event_editor(&frame, palette, &mut sites);
+            check_event_editor(&frame, palette, &a11y, &mut sites);
             check_which_days(&frame, palette, &mut sites);
             check_check_spelling(&frame, palette, &mut sites);
             check_insert_table(&frame, palette, &mut sites);
@@ -1345,7 +1366,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_destination(&frame, palette, &mut sites);
             check_first_run(&frame, palette, &mut sites);
             check_folder_choice(&frame, palette, &mut sites);
-            check_item_form(&frame, palette, &mut sites);
+            check_item_form(&frame, palette, &a11y, &mut sites);
             check_reminder_alert(&frame, palette, &mut sites);
             check_thread_view(&frame, palette, &mut sites);
             check_about(&frame, palette, &mut sites);
@@ -1354,7 +1375,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_contact_manager(&frame, &a11y, palette, &mut sites);
             check_wait_for_an_answer(&frame, palette, &mut sites);
             check_choose_from_list(&frame, palette, &mut sites);
-            check_contact_edit(&frame, palette, &mut sites);
+            check_contact_edit(&frame, palette, &a11y, &mut sites);
             check_email_sub_dialog(&frame, palette, &mut sites);
             check_phone_sub_dialog(&frame, palette, &mut sites);
             check_address_sub_dialog(&frame, palette, &mut sites);

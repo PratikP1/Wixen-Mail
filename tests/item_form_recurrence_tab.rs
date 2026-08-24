@@ -17,8 +17,9 @@
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::item_fields::FieldName;
 use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::DateSettings;
-use wixen_mail::presentation::wx_item_form::build_item_form_dialog;
+use wixen_mail::presentation::wx_item_form::{Chrome, build_item_form_dialog};
 use wxdragon::prelude::*;
 
 /// One outcome this file checked: its name, and why it was wrong. Empty
@@ -52,6 +53,7 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
         wxdragon::main(move |app| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
+            let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
             // ── An event has recurrence fields, so it gets a second page,
             // ── not the one showing when the dialog opens. ─────────────────
@@ -60,7 +62,10 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 ItemKind::Event,
                 &[],
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 DateSettings::default(),
                 None,
             )
@@ -139,7 +144,10 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 ItemKind::Task,
                 &[],
                 &[],
-                None,
+                Chrome {
+                    palette: None,
+                    a11y: &a11y,
+                },
                 DateSettings::default(),
                 None,
             )

@@ -1850,6 +1850,7 @@ impl WxMailApp {
                 let message_cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let a11y = a11y.clone();
                 move |_| {
                     managers::new_pim_item(
                         crate::application::new_item::ItemKind::Reminder,
@@ -1858,6 +1859,7 @@ impl WxMailApp {
                         &frame,
                         &ui_tx,
                         &runtime,
+                        &a11y,
                     );
                 }
             });
@@ -1868,6 +1870,7 @@ impl WxMailApp {
                 let message_cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let a11y = a11y.clone();
                 move |_| {
                     managers::new_pim_item(
                         crate::application::new_item::ItemKind::Task,
@@ -1876,6 +1879,7 @@ impl WxMailApp {
                         &frame,
                         &ui_tx,
                         &runtime,
+                        &a11y,
                     );
                 }
             });
@@ -1919,6 +1923,7 @@ impl WxMailApp {
                 let message_cache = message_cache.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let a11y = a11y.clone();
                 move |_| {
                     managers::new_pim_item(
                         crate::application::new_item::ItemKind::Note,
@@ -1927,6 +1932,7 @@ impl WxMailApp {
                         &frame,
                         &ui_tx,
                         &runtime,
+                        &a11y,
                     );
                 }
             });
@@ -2668,6 +2674,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 );
                             } else {
                                 let command = if id == ID_CONTEXT_DELETE_ITEM {
@@ -3020,6 +3027,7 @@ impl WxMailApp {
                                 &frame,
                                 &ui_tx,
                                 &runtime,
+                                &a11y,
                             );
                         }
                         _ if id == ID_NEW_REMINDER => {
@@ -3030,6 +3038,7 @@ impl WxMailApp {
                                 &frame,
                                 &ui_tx,
                                 &runtime,
+                                &a11y,
                             );
                         }
                         _ if id == ID_NEW_TASK => {
@@ -3040,6 +3049,7 @@ impl WxMailApp {
                                 &frame,
                                 &ui_tx,
                                 &runtime,
+                                &a11y,
                             );
                         }
                         _ if id == ID_NEW_NOTE => {
@@ -3050,6 +3060,7 @@ impl WxMailApp {
                                 &frame,
                                 &ui_tx,
                                 &runtime,
+                                &a11y,
                             );
                         }
                         // Context menu actions from WebView popup
@@ -3098,6 +3109,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 ),
                                 PimModule::Calendar => managers::new_pim_item(
                                     crate::application::new_item::ItemKind::Event,
@@ -3106,6 +3118,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 ),
                                 PimModule::Reminders => managers::new_pim_item(
                                     crate::application::new_item::ItemKind::Reminder,
@@ -3114,6 +3127,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 ),
                                 PimModule::Tasks => managers::new_pim_item(
                                     crate::application::new_item::ItemKind::Task,
@@ -3122,6 +3136,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 ),
                                 PimModule::Notes => managers::new_pim_item(
                                     crate::application::new_item::ItemKind::Note,
@@ -3130,6 +3145,7 @@ impl WxMailApp {
                                     &frame,
                                     &ui_tx,
                                     &runtime,
+                                    &a11y,
                                 ),
                             }
                         }
@@ -3396,7 +3412,14 @@ impl WxMailApp {
                         }
                         _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state, &a11y),
                         _ if id == ID_NEW_CONTACT => {
-                            managers::new_contact(&state, &message_cache, &frame, &ui_tx, &runtime)
+                            managers::new_contact(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            )
                         }
                         _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state, &a11y),
                         _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),

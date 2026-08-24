@@ -113,7 +113,7 @@ pub enum Entry {
 }
 
 /// One thing to fill in.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: FieldName,
     /// What the control is called. Carries its own mnemonic.
@@ -528,6 +528,96 @@ impl Filled {
             .filter(|field| field.required && self.text(field.name).is_empty())
             .collect()
     }
+
+    /// Everything wrong with this form for `kind`: which required fields are
+    /// still empty, and anything else that does not hold together even
+    /// though every box has something in it.
+    ///
+    /// In the order somebody moving through the form by keyboard would meet
+    /// them, so the first one named is where focus belongs when Save
+    /// refuses to accept the answer.
+    pub fn problems(&self, kind: ItemKind) -> Vec<Problem> {
+        let mut found: Vec<Problem> = self
+            .missing(kind)
+            .into_iter()
+            .map(|field| Problem {
+                said: format!(
+                    "{} is needed before this can be saved",
+                    field.label.replace('&', "")
+                ),
+                field,
+            })
+            .collect();
+        if kind == ItemKind::Event {
+            found.extend(self.event_problems());
+        }
+        found
+    }
+
+    /// The two ways an event's own dates can disagree with each other,
+    /// beyond either being missing, which `missing` above already reports:
+    /// an event that ends before it starts, and a series told to stop
+    /// before the day it starts on.
+    fn event_problems(&self) -> Vec<Problem> {
+        let field = |name| {
+            fields_for(ItemKind::Event)
+                .iter()
+                .find(|f| f.name == name)
+                .expect("an Event asks for every FieldName this checks")
+        };
+
+        let mut found = Vec::new();
+
+        let start_date = self.text(FieldName::StartDate);
+        let end_date = self.text(FieldName::EndDate);
+        if !start_date.is_empty() && !end_date.is_empty() {
+            let start_time = self.text(FieldName::StartTime);
+            let end_time = self.text(FieldName::EndTime);
+            // Neither time is required, so a box either one left blank is
+            // not itself a clash; only date order can be judged then. Both
+            // filled in lets a same-day clash be caught too.
+            let (start, end) = if start_time.is_empty() || end_time.is_empty() {
+                (start_date.to_string(), end_date.to_string())
+            } else {
+                (
+                    format!("{start_date} {start_time}"),
+                    format!("{end_date} {end_time}"),
+                )
+            };
+            if end < start {
+                found.push(Problem {
+                    field: field(FieldName::EndDate),
+                    said: "Ends cannot be before it starts".to_string(),
+                });
+            }
+        }
+
+        // Only asked about when the series both repeats and is told to stop
+        // on a date: "does not repeat" and "after a number of times" never
+        // fill this box in the first place, so a stray value left over from
+        // an earlier choice is not this form's to complain about.
+        if self.text(FieldName::Repeat) != "Does not repeat"
+            && self.text(FieldName::RepeatUntil) == "On a date"
+        {
+            let until_date = self.text(FieldName::RepeatUntilDate);
+            if !start_date.is_empty() && !until_date.is_empty() && until_date < start_date {
+                found.push(Problem {
+                    field: field(FieldName::RepeatUntilDate),
+                    said: "The last day cannot be before the series starts".to_string(),
+                });
+            }
+        }
+
+        found
+    }
+}
+
+/// One thing wrong with a filled-in form: which field it is about, so focus
+/// can be put there, and what to say about it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Problem {
+    pub field: &'static Field,
+    pub said: String,
 }
 
 #[cfg(test)]
@@ -796,6 +886,144 @@ mod tests {
 
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].name, FieldName::Title);
+    }
+
+    // ── Filled::problems: what Save checks before it accepts an answer ────
+
+    fn a_valid_event() -> Filled {
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Standup");
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "09:00");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "09:15");
+        filled.put(FieldName::Repeat, "Does not repeat");
+        filled
+    }
+
+    #[test]
+    fn test_a_blank_event_names_all_three_required_fields() {
+        let problems = Filled::default().problems(ItemKind::Event);
+
+        let named: Vec<FieldName> = problems.iter().map(|p| p.field.name).collect();
+        assert!(named.contains(&FieldName::Title), "{problems:?}");
+        assert!(named.contains(&FieldName::StartDate), "{problems:?}");
+        assert!(named.contains(&FieldName::EndDate), "{problems:?}");
+    }
+
+    #[test]
+    fn test_a_task_with_only_its_title_filled_in_has_no_problems() {
+        let mut filled = Filled::default();
+        filled.put(FieldName::Title, "Buy milk");
+
+        assert_eq!(filled.problems(ItemKind::Task), vec![]);
+    }
+
+    #[test]
+    fn test_a_correctly_filled_event_has_no_problems() {
+        assert_eq!(a_valid_event().problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_an_event_cannot_end_before_it_starts() {
+        let mut filled = a_valid_event();
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::EndDate, "2026-03-11");
+
+        let problems = filled.problems(ItemKind::Event);
+
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].field.name, FieldName::EndDate);
+    }
+
+    #[test]
+    fn test_an_event_on_one_day_can_still_end_before_it_starts_by_time() {
+        let mut filled = a_valid_event();
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "14:00");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "09:00");
+
+        let problems = filled.problems(ItemKind::Event);
+
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].field.name, FieldName::EndDate);
+    }
+
+    #[test]
+    fn test_an_all_day_event_is_ordered_by_date_alone() {
+        // Neither time box is required, so an all-day event may have
+        // neither filled in; the date is the whole answer for one.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::AllDay, "true");
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_a_timed_event_missing_one_time_is_ordered_by_date_alone() {
+        // Neither time is required on its own, so one box holding a time and
+        // the other not is not itself a reason to refuse the answer; a real
+        // clash the moment both are filled in is caught by the case above.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::StartDate, "2026-03-12");
+        filled.put(FieldName::StartTime, "20:00");
+        filled.put(FieldName::EndDate, "2026-03-12");
+        filled.put(FieldName::EndTime, "");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_a_series_cannot_end_before_it_starts() {
+        let mut filled = a_valid_event();
+        filled.put(FieldName::Repeat, "Every week");
+        filled.put(FieldName::RepeatUntil, "On a date");
+        filled.put(FieldName::RepeatUntilDate, "2026-03-01");
+
+        let problems = filled.problems(ItemKind::Event);
+
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].field.name, FieldName::RepeatUntilDate);
+    }
+
+    #[test]
+    fn test_a_series_ending_after_a_count_asks_nothing_about_a_date() {
+        // "After a number of times" never fills the date box in the first
+        // place; nothing here should invent a problem for a field the form
+        // never asked the person to answer.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::Repeat, "Every week");
+        filled.put(FieldName::RepeatUntil, "After a number of times");
+        filled.put(FieldName::RepeatTimes, "6");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_a_series_that_never_stops_asks_nothing_about_a_date_either() {
+        let mut filled = a_valid_event();
+        filled.put(FieldName::Repeat, "Every week");
+        filled.put(FieldName::RepeatUntil, "Never");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_an_event_that_does_not_repeat_asks_nothing_about_the_last_day() {
+        // Even if a stray value were sitting in the box (an event switched
+        // back to "Does not repeat" after typing a date in it, say), it is
+        // not part of the answer once the series itself is switched off.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::Repeat, "Does not repeat");
+        filled.put(FieldName::RepeatUntil, "On a date");
+        filled.put(FieldName::RepeatUntilDate, "2020-01-01");
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
     }
 
     #[test]

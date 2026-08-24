@@ -89,6 +89,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   alone is carried over exactly as stored, so an unusual value a calendar
   server sent and this dialog does not offer as a choice is never quietly
   replaced by a default.
+- **Save now checks what was typed before the dialog closes, for every kind
+  of item.** A blank title, an event whose end is set before its start, or
+  a repeating series told to stop before it starts used to be accepted
+  without complaint, or caught only after the dialog had already closed,
+  reopening with nothing said and nothing changed to explain why. Save now
+  reads the form back first: if something is wrong, the dialog stays open,
+  a line inside it says what to fix, the same words are spoken through the
+  accessibility announcement, and the cursor moves to the field that needs
+  attention. This covers the Event, Task, Reminder, and Note dialog, and
+  Calendar's own New Event and Edit Event, since they all open the same
+  dialog; Contact's dialog, which is separate, had the identical problem, a
+  blank name silently reopened it, and is fixed the same way.
 
 ### Fixed
 
