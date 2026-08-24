@@ -197,6 +197,21 @@ impl MessageCache {
     }
 
     /// Get folder by account and path
+    /// Which account a stored folder belongs to.
+    ///
+    /// Asked where only the folder's own id is in hand, which is how the
+    /// sync reaches the account's other folders to file mail into one.
+    pub fn account_of_folder(&self, folder_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT account_id FROM folders WHERE id = ?1",
+                rusqlite::params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder's account: {e}")))
+    }
+
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
         let mut stmt = self
             .conn

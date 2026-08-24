@@ -269,6 +269,8 @@ enum Deferred {
     Spelling,
     /// Leave the message body. `back` is Shift+Tab.
     Leaving { back: bool },
+    /// Go to the toolbar, which sits ahead of the fields.
+    Toolbar,
 }
 
 /// Whether a half-written message is worth keeping as a draft.
@@ -429,87 +431,6 @@ pub fn build_compose_dialog(
     let main_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Header fields panel --
-    let fields_sizer = FlexGridSizer::builder(0, 2)
-        .with_vgap(4)
-        .with_hgap(8)
-        .build();
-    fields_sizer.add_growable_col(1, 1);
-
-    // Account selector
-    let account_label = StaticText::builder(&dialog)
-        .with_label(Reached::From.label())
-        .build();
-    let account_choice = Choice::builder(&dialog)
-        .with_choices(account_names.iter().map(|s| s.to_string()).collect())
-        .with_selection(Some(active_account_index))
-        .build();
-    set_accessible_name(&account_choice, "From account");
-    fields_sizer.add(
-        &account_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields_sizer.add(&account_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // To field
-    let to_label = StaticText::builder(&dialog)
-        .with_label(Reached::To.label())
-        .build();
-    let to_field = TextCtrl::builder(&dialog).build();
-    set_accessible_name(&to_field, "To");
-    fields_sizer.add(
-        &to_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields_sizer.add(&to_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // CC field
-    let cc_label = StaticText::builder(&dialog)
-        .with_label(Reached::Cc.label())
-        .build();
-    let cc_field = TextCtrl::builder(&dialog).build();
-    set_accessible_name(&cc_field, "Cc");
-    fields_sizer.add(
-        &cc_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields_sizer.add(&cc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // BCC field
-    let bcc_label = StaticText::builder(&dialog)
-        .with_label(Reached::Bcc.label())
-        .build();
-    let bcc_field = TextCtrl::builder(&dialog).build();
-    set_accessible_name(&bcc_field, "Bcc");
-    fields_sizer.add(
-        &bcc_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    // Subject field
-    let subject_label = StaticText::builder(&dialog)
-        .with_label(Reached::Subject.label())
-        .build();
-    let subject_field = TextCtrl::builder(&dialog).build();
-    set_accessible_name(&subject_field, "Subject");
-    fields_sizer.add(
-        &subject_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields_sizer.add(&subject_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
-
-    main_sizer.add_sizer(&fields_sizer, 0, SizerFlag::Expand | SizerFlag::All, 4);
-
     // -- Compose toolbar --
     let toolbar_sizer = BoxSizer::builder(Orientation::Horizontal).build();
 
@@ -592,31 +513,21 @@ pub fn build_compose_dialog(
     set_accessible_name(&attach_btn, "Attach a file, Alt+A");
     toolbar_sizer.add(&attach_btn, 0, SizerFlag::All, 2);
 
-    // Seven of the nine are taken out of the tab order so that writing a
-    // message does not cost nine stops between the subject line and the body.
+    // Every one of the nine is in the tab order, and that is the point of
+    // building them here rather than after the fields.
     //
-    // That contradicts the toolbar navigation `compose_toolbar` describes and
-    // `go_to` implements, and the contradiction is why none of it works: a
-    // control that cannot take focus cannot be given it, so Ctrl+backslash
-    // moves focus nowhere, the announcements bound to these buttons' focus
-    // never fire, and `At::along` and `At::across` are reached by nothing.
-    // `format_btn` and `spell_btn` are not in this list, so two of the nine
-    // are tab-reachable and seven are not, which is the inconsistency the
-    // module comment says the design exists to avoid.
+    // They used to be made between the subject line and the message, which is
+    // where they are shown, and wxWidgets takes the tab order from the order
+    // controls are made. So Tab out of Subject landed on Send and took nine
+    // presses to reach the body, on the path somebody takes every time they
+    // write anything. Seven were given `set_can_focus(false)` to stop that,
+    // which did not: Tab still walked them, and it left two of the nine
+    // tab-reachable and seven not.
     //
-    // Not resolved here, because the two ways out are a trade nobody has
-    // chosen: make all nine focusable and accept the tab stops, or drop the
-    // toolbar navigation and keep the shortcuts each button already has.
-    // Both need a keyboard to settle and one of them is a judgement about how
-    // people write mail. Ctrl+backslash says it is not available rather than
-    // doing nothing, which is what it did.
-    send_toolbar_btn.set_can_focus(false);
-    undo_btn.set_can_focus(false);
-    redo_btn.set_can_focus(false);
-    bold_btn.set_can_focus(false);
-    italic_btn.set_can_focus(false);
-    underline_btn.set_can_focus(false);
-    attach_btn.set_can_focus(false);
+    // Built first, they sit before the From line, so Tab from Subject reaches
+    // the message and the toolbar is where a toolbar is: at the top, ahead of
+    // the form, reached by Shift+Tab from From or by Ctrl+backslash from
+    // anywhere. Nothing is taken out of the tab order and nothing needs to be.
 
     main_sizer.add_sizer(
         &toolbar_sizer,
@@ -624,6 +535,87 @@ pub fn build_compose_dialog(
         SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
         8,
     );
+
+    let fields_sizer = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
+    fields_sizer.add_growable_col(1, 1);
+
+    // Account selector
+    let account_label = StaticText::builder(&dialog)
+        .with_label(Reached::From.label())
+        .build();
+    let account_choice = Choice::builder(&dialog)
+        .with_choices(account_names.iter().map(|s| s.to_string()).collect())
+        .with_selection(Some(active_account_index))
+        .build();
+    set_accessible_name(&account_choice, "From account");
+    fields_sizer.add(
+        &account_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&account_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // To field
+    let to_label = StaticText::builder(&dialog)
+        .with_label(Reached::To.label())
+        .build();
+    let to_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&to_field, "To");
+    fields_sizer.add(
+        &to_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&to_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // CC field
+    let cc_label = StaticText::builder(&dialog)
+        .with_label(Reached::Cc.label())
+        .build();
+    let cc_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&cc_field, "Cc");
+    fields_sizer.add(
+        &cc_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&cc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // BCC field
+    let bcc_label = StaticText::builder(&dialog)
+        .with_label(Reached::Bcc.label())
+        .build();
+    let bcc_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&bcc_field, "Bcc");
+    fields_sizer.add(
+        &bcc_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // Subject field
+    let subject_label = StaticText::builder(&dialog)
+        .with_label(Reached::Subject.label())
+        .build();
+    let subject_field = TextCtrl::builder(&dialog).build();
+    set_accessible_name(&subject_field, "Subject");
+    fields_sizer.add(
+        &subject_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&subject_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    main_sizer.add_sizer(&fields_sizer, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
     // -- The message body, which is a web view --
     //
@@ -1413,17 +1405,31 @@ pub fn show_compose_dialog_full(
                 // reads backwards because it does: `navigate(true)` moves to
                 // the control before this one.
                 //
-                // Backward names the Subject line, because asking the window
-                // walks into the formatting toolbar, which sits between the
-                // fields and the message in the order the controls were made.
-                // Somebody pressing Shift+Tab in the body is going back to the
-                // recipients and the subject, not to the Bold button, which
-                // has its own key.
+                // Backward asks the window too, now that it gives the right
+                // answer. It used to name the Subject line by hand, because
+                // the toolbar was made between the fields and the message and
+                // asking would have walked into it: somebody pressing
+                // Shift+Tab in the body is going back to the recipients, not
+                // to the Bold button, which has its own key. The toolbar is
+                // made before the fields now, so the window's own answer and
+                // the one that was named by hand are the same, and asking
+                // stays right when a control is added.
                 Some(Deferred::Leaving { back }) => {
-                    if back {
-                        subject_field.set_focus();
-                    } else {
-                        body_editor.navigate(false);
+                    body_editor.navigate(back);
+                }
+                // The first button, which is Send. Reaching the toolbar from
+                // the body is otherwise Shift+Tab five times, back through
+                // the subject and every recipient line, and then forward
+                // again to get out. One key each way is the whole point of
+                // the toolbar being somewhere fixed.
+                //
+                // The arrows move along it from there, which wxWidgets does
+                // itself for a row of buttons; what this application adds is
+                // the announcement bound to each button's focus, so somebody
+                // arrowing along hears where they are.
+                Some(Deferred::Toolbar) => {
+                    if let Some(first) = toolbar_buttons.first() {
+                        first.set_focus();
                     }
                 }
                 // Nothing was asked for, so this is the autosave timer.
@@ -1560,15 +1566,11 @@ pub fn show_compose_dialog_full(
                 // moves focus too and the browser does its own focus work
                 // after the message is handed over.
                 Some(editor_document::EditorMessage::ToToolbar) => {
-                    // Said rather than done. The buttons this would move to
-                    // cannot take focus, so this used to move the keyboard
-                    // nowhere and say nothing, which is indistinguishable
-                    // from a shortcut that is not bound at all. See the
-                    // comment beside `set_can_focus(false)` above.
-                    let _ = a11y.announce(
-                        "Moving to the toolbar is not available yet.                          Each button has its own shortcut.",
-                        crate::presentation::accessibility::announcements::Priority::High,
-                    );
+                    // Through the same timer as Tab, because this moves focus
+                    // too and the browser does its own focus work after the
+                    // message is handed over.
+                    waiting.set(Some(Deferred::Toolbar));
+                    later.start(1, true);
                 }
                 // The page is ours, so an unknown message is a bug rather than
                 // an attack, and doing nothing beats guessing which command

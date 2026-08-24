@@ -2462,18 +2462,17 @@ pub fn show_filter_manager_dialog(
 /// list read out "mark_as_read" and "move_to_folder": machine names, spoken
 /// to somebody choosing between them.
 ///
-/// Moving to a folder says what it is. It is offered because a rule that
-/// files mail is the one most people write first, and it is not built: it
-/// needs the folder's id and a write to the server, and doing half of it here
-/// would show a message in a folder it is not in until the next sync put it
-/// back. Saying so where the choice is made is the difference between a
-/// limitation and a rule somebody believes is working.
+/// Moving to a folder is built now, and reaches the server: the sync files
+/// the message where the rule says and brings this computer into line
+/// afterwards. A folder the account does not have is passed over with a word
+/// in the log rather than failing the whole sync, so a rule naming a folder
+/// somebody has since renamed does not stop their mail arriving.
 const RULE_ACTIONS: &[(&str, &str)] = &[
     ("mark_as_read", "Mark as read"),
     ("mark_as_unread", "Mark as unread"),
     ("star", "Flag it"),
     ("delete", "Delete it"),
-    ("move_to_folder", "Move to a folder (not built yet)"),
+    ("move_to_folder", "Move to a folder"),
     ("add_tag", "Add a label"),
 ];
 

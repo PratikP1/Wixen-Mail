@@ -133,15 +133,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was removed to match. Such an answer is now refused and the calendar is
   left alone. A calendar that really is empty still says so properly and
   still works.
-- **Ctrl+backslash in the message window says it cannot move to the toolbar,
-  instead of doing nothing.** Moving around the toolbar with the arrow keys
-  was described in the code and never worked: the buttons are deliberately
-  kept out of the tab order so that writing a message does not cost nine
-  stops on the way to the body, and a button kept out that way cannot be
-  moved to at all. Making it work means either accepting those nine stops or
-  dropping the idea, which is a decision about how people write mail rather
-  than a bug to fix quietly. Every one of those buttons still has its own
-  shortcut, which is what the message now says.
+- **Tab from the subject line reaches the message, not nine buttons.** The
+  toolbar sat between the subject line and the message in the order the
+  window was built, and that order is the order Tab follows, so writing
+  anything meant nine presses to get from the subject to the body. Shift+Tab
+  out of the message skipped the buttons entirely, so the two directions did
+  not even agree. The toolbar is now built and shown above the From line,
+  where a toolbar belongs: Tab from the subject reaches the message,
+  Shift+Tab from the message reaches the subject, and the buttons are reached
+  by Shift+Tab from From, or from anywhere with Ctrl+backslash, which now
+  works. The arrow keys move along the toolbar and each button says what it
+  is and which key does the same thing.
 - **A rule, tag or signature cannot be saved without a name.** Leaving the
   name empty was accepted, and the manager then announced "Added the rule:"
   and stopped mid-sentence.
@@ -256,11 +258,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **Rules run on mail collected over POP.** They never had. The Rules window
   does not ask which kind of account you have, so a rule could be written,
   named and switched on, and never once looked at the mail.
+- **A rule that files mail into a folder now files it.** Naming a folder in
+  a rule had never moved anything, and the message was counted as sorted
+  anyway, so the status could say mail had been filed when none had. Arriving
+  mail that matches such a rule is now moved at the server and here, in that
+  order, so it is never shown in a folder it is not really in. A rule naming
+  a folder the account does not have leaves the message where it is instead
+  of stopping the rest of the mail arriving.
 - **The Rules window says what each action does, in words.** It listed the
   names used inside the program, so the choices read out as "mark_as_read"
-  and "move_to_folder". Moving to a folder now says plainly that it is not
-  built yet, which it never has been, and mail it would have moved is no
-  longer counted as sorted.
+  and "move_to_folder".
 - **A reminder set for the hour the clocks change still goes off.** On the
   Sunday the clocks go back, one hour of the day happens twice, and a
   reminder set inside it was skipped entirely and read aloud as a raw

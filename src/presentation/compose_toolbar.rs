@@ -10,23 +10,30 @@
 //! reader already knows, and it means the nine buttons cost one keystroke to
 //! reach and two arrows to cross rather than nine presses of Tab.
 //!
-//! # Entering the toolbar is not built, and the reason is a trade
+//! # Where the toolbar sits, and why that is the whole answer
 //!
-//! Seven of the nine buttons are given `set_can_focus(false)` so that writing
-//! a message does not cost nine tab stops between the subject line and the
-//! body. A control that cannot take focus cannot be given it, so nothing
-//! could ever move the keyboard onto them: Ctrl+backslash moved focus nowhere
-//! and said nothing, which reads exactly like a shortcut nobody bound.
+//! The buttons used to be made between the subject line and the message,
+//! which is where they are shown, and wxWidgets takes the tab order from the
+//! order controls are made. So Tab out of Subject landed on Send and took
+//! nine presses to reach the body, on the path somebody takes every time they
+//! write anything, while Shift+Tab out of the body skipped them entirely
+//! because that direction was named by hand to avoid exactly this. Seven of
+//! the nine were given `set_can_focus(false)` to stop it and it did not stop:
+//! Tab still walked them, and it left two of the nine tab-reachable and seven
+//! not.
 //!
-//! The two ways out are a trade nobody has chosen. Make all nine focusable
-//! and accept the tab stops, or drop this and keep the shortcut each button
-//! already has. Both need a keyboard to settle and one is a judgement about
-//! how people write mail, so the shortcut says it is not available rather
-//! than pretending, and the movement rules that were written for it are gone
-//! rather than sitting here reached by nothing.
+//! They are made before the From line now. Tab from Subject reaches the
+//! message, Shift+Tab from the message reaches Subject, and the toolbar is
+//! where a toolbar is: at the top, ahead of the form, reached by Shift+Tab
+//! from From or by Ctrl+backslash from anywhere. Nothing is taken out of the
+//! tab order and nothing needs to be, so the two directions agree and adding
+//! a control later cannot put them out of step again.
 //!
-//! What is left is what still runs: which button a position is, and what is
-//! said when one of the two still-reachable buttons takes focus.
+//! What is here is the part that can be decided without a window: which
+//! button a position is, and what is said when one takes focus. The arrows
+//! move along the row, which wxWidgets does itself for a row of buttons, so
+//! this rides on that rather than fighting it and adds the part that was
+//! missing, which is knowing where you are.
 
 /// One button on the toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

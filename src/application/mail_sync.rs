@@ -148,11 +148,35 @@ pub struct Filtered {
     pub held_back: usize,
     /// How many asked for something this program cannot do yet.
     ///
-    /// Only moving to a folder, so far. Kept apart from `changed` because
-    /// that count is what says how much the rules sorted, and counting a rule
-    /// that did nothing as having sorted a message tells somebody their rules
-    /// are working when they are not.
+    /// Kept apart from `changed` because that count is what says how much the
+    /// rules sorted, and counting a rule that did nothing as having sorted a
+    /// message tells somebody their rules are working when they are not.
     pub not_built_yet: usize,
+    /// Mail a rule meant to file that could not be filed, one sentence each.
+    ///
+    /// Said rather than logged. A rule that files invoices and does not is a
+    /// rule somebody believes is working, and this project's own rule is that
+    /// a warning nobody gets is not a warning. Sentences rather than a count,
+    /// because which folder and why are the useful part.
+    pub could_not_be_filed: Vec<String>,
+    /// Messages a rule says belong in another folder.
+    ///
+    /// Named here and carried out by the sync, which is the half with a
+    /// server. `apply_rules` runs with a cache and no connection, and a move
+    /// done in the cache alone would show a message in a folder it is not in
+    /// until the next sync put it back.
+    pub to_move: Vec<Moving>,
+}
+
+/// One message a rule says belongs somewhere else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moving {
+    /// The row here, so the cache can be brought into line afterwards.
+    pub message_row: i64,
+    /// What the server calls it in the folder it is in now.
+    pub uid: u32,
+    /// The folder it is going to, as the rule names it.
+    pub into: String,
 }
 
 /// Which messages to fetch headers for, newest first, bounded.
@@ -378,6 +402,22 @@ pub(crate) trait Mailbox {
     /// The headers of the named messages.
     async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>>;
 
+    /// Move one message to another folder at the server.
+    ///
+    /// On the trait because a rule that files mail has to reach the server:
+    /// doing it in the cache alone shows a message in a folder it is not in
+    /// until the next sync puts it back.
+    ///
+    /// Answers with what really happened, because a server without MOVE gets
+    /// a copy and a flag instead and the message is then in both folders.
+    /// That is a fact about somebody's mail and is theirs to hear.
+    async fn move_message(
+        &self,
+        from: &str,
+        uid: u32,
+        into: &str,
+    ) -> Result<crate::service::protocols::imap::Moved>;
+
     /// The flags of messages already held, for the ones that have changed.
     ///
     /// `changed_since` is the modification sequence a CONDSTORE server uses to
@@ -407,6 +447,15 @@ impl Mailbox for MailController {
 
     async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
         MailController::list_uids(self, folder).await
+    }
+
+    async fn move_message(
+        &self,
+        from: &str,
+        uid: u32,
+        into: &str,
+    ) -> Result<crate::service::protocols::imap::Moved> {
+        MailController::move_message(self, from, uid, into).await
     }
 
     async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
@@ -458,6 +507,15 @@ pub(crate) fn apply_rules(
             done.held_back += 1;
             continue;
         }
+        // Named before anything else is done to the message, so a move is
+        // still asked for even when the same rules also marked it read.
+        if let Some(into) = outcome.move_to.clone() {
+            done.to_move.push(Moving {
+                message_row: message.id,
+                uid: message.uid,
+                into,
+            });
+        }
         match carry_out(cache, &message, &outcome) {
             Ok(Carried::Something) => done.changed += 1,
             Ok(Carried::NothingBuiltYet) => done.not_built_yet += 1,
@@ -492,16 +550,6 @@ fn carry_out(
     }
     let did_something =
         outcome.read.is_some() || outcome.starred.is_some() || !outcome.tags.is_empty();
-    if let Some(folder) = &outcome.move_to {
-        // Named rather than done. Moving needs the folder's id and a write to
-        // the server, and doing half of it, in the cache only, would show
-        // somebody a message in a folder it is not in until the next sync put
-        // it back.
-        tracing::info!(
-            "A rule would move a message to {}, which is not built yet; it is left where it is",
-            folder
-        );
-    }
     Ok(match did_something {
         true => Carried::Something,
         false => Carried::NothingBuiltYet,
@@ -517,6 +565,76 @@ fn carry_out(
 pub(crate) enum Carried {
     Something,
     NothingBuiltYet,
+}
+
+/// Do the moves the rules asked for, and say how many really happened.
+///
+/// The server first, then the cache. The other order shows a message in a
+/// folder it is not in until the next sync puts it back, which is why this
+/// was left unbuilt rather than half-built.
+///
+/// A folder the account does not have is passed over with a word in the log
+/// rather than failing the whole sync: a rule naming a folder somebody has
+/// since renamed should not stop their mail arriving.
+async fn carry_out_the_moves<M: Mailbox>(
+    controller: &M,
+    cache: &MessageCache,
+    from: &str,
+    from_id: i64,
+    moves: &[Moving],
+) -> (usize, Vec<String>) {
+    let mut refused = Vec::new();
+    if moves.is_empty() {
+        return (0, refused);
+    }
+    let Ok(Some(account_id)) = cache.account_of_folder(from_id) else {
+        return (0, refused);
+    };
+    let Ok(folders) = cache.get_folders_for_account(&account_id) else {
+        return (0, refused);
+    };
+    let mut done = 0;
+    for moving in moves {
+        let Some(into) = folders
+            .iter()
+            .find(|f| f.name.eq_ignore_ascii_case(&moving.into) || f.path == moving.into)
+        else {
+            refused.push(format!(
+                "A rule files mail into {}, which this account does not have, so it was left where it is",
+                moving.into
+            ));
+            continue;
+        };
+        // What really happened, not just whether it failed. A server without
+        // MOVE copies and flags instead, which leaves the message in both
+        // folders, and that is somebody's mail being in two places.
+        match controller.move_message(from, moving.uid, &into.path).await {
+            Ok(crate::service::protocols::imap::Moved::Moved) => {}
+            Ok(partly) => refused.push(partly.spoken(&into.name)),
+            Err(why) => {
+                refused.push(format!(
+                    "A message could not be filed into {}, so it is still in {from}: {why}",
+                    into.name
+                ));
+                continue;
+            }
+        }
+        // The server has it in the new folder; bring this computer into line.
+        // A failure here leaves the two disagreeing until the next read of
+        // either folder, which is worth saying and is not a failed sync.
+        match cache.move_message(moving.message_row, into.id) {
+            Ok(()) => {}
+            Err(why) => {
+                refused.push(format!(
+                    "A message was filed into {} at the server but not here yet: {why}",
+                    into.name
+                ));
+                continue;
+            }
+        }
+        done += 1;
+    }
+    (done, refused)
 }
 
 pub(crate) async fn sync_folder<M: Mailbox>(
@@ -590,10 +708,24 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // messages already held would apply them again on every sync, and a rule
     // somebody has since changed their mind about would keep firing on mail
     // they had already sorted by hand.
-    let filtered = match filtering {
+    let mut filtered = match filtering {
         Some(rules) => apply_rules(cache, rules, &arrived),
         None => Filtered::default(),
     };
+    // What the rules said belongs elsewhere, done here because this is the
+    // half with a server. Each one reaches the server first and the cache
+    // second, so a move the server refuses leaves the message where it is
+    // rather than showing it somewhere it is not.
+    let (filed, could_not) = carry_out_the_moves(
+        controller,
+        cache,
+        &folder.path,
+        folder_id,
+        &filtered.to_move,
+    )
+    .await;
+    filtered.changed += filed;
+    filtered.could_not_be_filed = could_not;
 
     // Messages already held, whose flags may have changed elsewhere. The
     // header fetch above only asks about messages this cache does not have, so
@@ -933,6 +1065,101 @@ mod tests {
         );
     }
 
+    /// A message as it arrives, for a rule to be run over.
+    fn an_arriving_message(folder_id: i64, uid: u32, subject: &str) -> IncomingMessage {
+        IncomingMessage {
+            folder_id,
+            uid,
+            message_id: format!("{uid}@example.com"),
+            subject: subject.to_string(),
+            from_addr: "billing@example.com".into(),
+            to_addr: "me@example.com".into(),
+            cc: None,
+            reply_to: None,
+            date: "2026-07-31T09:00:00+00:00".into(),
+            internal_date: None,
+            size_bytes: None,
+            refs_header: None,
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
+            receipt_to: None,
+            pop_uidl: None,
+        }
+    }
+
+    #[test]
+    fn test_a_rule_that_moves_says_which_message_and_where() {
+        // Moving needs the folder's id and a write to the server, neither of
+        // which `apply_rules` has: it runs with a cache and no connection.
+        // So it names what has to move and the sync, which does have a
+        // server, carries it out. Doing it in the cache alone would show a
+        // message in a folder it is not in until the next sync put it back.
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let id = cache
+            .upsert_message(&an_arriving_message(folder_id, 41, "Invoice 2026-08"))
+            .expect("a message");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "File the invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "move_to_folder".into(),
+            action_value: Some("Invoices".into()),
+            enabled: true,
+            created_at: "2026-08-24T00:00:00Z".into(),
+        }]);
+
+        let done = apply_rules(
+            &cache,
+            &Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::EVERYTHING,
+            },
+            &[id],
+        );
+
+        assert_eq!(
+            done.to_move,
+            vec![Moving {
+                message_row: id,
+                uid: 41,
+                into: "Invoices".to_string(),
+            }],
+            "the rule did not say which message goes where"
+        );
+        assert_eq!(
+            done.changed, 0,
+            "nothing has moved yet, so nothing is counted as sorted"
+        );
+    }
+
     /// A rule whose only action is one this program cannot carry out is not
     /// counted as having sorted anything.
     ///
@@ -1205,6 +1432,9 @@ mod tests {
         /// can answer "what changed since" reports. `None` is a server that
         /// cannot, and the two take different paths through the flag fetch.
         highest_modseq: Option<u64>,
+        /// Every move this server was asked to make, so a test can check that
+        /// a rule that files mail really reached it.
+        moved: std::cell::RefCell<Vec<(String, u32, String)>>,
         /// Which uids the header fetch was asked for, so a test can check that
         /// a sync asked for the right ones rather than only that it ended up
         /// with the right rows.
@@ -1219,6 +1449,7 @@ mod tests {
                 on_server: Vec::new(),
                 headers: Vec::new(),
                 flags: Vec::new(),
+                moved: std::cell::RefCell::new(Vec::new()),
                 counts: crate::service::protocols::imap::FolderCounts {
                     total: 0,
                     unread: 0,
@@ -1232,6 +1463,18 @@ mod tests {
     }
 
     impl Mailbox for Scripted {
+        async fn move_message(
+            &self,
+            from: &str,
+            uid: u32,
+            into: &str,
+        ) -> Result<crate::service::protocols::imap::Moved> {
+            self.moved
+                .borrow_mut()
+                .push((from.to_string(), uid, into.to_string()));
+            Ok(crate::service::protocols::imap::Moved::Moved)
+        }
+
         async fn folder_counts(
             &self,
             _folder: &str,
@@ -1354,6 +1597,101 @@ mod tests {
             .build()
             .expect("a runtime")
             .block_on(sync_folder(server, cache, folder, id, limit, None))
+    }
+
+    #[test]
+    fn test_a_rule_that_files_mail_reaches_the_server_and_this_computer() {
+        // Naming a folder in a rule did nothing at all for as long as rules
+        // have existed, and the message was still counted as sorted. It has
+        // to reach the server: filing it here alone shows the message in a
+        // folder it is not in until the next sync puts it back.
+        use crate::application::filters::FilterEngine;
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        let inbox = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("an inbox");
+        let invoices = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Invoices".into(),
+                path: "INBOX/Invoices".into(),
+                folder_type: "Custom".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to file into");
+
+        let mut engine = FilterEngine::default();
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "File the invoices".into(),
+            field: "subject".into(),
+            match_type: "contains".into(),
+            pattern: "Invoice".into(),
+            case_sensitive: false,
+            action_type: "move_to_folder".into(),
+            action_value: Some("Invoices".into()),
+            enabled: true,
+            created_at: "2026-08-24T00:00:00Z".into(),
+        }]);
+        let filtering = Filtering {
+            rules: &engine,
+            allowed: crate::application::allowed::Allowed::EVERYTHING,
+        };
+
+        let server = Scripted {
+            on_server: vec![7],
+            headers: vec![ImapMessage {
+                subject: "Invoice #4021".to_string(),
+                ..message(7)
+            }],
+            ..Default::default()
+        };
+        let folder = folder("INBOX", FolderType::Inbox, true);
+
+        let done = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync_folder(
+                &server,
+                &cache,
+                &folder,
+                inbox,
+                50,
+                Some(&filtering),
+            ))
+            .expect("the sync to finish");
+
+        assert_eq!(
+            server.moved.borrow().as_slice(),
+            [("INBOX".to_string(), 7, "INBOX/Invoices".to_string())],
+            "the move never reached the server"
+        );
+        assert_eq!(
+            done.filtered.changed, 1,
+            "a message that really moved is not counted as sorted"
+        );
+        assert_eq!(
+            cache
+                .get_message_list_sorted(invoices, "acct", None, Some(50))
+                .expect("the folder reads")
+                .len(),
+            1,
+            "the message is not in the folder here"
+        );
     }
 
     #[test]
@@ -2231,6 +2569,8 @@ mod tests {
                 changed: 4,
                 held_back: 5,
                 not_built_yet: 0,
+                to_move: Vec::new(),
+                could_not_be_filed: Vec::new(),
             },
             ..FolderSync::default()
         });
