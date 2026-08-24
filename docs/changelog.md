@@ -68,6 +68,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   is in this repository under `sound-schemes/`, built from CC0 sounds;
   zip that folder yourself to try importing it until it has a proper home
   to download from.
+- **An event or a reminder's recurrence now lives on its own page.** How
+  often something repeats, whether that ever stops, the last day it
+  happens, and how many times in all used to sit as four fields on the
+  same page as everything else, in the way of finishing the form for
+  everybody who was never going to set up a repeat, which is most events
+  and most reminders. The dialog now opens on a "One-Time" page holding
+  everything about the thing itself; a "Recurrence" page next to it holds
+  the four repeat fields, reached by moving to it rather than by tabbing
+  past them. A task or a note, which has nothing to say about recurrence,
+  keeps the single page it always had.
 
 ### Fixed
 

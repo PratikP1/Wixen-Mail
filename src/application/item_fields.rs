@@ -64,6 +64,25 @@ pub enum FieldName {
     Pinned,
 }
 
+impl FieldName {
+    /// Whether this field is about how often something comes round again,
+    /// rather than about the thing itself.
+    ///
+    /// The item form dialog uses this to keep recurrence off the first page
+    /// somebody sees: most events and reminders never repeat, and these four
+    /// fields used to sit between the location and the alert regardless,
+    /// asking everybody to get past them to finish the form.
+    pub fn is_about_recurrence(self) -> bool {
+        matches!(
+            self,
+            FieldName::Repeat
+                | FieldName::RepeatUntil
+                | FieldName::RepeatUntilDate
+                | FieldName::RepeatTimes
+        )
+    }
+}
+
 /// How a field is filled in, which decides the control it gets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
@@ -514,6 +533,42 @@ impl Filled {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_repeat_fields_are_about_recurrence_and_nothing_else_is() {
+        // What the item form dialog splits onto a second page: everything
+        // about how often something comes round again, and nothing about the
+        // thing itself.
+        for recurring in [
+            FieldName::Repeat,
+            FieldName::RepeatUntil,
+            FieldName::RepeatUntilDate,
+            FieldName::RepeatTimes,
+        ] {
+            assert!(recurring.is_about_recurrence(), "{recurring:?}");
+        }
+        for not in [
+            FieldName::Title,
+            FieldName::Container,
+            FieldName::AllDay,
+            FieldName::StartDate,
+            FieldName::StartTime,
+            FieldName::EndDate,
+            FieldName::EndTime,
+            FieldName::DueDate,
+            FieldName::DueTime,
+            FieldName::Location,
+            FieldName::Notes,
+            FieldName::Priority,
+            FieldName::ShowAs,
+            FieldName::Status,
+            FieldName::AlertMinutes,
+            FieldName::Category,
+            FieldName::Pinned,
+        ] {
+            assert!(!not.is_about_recurrence(), "{not:?}");
+        }
+    }
 
     #[test]
     fn test_every_long_field_says_that_markdown_is_understood() {

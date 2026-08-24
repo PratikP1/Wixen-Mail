@@ -36,6 +36,20 @@
 //! way every other spinner and choice in this application does. Seconds are
 //! left out entirely: nothing downstream has ever stored them, and asking
 //! for a precision nobody uses is one more control to tab past.
+//!
+//! # Recurrence is a second page, not four fields in the way
+//!
+//! Most events and most reminders never repeat. How often something comes
+//! round again, whether that ever stops, the last day it happens, and how
+//! many times in all used to sit as four fields between the location and the
+//! alert, on the one page everybody had to get through to finish the form,
+//! whether or not they were ever going to touch any of them.
+//!
+//! A kind that has anything to say about recurrence now gets a second page
+//! for it, reached by moving off the first rather than by tabbing past four
+//! fields most people never set. A kind with nothing to say about
+//! recurrence, a task or a note, keeps the single page it always had: an
+//! empty second page is not a courtesy, it is a tab stop that goes nowhere.
 
 use crate::application::item_fields::{Entry, Field, Filled, fields_for};
 use crate::application::new_item::ItemKind;
@@ -138,6 +152,24 @@ fn current_date_settings() -> DateSettings {
         .unwrap_or_default()
 }
 
+/// The notebook a form gets when it has anything to say about how often
+/// something comes round again, and the two pages behind it.
+///
+/// Only built for a kind with a recurrence field at all: a task or a note
+/// has nothing to put on a second page, and a page nobody can fill anything
+/// in on is not a page, it is a tab stop that goes nowhere.
+#[derive(Clone, Copy)]
+pub struct RecurrencePages {
+    pub notebook: Notebook,
+    /// Everything about the thing itself: title, when, where. Selected when
+    /// the dialog opens, so recurrence is reached by moving to it rather
+    /// than sitting in the way of finishing the form for everybody who was
+    /// never going to touch it.
+    pub one_time_page: Panel,
+    /// How often, and when it stops.
+    pub recurrence_page: Panel,
+}
+
 /// The item form dialog's widgets, returned so a test can build it without a
 /// human closing a live modal and so `ask_for` can read every field back
 /// after a real `.show_modal()`.
@@ -154,6 +186,9 @@ pub struct ItemFormWidgets {
     /// Every time this form built, paired with the field it belongs to, for
     /// the same reason `text_fields` is public.
     pub time_fields: Vec<(&'static Field, TimeFields)>,
+    /// `Some` for a kind that asks anything about recurrence, `None` for one
+    /// that does not. See [`RecurrencePages`].
+    pub recurrence: Option<RecurrencePages>,
     built: Vec<(&'static Field, Control)>,
 }
 
@@ -197,24 +232,65 @@ pub fn build_item_form_dialog(
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let mut built: Vec<(&'static Field, Control)> = Vec::new();
 
-    for field in fields {
-        // A container choice with nothing to choose from is left out rather
-        // than shown empty. An empty combo box is a control somebody lands on,
-        // hears nothing from, and cannot leave a value in.
-        if field.entry == Entry::PickContainer && containers.is_empty() {
-            continue;
-        }
+    // Recurrence is asked for on its own page, reached by moving off the
+    // first one rather than by tabbing past it: see the module doc comment
+    // for why. A kind with nothing to say about recurrence keeps the one
+    // page it always had, so `main_fields` still gets every field when
+    // `recurrence_fields` comes back empty.
+    let (main_fields, recurrence_fields): (Vec<&'static Field>, Vec<&'static Field>) = fields
+        .iter()
+        .partition(|field| !field.name.is_about_recurrence());
 
-        let label = StaticText::builder(&dialog).with_label(field.label).build();
-        sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
+    let recurrence = if recurrence_fields.is_empty() {
+        build_fields_onto(
+            &dialog,
+            &sizer,
+            &main_fields,
+            containers,
+            known_categories,
+            date_settings,
+            &mut built,
+        );
+        None
+    } else {
+        let notebook = Notebook::builder(&dialog).build();
 
-        let spoken = name_from_label(field.label);
-        let control = build_control(&dialog, field, containers, known_categories, date_settings);
-        name_it(&control, &spoken, field.help);
-        add_to_sizer(&sizer, &control);
+        let one_time_page = Panel::builder(&notebook).build();
+        let one_time_sizer = BoxSizer::builder(Orientation::Vertical).build();
+        build_fields_onto(
+            &one_time_page,
+            &one_time_sizer,
+            &main_fields,
+            containers,
+            known_categories,
+            date_settings,
+            &mut built,
+        );
+        one_time_page.set_sizer(one_time_sizer, true);
+        notebook.add_page(&one_time_page, "One-Time", true, None);
 
-        built.push((field, control));
-    }
+        let recurrence_page = Panel::builder(&notebook).build();
+        let recurrence_sizer = BoxSizer::builder(Orientation::Vertical).build();
+        build_fields_onto(
+            &recurrence_page,
+            &recurrence_sizer,
+            &recurrence_fields,
+            containers,
+            known_categories,
+            date_settings,
+            &mut built,
+        );
+        recurrence_page.set_sizer(recurrence_sizer, true);
+        notebook.add_page(&recurrence_page, "Recurrence", false, None);
+
+        sizer.add(&notebook, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+        Some(RecurrencePages {
+            notebook,
+            one_time_page,
+            recurrence_page,
+        })
+    };
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let save = Button::builder(&dialog)
@@ -242,7 +318,9 @@ pub fn build_item_form_dialog(
     dialog.set_sizer_and_fit(sizer, true);
 
     // Focus starts on the first field rather than on Save, so the first thing
-    // heard is what to fill in.
+    // heard is what to fill in. Always a field on the page already showing:
+    // `main_fields` is built, and pushed onto `built`, before
+    // `recurrence_fields` is, so the first entry is never one of them.
     if let Some((_, first)) = built.first() {
         focus(first);
     }
@@ -274,9 +352,18 @@ pub fn build_item_form_dialog(
     // here and Windows decides. Every other kind of field this form can
     // build (the date and time controls, `Choice`, `ComboBox`, `SpinCtrl`,
     // `CheckBox`) is left to Windows, matching every one of those elsewhere
-    // in this round; only a real `TextCtrl` gets its own call.
+    // in this round; only a real `TextCtrl` gets its own call. The notebook
+    // and its two pages, when there is one, are painted the same way
+    // `wx_settings::build_settings_dialog` paints its own tabs: a `Panel`
+    // does not inherit a colour set on its parent, so left alone it would
+    // stay the one colour this dialog no longer is.
     if let Some(palette) = palette {
         theme::paint(&dialog, palette.main_surface());
+        if let Some(pages) = recurrence {
+            theme::paint(&pages.notebook, palette.main_surface());
+            theme::paint(&pages.one_time_page, palette.main_surface());
+            theme::paint(&pages.recurrence_page, palette.main_surface());
+        }
         for (_, field) in &text_fields {
             theme::paint(field, palette.main_surface());
         }
@@ -287,8 +374,46 @@ pub fn build_item_form_dialog(
         text_fields,
         date_fields,
         time_fields,
+        recurrence,
         built,
     })
+}
+
+/// Build every field in `fields` onto `parent`, in order, adding each one to
+/// `sizer` and recording it in `built`.
+///
+/// The one place a field becomes a label and a control, whichever page it
+/// ends up on: a kind with nothing to say about recurrence calls this once,
+/// straight onto the dialog; one that does calls it twice, once per page of
+/// the notebook that splits recurrence off. Same building, same naming, same
+/// tab order either way.
+fn build_fields_onto<W: WxWidget>(
+    parent: &W,
+    sizer: &BoxSizer,
+    fields: &[&'static Field],
+    containers: &[Container],
+    known_categories: &[String],
+    date_settings: DateSettings,
+    built: &mut Vec<(&'static Field, Control)>,
+) {
+    for &field in fields {
+        // A container choice with nothing to choose from is left out rather
+        // than shown empty. An empty combo box is a control somebody lands on,
+        // hears nothing from, and cannot leave a value in.
+        if field.entry == Entry::PickContainer && containers.is_empty() {
+            continue;
+        }
+
+        let label = StaticText::builder(parent).with_label(field.label).build();
+        sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
+
+        let spoken = name_from_label(field.label);
+        let control = build_control(parent, field, containers, known_categories, date_settings);
+        name_it(&control, &spoken, field.help);
+        add_to_sizer(sizer, &control);
+
+        built.push((field, control));
+    }
 }
 
 /// How many days a month has, February aware of the year it is in.
@@ -338,20 +463,20 @@ const LATEST_YEAR: i32 = 2100;
 /// Build the three controls a date is entered with, laid out in the order
 /// this computer, or somebody's own setting, reads a date in.
 fn build_date_fields(
-    dialog: &Dialog,
+    parent: &dyn WxWidget,
     order: DateOrder,
     now: chrono::DateTime<chrono::Local>,
 ) -> DateFields {
     use chrono::Datelike;
 
-    let month = Choice::builder(dialog)
+    let month = Choice::builder(parent)
         .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
         .with_selection(Some(now.month() - 1))
         .build();
-    let day = SpinCtrl::builder(dialog).build();
+    let day = SpinCtrl::builder(parent).build();
     day.set_range(1, days_in_month(now.year(), now.month()) as i32);
     day.set_value(now.day() as i32);
-    let year = SpinCtrl::builder(dialog).build();
+    let year = SpinCtrl::builder(parent).build();
     year.set_range(EARLIEST_YEAR, LATEST_YEAR);
     year.set_value(now.year());
 
@@ -370,7 +495,7 @@ fn build_date_fields(
 /// clock reads to twenty-four, three when it reads to twelve and a
 /// morning-or-afternoon choice is needed alongside the hour.
 fn build_time_fields(
-    dialog: &Dialog,
+    parent: &dyn WxWidget,
     clock: Clock,
     now: chrono::DateTime<chrono::Local>,
 ) -> TimeFields {
@@ -389,21 +514,21 @@ fn build_time_fields(
         }
     };
 
-    let hour = SpinCtrl::builder(dialog).build();
+    let hour = SpinCtrl::builder(parent).build();
     match clock {
         Clock::TwentyFourHour => hour.set_range(0, 23),
         Clock::TwelveHour => hour.set_range(1, 12),
     }
     hour.set_value(displayed_hour as i32);
 
-    let minute = SpinCtrl::builder(dialog).build();
+    let minute = SpinCtrl::builder(parent).build();
     minute.set_range(0, 59);
     minute.set_value(now.minute() as i32);
 
     let am_pm = match clock {
         Clock::TwentyFourHour => None,
         Clock::TwelveHour => {
-            let choice = Choice::builder(dialog)
+            let choice = Choice::builder(parent)
                 .with_choices(vec!["AM".to_string(), "PM".to_string()])
                 .with_selection(Some(if is_pm { 1 } else { 0 }))
                 .build();
@@ -420,7 +545,7 @@ fn build_time_fields(
 
 /// Build the control one field asks for.
 fn build_control(
-    dialog: &Dialog,
+    parent: &dyn WxWidget,
     field: &Field,
     containers: &[Container],
     known_categories: &[String],
@@ -428,17 +553,17 @@ fn build_control(
 ) -> Control {
     let now = chrono::Local::now();
     match &field.entry {
-        Entry::Line => Control::Line(TextCtrl::builder(dialog).build()),
+        Entry::Line => Control::Line(TextCtrl::builder(parent).build()),
         Entry::Paragraph => Control::Paragraph(
-            TextCtrl::builder(dialog)
+            TextCtrl::builder(parent)
                 .with_style(TextCtrlStyle::MultiLine)
                 .with_size(Size::new(480, 90))
                 .build(),
         ),
-        Entry::Date => Control::Date(build_date_fields(dialog, date_settings.order, now)),
-        Entry::Time => Control::Time(build_time_fields(dialog, date_settings.clock, now)),
+        Entry::Date => Control::Date(build_date_fields(parent, date_settings.order, now)),
+        Entry::Time => Control::Time(build_time_fields(parent, date_settings.clock, now)),
         Entry::Pick(options) => {
-            let choice = Choice::builder(dialog).build();
+            let choice = Choice::builder(parent).build();
             for option in *options {
                 choice.append(option);
             }
@@ -448,7 +573,7 @@ fn build_control(
             Control::Pick(choice)
         }
         Entry::PickContainer => {
-            let choice = Choice::builder(dialog).build();
+            let choice = Choice::builder(parent).build();
             for container in containers {
                 choice.append(&container.name);
             }
@@ -459,19 +584,19 @@ fn build_control(
         // list of categories is one that is wrong for everybody eventually and
         // the ones somebody adds are offered back to them afterwards.
         Entry::PickCategory => {
-            let box_ = ComboBox::builder(dialog).build();
+            let box_ = ComboBox::builder(parent).build();
             for category in crate::application::categories::offered(known_categories) {
                 box_.append(&category);
             }
             Control::Category(box_)
         }
         Entry::Whole { least, most } => {
-            let spin = SpinCtrl::builder(dialog).build();
+            let spin = SpinCtrl::builder(parent).build();
             spin.set_range(*least, *most);
             spin.set_value(*least);
             Control::Whole(spin)
         }
-        Entry::Tick => Control::Tick(CheckBox::builder(dialog).with_label("").build()),
+        Entry::Tick => Control::Tick(CheckBox::builder(parent).with_label("").build()),
     }
 }
 
