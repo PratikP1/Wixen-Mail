@@ -1881,42 +1881,8 @@ impl MessageCache {
                 Error::Other(format!("Failed to create the calendar search index: {}", e))
             })?;
 
-        // calendar_events keys on a TEXT id, so the index is keyed on the
-        // rowid SQLite gives the row rather than on that id, and the trigger
-        // is what ties the two together.
-        self.conn
-            .execute_batch(
-                "CREATE TRIGGER IF NOT EXISTS event_gone_from_search
-                 AFTER DELETE ON calendar_events BEGIN
-                     DELETE FROM calendar_search WHERE rowid = old.rowid;
-                 END;",
-            )
-            .map_err(|e| {
-                Error::Other(format!(
-                    "Failed to keep the calendar search index tidy: {}",
-                    e
-                ))
-            })?;
-
-        // Every way a message can be removed, in one place.
-        //
-        // A trigger rather than a call beside each delete, because there are
-        // several: forgetting one message, forgetting a whole folder, and the
-        // cascades that run when a folder or an account goes. A row left in
-        // the index after its message has gone is worse than a missing one,
-        // since a search would offer somebody a message that cannot be opened.
-        //
-        // Checked rather than assumed: this fires for a message deleted by a
-        // cascade from its folder, and does so whether or not recursive
-        // triggers are switched on.
-        self.conn
-            .execute_batch(
-                "CREATE TRIGGER IF NOT EXISTS message_gone_from_search
-                 AFTER DELETE ON messages BEGIN
-                     DELETE FROM message_search WHERE rowid = old.id;
-                 END;",
-            )
-            .map_err(|e| Error::Other(format!("Failed to keep the search index tidy: {}", e)))?;
+        // The triggers that keep both indexes tidy are created further down,
+        // after the table rebuilds, and the reason is written there.
 
         // Schema migrations
         // The snippet lives on the message rather than the body because
@@ -2237,6 +2203,40 @@ impl MessageCache {
         self.conn
             .execute("DROP TABLE IF EXISTS oauth_tokens", [])
             .map_err(|e| Error::Other(format!("Failed to drop oauth_tokens table: {}", e)))?;
+
+        // The triggers that take an entry out of a search index when the row
+        // it describes goes.
+        //
+        // Here, after the rebuilds above, and never before them. SQLite drops
+        // a table's triggers along with the table, and the calendar rebuild
+        // copies its rows into a new table and drops the old one, so a trigger
+        // created earlier is gone by the time an open finishes. The next open
+        // creates it again, which is exactly what made this the kind of fault
+        // nobody reports: for the rest of that one session, deleting an event
+        // left its entry in the index and a search offered a result that could
+        // not be opened.
+        //
+        // A trigger rather than a call beside each delete, because there are
+        // several: forgetting one message, forgetting a whole folder, and the
+        // cascades that run when a folder or an account goes. Checked rather
+        // than assumed: this fires for a row deleted by a cascade from its
+        // parent, whether or not recursive triggers are switched on.
+        //
+        // The calendar index is keyed on the rowid SQLite gives the row rather
+        // than on the event's own id, which is text; messages key on an
+        // INTEGER PRIMARY KEY, which is the rowid already.
+        self.conn
+            .execute_batch(
+                "CREATE TRIGGER IF NOT EXISTS message_gone_from_search
+                 AFTER DELETE ON messages BEGIN
+                     DELETE FROM message_search WHERE rowid = old.id;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS event_gone_from_search
+                 AFTER DELETE ON calendar_events BEGIN
+                     DELETE FROM calendar_search WHERE rowid = old.rowid;
+                 END;",
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep the search indexes tidy: {}", e)))?;
 
         // Indexes for performance
         let indexes = [
@@ -3052,6 +3052,94 @@ mod storage_shape {
              task_list_id, does not count and is why this check reads the \
              leftmost column rather than the whole list.",
             unindexed.join("\n  ")
+        );
+    }
+
+    /// The triggers this schema declares, and what each one is for.
+    const THE_TRIGGERS_THAT_TIDY_THE_INDEXES: &[(&str, &str)] = &[
+        ("message_gone_from_search", "a deleted message"),
+        ("event_gone_from_search", "a deleted calendar event"),
+    ];
+
+    #[test]
+    fn test_the_triggers_that_tidy_the_search_indexes_survive_opening_an_older_database() {
+        // SQLite drops a table's triggers along with the table. This schema
+        // rebuilds calendar_events on the first open of a database written
+        // before it was keyed by calendar, and that rebuild copies the rows
+        // into a new table and drops the old one, so a trigger created before
+        // the rebuild is gone by the time the open finishes.
+        //
+        // It is created again by the next open, which is what makes this the
+        // kind of fault nobody reports: for the rest of that one session,
+        // deleting an event leaves its entry in the search index, and a
+        // search offers a result that cannot be opened.
+        let home = TempHome::named("older_database_keeps_triggers", |dir| dir.to_path_buf());
+        let path = home.join("message_cache.db");
+        {
+            // A calendar_events table with the unique constraint that marks a
+            // database old enough to need the rebuild. Everything else the
+            // schema wants is added when it opens.
+            let old = rusqlite::Connection::open(&path).expect("a database");
+            old.execute_batch(
+                "CREATE TABLE calendar_events (
+                     id TEXT PRIMARY KEY,
+                     account_id TEXT NOT NULL,
+                     provider_event_id TEXT,
+                     summary TEXT NOT NULL,
+                     description TEXT,
+                     location TEXT,
+                     start_datetime TEXT NOT NULL,
+                     end_datetime TEXT NOT NULL,
+                     start_date TEXT,
+                     end_date TEXT,
+                     is_all_day BOOLEAN DEFAULT 0,
+                     time_zone TEXT,
+                     status TEXT DEFAULT 'confirmed',
+                     recurrence_rule TEXT,
+                     source_provider TEXT,
+                     etag TEXT,
+                     web_link TEXT,
+                     show_as TEXT DEFAULT 'busy',
+                     last_modified_remote TEXT,
+                     last_synced_at TEXT,
+                     attendees_json TEXT,
+                     reminders_json TEXT,
+                     created_at TEXT NOT NULL,
+                     updated_at TEXT NOT NULL,
+                     categories TEXT NOT NULL DEFAULT '',
+                     calendar_id TEXT,
+                     UNIQUE(account_id, provider_event_id)
+                 );",
+            )
+            .expect("an older calendar table");
+        }
+
+        let cache = MessageCache::new(home.to_path_buf(), None).expect("the cache to open");
+
+        let present: Vec<String> = {
+            let mut stmt = cache
+                .conn
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+                .expect("the trigger list");
+            stmt.query_map([], |row| row.get(0))
+                .expect("trigger names")
+                .collect::<std::result::Result<_, _>>()
+                .expect("trigger names")
+        };
+
+        let missing: Vec<&str> = THE_TRIGGERS_THAT_TIDY_THE_INDEXES
+            .iter()
+            .filter(|(name, _)| !present.iter().any(|held| held == name))
+            .map(|(_, what)| *what)
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "opening an older database left nothing to tidy the index after {}.\n\
+             A rebuild drops the table's triggers with it, so these have to be \
+             created after the rebuilds rather than before them.\n\
+             Triggers present: {present:?}",
+            missing.join(" and after ")
         );
     }
 

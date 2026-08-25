@@ -52,19 +52,38 @@ fn packed(text: &str) -> Result<Vec<u8>> {
         .map_err(|e| Error::Other(format!("Failed to pack message text: {}", e)))
 }
 
-/// Unpack stored message text.
+/// Unpack stored message text, or `None` if the stored bytes are damaged.
 ///
-/// A body that will not unpack is treated as a body that is not there by the
-/// caller, which is the same state as one that was never fetched or has since
-/// been evicted, and the application already knows how to fetch again. Losing
-/// the text is not good; showing a message half decoded would be worse.
-fn unpacked(stored: &[u8]) -> Result<String> {
+/// Damaged reads as absent rather than as a failure, because absent is a
+/// state the whole application already handles: a message with no cached text
+/// is fetched again. Answering with an error instead would leave a message
+/// that cannot be opened at all until somebody cleared the cache.
+///
+/// The empty check is the part that matters, and it is not defensive
+/// programming for its own sake. A zlib stream cut short does not report an
+/// error: the decoder reads the header, finds no complete block, and returns
+/// success having produced nothing. Measured directly, because the first
+/// version of this trusted the error and a truncated body therefore opened as
+/// a blank message with nothing wrong reported and no refetch, which is worse
+/// than either an error or a gap.
+///
+/// Empty is a safe signal because a packed blob is only ever written when
+/// packing came out smaller than the text, which cannot happen for text that
+/// was empty to begin with. So a blob that unpacks to nothing was damaged.
+fn unpacked(stored: &[u8]) -> Option<String> {
     use std::io::Read;
     let mut text = String::new();
-    flate2::read::ZlibDecoder::new(stored)
-        .read_to_string(&mut text)
-        .map_err(|e| Error::Other(format!("Failed to unpack message text: {}", e)))?;
-    Ok(text)
+    match flate2::read::ZlibDecoder::new(stored).read_to_string(&mut text) {
+        Ok(_) if !text.is_empty() => Some(text),
+        Ok(_) => {
+            tracing::warn!("Cached message text was cut short and has been discarded");
+            None
+        }
+        Err(e) => {
+            tracing::warn!("Cached message text could not be read and has been discarded: {e}");
+            None
+        }
+    }
 }
 
 /// One piece of message text, in whichever form is smaller.
@@ -311,16 +330,25 @@ impl MessageCache {
             return Ok(None);
         };
 
-        Ok(Some(MessageBody {
+        // Each half is decided on its own. A row whose formatted copy is
+        // damaged but whose plain copy reads is still worth showing.
+        let body = MessageBody {
             body_plain: match plain_packed {
-                Some(packed) => Some(unpacked(&packed)?),
+                Some(packed) => unpacked(&packed),
                 None => plain_text,
             },
             body_html: match html_packed {
-                Some(packed) => Some(unpacked(&packed)?),
+                Some(packed) => unpacked(&packed),
                 None => html_text,
             },
-        }))
+        };
+
+        // Both halves gone is a body that is not there, and saying so is what
+        // makes the message be fetched again rather than opened blank.
+        if body.body_plain.is_none() && body.body_html.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(body))
     }
 
     /// Mark a body as just read, so eviction prefers something else.
@@ -583,6 +611,41 @@ mod tests {
             "the packed copy of the long body is still there"
         );
         assert_eq!(cache.cached_body_bytes().unwrap(), 4);
+    }
+
+    #[test]
+    fn test_a_body_that_will_not_unpack_reads_as_absent_rather_than_as_an_error() {
+        // A body with no text cached is an ordinary state that the whole
+        // application already handles: it fetches the message again. A body
+        // whose stored bytes will not unpack is the same situation from the
+        // reader's point of view, and answering with an error instead means a
+        // message that cannot be opened at all until somebody clears the
+        // cache, rather than one that quietly downloads itself again.
+        //
+        // Found by reading this module's own comment, which said this was
+        // what happened, against the code, which propagated the failure.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        cache
+            .save_message_body(id, Some(&"The quarterly figures. ".repeat(60)), None)
+            .unwrap();
+
+        // Truncated the way a half-written file or a bad sector would leave it.
+        cache
+            .conn
+            .execute(
+                "UPDATE message_bodies SET body_plain_packed = ?1 WHERE message_id = ?2",
+                rusqlite::params![vec![0x78u8, 0x9c, 0x00, 0x01], id],
+            )
+            .unwrap();
+
+        let read = cache.get_message_body(id);
+
+        let body = read.expect("a damaged body is not an error");
+        assert!(
+            body.is_none_or(|held| held.body_plain.is_none()),
+            "damaged text was handed back as though it had been read"
+        );
     }
 
     #[test]
