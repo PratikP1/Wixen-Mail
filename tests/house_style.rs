@@ -4042,6 +4042,42 @@ fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
     );
 }
 
+#[test]
+fn test_the_installer_says_how_far_back_the_version_was_set() {
+    // The script is the artefact. What this cannot see is whether the number
+    // it prints is right; that was measured by hand against twelve real bumps
+    // when this was written, and the commit message records the figures.
+    //
+    // Why there is a check here at all: the versioning rule says a feature or
+    // a behaviour change moves the version in the commit that makes it, and
+    // that rule has now lapsed three times, twice badly enough to need a
+    // catch-up bump. No test can tell a behaviour change from a refactor, so
+    // this does not try. It asks only that the one moment where the drift
+    // becomes real, somebody building a file to hand to another person, puts
+    // the number in front of them.
+    let script = fs::read_to_string("scripts/build-installer.sh").expect("the installer script");
+    let does = what_it_does_not_what_it_says(&script);
+
+    assert!(
+        does.contains("VERSION_SET_AT"),
+        "the installer script never works out when the version it is stamping \
+         was last moved, so a build carrying a version sixteen commits stale \
+         looks exactly like one carrying a version set in the commit before it."
+    );
+
+    // Both answers, because they are different answers and a build has to be
+    // able to tell them apart. A shallow clone has no history to search, and
+    // reporting that as "set 0 commits ago" would read as "just bumped",
+    // which is the most reassuring thing it could possibly say and the one
+    // thing it does not know.
+    assert!(
+        does.contains("LAG=\"unknown\"") || does.contains("LAG=unknown"),
+        "the installer script has no answer for not being able to work out \
+         when the version was set. In a shallow clone the search finds \
+         nothing, and a count it does not have must not come out as a number."
+    );
+}
+
 /// The methods that come back with something to say about somebody's mail.
 ///
 /// Read out of the mail controller rather than listed here, because a list

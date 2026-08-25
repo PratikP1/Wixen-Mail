@@ -47,6 +47,33 @@ fi
 # are, not only the file it was installed from.
 export WIXEN_BUILD="$BUILD"
 
+# How far back the version being stamped was last moved.
+#
+# This project's rule is that a new feature, a schema change or a behaviour
+# change moves the version in the commit that makes it. That rule has lapsed
+# three times, twice badly enough to need a catch-up bump: 0.25.0 after one
+# feature landed on top of 0.24.0, and 0.33.0 after sixteen commits added
+# filing mail into a folder from a rule, moved the compose toolbar, gave Sent
+# and Drafts their own columns and built the Account Manager's Sign In Again.
+#
+# No check can tell a behaviour change from a refactor, so this does not try
+# to refuse anything. It says the number out loud at the one moment the drift
+# starts to matter, which is somebody building a file to give to another
+# person. Several builds sharing a version is normal and expected; sixteen
+# commits of feature work sharing one is the thing worth seeing.
+#
+# `git log -S` searches history for the commit that changed how many times
+# this exact line appears, which is the commit that set the current number.
+VERSION_SET_AT=$(git log --format=%H -S"version = \"$VERSION\"" -- Cargo.toml 2>/dev/null | head -1)
+if [ -n "$VERSION_SET_AT" ]; then
+  LAG=$(git rev-list --count "$VERSION_SET_AT..HEAD" 2>/dev/null || echo unknown)
+else
+  # A shallow clone has no history to search. Saying "0 commits ago" here
+  # would read as "just bumped", which is the most reassuring answer available
+  # and the one thing this does not know.
+  LAG="unknown"
+fi
+
 # The Windows file version field holds four numbers and nothing else, so a
 # prerelease has to be encoded rather than carried. Ordinary development
 # versions are plain and land on 4000, which is above every prerelease of
@@ -109,6 +136,27 @@ if [ -z "$ISCC" ]; then
   echo "    winget install JRSoftware.InnoSetup" >&2
   exit 1
 fi
+
+case "$LAG" in
+  unknown)
+    echo "== $VERSION was set at a commit this clone does not have =="
+    echo "   Cannot say how much has changed since. A shallow clone has no"
+    echo "   history to search."
+    ;;
+  0)
+    echo "== $VERSION was set in this very commit =="
+    ;;
+  1)
+    echo "== $VERSION was set 1 commit ago =="
+    ;;
+  *)
+    echo "== $VERSION was set $LAG commits ago =="
+    echo "   Several builds sharing a version is normal. If any of those $LAG"
+    echo "   added a feature or changed behaviour, the version should have"
+    echo "   moved with it. See the versioning rules in CLAUDE.md."
+    ;;
+esac
+echo
 
 echo "== release build =="
 cargo build --release
