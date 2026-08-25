@@ -18,6 +18,31 @@ const FIRST_RESERVED_UID: u32 = u32::MAX;
 /// drop bodies ask this first.
 pub(super) const ONLY_COPY_IS_HERE: &str = "(filed_here = 1 OR pop_uidl IS NOT NULL)";
 
+/// The query a folder listing runs, in one place.
+///
+/// Built here rather than inline so a test can ask SQLite how it plans to
+/// answer this exact query. Written inline, a test would have to hold a copy,
+/// and the copy is what goes stale: the plan test would keep passing against a
+/// string the application had stopped using.
+///
+/// `order` must come from `Sort::order_by_clause` and `limit_clause` from a
+/// formatted number. Neither carries anything a person typed, which is what
+/// makes interpolating them safe.
+pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
+    format!(
+        "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
+                m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                m.read, m.starred, m.answered, m.draft,
+                (m.has_attachments = 1
+                 OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                m.safety, m.safety_reasons, m.receipt_to
+         FROM messages m
+         INNER JOIN folders f ON m.folder_id = f.id
+         WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
+         ORDER BY {order}, m.uid DESC{limit_clause}"
+    )
+}
+
 /// One row of a folder listing.
 ///
 /// Deliberately not `CachedMessage`. A listing needs the snippet, the size and
@@ -811,18 +836,7 @@ impl MessageCache {
         // move a row out from under somebody's cursor.
         let order = order_by.unwrap_or("m.date DESC");
         let limit_clause = limit.map(|n| format!(" LIMIT {n}")).unwrap_or_default();
-        let query = format!(
-            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
-                    m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
-                    m.read, m.starred, m.answered, m.draft,
-                    (m.has_attachments = 1
-                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                    m.safety, m.safety_reasons, m.receipt_to
-             FROM messages m
-             INNER JOIN folders f ON m.folder_id = f.id
-             WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-             ORDER BY {order}, m.uid DESC{limit_clause}"
-        );
+        let query = listing_query(order, &limit_clause);
         let mut stmt = self
             .conn
             .prepare(&query)
