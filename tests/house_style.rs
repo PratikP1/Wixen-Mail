@@ -4043,6 +4043,51 @@ fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
 }
 
 #[test]
+fn test_only_one_place_reads_stored_message_text() {
+    // Message text is stored two ways, as text when it is short and packed
+    // when packing wins, and knowing which is which belongs in one place.
+    // It was in two: `get_message` joined to `message_bodies` and took its
+    // text columns directly, so when packing arrived that reader silently
+    // came back empty for every body worth packing. Filter rules can match on
+    // the text of a message and POP mail has its text stored before the rules
+    // run, so a rule matching on what a message said stopped matching.
+    //
+    // The rule is that SQL naming those columns lives in bodies.rs, which is
+    // the module that knows how they are written. Anywhere else reads through
+    // `get_message_body`.
+    let held_by = "src/data/message_cache/bodies.rs";
+    let mut elsewhere = Vec::new();
+
+    for path in [
+        "src/data/message_cache/messages.rs",
+        "src/data/message_cache/searching.rs",
+        "src/data/message_cache/drafts.rs",
+        "src/data/message_cache/outbox.rs",
+    ] {
+        let text = fs::read_to_string(path).expect("a cache module");
+        for (number, line) in what_it_does_not_what_it_says(&text).lines().enumerate() {
+            // The columns as they appear inside a query, qualified or not.
+            let names_a_column = ["body_plain_packed", "body_html_packed"]
+                .iter()
+                .any(|column| line.contains(column));
+            if names_a_column {
+                elsewhere.push(format!("{path}:{}", number + 1));
+            }
+        }
+    }
+
+    assert!(
+        elsewhere.is_empty(),
+        "these read the columns message text is stored in, which only {held_by} \
+         should:\n  {}\n\
+         Two readers of one fact come apart the first time the writer changes, \
+         which is exactly how a filter rule matching on a message's text \
+         stopped matching. Read through get_message_body instead.",
+        elsewhere.join("\n  ")
+    );
+}
+
+#[test]
 fn test_the_installer_says_how_far_back_the_version_was_set() {
     // The script is the artefact. What this cannot see is whether the number
     // it prints is right; that was measured by hand against twelve real bumps

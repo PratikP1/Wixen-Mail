@@ -1084,13 +1084,20 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                // Opening one message is the path that wants a body, so this
-                // is the query that joins to the body cache. A message with no
-                // cached body reads as None, which means fetch it.
+                // The row only. The text is read below, through the one
+                // function that knows how it is stored.
+                //
+                // This used to join to message_bodies and take its two text
+                // columns. That made two readers of one fact, and when text
+                // began to be packed into columns of its own only the other
+                // reader was told: every body big enough to be worth packing
+                // came back empty here. Filter rules can match on the text of
+                // a message and mail collected over POP has its text stored
+                // before the rules run, so a rule matching on what a message
+                // said stopped matching and said nothing about it.
                 "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr,
-                    m.cc, m.date, b.body_plain, b.body_html, m.read, m.starred, m.deleted
+                    m.cc, m.date, m.read, m.starred, m.deleted
              FROM messages m
-             LEFT JOIN message_bodies b ON b.message_id = m.id
              WHERE m.id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
@@ -1107,17 +1114,27 @@ impl MessageCache {
                     to_addr: row.get(6)?,
                     cc: row.get(7)?,
                     date: row.get(8)?,
-                    body_plain: row.get(9)?,
-                    body_html: row.get(10)?,
-                    read: row.get(11)?,
-                    starred: row.get(12)?,
-                    deleted: row.get(13)?,
+                    // Filled in below, from the one reader of stored text.
+                    body_plain: None,
+                    body_html: None,
+                    read: row.get(9)?,
+                    starred: row.get(10)?,
+                    deleted: row.get(11)?,
                 })
             })
             .optional()
             .map_err(|e| Error::Other(format!("Failed to get message: {}", e)))?;
 
-        Ok(message)
+        let Some(mut message) = message else {
+            return Ok(None);
+        };
+        // A message with no cached text is an ordinary state and means fetch
+        // it, so nothing here treats an absent body as a failure.
+        if let Some(body) = self.get_message_body(message_id)? {
+            message.body_plain = body.body_plain;
+            message.body_html = body.body_html;
+        }
+        Ok(Some(message))
     }
 
     /// Update message flags
@@ -1250,6 +1267,36 @@ mod tests {
         let found = cache.search_messages("acc", "quarterly", 50).unwrap();
 
         assert_eq!(found.len(), 2, "{found:#?}");
+    }
+
+    #[test]
+    fn test_reading_a_whole_message_gets_the_text_however_it_was_stored() {
+        // Two readers of the same fact, and only one of them was told when
+        // the writer changed. Message text is packed now, and packed text
+        // lives in its own columns, so this query's join to the old ones came
+        // back empty for every body big enough to be worth packing.
+        //
+        // Not a cosmetic gap. Filter rules can match on body_plain and
+        // body_html, and mail collected over POP has its text stored before
+        // the rules run, so a rule matching on what a message says stopped
+        // matching and said nothing about it.
+        let cache = fresh("whole_message_carries_its_text");
+        let inbox = folder(&cache, "INBOX");
+        let row = cache
+            .upsert_message(&incoming(inbox, 1, "Quarterly report"))
+            .unwrap();
+        // Long enough that packing wins, which is the case that broke. A
+        // short body stays as text and would have passed against the fault.
+        let text = "The refurbishment figures are attached. ".repeat(40);
+        cache.save_message_body(row, Some(&text), None).unwrap();
+
+        let read = cache.get_message(row).unwrap().expect("the message");
+
+        assert_eq!(
+            read.body_plain.as_deref(),
+            Some(text.as_str()),
+            "reading the whole message lost its text"
+        );
     }
 
     #[test]
