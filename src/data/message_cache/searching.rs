@@ -67,6 +67,134 @@ pub(super) fn as_a_search(typed: &str) -> Option<String> {
 }
 
 impl MessageCache {
+    /// Put a calendar event into the search index.
+    ///
+    /// Keyed on the row's own rowid rather than its `id`, because that id is
+    /// text and a full text index is keyed by integer. The trigger that
+    /// removes an entry reads the same rowid, so the two agree.
+    pub(super) fn index_event_for_search(&self, event_id: &str) -> Result<()> {
+        let held: Option<(i64, String, Option<String>, Option<String>)> = self
+            .conn
+            .query_row(
+                "SELECT rowid, summary, description, location
+                 FROM calendar_events WHERE id = ?1",
+                rusqlite::params![event_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .ok();
+
+        let Some((rowid, summary, description, location)) = held else {
+            return Ok(());
+        };
+
+        self.conn
+            .execute(
+                "DELETE FROM calendar_search WHERE rowid = ?1",
+                rusqlite::params![rowid],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear a calendar entry: {}", e)))?;
+        self.conn
+            .execute(
+                "INSERT INTO calendar_search (rowid, summary, description, location)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![rowid, summary, description, location],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to add to the calendar search index: {}", e))
+            })?;
+        Ok(())
+    }
+
+    /// Build the calendar index for events held before it existed.
+    ///
+    /// Same shape as [`Self::build_any_missing_search_index`], and the same
+    /// two-integer check in the ordinary case where there is nothing to do.
+    pub(super) fn build_any_missing_calendar_index(&self) -> Result<usize> {
+        let indexed: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM calendar_search", [], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Failed to measure the calendar index: {}", e)))?;
+        let held: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM calendar_events", [], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Failed to count events: {}", e)))?;
+
+        if indexed >= held {
+            return Ok(0);
+        }
+
+        let ids: Vec<String> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT id FROM calendar_events")
+                .map_err(|e| Error::Other(format!("Failed to list events: {}", e)))?;
+            stmt.query_map([], |row| row.get(0))
+                .map_err(|e| Error::Other(format!("Failed to read event ids: {}", e)))?
+                .collect::<std::result::Result<_, _>>()
+                .map_err(|e| Error::Other(format!("Failed to read an event id: {}", e)))?
+        };
+
+        let building = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin indexing events: {}", e)))?;
+        for id in &ids {
+            self.index_event_for_search(id)?;
+        }
+        building
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to store the calendar index: {}", e)))?;
+        Ok(ids.len())
+    }
+
+    /// Find calendar events matching what somebody typed.
+    ///
+    /// Searches the title, the notes and the place. Newest first, which is the
+    /// order the rest of the calendar reads in.
+    pub fn search_calendar_events(
+        &self,
+        account_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<super::CalendarEventEntry>> {
+        let Some(matching) = as_a_search(query) else {
+            return Ok(Vec::new());
+        };
+        let exactly = carries_punctuation(query);
+
+        let sql = format!(
+            "SELECT {} FROM calendar_search
+             INNER JOIN calendar_events e ON e.rowid = calendar_search.rowid
+             WHERE calendar_search MATCH ?1 AND e.account_id = ?2
+               AND (?4 = 0
+                    OR LOWER(e.summary) LIKE ?5 ESCAPE '!'
+                    OR LOWER(COALESCE(e.description, '')) LIKE ?5 ESCAPE '!'
+                    OR LOWER(COALESCE(e.location, '')) LIKE ?5 ESCAPE '!')
+             ORDER BY e.start_datetime DESC
+             LIMIT ?3",
+            super::calendar::event_columns_of("e")
+        );
+
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare the calendar search: {}", e)))?;
+
+        stmt.query_map(
+            rusqlite::params![
+                matching,
+                account_id,
+                limit as i64,
+                i64::from(exactly),
+                super::like_pattern(query),
+            ],
+            super::calendar::map_event_row,
+        )
+        .map_err(|e| Error::Other(format!("Failed to search the calendar: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to read a calendar result: {}", e)))
+    }
+
     /// Put a message into the search index, replacing whatever was there.
     ///
     /// Done from here rather than by a trigger because the body is stored

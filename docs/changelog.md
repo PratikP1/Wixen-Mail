@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The calendar can be searched.** It was the one module with no search at
+  all. Press Ctrl+F while the calendar is showing and it searches the title,
+  the notes and the place of every event, the same way Ctrl+F searches your
+  mail when mail is showing. Before this, pressing Ctrl+F in the calendar
+  searched your mail and replaced the calendar with a list of messages.
+
+  A repeating meeting is one result rather than one for every week it falls
+  on.
+
+### Changed
+
+- **Opening the calendar no longer reads every event you have.** It loaded
+  the whole account and then narrowed to the year and a half it displays. On
+  a six-year calendar of fifty thousand events that took about a quarter of a
+  second with the window unable to respond, and it grew with every year you
+  kept. It now asks only for the stretch it is going to show.
+
+  Repeating events are still shown wherever they fall, including series set
+  up years ago, and so are events that begin before the window and run into
+  it.
+
+### Added
+
 - **Search now looks inside your messages, not just their subject lines.**
   Until now searching covered the subject, the sender, and the first two
   hundred characters of a message. A phrase you remembered from further down

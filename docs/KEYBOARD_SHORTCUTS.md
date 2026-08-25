@@ -13,7 +13,7 @@ Complete reference of all keyboard shortcuts in Wixen Mail for efficient, access
 | Reply All | `Ctrl+Shift+R` |
 | Reply to Sender Only | `Alt+Shift+R` |
 | Forward | `Ctrl+L` |
-| Search | `Ctrl+F` |
+| Search (mail, or the calendar when it is showing) | `Ctrl+F` |
 | Delete Message | `Delete` |
 | Send Message | `Ctrl+Enter` |
 | Quit Application | `Ctrl+Q` |

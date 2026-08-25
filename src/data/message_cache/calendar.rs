@@ -52,8 +52,23 @@ const EVENT_COLS: &str =
      created_at, updated_at, categories, pending, exception_dates, cut_from_event_id,
      provider_recurrence_id";
 
+/// The same columns, each qualified with a table alias.
+///
+/// Derived from [`EVENT_COLS`] rather than written out again. A query that
+/// joins the calendar to its search index has two tables offering a `summary`
+/// and a `description`, so the columns have to say which they mean; a second
+/// hand-written list would be a second answer to the same question and would
+/// come apart the first time a column was added.
+pub(super) fn event_columns_of(alias: &str) -> String {
+    EVENT_COLS
+        .split(',')
+        .map(|column| format!("{alias}.{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Map a rusqlite row to a `CalendarEventEntry` (columns must match `EVENT_COLS` order).
-fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
+pub(super) fn map_event_row(row: &rusqlite::Row) -> rusqlite::Result<CalendarEventEntry> {
     Ok(CalendarEventEntry {
         id: row.get(0)?,
         account_id: row.get(1)?,
@@ -192,10 +207,90 @@ impl MessageCache {
                 &event.cut_from_event_id, &event.provider_recurrence_id,
             ],
         ).map_err(|e| Error::Other(format!("Failed to save calendar event: {}", e)))?;
+
+        // Searchable as soon as it is stored. The delete side is a trigger,
+        // because there are several ways an event goes; this side cannot be,
+        // since the same statement both inserts and updates and a trigger
+        // would have to be written twice to catch both.
+        self.index_event_for_search(&event.id)?;
         Ok(())
     }
 
     /// Get calendar events in a date range for an account.
+    /// The distinct category strings any of this account's events carry.
+    ///
+    /// One column of the rows that have anything in it, rather than every
+    /// column of every event in the account, which is what building this list
+    /// used to read. The answer is a handful of short words and the question
+    /// was costing an entire calendar.
+    ///
+    /// Still read from the events rather than kept in a list of its own, which
+    /// would be a second place for the same fact and would go stale the moment
+    /// an event was deleted.
+    pub fn categories_in_use(&self, account_id: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT DISTINCT categories FROM calendar_events
+                 WHERE account_id = ?1 AND categories IS NOT NULL AND categories <> ''",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare the category query: {}", e)))?;
+
+        stmt.query_map(params![account_id], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read categories: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect categories: {}", e)))
+    }
+
+    /// Every event that could show on a day between `from` and `to`.
+    ///
+    /// What the calendar actually needs, and deliberately not the same
+    /// question as [`Self::get_events_in_range`], which asks which events
+    /// *start* inside a stretch. Two kinds of event fall on a day in the
+    /// window without starting in it, and both would vanish from the calendar
+    /// if this asked the narrower question:
+    ///
+    /// A repeating event is stored once, with the start of its first
+    /// occurrence, and the list expands it across the days it lands on. A
+    /// weekly meeting set up in 2019 still falls on days this year. Every
+    /// event carrying a rule is therefore kept whatever its start says, since
+    /// only the expansion can decide, and there are few of them next to the
+    /// one-off events that make up a calendar's bulk.
+    ///
+    /// An event can also begin before the window and run into it. A
+    /// conference starting the day before is on days inside it, so the test
+    /// is whether the event overlaps the window rather than where it begins.
+    ///
+    /// This replaced reading every event in the account and filtering in
+    /// memory: 277 ms against 68 ms on a six year calendar of fifty thousand,
+    /// on the thread the window has to keep answering on.
+    pub fn events_that_could_fall_between(
+        &self,
+        account_id: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<Vec<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {EVENT_COLS} FROM calendar_events
+             WHERE account_id = ?1
+               AND (recurrence_rule IS NOT NULL
+                    OR (start_datetime <= ?3
+                        AND COALESCE(NULLIF(end_datetime, ''), start_datetime) >= ?2))
+             ORDER BY start_datetime ASC"
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
+
+        let events = stmt
+            .query_map(params![account_id, from, to], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to query events: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect events: {}", e)))?;
+        Ok(events)
+    }
+
     pub fn get_events_in_range(
         &self,
         account_id: &str,
@@ -684,6 +779,145 @@ mod tests {
             cut_from_event_id: None,
             provider_recurrence_id: None,
         }
+    }
+
+    #[test]
+    fn test_an_event_can_be_found_by_its_title_notes_or_place() {
+        // The calendar had no search at all. Every other module has one, and a
+        // calendar somebody has synced for years is the module where scrolling
+        // to find something is least workable.
+        let cache = temp_cache("calendar_search_finds");
+
+        let mut planning = make_event("e1", "acct", "p1", "Quarterly planning");
+        planning.description = Some("Bring the refurbishment figures".to_string());
+        planning.location = Some("Sandringham Room".to_string());
+        cache.save_calendar_event(&planning).unwrap();
+
+        let mut lunch = make_event("e2", "acct", "p2", "Lunch with Ada");
+        lunch.description = None;
+        lunch.location = None;
+        cache.save_calendar_event(&lunch).unwrap();
+
+        for (typed, expected, why) in [
+            ("quarterly", "Quarterly planning", "the title"),
+            ("refurbishment", "Quarterly planning", "the notes"),
+            ("sandringham", "Quarterly planning", "the place"),
+            ("Ada", "Lunch with Ada", "a name in the title"),
+        ] {
+            let found = cache.search_calendar_events("acct", typed, 50).unwrap();
+            assert_eq!(found.len(), 1, "searching {typed} by {why} found {found:?}");
+            assert_eq!(found[0].summary, expected, "searching {typed} by {why}");
+        }
+
+        assert!(
+            cache
+                .search_calendar_events("acct", "nothinglikethis", 50)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_has_gone_is_not_offered_by_a_search() {
+        // A result that cannot be opened is worse than a missing one.
+        let cache = temp_cache("calendar_search_forgets");
+        let mut event = make_event("e1", "acct", "p1", "Quarterly planning");
+        event.description = Some("Bring the refurbishment figures".to_string());
+        cache.save_calendar_event(&event).unwrap();
+        assert_eq!(
+            cache
+                .search_calendar_events("acct", "refurbishment", 50)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        cache.delete_calendar_event("e1").unwrap();
+
+        assert!(
+            cache
+                .search_calendar_events("acct", "refurbishment", 50)
+                .unwrap()
+                .is_empty(),
+            "a deleted event is still offered by search"
+        );
+    }
+
+    #[test]
+    fn test_a_search_does_not_cross_from_one_account_into_another() {
+        let cache = temp_cache("calendar_search_scoped");
+        let mut mine = make_event("e1", "mine", "p1", "Quarterly planning");
+        mine.description = Some("refurbishment".to_string());
+        cache.save_calendar_event(&mine).unwrap();
+        let mut theirs = make_event("e2", "theirs", "p2", "Quarterly planning");
+        theirs.description = Some("refurbishment".to_string());
+        cache.save_calendar_event(&theirs).unwrap();
+
+        let found = cache
+            .search_calendar_events("mine", "refurbishment", 50)
+            .unwrap();
+
+        assert_eq!(
+            found.len(),
+            1,
+            "a search reached another account's calendar"
+        );
+        assert_eq!(found[0].account_id, "mine");
+    }
+
+    #[test]
+    fn test_the_window_keeps_a_series_that_started_long_before_it() {
+        // The trap in bounding the calendar. A weekly meeting set up in 2019
+        // has a start of 2019 and still falls on days in this year's window,
+        // because the list expands a series across the days it lands on. Ask
+        // only for events starting inside the window and every long-running
+        // series silently disappears from the calendar, which is a worse
+        // fault than the slowness the bound is there to fix.
+        let cache = temp_cache("window_keeps_old_series");
+
+        let mut weekly = make_event("old-series", "acct", "p1", "Weekly standup");
+        weekly.start_datetime = "2019-01-07T09:00:00Z".to_string();
+        weekly.end_datetime = "2019-01-07T09:30:00Z".to_string();
+        weekly.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=MO".to_string());
+        cache.save_calendar_event(&weekly).unwrap();
+
+        let mut old_one_off = make_event("old-single", "acct", "p2", "A lunch in 2019");
+        old_one_off.start_datetime = "2019-02-11T12:00:00Z".to_string();
+        old_one_off.end_datetime = "2019-02-11T13:00:00Z".to_string();
+        cache.save_calendar_event(&old_one_off).unwrap();
+
+        let mut inside = make_event("inside", "acct", "p3", "Something this year");
+        inside.start_datetime = "2026-03-05T10:00:00Z".to_string();
+        inside.end_datetime = "2026-03-05T11:00:00Z".to_string();
+        cache.save_calendar_event(&inside).unwrap();
+
+        // Starts the day before the window and runs into it.
+        let mut straddling = make_event("straddling", "acct", "p4", "A long conference");
+        straddling.start_datetime = "2026-02-27T09:00:00Z".to_string();
+        straddling.end_datetime = "2026-03-02T17:00:00Z".to_string();
+        cache.save_calendar_event(&straddling).unwrap();
+
+        let shown = cache
+            .events_that_could_fall_between("acct", "2026-03-01T00:00:00Z", "2026-03-31T23:59:59Z")
+            .unwrap();
+        let names: Vec<&str> = shown.iter().map(|e| e.summary.as_str()).collect();
+
+        assert!(
+            names.contains(&"Weekly standup"),
+            "a series that started before the window was dropped: {names:?}"
+        );
+        assert!(
+            names.contains(&"Something this year"),
+            "an event inside the window was dropped: {names:?}"
+        );
+        assert!(
+            names.contains(&"A long conference"),
+            "an event running into the window was dropped: {names:?}"
+        );
+        assert!(
+            !names.contains(&"A lunch in 2019"),
+            "a one-off from years earlier was carried in, so this is not bounded: {names:?}"
+        );
     }
 
     #[test]

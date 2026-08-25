@@ -940,9 +940,16 @@ pub fn manage_calendar(
     if changed {
         // Read back rather than patching the list in memory, so the panel
         // shows what is stored, which is the thing that has to be true.
-        match cache.get_all_events_for_account(&account) {
+        // Bounded to the stretch the panel shows, for the reason the first
+        // load is: the whole account was being read to draw a year and a half
+        // of it.
+        let (from, to) = CalendarEventItem::the_window_now();
+        match cache.events_that_could_fall_between(
+            &account,
+            &from.format("%Y-%m-%dT00:00:00Z").to_string(),
+            &to.format("%Y-%m-%dT23:59:59Z").to_string(),
+        ) {
             Ok(events) => {
-                let (from, to) = CalendarEventItem::the_window_now();
                 let _ = tx.try_send(UIUpdate::CalendarEventsLoaded(
                     CalendarEventItem::every_day_shown(&events, from, to),
                 ));
@@ -1589,6 +1596,65 @@ pub fn search_messages(
     }
 }
 
+/// Search the calendar and show what was found.
+///
+/// Deliberately the same shape as [`search_messages`], including reporting an
+/// empty result through the earcon channel rather than as status text alone,
+/// because a search that finds nothing is the case somebody most needs told
+/// about and the status bar is the easiest thing to miss.
+///
+/// What it shows is the events themselves rather than every day a series
+/// falls on. A repeating meeting is one result, not one per week: a search
+/// that answered "your weekly standup" fifty times would be worse than no
+/// search.
+pub fn search_calendar(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    /// Enough to be useful, few enough to fill the list without a pause.
+    const LIMIT: usize = 500;
+
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    match cache.search_calendar_events(&account, query, LIMIT) {
+        Ok(events) => {
+            let found = events.len();
+            let _ = tx.try_send(UIUpdate::CalendarEventsLoaded(
+                events.iter().map(CalendarEventItem::from_entry).collect(),
+            ));
+            if found == 0 {
+                let _ = a11y.signal(
+                    crate::presentation::accessibility::feedback::Event::NothingFound,
+                    query,
+                );
+            } else {
+                send_status(
+                    tx,
+                    rt,
+                    &if found == LIMIT {
+                        format!("First {LIMIT} events matching {query}")
+                    } else {
+                        format!(
+                            "{found} event{} matching {query}",
+                            if found == 1 { "" } else { "s" }
+                        )
+                    },
+                );
+            }
+        }
+        Err(e) => {
+            tracing::error!("Calendar search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
 /// Create a contact and save it.
 ///
 /// The dialog returned the contact it built and the caller dropped it, so
@@ -1769,12 +1835,15 @@ fn item_form_ingredients(
     // them. Read from the events themselves rather than kept in a list of
     // their own, which would be a second place for the same fact and would go
     // stale the moment an event was deleted.
+    // One column of the rows that carry anything, rather than every column of
+    // every event: the answer is a handful of short words and the question
+    // was reading a whole calendar to find them.
     let known_categories = cache
-        .get_all_events_for_account(account_id)
-        .map(|events| {
-            events
+        .categories_in_use(account_id)
+        .map(|stored| {
+            stored
                 .iter()
-                .flat_map(|event| crate::application::categories::on(&event.categories))
+                .flat_map(|carried| crate::application::categories::on(carried))
                 .collect()
         })
         .unwrap_or_default();
@@ -2722,6 +2791,93 @@ mod tests {
             a11y.take_visual_feedback(),
             None,
             "a mail search that found a message still signalled NothingFound"
+        );
+    }
+
+    #[test]
+    fn test_searching_the_calendar_sends_back_the_events_it_found() {
+        // The calendar had no search of any kind. This is the whole path: a
+        // typed word, through the index, to the update the panel draws from.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let with_cache = cache.as_ref().expect("a cache");
+        let event = crate::data::message_cache::CalendarEventEntry {
+            id: "evt-1".to_string(),
+            account_id: LOCAL_ACCOUNT_ID.to_string(),
+            provider_event_id: None,
+            calendar_id: None,
+            summary: "Quarterly planning".to_string(),
+            description: Some("Bring the refurbishment figures".to_string()),
+            location: None,
+            start_datetime: "2026-03-05T10:00:00Z".to_string(),
+            end_datetime: "2026-03-05T11:00:00Z".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: None,
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        };
+        with_cache
+            .save_calendar_event(&event)
+            .expect("an event to search for");
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_calendar(&state, &cache, "refurbishment", &tx, &rt, &a11y);
+
+        let sent = rx.try_recv().expect("the panel to be sent something");
+        match sent {
+            UIUpdate::CalendarEventsLoaded(items) => {
+                assert_eq!(items.len(), 1, "{items:#?}");
+                assert_eq!(items[0].summary, "Quarterly planning");
+            }
+            other => panic!("the calendar search sent {other:?} rather than events"),
+        }
+        assert_eq!(
+            a11y.take_visual_feedback(),
+            None,
+            "a calendar search that found an event still signalled NothingFound"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_search_that_finds_nothing_reaches_the_earcon_channel() {
+        // The same rule the mail search follows: an empty result is the case
+        // somebody most needs telling about, and the status bar is the easiest
+        // thing to miss.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, _rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_calendar(&state, &cache, "nothinglikethis", &tx, &rt, &a11y);
+
+        assert!(
+            a11y.take_visual_feedback().is_some(),
+            "a calendar search that found nothing said so only in the status bar"
         );
     }
 
