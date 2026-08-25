@@ -72,7 +72,7 @@ impl MessageCache {
     pub fn get_reminders_for_account(&self, account_id: &str) -> Result<Vec<ReminderEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, title, description, due_datetime,
                         is_completed, priority, repeat_rule, related_event_id,
                         created_at, updated_at
@@ -136,7 +136,7 @@ impl MessageCache {
         let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, title, description, due_datetime,
                         is_completed, priority, repeat_rule, related_event_id,
                         created_at, updated_at

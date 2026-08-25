@@ -99,7 +99,7 @@ impl MessageCache {
     pub fn get_calendars_for_account(&self, account_id: &str) -> Result<Vec<CalendarContainer>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, color, source_provider, caldav_url,
                         subscription_url, is_default, is_visible, is_read_only,
                         display_order, etag, ctag, sync_token, refresh_interval_minutes,
@@ -146,7 +146,7 @@ impl MessageCache {
     pub fn get_calendar(&self, calendar_id: &str) -> Result<Option<CalendarContainer>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, color, source_provider, caldav_url,
                         subscription_url, is_default, is_visible, is_read_only,
                         display_order, etag, ctag, sync_token, refresh_interval_minutes,

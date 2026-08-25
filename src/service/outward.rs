@@ -1357,7 +1357,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 41] = [
+    const A_CRATE_THAT_CANNOT: [&str; 42] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1400,6 +1400,9 @@ mod completeness {
         // ever names a socket, a hostname, or a client of anything on
         // A_WAY_OUT_OF_THIS_PROGRAM.
         "zip",
+        // Packs and unpacks cached message text in memory. A compressor takes
+        // bytes and gives bytes back; it has no notion of a destination.
+        "flate2",
         "windows",
         "winresource",
         "boa_engine",

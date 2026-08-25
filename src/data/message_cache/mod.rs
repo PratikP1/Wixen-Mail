@@ -18,6 +18,7 @@ pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
 mod outbox;
 pub mod reminders;
+mod searching;
 mod signatures;
 mod tags;
 pub mod tasks;
@@ -77,10 +78,26 @@ fn fold_case_the_way_rust_does(conn: &Connection) -> Result<()> {
     .map_err(|e| Error::Other(format!("Failed to prepare text comparison: {e}")))
 }
 
+/// Bring the statistics up to date on the way out, which is where SQLite's
+/// own documentation says to do it: this connection has seen a session's worth
+/// of queries and knows more about the data than it did at open.
+impl Drop for MessageCache {
+    fn drop(&mut self) {
+        if let Err(e) = self
+            .conn
+            .execute_batch("PRAGMA analysis_limit=400; PRAGMA optimize;")
+        {
+            tracing::debug!("Could not update the database statistics on close: {e}");
+        }
+    }
+}
+
 /// Message cache using SQLite
 pub struct MessageCache {
     conn: Connection,
     security: Option<SecurityService>,
+    /// How much body text to keep. See [`bodies::BODY_CACHE_BUDGET_BYTES`].
+    body_budget: i64,
 }
 
 /// Cached folder information
@@ -1136,7 +1153,11 @@ impl MessageCache {
         )
         .map_err(|e| Error::Other(format!("Failed to set pragmas: {}", e)))?;
 
-        let cache = Self { conn, security };
+        let cache = Self {
+            conn,
+            security,
+            body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
+        };
         cache.initialize_schema()?;
 
         // Databases written by earlier versions keep bodies inline in the
@@ -1148,7 +1169,60 @@ impl MessageCache {
             tracing::warn!("Could not move inline message bodies: {}", e);
         }
 
+        // A database held before there was a search index has to have one
+        // built, once. Ordinarily this compares two counts and stops. A
+        // failure is not fatal for the same reason the line above is not:
+        // searching would find less than it should, which is worth a line in
+        // the log and is not worth refusing to open somebody's mail over.
+        match cache.build_any_missing_search_index() {
+            Ok(0) => {}
+            Ok(indexed) => tracing::info!("Built the search index over {indexed} messages"),
+            Err(e) => tracing::warn!("Could not build the search index: {}", e),
+        }
+
+        // Once at open, so the first folder somebody looks at is planned with
+        // statistics rather than without. The connection is long lived, so the
+        // usual advice to do this before closing would mean doing it once a
+        // session, after every query that could have benefited.
+        cache.let_the_planner_learn();
+
         Ok(cache)
+    }
+
+    /// Let SQLite bring its own statistics up to date.
+    ///
+    /// The planner chooses between indexes using `sqlite_stat1`, and with no
+    /// statistics it guesses from the shape of the schema. That was survivable
+    /// while there was usually only one index it could possibly use; now that
+    /// a folder listing can be answered two ways and a search three, the guess
+    /// is a real choice and it should be an informed one.
+    ///
+    /// `analysis_limit` is what makes this safe to call rather than a full
+    /// `ANALYZE`, which reads every index end to end. Four hundred is the
+    /// figure SQLite's own documentation uses: it samples rather than counts,
+    /// and the whole call is bounded to something a person does not see.
+    ///
+    /// Failure is ignored on purpose. Out of date statistics make queries
+    /// slower and nothing else, so this must never be the reason a mailbox
+    /// will not open.
+    fn let_the_planner_learn(&self) {
+        if let Err(e) = self
+            .conn
+            .execute_batch("PRAGMA analysis_limit=400; PRAGMA optimize;")
+        {
+            tracing::debug!("Could not update the database statistics: {e}");
+        }
+    }
+
+    /// The same cache, keeping less body text than the default.
+    ///
+    /// Exists so a test can watch an eviction without building half a gigabyte
+    /// of message bodies, and so a setting has somewhere to plug in if anyone
+    /// ever asks for one.
+    #[must_use]
+    pub fn keeping_bodies_under(mut self, budget_bytes: i64) -> Self {
+        self.body_budget = budget_bytes;
+        self
     }
 
     /// Decrypt a stored value. Tries AES decryption first, falls back to base64 for migration.
@@ -1740,6 +1814,66 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create message_bodies table: {}", e)))?;
 
+        // Message text is packed before it is stored, and these hold the
+        // packed form. The two TEXT columns above stay, because a column that
+        // shipped is never dropped from under somebody's database and every
+        // body written before this exists in them. A body is read from
+        // whichever of the two it is in.
+        self.ensure_column_exists("message_bodies", "body_plain_packed", "BLOB")?;
+        self.ensure_column_exists("message_bodies", "body_html_packed", "BLOB")?;
+
+        // The full text index over somebody's mail.
+        //
+        // Search used to be LOWER(column) LIKE '%term%' over the subject, the
+        // sender and the two hundred character snippet. A leading wildcard
+        // cannot use an index, so every search read every message in the
+        // account: a flat 150 ms at two hundred thousand messages whatever was
+        // typed, including when there was nothing to find, and all of it on
+        // the interface thread. It also could not see message text at all, so
+        // searching for a phrase somebody remembered from the middle of a
+        // message found nothing and said nothing about why.
+        //
+        // `content=''` keeps the index and not a second copy of the text,
+        // which matters because the text it indexes is stored packed and
+        // copying it back out uncompressed would give away what packing
+        // bought. `contentless_delete=1` is what lets a row be deleted from
+        // an index that does not hold its content, and needs SQLite 3.43 or
+        // newer; a test beside this fails if the bundled one cannot.
+        //
+        // `remove_diacritics 2` folds accents the way somebody searching for
+        // a name expects, so "Rene" finds "René". That is the same job the
+        // custom Unicode `lower` does for the LIKE queries elsewhere, done by
+        // the tokenizer instead.
+        self.conn
+            .execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS message_search USING fts5(
+                     subject, from_addr, snippet, body,
+                     content='', contentless_delete=1,
+                     tokenize=\"unicode61 remove_diacritics 2\"
+                 );",
+            )
+            .map_err(|e| Error::Other(format!("Failed to create the search index: {}", e)))?;
+
+        // Every way a message can be removed, in one place.
+        //
+        // A trigger rather than a call beside each delete, because there are
+        // several: forgetting one message, forgetting a whole folder, and the
+        // cascades that run when a folder or an account goes. A row left in
+        // the index after its message has gone is worse than a missing one,
+        // since a search would offer somebody a message that cannot be opened.
+        //
+        // Checked rather than assumed: this fires for a message deleted by a
+        // cascade from its folder, and does so whether or not recursive
+        // triggers are switched on.
+        self.conn
+            .execute_batch(
+                "CREATE TRIGGER IF NOT EXISTS message_gone_from_search
+                 AFTER DELETE ON messages BEGIN
+                     DELETE FROM message_search WHERE rowid = old.id;
+                 END;",
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep the search index tidy: {}", e)))?;
+
         // Schema migrations
         // The snippet lives on the message rather than the body because
         // bodies are evicted under a budget and the snippet column has to keep
@@ -2146,7 +2280,7 @@ impl MessageCache {
     fn columns_of(&self, table: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare(&format!("PRAGMA table_info({})", table))
+            .prepare_cached(&format!("PRAGMA table_info({})", table))
             .map_err(|e| Error::Other(format!("Failed to inspect schema for {}: {}", table, e)))?;
 
         stmt.query_map([], |row| row.get::<_, String>(1))
@@ -2170,7 +2304,7 @@ impl MessageCache {
     fn is_kept_apart_by(&self, table: &str, columns: &[&str]) -> Result<bool> {
         let mut indexes = self
             .conn
-            .prepare(&format!("PRAGMA index_list({})", table))
+            .prepare_cached(&format!("PRAGMA index_list({})", table))
             .map_err(|e| Error::Other(format!("Failed to list {} indexes: {}", table, e)))?;
         let each_index = indexes
             .query_map([], |row| {
@@ -2186,7 +2320,7 @@ impl MessageCache {
             }
             let mut over = self
                 .conn
-                .prepare(&format!(
+                .prepare_cached(&format!(
                     "PRAGMA index_info('{}')",
                     name.replace('\'', "''")
                 ))
@@ -2785,6 +2919,30 @@ mod storage_shape {
         .expect("columns")
         .filter_map(std::result::Result::ok)
         .any(|(name, kind, pk)| name == column && pk == 1 && kind.eq_ignore_ascii_case("INTEGER"))
+    }
+
+    #[test]
+    fn test_the_database_this_ships_with_can_do_full_text_search() {
+        // FTS5 is a compile-time option in SQLite and a separate feature in
+        // rusqlite, so it is perfectly possible to build a database that
+        // silently cannot do this. Searching mail is the reason the index
+        // below exists, and the failure would otherwise surface as an opening
+        // error on somebody's machine rather than here.
+        let cache = fresh("fts5_is_available");
+        let version: String = cache
+            .conn
+            .query_row("SELECT sqlite_version()", [], |row| row.get(0))
+            .expect("a version");
+
+        cache
+            .conn
+            .execute_batch("CREATE VIRTUAL TABLE probe USING fts5(body)")
+            .unwrap_or_else(|e| {
+                panic!(
+                    "the bundled SQLite ({version}) cannot create a full text index: {e}\n\
+                     rusqlite needs its \"fts5\" feature for this."
+                )
+            });
     }
 
     #[test]

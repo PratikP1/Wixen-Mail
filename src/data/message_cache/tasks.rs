@@ -35,7 +35,7 @@ impl MessageCache {
     pub fn get_task_lists_for_account(&self, account_id: &str) -> Result<Vec<TaskListEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, color, display_order, created_at
                  FROM task_lists WHERE account_id = ?1 ORDER BY display_order, name",
             )
@@ -163,7 +163,7 @@ impl MessageCache {
     pub fn get_tasks_for_list(&self, task_list_id: &str) -> Result<Vec<TaskEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at, remote_updated, pending,
@@ -188,7 +188,7 @@ impl MessageCache {
     pub fn get_all_tasks_for_account(&self, account_id: &str) -> Result<Vec<TaskEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at, remote_updated, pending,
@@ -240,7 +240,7 @@ impl MessageCache {
     pub fn find_task(&self, task_id: &str) -> Result<Option<TaskEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at, remote_updated, pending,
@@ -263,7 +263,7 @@ impl MessageCache {
     pub fn pending_tasks(&self, account_id: &str) -> Result<Vec<TaskEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at, remote_updated, pending,
@@ -292,7 +292,7 @@ impl MessageCache {
     pub fn deleted_tasks(&self, account_id: &str) -> Result<Vec<DeletedTask>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, deleted_at, taken_at
                  FROM deleted_tasks WHERE account_id = ?1 ORDER BY deleted_at",
             )
@@ -472,7 +472,7 @@ impl MessageCache {
         let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, task_list_id, title, description, due_date,
                         is_completed, completed_at, priority, display_order,
                         parent_task_id, created_at, updated_at, remote_updated, pending,

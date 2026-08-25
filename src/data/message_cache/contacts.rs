@@ -155,7 +155,7 @@ impl MessageCache {
     ) -> Result<HashMap<String, Vec<ProviderIdentity>>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT contact_id, address_book, provider_contact_id, provider_version,
                         change_is_waiting
                  FROM contact_identities WHERE account_id = ?1 ORDER BY address_book",
@@ -211,7 +211,7 @@ impl MessageCache {
 
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
@@ -272,7 +272,7 @@ impl MessageCache {
         limit: usize,
     ) -> Result<Vec<ContactEntry>> {
         let pattern = super::like_pattern(query);
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
                     nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
@@ -986,7 +986,7 @@ impl MessageCache {
     pub fn deleted_contacts(&self, account_id: &str) -> Result<Vec<DeletedContact>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT contact_id, account_id, address_book, provider_contact_id, deleted_at,
                         taken_at
                  FROM deleted_contacts WHERE account_id = ?1
@@ -1064,7 +1064,7 @@ impl MessageCache {
 
     /// Load all contact groups for an account
     pub fn load_contact_groups(&self, account_id: &str) -> Result<Vec<ContactGroup>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, name, description, created_at FROM contact_groups WHERE account_id = ?1 ORDER BY name"
         ).map_err(|e| Error::Other(format!("Failed to prepare contact groups query: {}", e)))?;
 
@@ -1142,7 +1142,7 @@ impl MessageCache {
     fn load_group_member_ids(&self, group_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT contact_id FROM contact_group_members WHERE group_id = ?1")
+            .prepare_cached("SELECT contact_id FROM contact_group_members WHERE group_id = ?1")
             .map_err(|e| Error::Other(format!("Failed to prepare group members query: {}", e)))?;
 
         let ids = stmt
@@ -1161,7 +1161,7 @@ impl MessageCache {
     pub fn resolve_group_emails(&self, group_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT c.email FROM contacts c
              INNER JOIN contact_group_members m ON c.id = m.contact_id
              WHERE m.group_id = ?1 AND c.email <> ''

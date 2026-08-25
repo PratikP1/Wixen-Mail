@@ -210,7 +210,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
 
         let events = stmt
@@ -229,7 +229,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
 
         let events = stmt
@@ -252,7 +252,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
 
         let mut rows = stmt
@@ -271,7 +271,7 @@ impl MessageCache {
         let sql = format!("SELECT {} FROM calendar_events WHERE id = ?1", EVENT_COLS);
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
 
         let mut rows = stmt
@@ -293,7 +293,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
 
         let events = stmt
@@ -317,7 +317,9 @@ impl MessageCache {
     pub fn days_cut_out_of_it_still_waiting(&self, event_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id FROM calendar_events WHERE cut_from_event_id = ?1 AND pending = 1")
+            .prepare_cached(
+                "SELECT id FROM calendar_events WHERE cut_from_event_id = ?1 AND pending = 1",
+            )
             .map_err(|e| {
                 Error::Other(format!(
                     "Failed to prepare the query for days cut out of a series: {}",
@@ -351,7 +353,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&sql)
+            .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare the pending query: {}", e)))?;
 
         let events = stmt
@@ -459,7 +461,7 @@ impl MessageCache {
     pub fn deleted_calendar_events(&self, account_id: &str) -> Result<Vec<DeletedCalendarEvent>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, provider_event_id, calendar_id, deleted_at, event_url,
                         taken_at, provider_recurrence_id
                  FROM deleted_calendar_events WHERE account_id = ?1 ORDER BY deleted_at",
@@ -578,7 +580,7 @@ impl MessageCache {
     ) -> Result<Option<SyncState>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, sync_type, provider, sync_token, delta_link,
                     last_full_sync, last_incremental_sync
              FROM sync_state

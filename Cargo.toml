@@ -113,6 +113,20 @@ rodio = "0.22.2"
 # safety.
 zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
 
+# Packing cached message text. Mail compresses unusually well: measured on
+# real prose, a plain body goes to a third, a newsletter to a tenth, and a
+# reply chain quoting itself several times over to a fifth. Overall 4.6 to 1,
+# which is the difference between a mail cache measured in gigabytes and one
+# measured in hundreds of megabytes.
+#
+# Deflate rather than a stronger codec, and this is a real choice rather than
+# inertia: the cost that matters is the one paid on opening a message, which
+# lands on the interface thread, and deflate unpacks a body in well under a
+# millisecond. It was also already in the tree underneath `zip`. Named here
+# because a dependency this code calls directly should say so rather than
+# arriving as somebody else's implementation detail.
+flate2 = "1.1.9"
+
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.

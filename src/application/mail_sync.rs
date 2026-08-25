@@ -688,21 +688,20 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     }
 
     let forgotten = uids_to_forget(&on_server, &stored);
-    for uid in &forgotten {
-        cache.forget_message(folder_id, *uid)?;
-    }
+    cache.forget_messages(folder_id, &forgotten)?;
 
     let wanted = uids_to_fetch(&on_server, &stored, limit);
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
-    let mut arrived = Vec::new();
-    for message in &fetched {
-        let id = cache.upsert_message(&to_incoming(
-            message,
-            folder_id,
-            folder.folder_type == crate::common::types::FolderType::Spam,
-        ))?;
-        arrived.push(id);
-    }
+    // One transaction for the batch rather than one per message. The sync has
+    // its own connection on a worker thread, so writing them one at a time
+    // took the database's write lock once per message and left the interface's
+    // connection waiting behind each one.
+    let spam = folder.folder_type == crate::common::types::FolderType::Spam;
+    let arriving: Vec<_> = fetched
+        .iter()
+        .map(|message| to_incoming(message, folder_id, spam))
+        .collect();
+    let arrived = cache.upsert_messages(&arriving)?;
 
     // Rules, on what has just arrived and nothing else. Running them over
     // messages already held would apply them again on every sync, and a rule
@@ -783,6 +782,21 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // 2", which is what a pair taken from two commands a moment apart can say.
     let unread = counts.unread as usize;
     cache.set_folder_counts(folder_id, unread, counts.total as usize)?;
+
+    // Message text is kept so a message opened once can be read again without
+    // the server, and until this call the keeping had no end: every body ever
+    // fetched stayed for as long as the account did. Applied here because this
+    // is a worker thread with its own connection, and eviction writes.
+    //
+    // Reported rather than propagated. A cache that could not be trimmed is
+    // worth knowing about and is not a reason to fail a sync that otherwise
+    // worked: the mail is downloaded, and refusing it here would lose that
+    // over a housekeeping step.
+    match cache.keep_bodies_within_budget() {
+        Ok(0) => {}
+        Ok(freed) => tracing::debug!("Freed {freed} bytes of cached message text"),
+        Err(e) => tracing::warn!("Could not bring the message text cache within its budget: {e}"),
+    }
 
     Ok(FolderSync {
         folder: folder.name.clone(),
@@ -1597,6 +1611,120 @@ mod tests {
             .build()
             .expect("a runtime")
             .block_on(sync_folder(server, cache, folder, id, limit, None))
+    }
+
+    #[test]
+    fn test_a_sync_brings_the_body_cache_back_under_its_budget() {
+        // `evict_bodies_over` was written, tested, documented in the module
+        // header as what the cache does, and called by nothing outside its own
+        // tests. So the body cache grew without any limit at all: every message
+        // ever opened kept its text for as long as the account existed, in a
+        // file the documentation correctly says is not encrypted.
+        //
+        // The budget is applied here, at the end of a folder sync, because that
+        // is a worker thread with its own connection. Eviction deletes rows,
+        // and a write on the interface thread is the thing this whole layer
+        // is careful about.
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None)
+            .expect("a cache")
+            .keeping_bodies_under(60);
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        let folder = ImapFolder {
+            name: "Inbox".into(),
+            display_path: "INBOX".into(),
+            path: "INBOX".into(),
+            folder_type: FolderType::Inbox,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+        };
+
+        // Six messages an ordinary sync brought down, each with a body well
+        // over the budget between them. Ordinary matters: mail collected over
+        // POP and a copy of a sent message are the only copy of their text and
+        // are never evicted, so a test built from those would pass by never
+        // having a candidate.
+        for uid in 1..=6u32 {
+            let row = cache
+                .upsert_message(&IncomingMessage {
+                    folder_id,
+                    uid,
+                    message_id: format!("held-{uid}@example.com"),
+                    subject: format!("Message {uid}"),
+                    from_addr: "someone@example.com".into(),
+                    to_addr: "me@example.com".into(),
+                    cc: None,
+                    reply_to: None,
+                    date: format!("2026-07-{uid:02}T09:00:00+00:00"),
+                    internal_date: None,
+                    size_bytes: None,
+                    refs_header: None,
+                    read: false,
+                    starred: false,
+                    answered: false,
+                    draft: false,
+                    deleted: false,
+                    has_attachments: false,
+                    safety: crate::service::safety::Verdict::ordinary(),
+                    gmail_message_id: None,
+                    labels: None,
+                    receipt_to: None,
+                    pop_uidl: None,
+                })
+                .expect("a message");
+            cache
+                .save_message_body(row, Some(&"body text ".repeat(20)), None)
+                .expect("a body");
+        }
+
+        // Sixty bytes, not the four hundred this first said. Message text is
+        // packed before it is stored, so six repetitive bodies came to 126
+        // bytes on the disk rather than 1200 and the test sat under its own
+        // budget, proving nothing. The guard below is what caught that, and it
+        // stays for the next time something changes what a body costs.
+        let before = cache.cached_body_bytes().expect("a total");
+        assert!(
+            before > 60,
+            "the test has to start over budget or it proves nothing: {before}"
+        );
+
+        // Every one of the six is still on the server, so this sync fetches
+        // nothing and forgets nothing. That is the point: the first version of
+        // this test left one uid on the server, the sync deleted the other
+        // five as gone, their bodies went with them, and the test passed
+        // against code that never evicted anything. Eviction has to be the
+        // only thing that can bring the total down.
+        let server = Scripted {
+            on_server: vec![1, 2, 3, 4, 5, 6],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 6,
+                unread: 0,
+            },
+            ..Scripted::default()
+        };
+        let did = run(&server, &cache, folder_id, &folder);
+        assert_eq!(
+            did.forgotten, 0,
+            "the sync removed messages, so this measures deletion and not eviction"
+        );
+
+        let after = cache.cached_body_bytes().expect("a total");
+        assert!(
+            after <= 400,
+            "a sync finished with the body cache still over its budget: \
+             {before} bytes before, {after} after, budget 400"
+        );
     }
 
     #[test]

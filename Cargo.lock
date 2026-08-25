@@ -5609,6 +5609,7 @@ dependencies = [
  "chrono-tz",
  "dirs",
  "ego-tree",
+ "flate2",
  "futures",
  "html-escape",
  "icalendar",

@@ -46,7 +46,7 @@ impl MessageCache {
 
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header
              FROM outbox_queue
              WHERE account_id = ?1
@@ -95,7 +95,7 @@ impl MessageCache {
     pub fn outbox_rows(&self, account_id: &str) -> Result<Vec<super::MessageListRow>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT rowid, to_addr, subject, body, created_at, attempt_count, last_error
                  FROM outbox_queue
                  WHERE account_id = ?1

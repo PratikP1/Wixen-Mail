@@ -106,7 +106,7 @@ impl MessageCache {
     pub fn load_accounts(&self) -> Result<Vec<crate::data::account::Account>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, name, email, imap_server, imap_port, imap_use_tls,
                     smtp_server, smtp_port, smtp_use_tls, username, password,
                     enabled, check_interval_minutes, provider, last_sync, color,

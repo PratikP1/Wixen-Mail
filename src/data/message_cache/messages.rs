@@ -142,7 +142,7 @@ impl MessageCache {
     pub fn pop_uidls(&self, folder_id: i64) -> Result<std::collections::HashSet<String>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT pop_uidl FROM messages
                  WHERE folder_id = ?1 AND pop_uidl IS NOT NULL",
             )
@@ -169,7 +169,7 @@ impl MessageCache {
     ) -> Result<std::collections::HashSet<String>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT m.pop_uidl FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL",
@@ -193,7 +193,7 @@ impl MessageCache {
     ) -> Result<std::collections::HashMap<String, chrono::DateTime<chrono::Utc>>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT m.pop_uidl, m.downloaded_at FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL
@@ -243,7 +243,7 @@ impl MessageCache {
     ) -> Result<std::collections::HashMap<String, chrono::DateTime<chrono::Utc>>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT pop_uidl, downloaded_at FROM messages
                  WHERE folder_id = ?1 AND pop_uidl IS NOT NULL AND downloaded_at IS NOT NULL",
             )
@@ -377,8 +377,12 @@ impl MessageCache {
     /// So this updates in place, touching only what the server just told us.
     /// Flags are included, because the server is the authority on those: a
     /// message read on a phone should read as read here.
+    ///
+    /// [`Self::upsert_messages`] is the one to reach for when a sync has a
+    /// batch in hand, which is the usual case.
     pub fn upsert_message(&self, incoming: &IncomingMessage) -> Result<i64> {
-        self.conn
+        let id: i64 = self
+            .conn
             .query_row(
                 "INSERT INTO messages
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
@@ -450,7 +454,61 @@ impl MessageCache {
                 ],
                 |row| row.get(0),
             )
-            .map_err(|e| Error::Other(format!("Failed to store message: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to store message: {}", e)))?;
+
+        // Searchable as soon as it is held, by subject and sender, rather than
+        // only once somebody has opened it and a body has arrived. A message
+        // that could be listed and not found would be the worse half of the
+        // gap this replaced.
+        self.index_message_for_search(id)?;
+        Ok(id)
+    }
+
+    /// Write a batch of arriving mail as one transaction.
+    ///
+    /// A sync fetches headers in bulk and used to write them one at a time,
+    /// which meant one transaction per message. That is slower, 157 ms against
+    /// 10 ms for five thousand, but throughput is the smaller half of it: a
+    /// sync runs on a worker thread with its own connection, so each of those
+    /// transactions takes the database's write lock on its own and the
+    /// interface's connection queues behind every one. Five thousand handoffs
+    /// become one.
+    ///
+    /// All or nothing, which is the other reason. Half a folder's headers
+    /// written and half refused leaves a listing that is neither what the
+    /// server has nor what was there before.
+    pub fn upsert_messages(&self, arriving: &[IncomingMessage]) -> Result<Vec<i64>> {
+        let batch = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin storing messages: {}", e)))?;
+
+        let mut rows = Vec::with_capacity(arriving.len());
+        for incoming in arriving {
+            rows.push(self.upsert_message(incoming)?);
+        }
+
+        batch
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to store messages: {}", e)))?;
+        Ok(rows)
+    }
+
+    /// Forget a batch of messages the server no longer lists, as one
+    /// transaction. Same reasoning as [`Self::upsert_messages`].
+    pub fn forget_messages(&self, folder_id: i64, uids: &[u32]) -> Result<()> {
+        let batch = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin forgetting messages: {}", e)))?;
+
+        for uid in uids {
+            self.forget_message(folder_id, *uid)?;
+        }
+
+        batch
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to forget messages: {}", e)))
     }
 
     /// Bring one message's flags up to date with the server.
@@ -559,7 +617,7 @@ impl MessageCache {
     pub fn stored_uids(&self, folder_id: i64) -> Result<Vec<u32>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT uid FROM messages WHERE folder_id = ?1 AND filed_here = 0")
+            .prepare_cached("SELECT uid FROM messages WHERE folder_id = ?1 AND filed_here = 0")
             .map_err(|e| Error::Other(format!("Failed to prepare uid query: {}", e)))?;
         let uids = stmt
             .query_map(params![folder_id], |row| row.get(0))
@@ -671,7 +729,9 @@ impl MessageCache {
             ],
         ).map_err(|e| Error::Other(format!("Failed to save message: {}", e)))?;
 
-        Ok(self.conn.last_insert_rowid())
+        let id = self.conn.last_insert_rowid();
+        self.index_message_for_search(id)?;
+        Ok(id)
     }
 
     /// Get messages for a folder scoped to an account
@@ -680,7 +740,7 @@ impl MessageCache {
         folder_id: i64,
         account_id: &str,
     ) -> Result<Vec<CachedMessage>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             // NULL in place of the bodies: a listing shows subjects, and
             // pulling body text through to render one is what made this table
             // unusable at scale.
@@ -760,7 +820,7 @@ impl MessageCache {
         );
         let mut stmt = self
             .conn
-            .prepare(&query)
+            .prepare_cached(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare the unified inbox: {}", e)))?;
 
         let rows = stmt
@@ -839,7 +899,7 @@ impl MessageCache {
         let query = listing_query(order, &limit_clause);
         let mut stmt = self
             .conn
-            .prepare(&query)
+            .prepare_cached(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare listing query: {}", e)))?;
 
         let rows = stmt
@@ -925,94 +985,6 @@ impl MessageCache {
     /// Bounded, because a search that returns two hundred thousand rows is a
     /// search nobody can use and a list that takes a visible moment to fill.
     ///
-    /// One row per message, not per copy. On Gmail a label is a mailbox, so a
-    /// message with three labels is three rows with three UIDs, and a search
-    /// reads every folder. Grouping on Gmail's own identifier for the message
-    /// collapses those back to one. Everywhere else that identifier is null and
-    /// the grouping falls through to the row's own id, which groups nothing.
-    pub fn search_messages(
-        &self,
-        account_id: &str,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<MessageListRow>> {
-        if query.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-        let pattern = super::like_pattern(query);
-        let mut stmt = self
-            .conn
-            .prepare(
-                // `MIN(m.id)` is not decoration. SQLite documents that when
-                // min or max is used in an aggregate query, every bare column
-                // comes from that same input row, so the whole row is one
-                // copy's rather than a mixture of two. Without it the choice
-                // is unspecified and could pair one copy's id with another's
-                // folder, which opens the wrong message.
-                "SELECT MIN(m.id), m.uid, m.message_id, m.refs_header, m.subject, m.from_addr,
-                        m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
-                        m.read, m.starred, m.answered, m.draft,
-                        (m.has_attachments = 1
-                         OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                        m.safety, m.safety_reasons, m.receipt_to
-                 FROM messages m
-                 INNER JOIN folders f ON m.folder_id = f.id
-                 WHERE f.account_id = ?1 AND m.deleted = 0
-                   AND (
-                        LOWER(m.subject) LIKE ?2 ESCAPE '!' OR
-                        LOWER(m.from_addr) LIKE ?2 ESCAPE '!' OR
-                        LOWER(COALESCE(m.snippet, '')) LIKE ?2 ESCAPE '!'
-                   )
-                 GROUP BY COALESCE(m.gmail_msgid, m.id)
-                 ORDER BY m.date DESC, m.uid DESC
-                 LIMIT ?3",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare search: {}", e)))?;
-
-        let rows = stmt
-            .query_map(params![account_id, pattern, limit as i64], |row| {
-                Ok(MessageListRow {
-                    id: row.get(0)?,
-                    uid: row.get(1)?,
-                    // The search is scoped to one account, so every row it
-                    // returns belongs to that account by construction.
-                    account_id: account_id.to_string(),
-                    message_id: row.get(2)?,
-                    refs_header: row.get(3)?,
-                    subject: row.get(4)?,
-                    from_addr: row.get(5)?,
-                    to_addr: row.get(6)?,
-                    cc: row.get(7)?,
-                    reply_to: row.get(8)?,
-                    date: row.get(9)?,
-                    snippet: row.get(10)?,
-                    size_bytes: row.get(11)?,
-                    read: row.get(12)?,
-                    starred: row.get(13)?,
-                    answered: row.get(14)?,
-                    draft: row.get(15)?,
-                    has_attachments: row.get(16)?,
-                    safety: crate::service::safety::Safety::from_stored(
-                        &row.get::<_, Option<String>>(17)?.unwrap_or_default(),
-                    ),
-                    // Stored one per line, because SQLite has no list type
-                    // worth the trouble and the bar reads them as sentences.
-                    safety_reasons: row
-                        .get::<_, Option<String>>(18)?
-                        .unwrap_or_default()
-                        .lines()
-                        .filter(|line| !line.trim().is_empty())
-                        .map(str::to_string)
-                        .collect(),
-                    receipt_to: row.get(19)?,
-                })
-            })
-            .map_err(|e| Error::Other(format!("Failed to search messages: {}", e)))?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect search results: {}", e)))?;
-        Ok(rows)
-    }
-
     /// Store an attachment record.
     ///
     /// The record, not the file. What the list and the details reading need is
@@ -1067,7 +1039,7 @@ impl MessageCache {
     pub fn get_attachments_for_message(&self, message_id: i64) -> Result<Vec<CachedAttachment>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, message_id, filename, mime_type, size, content_id
                  FROM attachments WHERE message_id = ?1 ORDER BY id",
             )
@@ -1091,7 +1063,6 @@ impl MessageCache {
         Ok(attachments)
     }
 
-    /// Get a specific message by ID
     /// The row id of a message named by its folder and uid.
     ///
     /// The sync speaks in uids because that is what the server uses; the tag
@@ -1112,7 +1083,7 @@ impl MessageCache {
     pub fn get_message(&self, message_id: i64) -> Result<Option<CachedMessage>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 // Opening one message is the path that wants a body, so this
                 // is the query that joins to the body cache. A message with no
                 // cached body reads as None, which means fetch it.
@@ -1279,6 +1250,63 @@ mod tests {
         let found = cache.search_messages("acc", "quarterly", 50).unwrap();
 
         assert_eq!(found.len(), 2, "{found:#?}");
+    }
+
+    #[test]
+    fn test_a_batch_of_arriving_mail_is_all_written_or_none_of_it() {
+        // A sync wrote headers one at a time, so each took the database's
+        // write lock on its own and the interface's connection queued behind
+        // every one of them. Batching is mostly about that contention rather
+        // than throughput, but it buys this as well, and this is the part a
+        // test can hold: a batch that fails part way leaves nothing behind.
+        //
+        // Refused by naming a folder that does not exist. foreign_keys is on,
+        // so the third row cannot be written, and without a transaction the
+        // first two would already be in the folder when it fails.
+        let cache = fresh("batch_is_all_or_nothing");
+        let inbox = folder(&cache, "INBOX");
+
+        let mut batch = vec![
+            incoming(inbox, 1, "The first"),
+            incoming(inbox, 2, "The second"),
+            incoming(inbox, 3, "Names a folder that is not there"),
+        ];
+        batch[2].folder_id = 9999;
+
+        let refused = cache.upsert_messages(&batch);
+
+        assert!(
+            refused.is_err(),
+            "a message naming a folder that does not exist was accepted"
+        );
+        let held = cache.get_message_list(inbox, "acc").expect("the listing");
+        assert!(
+            held.is_empty(),
+            "the batch failed and left {} of its messages behind",
+            held.len()
+        );
+    }
+
+    #[test]
+    fn test_a_batch_that_works_writes_every_message_in_it() {
+        // The other direction, so the test above cannot be satisfied by a
+        // batch that simply never writes anything.
+        let cache = fresh("batch_writes_all");
+        let inbox = folder(&cache, "INBOX");
+
+        let rows = cache
+            .upsert_messages(&[
+                incoming(inbox, 1, "The first"),
+                incoming(inbox, 2, "The second"),
+                incoming(inbox, 3, "The third"),
+            ])
+            .expect("the batch is written");
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            cache.get_message_list(inbox, "acc").expect("listing").len(),
+            3
+        );
     }
 
     fn fresh(name: &str) -> TempHome<super::super::MessageCache> {

@@ -8,6 +8,55 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Search now looks inside your messages, not just their subject lines.**
+  Until now searching covered the subject, the sender, and the first two
+  hundred characters of a message. A phrase you remembered from further down
+  a message could not be found, and nothing told you that: it looked exactly
+  the same as the message not being there. All of the text of every message
+  you have downloaded is now searched.
+
+  Searching is also much faster and no longer slows down as your mailbox
+  grows. It used to read every message in the account every time, taking
+  about the same time whatever you typed, including when there was nothing to
+  find. At two hundred thousand messages that was around a sixth of a second
+  with the window unable to respond; it is now a fraction of a millisecond
+  for a word that appears in only a few messages.
+
+  Two changes to how a search is matched come with this. Typing the start of
+  a word finds the whole word, so "refurb" finds "refurbishment". Typing the
+  middle of a word no longer finds it, which it used to: "furbish" will not
+  find "refurbishment". Searching for an email address, a file name, or
+  anything else with punctuation in it now works properly; before, some of
+  those produced no results at all.
+
+### Changed
+
+- **Downloaded message text is now compressed, and the amount kept is
+  limited.** Mail compresses well, so this is a large saving: measured across
+  plain, formatted, and quoted reply messages it is about four and a half
+  times smaller overall, and around ten times for a newsletter. Very short
+  messages are stored as they are, because compressing something that small
+  makes it bigger.
+
+  Separately, there was no limit at all on how much message text was kept.
+  Every message you had ever opened kept its text for as long as the account
+  existed. At a large mailbox that ran to several gigabytes. The oldest text
+  you have not read recently is now dropped once the total passes half a
+  gigabyte, and any message dropped this way is downloaded again next time
+  you open it. Mail collected over POP and copies of messages you have sent
+  are never dropped, because this is the only copy of those.
+
+- **Opening a folder, deleting mail, and removing an account are all much
+  faster.** Four database indexes were missing. The worst of them meant that
+  deleting the messages in a folder had to search the whole attachment table
+  once per message: on a large mailbox that took over a minute, with the
+  window frozen and a screen reader reporting the application as unavailable.
+  It now takes well under a second. That path runs on its own during an
+  ordinary sync, whenever a mail server renumbers a folder, so it was not
+  something you had to do anything unusual to hit.
+
+### Added
+
 - **Every date and time entered anywhere in the application, an event's
   start, a task's due date, a reminder's time, is now three or two real
   controls, not one packed native picker.** A screen reader session found

@@ -24,7 +24,7 @@ impl MessageCache {
 
     /// Get all message filter rules for an account
     pub fn get_filter_rules_for_account(&self, account_id: &str) -> Result<Vec<MessageFilterRule>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at
              FROM message_filter_rules
              WHERE account_id = ?1

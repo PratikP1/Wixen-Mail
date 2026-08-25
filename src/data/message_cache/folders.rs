@@ -69,7 +69,7 @@ impl MessageCache {
     ) -> Result<std::collections::HashMap<String, bool>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT path, sync_enabled FROM folders
                  WHERE account_id = ?1 AND sync_enabled IS NOT NULL",
             )
@@ -124,7 +124,9 @@ impl MessageCache {
     ) -> Result<std::collections::HashMap<String, (bool, bool)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path, holds_all_mail, subscribed FROM folders WHERE account_id = ?1")
+            .prepare_cached(
+                "SELECT path, holds_all_mail, subscribed FROM folders WHERE account_id = ?1",
+            )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
         let rows = stmt
@@ -215,7 +217,7 @@ impl MessageCache {
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, path, folder_type, unread_count, total_count
              FROM folders WHERE account_id = ?1 AND path = ?2",
             )
@@ -243,7 +245,7 @@ impl MessageCache {
     pub fn get_folders_for_account(&self, account_id: &str) -> Result<Vec<CachedFolder>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 // Read in a settled order and sorted below, rather than sorted
                 // here. The database used to hold a second answer to where a
                 // folder sits, and it disagreed: it had no place for mail

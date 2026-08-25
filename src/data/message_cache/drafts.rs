@@ -37,7 +37,7 @@ impl MessageCache {
     pub fn load_drafts(&self, account_id: &str) -> Result<Vec<CachedDraft>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, to_addr, cc, bcc, subject, body, created_at, updated_at, in_reply_to, references_header, body_html, attachments
              FROM drafts
              WHERE account_id = ?1

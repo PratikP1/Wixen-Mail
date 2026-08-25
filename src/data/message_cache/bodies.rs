@@ -15,12 +15,15 @@
 //! computer. Their bodies are never evicted and never dropped on a delete,
 //! because this is the only copy.
 //!
-//! Nothing applies the budget today. `evict_bodies_over` has no caller outside
-//! its own tests, so what this paragraph describes is the design and not what
-//! is running.
+//! The budget is applied at the end of each folder sync, which is the worker
+//! thread rather than the interface one. Before that it was applied nowhere:
+//! `evict_bodies_over` existed, was tested, and had no caller outside its own
+//! tests, so the cache grew without limit and the paragraph above described a
+//! design rather than what ran.
 
 use super::MessageCache;
 use crate::common::{Error, Result};
+use rusqlite::OptionalExtension;
 
 /// A stored message body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,14 +32,129 @@ pub struct MessageBody {
     pub body_html: Option<String>,
 }
 
-impl MessageBody {
-    /// Bytes this body occupies, used for the cache budget.
+/// How hard to work at packing message text.
+///
+/// Six is deflate's own default and the measured knee: nine costs noticeably
+/// more time for a fraction of a percent, and one gives most of the space back.
+/// What matters more than the level is that unpacking is cheap at any of them,
+/// and unpacking is the half that happens on the interface thread.
+const PACKING_EFFORT: flate2::Compression = flate2::Compression::new(6);
+
+/// Pack message text for storage.
+fn packed(text: &str) -> Result<Vec<u8>> {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), PACKING_EFFORT);
+    encoder
+        .write_all(text.as_bytes())
+        .map_err(|e| Error::Other(format!("Failed to pack message text: {}", e)))?;
+    encoder
+        .finish()
+        .map_err(|e| Error::Other(format!("Failed to pack message text: {}", e)))
+}
+
+/// Unpack stored message text.
+///
+/// A body that will not unpack is treated as a body that is not there by the
+/// caller, which is the same state as one that was never fetched or has since
+/// been evicted, and the application already knows how to fetch again. Losing
+/// the text is not good; showing a message half decoded would be worse.
+fn unpacked(stored: &[u8]) -> Result<String> {
+    use std::io::Read;
+    let mut text = String::new();
+    flate2::read::ZlibDecoder::new(stored)
+        .read_to_string(&mut text)
+        .map_err(|e| Error::Other(format!("Failed to unpack message text: {}", e)))?;
+    Ok(text)
+}
+
+/// One piece of message text, in whichever form is smaller.
+///
+/// Deflate writes a header and a checksum, so packing something very short
+/// makes it longer: a six character reply comes out of the packer at fourteen
+/// bytes. Mail has plenty of those, and a cache that grew when asked to shrink
+/// would be a poor trade dressed up as an optimisation.
+///
+/// So each piece is stored whichever way is smaller and the row says which by
+/// which column holds it. Packing then never costs anything and the ratios it
+/// does reach, a tenth on a newsletter, are kept.
+///
+/// Found by six existing tests going red on exact byte counts. They were
+/// right: the first version of this packed unconditionally.
+enum Stored {
+    Text(String),
+    Packed(Vec<u8>),
+}
+
+impl Stored {
+    fn of(text: &str) -> Result<Self> {
+        let packed = packed(text)?;
+        Ok(if packed.len() < text.len() {
+            Self::Packed(packed)
+        } else {
+            Self::Text(text.to_string())
+        })
+    }
+
+    /// What this costs on the disk, which is what the budget counts. The
+    /// text's own length would be a number the disk never sees.
+    fn size(&self) -> usize {
+        match self {
+            Self::Text(text) => text.len(),
+            Self::Packed(packed) => packed.len(),
+        }
+    }
+
+    fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Packed(_) => None,
+        }
+    }
+
+    fn as_packed(&self) -> Option<&[u8]> {
+        match self {
+            Self::Text(_) => None,
+            Self::Packed(packed) => Some(packed),
+        }
+    }
+}
+
+/// A body as it is about to be written.
+struct ForStorage {
+    plain: Option<Stored>,
+    html: Option<Stored>,
+}
+
+impl ForStorage {
+    fn of(body: &MessageBody) -> Result<Self> {
+        Ok(Self {
+            plain: body.body_plain.as_deref().map(Stored::of).transpose()?,
+            html: body.body_html.as_deref().map(Stored::of).transpose()?,
+        })
+    }
+
     fn size(&self) -> i64 {
-        let plain = self.body_plain.as_ref().map_or(0, |s| s.len());
-        let html = self.body_html.as_ref().map_or(0, |s| s.len());
+        let plain = self.plain.as_ref().map_or(0, Stored::size);
+        let html = self.html.as_ref().map_or(0, Stored::size);
         (plain + html) as i64
     }
 }
+
+/// How much message text the cache keeps before it drops the least recently
+/// read.
+///
+/// Half a gigabyte. There is no measurement that says this is the right
+/// number, and saying so is more useful than a false justification: it is
+/// chosen to be large enough that ordinary reading never evicts anything, and
+/// small enough that a mailbox cannot quietly fill a disk. At two hundred
+/// thousand messages with bodies of the size real mail runs to, unbounded
+/// meant several gigabytes.
+///
+/// A number rather than a setting, because a setting has to be shown,
+/// named for a screen reader, documented and explained, and nobody has asked
+/// for one. [`MessageCache::keeping_bodies_under`] is the seam a setting would
+/// use if that changes.
+pub const BODY_CACHE_BUDGET_BYTES: i64 = 512 * 1024 * 1024;
 
 /// How many characters of a snippet are kept.
 ///
@@ -69,7 +187,7 @@ fn snippet_from(text: &str) -> String {
 /// Not sanitizing: nothing here is rendered. It exists so a message with no
 /// plain part still gets a snippet instead of a silently empty column, which
 /// is a large share of newsletters and most marketing mail.
-fn strip_markup(html: &str) -> String {
+pub(super) fn strip_markup(html: &str) -> String {
     let mut text = String::with_capacity(html.len());
     let mut in_tag = false;
     for ch in html.chars() {
@@ -98,20 +216,32 @@ impl MessageCache {
             body_plain: body_plain.map(str::to_string),
             body_html: body_html.map(str::to_string),
         };
+        // Every one of the four columns is written every time, including the
+        // ones being set to NULL. Writing only the column in use would leave
+        // the other holding whatever the previous save put there, so a long
+        // body replaced by a short one would keep both, and the row would cost
+        // the sum of a text it no longer has and a packed copy it does.
+        let storing = ForStorage::of(&body)?;
         self.conn
             .execute(
-                "INSERT INTO message_bodies (message_id, body_plain, body_html, bytes, last_read_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO message_bodies
+                     (message_id, body_plain, body_html,
+                      body_plain_packed, body_html_packed, bytes, last_read_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(message_id) DO UPDATE SET
                      body_plain = excluded.body_plain,
                      body_html = excluded.body_html,
+                     body_plain_packed = excluded.body_plain_packed,
+                     body_html_packed = excluded.body_html_packed,
                      bytes = excluded.bytes,
                      last_read_at = excluded.last_read_at",
                 rusqlite::params![
                     message_id,
-                    body.body_plain,
-                    body.body_html,
-                    body.size(),
+                    storing.plain.as_ref().and_then(Stored::as_text),
+                    storing.html.as_ref().and_then(Stored::as_text),
+                    storing.plain.as_ref().and_then(Stored::as_packed),
+                    storing.html.as_ref().and_then(Stored::as_packed),
+                    storing.size(),
                     now(),
                 ],
             )
@@ -141,33 +271,56 @@ impl MessageCache {
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save message snippet: {}", e)))?;
+
+        // The body is what somebody actually searches for, and this is the
+        // only moment it is in hand as text: it goes into the row packed, and
+        // the index cannot unpack it. Reindexed rather than added to, because
+        // a contentless index has no way to update one column on its own.
+        self.index_message_for_search(message_id)?;
         Ok(())
     }
 
     /// Read a message body back, if one is cached.
+    ///
+    /// Both shapes read. Bodies written before packing existed are text in the
+    /// old columns and are still there, because a column that shipped is never
+    /// dropped; bodies written since are packed blobs. The packed column wins
+    /// where a row somehow holds both.
     pub fn get_message_body(&self, message_id: i64) -> Result<Option<MessageBody>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT body_plain, body_html FROM message_bodies WHERE message_id = ?1")
+            .prepare_cached(
+                "SELECT body_plain, body_html, body_plain_packed, body_html_packed
+                 FROM message_bodies WHERE message_id = ?1",
+            )
             .map_err(|e| Error::Other(format!("Failed to prepare body query: {}", e)))?;
 
-        let mut rows = stmt
-            .query_map(rusqlite::params![message_id], |row| {
-                Ok(MessageBody {
-                    body_plain: row.get(0)?,
-                    body_html: row.get(1)?,
-                })
+        let stored = stmt
+            .query_row(rusqlite::params![message_id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<Vec<u8>>>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                ))
             })
+            .optional()
             .map_err(|e| Error::Other(format!("Failed to query message body: {}", e)))?;
 
-        match rows.next() {
-            Some(row) => {
-                Ok(Some(row.map_err(|e| {
-                    Error::Other(format!("Failed to read body row: {}", e))
-                })?))
-            }
-            None => Ok(None),
-        }
+        let Some((plain_text, html_text, plain_packed, html_packed)) = stored else {
+            return Ok(None);
+        };
+
+        Ok(Some(MessageBody {
+            body_plain: match plain_packed {
+                Some(packed) => Some(unpacked(&packed)?),
+                None => plain_text,
+            },
+            body_html: match html_packed {
+                Some(packed) => Some(unpacked(&packed)?),
+                None => html_text,
+            },
+        }))
     }
 
     /// Mark a body as just read, so eviction prefers something else.
@@ -179,6 +332,16 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to touch message body: {}", e)))?;
         Ok(())
+    }
+
+    /// Bring the body cache back under its budget.
+    ///
+    /// Returns the bytes freed. Called at the end of a folder sync, which
+    /// matters: that is a worker thread with its own connection, and eviction
+    /// deletes rows, so running it from the interface would be a write on the
+    /// thread that has to stay answering.
+    pub fn keep_bodies_within_budget(&self) -> Result<i64> {
+        self.evict_bodies_over(self.body_budget)
     }
 
     /// Total bytes of body text currently cached.
@@ -204,9 +367,10 @@ impl MessageCache {
     /// all mail of that kind frees less than it was asked for and stays over,
     /// and whoever wires this has to accept that rather than loop.
     ///
-    /// Nothing calls this outside its own tests, so the budget the module
-    /// header describes is not running. Wiring it is a decision with a number
-    /// attached that nobody has taken.
+    /// Called through [`Self::keep_bodies_within_budget`], which supplies the
+    /// number. This one takes it as an argument so the tests can name a small
+    /// budget rather than having to build half a gigabyte of message bodies to
+    /// watch an eviction happen.
     pub fn evict_bodies_over(&self, budget_bytes: i64) -> Result<i64> {
         let mut total = self.cached_body_bytes()?;
         if total <= budget_bytes {
@@ -216,7 +380,7 @@ impl MessageCache {
         let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
         let mut stmt = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT b.message_id, b.bytes FROM message_bodies b
                  INNER JOIN messages m ON m.id = b.message_id
                  WHERE NOT {only_copy_is_here}
@@ -256,7 +420,7 @@ impl MessageCache {
     pub fn migrate_inline_bodies(&self) -> Result<usize> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, body_plain, body_html FROM messages
                  WHERE body_plain IS NOT NULL OR body_html IS NOT NULL",
             )
@@ -309,6 +473,160 @@ mod tests {
     // budget, so reading the snippet from the body would leave rows going
     // blank as the cache filled. It is small enough to keep beside the
     // subject and never evicted.
+
+    // ── Message text is packed before it is stored ──────────────────────
+
+    #[test]
+    fn test_a_body_is_stored_packed_rather_than_as_the_text_itself() {
+        // Mail compresses unusually well and the cache had been keeping it
+        // raw. Measured on real prose: a plain body to a third, a newsletter
+        // to a tenth, a reply chain to a fifth, 4.6 to 1 overall.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        // Repetitive on purpose. The point of this test is that something
+        // packed it, not what ratio deflate reaches on any particular body.
+        let text = "The quarterly figures are attached. ".repeat(60);
+
+        cache.save_message_body(id, Some(&text), None).unwrap();
+
+        let stored: Option<Vec<u8>> = cache
+            .conn
+            .query_row(
+                "SELECT body_plain_packed FROM message_bodies WHERE message_id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let stored = stored.expect("the body to be stored packed");
+        assert!(
+            stored.len() < text.len() / 2,
+            "stored {} bytes for {} of text, which is not packed",
+            stored.len(),
+            text.len()
+        );
+
+        // And it has to come back identical, or the saving is a data loss bug
+        // rather than a saving.
+        let read = cache.get_message_body(id).unwrap().expect("a body");
+        assert_eq!(read.body_plain.as_deref(), Some(text.as_str()));
+    }
+
+    #[test]
+    fn test_a_body_too_short_to_gain_from_packing_is_stored_as_it_is() {
+        // Deflate writes a header and a checksum, so short text comes out
+        // longer than it went in: "Yes." packs to more than four bytes. Mail
+        // is full of those, and a cache that grew when asked to shrink would
+        // be a poor trade dressed up as an optimisation.
+        //
+        // This is not a guessed edge case. Six existing tests went red on
+        // exact byte counts when the first version of this packed everything,
+        // which is what said the rule had to be whichever is smaller.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Re: lunch")).unwrap();
+
+        cache.save_message_body(id, Some("Yes."), None).unwrap();
+
+        let (text, packed): (Option<String>, Option<Vec<u8>>) = cache
+            .conn
+            .query_row(
+                "SELECT body_plain, body_plain_packed FROM message_bodies WHERE message_id = ?1",
+                rusqlite::params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(text.as_deref(), Some("Yes."), "kept as the text it is");
+        assert!(packed.is_none(), "and not also packed");
+        assert_eq!(
+            cache.cached_body_bytes().unwrap(),
+            4,
+            "the budget counts the four bytes it really costs"
+        );
+        assert_eq!(
+            cache
+                .get_message_body(id)
+                .unwrap()
+                .unwrap()
+                .body_plain
+                .as_deref(),
+            Some("Yes.")
+        );
+    }
+
+    #[test]
+    fn test_a_long_body_replaced_by_a_short_one_leaves_nothing_behind() {
+        // The row has two columns for each half of a body and only one is in
+        // use at a time. Writing just the one in use would leave the other
+        // holding the previous save, so the row would cost the sum of text it
+        // no longer has and a packed copy it does, and the budget would count
+        // both.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+
+        cache
+            .save_message_body(id, Some(&"The quarterly figures. ".repeat(60)), None)
+            .unwrap();
+        cache.save_message_body(id, Some("Yes."), None).unwrap();
+
+        let (text, packed): (Option<String>, Option<Vec<u8>>) = cache
+            .conn
+            .query_row(
+                "SELECT body_plain, body_plain_packed FROM message_bodies WHERE message_id = ?1",
+                rusqlite::params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(text.as_deref(), Some("Yes."));
+        assert!(
+            packed.is_none(),
+            "the packed copy of the long body is still there"
+        );
+        assert_eq!(cache.cached_body_bytes().unwrap(), 4);
+    }
+
+    #[test]
+    fn test_a_body_written_before_packing_existed_is_still_readable() {
+        // Databases in use hold their bodies as text in the old columns. The
+        // schema rule here is that columns are added and never dropped, so
+        // both shapes have to read, and this is the direction that would fail
+        // silently: an unreadable old body looks exactly like a body that was
+        // evicted, and the application would quietly refetch every message
+        // somebody had already downloaded.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "An older message")).unwrap();
+        cache
+            .conn
+            .execute(
+                "INSERT INTO message_bodies (message_id, body_plain, body_html, bytes, last_read_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![id, "Written the old way", Option::<String>::None, 19, now()],
+            )
+            .unwrap();
+
+        let read = cache.get_message_body(id).unwrap().expect("a body");
+
+        assert_eq!(read.body_plain.as_deref(), Some("Written the old way"));
+    }
+
+    #[test]
+    fn test_the_budget_counts_what_a_body_costs_on_the_disk() {
+        // The budget exists to bound a file's size, so it has to count stored
+        // bytes. Counting the text's own length would evict on a number the
+        // disk never sees, and after packing that number is several times the
+        // truth.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        let text = "The quarterly figures are attached. ".repeat(60);
+
+        cache.save_message_body(id, Some(&text), None).unwrap();
+
+        let counted = cache.cached_body_bytes().unwrap();
+        assert!(
+            counted < text.len() as i64 / 2,
+            "the budget counted {counted} bytes for a body packed much smaller"
+        );
+    }
 
     #[test]
     fn test_saving_a_body_fills_the_snippet_on_the_message() {

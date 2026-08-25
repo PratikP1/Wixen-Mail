@@ -31,7 +31,7 @@ impl MessageCache {
     pub fn get_note_folders_for_account(&self, account_id: &str) -> Result<Vec<NoteFolderEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, display_order, created_at
                  FROM note_folders WHERE account_id = ?1 ORDER BY display_order, name",
             )
@@ -130,7 +130,7 @@ impl MessageCache {
     pub fn get_notes_for_folder(&self, folder_id: &str) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, folder_id, title, body, format, pinned,
                         created_at, updated_at
                  FROM notes WHERE folder_id = ?1
@@ -153,7 +153,7 @@ impl MessageCache {
     pub fn get_all_notes_for_account(&self, account_id: &str) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, folder_id, title, body, format, pinned,
                         created_at, updated_at
                  FROM notes WHERE account_id = ?1
@@ -180,7 +180,7 @@ impl MessageCache {
     pub fn get_note(&self, note_id: &str) -> Result<Option<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, folder_id, title, body, format, pinned,
                         created_at, updated_at
                  FROM notes WHERE id = ?1",
@@ -229,7 +229,7 @@ impl MessageCache {
         let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, folder_id, title, body, format, pinned,
                         created_at, updated_at
                  FROM notes WHERE account_id = ?1 AND (title LIKE ?2 ESCAPE '!' OR body LIKE ?2 ESCAPE '!')

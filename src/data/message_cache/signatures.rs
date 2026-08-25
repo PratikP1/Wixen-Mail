@@ -32,7 +32,7 @@ impl MessageCache {
     pub fn get_signatures_for_account(&self, account_id: &str) -> Result<Vec<Signature>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
              FROM signatures WHERE account_id = ?1 ORDER BY name",
             )
@@ -60,7 +60,7 @@ impl MessageCache {
     pub fn get_signature(&self, signature_id: &str) -> Result<Option<Signature>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
              FROM signatures WHERE id = ?1",
             )
@@ -87,7 +87,7 @@ impl MessageCache {
     pub fn get_default_signature(&self, account_id: &str) -> Result<Option<Signature>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, content_plain, content_html, is_default, created_at
              FROM signatures WHERE account_id = ?1 AND is_default = 1",
             )

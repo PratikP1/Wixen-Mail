@@ -70,7 +70,7 @@ impl MessageCache {
     pub fn get_tags_for_account(&self, account_id: &str) -> Result<Vec<Tag>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, color, created_at, keyword
              FROM tags WHERE account_id = ?1 ORDER BY name",
             )
@@ -97,7 +97,7 @@ impl MessageCache {
     pub fn get_tag(&self, tag_id: &str) -> Result<Option<Tag>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, account_id, name, color, created_at, keyword FROM tags WHERE id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
@@ -176,7 +176,7 @@ impl MessageCache {
     pub fn get_tags_for_message(&self, message_id: i64) -> Result<Vec<Tag>> {
         let mut stmt = self
             .conn
-            .prepare(
+            .prepare_cached(
                 "SELECT t.id, t.account_id, t.name, t.color, t.created_at, t.keyword
              FROM tags t
              INNER JOIN message_tags mt ON t.id = mt.tag_id
@@ -233,7 +233,7 @@ impl MessageCache {
             .join(", ");
         let mut stmt = self
             .conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT mt.message_id, t.id, t.account_id, t.name, t.color, t.created_at, t.keyword
                  FROM tags t
                  INNER JOIN message_tags mt ON t.id = mt.tag_id
@@ -268,7 +268,7 @@ impl MessageCache {
 
     /// Get all messages with a specific tag
     pub fn get_messages_by_tag(&self, tag_id: &str) -> Result<Vec<CachedMessage>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
                     m.body_plain, m.body_html, m.read, m.starred, m.deleted
              FROM messages m
