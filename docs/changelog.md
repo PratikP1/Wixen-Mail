@@ -8,14 +8,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **The calendar can be searched.** It was the one module with no search at
-  all. Press Ctrl+F while the calendar is showing and it searches the title,
-  the notes and the place of every event, the same way Ctrl+F searches your
-  mail when mail is showing. Before this, pressing Ctrl+F in the calendar
-  searched your mail and replaced the calendar with a list of messages.
+- **Ctrl+F now searches whatever you are looking at.** It always searched
+  your mail, whichever module was on screen, so pressing Find while reading
+  your contacts threw the contacts list away and put a list of messages in
+  its place. It now searches contacts, reminders, tasks, notes or the
+  calendar when one of those is showing, and mail when mail is showing.
 
-  A repeating meeting is one result rather than one for every week it falls
-  on.
+  Contacts, reminders, tasks and notes each had a working search underneath
+  that nothing had ever been able to reach.
+
+- **The calendar can be searched.** It was the one module with no search of
+  any kind. It looks at the title, the notes and the place of every event. A
+  repeating meeting is one result rather than one for every week it falls on.
 
 ### Changed
 

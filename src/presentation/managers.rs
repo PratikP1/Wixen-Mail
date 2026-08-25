@@ -1596,6 +1596,197 @@ pub fn search_messages(
     }
 }
 
+/// Search whichever module is showing.
+///
+/// Find used to search mail whatever was on screen. Pressing it while reading
+/// contacts threw the contacts list away and put a list of messages in its
+/// place: an answer to a question nobody asked, and one that took the screen
+/// away from what somebody was looking at.
+///
+/// Every module already had a search in the layer below, written and tested,
+/// and nothing called any of them. This is where they are called.
+pub fn search_whatever_is_showing(
+    module: crate::presentation::ui_types::PimModule,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::presentation::ui_types::PimModule;
+    match module {
+        PimModule::Mail => search_messages(state, cache, query, tx, rt, a11y),
+        PimModule::Calendar => search_calendar(state, cache, query, tx, rt, a11y),
+        PimModule::Contacts => search_contacts(state, cache, query, tx, rt, a11y),
+        PimModule::Reminders => search_reminders(state, cache, query, tx, rt, a11y),
+        PimModule::Tasks => search_tasks(state, cache, query, tx, rt, a11y),
+        PimModule::Notes => search_notes(state, cache, query, tx, rt, a11y),
+    }
+}
+
+/// How many results any one search hands back.
+///
+/// Enough to be useful, few enough to fill a list without a pause. The same
+/// number for every module, because a person should not have to learn that
+/// one of them stops sooner than another.
+const SEARCH_LIMIT: usize = 500;
+
+/// Say what a search found, or signal that it found nothing.
+///
+/// One place, so every module says it the same way. An empty result reaches
+/// the earcon channel rather than the status bar alone: it is the case
+/// somebody most needs telling about and the status bar is the easiest thing
+/// to miss.
+fn report_what_was_found(
+    found: usize,
+    what: &str,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    if found == 0 {
+        let _ = a11y.signal(
+            crate::presentation::accessibility::feedback::Event::NothingFound,
+            query,
+        );
+        return;
+    }
+    send_status(
+        tx,
+        rt,
+        &if found == SEARCH_LIMIT {
+            format!("First {SEARCH_LIMIT} {what} matching {query}")
+        } else {
+            format!(
+                "{found} {what}{} matching {query}",
+                if found == 1 { "" } else { "s" }
+            )
+        },
+    );
+}
+
+/// Search the contacts and show what was found.
+pub fn search_contacts(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    match cache.search_contacts_for_account(&account, query, SEARCH_LIMIT) {
+        Ok(found) => {
+            let _ = tx.try_send(UIUpdate::ContactsLoaded(
+                found
+                    .iter()
+                    .map(crate::presentation::ui_types::ContactItem::from_entry)
+                    .collect(),
+            ));
+            report_what_was_found(found.len(), "contact", query, tx, rt, a11y);
+        }
+        Err(e) => {
+            tracing::error!("Contact search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
+/// Search the reminders and show what was found.
+pub fn search_reminders(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    match cache.search_reminders(&account, query) {
+        Ok(found) => {
+            let _ = tx.try_send(UIUpdate::RemindersLoaded(
+                found
+                    .iter()
+                    .map(crate::presentation::ui_types::ReminderItem::from_entry)
+                    .collect(),
+            ));
+            report_what_was_found(found.len(), "reminder", query, tx, rt, a11y);
+        }
+        Err(e) => {
+            tracing::error!("Reminder search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
+/// Search the tasks and show what was found.
+pub fn search_tasks(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    match cache.search_tasks(&account, query) {
+        Ok(found) => {
+            let _ = tx.try_send(UIUpdate::TasksLoaded(
+                found
+                    .iter()
+                    .map(crate::presentation::ui_types::TaskItem::from_entry)
+                    .collect(),
+            ));
+            report_what_was_found(found.len(), "task", query, tx, rt, a11y);
+        }
+        Err(e) => {
+            tracing::error!("Task search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
+/// Search the notes and show what was found.
+pub fn search_notes(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    query: &str,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    match cache.search_notes(&account, query) {
+        Ok(found) => {
+            let _ = tx.try_send(UIUpdate::NotesLoaded(
+                found
+                    .iter()
+                    .map(crate::presentation::ui_types::NoteItem::from_entry)
+                    .collect(),
+            ));
+            report_what_was_found(found.len(), "note", query, tx, rt, a11y);
+        }
+        Err(e) => {
+            tracing::error!("Note search failed: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
+        }
+    }
+}
+
 /// Search the calendar and show what was found.
 ///
 /// Deliberately the same shape as [`search_messages`], including reporting an
@@ -2792,6 +2983,80 @@ mod tests {
             None,
             "a mail search that found a message still signalled NothingFound"
         );
+    }
+
+    #[test]
+    fn test_find_searches_the_module_being_read_rather_than_always_the_mail() {
+        // Find searched mail whatever was on screen. Pressing it while reading
+        // contacts threw the contacts list away and replaced it with a list of
+        // messages, which is an answer to a question nobody asked and takes
+        // the screen away from what somebody was looking at.
+        //
+        // Every module already had a search in the layer below, written and
+        // tested, and nothing called any of them.
+        use crate::presentation::accessibility::Accessibility;
+        use crate::presentation::ui_types::PimModule;
+
+        let cache = test_cache_arc();
+        let with_cache = cache.as_ref().expect("a cache");
+        with_cache
+            .save_contact(&crate::data::message_cache::ContactEntry {
+                id: "c1".to_string(),
+                account_id: LOCAL_ACCOUNT_ID.to_string(),
+                name: "Refurbishment Ltd".to_string(),
+                given_name: None,
+                family_name: None,
+                email: "hello@refurb.example.com".to_string(),
+                phone: None,
+                company: None,
+                job_title: None,
+                website: None,
+                address: None,
+                birthday: None,
+                avatar_url: None,
+                avatar_data_base64: None,
+                source_provider: None,
+                last_synced_at: None,
+                vcard_raw: None,
+                notes: None,
+                favorite: false,
+                created_at: "2026-08-01T00:00:00Z".to_string(),
+                nickname: None,
+                department: None,
+                relationship: None,
+                emails_json: None,
+                phones_json: None,
+                addresses_json: None,
+                custom_fields_json: None,
+                pending: false,
+                known_to: Vec::new(),
+            })
+            .expect("a contact to find");
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_whatever_is_showing(
+            PimModule::Contacts,
+            &state,
+            &cache,
+            "refurbishment",
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        match rx.try_recv().expect("the panel to be sent something") {
+            UIUpdate::ContactsLoaded(items) => {
+                assert_eq!(items.len(), 1, "{items:#?}");
+            }
+            UIUpdate::MessagesLoaded(_) => {
+                panic!("searching the contacts replaced them with a list of messages")
+            }
+            other => panic!("searching the contacts sent {other:?}"),
+        }
     }
 
     #[test]

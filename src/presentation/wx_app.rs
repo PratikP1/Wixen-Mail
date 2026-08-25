@@ -3455,26 +3455,17 @@ impl WxMailApp {
                                 // would deadlock rather than merely being
                                 // untidy.
                                 let showing = lock_state(&state).active_module;
-                                match showing {
-                                    PimModule::Calendar => managers::search_calendar(
-                                        &state,
-                                        &message_cache,
-                                        &q,
-                                        &ui_tx,
-                                        &runtime,
-                                        &a11y,
-                                    ),
-                                    _ => {
-                                        managers::search_messages(
-                                            &state,
-                                            &message_cache,
-                                            &q,
-                                            &ui_tx,
-                                            &runtime,
-                                            &a11y,
-                                        );
-                                        msg_list.set_focus();
-                                    }
+                                managers::search_whatever_is_showing(
+                                    showing,
+                                    &state,
+                                    &message_cache,
+                                    &q,
+                                    &ui_tx,
+                                    &runtime,
+                                    &a11y,
+                                );
+                                if showing == PimModule::Mail {
+                                    msg_list.set_focus();
                                 }
                             }
                         }
