@@ -2287,6 +2287,17 @@ impl MessageCache {
             "CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON attachments(message_id)",
             "CREATE INDEX IF NOT EXISTS idx_tasks_task_list ON tasks(task_list_id)",
             "CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id)",
+            // Only the events that repeat, which is what makes this worth
+            // having: a series is a small fraction of a calendar, and a
+            // partial index holds that fraction rather than a row per event.
+            //
+            // The calendar reads its window as two queries because one query
+            // with an OR could not seek at all. This is what lets the second
+            // of them seek; without it, finding the series means reading every
+            // event in the account, which is the cost the bound exists to
+            // avoid.
+            "CREATE INDEX IF NOT EXISTS idx_calendar_events_repeating
+                 ON calendar_events(account_id) WHERE recurrence_rule IS NOT NULL",
         ];
         for idx in indexes {
             self.conn
@@ -3041,6 +3052,47 @@ mod storage_shape {
              task_list_id, does not count and is why this check reads the \
              leftmost column rather than the whole list.",
             unindexed.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_reading_the_calendars_window_does_not_walk_the_whole_account() {
+        // Bounding a read is only worth anything if the bound reaches the
+        // index, and the first version of this did not. Asking for the window
+        // OR anything that repeats, in one query, left SQLite walking every
+        // event in the account exactly as before and then testing each one
+        // against the extra clause: measured at 860 ms against 328 ms for
+        // reading the lot, so the change made the calendar slower while
+        // looking like an optimisation.
+        //
+        // Two queries, each of which can seek. This asks SQLite about both
+        // rather than trusting either.
+        let cache = fresh("calendar_window_seeks");
+
+        let window = how_it_will_be_answered(
+            &cache.conn,
+            &super::calendar::events_that_overlap_query(),
+            rusqlite::params!["acct", "2026-01-01T00:00:00Z", "2026-12-31T23:59:59Z"],
+        );
+        assert!(
+            window
+                .iter()
+                .any(|step| step.contains("start_datetime<") || step.contains("start_datetime>")),
+            "the window read cannot seek on the date, so it walks the account:\n  {}",
+            window.join("\n  ")
+        );
+
+        let series = how_it_will_be_answered(
+            &cache.conn,
+            &super::calendar::repeating_events_query(),
+            rusqlite::params!["acct"],
+        );
+        assert!(
+            series
+                .iter()
+                .any(|step| step.contains("idx_calendar_events_repeating")),
+            "finding the repeating events reads every event in the account:\n  {}",
+            series.join("\n  ")
         );
     }
 

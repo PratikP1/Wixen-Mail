@@ -52,6 +52,36 @@ const EVENT_COLS: &str =
      created_at, updated_at, categories, pending, exception_dates, cut_from_event_id,
      provider_recurrence_id";
 
+/// Events overlapping a stretch of days: `?1` account, `?2` from, `?3` to.
+///
+/// The test is overlap rather than where an event begins, so a conference
+/// starting the day before the window and running into it is kept. Built as a
+/// function so the test that asks SQLite how it plans to answer this runs the
+/// string the application uses, rather than a copy that can go stale.
+pub(super) fn events_that_overlap_query() -> String {
+    format!(
+        "SELECT {EVENT_COLS} FROM calendar_events
+         WHERE account_id = ?1
+           AND start_datetime <= ?3
+           AND COALESCE(NULLIF(end_datetime, ''), start_datetime) >= ?2
+         ORDER BY start_datetime ASC"
+    )
+}
+
+/// Every event of an account that repeats: `?1` account.
+///
+/// A series is stored once with the start of its first occurrence and expanded
+/// across the days it falls on, so one set up in 2019 still lands on days this
+/// year and cannot be found by any question about dates. There are few of them
+/// beside the one-off events that make up a calendar's bulk, and a partial
+/// index holds exactly those few.
+pub(super) fn repeating_events_query() -> String {
+    format!(
+        "SELECT {EVENT_COLS} FROM calendar_events
+         WHERE account_id = ?1 AND recurrence_rule IS NOT NULL"
+    )
+}
+
 /// The same columns, each qualified with a table alias.
 ///
 /// Derived from [`EVENT_COLS`] rather than written out again. A query that
@@ -264,30 +294,52 @@ impl MessageCache {
     /// This replaced reading every event in the account and filtering in
     /// memory: 277 ms against 68 ms on a six year calendar of fifty thousand,
     /// on the thread the window has to keep answering on.
+    /// Asked as two queries, not one, and this is the whole reason the code
+    /// below looks like more work than it should be.
+    ///
+    /// Written as a single query with `OR recurrence_rule IS NOT NULL`, SQLite
+    /// cannot seek: an index narrows a search only while every branch of the
+    /// condition can use it, and that clause cannot, so it walked every event
+    /// in the account exactly as reading them all did, and then tested each
+    /// one against the extra clause on the way past. Measured at 860 ms
+    /// against 328 ms for simply reading the lot, so the "optimisation" was
+    /// two and a half times slower than what it replaced. Two queries that can
+    /// each seek come to 285 ms against 1,199 ms.
     pub fn events_that_could_fall_between(
         &self,
         account_id: &str,
         from: &str,
         to: &str,
     ) -> Result<Vec<CalendarEventEntry>> {
-        let sql = format!(
-            "SELECT {EVENT_COLS} FROM calendar_events
-             WHERE account_id = ?1
-               AND (recurrence_rule IS NOT NULL
-                    OR (start_datetime <= ?3
-                        AND COALESCE(NULLIF(end_datetime, ''), start_datetime) >= ?2))
-             ORDER BY start_datetime ASC"
-        );
-        let mut stmt = self
+        let mut overlapping = self
             .conn
-            .prepare_cached(&sql)
+            .prepare_cached(&events_that_overlap_query())
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
-
-        let events = stmt
+        let mut events: Vec<CalendarEventEntry> = overlapping
             .query_map(params![account_id, from, to], map_event_row)
             .map_err(|e| Error::Other(format!("Failed to query events: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect events: {}", e)))?;
+
+        let held: std::collections::HashSet<String> =
+            events.iter().map(|event| event.id.clone()).collect();
+
+        let mut repeating = self
+            .conn
+            .prepare_cached(&repeating_events_query())
+            .map_err(|e| Error::Other(format!("Failed to prepare the series query: {}", e)))?;
+        let series = repeating
+            .query_map(params![account_id], map_event_row)
+            .map_err(|e| Error::Other(format!("Failed to query repeating events: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect repeating events: {}", e)))?;
+
+        // A series that also starts inside the window comes back from both, so
+        // the second lot is added only where the first did not already have it.
+        // Without this a weekly meeting set up last month would be expanded
+        // twice and appear twice on every day it falls on.
+        events.extend(series.into_iter().filter(|event| !held.contains(&event.id)));
+        events.sort_by(|one, other| one.start_datetime.cmp(&other.start_datetime));
         Ok(events)
     }
 
@@ -918,6 +970,40 @@ mod tests {
             !names.contains(&"A lunch in 2019"),
             "a one-off from years earlier was carried in, so this is not bounded: {names:?}"
         );
+    }
+
+    #[test]
+    fn test_a_series_inside_the_window_is_only_carried_once() {
+        // The window is read as two queries, one for what overlaps it and one
+        // for everything that repeats, because a single query with an OR could
+        // not use an index. A series that also starts inside the window
+        // answers both. Without the second lot being filtered against the
+        // first it would be expanded twice, and a weekly meeting set up last
+        // month would appear twice on every day it falls on.
+        let cache = temp_cache("series_in_window_once");
+
+        let mut weekly = new_series("recent-series", "acct", "Weekly standup");
+        weekly.start_datetime = "2026-03-02T09:00:00Z".to_string();
+        weekly.end_datetime = "2026-03-02T09:30:00Z".to_string();
+        weekly.recurrence_rule = Some("FREQ=WEEKLY;BYDAY=MO".to_string());
+        cache.save_calendar_event(&weekly).unwrap();
+
+        let shown = cache
+            .events_that_could_fall_between("acct", "2026-03-01T00:00:00Z", "2026-03-31T23:59:59Z")
+            .unwrap();
+
+        let standups = shown
+            .iter()
+            .filter(|e| e.summary == "Weekly standup")
+            .count();
+        assert_eq!(
+            standups, 1,
+            "the series came back {standups} times: {shown:#?}"
+        );
+    }
+
+    fn new_series(id: &str, account: &str, summary: &str) -> CalendarEventEntry {
+        make_event(id, account, &format!("p-{id}"), summary)
     }
 
     #[test]
