@@ -43,6 +43,33 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
     )
 }
 
+/// The query the All Inboxes view runs, in one place.
+///
+/// Here rather than inline for the reason [`listing_query`] is: a test asks
+/// SQLite how it plans to answer this, and a copy held in the test would go
+/// stale without saying so.
+///
+/// This one names no folder, so the index that serves a single folder cannot
+/// serve it: an index is searched from its leftmost column and that one begins
+/// with `folder_id`. Without an index in the sort's own order SQLite reads
+/// every message in every inbox, sorts the lot and keeps a screenful.
+pub(super) fn unified_inbox_query(limit: usize) -> String {
+    format!(
+        "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
+                m.from_addr, m.to_addr, m.cc, m.reply_to, m.date, m.snippet,
+                m.size_bytes, m.read, m.starred, m.answered, m.draft,
+                (m.has_attachments = 1
+                 OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                m.safety, m.safety_reasons, m.receipt_to
+         FROM messages m
+         INNER JOIN folders f ON m.folder_id = f.id
+         WHERE f.folder_type = 'Inbox' AND m.deleted = 0
+         ORDER BY m.date DESC, m.uid DESC
+         LIMIT {}",
+        limit as i64
+    )
+}
+
 /// One row of a folder listing.
 ///
 /// Deliberately not `CachedMessage`. A listing needs the snippet, the size and
@@ -804,20 +831,7 @@ impl MessageCache {
     /// Bounded, because this is every inbox at once and the list is virtual:
     /// what it needs is the newest page, not the whole of everything.
     pub fn unified_inbox(&self, limit: usize) -> Result<Vec<MessageListRow>> {
-        let query = format!(
-            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
-                    m.from_addr, m.to_addr, m.cc, m.reply_to, m.date, m.snippet,
-                    m.size_bytes, m.read, m.starred, m.answered, m.draft,
-                    (m.has_attachments = 1
-                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                    m.safety, m.safety_reasons, m.receipt_to
-             FROM messages m
-             INNER JOIN folders f ON m.folder_id = f.id
-             WHERE f.folder_type = 'Inbox' AND m.deleted = 0
-             ORDER BY m.date DESC, m.uid DESC
-             LIMIT {}",
-            limit as i64
-        );
+        let query = unified_inbox_query(limit);
         let mut stmt = self
             .conn
             .prepare_cached(&query)
