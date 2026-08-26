@@ -6,6 +6,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **Five menu items had to be pressed twice.** Inside an open menu, a letter
+  is meant to run an item at once. Two items sharing a letter quietly turns
+  that into press, press again, then Enter, and nothing tells you the letter
+  you learned no longer finishes the job. Six items shared three letters
+  across the New, View, Action and Tools menus. The letters that changed are
+  Contact, Mute Message Reading, Sync Contacts, Sync Tasks, Signatures and
+  Mark as Read; their `Ctrl` shortcuts are unchanged.
+
 ### Changed
 
 - **The Message menu is now the Action menu**, reached with `Alt+A` rather

@@ -1628,6 +1628,91 @@ fn test_a_link_that_will_not_be_opened_is_not_refused_in_silence() {
     );
 }
 
+/// Every label in one stretch of menu-building code that claims a letter.
+///
+/// Reads the string literals rather than the built menu, because the menus are
+/// built by wxWidgets at run time and there is nothing to ask at test time.
+/// Both plain labels and the ones built by `format!` are string literals on one
+/// line, so one rule finds both.
+fn menu_labels_claiming_a_letter(segment: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for line in segment.lines() {
+        // Odd-numbered pieces of a split on the quote are the contents of the
+        // string literals. The even ones are the code between them, which is
+        // where `&format!` lives and is exactly what must not be read as a
+        // mnemonic.
+        for piece in line.split('"').skip(1).step_by(2) {
+            if alt_key_of(piece).is_none() {
+                continue;
+            }
+            // The accelerator after the tab is a different thing from the
+            // mnemonic and is checked by its own guard.
+            found.push(piece.split("\\t").next().unwrap_or(piece).to_string());
+        }
+    }
+    found
+}
+
+/// No two items on one menu claim the same letter.
+///
+/// Inside an open menu a mnemonic is meant to be one keystroke: press the
+/// letter and the item runs. Two items sharing a letter silently downgrades
+/// both to a three-key cycle, press, press again, then Enter, and nothing tells
+/// the person that the letter they were taught no longer finishes the job. It
+/// is the kind of fault that only shows up under the keyboard, which is how
+/// this application is meant to be used.
+///
+/// Written before moving a pile of module commands onto the Action menu. A
+/// longer menu is where this stops being theoretical, and the check has to
+/// exist before the items land rather than after.
+#[test]
+fn test_no_two_items_on_one_menu_claim_the_same_letter() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    let mut menus_checked = 0;
+    for (at, _) in ship.match_indices("= Menu::builder()") {
+        let binding = ship[..at].rfind("let ").expect("a menu is bound to a name");
+        let name = ship[binding + "let ".len()..at].trim();
+        let block = &ship[at..];
+        let ends = block.find(".build();").expect("a menu is finished");
+
+        let mut labels = menu_labels_claiming_a_letter(&block[..ends]);
+        // A submenu, or an item appended once the builder has finished, sits on
+        // the menu like any other and claims a letter like any other.
+        for line in ship.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with(&format!("{name}.append"))
+                || trimmed.starts_with(&format!("{name}.prepend"))
+            {
+                labels.extend(menu_labels_claiming_a_letter(line));
+            }
+        }
+        if labels.len() < 2 {
+            continue;
+        }
+        menus_checked += 1;
+
+        for (index, label) in labels.iter().enumerate() {
+            let letter = alt_key_of(label).expect("only labels claiming a letter are collected");
+            let clash = labels[..index]
+                .iter()
+                .find(|earlier| alt_key_of(earlier) == Some(letter));
+            if let Some(earlier) = clash {
+                panic!(
+                    "on the {name} menu, \"{label}\" and \"{earlier}\" both claim {letter}, \
+                     so pressing {letter} runs neither and cycles between them instead"
+                );
+            }
+        }
+    }
+
+    assert!(
+        menus_checked >= 6,
+        "only {menus_checked} menus were read, so this guard is measuring almost nothing"
+    );
+}
+
 /// No two menus on the bar answer to the same Alt key.
 ///
 /// The bar is reached by Alt and then a letter, so two menus claiming one

@@ -3996,7 +3996,7 @@ impl WxMailApp {
             .append_separator()
             .append_item(
                 ID_NEW_CONTACT,
-                &format!("Co&ntact\t{}", key_for(ItemKind::Contact)),
+                &format!("&Contact\t{}", key_for(ItemKind::Contact)),
                 "Create a new contact",
             )
             .append_item(ID_NEW_ACCOUNT, "&Account", "Open Account Manager")
@@ -4174,7 +4174,7 @@ impl WxMailApp {
                 // Moved off Ctrl+Shift+M, which is New Message now, as it is in
                 // Outlook. Ctrl+M is free, mnemonic, and one key easier to
                 // press than what it had.
-                "&Mute Message Reading\tCtrl+M",
+                "M&ute Message Reading\tCtrl+M",
                 "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()
@@ -4292,7 +4292,7 @@ impl WxMailApp {
                 "Go to the previous message you have not read",
             )
             .append_separator()
-            .append_item(ID_MARK_READ, "Mark as &Read", "Mark as read")
+            .append_item(ID_MARK_READ, "Mark as R&ead", "Mark as read")
             .append_item(
                 ID_TOGGLE_STAR,
                 "&Star or Unstar\tCtrl+Shift+S",
@@ -4325,7 +4325,7 @@ impl WxMailApp {
             .append_separator()
             .append_item(
                 ID_SYNC_CONTACTS,
-                "Sync C&ontacts",
+                "Sync Co&ntacts",
                 "Sync contacts with cloud providers",
             )
             .append_item(
@@ -4335,7 +4335,7 @@ impl WxMailApp {
             )
             .append_item(
                 ID_SYNC_TASKS,
-                "Sync Ta&sks",
+                "Sync &Tasks",
                 "Bring tasks down from Google Tasks and Microsoft To Do",
             )
             .append_separator()
@@ -4357,7 +4357,7 @@ impl WxMailApp {
             )
             .append_item(
                 ID_SIG_MGR,
-                "Si&gnatures...",
+                "S&ignatures...",
                 "Text added to the end of messages you send",
             )
             .append_item(ID_TAG_MGR, "Ta&gs...", "Labels you can put on messages")
