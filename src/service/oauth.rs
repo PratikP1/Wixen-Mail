@@ -1651,3 +1651,56 @@ mod tests {
         assert_eq!(parsed.refresh_token, Some("def".to_string()));
     }
 }
+
+#[cfg(test)]
+mod which_entries_belong_to_an_account {
+    use super::{OAuthService, entries_for_account, keyring_service};
+
+    #[test]
+    fn test_an_account_is_named_under_every_provider() {
+        // Every provider rather than the one the address names today. An
+        // account switched back to a password keeps whatever token it was
+        // given, and an address edited after signing in leaves an entry named
+        // after the old one. Both are secrets nothing else would name again.
+        let entries = entries_for_account("acc-1");
+
+        let providers = OAuthService::providers();
+        assert_eq!(
+            entries.len(),
+            providers.len(),
+            "one entry per provider, or a token is left where nothing looks: {entries:?}"
+        );
+        for provider in &providers {
+            assert!(
+                entries.contains(&(keyring_service(&provider.name), "acc-1".to_string())),
+                "nothing names {}'s entry for this account: {entries:?}",
+                provider.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_two_accounts_do_not_share_an_entry() {
+        // The account is the user under each provider's service, so removing
+        // one account must not name another's token. Taking the wrong one is
+        // worse than leaving one: somebody else's mail stops working.
+        let mine = entries_for_account("acc-1");
+        let theirs = entries_for_account("acc-2");
+
+        assert!(
+            mine.iter().all(|entry| !theirs.contains(entry)),
+            "two accounts name the same credential entry: {mine:?} against {theirs:?}"
+        );
+    }
+
+    #[test]
+    fn test_an_account_that_names_nothing_still_answers() {
+        // A blank id is not a reason to answer with nothing: an entry stored
+        // under a blank id is still an entry, and a sweep that skipped it
+        // would leave it behind for good.
+        assert_eq!(
+            entries_for_account("").len(),
+            OAuthService::providers().len()
+        );
+    }
+}

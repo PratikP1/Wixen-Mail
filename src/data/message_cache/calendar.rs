@@ -792,13 +792,18 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::MessageCache;
 
-    fn temp_cache(label: &str) -> TempHome<MessageCache> {
+    pub(super) fn temp_cache(label: &str) -> TempHome<MessageCache> {
         TempHome::named(label, |dir| {
             MessageCache::new(dir.to_path_buf(), None).unwrap()
         })
     }
 
-    fn make_event(id: &str, account: &str, provider_id: &str, summary: &str) -> CalendarEventEntry {
+    pub(super) fn make_event(
+        id: &str,
+        account: &str,
+        provider_id: &str,
+        summary: &str,
+    ) -> CalendarEventEntry {
         CalendarEventEntry {
             id: id.to_string(),
             account_id: account.to_string(),
@@ -2224,5 +2229,70 @@ mod tests {
                 .is_empty(),
             "a day that has already reached the server still holds its series back"
         );
+    }
+}
+
+#[cfg(test)]
+mod the_categories_already_in_use {
+    use super::tests::{make_event, temp_cache};
+
+    #[test]
+    fn test_the_categories_events_carry_are_offered_back() {
+        // The event editor offers somebody their own categories back. Read
+        // from the events rather than kept in a list of its own, so this is
+        // the only thing that knows them: answering with nothing means the
+        // editor offers nothing and looks as though none were ever used.
+        let cache = temp_cache("categories_in_use");
+        let mut work = make_event("e1", "acct", "p1", "Standup");
+        work.categories = "Work".to_string();
+        cache.save_calendar_event(&work).unwrap();
+        let mut home = make_event("e2", "acct", "p2", "Dentist");
+        home.categories = "Personal".to_string();
+        cache.save_calendar_event(&home).unwrap();
+
+        let mut found = cache.categories_in_use("acct").unwrap();
+        found.sort();
+
+        assert_eq!(found, vec!["Personal".to_string(), "Work".to_string()]);
+    }
+
+    #[test]
+    fn test_an_event_carrying_no_category_offers_nothing() {
+        // Most events carry none. A blank has to be left out rather than
+        // offered as a category somebody can pick, which would put an empty
+        // row in the editor's list.
+        let cache = temp_cache("categories_none");
+        cache
+            .save_calendar_event(&make_event("e1", "acct", "p1", "Standup"))
+            .unwrap();
+
+        assert!(cache.categories_in_use("acct").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_the_categories_of_another_account_are_not_offered() {
+        let cache = temp_cache("categories_scoped");
+        let mut mine = make_event("e1", "mine", "p1", "Standup");
+        mine.categories = "Work".to_string();
+        cache.save_calendar_event(&mine).unwrap();
+        let mut theirs = make_event("e2", "theirs", "p2", "Theirs");
+        theirs.categories = "Secret".to_string();
+        cache.save_calendar_event(&theirs).unwrap();
+
+        assert_eq!(cache.categories_in_use("mine").unwrap(), vec!["Work"]);
+    }
+
+    #[test]
+    fn test_one_category_used_twice_is_offered_once() {
+        // Distinct, or a category on forty events fills the editor's list with
+        // forty copies of itself.
+        let cache = temp_cache("categories_distinct");
+        for (id, provider) in [("e1", "p1"), ("e2", "p2")] {
+            let mut event = make_event(id, "acct", provider, "Standup");
+            event.categories = "Work".to_string();
+            cache.save_calendar_event(&event).unwrap();
+        }
+
+        assert_eq!(cache.categories_in_use("acct").unwrap(), vec!["Work"]);
     }
 }

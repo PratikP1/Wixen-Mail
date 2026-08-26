@@ -644,3 +644,120 @@ mod tests {
         assert!(as_a_search("   ").is_none());
     }
 }
+
+#[cfg(test)]
+mod building_the_calendar_index {
+    use super::super::{CalendarEventEntry, MessageCache};
+    use crate::common::temp_home::TempHome;
+
+    fn an_event(id: &str, summary: &str) -> CalendarEventEntry {
+        CalendarEventEntry {
+            id: id.to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: None,
+            calendar_id: None,
+            summary: summary.to_string(),
+            description: None,
+            location: None,
+            start_datetime: "2026-03-05T10:00:00Z".to_string(),
+            end_datetime: "2026-03-05T11:00:00Z".to_string(),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: None,
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-03-01T00:00:00Z".to_string(),
+            updated_at: "2026-03-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        }
+    }
+
+    #[test]
+    fn test_a_calendar_held_before_the_index_existed_becomes_searchable() {
+        // Everybody upgrading has one of these. Without the build on open,
+        // searching a calendar somebody already had would find nothing at all
+        // and say nothing about why.
+        let home = TempHome::named("calendar_index_is_built", |dir| dir.to_path_buf());
+        {
+            let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
+            cache
+                .save_calendar_event(&an_event("e1", "Quarterly planning"))
+                .expect("an event");
+            // Emptied to stand in for a calendar stored before the index
+            // existed, which is what an upgrade really has.
+            cache
+                .conn
+                .execute("DELETE FROM calendar_search", [])
+                .expect("an empty index");
+        }
+
+        let reopened = MessageCache::new(home.to_path_buf(), None).expect("the cache again");
+
+        assert_eq!(
+            reopened
+                .search_calendar_events("acct", "quarterly", 50)
+                .expect("a search")
+                .len(),
+            1,
+            "reopening did not build the calendar index"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_already_indexed_is_not_built_again() {
+        // The ordinary case, and it has to cost two counts rather than a pass
+        // over somebody's whole calendar on every open. Reported as nothing
+        // built, which is what the caller logs on.
+        let home = TempHome::named("calendar_index_left_alone", |dir| dir.to_path_buf());
+        let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
+        cache
+            .save_calendar_event(&an_event("e1", "Quarterly planning"))
+            .expect("an event");
+
+        assert_eq!(
+            cache
+                .build_any_missing_calendar_index()
+                .expect("the check runs"),
+            0,
+            "an index already level with the events was built again"
+        );
+    }
+
+    #[test]
+    fn test_an_index_with_something_missing_is_built() {
+        // The count answers with what it did, so a caller can say so. Zero
+        // here would mean an upgrade reported nothing and left search broken.
+        let home = TempHome::named("calendar_index_partly_missing", |dir| dir.to_path_buf());
+        let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
+        for (id, summary) in [("e1", "Quarterly planning"), ("e2", "Lunch")] {
+            cache
+                .save_calendar_event(&an_event(id, summary))
+                .expect("an event");
+        }
+        cache
+            .conn
+            .execute("DELETE FROM calendar_search", [])
+            .expect("an empty index");
+
+        assert_eq!(
+            cache
+                .build_any_missing_calendar_index()
+                .expect("the build runs"),
+            2,
+            "the build did not report what it indexed"
+        );
+    }
+}
