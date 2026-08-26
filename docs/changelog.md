@@ -23,6 +23,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   is named for that rather than for one kind of item, and Delete on it already
   acted on whichever module was showing.
 
+- **Sixteen commands can now be found on the menu bar.** Making a task out of
+  an email, moving an event to another calendar, writing to a contact group,
+  renaming or deleting a calendar, list or folder, and refreshing the folder
+  you are reading were all raised only by the `Applications` key. That key
+  works and always did, so none of this was unusable. It was undiscoverable:
+  if you did not already know a command existed, nothing would tell you.
+  They are on the Action menu now, under Copy to, Group, Sidebar and This
+  Folder, and still on the `Applications` key where they were.
+
+- **Move follows the module you are in.** One Move on the Action menu, still
+  `Ctrl+Shift+V`. In Mail it asks which folder, and in the other modules it
+  asks which calendar, list or note folder. This is the rule Delete beside it
+  already followed. Moving an event to another calendar had no menu entry at
+  all before.
+
+- **Move and Copy have left the File menu**, and marking a task done and
+  pinning a note have left Edit. None of the four is a file operation or an
+  edit; all four act on the thing you have chosen. File now holds making,
+  saving and fetching, and Edit holds Search, where Find lives on Windows.
+  The keys are unchanged.
+
 ### Added
 
 - **You can hide a calendar, and hiding one now does something.** The

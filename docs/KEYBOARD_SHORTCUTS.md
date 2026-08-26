@@ -312,8 +312,8 @@ can navigate. Making them real headings is being worked on.
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
 | Send read receipt | no shortcut | Action menu. Only when that message asked for one |
-| Move to folder | `Ctrl+Shift+V` | Put this message in another folder. Opens on the last folder you filed into |
-| Copy to folder | `Ctrl+Shift+Y` | Put a copy of this message in another folder |
+| Move to | `Ctrl+Shift+V` | Action menu. In Mail, put this message in another folder, opening on the last folder you filed into. In the other modules, move the chosen event, task or note to another calendar, list or folder |
+| Copy to folder | `Ctrl+Shift+Y` | Action menu, Copy to. Put a copy of this message in another folder |
 | Menu for this thing | `Applications` or `Shift+F10` | What can be done with the message, task, folder or list you are on |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |
@@ -354,14 +354,51 @@ dialog once you have more than one.
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save message or attachment to file |
 | Check Mail | `F9` | Check for new messages |
-| Get Older Messages | `Shift+F9` | Bring down the next page of older mail in the folder you are in |
 | Quit | `Ctrl+Q` | Exit the application |
+
+File holds making, saving and fetching. Anything that acts on the message,
+event, task, note or contact you are on is on the Action menu instead.
 
 ### Edit Menu
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Search | `Ctrl+F` | Open search dialog |
+| Search | `Ctrl+F` | Searches whichever module you are looking at |
+
+One item, because Find has lived under Edit on Windows for thirty years and
+moving it would cost more than the short menu does. Marking a task done and
+pinning a note used to be here; neither is an edit, and both are on the Action
+menu now.
+
+### Action Menu
+
+Everything you can do to the thing in front of you, reached with `Alt+A`. Items
+that mean nothing in the module you are in are greyed out rather than hidden, so
+your screen reader says "unavailable" and answers the question before you press
+anything.
+
+| Action | Shortcut | Where it applies |
+|--------|----------|-------------|
+| Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail |
+| Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
+| Mark as Read | (no shortcut) | Mail |
+| Star or Unstar | `Ctrl+Shift+S` | Mail |
+| Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
+| Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
+| Pin or Unpin | `Ctrl+Shift+P` | Notes |
+| Delete | `Delete` | Every module. Deletes whichever item is chosen |
+| Delete Permanently | `Shift+Del` | Mail |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, and for a calendar, list or note folder elsewhere |
+
+Five submenus hold the rest:
+
+| Submenu | What is on it |
+|--------|----------|
+| Copy to | Another folder (`Ctrl+Shift+Y`), a task, the calendar, or a note. The message stays where it is |
+| Label | The ten labels, and Remove every label |
+| Group | Write to this group, put a contact in a group, take a contact out of one |
+| Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), Folders to Keep Up to Date |
 
 ### Account Management
 
@@ -380,9 +417,10 @@ dialog once you have more than one.
 A contact group is a name you give to some of the people in your address book, so you can write
 to all of them at once. Groups are kept on this computer and are not sent to Google or Outlook.
 
-Everything here is on a context menu, opened with the `Applications` key or `Shift+F10`. No new
-key was added. Press the menu key on the groups tree in the contacts sidebar, or on a contact in
-the contacts list.
+There are two ways to reach all of this and no new key for either. The Action menu (`Alt+A`) holds
+it under Group and Sidebar. The context menu, opened with the `Applications` key or `Shift+F10`,
+holds it where you already are: press the menu key on the groups tree in the contacts sidebar, or
+on a contact in the contacts list. The letters below are the context menu's.
 
 | Where you are | Menu entry | What it does |
 |--------|----------|-------------|
@@ -410,10 +448,11 @@ group are being written to, so you can tell when somebody has been missed.
 | Preview Pane | `Alt+2` | Show or hide the message preview |
 | Module Buttons | `Alt+3` | Show or hide the module navigation buttons |
 | Columns | `F8` | Choose which message list columns are shown and in what order |
-| Refresh Folder | `F5` | Read this folder again from the server |
 | Next Pane | `F6` | Move focus between the folder tree and the message list |
+| Mute Message Reading | `Ctrl+M` | Stop what is being read aloud |
 | Thread View Toggle | `Ctrl+T` | Not available yet. It would collapse the list to one row per conversation. To read a conversation now, press `Enter` on a message that belongs to one. |
-| Check Mail | `F9` | Check for new messages |
+| Sort Messages | (submenu) | Date, sender, subject, or unread first |
+| Offline Mode | (no shortcut) | Stop reaching the network |
 
 #### Inside the Columns dialog
 

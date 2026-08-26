@@ -1653,6 +1653,63 @@ fn menu_labels_claiming_a_letter(segment: &str) -> Vec<String> {
     found
 }
 
+/// Everything that builds one named menu.
+///
+/// Two halves, because wxWidgets only lets a submenu be added once the builder
+/// chain has finished: the chain itself, and every item or submenu appended to
+/// the menu afterwards. A menu built entirely the second way has an empty first
+/// half and is read just as well.
+fn menu_block(ship: &str, name: &str) -> String {
+    let mut block = String::new();
+    if let Some(at) = ship.find(&format!("let {name} = Menu::builder()")) {
+        let chain = &ship[at..];
+        let ends = chain.find(".build();").unwrap_or(chain.len());
+        block.push_str(&chain[..ends]);
+    }
+    let lines: Vec<&str> = ship.lines().collect();
+    let mut at = 0;
+    while at < lines.len() {
+        let trimmed = lines[at].trim_start();
+        if !(trimmed.starts_with(&format!("{name}.append"))
+            || trimmed.starts_with(&format!("{name}.prepend")))
+        {
+            at += 1;
+            continue;
+        }
+        // rustfmt wraps a long call over several lines and puts the label on
+        // one of its own, so taking only the first line would read the call and
+        // miss the very thing being checked.
+        let mut end = at;
+        while end + 1 < lines.len() && !lines[end].trim_end().ends_with(");") {
+            end += 1;
+        }
+        for line in &lines[at..=end] {
+            block.push('\n');
+            block.push_str(line);
+        }
+        at = end + 1;
+    }
+    block
+}
+
+/// The source with every space taken out, so a call can be found whatever way
+/// rustfmt has chosen to wrap it.
+fn without_whitespace(source: &str) -> String {
+    source.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Whether a command is on a menu somewhere, by any of the ways one is added.
+fn is_on_a_menu(squashed: &str, id: &str) -> bool {
+    [
+        format!("append({id},"),
+        format!("append_item({id},"),
+        format!("append_check_item({id},"),
+        format!("append_radio_item({id},"),
+    ]
+    .iter()
+    .any(|call| squashed.contains(call))
+}
+
 /// No two items on one menu claim the same letter.
 ///
 /// Inside an open menu a mnemonic is meant to be one keystroke: press the
@@ -1674,20 +1731,10 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
     for (at, _) in ship.match_indices("= Menu::builder()") {
         let binding = ship[..at].rfind("let ").expect("a menu is bound to a name");
         let name = ship[binding + "let ".len()..at].trim();
-        let block = &ship[at..];
-        let ends = block.find(".build();").expect("a menu is finished");
 
-        let mut labels = menu_labels_claiming_a_letter(&block[..ends]);
         // A submenu, or an item appended once the builder has finished, sits on
         // the menu like any other and claims a letter like any other.
-        for line in ship.lines() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with(&format!("{name}.append"))
-                || trimmed.starts_with(&format!("{name}.prepend"))
-            {
-                labels.extend(menu_labels_claiming_a_letter(line));
-            }
-        }
+        let labels = menu_labels_claiming_a_letter(&menu_block(ship, name));
         if labels.len() < 2 {
             continue;
         }
@@ -1711,6 +1758,154 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
         menus_checked >= 6,
         "only {menus_checked} menus were read, so this guard is measuring almost nothing"
     );
+}
+
+/// Everything you can do to the thing in front of you is on the menu bar.
+///
+/// Each of these had a handler and a place on the menu raised by the
+/// Applications key, and no place on the bar at all. The context menu is
+/// keyboard-reachable, so none of this was unusable; it was undiscoverable,
+/// which is a different fault with the same ending. Somebody who does not know
+/// a command exists cannot press the key that raises the menu that would have
+/// told them.
+///
+/// New items are the deliberate exception and stay under File, New. Making a
+/// thing is not something done to the thing in front of you.
+#[test]
+fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let squashed = without_whitespace(ship);
+
+    for (id, what) in [
+        ("ID_MOVE_TO_FOLDER", "move this somewhere else"),
+        (
+            "ID_COPY_TO_FOLDER",
+            "put a copy of this message in another folder",
+        ),
+        ("ID_CONTEXT_COPY_TO_TASK", "make a task out of this message"),
+        (
+            "ID_CONTEXT_COPY_TO_EVENT",
+            "make a calendar event out of it",
+        ),
+        ("ID_CONTEXT_COPY_TO_NOTE", "make a note out of it"),
+        ("ID_PIM_TOGGLE_DONE", "mark this task or reminder done"),
+        ("ID_PIM_TOGGLE_PIN", "pin this note"),
+        (
+            "ID_CONTEXT_WRITE_TO_GROUP",
+            "write to everybody in this group",
+        ),
+        ("ID_CONTEXT_ADD_TO_GROUP", "put this contact in a group"),
+        (
+            "ID_CONTEXT_REMOVE_FROM_GROUP",
+            "take this contact out of a group",
+        ),
+        ("ID_CONTEXT_RENAME_CONTAINER", "rename this group"),
+        (
+            "ID_CONTEXT_DELETE_CONTAINER",
+            "delete this calendar, list or group",
+        ),
+        (
+            "ID_CONTEXT_SYNC_NOW",
+            "fetch this module from the provider now",
+        ),
+        ("ID_REFRESH_FOLDER", "read this folder again"),
+        ("ID_GET_OLDER", "fetch older messages in this folder"),
+        (
+            "ID_CHOOSE_FOLDERS",
+            "choose which folders are kept up to date",
+        ),
+    ] {
+        assert!(
+            is_on_a_menu(&squashed, id),
+            "\"{what}\" ({id}) is on no menu on the bar, so the only way to find \
+             out it exists is to already know"
+        );
+    }
+}
+
+/// Move follows the module rather than always meaning a mail folder.
+///
+/// One item on the Action menu and one key, the rule Delete beside it already
+/// follows. In Mail it asks which folder; anywhere else it asks which calendar,
+/// list or note folder, because offering a mail folder as a home for a task is
+/// not a mistake worth making reachable.
+///
+/// The arm that answers for the other five modules has to come first, since a
+/// match is read top down and the mail arm below it takes the command
+/// unconditionally.
+#[test]
+fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let squashed = without_whitespace(ship);
+
+    assert!(
+        squashed.contains("id==ID_MOVE_TO_FOLDER&&showing!=PimModule::Mail"),
+        "Move is no longer answered by the module it was raised in, so choosing \
+         it on a task offers a list of mail folders"
+    );
+    assert!(
+        squashed.contains("id==ID_CONTEXT_MOVE_ITEM||id==ID_MOVE_TO_FOLDER{PimCommand::Move"),
+        "the menu bar's Move no longer asks for a move, so it reaches the item \
+         handler and does something else there"
+    );
+
+    let pim_arm = squashed
+        .find("id==ID_MOVE_TO_FOLDER&&showing!=PimModule::Mail")
+        .expect("the arm for the other five modules");
+    let mail_arm = squashed
+        .find("id==ID_MOVE_TO_FOLDER||id==ID_COPY_TO_FOLDER")
+        .expect("the arm for mail");
+    assert!(
+        pim_arm < mail_arm,
+        "the mail arm is read first, so Move in Tasks or Notes offers mail \
+         folders and the module arm below it is never reached"
+    );
+}
+
+/// File and Edit hold nothing that acts on the selected thing.
+///
+/// Both had collected commands that belong to neither. File carried move and
+/// copy, which act on the chosen message rather than on a file, and Edit
+/// carried marking a task done and pinning a note, which are not edits in the
+/// sense every other Windows application uses that menu for. Edit keeps Search,
+/// where Find has lived on this platform for thirty years.
+#[test]
+fn test_file_and_edit_hold_nothing_that_acts_on_a_selection() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    for (menu, moved) in [
+        (
+            "file",
+            [
+                "ID_MOVE_TO_FOLDER",
+                "ID_COPY_TO_FOLDER",
+                "ID_REFRESH_FOLDER",
+                "ID_GET_OLDER",
+                "ID_CHOOSE_FOLDERS",
+            ]
+            .as_slice(),
+        ),
+        (
+            "edit",
+            ["ID_PIM_TOGGLE_DONE", "ID_PIM_TOGGLE_PIN"].as_slice(),
+        ),
+    ] {
+        let block = menu_block(ship, menu);
+        assert!(
+            block.contains("append"),
+            "the {menu} menu was not found, so this guard is measuring nothing"
+        );
+        for id in moved {
+            assert!(
+                !block.contains(id),
+                "{id} is still on the {menu} menu, so it is offered in two places \
+                 and the one it was moved to is not the only answer"
+            );
+        }
+    }
 }
 
 /// No two menus on the bar answer to the same Alt key.

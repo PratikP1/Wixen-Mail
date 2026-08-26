@@ -2650,6 +2650,12 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
+                    // Read once, here, and let go of the lock before the match
+                    // starts. Asking inside a match guard would hold it for the
+                    // whole match, and the arms below spawn work and send
+                    // status, which is the shape that deadlocked the UI thread
+                    // and froze the screen reader with it.
+                    let showing = lock_state(&state).active_module;
                     match id {
                         // ── View toggles ──────────────────────────────────
                         _ if id == ID_VIEW_FOLDER_PANE => {
@@ -2815,14 +2821,19 @@ impl WxMailApp {
                         // command serves every panel. The alternative is
                         // seven ids per action and seven handlers that differ
                         // only in which list they read.
+                        // Move on the Action menu lands here in every module but
+                        // Mail, and falls through to the folder picker in Mail.
+                        // One item, one key, and the answer follows the module,
+                        // which is the rule Delete already follows.
                         _ if id == ID_CONTEXT_NEW_ITEM
                             || id == ID_CONTEXT_DELETE_ITEM
                             || id == ID_CONTEXT_TOGGLE_COMPLETE
                             || id == ID_CONTEXT_TOGGLE_PIN
-                            || id == ID_CONTEXT_MOVE_ITEM =>
+                            || id == ID_CONTEXT_MOVE_ITEM
+                            || (id == ID_MOVE_TO_FOLDER && showing != PimModule::Mail) =>
                         {
                             use crate::application::pim_command::{PimAction, PimCommand};
-                            let module = lock_state(&state).active_module;
+                            let module = showing;
                             let kind = module.item_kind();
 
                             if id == ID_CONTEXT_NEW_ITEM {
@@ -2840,7 +2851,7 @@ impl WxMailApp {
                                     PimCommand::Delete
                                 } else if id == ID_CONTEXT_TOGGLE_COMPLETE {
                                     PimCommand::ToggleComplete
-                                } else if id == ID_CONTEXT_MOVE_ITEM {
+                                } else if id == ID_CONTEXT_MOVE_ITEM || id == ID_MOVE_TO_FOLDER {
                                     PimCommand::Move
                                 } else {
                                     PimCommand::TogglePin
@@ -4007,34 +4018,6 @@ impl WxMailApp {
             .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
             .append_separator()
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
-            // Shift with the same key, because it is the same action reaching
-            // further back.
-            .append_item(
-                ID_GET_OLDER,
-                "Get &Older Messages\tShift+F9",
-                "Fetch the next page of older messages in this folder",
-            )
-            .append_item(
-                ID_REFRESH_FOLDER,
-                "&Refresh Folder\tF5",
-                "Read this folder again from the server",
-            )
-            .append_item(
-                ID_CHOOSE_FOLDERS,
-                "&Folders to Keep Up to Date...",
-                "Choose which of this account's folders are downloaded",
-            )
-            .append_separator()
-            .append_item(
-                ID_MOVE_TO_FOLDER,
-                "Mo&ve to Folder...\tCtrl+Shift+V",
-                "Put this message in another folder",
-            )
-            .append_item(
-                ID_COPY_TO_FOLDER,
-                "Cop&y to Folder...\tCtrl+Shift+Y",
-                "Put a copy of this message in another folder",
-            )
             .append_separator()
             // Drafts were saved and then unreachable, which is worse than not
             // saving them because it looks like it worked. That was fixed by
@@ -4054,28 +4037,18 @@ impl WxMailApp {
         file.prepend_separator();
         file.prepend_submenu(new_sub, "&New", "Create a new item");
 
-        // Delete is deliberately not here. It is already the Action menu's
-        // key, and one Delete that acts on whatever you are looking at follows
-        // the same rule Ctrl+N does: the key means "the thing in front of me".
-        // A second menu item with the same accelerator would be two commands
-        // racing for one key.
-        //
-        // Both are greyed out where they mean nothing: marking done in
-        // Contacts, pinning in Tasks. A screen reader says "unavailable" on a
-        // disabled item, so somebody walking the menu is answered before they
-        // press anything, which is the whole reason a menu sits beside a key.
+        // One item, and that is the right number. Find has lived under Edit on
+        // this platform for thirty years, so somebody who has used any other
+        // Windows application already knows where it is. Marking a task done
+        // and pinning a note used to be here too, which put two commands that
+        // are not edits in any sense under a heading that promised they were.
+        // They are on the Action menu with the rest of what acts on the thing
+        // in front of you.
         let edit = Menu::builder()
-            .append_item(ID_SEARCH, "&Search\tCtrl+F", "Search messages")
-            .append_separator()
             .append_item(
-                ID_PIM_TOGGLE_DONE,
-                "Mark &Done or Not Done\tCtrl+Shift+K",
-                "Mark the selected task or reminder done, or not done",
-            )
-            .append_item(
-                ID_PIM_TOGGLE_PIN,
-                "&Pin or Unpin\tCtrl+Shift+P",
-                "Pin the selected note to the top of the list, or unpin it",
+                ID_SEARCH,
+                "&Search\tCtrl+F",
+                "Search whichever module you are looking at",
             )
             .build();
 
@@ -4264,6 +4237,101 @@ impl WxMailApp {
             wxdragon::menus::ItemKind::Normal,
         );
 
+        // The thing you have to do arrived as an email, and retyping its
+        // subject into a task list is the clerical work software exists to
+        // remove. All four keep the message where it is.
+        let copy_to_menu = Menu::builder()
+            .append_item(
+                ID_COPY_TO_FOLDER,
+                "another &Folder...\tCtrl+Shift+Y",
+                "Put a copy of this message in another folder",
+            )
+            .append_separator()
+            .append_item(
+                ID_CONTEXT_COPY_TO_TASK,
+                "a &Task",
+                "Make a task from this message, keeping its subject and its text",
+            )
+            .append_item(
+                ID_CONTEXT_COPY_TO_EVENT,
+                "the &Calendar",
+                "Make a calendar event from this message",
+            )
+            .append_item(
+                ID_CONTEXT_COPY_TO_NOTE,
+                "a &Note",
+                "Make a note from this message",
+            )
+            .build();
+
+        let group_menu = Menu::builder()
+            // First, because it is what a group is for. Without it a group is a
+            // name in a sidebar and nothing more.
+            .append_item(
+                ID_CONTEXT_WRITE_TO_GROUP,
+                "&Write to This Group",
+                "Open a message addressed to everybody in this group",
+            )
+            .append_separator()
+            // Worded as putting somebody in and taking them out, rather than as
+            // adding and removing, so the one next to Delete does not read like
+            // one.
+            .append_item(
+                ID_CONTEXT_ADD_TO_GROUP,
+                "&Put a Contact in a Group...",
+                "Put the chosen contact in a group",
+            )
+            .append_item(
+                ID_CONTEXT_REMOVE_FROM_GROUP,
+                "&Take a Contact Out of a Group...",
+                "Take the chosen contact out of a group, leaving the contact alone",
+            )
+            .build();
+
+        // Rename is offered only where a rename is written, which today is a
+        // contact group. It is greyed out on the other three rather than
+        // missing, so somebody who looks for it is told it cannot be done here
+        // instead of being left wondering whether they are on the wrong row.
+        let sidebar_menu = Menu::builder()
+            .append_item(
+                ID_CONTEXT_RENAME_CONTAINER,
+                "&Rename...",
+                "Give the chosen contact group a different name",
+            )
+            .append_item(
+                ID_CONTEXT_DELETE_CONTAINER,
+                "&Delete",
+                "Remove the chosen calendar, task list, note folder or contact group",
+            )
+            .append_separator()
+            .append_item(
+                ID_CONTEXT_SYNC_NOW,
+                "&Sync Now",
+                "Fetch this module from the provider now",
+            )
+            .build();
+
+        let folder_menu = Menu::builder()
+            .append_item(
+                ID_REFRESH_FOLDER,
+                "&Refresh\tF5",
+                "Read this folder again from the server",
+            )
+            // Shift with the same key as Check Mail, because it is the same
+            // action reaching further back.
+            .append_item(
+                ID_GET_OLDER,
+                "Get &Older Messages\tShift+F9",
+                "Fetch the next page of older messages in this folder",
+            )
+            .append_separator()
+            .append_item(
+                ID_CHOOSE_FOLDERS,
+                "&Folders to Keep Up to Date...",
+                "Choose which of this account's folders are downloaded",
+            )
+            .build();
+
         let message = Menu::builder()
             .append_item(ID_REPLY, "&Reply\tCtrl+R", "Reply to sender")
             .append_item(ID_REPLY_ALL, "Reply &All\tCtrl+Shift+R", "Reply to all")
@@ -4298,23 +4366,81 @@ impl WxMailApp {
                 "&Star or Unstar\tCtrl+Shift+S",
                 "Star the selected message, or take the star off",
             )
-            .append_item(ID_DELETE, "&Delete\tDel", "Move this message to the Trash")
+            .append_item(
+                ID_SEND_RECEIPT,
+                "Send Read Rece&ipt",
+                "Tell this sender you have read their message",
+            )
+            .append_separator()
+            // Marking done and pinning were on Edit, which is the menu every
+            // other Windows application uses for the clipboard. Neither is an
+            // edit. Both are greyed out where they mean nothing: marking done
+            // in Contacts, pinning in Tasks. A screen reader says "unavailable"
+            // on a disabled item, so somebody walking the menu is answered
+            // before they press anything, which is the whole reason a menu sits
+            // beside a key.
+            .append_item(
+                ID_PIM_TOGGLE_DONE,
+                "Mar&k Done or Not Done\tCtrl+Shift+K",
+                "Mark the selected task or reminder done, or not done",
+            )
+            .append_item(
+                ID_PIM_TOGGLE_PIN,
+                "&Pin or Unpin\tCtrl+Shift+P",
+                "Pin the selected note to the top of the list, or unpin it",
+            )
+            .append_separator()
+            .append_item(
+                ID_DELETE,
+                "&Delete\tDel",
+                "Delete whichever message, event, task, note or contact is chosen",
+            )
             .append_item(
                 ID_DELETE_OUTRIGHT,
-                "Delete &Permanently\tShift+Del",
+                "Delete Per&manently\tShift+Del",
                 // Not "from the server". On an account that collects its mail
                 // rather than reading it in place, this takes the message off
                 // this computer and the server still has it. Saying otherwise
                 // is the claim somebody acts on when they mean to be rid of it.
                 "Remove this message without putting it in the Trash",
             )
+            .append_separator()
+            // One Move, following whichever module is showing, which is the
+            // rule Delete beside it already follows. A message goes to a mail
+            // folder and an event goes to a calendar, and those are different
+            // pickers behind one item rather than two items somebody has to
+            // choose between while knowing which module they are in.
             .append_item(
-                ID_SEND_RECEIPT,
-                "Send Read Rece&ipt",
-                "Tell this sender you have read their message",
+                ID_MOVE_TO_FOLDER,
+                "Mo&ve to...\tCtrl+Shift+V",
+                "Move the chosen message, event, task or note somewhere else",
             )
+            .append_separator()
             .build();
+
+        // The submenus go on last because wxWidgets only takes one once the
+        // builder chain has finished.
+        message.append_submenu(
+            copy_to_menu,
+            "Cop&y to",
+            "Keep this message and make something else from it",
+        );
         message.append_submenu(labels_menu, "&Label", "Put a label on this message");
+        message.append_submenu(
+            group_menu,
+            "&Group",
+            "What a contact group is for, and how contacts go in and out of one",
+        );
+        message.append_submenu(
+            sidebar_menu,
+            "Side&bar",
+            "Act on the chosen calendar, task list, note folder or contact group",
+        );
+        message.append_submenu(
+            folder_menu,
+            "&This Folder",
+            "Act on the mail folder you are reading",
+        );
 
         let tools = Menu::builder()
             .append_item(
