@@ -58,8 +58,12 @@ impl Accessibility {
     pub fn initialize(&self) -> Result<()> {
         self.keyboard
             .register_shortcut("Ctrl+N", "compose_new_message")?;
+        // Not "search_messages" any more: Find searches whichever module is
+        // showing. Corrected rather than left, even though nothing reads this
+        // map back today, because a wrong fact sitting in the tree is what
+        // somebody wiring it up later would believe.
         self.keyboard
-            .register_shortcut("Ctrl+F", "search_messages")?;
+            .register_shortcut("Ctrl+F", "search_whatever_is_showing")?;
         self.keyboard.register_shortcut("F1", "open_help")?;
         // Module navigation shortcuts
         self.keyboard

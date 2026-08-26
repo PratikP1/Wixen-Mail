@@ -8182,7 +8182,24 @@ fn flush_outbox(app: AppHandles<'_>) {
 
             match &outcome {
                 Ok(raw) => {
-                    let _ = cache.delete_outbox_message(&msg.id);
+                    // The one failure in this routine that reaches somebody
+                    // outside the program. The message has already gone to the
+                    // server; a row left behind is found by the next flush and
+                    // sent a second time, and the person it is addressed to
+                    // receives two copies.
+                    //
+                    // Said rather than dropped, and said as what it means
+                    // rather than as a database error, because the thing to do
+                    // about it is to look in Sent before sending anything else.
+                    if let Err(e) = cache.delete_outbox_message(&msg.id) {
+                        let said = format!(
+                            "{} was sent, but it is still in the Outbox and may be sent \
+                             again. Check Sent before trying once more. ({e})",
+                            msg.subject
+                        );
+                        tracing::error!("{said}");
+                        let _ = tx.send(UIUpdate::StatusUpdated(said)).await;
+                    }
                     sent += 1;
                     // The copy is filed after the send, and a failure to file
                     // it is not a failure to send: the message has gone, and

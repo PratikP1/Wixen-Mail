@@ -1492,3 +1492,32 @@ fn test_the_account_manager_buttons_tab_in_the_order_they_are_shown() {
          beside the one you are on"
     );
 }
+
+/// A message that was sent is taken out of the queue, and a failure to take it
+/// out is said rather than dropped.
+///
+/// The send has already happened by this point. If the row cannot be removed,
+/// the next flush finds it still waiting and sends it a second time, and the
+/// person it is addressed to gets two copies. That is the one failure in this
+/// routine that reaches somebody outside the program, so it is the one that
+/// must not be swallowed.
+///
+/// What this cannot see: whether the sentence is ever shown, or whether the
+/// row really goes. It asks that the answer is looked at rather than discarded.
+#[test]
+fn test_a_sent_message_that_will_not_leave_the_queue_is_reported() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let flush = body_of(&app, "fn flush_outbox(");
+
+    assert!(
+        !flush.contains("let _ = cache.delete_outbox_message("),
+        "the outbox drops the answer to whether a sent message left the queue. \
+         It has already gone to the server at that point, so a row left behind \
+         is sent again on the next flush and somebody receives it twice."
+    );
+    assert!(
+        flush.contains("delete_outbox_message"),
+        "nothing takes a sent message out of the queue, so every message would \
+         be sent again on the next flush"
+    );
+}
