@@ -84,6 +84,18 @@ done". A toggle you cannot see is a toggle you have to be told about. They are
 greyed out in modules where they mean nothing, so your screen reader says
 "unavailable" rather than leaving you to press a key that does nothing.
 
+### The Sidebars
+
+In the mail sidebar, your folders come first, then a **Labels** heading with
+one row per label. Choosing a label lists the mail carrying it. A label row
+reads as "Work, label" so you can tell it apart from a folder of the same
+name.
+
+In the calendar sidebar, each calendar shows a tick box: `[x]` when it is
+showing and `[ ]` when it is hidden. `Enter` on a calendar hides or shows it,
+and says which it did. Its events leave and rejoin the day list to match.
+Events that belong to no calendar are always shown.
+
 ### The Reader Window
 
 `Enter` on a message opens it, formatted: the sender's headings are headings so

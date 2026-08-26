@@ -377,6 +377,11 @@ pub enum UIUpdate {
     ModuleChanged(PimModule),
     /// Calendar containers loaded
     CalendarContainersLoaded(Vec<CalendarContainerItem>),
+    /// The labels an account has, as (identifier, name).
+    ///
+    /// Sent before the folders, because the mail sidebar draws both in one
+    /// pass and needs them in hand when it does.
+    LabelsLoaded(Vec<(String, String)>),
     /// Reminders loaded
     RemindersLoaded(Vec<ReminderItem>),
     /// Task lists loaded
@@ -505,6 +510,49 @@ pub struct CalendarContainerItem {
     pub is_visible: bool,
     pub is_default: bool,
     pub is_read_only: bool,
+}
+
+impl CalendarContainerItem {
+    /// How a calendar reads in the sidebar.
+    ///
+    /// Written here rather than where the tree is filled, because the handler
+    /// that toggles a calendar finds which one was landed on by matching this
+    /// against the row's text, the same way the contacts sidebar resolves a
+    /// group. Two spellings of one row would mean a row nothing could resolve.
+    ///
+    /// The state is a word in the text and not a colour, so it is there for
+    /// somebody reading the row and for somebody hearing it.
+    #[must_use]
+    pub fn shown(name: &str, is_visible: bool) -> String {
+        match is_visible {
+            true => format!("[x] {name}"),
+            false => format!("[ ] {name}"),
+        }
+    }
+
+    /// The identifiers of the calendars somebody has hidden.
+    #[must_use]
+    pub fn hidden_among(containers: &[Self]) -> std::collections::HashSet<String> {
+        containers
+            .iter()
+            .filter(|container| !container.is_visible)
+            .map(|container| container.id.clone())
+            .collect()
+    }
+
+    /// Whether an event belongs to a calendar that is showing.
+    ///
+    /// An event filed under no calendar at all is shown. Those are events
+    /// made before an event carried which calendar it belonged to, and
+    /// hiding them would be hiding somebody's appointments over a detail of
+    /// how they were stored.
+    #[must_use]
+    pub fn is_showing(
+        calendar_id: Option<&str>,
+        hidden: &std::collections::HashSet<String>,
+    ) -> bool {
+        calendar_id.is_none_or(|id| !hidden.contains(id))
+    }
 }
 
 /// Reminder item for UI display
@@ -2064,5 +2112,70 @@ mod tests {
         // A header present but empty is not somewhere to send mail.
         let blank = addressed("Ada <ada@example.com>", "   ");
         assert_eq!(blank.reply_address(), "Ada <ada@example.com>");
+    }
+}
+
+#[cfg(test)]
+mod which_calendars_are_showing {
+    use super::CalendarContainerItem;
+
+    fn calendar(id: &str, name: &str, is_visible: bool) -> CalendarContainerItem {
+        CalendarContainerItem {
+            id: id.to_string(),
+            name: name.to_string(),
+            color: String::new(),
+            provider: String::new(),
+            is_visible,
+            is_default: false,
+            is_read_only: false,
+        }
+    }
+
+    #[test]
+    fn test_a_row_says_whether_the_calendar_is_showing_in_words() {
+        // Read as well as seen. A colour would say this to one of the two.
+        assert_eq!(
+            CalendarContainerItem::shown("Work", true),
+            "[x] Work",
+            "a calendar that is showing"
+        );
+        assert_eq!(
+            CalendarContainerItem::shown("Work", false),
+            "[ ] Work",
+            "a calendar that is hidden"
+        );
+    }
+
+    #[test]
+    fn test_an_event_in_a_hidden_calendar_is_not_shown() {
+        let hidden = CalendarContainerItem::hidden_among(&[
+            calendar("work", "Work", true),
+            calendar("gym", "Gym", false),
+        ]);
+
+        assert!(CalendarContainerItem::is_showing(Some("work"), &hidden));
+        assert!(!CalendarContainerItem::is_showing(Some("gym"), &hidden));
+    }
+
+    #[test]
+    fn test_an_event_filed_under_no_calendar_is_still_shown() {
+        // Events made before an event carried which calendar it was in. Hiding
+        // them would be hiding somebody's appointments over a detail of how
+        // they happen to be stored, and nothing in the sidebar would explain
+        // where they had gone.
+        let hidden = CalendarContainerItem::hidden_among(&[calendar("gym", "Gym", false)]);
+
+        assert!(CalendarContainerItem::is_showing(None, &hidden));
+    }
+
+    #[test]
+    fn test_hiding_nothing_leaves_every_event_showing() {
+        let hidden = CalendarContainerItem::hidden_among(&[
+            calendar("work", "Work", true),
+            calendar("home", "Home", true),
+        ]);
+
+        assert!(hidden.is_empty());
+        assert!(CalendarContainerItem::is_showing(Some("work"), &hidden));
     }
 }

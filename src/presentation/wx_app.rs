@@ -272,6 +272,17 @@ pub struct WxUIState {
     pub reminders: Vec<ReminderItem>,
     pub tasks: Vec<TaskItem>,
     pub events: Vec<CalendarEventItem>,
+    /// The labels, as (identifier, name), kept for the same reason the
+    /// calendars are: the mail sidebar holds text and the handler has to work
+    /// back from a row to the label it names.
+    pub labels: Vec<(String, String)>,
+    /// The calendars, kept so the sidebar can say which one was landed on.
+    ///
+    /// The tree holds text and nothing else, so the handler that hides or
+    /// shows a calendar finds it by matching the row against
+    /// `CalendarContainerItem::shown`, the same way the contacts sidebar
+    /// resolves a group.
+    pub calendars: Vec<CalendarContainerItem>,
     /// Which note the editor is currently showing, so a save knows what it is
     /// writing back to.
     pub selected_note_id: Option<String>,
@@ -315,6 +326,8 @@ impl Default for WxUIState {
             reminders: Vec::new(),
             tasks: Vec::new(),
             events: Vec::new(),
+            labels: Vec::new(),
+            calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
         }
@@ -2196,6 +2209,32 @@ impl WxMailApp {
                             load_every_inbox(&folder_cache, &ui_tx);
                             return;
                         }
+                        // The Labels branch header itself, which is not a
+                        // label. Landing on it does nothing, the same way
+                        // landing on the tree's own root does.
+                        if name == "Labels" {
+                            return;
+                        }
+                        // A label, found by matching the one spelling of a
+                        // label row. Before the folder lookup, because a label
+                        // row is not in the folder map and would otherwise
+                        // fall through to a folder that does not exist.
+                        let label = {
+                            let s = lock_state(&state);
+                            s.labels
+                                .iter()
+                                .find(|(_, label_name)| label_row(label_name) == name)
+                                .cloned()
+                        };
+                        if let Some((tag_id, label_name)) = label {
+                            {
+                                let mut s = lock_state(&state);
+                                s.selected_folder = Some(name.clone());
+                            }
+                            frame.set_title(&format!("{label_name} - Mail - Wixen Mail"));
+                            load_messages_with_label(&folder_cache, &state, &tag_id, &ui_tx);
+                            return;
+                        }
                         let (folder_id, account_id) = {
                             let mut s = lock_state(&state);
                             s.selected_folder = Some(name.clone());
@@ -2473,6 +2512,72 @@ impl WxMailApp {
                     Focus::Containers(ContainerKind::ContactGroup),
                 );
                 wire_context_menu(&cal_sb.tree, Focus::Containers(ContainerKind::Calendar));
+
+                // Hiding and showing a calendar.
+                //
+                // The sidebar has drawn a [x] against every calendar since it
+                // was written, and nothing could ever change one: the flag was
+                // stored, read, and never set, so the boxes were real, always
+                // ticked, and meant nothing. This is what they do.
+                //
+                // On activation, which is Enter as well as a double click, so
+                // it is reachable from the keyboard without a menu of its own.
+                cal_sb.tree.on_item_activated({
+                    let state = state.clone();
+                    let cal_tree = cal_sb.tree;
+                    let calendar_cache = message_cache.clone();
+                    let ui_tx = ui_tx.clone();
+                    let runtime = runtime.clone();
+                    let a11y = a11y.clone();
+                    move |event| {
+                        let Some(item) = event.get_item() else {
+                            return;
+                        };
+                        let Some(text) = cal_tree.get_item_text(&item) else {
+                            return;
+                        };
+                        // Which calendar the row is, found by matching the one
+                        // spelling of a row. Landing on the tree's own root is
+                        // a no-op, as it is in every other sidebar here.
+                        let landed_on = lock_state(&state)
+                            .calendars
+                            .iter()
+                            .find(|c| CalendarContainerItem::shown(&c.name, c.is_visible) == text)
+                            .map(|c| (c.id.clone(), c.name.clone(), c.is_visible));
+                        let Some((id, name, was_showing)) = landed_on else {
+                            return;
+                        };
+                        let Some(cache) = calendar_cache.as_ref() else {
+                            return;
+                        };
+                        if let Err(e) = cache.set_calendar_visibility(&id, !was_showing) {
+                            let _ = ui_tx.try_send(UIUpdate::ErrorOccurred(format!(
+                                "Could not change whether {name} is showing: {e}"
+                            )));
+                            return;
+                        }
+                        // Said rather than left to be noticed. The row's own
+                        // text changes when the sidebar is drawn again, and a
+                        // row redrawn under the cursor is not something a
+                        // screen reader announces on its own.
+                        let said = match was_showing {
+                            true => format!("{name} hidden"),
+                            false => format!("{name} showing"),
+                        };
+                        let _ = a11y.announce(
+                            &said,
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        send_status(&ui_tx, &runtime, &said);
+                        // The whole module, which redraws the sidebar's boxes
+                        // and reads the events again, now that one calendar
+                        // more or fewer is showing. Read back rather than
+                        // patched in memory, so the panel shows what is
+                        // stored, which is the thing that has to be true.
+                        let account = lock_state(&state).active_account_id.clone();
+                        load_module_data(PimModule::Calendar, &calendar_cache, account, &ui_tx);
+                    }
+                });
                 wire_context_menu(&tasks_sb.tree, Focus::Containers(ContainerKind::TaskList));
                 wire_context_menu(&notes_sb.tree, Focus::Containers(ContainerKind::NoteFolder));
             }
@@ -4362,6 +4467,45 @@ const FOLDER_LIST_PAGE_SIZE: usize = 500;
 /// Each row carries the account it came from, so flagging or deleting one from
 /// this list reaches the right server rather than whichever account happens to
 /// be open.
+/// Show the mail carrying one label.
+///
+/// Built the same way a folder listing is, down to the threading and the
+/// labels on each row, because it is the same list showing the same messages
+/// and a second shape would mean a label view missing what every other view
+/// of those messages shows.
+fn load_messages_with_label(
+    cache: &Option<Arc<MessageCache>>,
+    state: &Arc<StdMutex<WxUIState>>,
+    tag_id: &str,
+    tx: &Sender<UIUpdate>,
+) {
+    let Some(cache) = cache.as_ref() else {
+        let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
+        return;
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return;
+    };
+    match cache.messages_with_label(&account_id, tag_id, ALL_INBOXES_LIMIT) {
+        Ok(rows) => {
+            let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+            apply_threading(&rows, &mut items);
+            attach_labels(cache, &mut items);
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+        }
+        Err(e) => {
+            // Said rather than left as an empty list, for the reason every
+            // other listing here says so: no mail and mail that could not be
+            // read are different facts, and the empty one is the more
+            // reassuring to be told wrongly.
+            tracing::error!("Failed to read the mail carrying a label: {}", e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The mail with that label could not be read: {e}"
+            )));
+        }
+    }
+}
+
 fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
     let Some(cache) = cache.as_ref() else {
         let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
@@ -5149,7 +5293,23 @@ fn folder_tree_updates(
     // map has to be keyed on the same label the tree shows. Keyed on the bare
     // name it would miss every folder that had unread mail, which is the set
     // somebody is most likely to open.
+    // Labels first: the sidebar draws folders and labels in one pass, so they
+    // have to be in hand by the time FoldersLoaded rebuilds the tree.
+    //
+    // A label that cannot be read is not worth refusing a folder list over,
+    // so this reports nothing rather than failing: the tree simply has no
+    // Labels branch, which is also what an account with no labels shows.
+    let labels = cache.get_tags_for_account(account_id).unwrap_or_else(|e| {
+        tracing::warn!("The labels could not be read: {e}");
+        Vec::new()
+    });
     Ok(vec![
+        UIUpdate::LabelsLoaded(
+            labels
+                .iter()
+                .map(|tag| (tag.id.clone(), tag.name.clone()))
+                .collect(),
+        ),
         UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (folder_label(f), f.id)).collect()),
         UIUpdate::FoldersLoaded(folders.iter().map(folder_label).collect()),
     ])
@@ -5193,6 +5353,21 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
     } else {
         folder.name.clone()
     }
+}
+
+/// How a label reads in the mail sidebar.
+///
+/// The word is there to be heard as much as seen, and it is doing a second
+/// job: this tree holds text and nothing else, and the binding gives no way
+/// to ask which branch a row sits under, so the row's own words are the only
+/// way the handler can tell a label from a folder. A folder row is a bare
+/// name or ends in " unread", so nothing a folder produces reads this way.
+///
+/// One spelling, used by the tree that draws the row and the handler that
+/// resolves it, for the reason the calendar sidebar has one: two spellings
+/// would mean a row nothing could resolve.
+fn label_row(name: &str) -> String {
+    format!("{name}, label")
 }
 
 // ── What the status line says a module holds ────────────────────────────────
@@ -5541,12 +5716,13 @@ pub(crate) fn load_module_data(
             let containers = from_every(&sources, &mut failures, "calendars", |id| {
                 cache.get_calendars_for_account(id)
             });
-            updates.push(UIUpdate::CalendarContainersLoaded(
-                containers
-                    .iter()
-                    .map(CalendarContainerItem::from_entry)
-                    .collect(),
-            ));
+            // Built once and used twice: the sidebar draws them, and the
+            // event read below asks them which calendars are showing.
+            let shown_calendars: Vec<CalendarContainerItem> = containers
+                .iter()
+                .map(CalendarContainerItem::from_entry)
+                .collect();
+            updates.push(UIUpdate::CalendarContainersLoaded(shown_calendars.clone()));
             // The window is worked out first because the read is now bounded
             // by it. Reading every event in the account and then narrowing in
             // memory cost 277 ms against 68 ms on a six year calendar, and it
@@ -5559,10 +5735,26 @@ pub(crate) fn load_module_data(
                     &to.format("%Y-%m-%dT23:59:59Z").to_string(),
                 )
             });
+            // Calendars somebody has hidden are left out here rather than
+            // drawn and then filtered, so the count the status line gives is
+            // the count of what is on screen.
+            //
+            // The sidebar has shown a [x] against every calendar since it was
+            // written and nothing could ever change one: the flag was stored,
+            // read, and never set, and the events were drawn without asking
+            // about it at all. So the boxes were real, always ticked, and
+            // meant nothing.
+            let hidden = CalendarContainerItem::hidden_among(&shown_calendars);
+            let showing: Vec<_> = events
+                .into_iter()
+                .filter(|event| {
+                    CalendarContainerItem::is_showing(event.calendar_id.as_deref(), &hidden)
+                })
+                .collect();
             // Every day a series falls on, not one row per stored event. A
             // weekly meeting used to appear once, on the day it was set up.
             updates.push(UIUpdate::CalendarEventsLoaded(
-                CalendarEventItem::every_day_shown(&events, from, to),
+                CalendarEventItem::every_day_shown(&showing, from, to),
             ));
         }
         PimModule::Contacts => {
@@ -7279,6 +7471,19 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 for f in folders {
                     folder_tree.append_item(&root, f, None, None);
                 }
+                // Labels last and under a branch of their own, so arrowing
+                // through the folders somebody opens every day does not pass
+                // through a list of labels first. No branch at all when there
+                // are none, rather than an empty one to arrow into.
+                let labels = lock_state(state).labels.clone();
+                if !labels.is_empty()
+                    && let Some(branch) = folder_tree.append_item(&root, "Labels", None, None)
+                {
+                    for (_, name) in &labels {
+                        folder_tree.append_item(&branch, &label_row(name), None, None);
+                    }
+                    folder_tree.expand(&branch);
+                }
                 folder_tree.expand(&root);
                 // Back where it was. A sync finishing on a timer used to take
                 // the cursor away mid-list with only a count spoken.
@@ -7291,6 +7496,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::FolderIdsLoaded(pairs) => {
             let mut s = lock_state(state);
             s.folder_ids = pairs.iter().cloned().collect();
+        }
+        UIUpdate::LabelsLoaded(labels) => {
+            lock_state(state).labels = labels.clone();
         }
         UIUpdate::MessagesLoaded(messages) => {
             {
@@ -7538,15 +7746,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             frame.set_status_text(&label, 2);
         }
         UIUpdate::CalendarContainersLoaded(containers) => {
+            // Kept, so the handler that hides or shows one can work out which
+            // row was landed on. The tree holds text and nothing else.
+            lock_state(state).calendars = containers.clone();
             let was_on = what_the_cursor_was_on(&pim.cal_tree);
             pim.cal_tree.delete_all_items();
             if let Some(root) = pim.cal_tree.add_root("All Calendars", None, None) {
                 let rows: Vec<String> = containers
                     .iter()
-                    .map(|c| match c.is_visible {
-                        true => format!("[x] {}", c.name),
-                        false => format!("[ ] {}", c.name),
-                    })
+                    .map(|c| CalendarContainerItem::shown(&c.name, c.is_visible))
                     .collect();
                 for label in &rows {
                     pim.cal_tree.append_item(&root, label, None, None);
@@ -14591,5 +14799,289 @@ mod where_the_cursor_lands_after_a_rebuild {
     #[test]
     fn test_an_empty_tree_has_nowhere_to_land() {
         assert_eq!(the_row_to_land_on(Some("Archive"), &[]), None);
+    }
+}
+
+#[cfg(test)]
+mod hiding_a_calendar {
+    use super::{PimModule, UIUpdate, load_module_data};
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+    use std::sync::Arc;
+
+    fn a_calendar(id: &str, name: &str, is_visible: bool) -> CalendarContainer {
+        CalendarContainer {
+            id: id.to_string(),
+            account_id: "acct".to_string(),
+            name: name.to_string(),
+            color: "#336699".to_string(),
+            source_provider: Some("local".to_string()),
+            caldav_url: None,
+            subscription_url: None,
+            is_default: false,
+            is_visible,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: "2026-08-01T00:00:00Z".to_string(),
+            updated_at: "2026-08-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn an_event(id: &str, calendar_id: Option<&str>, summary: &str) -> CalendarEventEntry {
+        let today = chrono::Utc::now().date_naive();
+        CalendarEventEntry {
+            id: id.to_string(),
+            account_id: "acct".to_string(),
+            provider_event_id: None,
+            calendar_id: calendar_id.map(str::to_string),
+            summary: summary.to_string(),
+            description: None,
+            location: None,
+            start_datetime: format!("{today}T10:00:00Z"),
+            end_datetime: format!("{today}T11:00:00Z"),
+            start_date: None,
+            end_date: None,
+            is_all_day: false,
+            time_zone: None,
+            status: "confirmed".to_string(),
+            recurrence_rule: None,
+            categories: String::new(),
+            source_provider: Some("local".to_string()),
+            etag: None,
+            web_link: None,
+            show_as: "busy".to_string(),
+            last_modified_remote: None,
+            last_synced_at: None,
+            attendees_json: None,
+            reminders_json: None,
+            created_at: "2026-08-01T00:00:00Z".to_string(),
+            updated_at: "2026-08-01T00:00:00Z".to_string(),
+            pending: false,
+            exception_dates: None,
+            cut_from_event_id: None,
+            provider_recurrence_id: None,
+        }
+    }
+
+    /// What the calendar panel was told to draw.
+    fn events_drawn(updates: &[UIUpdate]) -> Vec<String> {
+        updates
+            .iter()
+            .find_map(|update| match update {
+                UIUpdate::CalendarEventsLoaded(items) => {
+                    Some(items.iter().map(|i| i.summary.clone()).collect())
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn test_a_hidden_calendars_events_are_not_drawn() {
+        // The sidebar has drawn a [x] against every calendar since it was
+        // written and nothing could ever change one: the flag was stored,
+        // read, and never set, and the day list was filled without asking
+        // about it at all. So the boxes were real, always ticked, and meant
+        // nothing at all to what somebody saw.
+        // `MessageCache` wraps a rusqlite connection and is not `Sync`, so the
+        // `Arc` buys sharing with the function under test rather than thread
+        // safety. Production holds it the same way, which is what makes this
+        // the right mirror rather than a lint to silence.
+        #[allow(clippy::arc_with_non_send_sync)]
+        let home = TempHome::named("hiding_a_calendar", |dir| {
+            Arc::new(MessageCache::new(dir.to_path_buf(), None).expect("a cache"))
+        });
+        home.save_calendar(&a_calendar("work", "Work", true))
+            .expect("a calendar");
+        home.save_calendar(&a_calendar("gym", "Gym", false))
+            .expect("a hidden calendar");
+        home.save_calendar_event(&an_event("e1", Some("work"), "Standup"))
+            .expect("an event");
+        home.save_calendar_event(&an_event("e2", Some("gym"), "Swimming"))
+            .expect("an event in the hidden calendar");
+        home.save_calendar_event(&an_event("e3", None, "Filed under nothing"))
+            .expect("an event in no calendar");
+
+        let (tx, rx) = async_channel::unbounded();
+        load_module_data(
+            PimModule::Calendar,
+            &Some(Arc::clone(&home)),
+            Some("acct".to_string()),
+            &tx,
+        );
+
+        let mut updates = Vec::new();
+        while let Ok(update) = rx.try_recv() {
+            updates.push(update);
+        }
+        let drawn = events_drawn(&updates);
+
+        assert!(drawn.contains(&"Standup".to_string()), "{drawn:?}");
+        assert!(
+            !drawn.contains(&"Swimming".to_string()),
+            "an event in a hidden calendar was drawn anyway: {drawn:?}"
+        );
+        assert!(
+            drawn.contains(&"Filed under nothing".to_string()),
+            "an event filed under no calendar was hidden, which hides somebody's \
+             appointments over a detail of how they are stored: {drawn:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod showing_the_mail_with_a_label {
+    use super::{PimModule, UIUpdate, folder_label, label_row, load_module_data};
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, Tag};
+    use std::sync::Arc;
+
+    fn arriving(folder_id: i64, uid: u32, subject: &str) -> IncomingMessage {
+        IncomingMessage {
+            folder_id,
+            uid,
+            message_id: format!("<{uid}@example.com>"),
+            subject: subject.to_string(),
+            from_addr: "ada@example.com".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            reply_to: None,
+            date: "2026-08-01T09:00:00+00:00".to_string(),
+            internal_date: None,
+            size_bytes: None,
+            refs_header: None,
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
+            receipt_to: None,
+            pop_uidl: None,
+        }
+    }
+
+    #[test]
+    fn test_a_label_row_cannot_be_mistaken_for_a_folder() {
+        // The tree holds text and nothing else, and the binding gives no way
+        // to ask which branch a row sits under, so the row's own words are all
+        // the handler has to tell a label from a folder. A folder row is a
+        // bare name or ends in " unread".
+        let folder = CachedFolder {
+            id: 1,
+            account_id: "acct".to_string(),
+            name: "Work".to_string(),
+            path: "Work".to_string(),
+            folder_type: "Custom".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        };
+        let with_unread = CachedFolder {
+            unread_count: 3,
+            ..folder.clone()
+        };
+
+        assert_ne!(label_row("Work"), folder_label(&folder));
+        assert_ne!(label_row("Work"), folder_label(&with_unread));
+        assert_eq!(label_row("Work"), "Work, label");
+    }
+
+    #[test]
+    fn test_the_labels_an_account_has_reach_the_sidebar() {
+        // Nothing could ever ask to see the mail carrying a label: the query
+        // existed, answered with a shape the list could not draw, and had no
+        // caller outside its own test. This is the path that reaches it.
+        #[allow(clippy::arc_with_non_send_sync)]
+        let home = TempHome::named("labels_reach_the_sidebar", |dir| {
+            Arc::new(MessageCache::new(dir.to_path_buf(), None).expect("a cache"))
+        });
+        home.save_folder(&CachedFolder {
+            id: 0,
+            account_id: "acct".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("a folder");
+        home.create_tag(&Tag {
+            id: "tag-work".to_string(),
+            account_id: "acct".to_string(),
+            name: "Work".to_string(),
+            color: "#336699".to_string(),
+            created_at: "2026-08-01T00:00:00Z".to_string(),
+            keyword: None,
+        })
+        .expect("a label");
+
+        let (tx, rx) = async_channel::unbounded();
+        load_module_data(
+            PimModule::Mail,
+            &Some(Arc::clone(&home)),
+            Some("acct".to_string()),
+            &tx,
+        );
+
+        let mut labels = None;
+        while let Ok(update) = rx.try_recv() {
+            if let UIUpdate::LabelsLoaded(found) = update {
+                labels = Some(found);
+            }
+        }
+
+        assert_eq!(
+            labels.expect("the sidebar to be told about the labels"),
+            vec![("tag-work".to_string(), "Work".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_only_the_mail_carrying_the_label_is_listed() {
+        #[allow(clippy::arc_with_non_send_sync)]
+        let home = TempHome::named("only_labelled_mail", |dir| {
+            Arc::new(MessageCache::new(dir.to_path_buf(), None).expect("a cache"))
+        });
+        let inbox = home
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        home.create_tag(&Tag {
+            id: "tag-work".to_string(),
+            account_id: "acct".to_string(),
+            name: "Work".to_string(),
+            color: "#336699".to_string(),
+            created_at: "2026-08-01T00:00:00Z".to_string(),
+            keyword: None,
+        })
+        .expect("a label");
+        let labelled = home
+            .upsert_message(&arriving(inbox, 1, "The quarterly figures"))
+            .expect("a message");
+        home.upsert_message(&arriving(inbox, 2, "Something else"))
+            .expect("another message");
+        home.add_tag_to_message(labelled, "tag-work")
+            .expect("the label goes on");
+
+        let listed = home
+            .messages_with_label("acct", "tag-work", 500)
+            .expect("the listing");
+
+        assert_eq!(listed.len(), 1, "{listed:#?}");
+        assert_eq!(listed[0].subject, "The quarterly figures");
     }
 }

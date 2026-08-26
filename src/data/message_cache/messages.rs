@@ -43,6 +43,53 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
     )
 }
 
+/// Read one row of a message listing.
+///
+/// Every listing query selects the same columns in the same order, and each
+/// one used to unpack them itself. Three copies of the same twenty-one
+/// `row.get` calls is three chances for one of them to drift a column, and a
+/// drifted column here does not fail: it puts one message's subject beside
+/// another's date. The queries name the columns; this reads them.
+///
+/// Column order is the contract between the two, and it is stated in each
+/// query rather than derived, because SQLite has no way to ask for a column by
+/// name from a positional row.
+pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRow> {
+    Ok(MessageListRow {
+        id: row.get(0)?,
+        uid: row.get(1)?,
+        account_id: row.get(2)?,
+        message_id: row.get(3)?,
+        refs_header: row.get(4)?,
+        subject: row.get(5)?,
+        from_addr: row.get(6)?,
+        to_addr: row.get(7)?,
+        cc: row.get(8)?,
+        reply_to: row.get(9)?,
+        date: row.get(10)?,
+        snippet: row.get(11)?,
+        size_bytes: row.get(12)?,
+        read: row.get(13)?,
+        starred: row.get(14)?,
+        answered: row.get(15)?,
+        draft: row.get(16)?,
+        has_attachments: row.get(17)?,
+        safety: crate::service::safety::Safety::from_stored(
+            &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
+        ),
+        // Stored one per line, because SQLite has no list type worth the
+        // trouble and the bar reads them as sentences.
+        safety_reasons: row
+            .get::<_, Option<String>>(19)?
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect(),
+        receipt_to: row.get(20)?,
+    })
+}
+
 /// The query the All Inboxes view runs, in one place.
 ///
 /// Here rather than inline for the reason [`listing_query`] is: a test asks
@@ -838,41 +885,7 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to prepare the unified inbox: {}", e)))?;
 
         let rows = stmt
-            .query_map([], |row| {
-                Ok(MessageListRow {
-                    id: row.get(0)?,
-                    uid: row.get(1)?,
-                    account_id: row.get(2)?,
-                    message_id: row.get(3)?,
-                    refs_header: row.get(4)?,
-                    subject: row.get(5)?,
-                    from_addr: row.get(6)?,
-                    to_addr: row.get(7)?,
-                    cc: row.get(8)?,
-                    reply_to: row.get(9)?,
-                    date: row.get(10)?,
-                    snippet: row.get(11)?,
-                    size_bytes: row.get(12)?,
-                    read: row.get(13)?,
-                    starred: row.get(14)?,
-                    answered: row.get(15)?,
-                    draft: row.get(16)?,
-                    has_attachments: row.get(17)?,
-                    safety: crate::service::safety::Safety::from_stored(
-                        &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
-                    ),
-                    // Stored one per line, because SQLite has no list type
-                    // worth the trouble and the bar reads them as sentences.
-                    safety_reasons: row
-                        .get::<_, Option<String>>(19)?
-                        .unwrap_or_default()
-                        .lines()
-                        .filter(|line| !line.trim().is_empty())
-                        .map(str::to_string)
-                        .collect(),
-                    receipt_to: row.get(20)?,
-                })
-            })
+            .query_map([], listing_row)
             .map_err(|e| Error::Other(format!("Failed to read the unified inbox: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect the unified inbox: {}", e)))?;
@@ -917,41 +930,7 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to prepare listing query: {}", e)))?;
 
         let rows = stmt
-            .query_map(params![folder_id, account_id], |row| {
-                Ok(MessageListRow {
-                    id: row.get(0)?,
-                    uid: row.get(1)?,
-                    account_id: row.get(2)?,
-                    message_id: row.get(3)?,
-                    refs_header: row.get(4)?,
-                    subject: row.get(5)?,
-                    from_addr: row.get(6)?,
-                    to_addr: row.get(7)?,
-                    cc: row.get(8)?,
-                    reply_to: row.get(9)?,
-                    date: row.get(10)?,
-                    snippet: row.get(11)?,
-                    size_bytes: row.get(12)?,
-                    read: row.get(13)?,
-                    starred: row.get(14)?,
-                    answered: row.get(15)?,
-                    draft: row.get(16)?,
-                    has_attachments: row.get(17)?,
-                    safety: crate::service::safety::Safety::from_stored(
-                        &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
-                    ),
-                    // Stored one per line, because SQLite has no list type
-                    // worth the trouble and the bar reads them as sentences.
-                    safety_reasons: row
-                        .get::<_, Option<String>>(19)?
-                        .unwrap_or_default()
-                        .lines()
-                        .filter(|line| !line.trim().is_empty())
-                        .map(str::to_string)
-                        .collect(),
-                    receipt_to: row.get(20)?,
-                })
-            })
+            .query_map(params![folder_id, account_id], listing_row)
             .map_err(|e| Error::Other(format!("Failed to list messages: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect listing: {}", e)))?;

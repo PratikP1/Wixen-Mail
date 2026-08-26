@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can hide a calendar, and hiding one now does something.** The
+  calendar sidebar has always shown a tick box against each calendar. It was
+  always ticked, nothing could change it, and the day list was filled without
+  ever consulting it. Press Enter on a calendar in the sidebar to hide or show
+  it. Its events leave and rejoin the day list, and the change is announced
+  and kept.
+
+  Events that belong to no calendar are always shown. Those are events made
+  before an event recorded which calendar it was in, and hiding them would
+  mean losing appointments over a detail of how they happen to be stored.
+
+- **You can see the mail carrying a label.** Labels now appear in the mail
+  sidebar under a Labels heading, below your folders. Choosing one lists the
+  messages carrying it, with the same columns, threading and labels as any
+  other view of the same mail. Before this there was no way to ask.
+
 - **Ctrl+F now searches whatever you are looking at.** It always searched
   your mail, whichever module was on screen, so pressing Find while reading
   your contacts threw the contacts list away and put a list of messages in

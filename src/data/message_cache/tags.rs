@@ -1,6 +1,8 @@
 //! Tag and message-tag junction persistence operations
 
-use super::{CachedMessage, MessageCache, Tag};
+#[cfg(test)]
+use super::CachedMessage;
+use super::{MessageCache, Tag};
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
@@ -267,39 +269,47 @@ impl MessageCache {
     }
 
     /// Get all messages with a specific tag
-    pub fn get_messages_by_tag(&self, tag_id: &str) -> Result<Vec<CachedMessage>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
-                    m.body_plain, m.body_html, m.read, m.starred, m.deleted
+    /// The messages carrying a label, as the list draws them.
+    ///
+    /// The same row a folder listing produces, and deliberately so: the mail
+    /// list has one shape, and a second one would mean a label view missing
+    /// the snippet, the size and the attachment marker that every other view
+    /// of the same messages shows.
+    ///
+    /// Replaced `get_messages_by_tag`, which answered with a different shape,
+    /// read body text out of the columns it stopped being written to, and had
+    /// no caller at all outside its own test: nothing in the application
+    /// could ever ask to see the mail carrying a label.
+    pub fn messages_with_label(
+        &self,
+        account_id: &str,
+        tag_id: &str,
+        limit: usize,
+    ) -> Result<Vec<super::MessageListRow>> {
+        let query = format!(
+            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
+                    m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                    m.read, m.starred, m.answered, m.draft,
+                    (m.has_attachments = 1
+                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                    m.safety, m.safety_reasons, m.receipt_to
              FROM messages m
              INNER JOIN message_tags mt ON m.id = mt.message_id
-             WHERE mt.tag_id = ?1 AND m.deleted = 0
-             ORDER BY m.date DESC"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE mt.tag_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
+             ORDER BY m.date DESC, m.uid DESC
+             LIMIT {}",
+            limit as i64
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&query)
+            .map_err(|e| Error::Other(format!("Failed to prepare the label listing: {}", e)))?;
 
-        let messages = stmt
-            .query_map(params![tag_id], |row| {
-                Ok(CachedMessage {
-                    id: row.get(0)?,
-                    uid: row.get(1)?,
-                    folder_id: row.get(2)?,
-                    message_id: row.get(3)?,
-                    subject: row.get(4)?,
-                    from_addr: row.get(5)?,
-                    to_addr: row.get(6)?,
-                    cc: row.get(7)?,
-                    date: row.get(8)?,
-                    body_plain: row.get(9)?,
-                    body_html: row.get(10)?,
-                    read: row.get(11)?,
-                    starred: row.get(12)?,
-                    deleted: row.get(13)?,
-                })
-            })
-            .map_err(|e| Error::Other(format!("Failed to query messages by tag: {}", e)))?
+        stmt.query_map(params![tag_id, account_id], super::messages::listing_row)
+            .map_err(|e| Error::Other(format!("Failed to list messages with a label: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect messages by tag: {}", e)))?;
-        Ok(messages)
+            .map_err(|e| Error::Other(format!("Failed to read a labelled message: {}", e)))
     }
 }
 
@@ -599,9 +609,22 @@ mod tests {
         let message_tags = cache.get_tags_for_message(message_id).unwrap();
         assert_eq!(message_tags.len(), 2);
 
-        let messages = cache.get_messages_by_tag("tag-important").unwrap();
+        let messages = cache
+            .messages_with_label("test@example.com", "tag-important", 50)
+            .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Message");
+
+        // Scoped to the account, the way every other listing here is. A label
+        // belongs to an account, so a label id from one must never draw in
+        // another's mail even if the ids were ever to collide.
+        assert!(
+            cache
+                .messages_with_label("someone@else.example", "tag-important", 50)
+                .unwrap()
+                .is_empty(),
+            "a label listing reached another account's mail"
+        );
 
         cache
             .remove_tag_from_message(message_id, "tag-personal")
