@@ -2,10 +2,7 @@
 //!
 //! Manages email messages, threads, and message operations.
 
-use crate::common::{
-    Result,
-    types::{Attachment, EmailAddress, Id, MessageBody},
-};
+use crate::common::types::{Attachment, EmailAddress, Id, MessageBody};
 use crate::data::message_cache::CachedMessage;
 use chrono::{DateTime, Utc};
 
@@ -149,59 +146,6 @@ impl From<CachedMessage> for Message {
     }
 }
 
-/// Manages email messages
-#[derive(Default)]
-pub struct MessageManager {
-    messages: Vec<Message>,
-}
-
-impl MessageManager {
-    /// Create a new message manager
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            messages: Vec::new(),
-        })
-    }
-
-    /// Add a message
-    pub fn add_message(&mut self, message: Message) -> Result<()> {
-        self.messages.push(message);
-        Ok(())
-    }
-
-    /// Get all messages
-    pub fn get_messages(&self) -> &[Message] {
-        &self.messages
-    }
-
-    /// Get message by ID
-    pub fn get_message(&self, id: &str) -> Option<&Message> {
-        self.messages.iter().find(|m| m.id == id)
-    }
-
-    /// Mark message as read
-    pub fn mark_as_read(&mut self, id: &str) -> Result<()> {
-        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == id) {
-            msg.flags.read = true;
-        }
-        Ok(())
-    }
-
-    /// Delete a message by ID
-    pub fn delete_message(&mut self, id: &str) -> Result<()> {
-        self.messages.retain(|m| m.id != id);
-        Ok(())
-    }
-
-    /// Toggle read/unread status
-    pub fn toggle_read(&mut self, id: &str) -> Result<()> {
-        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == id) {
-            msg.flags.read = !msg.flags.read;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,64 +219,5 @@ mod tests {
         assert_eq!(msg.tags.len(), 2);
         assert!(msg.tags.contains(&"important".to_string()));
         assert!(msg.tags.contains(&"work".to_string()));
-    }
-
-    #[test]
-    fn test_mark_as_read() {
-        let mut manager = MessageManager::new().unwrap();
-        let from = EmailAddress::new("sender@example.com".to_string(), None);
-        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
-        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
-        let id = msg.id.clone();
-
-        manager.add_message(msg).unwrap();
-        manager.mark_as_read(&id).unwrap();
-
-        let msg = manager.get_message(&id).unwrap();
-        assert!(msg.flags.read);
-    }
-
-    #[test]
-    fn test_delete_message_removes_it() {
-        let mut manager = MessageManager::new().unwrap();
-        let from = EmailAddress::new("sender@example.com".to_string(), None);
-        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
-        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
-        let id = msg.id.clone();
-
-        manager.add_message(msg).unwrap();
-        assert_eq!(manager.get_messages().len(), 1);
-
-        manager.delete_message(&id).unwrap();
-        assert_eq!(manager.get_messages().len(), 0);
-        assert!(manager.get_message(&id).is_none());
-    }
-
-    #[test]
-    fn test_delete_nonexistent_message_is_noop() {
-        let mut manager = MessageManager::new().unwrap();
-        let from = EmailAddress::new("sender@example.com".to_string(), None);
-        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
-        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
-        manager.add_message(msg).unwrap();
-
-        manager.delete_message("nonexistent-id").unwrap();
-        assert_eq!(manager.get_messages().len(), 1);
-    }
-
-    #[test]
-    fn test_toggle_read_unread() {
-        let mut manager = MessageManager::new().unwrap();
-        let from = EmailAddress::new("sender@example.com".to_string(), None);
-        let to = vec![EmailAddress::new("recipient@example.com".to_string(), None)];
-        let msg = Message::new_simple("Test".to_string(), from, to, "Body".to_string());
-        let id = msg.id.clone();
-        manager.add_message(msg).unwrap();
-
-        assert!(!manager.get_message(&id).unwrap().flags.read);
-        manager.mark_as_read(&id).unwrap();
-        assert!(manager.get_message(&id).unwrap().flags.read);
-        manager.toggle_read(&id).unwrap();
-        assert!(!manager.get_message(&id).unwrap().flags.read);
     }
 }

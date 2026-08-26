@@ -597,31 +597,6 @@ impl ConfigManager {
     pub fn app_config_mut(&mut self) -> &mut AppConfig {
         &mut self.app_config
     }
-
-    /// Get account configuration
-    pub fn get_account_config(&self, account_id: &str) -> Option<&AccountConfig> {
-        self.account_configs.get(account_id)
-    }
-
-    /// Add or update account configuration
-    pub fn set_account_config(&mut self, account_config: AccountConfig) -> Result<()> {
-        account_config.validate()?;
-        self.account_configs
-            .insert(account_config.id.clone(), account_config);
-        Ok(())
-    }
-
-    /// Remove account configuration
-    pub fn remove_account_config(&mut self, account_id: &str) -> Result<()> {
-        self.account_configs.remove(account_id);
-        let path = self.account_config_path(account_id);
-        if path.exists() {
-            fs::remove_file(path).map_err(|e| {
-                Error::Config(format!("Failed to remove account config file: {}", e))
-            })?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -654,98 +629,6 @@ mod tests {
             crate::application::allowed::Allowed::NOTHING,
             "an upgrade would have handed back permissions somebody took away"
         );
-    }
-
-    #[test]
-    fn test_an_account_s_settings_come_back_from_its_own_file() {
-        let dir = tempfile::TempDir::new().expect("a temporary folder");
-        let mut first =
-            ConfigManager::in_dir(dir.path().join("config")).expect("a settings folder");
-        let mut account = AccountConfig::new("acc-1".to_string(), "Work".to_string());
-        account.check_interval_minutes = 30;
-        account.default_folder = "Archive".to_string();
-        account.signature = Some("Sent from Wixen Mail".to_string());
-        first
-            .set_account_config(account)
-            .expect("the account to be accepted");
-        first.save().expect("the settings to be written");
-
-        let mut later =
-            ConfigManager::in_dir(dir.path().join("config")).expect("the same settings folder");
-        later.load().expect("the settings to be read back");
-
-        let read_back = later
-            .get_account_config("acc-1")
-            .expect("the account to have been read back");
-        assert_eq!(read_back.name, "Work");
-        assert_eq!(read_back.check_interval_minutes, 30);
-        assert_eq!(read_back.default_folder, "Archive");
-        assert_eq!(read_back.signature.as_deref(), Some("Sent from Wixen Mail"));
-    }
-
-    #[test]
-    fn test_only_the_account_files_are_read_as_accounts() {
-        // The second time this shape has come up: `is_settings_file` in
-        // `common` had the same two halves never checked apart. With `or` in
-        // place of `and`, every .json file in the folder is opened as an
-        // account, and one that does not parse stops the settings loading at
-        // all, which is somebody's whole configuration gone on startup.
-        let dir = tempfile::TempDir::new().expect("a temporary folder");
-        let folder = dir.path().join("config");
-        let mut manager = ConfigManager::in_dir(folder.clone()).expect("a settings folder");
-        manager
-            .set_account_config(a_valid_account_config())
-            .expect("the account to be accepted");
-        manager.save().expect("the settings to be written");
-
-        // Neither of these is an account file, and each is one half of the
-        // test the loader makes.
-        fs::write(folder.join("notes.json"), "{\"not\": \"an account\"}")
-            .expect("a stray json file");
-        fs::write(folder.join("account_notes.txt"), "not json at all")
-            .expect("a stray account-looking file");
-
-        let mut later = ConfigManager::in_dir(folder).expect("the same settings folder");
-        later
-            .load()
-            .expect("a stray file in the folder stopped the settings loading");
-
-        assert!(later.get_account_config("acc-1").is_some());
-        assert!(later.get_account_config("notes").is_none());
-        assert!(later.get_account_config("account_notes").is_none());
-    }
-
-    #[test]
-    fn test_removing_an_account_takes_its_file_with_it() {
-        // A file left behind is an account that comes back on the next start,
-        // after somebody has deleted it.
-        let dir = tempfile::TempDir::new().expect("a temporary folder");
-        let folder = dir.path().join("config");
-        let mut manager = ConfigManager::in_dir(folder.clone()).expect("a settings folder");
-        manager
-            .set_account_config(a_valid_account_config())
-            .expect("the account to be accepted");
-        manager.save().expect("the settings to be written");
-        assert!(folder.join("account_acc-1.json").exists());
-
-        manager
-            .remove_account_config("acc-1")
-            .expect("the account to be removed");
-
-        assert!(
-            !folder.join("account_acc-1.json").exists(),
-            "the account's file is still in the settings folder"
-        );
-        let mut later = ConfigManager::in_dir(folder).expect("the same settings folder");
-        later.load().expect("the settings to be read back");
-        assert!(
-            later.get_account_config("acc-1").is_none(),
-            "the deleted account came back on the next start"
-        );
-    }
-
-    fn a_valid_account_config() -> AccountConfig {
-        AccountConfig::new("acc-1".to_string(), "Work".to_string())
     }
 
     #[test]
@@ -817,17 +700,6 @@ mod tests {
 
         config.check_interval_minutes = 2000;
         assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_config_manager_account_config() {
-        let mut manager = ConfigManager::new().unwrap();
-        let account_config = AccountConfig::new("acc-1".to_string(), "Test".to_string());
-
-        manager.set_account_config(account_config.clone()).unwrap();
-        let retrieved = manager.get_account_config("acc-1");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().name, "Test");
     }
 
     #[test]

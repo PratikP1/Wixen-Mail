@@ -44,7 +44,14 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 295 records have arrived since and have not been through it.
+# 289 records have arrived since and have not been through it.
+#
+# Six went on 2026-08-26 with the code they were about: five in
+# application/notes.rs, whose module doc already said nothing in the running
+# program reached it, and one on the duplicate-address check in
+# data::account::AccountManager. Removed rather than re-measured, because
+# there is nothing left to measure by hand when the code a record names has
+# gone; the test each one required to redden went with it.
 #
 # Those two numbers add up to the records in this file, and
 # `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -2141,24 +2148,6 @@ red = [
 # already holds. Everything stored is filed under an account's identifier, so a
 # second account for one mailbox is a second mailbox as far as the rest of the
 # program is concerned.
-
-[[guard]]
-name = "one mailbox is one account however its address is written"
-file = "src/data/account.rs"
-before = """            .any(|a| a.email.trim().eq_ignore_ascii_case(account.email.trim()))"""
-after = """            .any(|a| a.email == account.email)"""
-red = [
-    "data::account::tests::test_the_same_mailbox_typed_with_capitals_is_still_the_same_mailbox",
-]
-
-# ── Which answer Enter gives, and who hears what a choice costs ─────────────
-#
-# A message box with Yes and No on it gives Yes to Enter unless it is told
-# otherwise. Both questions asked before a deletion were built that way, so
-# somebody who pressed Enter partway through hearing one had deleted the thing
-# and nothing here can undo it. The flag is what stops that, and it is one word
-# at the end of a line, which is the kind of thing a later edit takes off
-# without noticing.
 
 [[guard]]
 name = "a deletion that cannot be undone does not let Enter answer Yes"
@@ -8297,100 +8286,6 @@ red = ["service::safebrowsing::urls::tests::test_a_part_that_only_looks_numeric_
 # same folder by content, not only the folder test built to catch it; adding
 # a folder that never gets pushed does not, since nothing there reads it back
 # through the cache.
-
-[[guard]]
-name = "load_notes really reads the folders and notes the cache holds, not a stub returning Ok"
-file = "src/application/notes.rs"
-before = """        self.folders = cache.get_note_folders_for_account(account_id)?;
-        self.notes = cache.get_all_notes_for_account(account_id)?;
-        Ok(())"""
-after = """        let _ = (cache, account_id);
-        Ok(())"""
-red = ["application::notes::tests::test_load_notes_reads_the_folders_and_notes_the_cache_holds"]
-
-[[guard]]
-name = "all_folders reflects what was added, not a permanently empty slice"
-file = "src/application/notes.rs"
-before = """        &self.folders"""
-after = """        Vec::leak(Vec::new())"""
-red = [
-    "application::notes::tests::test_all_folders_reflects_what_was_added",
-    "application::notes::tests::test_load_notes_reads_the_folders_and_notes_the_cache_holds",
-]
-
-[[guard]]
-name = "add_folder really stores the folder it is given, not a no-op"
-file = "src/application/notes.rs"
-before = """        self.folders.push(folder);"""
-after = """        let _ = folder;"""
-red = ["application::notes::tests::test_all_folders_reflects_what_was_added"]
-
-[[guard]]
-name = "remove_note takes only the one asked for, not every other one"
-file = "src/application/notes.rs"
-before = """        self.notes.retain(|n| n.id != note_id);"""
-after = """        self.notes.retain(|n| n.id == note_id);"""
-red = ["application::notes::tests::test_remove_note_takes_only_the_one_asked_for"]
-
-[[guard]]
-name = "adding a note really sorts pinned first then most recently changed, not a no-op"
-file = "src/application/notes.rs"
-before = """        self.notes.sort_by(|a, b| {
-            b.pinned
-                .cmp(&a.pinned)
-                .then_with(|| b.updated_at.cmp(&a.updated_at))
-        });"""
-after = """        let _ = &self.notes;"""
-red = ["application::notes::tests::test_adding_a_note_sorts_pinned_first_then_most_recently_changed"]
-
-# ── Data, common and misc-service, from the 2026-08-22 mutation-sweep round ─
-#
-# 102 misses and two timeouts across attachment_name.rs, pdf.rs,
-# spellcheck/mod.rs, spellcheck/windows_speller.rs, message_cache/bodies.rs
-# and common/error.rs. Forty guarded below, all in pdf.rs and the two
-# spellcheck files.
-#
-# attachment_name.rs's one miss is genuinely equivalent and documented in a
-# comment rather than a debug_assert!: an all-dots name reaches the same
-# `FALLBACK` whether the early return fires or falls through to
-# `trim_end_matches` doing the identical stripping, which is a structural
-# fact about the code shape rather than a runtime invariant, so there is
-# nothing left to assert. message_cache/bodies.rs's three arithmetic misses
-# guard a `tracing::info!` line only; the real return value is already
-# covered elsewhere, and this codebase has no precedent for capturing tracing
-# output in a test. common/error.rs's two timeouts are both real, both
-# already fixed with a pair of debug_assert!s proving forward progress on
-# `redact_provider_message`'s cursor, and neither is guarded, matching this
-# round's other debug_assert-hardened timeout in safebrowsing/urls.rs.
-#
-# spellcheck/mod.rs's own `check_text` has one more genuinely equivalent
-# miss, a `||` that cannot be told from `&&`: `is_whitespace()` already
-# includes `\n` and `\r` as Unicode White_Space, so the two explicit checks
-# after it never change what the split produces either way. Documented in
-# place. `system_language`'s non-Windows body is not reachable by any check
-# this project runs (every workflow targets `windows-latest`), so a mutation
-# inside it changes tokens the compiler never sees on the only platform
-# anything here builds for; written down rather than asserted, since there is
-# no runtime state to check.
-#
-# windows_speller.rs's COM-dependent surface is untested by design and
-# undisturbed here: `ensure_com_initialised`, `for_language`,
-# `supported_languages`, and all five `Speller` trait methods on
-# `WindowsSpeller` (`check`, `suggest`, `add_to_dictionary`, `ignore`, the
-# plain `language` accessor, `source`) all need a live COM spell-checking
-# factory that `WindowsSpeller`'s only constructor requires and that this
-# project's own CI runners are not guaranteed to have. `display_name` and
-# `Wide::as_pcwstr`, in the same file but not COM, are guarded below.
-#
-# Measured by hand: each guard applied alone, against the whole crate's
-# `service::spellcheck` or `service::pdf` scope (broad enough to catch a
-# break reaching outside the file it is in), reddened exactly the test(s)
-# named and nothing else. Restored and reran green after each. Several
-# entries name more than one test where a single local guard, once broken,
-# is also what a sibling test or an integration-level test above it depends
-# on; two arithmetic mutants first suspected of pinning `display_name`
-# turned out not to redden its test at all; the whole-function replacement
-# does, and is what is recorded here instead.
 
 [[guard]]
 name = "a real heading is found and placed correctly in the text, not an empty page"

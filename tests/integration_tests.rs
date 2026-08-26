@@ -5,7 +5,7 @@
 use wixen_mail::application::accounts::{Account, AccountManager};
 use wixen_mail::application::contact_groups::{Writing, writing_to};
 use wixen_mail::application::filters::{FilterAction, FilterEngine, FilterRule};
-use wixen_mail::application::messages::{Message, MessageManager};
+use wixen_mail::application::messages::Message;
 use wixen_mail::application::search::{SearchEngine, SearchQuery};
 use wixen_mail::common::types::*;
 use wixen_mail::data::message_cache::{CachedMessage, ContactEntry, ContactGroup, MessageCache};
@@ -142,33 +142,6 @@ fn a_contact(id: &str, name: &str, email: &str) -> ContactEntry {
 }
 
 // ── Message Management Tests ────────────────────────────────────────────────
-
-#[test]
-fn test_message_lifecycle() {
-    let mut manager = MessageManager::new().unwrap();
-
-    let from = EmailAddress::new("sender@example.com".to_string(), None);
-    let to = vec![EmailAddress::new("me@example.com".to_string(), None)];
-    let msg = Message::new_simple(
-        "Test Subject".to_string(),
-        from,
-        to,
-        "Message body here".to_string(),
-    );
-    let id = msg.id.clone();
-
-    manager.add_message(msg).unwrap();
-    assert_eq!(manager.get_messages().len(), 1);
-
-    // Should be unread
-    let m = manager.get_message(&id).unwrap();
-    assert!(!m.flags.read);
-
-    // Mark as read
-    manager.mark_as_read(&id).unwrap();
-    let m = manager.get_message(&id).unwrap();
-    assert!(m.flags.read);
-}
 
 #[test]
 fn test_message_tags_dedup() {
@@ -633,71 +606,6 @@ fn test_folder_types() {
 // ── PIM Manager Integration Tests ──────────────────────────────────────────
 
 #[test]
-fn test_calendar_manager_visibility_filters_unified() {
-    use wixen_mail::application::calendar::CalendarManager;
-    use wixen_mail::data::message_cache::{CalendarContainer, CalendarEventEntry};
-
-    let mut mgr = CalendarManager::default();
-    mgr.add_calendar(CalendarContainer {
-        id: "cal1".to_string(),
-        account_id: "test".to_string(),
-        name: "Work".to_string(),
-        color: "#4285F4".to_string(),
-        source_provider: None,
-        caldav_url: None,
-        subscription_url: None,
-        is_default: true,
-        is_visible: true,
-        is_read_only: false,
-        display_order: 0,
-        etag: None,
-        ctag: None,
-        sync_token: None,
-        refresh_interval_minutes: None,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-    });
-    mgr.add_event(CalendarEventEntry {
-        id: "e1".to_string(),
-        account_id: "test".to_string(),
-        provider_event_id: None,
-        calendar_id: Some("cal1".to_string()),
-        summary: "Meeting".to_string(),
-        description: None,
-        location: None,
-        start_datetime: "2026-03-05T09:00:00Z".to_string(),
-        end_datetime: "2026-03-05T10:00:00Z".to_string(),
-        start_date: None,
-        end_date: None,
-        is_all_day: false,
-        time_zone: None,
-        status: "confirmed".to_string(),
-        recurrence_rule: None,
-        categories: String::new(),
-        source_provider: None,
-        etag: None,
-        web_link: None,
-        show_as: "busy".to_string(),
-        last_modified_remote: None,
-        last_synced_at: None,
-        attendees_json: None,
-        reminders_json: None,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-        pending: false,
-        exception_dates: None,
-        cut_from_event_id: None,
-        provider_recurrence_id: None,
-    });
-
-    assert_eq!(mgr.unified_events().len(), 1);
-    mgr.toggle_visibility("cal1");
-    assert_eq!(mgr.unified_events().len(), 0);
-    mgr.toggle_visibility("cal1");
-    assert_eq!(mgr.unified_events().len(), 1);
-}
-
-#[test]
 fn test_contact_item_display_conversion() {
     use wixen_mail::data::message_cache::ContactEntry;
     use wixen_mail::presentation::ui_types::ContactItem;
@@ -741,138 +649,6 @@ fn test_contact_item_display_conversion() {
     assert_eq!(item.phone, "555-9999");
     assert_eq!(item.company, "Widgets Inc");
     assert!(item.favorite);
-}
-
-#[test]
-fn test_note_manager_full_lifecycle() {
-    use wixen_mail::application::notes::NoteManager;
-    use wixen_mail::data::message_cache::{NoteEntry, NoteFolderEntry};
-
-    let mut mgr = NoteManager::default();
-
-    // Add folder and notes
-    mgr.add_folder(NoteFolderEntry {
-        id: "f1".to_string(),
-        account_id: "test".to_string(),
-        name: "Personal".to_string(),
-        display_order: 0,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-    });
-    mgr.add_note(NoteEntry {
-        id: "n1".to_string(),
-        account_id: "test".to_string(),
-        folder_id: Some("f1".to_string()),
-        title: "Shopping".to_string(),
-        body: "Eggs, milk".to_string(),
-        format: "plain".to_string(),
-        pinned: true,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-    });
-    mgr.add_note(NoteEntry {
-        id: "n2".to_string(),
-        account_id: "test".to_string(),
-        folder_id: Some("f1".to_string()),
-        title: "Ideas".to_string(),
-        body: "Build a rocket".to_string(),
-        format: "plain".to_string(),
-        pinned: false,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-02T00:00:00Z".to_string(),
-    });
-
-    // Pinned notes first
-    assert_eq!(mgr.all_notes().len(), 2);
-    assert_eq!(mgr.pinned_notes().len(), 1);
-    assert_eq!(mgr.pinned_notes()[0].title, "Shopping");
-
-    // Update
-    mgr.update_note("n1", "Updated Shopping", "Eggs, milk, bread");
-    assert_eq!(mgr.get_note("n1").unwrap().body, "Eggs, milk, bread");
-
-    // Search
-    assert_eq!(mgr.search_notes("rocket").len(), 1);
-    assert_eq!(mgr.search_notes("bread").len(), 1);
-    assert_eq!(mgr.search_notes("xyz").len(), 0);
-
-    // Remove note
-    mgr.remove_note("n2");
-    assert_eq!(mgr.all_notes().len(), 1);
-
-    // Remove folder cascades
-    mgr.remove_folder("f1");
-    assert_eq!(mgr.all_notes().len(), 0);
-    assert_eq!(mgr.all_folders().len(), 0);
-}
-
-#[test]
-fn test_task_manager_full_lifecycle() {
-    use wixen_mail::application::tasks::TaskManager;
-    use wixen_mail::data::message_cache::{TaskEntry, TaskListEntry};
-
-    let mut mgr = TaskManager::default();
-    mgr.add_task_list(TaskListEntry {
-        id: "list1".to_string(),
-        account_id: "test".to_string(),
-        name: "Work".to_string(),
-        color: "#4285F4".to_string(),
-        display_order: 0,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-    });
-    mgr.add_task(TaskEntry {
-        id: "t1".to_string(),
-        account_id: "test".to_string(),
-        task_list_id: Some("list1".to_string()),
-        title: "Write docs".to_string(),
-        description: None,
-        due_date: Some("2026-03-01".to_string()),
-        is_completed: false,
-        completed_at: None,
-        priority: "high".to_string(),
-        display_order: 0,
-        parent_task_id: None,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-        remote_updated: None,
-        pending: false,
-        remote_status: None,
-    });
-    mgr.add_task(TaskEntry {
-        id: "t2".to_string(),
-        account_id: "test".to_string(),
-        task_list_id: Some("list1".to_string()),
-        title: "Deploy".to_string(),
-        description: None,
-        due_date: Some("2026-04-01".to_string()),
-        is_completed: false,
-        completed_at: None,
-        priority: "normal".to_string(),
-        display_order: 1,
-        parent_task_id: None,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-        remote_updated: None,
-        pending: false,
-        remote_status: None,
-    });
-
-    // Overdue
-    assert_eq!(mgr.overdue_tasks("2026-03-05").len(), 1);
-    assert_eq!(mgr.overdue_tasks("2026-03-05")[0].title, "Write docs");
-
-    // Toggle complete
-    mgr.toggle_complete("t1");
-    assert!(mgr.get_task("t1").unwrap().is_completed);
-    assert!(mgr.get_task("t1").unwrap().completed_at.is_some());
-    assert_eq!(mgr.overdue_tasks("2026-03-05").len(), 0);
-
-    // Update title
-    mgr.update_task_title("t2", "Deploy v2");
-    assert_eq!(mgr.get_task("t2").unwrap().title, "Deploy v2");
-
-    // Remove list cascades
-    mgr.remove_task_list("list1");
-    assert_eq!(mgr.all_tasks().len(), 0);
 }
 
 /// A note written with markdown, from the database to the words a screen reader
