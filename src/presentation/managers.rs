@@ -6025,7 +6025,26 @@ fn remove_container(
     use crate::application::new_item::ContainerKind;
 
     match kind {
-        ContainerKind::Calendar => cache.delete_calendar(id),
+        ContainerKind::Calendar => {
+            // The sign-in goes with the calendar. A calendar added by address
+            // keeps a user name and a password in the credential store, and
+            // deleting the row used to leave both behind with nothing left
+            // pointing at them.
+            //
+            // They outlived uninstall as well: erasing everything works out
+            // which entries to remove by walking the calendars that exist, so
+            // a credential whose calendar had gone was never named. The rule
+            // here is that the code erasing a secret names the same entries as
+            // the code that wrote it.
+            //
+            // Before the row, so a failure to forget stops the delete rather
+            // than orphaning the secret. Forgetting one that was never stored
+            // is an ordinary success, which is what most calendars are: one
+            // made here, or one belonging to an account signed in through its
+            // provider.
+            crate::service::caldav::sign_in::forget(id)?;
+            cache.delete_calendar(id)
+        }
         ContainerKind::TaskList => cache.delete_task_list(id),
         ContainerKind::NoteFolder => cache.delete_note_folder(id),
         ContainerKind::ContactGroup => cache.delete_contact_group(id),
@@ -8346,5 +8365,84 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
             "a day the provider itself named as a RECURRENCE-ID override was \
              not flagged just because its series is not stored here yet"
         );
+    }
+}
+
+#[cfg(test)]
+mod removing_a_calendar_takes_its_sign_in_with_it {
+    use super::remove_container;
+    use crate::application::new_item::ContainerKind;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CalendarContainer, MessageCache};
+    use crate::service::caldav::sign_in;
+
+    fn a_calendar(id: &str) -> CalendarContainer {
+        CalendarContainer {
+            id: id.to_string(),
+            account_id: "acct".to_string(),
+            name: "Team".to_string(),
+            color: "#336699".to_string(),
+            source_provider: Some("caldav".to_string()),
+            caldav_url: Some("https://example.com/dav/team/".to_string()),
+            subscription_url: None,
+            is_default: false,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: "2026-08-01T00:00:00Z".to_string(),
+            updated_at: "2026-08-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_deleting_a_calendar_added_by_address_forgets_its_password() {
+        // A calendar added by address keeps a user name and a password in the
+        // credential store. Deleting the calendar took the row and left both
+        // behind, with nothing left pointing at them.
+        //
+        // They outlive uninstall too. Erasing everything works out which
+        // entries to remove by walking the calendars that exist, so a
+        // credential whose calendar has gone is never named and never cleared.
+        // This project's own rule is that the code that erases a secret has to
+        // name the same entries as the code that wrote it.
+        let cache = TempHome::named("deleting_a_calendar_forgets_it", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
+        cache
+            .save_calendar(&a_calendar("cal-1"))
+            .expect("a calendar");
+        sign_in::store("cal-1", "sam", "hunter2").expect("a sign-in to keep");
+        assert!(
+            sign_in::load("cal-1").is_some(),
+            "the fixture stored nothing"
+        );
+
+        remove_container(&cache, ContainerKind::Calendar, "cal-1").expect("the calendar goes");
+
+        assert!(
+            sign_in::load("cal-1").is_none(),
+            "the calendar was deleted and its password is still on this computer"
+        );
+    }
+
+    #[test]
+    fn test_deleting_a_calendar_that_never_had_a_sign_in_is_not_an_error() {
+        // Most calendars have none: one made here, or one belonging to an
+        // account signed in through the provider. Forgetting a sign-in that
+        // was never stored has to be an ordinary outcome, or deleting an
+        // ordinary calendar starts failing.
+        let cache = TempHome::named("deleting_a_plain_calendar", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
+        let mut plain = a_calendar("cal-2");
+        plain.source_provider = Some("local".to_string());
+        plain.caldav_url = None;
+        cache.save_calendar(&plain).expect("a calendar");
+
+        remove_container(&cache, ContainerKind::Calendar, "cal-2").expect("the calendar goes");
     }
 }
