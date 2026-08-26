@@ -46,17 +46,12 @@ fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<Cred
             service: credentials::KEYRING_SERVICE.to_string(),
             user: account.id.clone(),
         });
-        // Every provider, rather than the one this account's address names
-        // today. Two ways an account ends up holding a token nobody can point
-        // at: it was switched back to a password, which keeps whatever token
-        // it was given, and its address was edited after it signed in, which
-        // is what the entry was named after. Both leave a secret on the
-        // machine after the application has gone.
-        for provider in oauth::OAuthService::providers() {
-            entries.push(CredentialEntry {
-                service: oauth::keyring_service(&provider.name),
-                user: account.id.clone(),
-            });
+        // Asked rather than listed here, because removing one account has to
+        // erase exactly these and the two lists came apart: this one named an
+        // account's tokens and the delete path did not, so a removed account
+        // left its refresh token behind and this sweep never saw it again.
+        for (service, user) in oauth::entries_for_account(&account.id) {
+            entries.push(CredentialEntry { service, user });
         }
     }
 

@@ -654,6 +654,44 @@ pub fn keyring_service(provider: &str) -> String {
     format!("wixen-mail-{provider}")
 }
 
+/// Every credential store entry that could hold a token for one account, as
+/// `(service, user)` pairs.
+///
+/// One answer, because two places need it and they disagreed. Uninstalling
+/// listed these to erase them; removing a single account erased its password
+/// and nothing else, so its refresh token stayed on the machine. Uninstalling
+/// then walked the accounts that were left, never named the removed one, and
+/// the token outlived the program.
+///
+/// Every provider, rather than the one this account's address names today, for
+/// the reason the uninstall list already gave: an account switched back to a
+/// password keeps whatever token it was given, and an address edited after
+/// signing in leaves an entry named after the old one.
+pub fn entries_for_account(account_id: &str) -> Vec<(String, String)> {
+    OAuthService::providers()
+        .iter()
+        .map(|provider| (keyring_service(&provider.name), account_id.to_string()))
+        .collect()
+}
+
+/// Forget every token stored for one account.
+///
+/// Reports the entries it could not remove, so a caller can refuse to go on
+/// rather than leave a secret behind with nothing left naming it.
+pub fn forget_every_token_for(account_id: &str) -> Vec<String> {
+    let mut left_behind = Vec::new();
+    for (service, user) in entries_for_account(account_id) {
+        match keyring::Entry::new(&service, &user) {
+            Ok(entry) => match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => {}
+                Err(e) => left_behind.push(format!("{service}: {e}")),
+            },
+            Err(e) => left_behind.push(format!("{service}: {e}")),
+        }
+    }
+    left_behind
+}
+
 pub struct AuthManager {
     /// Account identifier (used as keyring username).
     account_id: String,

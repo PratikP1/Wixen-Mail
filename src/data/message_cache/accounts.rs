@@ -241,6 +241,19 @@ impl MessageCache {
         if let Err(e) = credentials::forget(account_id) {
             tracing::warn!("Removed {account_id} but its saved password is still stored: {e}");
         }
+        // And the tokens, which used to be left. Erasing everything works out
+        // what to remove by walking the accounts that exist, so a token
+        // belonging to an account already removed was never named again and
+        // outlived the program itself.
+        //
+        // Both lists come from `oauth::entries_for_account` now, so the set
+        // erased here and the set erased at uninstall cannot drift apart.
+        for left_behind in crate::service::oauth::forget_every_token_for(account_id) {
+            tracing::warn!(
+                "Removed {account_id} but one of its saved sign-in tokens is still \
+                 stored: {left_behind}"
+            );
+        }
 
         // And so does the mail. This used to remove the account row alone,
         // leaving every folder, message, body and draft it owned in a database

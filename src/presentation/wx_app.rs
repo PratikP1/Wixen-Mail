@@ -974,39 +974,50 @@ impl WxMailApp {
                 preview.enable_browser_accelerator_keys(false);
 
                 // Block all navigation: open links in default browser instead
-                preview.on_navigating(|event: WebViewEventData| {
-                    if let Some(url) = event.get_string() {
-                        // An empty URL is the control loading its own document,
-                        // not a link the user followed. Vetoing it blocked the
-                        // message preview from rendering at all.
-                        if !url.is_empty()
-                            && url != "about:blank"
-                            && !url.starts_with("about:")
-                            && !url.starts_with("data:")
-                        {
-                            event.event.event.veto();
-                            // The sender of a message does not get to choose
-                            // what this machine opens.
-                            if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
-                                let _ = open::that(&safe);
-                            } else {
-                                tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                preview.on_navigating({
+                    let a11y = a11y.clone();
+                    move |event: WebViewEventData| {
+                        if let Some(url) = event.get_string() {
+                            // An empty URL is the control loading its own document,
+                            // not a link the user followed. Vetoing it blocked the
+                            // message preview from rendering at all.
+                            if !url.is_empty()
+                                && url != "about:blank"
+                                && !url.starts_with("about:")
+                                && !url.starts_with("data:")
+                            {
+                                event.event.event.veto();
+                                // The sender of a message does not get to choose
+                                // what this machine opens.
+                                if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
+                                    let _ = open::that(&safe);
+                                } else {
+                                    tracing::warn!(
+                                        "Refused to open unsafe URL from message: {}",
+                                        url
+                                    );
+                                    say_the_link_was_refused(&a11y);
+                                }
                             }
                         }
                     }
                 });
 
                 // Block new window requests
-                preview.on_new_window(|event: WebViewEventData| {
-                    if let Some(url) = event.get_string() {
-                        event.event.event.veto();
-                        if url.is_empty() {
-                            return;
-                        }
-                        if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
-                            let _ = open::that(&safe);
-                        } else {
-                            tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                preview.on_new_window({
+                    let a11y = a11y.clone();
+                    move |event: WebViewEventData| {
+                        if let Some(url) = event.get_string() {
+                            event.event.event.veto();
+                            if url.is_empty() {
+                                return;
+                            }
+                            if let Some(safe) = HtmlRenderer::safe_external_url(&url) {
+                                let _ = open::that(&safe);
+                            } else {
+                                tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                                say_the_link_was_refused(&a11y);
+                            }
                         }
                     }
                 });
@@ -3229,6 +3240,7 @@ impl WxMailApp {
                                         let _ = open::that(&safe);
                                     } else {
                                         tracing::warn!("Refused to open unsafe link: {}", href);
+                                        say_the_link_was_refused(&a11y);
                                     }
                                 }
                             }
@@ -9254,6 +9266,26 @@ fn ensure_local_folders(
 /// Worded for somebody reading their mail rather than as a connection error,
 /// and it says what to do instead. The mailbox looks exactly the same either
 /// way, which is what makes silence here the wrong answer.
+/// Say that a link was not opened, and why.
+///
+/// Four places open a link a sender wrote: the preview's navigation and its
+/// new-window request, the reader's navigation, and Save Link on the context
+/// menu. Each checks the address first and refuses anything whose scheme is
+/// not worth opening, which is right, and each then did nothing at all beyond
+/// a line in a log.
+///
+/// Activating a link and having nothing happen reads as the command being
+/// broken. It is also the moment somebody most needs telling, because a
+/// refused address is usually one to be wary of. The address itself is not
+/// repeated: it was written by a stranger, it can be built to read as
+/// something it is not, and a screen reader would say the whole of it.
+fn say_the_link_was_refused(a11y: &Arc<Accessibility>) {
+    let _ = a11y.announce(
+        "That link was not opened. It does not use a kind of address this program will open.",
+        crate::presentation::accessibility::announcements::Priority::High,
+    );
+}
+
 fn say_the_watch_is_off(tx: &Sender<UIUpdate>) {
     let _ = tx.try_send(UIUpdate::StatusUpdated(
         "New mail will not appear on its own. Use Refresh to check for it.".to_string(),
@@ -9808,19 +9840,25 @@ fn show_conversation_as_page(
     // The browser does not get this application's keys.
     page.enable_browser_accelerator_keys(false);
     // A sender does not choose what this machine opens.
-    page.on_navigating(|event: WebViewEventData| {
-        if let Some(url) = event.get_string()
-            && !url.is_empty()
-            && url != "about:blank"
-            && !url.starts_with("about:")
-            && !url.starts_with("data:")
-        {
-            event.event.event.veto();
-            match HtmlRenderer::safe_external_url(&url) {
-                Some(safe) => {
-                    let _ = open::that(&safe);
+    page.on_navigating({
+        let a11y = a11y.clone();
+        move |event: WebViewEventData| {
+            if let Some(url) = event.get_string()
+                && !url.is_empty()
+                && url != "about:blank"
+                && !url.starts_with("about:")
+                && !url.starts_with("data:")
+            {
+                event.event.event.veto();
+                match HtmlRenderer::safe_external_url(&url) {
+                    Some(safe) => {
+                        let _ = open::that(&safe);
+                    }
+                    None => {
+                        tracing::warn!("Refused to open unsafe URL from message: {}", url);
+                        say_the_link_was_refused(&a11y);
+                    }
                 }
-                None => tracing::warn!("Refused to open unsafe URL from message: {}", url),
             }
         }
     });

@@ -1558,3 +1558,72 @@ fn test_a_mail_watch_that_ends_is_reported_rather_than_only_logged() {
          no different, which is the whole reason Stopped is an event."
     );
 }
+
+/// Removing one account erases exactly what uninstalling would erase for it.
+///
+/// These were two lists and they disagreed. Uninstalling named an account's
+/// password and a token entry per provider; removing a single account erased
+/// the password and nothing else. So a removed account left its refresh token
+/// on the machine, and the sweep that would have caught it walks the accounts
+/// that still exist, which no longer included that one. The token outlived the
+/// program.
+///
+/// What this cannot see: whether either really deletes anything. The credential
+/// store is behind a seam for the accounts' own passwords and not for the
+/// tokens, so what is checked here is that one list is asked for in both
+/// places rather than written out twice.
+#[test]
+fn test_one_list_says_which_secrets_belong_to_an_account() {
+    let sweep = fs::read_to_string("src/application/forget.rs").expect("the erase-all sweep");
+    let removal = fs::read_to_string("src/data/message_cache/accounts.rs").expect("the accounts");
+
+    assert!(
+        sweep.contains("entries_for_account"),
+        "the uninstall sweep lists an account's token entries itself again, so it \
+         can disagree with what removing that account erases"
+    );
+    assert!(
+        !sweep.contains("OAuthService::providers()"),
+        "the uninstall sweep walks the providers itself, which is the second \
+         answer that let the two come apart"
+    );
+    assert!(
+        removal.contains("forget_every_token_for"),
+        "removing an account erases its password and leaves its sign-in tokens, \
+         which nothing names again once the account has gone"
+    );
+}
+
+/// A link this program will not open says so.
+///
+/// Two places open a link a sender wrote: the reader's own navigation, and
+/// Save Link on the context menu. Both check the address first and refuse
+/// anything that is not a scheme worth opening, which is right. Both then did
+/// nothing at all, and wrote a line to a log.
+///
+/// Clicking a link and having nothing happen is indistinguishable from the
+/// command being broken, and it is the case where somebody most needs telling:
+/// a refused link is usually a link worth being wary of. This project already
+/// took the same decision for the compose toolbar, where doing nothing was
+/// replaced by saying it is not built.
+///
+/// What this cannot see: whether the sentence is shown, or whether it is true.
+#[test]
+fn test_a_link_that_will_not_be_opened_is_not_refused_in_silence() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let refusals = app.matches("Refused to open").count();
+    assert!(
+        refusals >= 2,
+        "one of the two places that refuse a link no longer does, so this guard \
+         is measuring less than it was written for"
+    );
+    assert_eq!(
+        // The call sites, not the definition, which also carries the name.
+        app.matches("say_the_link_was_refused(&").count(),
+        refusals,
+        "a link refused as unsafe is still logged and not said. Nothing happens \
+         when somebody activates it, which reads as the command being broken \
+         rather than as a warning about the link."
+    );
+}
