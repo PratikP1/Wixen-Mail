@@ -1521,3 +1521,40 @@ fn test_a_sent_message_that_will_not_leave_the_queue_is_reported() {
          be sent again on the next flush"
     );
 }
+
+/// A mail watch that stops, or never starts, is said rather than only logged.
+///
+/// The window watches the inbox so new mail arrives without asking for it.
+/// When that watch ends, because the connection dropped or the server closed
+/// it, nothing restarts it: the ordinary cycle starts a fresh watch only after
+/// mail arrives and the folder is re-read, which is exactly what stops
+/// happening. New mail then stops arriving on its own, the mailbox looks no
+/// different, and the only record is a line in a file nobody reads.
+///
+/// `ImapIdleEvent::Stopped` says as much where it is declared: silence is what
+/// a dropped connection looks like, which is why it is an event at all.
+///
+/// What this cannot see: whether either sentence reaches anybody, or whether
+/// what it says is true. It asks only that both failures reach the routine
+/// that speaks, and that both are still handled here.
+#[test]
+fn test_a_mail_watch_that_ends_is_reported_rather_than_only_logged() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let watcher = body_of(&app, "fn spawn_mail_watch(");
+
+    for (marker, what) in [
+        ("Could not watch the inbox", "a watch that never starts"),
+        ("Stopped watching", "a watch that ends"),
+    ] {
+        assert!(
+            watcher.contains(marker),
+            "{what} is no longer handled here, so this guard is measuring nothing"
+        );
+    }
+    assert!(
+        watcher.matches("say_the_watch_is_off").count() >= 2,
+        "one or both of the two ways a mail watch can fail goes to a log and \
+         nowhere else. New mail stops arriving on its own and the mailbox looks \
+         no different, which is the whole reason Stopped is an event."
+    );
+}

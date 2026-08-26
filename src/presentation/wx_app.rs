@@ -9243,6 +9243,23 @@ fn ensure_local_folders(
 /// Any watch already running is stopped first. Without that, every check for
 /// mail would leave a connection behind, and a server refuses new ones long
 /// before the count gets interesting.
+/// Say that new mail will not arrive on its own any more.
+///
+/// Both ways the inbox watch can fail end here: one where it never starts, and
+/// one where it ends after running. Neither is restarted from where it
+/// happens, because the ordinary cycle begins a fresh watch only after mail
+/// arrives and the folder is read again, and mail arriving on its own is what
+/// has stopped.
+///
+/// Worded for somebody reading their mail rather than as a connection error,
+/// and it says what to do instead. The mailbox looks exactly the same either
+/// way, which is what makes silence here the wrong answer.
+fn say_the_watch_is_off(tx: &Sender<UIUpdate>) {
+    let _ = tx.try_send(UIUpdate::StatusUpdated(
+        "New mail will not appear on its own. Use Refresh to check for it.".to_string(),
+    ));
+}
+
 fn spawn_mail_watch(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
@@ -9315,6 +9332,7 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
             Ok(watching) => watching,
             Err(e) => {
                 tracing::warn!("Could not watch the inbox: {}", e);
+                say_the_watch_is_off(&tx);
                 return;
             }
         };
@@ -9336,6 +9354,12 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
                     crate::service::protocols::imap::ImapIdleEvent::StillWatching { .. } => {}
                     crate::service::protocols::imap::ImapIdleEvent::Stopped { folder, reason } => {
                         tracing::info!("Stopped watching {}: {}", folder, reason);
+                        // Nothing starts another watch from here. A fresh one
+                        // begins only after mail arrives and the folder is
+                        // read again, and mail arriving on its own is exactly
+                        // what has stopped. Said, because the mailbox looks no
+                        // different either way.
+                        say_the_watch_is_off(&tx);
                         break;
                     }
                 }

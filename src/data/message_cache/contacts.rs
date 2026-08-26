@@ -5407,3 +5407,54 @@ END:VCARD";
         assert_eq!(ada.last_synced_at, None);
     }
 }
+
+#[cfg(test)]
+mod folded_cards {
+    use super::super::MessageCache;
+    use crate::common::temp_home::TempHome;
+
+    fn a_cache(what_for: &str) -> TempHome<MessageCache> {
+        TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    #[test]
+    fn test_a_card_this_program_wrote_reads_back_the_way_it_went_out() {
+        // The exporter folds. Without unfolding on the way in, this
+        // application loses data on its own round trip, which is the sharpest
+        // form of the fault: nothing else has to be involved.
+        let cache = a_cache("round_trip_keeps_the_whole_note");
+        let long = "A note long enough that the exporter has to fold it, which \
+                    takes more than seventy-five octets on one line to do.";
+        cache
+            .import_contacts_from_vcard(
+                "acct",
+                &format!(
+                    "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\nN:Hopper;Grace;;;\r\n\
+                     EMAIL:grace@example.com\r\nNOTE:{long}\r\nEND:VCARD\r\n"
+                ),
+            )
+            .expect("the card is read");
+
+        let exported = cache
+            .export_contacts_to_vcard("acct")
+            .expect("the cards go out");
+        assert!(
+            exported.contains("\r\n "),
+            "this test proves nothing unless the exporter really folded: {exported}"
+        );
+
+        let back = a_cache("round_trip_reads_it_back");
+        back.import_contacts_from_vcard("acct", &exported)
+            .expect("the cards come back");
+
+        let held = back.get_contacts_for_account("acct").expect("the contacts");
+        assert_eq!(held.len(), 1, "{held:#?}");
+        assert_eq!(
+            held[0].notes.as_deref(),
+            Some(long),
+            "a card this program wrote came back with its note cut short"
+        );
+    }
+}
