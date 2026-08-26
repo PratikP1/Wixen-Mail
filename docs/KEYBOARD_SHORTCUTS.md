@@ -349,6 +349,7 @@ dialog once you have more than one.
 | New > Reminder | `Ctrl+Shift+D` | `D` for due. `Ctrl+Shift+R` is Reply All, here and in every other mail client |
 | New > Task | `Ctrl+Shift+T` | |
 | New > Note | `Ctrl+Shift+N` | |
+| New > Calendar, List, Folder or Group | (none) | Makes another of whatever the module you are in keeps its items in: a calendar in Calendar, a task list in Tasks, a folder in Notes, a group in Contacts. Mail folders are made on the server, and it says so |
 | New > Account | (none) | Open Account Manager |
 | Open Draft | `Ctrl+Shift+O` | Reopen a message you saved to finish later |
 | Save | `Ctrl+S` | Save current draft |

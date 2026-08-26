@@ -38,6 +38,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   already followed. Moving an event to another calendar had no menu entry at
   all before.
 
+- **Starting a second calendar, task list or note folder is on a menu now.**
+  It is under File, New, with the other new things, and makes whichever kind
+  the module you are in keeps its items in. Before this the only way to make
+  one was the `Applications` key, so anybody who did not already know that
+  had no way to find out it could be done at all.
+
 - **Move and Copy have left the File menu**, and marking a task done and
   pinning a note have left Edit. None of the four is a file operation or an
   edit; all four act on the thing you have chosen. File now holds making,

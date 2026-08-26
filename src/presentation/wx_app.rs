@@ -4010,6 +4010,19 @@ impl WxMailApp {
                 &format!("&Contact\t{}", key_for(ItemKind::Contact)),
                 "Create a new contact",
             )
+            .append_separator()
+            // The four things that hold the six above. One entry rather than
+            // four, because which one it makes follows the module you are in,
+            // the way New at the top of this menu already does. Naming all four
+            // is long for a menu and is still the honest label: a person in
+            // Notes should not have to guess that "New calendar" would make
+            // them a folder.
+            .append_item(
+                ID_CONTEXT_NEW_CONTAINER,
+                "Ca&lendar, List, Folder or Group...",
+                "Make another calendar, task list, note folder or contact group, \
+                 whichever the module you are in keeps its items in",
+            )
             .append_item(ID_NEW_ACCOUNT, "&Account", "Open Account Manager")
             .build();
 

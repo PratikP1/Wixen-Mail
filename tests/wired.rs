@@ -1864,6 +1864,31 @@ fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
     );
 }
 
+/// Making a calendar, list, folder or group is under File, New.
+///
+/// Making a thing is not something done to the thing in front of you, so it
+/// belongs with the other New entries rather than on the Action menu. It was in
+/// neither place: the six item kinds were all under New and the four containers
+/// that hold them were reachable only by the Applications key, so somebody
+/// looking for how to start a second calendar had nowhere to find out.
+#[test]
+fn test_making_a_calendar_or_list_is_under_file_new() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    let new_menu = without_whitespace(&menu_block(ship, "new_sub"));
+    assert!(
+        new_menu.contains("ID_NEW_EVENT"),
+        "the New submenu was not found, so this guard is measuring nothing"
+    );
+    assert!(
+        new_menu.contains("ID_CONTEXT_NEW_CONTAINER"),
+        "making a calendar, task list, note folder or contact group is on no \
+         menu at all, so the only way to start a second one is to already know \
+         the Applications key offers it"
+    );
+}
+
 /// File and Edit hold nothing that acts on the selected thing.
 ///
 /// Both had collected commands that belong to neither. File carried move and
