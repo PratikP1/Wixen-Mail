@@ -1627,3 +1627,48 @@ fn test_a_link_that_will_not_be_opened_is_not_refused_in_silence() {
          rather than as a warning about the link."
     );
 }
+
+/// No two menus on the bar answer to the same Alt key.
+///
+/// The bar is reached by Alt and then a letter, so two menus claiming one
+/// letter means one of them cannot be opened that way at all. Somebody working
+/// by keyboard loses a whole menu and nothing says why.
+///
+/// Written when Message became Action. That freed M and claimed A, and A was
+/// only free by luck rather than by anything checking.
+#[test]
+fn test_no_two_menus_on_the_bar_claim_the_same_alt_key() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let bar = body_of(&app, "        MenuBar::builder()");
+
+    let mut claimed: Vec<(char, String)> = Vec::new();
+    for line in bar.lines() {
+        let Some(at) = line.find(".append(") else {
+            continue;
+        };
+        let Some(amp) = line[at..].find("\"&") else {
+            continue;
+        };
+        let rest = &line[at + amp + 2..];
+        let Some(letter) = rest.chars().next() else {
+            continue;
+        };
+        let name: String = rest.chars().take_while(|c| c.is_alphanumeric()).collect();
+        claimed.push((letter.to_ascii_uppercase(), name));
+    }
+
+    assert!(
+        claimed.len() >= 5,
+        "only {} menus were read off the bar, so this guard is measuring almost \
+         nothing: {claimed:?}",
+        claimed.len()
+    );
+    for (index, (letter, name)) in claimed.iter().enumerate() {
+        if let Some((_, other)) = claimed[..index].iter().find(|(seen, _)| seen == letter) {
+            panic!(
+                "the {name} menu and the {other} menu both answer to Alt+{letter}, so one \
+                 of them cannot be opened from the keyboard at all"
+            );
+        }
+    }
+}

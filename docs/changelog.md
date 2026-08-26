@@ -6,6 +6,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **The Message menu is now the Action menu**, reached with `Alt+A` rather
+  than `Alt+M`. It holds the things you do to what you are looking at, so it
+  is named for that rather than for one kind of item, and Delete on it already
+  acted on whichever module was showing.
+
 ### Added
 
 - **You can hide a calendar, and hiding one now does something.** The

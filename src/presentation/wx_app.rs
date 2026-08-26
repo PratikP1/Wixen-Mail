@@ -4054,7 +4054,7 @@ impl WxMailApp {
         file.prepend_separator();
         file.prepend_submenu(new_sub, "&New", "Create a new item");
 
-        // Delete is deliberately not here. It is already the Message menu's
+        // Delete is deliberately not here. It is already the Action menu's
         // key, and one Delete that acts on whatever you are looking at follows
         // the same rule Ctrl+N does: the key means "the thing in front of me".
         // A second menu item with the same accelerator would be two commands
@@ -4422,7 +4422,7 @@ impl WxMailApp {
             .append(edit, "&Edit")
             .append(view, "&View")
             .append(go_menu, "&Go")
-            .append(message, "&Message")
+            .append(message, "&Action")
             .append(tools, "&Tools")
             .append(help, "&Help")
             .build()
@@ -8859,7 +8859,7 @@ fn receipt_for_the_open_message(app: AppHandles<'_>) {
         Answer::Ask { why, .. } => {
             said.push_str(&format!(
                 " Nothing has been sent yet, because {why}. \
-                 Message menu, Send Read Receipt, if you want to."
+                 Action menu, Send Read Receipt, if you want to."
             ));
             send_status(tx, rt, &said);
             lock_state(state).receipt_offered = Some(row_id);
