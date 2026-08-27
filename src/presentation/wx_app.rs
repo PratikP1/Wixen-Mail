@@ -802,22 +802,12 @@ impl WxMailApp {
             if let Some(palette) = palette {
                 theme::paint(&msg_list, palette.main_surface());
             }
-            // The size somebody chose, not a number written here. Settings has
-            // offered a font size since it existed and nothing read it, which
-            // matters more than most of the settings that were ignored: it is
-            // the one somebody with low vision reaches for first, and the list
-            // is where mail is read.
-            let chosen_size = crate::data::config::ConfigManager::load_stored()
-                .map(|stored| stored.app_config().font_size)
-                .unwrap_or(12);
-            if let Some(list_font) = Font::new_with_details(
-                chosen_size as i32,
-                FontFamily::Swiss.as_i32(),
-                FontStyle::Normal.as_i32(),
-                FontWeight::Normal.as_i32(),
-                false,
-                "",
-            ) {
+            // The size and the typeface somebody chose, not numbers written
+            // here. It is what somebody with low vision reaches for first, and
+            // the list is where mail is read. The other five lists are given
+            // the same font where they are built, so the setting means every
+            // list rather than only this one.
+            if let Some(list_font) = the_chosen_list_font() {
                 msg_list.set_font(&list_font);
             }
             // Columns come from the layout, so hiding and reordering has one
@@ -1190,6 +1180,22 @@ impl WxMailApp {
                 note_list: notes_cp.note_list,
                 notes_tree: notes_sb.tree,
             };
+
+            // The same font as the message list. Before this the size setting
+            // reached the mail list alone, so making the text bigger changed
+            // the mail and left the contacts, the calendar, the tasks, the
+            // notes and the reminders exactly as they were.
+            if let Some(list_font) = the_chosen_list_font() {
+                for list in [
+                    &pim_refs.cal_event_list,
+                    &pim_refs.contact_list,
+                    &pim_refs.reminder_list,
+                    &pim_refs.task_list,
+                    &pim_refs.note_list,
+                ] {
+                    list.set_font(&list_font);
+                }
+            }
 
             // The five other lists paint from memory too. Registering the
             // callbacks here rather than in each panel builder keeps the
@@ -7908,6 +7914,38 @@ type AnswersTheTray = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(i32)>>>>;
 /// A slot for the same reason as [`AnswersTheTray`]: the timer that receives a
 /// handover is built before the module switcher that opening one needs.
 type OpensAHandover = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(String)>>>>;
+
+/// The typeface and size the item lists are drawn in, or `None` to leave them.
+///
+/// One answer for every list rather than one per list. The size setting has
+/// existed for as long as the settings screen has and reached only the message
+/// list, so somebody who made the text bigger because they could not read it
+/// found their contacts unchanged.
+///
+/// A chosen typeface that is not installed is not passed on. Windows draws
+/// something else for a face it does not have and says nothing, so
+/// `font_choice` checks against what the machine really has and falls back
+/// openly. The settings screen says so in words.
+fn the_chosen_list_font() -> Option<Font> {
+    let Ok(stored) = crate::data::config::ConfigManager::load_stored() else {
+        return None;
+    };
+    let settings = stored.app_config();
+    // An enumeration that fails leaves an empty list, which `font_choice`
+    // reads as "nothing is installed" and answers with the system font. That
+    // is the right answer for a machine that will not say.
+    let installed = crate::service::fonts::installed_families().unwrap_or_default();
+    let face =
+        crate::application::font_choice::face_to_draw_with(&settings.font_family, &installed);
+    Font::new_with_details(
+        settings.font_size as i32,
+        FontFamily::Swiss.as_i32(),
+        FontStyle::Normal.as_i32(),
+        FontWeight::Normal.as_i32(),
+        false,
+        &face,
+    )
+}
 
 fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
     let Some(root) = tree.get_root_item() else {

@@ -8,6 +8,7 @@ pub mod caldav;
 pub mod credentials;
 pub mod default_apps;
 pub mod default_apps_registration;
+pub mod fonts;
 pub mod google_api;
 pub mod handover;
 pub mod ical_subscription;

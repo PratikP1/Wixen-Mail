@@ -61,6 +61,7 @@ pub struct SettingsWidgets {
     // General
     theme: Choice,
     pub font_size: TextCtrl,
+    pub font_family: Choice,
     // Compose
     preview_before_send: CheckBox,
     keep_sent_mail_on_this_computer: CheckBox,
@@ -183,6 +184,7 @@ pub fn build_settings_dialog(
     let general_panel = Panel::builder(&notebook).build();
     let GeneralTabControls {
         theme,
+        font_family,
         font_size,
         language,
         check_before_send: check_spelling_before_send,
@@ -337,6 +339,7 @@ pub fn build_settings_dialog(
         advanced_panel,
         theme,
         font_size,
+        font_family,
         preview_before_send,
         keep_sent_mail_on_this_computer,
         draft_autosave,
@@ -523,6 +526,7 @@ fn add_closing(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> CheckBox 
 /// of the check boxes would compile and save each other's setting.
 struct GeneralTabControls {
     theme: Choice,
+    font_family: Choice,
     font_size: TextCtrl,
     language: Choice,
     check_before_send: CheckBox,
@@ -680,6 +684,49 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
     set_accessible_name(&theme_note, crate::presentation::theme::REACH);
     app_sec.add(&theme_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
+    // Only the fonts this computer has. A list written here would be the same
+    // mistake the language list once made: Windows draws something else for a
+    // typeface it does not have and says nothing, so choosing one that is not
+    // installed would look like it worked and change nothing on the screen.
+    let installed = crate::service::fonts::installed_families().unwrap_or_default();
+    let type_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let type_label = StaticText::builder(panel).with_label("Font:").build();
+    let type_choice = Choice::builder(panel)
+        .with_choices(crate::application::font_choice::what_the_list_offers(
+            &installed,
+        ))
+        .with_selection(Some(crate::application::font_choice::which_row_is_chosen(
+            &config.font_family,
+            &installed,
+        ) as u32))
+        .build();
+    set_accessible_name_and_description(
+        &type_choice,
+        "Font",
+        "The typeface your messages, contacts, calendar, tasks, notes and          reminders are listed in. Only fonts installed on this computer are          offered",
+    );
+    type_row.add(
+        &type_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    type_row.add(&type_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    app_sec.add_sizer(&type_row, 0, SizerFlag::Expand, 0);
+
+    // Said only when it is true of this machine. A font uninstalled after it
+    // was chosen, or a settings file carried from another computer, otherwise
+    // shows as a program that looks wrong for no stated reason.
+    let wrong = crate::application::font_choice::what_is_wrong_with_the_choice(
+        &config.font_family,
+        &installed,
+    );
+    if !wrong.is_empty() {
+        let note = StaticText::builder(panel).with_label(&wrong).build();
+        set_accessible_name(&note, &wrong);
+        app_sec.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+    }
+
     let font_row = BoxSizer::builder(Orientation::Horizontal).build();
     let font_label = StaticText::builder(panel).with_label("Font size:").build();
     let font_field = TextCtrl::builder(panel).build();
@@ -711,6 +758,7 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
     panel.set_sizer(sizer, true);
     GeneralTabControls {
         theme: theme_choice,
+        font_family: type_choice,
         font_size: font_field,
         language,
         check_before_send,
@@ -1912,6 +1960,10 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
+    cfg.font_family = crate::application::font_choice::what_a_row_stores(
+        sel(&w.font_family) as usize,
+        &crate::service::fonts::installed_families().unwrap_or_default(),
+    );
     cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
     cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {

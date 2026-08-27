@@ -1961,6 +1961,64 @@ fn test_the_signature_editor_offers_no_box_that_reaches_no_message() {
     );
 }
 
+/// The chosen font reaches every list, not only the mail one.
+///
+/// The size setting existed for as long as the settings screen did and reached
+/// the message list alone, so somebody who made the text bigger because they
+/// could not read it found their contacts, calendar, tasks, notes and reminders
+/// exactly as they were. That is the setting most likely to be reached for by
+/// somebody with low vision, and it worked in a sixth of the places it claimed.
+///
+/// Counted rather than eyeballed, because a list added later is a list that
+/// silently keeps the system font.
+#[test]
+fn test_every_item_list_is_drawn_in_the_font_that_was_chosen() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let squashed = without_whitespace(&app);
+
+    assert!(
+        squashed.contains("fnthe_chosen_list_font()"),
+        "there is no one answer for what font a list is drawn in, so each list \
+         reads the settings for itself and they can disagree"
+    );
+
+    assert!(
+        squashed.contains("msg_list.set_font("),
+        "the message list is not given the chosen font"
+    );
+
+    // Only the block that hands the font to the other five, not the whole
+    // file: every one of these names appears elsewhere, so searching the file
+    // would find them however the font is applied. The first version of this
+    // guard did exactly that and passed with a list taken out.
+    let at = squashed
+        .find("forlistin[")
+        .expect("the loop that gives the other lists their font");
+    let loop_body = &squashed[at..squashed.len().min(at + 300)];
+
+    for list in [
+        "cal_event_list",
+        "contact_list",
+        "reminder_list",
+        "task_list",
+        "note_list",
+    ] {
+        assert!(
+            loop_body.contains(list),
+            "{list} is not in the loop that gives the lists their font, so \
+             changing the font or the size leaves it alone: {loop_body}"
+        );
+    }
+
+    // And nothing reads the size on its own any more. A second reader is a
+    // second place the typeface can be forgotten.
+    assert!(
+        !squashed.contains("app_config().font_size"),
+        "something reads the font size without the typeface beside it, which is \
+         how the size came to apply where the typeface does not"
+    );
+}
+
 /// One copy runs, and the rest hand what they were given to it.
 ///
 /// Three pieces, in three files, and any one of them missing turns this back

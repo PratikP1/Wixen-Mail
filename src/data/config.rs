@@ -74,6 +74,18 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
+    /// The typeface the item lists are drawn in.
+    ///
+    /// Empty means whatever Windows uses, which is the default and is stored
+    /// as an empty string rather than as today's system font name: storing the
+    /// name would freeze it, so somebody who later changed their Windows font
+    /// would keep the old one here with nothing saying why.
+    ///
+    /// A name that is not installed is not passed to the toolkit. Windows
+    /// substitutes silently for a face it does not have, so the check and the
+    /// sentence about it live in [`crate::application::font_choice`].
+    #[serde(default)]
+    pub font_family: String,
     /// Say at startup when another program holds a default this could hold.
     ///
     /// Off by default. Somebody who has chosen another mail program on purpose
@@ -417,6 +429,7 @@ impl Default for AppConfig {
             keep_sent_mail_on_this_computer: false,
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
+            font_family: String::new(),
             check_default_programs_at_startup: false,
             keep_running_in_the_tray: false,
             smooth_scrolling: false,

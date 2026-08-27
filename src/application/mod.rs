@@ -23,6 +23,7 @@ pub mod draft_copy;
 pub mod draft_message;
 pub mod due;
 pub mod filters;
+pub mod font_choice;
 pub mod forget;
 pub mod from_message;
 pub mod handover;

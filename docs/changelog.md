@@ -53,6 +53,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   The same four things can be given on the command line, and `--help` says so.
 
+- **You can choose the typeface your lists are drawn in**, under Settings,
+  General, beside the font size. Only fonts installed on this computer are
+  offered, so a font you pick is a font you have.
+
+  Windows draws something else when asked for a typeface it does not have, and
+  says nothing about it. So if a font you chose is later uninstalled, or your
+  settings come from another computer, Settings says which font has gone and
+  the lists fall back to the Windows font on purpose rather than to whatever
+  Windows would have substituted.
+
+- **Font size now applies to every list, not just your mail.** It had reached
+  the message list alone since the setting existed, so making the text bigger
+  changed your mail and left your contacts, calendar, tasks, notes and
+  reminders exactly as they were. Both the size and the typeface now apply to
+  all six.
+
 - **Wixen Mail is one copy now.** Clicking a `mailto:` link, or opening an
   `.ics` or `.vcf` file, when Wixen Mail is already running brings the window
   you already have to the front and opens the link there, instead of starting
