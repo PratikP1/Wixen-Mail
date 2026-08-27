@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Changing the font or the font size did nothing until you restarted.** Both
+  were read once, where the lists are built, so the settings screen appeared to
+  ignore you. They now take effect when you press OK. This is the setting
+  somebody with low vision reaches for first.
+
+- **Copying out of the message preview stopped working.** Putting Copy on the
+  Edit menu took `Ctrl+C` away from the preview, which had been handling it
+  itself, so selecting text in a message and copying it refused instead. The
+  preview is handled now.
+
 - **`Ctrl+A` opened the Account Manager.** It means Select All in every other
   Windows program, so pressing it while editing a note put an accounts dialog
   in front of you instead of selecting your text. The Account Manager is on

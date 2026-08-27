@@ -1960,10 +1960,15 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
-    cfg.font_family = crate::application::font_choice::what_a_row_stores(
-        sel(&w.font_family) as usize,
-        &crate::service::fonts::installed_families().unwrap_or_default(),
-    );
+    // By the words shown rather than the row number. A row number needs the
+    // installed list a second time to mean anything, and if that list differed
+    // at saving from the one somebody chose from, their choice would be stored
+    // as a different font or quietly reset.
+    cfg.font_family = w
+        .font_family
+        .get_string_selection()
+        .map(|chosen| crate::application::font_choice::what_the_words_store(&chosen))
+        .unwrap_or_else(|| cfg.font_family.clone());
     cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
     cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {

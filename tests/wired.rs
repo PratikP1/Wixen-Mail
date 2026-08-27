@@ -2017,6 +2017,18 @@ fn test_every_item_list_is_drawn_in_the_font_that_was_chosen() {
         "something reads the font size without the typeface beside it, which is \
          how the size came to apply where the typeface does not"
     );
+
+    // Applied again when settings closes, not only where the lists are built.
+    // Read once at startup, changing the font or the size did nothing at all
+    // until the next start, which reads as a settings screen that ignores you.
+    let after_settings = squashed
+        .find("handle_settings(&frame")
+        .map(|at| &squashed[at..squashed.len().min(at + 900)])
+        .expect("the settings command");
+    assert!(
+        after_settings.contains("the_chosen_list_font()"),
+        "the font is not applied again when settings closes, so changing it or          the size does nothing until the next start"
+    );
 }
 
 /// One copy runs, and the rest hand what they were given to it.

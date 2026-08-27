@@ -69,6 +69,24 @@ pub fn what_a_row_stores(row: usize, installed: &[String]) -> String {
         .unwrap_or_else(|| THE_SYSTEM_FONT.to_string())
 }
 
+/// What a chosen row of the list stores, taken from its words.
+///
+/// By name rather than by position, because a position only means anything
+/// beside the list it came from. Reading the row number back needed the
+/// installed list a second time, at saving, and both ways that could differ
+/// from the list the person actually chose from lose their choice silently: a
+/// font installed or removed while the window sat open shifts every row below
+/// it, and an enumeration that failed at that moment would answer with an empty
+/// list, land on row nought, and store the system font over whatever they had
+/// picked.
+pub fn what_the_words_store(chosen: &str) -> String {
+    if chosen == THE_SYSTEM_FONT_LABEL {
+        THE_SYSTEM_FONT.to_string()
+    } else {
+        chosen.to_string()
+    }
+}
+
 /// The face name to draw with, which is not always the one that was chosen.
 ///
 /// Empty means let the toolkit decide. A chosen font that is not installed
@@ -154,6 +172,30 @@ mod tests {
                 which_row_is_chosen(&stored, &installed),
                 row,
                 "row {row} stores {stored:?} which comes back as a different row"
+            );
+        }
+    }
+
+    #[test]
+    fn test_what_is_stored_comes_from_the_words_rather_than_the_row_number() {
+        // A row number only means something beside the list it came from. A
+        // font installed or removed while the settings window sat open shifts
+        // every row below it, and the number would then name a different font.
+        assert_eq!(what_the_words_store("Verdana"), "Verdana");
+        assert_eq!(what_the_words_store(THE_SYSTEM_FONT_LABEL), THE_SYSTEM_FONT);
+    }
+
+    #[test]
+    fn test_the_words_and_the_row_agree_about_every_row() {
+        // Both ways of reading the list have to give the same answer, or the
+        // one used for saving and the one used for showing would disagree.
+        let installed = installed();
+        let offered = what_the_list_offers(&installed);
+        for (row, words) in offered.iter().enumerate() {
+            assert_eq!(
+                what_the_words_store(words),
+                what_a_row_stores(row, &installed),
+                "row {row} reads as {words:?} one way and something else the other"
             );
         }
     }

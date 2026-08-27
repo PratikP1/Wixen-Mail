@@ -3349,15 +3349,18 @@ impl WxMailApp {
                                             pim_refs.note_body,
                                             pim_refs.contacts_search,
                                         ],
+                                        pages: &[preview],
                                         lists: &[
-                                            msg_list,
-                                            contact_list,
-                                            cal_event_list,
-                                            reminder_list,
-                                            task_list,
-                                            note_list,
+                                            (msg_list, PimModule::Mail),
+                                            (contact_list, PimModule::Contacts),
+                                            (cal_event_list, PimModule::Calendar),
+                                            (reminder_list, PimModule::Reminders),
+                                            (task_list, PimModule::Tasks),
+                                            (note_list, PimModule::Notes),
                                         ],
                                         trees: &[folder_tree, pim_refs.contacts_tree],
+                                        state: &state,
+                                        dates: date_settings,
                                     },
                                     &a11y,
                                 );
@@ -3932,6 +3935,26 @@ impl WxMailApp {
                             // ended the program instead of hiding it, because
                             // there was no icon to come back through.
                             follow_the_tray_setting();
+
+                            // So does the font. Both it and the size were read
+                            // once, where the lists are built, so changing
+                            // either did nothing at all until the next start.
+                            // That is the setting somebody with low vision
+                            // reaches for first, and a settings screen that
+                            // appears to ignore it is one they stop trusting.
+                            if let Some(list_font) = the_chosen_list_font() {
+                                for list in [
+                                    &msg_list,
+                                    &contact_list,
+                                    &cal_event_list,
+                                    &reminder_list,
+                                    &task_list,
+                                    &note_list,
+                                ] {
+                                    list.set_font(&list_font);
+                                    list.refresh(true, None);
+                                }
+                            }
                             // Every widget startup paints once, painted
                             // again right now: the sidebar and content area
                             // of every module, and the main window's own
@@ -8023,6 +8046,39 @@ fn the_chosen_list_font() -> Option<Font> {
     )
 }
 
+/// The text of the row a list is sitting on, read out of the application's own
+/// state rather than out of the control.
+///
+/// The message list is virtual: it holds no text at all, and answers the
+/// control's questions from `state` as rows are painted. `GetItemText` on a
+/// virtual list is not a question wxWidgets promises to answer, so asking it
+/// would have made Copy return nothing on the one list where mail lives, and
+/// the failure would have read as "nothing is chosen" rather than as a fault.
+///
+/// The same words `Space` reads out, so what lands on the clipboard is what was
+/// heard, and neither has to be kept in step with the other.
+fn chosen_row_text(
+    which: PimModule,
+    row: usize,
+    state: &Arc<StdMutex<WxUIState>>,
+    dates: crate::presentation::date_display::DateSettings,
+) -> Option<String> {
+    use crate::presentation::read_aloud::{ReadAloud, Reading};
+    let out = Reading {
+        dates,
+        now: chrono::Local::now(),
+    };
+    let s = lock_state(state);
+    match which {
+        PimModule::Mail => s.messages.get(row).map(|item| item.read_short(out)),
+        PimModule::Contacts => s.contacts.get(row).map(|item| item.read_short(out)),
+        PimModule::Calendar => s.events.get(row).map(|item| item.read_short(out)),
+        PimModule::Reminders => s.reminders.get(row).map(|item| item.read_short(out)),
+        PimModule::Tasks => s.tasks.get(row).map(|item| item.read_short(out)),
+        PimModule::Notes => s.notes.get(row).map(|item| item.read_short(out)),
+    }
+}
+
 /// Which of the four an id is, if it is one of them.
 fn an_edit_command(id: i32) -> Option<crate::application::editing::EditCommand> {
     use crate::application::editing::EditCommand;
@@ -8059,14 +8115,18 @@ fn do_an_edit_command(
 
     let EditParts {
         boxes,
+        pages,
         lists,
         trees,
+        state,
+        dates,
     } = parts;
 
     // The box with focus, if one has it. Asked first because a text box is
     // where these mean the most and where somebody expects them to work.
     let focused_box = boxes.iter().find(|box_| box_.has_focus());
-    let focused_list = lists.iter().find(|list| list.has_focus());
+    let focused_page = pages.iter().find(|page| page.has_focus());
+    let focused_list = lists.iter().find(|(list, _)| list.has_focus());
     let focused_tree = trees.iter().find(|tree| tree.has_focus());
 
     let place = if let Some(box_) = focused_box {
@@ -8075,7 +8135,11 @@ fn do_an_edit_command(
         } else {
             Where::AReadOnlyText
         }
-    } else if let Some(list) = focused_list {
+    } else if focused_page.is_some() {
+        // A message somebody is reading. Copying a line out of one is the
+        // ordinary reason to be there, and nothing in it can be changed.
+        Where::AReadOnlyText
+    } else if let Some((list, _)) = focused_list {
         Where::AList {
             rows: list.get_item_count().max(0) as usize,
         }
@@ -8090,6 +8154,21 @@ fn do_an_edit_command(
             let _ = a11y.announce(&why, Priority::High);
         }
         Doing::ToTheText => {
+            // The page first, because when it has focus there is no box to
+            // fall through to and the command would do nothing at all.
+            if let Some(page) = focused_page {
+                match command {
+                    EditCommand::SelectAll => page.select_all(),
+                    // The page puts it on the clipboard itself, so there is
+                    // nothing here to say about whether that worked.
+                    EditCommand::Copy => {
+                        page.copy();
+                        let _ = a11y.announce("Copied", Priority::Normal);
+                    }
+                    EditCommand::Cut | EditCommand::Paste => {}
+                }
+                return;
+            }
             let Some(box_) = focused_box else {
                 return;
             };
@@ -8132,7 +8211,7 @@ fn do_an_edit_command(
             }
         }
         Doing::ChooseEveryRow => {
-            let Some(list) = focused_list else {
+            let Some((list, _)) = focused_list else {
                 return;
             };
             let rows = list.get_item_count().max(0);
@@ -8142,18 +8221,12 @@ fn do_an_edit_command(
             let _ = a11y.announce(&format!("{rows} rows selected"), Priority::Normal);
         }
         Doing::CopyWhatIsChosen => {
-            let words = if let Some(list) = focused_list {
+            let words = if let Some((list, which)) = focused_list {
                 let row = list.get_first_selected_item();
                 if row < 0 {
                     String::new()
                 } else {
-                    // The columns a row shows, joined the way a row is read
-                    // out, so what lands on the clipboard is what was heard.
-                    (0..3)
-                        .map(|column| list.get_item_text(row as i64, column))
-                        .filter(|cell| !cell.trim().is_empty())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    chosen_row_text(*which, row as usize, state, dates).unwrap_or_default()
                 }
             } else if let Some(tree) = focused_tree {
                 tree.get_selection()
@@ -8178,8 +8251,19 @@ fn do_an_edit_command(
 /// one, because `do_an_edit_command` would otherwise take eleven parameters.
 struct EditParts<'a> {
     boxes: &'a [TextCtrl],
-    lists: &'a [ListCtrl],
+    /// The message preview, which is a web page rather than a text box.
+    ///
+    /// It has to be here because putting these commands on the menu took the
+    /// keys away from it: a page handles Ctrl+C itself until an accelerator
+    /// claims the key, and then copying out of a message stops working. It is
+    /// read-only, so it copies and selects and refuses the other two.
+    pages: &'a [WebView],
+    /// Each list with the module whose items it shows, so the row's words can
+    /// be read out of state rather than out of a virtual control.
+    lists: &'a [(ListCtrl, PimModule)],
     trees: &'a [TreeCtrl],
+    state: &'a Arc<StdMutex<WxUIState>>,
+    dates: crate::presentation::date_display::DateSettings,
 }
 
 /// The chosen run of a box's text.
