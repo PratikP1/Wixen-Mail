@@ -77,6 +77,7 @@ pub struct SettingsWidgets {
     mark_read_after: Choice,
     sort_then: Choice,
     copy_lines: Choice,
+    start_in_all_inboxes: CheckBox,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -202,6 +203,7 @@ pub fn build_settings_dialog(
         mark_read_after,
         sort_then,
         copy_lines,
+        start_in_all_inboxes,
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
@@ -315,6 +317,7 @@ pub fn build_settings_dialog(
         mark_read_after,
         sort_then,
         copy_lines,
+        start_in_all_inboxes,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -519,6 +522,7 @@ const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your sign
 /// for what it actually controls rather than by position.
 struct ReadingTabControls {
     sort_order: Choice,
+    start_in_all_inboxes: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -581,6 +585,25 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     // for that reason and says so, and this box was unticked, saved by nothing
     // and read by nothing. A default for something that cannot be switched on
     // is a setting for a feature that is not there.
+
+    // This one does something, which is the difference. The folder tree opens
+    // with no row chosen, so mail is listed only once somebody arrows onto a
+    // folder; ticking this lands them in the combined inbox instead.
+    let start_in_all_inboxes = CheckBox::builder(panel)
+        .with_label("Start in All &Inboxes")
+        .build();
+    start_in_all_inboxes.set_value(config.start_in_all_inboxes);
+    set_accessible_name_and_description(
+        &start_in_all_inboxes,
+        "Start in All Inboxes",
+        "Open showing every account's inbox in one list, rather than with no folder chosen",
+    );
+    list_sec.add(
+        &start_in_all_inboxes,
+        0,
+        SizerFlag::Left | SizerFlag::All,
+        4,
+    );
     sizer.add_sizer(&list_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Reading Behaviour
@@ -807,6 +830,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         mark_read_after: markread_choice,
         sort_then,
         copy_lines,
+        start_in_all_inboxes,
     }
 }
 
@@ -1662,6 +1686,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.add_signature_automatically = w.add_signature_automatically.get_value();
 
     // Reading
+    cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {
         1 => "date_oldest",
         2 => "sender_az",

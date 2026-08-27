@@ -129,6 +129,7 @@ menu_ids!(
     ID_VIEW_FOLDER_PANE,
     ID_VIEW_PREVIEW_PANE,
     ID_VIEW_MODULE_BUTTONS,
+    ID_VIEW_ALL_INBOXES,
     ID_VIEW_COLUMNS,
     ID_NEXT_UNREAD,
     ID_PREV_UNREAD,
@@ -2643,6 +2644,11 @@ impl WxMailApp {
                 // The sidebar of every module, so F6 cycles the panes of the
                 // one that is open rather than always the mail folder tree.
                 let module_focus = module_focus.clone();
+                // `folder_tree` is copied in by the `move` below, the same as
+                // the lists above. All Inboxes is a row of that tree, and the
+                // command moves the cursor onto it rather than loading it
+                // directly, so there is one path into a combined inbox and not
+                // two that could disagree.
                 move |event| {
                     let id = event.get_id();
                     let app = AppHandles {
@@ -3174,6 +3180,24 @@ impl WxMailApp {
                             left_panel.layout();
                         }
                         // Module navigation (Go menu + sidebar buttons)
+                        _ if id == ID_VIEW_ALL_INBOXES => {
+                            // Mail first. This is on the View menu, which is
+                            // reachable from every module, and a combined
+                            // inbox loaded behind the contacts list is a list
+                            // nobody can see.
+                            do_switch(PimModule::Mail);
+                            if !select_row_named(&folder_tree, ALL_INBOXES) {
+                                // The tree has no rows yet, which means no
+                                // account has loaded its folders. Saying so
+                                // beats a command that looks like it did
+                                // nothing.
+                                let _ = a11y.announce(
+                                    "All Inboxes has nothing to show yet: no account has \
+                                     finished loading its folders",
+                                    crate::presentation::accessibility::announcements::Priority::High,
+                                );
+                            }
+                        }
                         _ if id == ID_MODULE_MAIL => do_switch(PimModule::Mail),
                         _ if id == ID_MODULE_CONTACTS => do_switch(PimModule::Contacts),
                         _ if id == ID_MODULE_CALENDAR => do_switch(PimModule::Calendar),
@@ -4108,6 +4132,16 @@ impl WxMailApp {
             .build();
 
         let view = Menu::builder()
+            // First, and on the menu at all, because until now the only way to
+            // reach it was to know that the first row of the folder tree is
+            // not a folder. Somebody who never scrolled to the top of that
+            // tree had no way of finding out a combined inbox existed.
+            .append_item(
+                ID_VIEW_ALL_INBOXES,
+                "All &Inboxes\tCtrl+Shift+I",
+                "Show the mail from every account's inbox in one list",
+            )
+            .append_separator()
             .append_check_item(
                 ID_VIEW_FOLDER_PANE,
                 "&Folder Pane\tAlt+1",
@@ -7245,12 +7279,51 @@ fn what_the_cursor_was_on(tree: &TreeCtrl) -> Option<String> {
 /// Every row under the root is walked, not only the top ones, because the
 /// contacts tree keeps its groups on a branch of their own and somebody
 /// arrowing through them is exactly as entitled to keep their place.
+/// Put the cursor on the folder-tree row that says `name`, if there is one.
+///
+/// Selecting the row is the whole command rather than half of it: the tree's
+/// own selection handler is what loads a folder, so moving the cursor here
+/// makes the sidebar and the message list agree by construction. Doing the
+/// load separately and then moving the cursor would load twice, and the second
+/// one would be the one that counted.
+///
+/// `false` when the tree has no such row, which is a tree that has not been
+/// built yet. The caller says so rather than appearing to do nothing.
+fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
+    let Some(root) = tree.get_root_item() else {
+        return false;
+    };
+    let mut items = Vec::new();
+    let mut labels = Vec::new();
+    collect_rows(tree, &root, &mut items, &mut labels);
+    let Some(item) = labels
+        .iter()
+        .position(|row| row == name)
+        .and_then(|at| items.get(at))
+    else {
+        return false;
+    };
+    tree.select_item(item);
+    tree.ensure_visible(item);
+    true
+}
+
 fn land_the_cursor(tree: &TreeCtrl, root: &TreeItemId, was: Option<&str>) {
     let mut items = Vec::new();
     let mut labels = Vec::new();
     collect_rows(tree, root, &mut items, &mut labels);
 
-    let Some(at) = the_row_to_land_on(was, &labels) else {
+    // Read only when nothing was selected, which is the first build and the
+    // only build this can decide. Every rebuild after that keeps somebody
+    // where they were, so asking the disk then would be a read whose answer
+    // could not be used.
+    let start_at = was
+        .is_none()
+        .then(crate::data::config::ConfigManager::load_stored)
+        .and_then(|stored| stored.ok())
+        .filter(|stored| stored.app_config().start_in_all_inboxes)
+        .map(|_| ALL_INBOXES);
+    let Some(at) = the_row_to_land_on(was, &labels, start_at) else {
         return;
     };
     if let Some(item) = items.get(at) {
@@ -7296,11 +7369,18 @@ fn collect_rows(
 /// Nothing selected before means nothing forced after, because the cursor may
 /// well be somewhere else entirely and moving it into this tree would take
 /// somebody out of what they were reading.
-fn the_row_to_land_on(was: Option<&str>, now: &[String]) -> Option<usize> {
-    let was = was?;
+/// `start_at` is where somebody has asked to open, which only decides the
+/// first build: after that they are somewhere, and being moved out of the
+/// folder they are reading every time a sync rebuilds the tree is the fault
+/// this function was written to stop. A row that is not there forces nothing,
+/// rather than falling to whatever happens to be first.
+fn the_row_to_land_on(was: Option<&str>, now: &[String], start_at: Option<&str>) -> Option<usize> {
     if now.is_empty() {
         return None;
     }
+    let Some(was) = was else {
+        return now.iter().position(|row| Some(row.as_str()) == start_at);
+    };
     // Somewhere real beats nowhere when the row has genuinely gone:
     // unsubscribed, renamed at the server, or on an account just removed.
     Some(now.iter().position(|row| row == was).unwrap_or(0))
@@ -14992,7 +15072,7 @@ mod where_the_cursor_lands_after_a_rebuild {
             "Work".to_string(),
         ];
 
-        assert_eq!(the_row_to_land_on(Some("Archive"), &now), Some(1));
+        assert_eq!(the_row_to_land_on(Some("Archive"), &now, None), Some(1));
     }
 
     #[test]
@@ -15002,7 +15082,7 @@ mod where_the_cursor_lands_after_a_rebuild {
         // Somewhere real beats nowhere, and nowhere is what this had.
         let now = ["All Inboxes".to_string(), "Work".to_string()];
 
-        assert_eq!(the_row_to_land_on(Some("Archive"), &now), Some(0));
+        assert_eq!(the_row_to_land_on(Some("Archive"), &now, None), Some(0));
     }
 
     #[test]
@@ -15012,12 +15092,51 @@ mod where_the_cursor_lands_after_a_rebuild {
         // the message list they were reading.
         let now = ["All Inboxes".to_string()];
 
-        assert_eq!(the_row_to_land_on(None, &now), None);
+        assert_eq!(the_row_to_land_on(None, &now, None), None);
     }
 
     #[test]
     fn test_an_empty_tree_has_nowhere_to_land() {
-        assert_eq!(the_row_to_land_on(Some("Archive"), &[]), None);
+        assert_eq!(the_row_to_land_on(Some("Archive"), &[], None), None);
+    }
+
+    #[test]
+    fn test_asking_to_start_in_all_inboxes_lands_there_on_the_first_build() {
+        // The first build is the only one where nothing was selected before,
+        // so it is the one that decides where somebody opens. Without this the
+        // answer is nowhere: the tree comes up with no row chosen and no mail
+        // listed until somebody arrows onto a folder themselves.
+        let now = [
+            ALL_INBOXES.to_string(),
+            "Inbox".to_string(),
+            "Archive".to_string(),
+        ];
+
+        assert_eq!(the_row_to_land_on(None, &now, Some(ALL_INBOXES)), Some(0));
+    }
+
+    #[test]
+    fn test_where_somebody_already_was_beats_where_they_asked_to_start() {
+        // A rebuild mid-session, from a sync finishing or a folder arriving.
+        // Starting somewhere is about opening the application, not about being
+        // moved out of the folder currently being read every time the tree is
+        // rebuilt underneath it.
+        let now = [ALL_INBOXES.to_string(), "Archive".to_string()];
+
+        assert_eq!(
+            the_row_to_land_on(Some("Archive"), &now, Some(ALL_INBOXES)),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_asking_to_start_somewhere_that_is_not_there_forces_nothing() {
+        // All Inboxes is built unconditionally today, so this is the guard
+        // against a build where it is not: landing on row nought regardless
+        // would drop somebody into whatever happened to be first.
+        let now = ["Inbox".to_string()];
+
+        assert_eq!(the_row_to_land_on(None, &now, Some(ALL_INBOXES)), None);
     }
 }
 

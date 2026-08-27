@@ -84,6 +84,21 @@ done". A toggle you cannot see is a toggle you have to be told about. They are
 greyed out in modules where they mean nothing, so your screen reader says
 "unavailable" rather than leaving you to press a key that does nothing.
 
+### All Inboxes
+
+One list holding the mail from every account's inbox, so an account with three
+messages in it does not have to be visited to find that out. Reach it with
+`Ctrl+Shift+I`, from View, All Inboxes, or by choosing the first row of the mail
+sidebar, which is where it has always been.
+
+Every row still belongs to its own account, and a command aimed at a row goes to
+that row's own server, so replying, filing and deleting behave the same as they
+do in the account's own inbox.
+
+To open here every time, tick **Start in All Inboxes** under Settings, Reading.
+Without it the folder tree opens with no folder chosen, and no mail is listed
+until you arrow onto one.
+
 ### The Sidebars
 
 In the mail sidebar, your folders come first, then a **Labels** heading with
@@ -445,6 +460,7 @@ group are being written to, so you can tell when somebody has been missed.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| All Inboxes | `Ctrl+Shift+I` | Every account's inbox in one list |
 | Folder Pane | `Alt+1` | Show or hide the folder pane |
 | Preview Pane | `Alt+2` | Show or hide the message preview |
 | Module Buttons | `Alt+3` | Show or hide the module navigation buttons |

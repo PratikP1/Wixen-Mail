@@ -74,6 +74,18 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
+    /// Open in All Inboxes rather than with no folder chosen.
+    ///
+    /// The folder tree comes up with nothing selected, deliberately: forcing
+    /// the cursor into it would take somebody out of whatever they were
+    /// reading when a sync rebuilt it. That rule is right for every rebuild
+    /// after the first and leaves the first one landing nowhere, with no mail
+    /// listed until somebody arrows onto a folder.
+    ///
+    /// Off by default, because on is a change to where everybody opens and
+    /// somebody with one account has no use for a combined list of one.
+    #[serde(default)]
+    pub start_in_all_inboxes: bool,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -367,6 +379,7 @@ impl Default for AppConfig {
             // copy is what Sent has always listed.
             keep_sent_mail_on_this_computer: false,
             add_signature_automatically: default_true(),
+            start_in_all_inboxes: false,
             language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
@@ -769,6 +782,38 @@ mod tests {
 
         config.check_interval_minutes = 1441;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_asking_to_start_in_all_inboxes_survives_being_written_and_read_back() {
+        // A setting that does not persist is a setting somebody ticks once a
+        // session and never notices is not being kept. It also has to read
+        // back from a file written before it existed, which every settings
+        // file on every machine already is.
+        let mut config = AppConfig::default();
+        assert!(
+            !config.start_in_all_inboxes,
+            "on by default would move where everybody opens"
+        );
+
+        config.start_in_all_inboxes = true;
+        let written = serde_json::to_string(&config).unwrap();
+        let read_back: AppConfig = serde_json::from_str(&written).unwrap();
+        assert!(read_back.start_in_all_inboxes);
+
+        // A real settings file with this one key taken out, which is what
+        // every file on every machine looks like until the first save after
+        // this ships.
+        let mut older: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&AppConfig::default()).unwrap()).unwrap();
+        older
+            .as_object_mut()
+            .expect("the config is an object")
+            .remove("start_in_all_inboxes")
+            .expect("the key is written, so removing it is a real before-and-after");
+        let older: AppConfig = serde_json::from_value(older)
+            .expect("a settings file written before this existed has to still load");
+        assert!(!older.start_in_all_inboxes);
     }
 
     #[test]

@@ -8,6 +8,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **All Inboxes has a way in that does not depend on finding it.** One list of
+  every account's inbox has been there all along, as the first row of the mail
+  sidebar, and nothing named it: not a menu, not a key, not a line of the
+  documentation. If you never scrolled to the top of the folder tree there was
+  no way to learn it existed. It is now on the View menu and on `Ctrl+Shift+I`,
+  and it is written down.
+
+  Settings, Reading has **Start in All Inboxes** for opening there every time.
+  The folder tree deliberately opens with nothing chosen, so that nothing takes
+  you out of what you were reading when a sync rebuilds it, and the cost of
+  that is a first screen with no mail on it until you pick a folder. Ticking
+  this makes the combined inbox that first screen. Off by default.
+
 - **Your signature can be written in Markdown.** It was escaped line by line,
   so somebody who wrote their job title in bold sent asterisks to everybody
   they wrote to, and the only way to get a formatted signature was to write
