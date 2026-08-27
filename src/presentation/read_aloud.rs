@@ -326,6 +326,10 @@ impl ReadAloud for ContactItem {
             // pane spell it. One record read two ways is two records to
             // anybody listening.
             ("", if self.favorite { "Favorite" } else { "" }),
+            // Last, because it is the long one. The short facts come first so
+            // somebody who wanted the phone number is not made to sit through
+            // half a page of notes to reach it.
+            ("Notes", &long_text::spoken(&self.notes)),
         ])
     }
 }
@@ -558,7 +562,24 @@ mod tests {
             address_label: String::new(),
             birthday: String::new(),
             favorite: false,
+            notes: String::new(),
         }
+    }
+
+    #[test]
+    fn test_a_contacts_notes_are_read_with_the_structure_written_into_them() {
+        // The one long field that markdown did nothing in. A contact's notes
+        // are a multi-line box like a note's body and an event's description,
+        // they sync to and from Google and Outlook, and they were read out as
+        // nothing at all: the field was not on the item this reads from, so a
+        // contact with half a page of notes said only its name and address.
+        let mut contact = contact();
+        contact.notes = "# Met at\n\n- Grace Hopper Celebration\n- Introduced by Ada".to_string();
+
+        let said = contact.read_full(aloud());
+
+        assert!(said.contains("heading level 1, Met at"), "{said}");
+        assert!(said.contains("bullet, Grace Hopper Celebration"), "{said}");
     }
 
     fn note() -> NoteItem {

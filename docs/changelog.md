@@ -6,6 +6,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Your signature can be written in Markdown.** It was escaped line by line,
+  so somebody who wrote their job title in bold sent asterisks to everybody
+  they wrote to, and the only way to get a formatted signature was to write
+  HTML by hand in a second box. Type Markdown in the signature box now: what
+  you type is what a plain text reader sees, and the formatted half of the
+  message is made from it. The lines you type stay on separate lines, which
+  is what a signature is.
+
+- **The notes on a contact are read back with the structure you wrote.** It
+  was the one long box in the application where Markdown did nothing. Worse,
+  a contact's notes were not read aloud at all: a contact with half a page of
+  them said only its name, email and address, and there was no way to hear
+  what you had written. Both fixed, and the box now says Markdown is
+  understood in it, the way the other long boxes do.
+
 ### Fixed
 
 - **Five menu items had to be pressed twice.** Inside an open menu, a letter

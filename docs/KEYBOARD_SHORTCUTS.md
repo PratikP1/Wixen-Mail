@@ -636,6 +636,23 @@ hyphen stays a sentence. An address the application will not carry, such as a
 `javascript:` one, leaves the words alone and says so rather than making a link
 that goes somewhere different.
 
+**Markdown in the other long boxes.** Every box you type more than a line into
+understands it: a note's body, an event's description, a task's or reminder's
+notes, the notes on a contact, and your signature. Each of those boxes says so
+when you land on it.
+
+These work differently from the message body, and the difference is
+deliberate. The message body is a live editor, so a marker turns into real
+formatting the moment you finish typing it. The other boxes keep exactly what
+you typed, because Markdown reads perfectly well as it stands and storing the
+source means your text is never worse than you left it. The structure is read
+back to you when the item is read aloud, so a note with a heading in it is
+announced as a heading.
+
+A signature is the one that becomes formatting somewhere else: what you type is
+what a plain text reader sees, and the formatted half of the message is made
+from it. So there is no need to write HTML by hand to get a bold name.
+
 **Tables.** Format, then Insert Table, asks for rows and columns and whether the
 first row is column headers. Leave the headers on unless you have a reason not
 to: they are what lets the person receiving the message hear "Total, column 3"

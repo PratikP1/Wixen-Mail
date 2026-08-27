@@ -11,7 +11,9 @@
 
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
-use crate::presentation::accessibility::names::{name_from_label, set_accessible_name};
+use crate::presentation::accessibility::names::{
+    name_from_label, set_accessible_name, set_accessible_name_and_description,
+};
 use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
@@ -1345,13 +1347,17 @@ pub fn build_contact_edit_dialog(
     let notes_panel = Panel::builder(&notebook).build();
     let notes_sizer = BoxSizer::builder(Orientation::Vertical).build();
     let notes_label = StaticText::builder(&notes_panel)
-        .with_label("&Notes:")
+        .with_label("&Notes, in Markdown:")
         .build();
     notes_sizer.add(&notes_label, 0, SizerFlag::Left | SizerFlag::Top, 8);
     let notes_f = TextCtrl::builder(&notes_panel)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
-    set_accessible_name(&notes_f, "Notes");
+    set_accessible_name_and_description(
+        &notes_f,
+        "Notes",
+        "Markdown headings and lists are read back when this is read aloud",
+    );
     notes_sizer.add(&notes_f, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let custom_label = StaticText::builder(&notes_panel)
@@ -3101,13 +3107,18 @@ pub fn build_sig_edit_dialog(
     );
 
     let plain_label = StaticText::builder(&dlg)
-        .with_label("&Signature (plain text):")
+        .with_label("&Signature, in Markdown:")
         .build();
     sizer.add(&plain_label, 0, SizerFlag::Left | SizerFlag::All, 8);
     let content_f = TextCtrl::builder(&dlg)
         .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
         .build();
-    set_accessible_name(&content_f, "Signature, plain text");
+    set_accessible_name_and_description(
+        &content_f,
+        "Signature",
+        "Markdown becomes real formatting in the message. What you type here is \
+         what a plain text reader sees",
+    );
     sizer.add(&content_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
     let html_label = StaticText::builder(&dlg)

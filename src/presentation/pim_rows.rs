@@ -307,6 +307,7 @@ mod tests {
             address_label: String::new(),
             birthday: String::new(),
             favorite: false,
+            notes: String::new(),
         }
     }
 

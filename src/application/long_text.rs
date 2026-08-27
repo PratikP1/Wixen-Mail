@@ -195,6 +195,38 @@ pub fn spoken(written: &str) -> String {
 /// `#`, `-` or `>` is read back as that marker. Escaping it would put a
 /// backslash into a box somebody edits by hand, which is a worse fate than the
 /// rare line that reads oddly.
+/// Turn a long field's markdown into markup, for the half of a message that
+/// carries markup.
+///
+/// The other direction from [`from_markup`], and the pair is the point: what
+/// somebody typed is kept as markdown, which is legible on its own, and the
+/// markup is made from it when a message needs one. Nothing is stored twice, so
+/// the two halves cannot drift apart the way a hand-written HTML copy does.
+///
+/// Sanitized on the way out. Markdown admits raw HTML, so a signature pasted
+/// from a web page can carry a script, and this is where that stops. Guardrail
+/// 6: text somebody else wrote stays untrusted however ordinary the box it
+/// arrived in looks.
+pub fn as_markup(written: &str) -> String {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+
+    // A line somebody typed is a line they meant. Markdown reads a single
+    // newline as a space and joins the lines of a paragraph, which is right for
+    // a document and wrong for a box somebody typed their name, their job title
+    // and their company into on three lines: it would run a whole sign-off onto
+    // one. These fields are not documents, so a break is a break.
+    let as_typed = Parser::new_ext(written, options).map(|event| match event {
+        Event::SoftBreak => Event::HardBreak,
+        kept => kept,
+    });
+
+    let mut rendered = String::new();
+    pulldown_cmark::html::push_html(&mut rendered, as_typed);
+    ammonia::clean(&rendered)
+}
+
 pub fn from_markup(html: &str) -> String {
     let cleaned = ammonia::clean(html);
     let fragment = scraper::Html::parse_fragment(&cleaned);
@@ -546,6 +578,37 @@ pub fn first_line(written: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_a_signature_written_in_markdown_becomes_real_structure() {
+        // The one long box in the application where markdown did nothing. A
+        // signature was escaped line by line into divs, so somebody who wrote
+        // their job title in bold sent asterisks to everybody they wrote to.
+        let markup = as_markup(
+            "**Grace Hopper**
+
+Rear Admiral",
+        );
+
+        assert!(
+            markup.contains("<strong>Grace Hopper</strong>"),
+            "the bold was not made: {markup}"
+        );
+        assert!(
+            !markup.contains("**"),
+            "the markers were left in the message: {markup}"
+        );
+    }
+
+    #[test]
+    fn test_markup_that_arrives_in_a_signature_cannot_carry_a_script() {
+        // Markdown admits raw HTML, so this is the boundary where a signature
+        // pasted from somewhere else stops being trusted. Guardrail 6: the
+        // input stays untrusted however ordinary the field looks.
+        let markup = as_markup("Hello <script>alert(1)</script> there");
+
+        assert!(!markup.contains("<script"), "a script survived: {markup}");
+    }
     use super::*;
 
     #[test]

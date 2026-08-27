@@ -1864,6 +1864,43 @@ fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
     );
 }
 
+/// Every long prose box says Markdown is understood in it.
+///
+/// The four fields the item form builds are held to this by a test beside their
+/// table, in `application::item_fields`. These two are built by hand and that
+/// test cannot see them, which is exactly how the contact notes box ended up
+/// being the one long field in the application where Markdown did nothing and
+/// nothing said so either way.
+///
+/// The promise has to be on the control rather than only in the documentation.
+/// A screen reader reads the description when the field takes focus, and that
+/// is the moment somebody decides whether to type a hash.
+#[test]
+fn test_every_long_prose_box_says_markdown_is_understood() {
+    let managers = fs::read_to_string("src/presentation/wx_managers.rs").expect("the managers");
+    let squashed = without_whitespace(&managers);
+
+    for (control, what) in [
+        ("&notes_f", "the notes on a contact"),
+        ("&content_f", "a signature"),
+    ] {
+        let at = squashed
+            .find(&format!("set_accessible_name_and_description({control},"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{what} ({control}) carries a name with no description, so nothing \
+                     tells anybody Markdown is understood in it"
+                )
+            });
+        let described = &squashed[at..squashed.len().min(at + 400)];
+        assert!(
+            described.contains("Markdown"),
+            "the description on {what} does not mention Markdown, so the field \
+             promises nothing and somebody types a hash to find out"
+        );
+    }
+}
+
 /// Making a calendar, list, folder or group is under File, New.
 ///
 /// Making a thing is not something done to the thing in front of you, so it

@@ -206,25 +206,29 @@ fn with_signature(body: &MessageBody, signature: &str) -> MessageBody {
     }
 }
 
-/// A signature as paragraphs, under a separator paragraph.
-fn signature_markup(signature: &str) -> String {
-    let lines: String = signature
-        .trim_end()
-        .lines()
-        .map(|line| format!("<div>{}</div>", html_escape(line)))
-        .collect();
-    format!("<div><br></div><div>--&nbsp;</div>{lines}")
-}
-
-/// The four characters that would otherwise be read as markup.
+/// A signature as markup, under the delimiter every mail reader knows.
 ///
-/// A signature is somebody's own text and can hold anything, including the
-/// angle brackets around an address.
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+/// The signature is written in Markdown, the same as a note's body and an
+/// event's description, and is turned into markup here rather than being
+/// escaped line by line. Escaping was why somebody who wrote their job title in
+/// bold sent asterisks to everybody they wrote to: Markdown works everywhere
+/// else somebody types more than one line, and the signature was the one box
+/// where it did nothing.
+///
+/// The plain half of the message keeps the Markdown as it was typed, which
+/// reads perfectly well on its own. That is the whole argument for storing the
+/// source rather than a second copy in markup.
+///
+/// Two dashes and a space stay in front. That is how a mail reader finds where
+/// a signature starts and how it offers to fold one away, and it is put here
+/// rather than typed, so it sits outside what gets rendered.
+///
+/// Escaping is not lost by this. [`crate::application::long_text::as_markup`]
+/// sanitizes what it produces, so the angle brackets around an address are
+/// still safe and a script pasted in from a web page still does not survive.
+fn signature_markup(signature: &str) -> String {
+    let written = crate::application::long_text::as_markup(signature.trim_end());
+    format!("<div><br></div><div>--&nbsp;</div>{written}")
 }
 
 /// The conversation this window is answering, if it is answering one.
@@ -2818,6 +2822,55 @@ mod tests {
         };
         assert!(text.contains("---------- Forwarded message ----------"));
         assert!(text.contains("Forwarded text"));
+    }
+
+    #[test]
+    fn test_an_ordinary_signature_keeps_the_lines_it_was_typed_on() {
+        // Nearly every signature is a short stack of lines with no blank line
+        // between them: a name, a title, a company. Markdown reads those as one
+        // paragraph and joins them with spaces, so treating a signature as a
+        // document would run somebody's whole sign-off onto one line. It is a
+        // box somebody typed lines into, so the lines are meant.
+        let markup = signature_markup(
+            "Grace Hopper
+Rear Admiral
+US Navy",
+        );
+
+        assert!(
+            !markup.contains("Grace Hopper Rear Admiral"),
+            "the lines were run together into one: {markup}"
+        );
+        assert!(
+            markup.contains("Grace Hopper<br>"),
+            "the break between the lines is not there: {markup}"
+        );
+    }
+
+    #[test]
+    fn test_a_signature_carries_the_structure_it_was_written_with() {
+        // It was escaped line by line into divs, so a job title written in
+        // bold went out as asterisks to everybody. Markdown works in the
+        // message body as it is typed and in every other long box in the
+        // application; the signature was the one place it did nothing.
+        let markup = signature_markup("**Grace Hopper**\n\nRear Admiral");
+
+        assert!(
+            markup.contains("<strong>Grace Hopper</strong>"),
+            "the bold was not made: {markup}"
+        );
+        assert!(!markup.contains("**"), "the markers went out: {markup}");
+    }
+
+    #[test]
+    fn test_a_signature_still_starts_with_the_delimiter_every_mail_reader_knows() {
+        // Two dashes and a space is how every mail reader on earth finds where
+        // a signature starts, and it is what lets a client fold one away. It
+        // is put there by this rather than typed, so rendering the signature
+        // must not swallow it.
+        let markup = signature_markup("Grace");
+
+        assert!(markup.contains("--&nbsp;"), "{markup}");
     }
 
     #[test]

@@ -700,6 +700,14 @@ pub struct ContactItem {
     /// this is the value, and the value is what a card holds.
     pub birthday: String,
     pub favorite: bool,
+    /// Whatever was typed into the Notes box, exactly as it was typed.
+    ///
+    /// Markdown, like a note's body and an event's description, and kept as
+    /// written for the same reason: markdown is legible as it stands, so
+    /// storing the source means the text is never worse than what somebody
+    /// typed. This field is what a provider syncs, so it holds other people's
+    /// notes too, and text with no markdown in it is simply text.
+    pub notes: String,
 }
 
 impl ContactItem {
@@ -728,6 +736,7 @@ impl ContactItem {
             address_label: address.map(|a| a.label).unwrap_or_default(),
             birthday: entry.birthday.clone().unwrap_or_default(),
             favorite: entry.favorite,
+            notes: entry.notes.clone().unwrap_or_default(),
         }
     }
 
@@ -1205,6 +1214,7 @@ mod tests {
             address_label: String::new(),
             birthday: String::new(),
             favorite: false,
+            notes: String::new(),
         };
         assert_eq!(
             contact.detail_text(date_settings()),
@@ -1225,6 +1235,7 @@ mod tests {
             address_label: String::new(),
             birthday: "1815-12-10".into(),
             favorite: true,
+            notes: String::new(),
         };
         assert_eq!(
             contact.detail_text(date_settings()),
@@ -1333,6 +1344,7 @@ mod tests {
             address_label: String::new(),
             birthday: "--12-10".into(),
             favorite: false,
+            notes: String::new(),
         };
         assert_eq!(
             contact.detail_text(date_settings()),
@@ -1353,6 +1365,7 @@ mod tests {
             address_label: String::new(),
             birthday: String::new(),
             favorite: false,
+            notes: String::new(),
         };
         assert!(
             !contact.detail_text(date_settings()).contains("Birthday"),
@@ -1374,6 +1387,7 @@ mod tests {
             address_label: String::new(),
             birthday: "1815-12-10".into(),
             favorite: false,
+            notes: String::new(),
         };
         assert_eq!(
             contact.detail_text(date_settings()),
