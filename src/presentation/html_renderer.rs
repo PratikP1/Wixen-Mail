@@ -684,7 +684,8 @@ mod tests {
 
         assert!(
             out.contains("cdn.example"),
-            "sanitising a message being written held a picture back, so the              recipient would be sent a note about it instead: {out}"
+            "sanitising a message being written held a picture back, so the \
+             recipient would be sent a note about it instead: {out}"
         );
     }
 

@@ -5160,6 +5160,66 @@ fn test_no_source_file_carries_an_invisible_control_character() {
     );
 }
 
+/// A sentence written across two lines of source keeps the indentation.
+///
+/// Writing a long message inside a string literal and letting it wrap puts
+/// every space of the next line's indentation into the middle of the sentence.
+/// It is invisible in the source, where the run looks like alignment, and it is
+/// not invisible in the product: a wxWidgets label draws every one of those
+/// spaces, so a settings description reads with a gap through the middle of it.
+///
+/// Nineteen of these had been written before anybody looked, which is what
+/// makes it worth a check rather than a fix. The answer when this fails is a
+/// `\` at the end of the line, which continues a literal and eats the
+/// indentation that follows.
+#[test]
+fn test_no_sentence_is_written_with_the_source_indentation_inside_it() {
+    const A_RUN: usize = 5;
+    let mut found = Vec::new();
+    for dir in ["src", "search-handler/src"] {
+        let mut files = Vec::new();
+        collect_rust_files(Path::new(dir), &mut files);
+        for path in files {
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            for (at, line) in text.lines().enumerate() {
+                // Comments say what they like; this is about what is shown.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                // Script written into the page has the same flattening in it
+                // and nobody reads it: whitespace between two statements draws
+                // nothing and means nothing. Left alone rather than counted,
+                // so this stays a check about sentences.
+                if line.contains("document.") || line.contains("window.") {
+                    continue;
+                }
+                for (found_at, _) in line.match_indices(&" ".repeat(A_RUN)) {
+                    let before = &line[..found_at];
+                    // A literal holding a newline is indented on purpose: the
+                    // spaces are part of what it is quoting, not a wrap.
+                    if before.ends_with("\\n") || !before.contains('"') {
+                        continue;
+                    }
+                    // Only inside a sentence. A run at the start of a literal
+                    // is a caller lining something up in a table.
+                    if before.ends_with(|c: char| c.is_alphanumeric() || ",.:;".contains(c)) {
+                        found.push(format!("{}:{}", path.display(), at + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        found.is_empty(),
+        "these lines put the source indentation into the middle of a sentence \
+         somebody reads, which draws as a gap in a label:\n  {}",
+        found.join("\n  ")
+    );
+}
+
 fn collect_rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;

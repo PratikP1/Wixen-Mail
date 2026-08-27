@@ -234,7 +234,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(
             rows[0].id < 0,
-            "a queued row carries {}, which a reader will look up as a              received message and find somebody else's mail",
+            "a queued row carries {}, which a reader will look up as a \
+             received message and find somebody else's mail",
             rows[0].id
         );
 

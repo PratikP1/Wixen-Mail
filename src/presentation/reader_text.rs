@@ -763,6 +763,37 @@ pub(crate) fn human_size(bytes: usize) -> String {
 }
 
 impl ReaderDocument {
+    /// A position the text box gave, counted the way landmarks are counted.
+    ///
+    /// The two do not agree on their own. A landmark's offset counts
+    /// characters, because that is what [`read_whole`] slices the text by, and
+    /// a text box counts the way Windows counts, where a character from
+    /// outside the basic plane is two positions rather than one. So a single
+    /// emoji anywhere earlier in a conversation puts every landmark after it
+    /// one out, and a thread with several drifts further with each one.
+    ///
+    /// Measured against a real control in `tests/text_selection_offsets.rs`
+    /// rather than reasoned about, because wxdragon's shim sits in between and
+    /// either layer could have been converting.
+    pub fn caret_at(&self, the_box_says: usize) -> usize {
+        let mut counted = 0usize;
+        for (characters, letter) in self.text.chars().enumerate() {
+            if counted >= the_box_says {
+                return characters;
+            }
+            counted += letter.len_utf16();
+        }
+        self.text.chars().count()
+    }
+
+    /// A landmark's offset, counted the way the text box counts.
+    ///
+    /// The other direction of [`caret_at`](Self::caret_at), for putting the
+    /// caret somewhere rather than reading where it is.
+    pub fn where_the_box_puts_it(&self, offset: usize) -> usize {
+        self.text.chars().take(offset).map(char::len_utf16).sum()
+    }
+
     /// The next landmark after a caret position, if there is one.
     pub fn next_landmark(&self, from: usize) -> Option<&Landmark> {
         self.landmarks.iter().find(|l| l.offset > from)
@@ -1926,5 +1957,61 @@ mod warning_tests {
         let warning = document.warning.expect("should warn");
         assert!(warning.contains("spam"), "got {warning}");
         assert!(!warning.starts_with("Warning:"), "got {warning}");
+    }
+
+    /// A document whose text holds a character from outside the basic plane.
+    fn a_document_with_a_wide_character() -> ReaderDocument {
+        ReaderDocument {
+            title: "A thread".to_string(),
+            text: "Hi \u{1F600} there".to_string(),
+            landmarks: Vec::new(),
+            warning: None,
+            attachments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_a_wide_character_moves_the_box_further_than_it_moves_a_landmark() {
+        // The whole reason the two are converted between. "Hi ", the emoji,
+        // then a space: four characters, and five of the positions a text box
+        // counts in, because the emoji is two of those.
+        let document = a_document_with_a_wide_character();
+
+        assert_eq!(document.where_the_box_puts_it(4), 5);
+        assert_eq!(document.caret_at(5), 4);
+    }
+
+    #[test]
+    fn test_a_caret_and_a_landmark_offset_convert_back_to_each_other() {
+        // Both ways over every position, because one direction alone can be
+        // right while the pair disagrees, and it is the pair that decides
+        // whether pressing H lands where the announcement says it did.
+        let document = a_document_with_a_wide_character();
+
+        for offset in 0..=document.text.chars().count() {
+            let in_the_box = document.where_the_box_puts_it(offset);
+            assert_eq!(
+                document.caret_at(in_the_box),
+                offset,
+                "a landmark at character {offset} goes to box position \
+                 {in_the_box} and comes back as something else"
+            );
+        }
+    }
+
+    #[test]
+    fn test_text_with_nothing_wide_in_it_is_left_where_it_is() {
+        // Almost every message. The conversion has to be free for those, or
+        // it is a change to how all mail is navigated rather than to the
+        // little of it that carries an emoji.
+        let document = ReaderDocument {
+            text: "Ordinary words".to_string(),
+            ..a_document_with_a_wide_character()
+        };
+
+        for offset in 0..=document.text.chars().count() {
+            assert_eq!(document.where_the_box_puts_it(offset), offset);
+            assert_eq!(document.caret_at(offset), offset);
+        }
     }
 }

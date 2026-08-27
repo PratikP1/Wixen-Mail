@@ -689,7 +689,13 @@ impl ReaderWindow {
             let Some(document) = documents.get(index) else {
                 return;
             };
-            let caret = control.get_insertion_point().max(0) as usize;
+            // Counted into the units landmarks use on the way in, and back out
+            // of them on the way out. The box counts the way Windows counts,
+            // where a character from outside the basic plane is two positions,
+            // so without this one emoji earlier in the conversation lands every
+            // jump after it a character early and a thread with several drifts
+            // further with each one.
+            let caret = document.caret_at(control.get_insertion_point().max(0) as usize);
             let target = if forwards {
                 document.next_landmark(caret)
             } else {
@@ -697,8 +703,9 @@ impl ReaderWindow {
             };
             match target {
                 Some(landmark) => {
-                    control.set_insertion_point(landmark.offset as i64);
-                    control.show_position(landmark.offset as i64);
+                    let put_it_at = document.where_the_box_puts_it(landmark.offset) as i64;
+                    control.set_insertion_point(put_it_at);
+                    control.show_position(put_it_at);
                     let _ = a11y.announce(&landmark.label, Priority::Normal);
                 }
                 None => {

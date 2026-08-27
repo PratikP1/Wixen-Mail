@@ -880,7 +880,8 @@ pub fn insert_table_script(rows: usize, columns: usize, header: bool) -> Option<
 pub fn table_spoken(rows: usize, columns: usize, header: bool) -> String {
     let header = if header { ", with a header row" } else { "" };
     format!(
-        "Table added, {rows} rows by {columns} columns{header}.          In the first cell. Tab moves to the next cell,          and Tab in the last cell adds a row."
+        "Table added, {rows} rows by {columns} columns{header}. In the first \
+         cell. Tab moves to the next cell, and Tab in the last cell adds a row."
     )
 }
 

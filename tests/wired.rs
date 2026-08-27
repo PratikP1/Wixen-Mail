@@ -2234,3 +2234,43 @@ fn test_no_two_menus_on_the_bar_claim_the_same_alt_key() {
         }
     }
 }
+
+/// Bringing the window forward has to undo minimising as well.
+///
+/// `show(true)` and `raise()` between them do not restore a window somebody
+/// minimised: on Windows it stays in the taskbar, having been shown and
+/// raised, and whatever asked for it looks exactly like something that did
+/// nothing. Both callers are the ones where that matters most, because both
+/// are reached when the window is not on screen: clicking the tray icon, and
+/// following a `mailto:` link that hands over to the copy already running.
+///
+/// Read out of the source rather than driven, because the failure only appears
+/// on a window that is really minimised on a real desktop.
+#[test]
+fn test_nothing_raises_the_window_without_also_taking_it_out_of_the_taskbar() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let raising: Vec<usize> = app
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("frame.raise()"))
+        .map(|(at, _)| at)
+        .collect();
+
+    assert!(
+        !raising.is_empty(),
+        "nothing raises the window at all, so this guard is measuring nothing"
+    );
+
+    let lines: Vec<&str> = app.lines().collect();
+    for at in raising {
+        // The three lines in front of it: the un-minimising and the showing.
+        let looked_at = lines[at.saturating_sub(3)..=at].join("\n");
+        assert!(
+            looked_at.contains("iconize(false)"),
+            "line {} raises the window without taking it out of the taskbar, so \
+             a minimised window stays minimised:\n{looked_at}",
+            at + 1
+        );
+    }
+}

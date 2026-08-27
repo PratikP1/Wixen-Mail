@@ -8,6 +8,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Pictures you put in a message now reach the person you sent it to.** They
+  did not. A picture was written into the body itself, which is how this
+  program shows one and is not how mail carries one: Gmail and Outlook both
+  drop pictures written that way out of a message they receive. So a message
+  looked right on the computer that sent it and arrived with nothing where
+  every picture was, and nobody sending one would have found out. Pictures now
+  leave the body on the way to the server and travel as parts of their own.
+  This covers pictures in signatures too.
+
+- **The plain-text half of a message says what its pictures were.** It said
+  nothing: the plain half is what the editor rendered, and a rendered page
+  reads a picture as no text at all, so the description went out only in the
+  formatted half. Somebody reading their mail as plain text is exactly who that
+  description is written for, and they were the one person not getting it.
+
+- **Forwarding a message passes its pictures on.** Forwarding used the same
+  rule as replying, which takes the pictures out, so forwarding a photograph
+  sent a note saying a picture had been there. Replying still leaves them
+  behind, which is right: the person reading a reply is the one who sent them.
+
+- **Cut and Copy take the words you selected when the text holds an emoji.**
+  Windows counts an emoji as two positions and this program counted it as one,
+  so every selection after one was a character out. Cut was the worse of the
+  two: it removed the right words and put different ones on the clipboard.
+
+- **Moving between messages in the reader window lands in the right place.**
+  The same counting fault. One emoji earlier in a conversation put every jump
+  after it a character early, and a thread with several drifted further with
+  each one.
+
+- **Clicking the tray icon, or a mail link, restores a minimised window.**
+  Both brought the window to the front without taking it out of the taskbar,
+  so a window somebody had minimised stayed there and the click looked like it
+  had done nothing.
+
+- **Several messages and settings descriptions no longer read with a gap
+  through the middle.** Eighteen of them had the source indentation inside the
+  sentence, which a label draws as a run of spaces.
+
 - **Replying to a message no longer sends its pictures back.** Pictures now
   travel inside the message, so quoting one whole meant replying with every
   picture the sender sent: three ordinary banners turned a 135-byte message

@@ -170,18 +170,52 @@ fn build_message(email: &Email) -> Result<Message> {
         builder = builder.bcc(parse_mailbox(&bcc.address, bcc.name.as_deref())?);
     }
 
-    let both_ways = |html: &str| {
-        MultiPart::alternative()
+    // The pictures come out of the body here and go as parts of their own.
+    //
+    // A picture is written into the body as a `data:` address, which is how
+    // this program shows one and is not how mail carries one: Gmail and
+    // Outlook both drop `data:` pictures out of a message they receive, so a
+    // body sent the way it is displayed arrives with nothing where each
+    // picture was, and looks perfectly right to whoever sent it. So the body
+    // is turned back into what the same pictures arrived as, which is
+    // `multipart/related` with a `cid:` in the body for each part.
+    let both_ways = |html: &str| -> Result<MultiPart> {
+        let (rewritten, pictures) = crate::application::pictures::pictures_out_of(html);
+        // The plain half is what the page rendered, and a page renders a
+        // picture as no text at all, so the descriptions have to be put back
+        // or the plain half of the message has a silent hole in it.
+        let plain = format!(
+            "{}{}",
+            email.body_text,
+            crate::application::pictures::what_the_plain_text_should_say(&pictures)
+        );
+        let words = MultiPart::alternative()
             .singlepart(
                 SinglePart::builder()
                     .header(ContentType::TEXT_PLAIN)
-                    .body(email.body_text.clone()),
+                    .body(plain),
             )
             .singlepart(
                 SinglePart::builder()
                     .header(ContentType::TEXT_HTML)
-                    .body(html.to_string()),
-            )
+                    .body(rewritten),
+            );
+        if pictures.is_empty() {
+            return Ok(words);
+        }
+        let mut related = MultiPart::related().multipart(words);
+        for picture in pictures {
+            let kind = picture.kind.parse::<ContentType>().map_err(|e| {
+                Error::Protocol(format!(
+                    "a picture in the message is of a kind this cannot write: {e}"
+                ))
+            })?;
+            related = related.singlepart(
+                lettre::message::Attachment::new_inline(picture.content_id)
+                    .body(picture.bytes, kind),
+            );
+        }
+        Ok(related)
     };
     let plain_only = || {
         SinglePart::builder()
@@ -191,12 +225,12 @@ fn build_message(email: &Email) -> Result<Message> {
 
     let built = if email.attachments.is_empty() {
         match &email.body_html {
-            Some(html) => builder.multipart(both_ways(html)),
+            Some(html) => builder.multipart(both_ways(html)?),
             None => builder.body(email.body_text.clone()),
         }
     } else {
         let mut mixed = match &email.body_html {
-            Some(html) => MultiPart::mixed().multipart(both_ways(html)),
+            Some(html) => MultiPart::mixed().multipart(both_ways(html)?),
             None => MultiPart::mixed().singlepart(plain_only()),
         };
         for file in &email.attachments {
@@ -449,6 +483,99 @@ mod tests {
             from_name: Some(name.to_string()),
             ..plain_note()
         }
+    }
+
+    /// A message whose body holds a picture the way the composer writes one.
+    fn note_carrying_a_picture() -> Email {
+        let picture = crate::application::pictures::a_picture_to_send(
+            "image/png",
+            &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+            "A cat",
+        )
+        .expect("a picture");
+        Email {
+            body_html: Some(format!("<p>Look at this</p>{picture}")),
+            ..plain_note()
+        }
+    }
+
+    #[test]
+    fn test_a_picture_goes_out_as_a_part_rather_than_written_into_the_body() {
+        // The whole reason the rewriting exists. Gmail and Outlook both drop a
+        // `data:` picture out of a message they receive, so this going wrong
+        // sends a message that is right on the sending machine and blank where
+        // every picture was on the receiving one. Nothing on this side would
+        // ever show it, which is why the check is on what goes on the wire.
+        let sent = on_the_wire(&note_carrying_a_picture());
+
+        assert!(
+            !sent.contains("data:image"),
+            "a picture went out written into the body: {sent}"
+        );
+        assert!(
+            sent.to_lowercase().contains("multipart/related"),
+            "the picture was not sent as a part of its own: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_the_sent_body_and_the_sent_picture_name_each_other() {
+        // Present and unshown is the same symptom as absent, and it is the
+        // shape this is most likely to break into later: a body naming one
+        // thing and a part carrying another still passes every check that only
+        // counts parts.
+        let sent = on_the_wire(&note_carrying_a_picture());
+
+        let named = sent
+            .lines()
+            .find(|line| line.to_lowercase().starts_with("content-id:"))
+            .map(|line| line["Content-ID:".len()..].trim().trim_matches(['<', '>']))
+            .map(str::to_string)
+            .unwrap_or_else(|| panic!("the picture part carries no name: {sent}"));
+
+        assert!(
+            sent.contains(&format!("cid:{named}")),
+            "the body does not refer to the picture called {named}: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_the_plain_half_of_a_sent_message_says_what_the_picture_was() {
+        // Somebody reading in plain text is exactly who the description rule
+        // exists for, and they are the one person who cannot see the picture
+        // it belongs to.
+        //
+        // Looked for in the plain half rather than anywhere in the message,
+        // and that distinction is the whole test: the description sits in the
+        // markup half's `alt` either way, so a check for it in the message as
+        // a whole passes with the plain half empty. This one was written that
+        // way first and passed against the fault it was written for.
+        let sent = on_the_wire(&note_carrying_a_picture());
+        let markup_starts = sent
+            .find("text/html")
+            .unwrap_or_else(|| panic!("the message has no markup half: {sent}"));
+        let plain_half = &sent[..markup_starts];
+
+        assert!(
+            plain_half.contains("A cat"),
+            "the plain half went out with nothing where the picture was: {plain_half}"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_message_is_not_made_into_a_related_one() {
+        // Almost no message carries a picture, and wrapping every one of them
+        // would put this in the path of all mail rather than the little of it
+        // this is about.
+        let sent = on_the_wire(&Email {
+            body_html: Some("<p>Nothing but words</p>".to_string()),
+            ..plain_note()
+        });
+
+        assert!(
+            !sent.to_lowercase().contains("multipart/related"),
+            "a message with no picture was wrapped anyway: {sent}"
+        );
     }
 
     #[test]
@@ -1102,7 +1229,8 @@ pub(crate) mod against_a_server_that_answers {
         assert_eq!(
             on_the_wire,
             identifier_in(&String::from_utf8_lossy(&sent)),
-            "the copy filed in Sent carries a different identifier from the              message the server was given"
+            "the copy filed in Sent carries a different identifier from the \
+             message the server was given"
         );
     }
 

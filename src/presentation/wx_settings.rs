@@ -143,7 +143,8 @@ pub fn show_settings_dialog(
     let ends = sel(&widgets.day_ends) as u8;
     if WorkingDay::could_not_be_used(starts, ends) {
         let _ = a11y.announce(
-            "A working day that runs past midnight cannot be kept, so the              working day is unchanged. Everything else you changed is saved.",
+            "A working day that runs past midnight cannot be kept, so the \
+             working day is unchanged. Everything else you changed is saved.",
             crate::presentation::accessibility::announcements::Priority::High,
         );
     }
@@ -706,7 +707,9 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
     set_accessible_name_and_description(
         &type_choice,
         "Font",
-        "The typeface your messages, contacts, calendar, tasks, notes and          reminders are listed in. Only fonts installed on this computer are          offered",
+        "The typeface your messages, contacts, calendar, tasks, notes and \
+         reminders are listed in. Only fonts installed on this computer are \
+         offered",
     );
     type_row.add(
         &type_label,
@@ -1015,7 +1018,8 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     set_accessible_name_and_description(
         &style_choice,
         "Open messages",
-        "Formatted keeps the sender's headings, links and tables. Plain text          gives you a caret to move through the message with, and flattens them.",
+        "Formatted keeps the sender's headings, links and tables. Plain text \
+         gives you a caret to move through the message with, and flattens them.",
     );
     let chosen_style = ReadingStyle::from_stored(&config.read_messages_as);
     style_choice.set_selection(
@@ -1054,7 +1058,8 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     set_accessible_name_and_description(
         &receipt_choice,
         "Tell senders when you read their mail",
-        "A read receipt tells the sender your address is live and roughly when          you were at your desk. Nothing is sent unless you choose it here.",
+        "A read receipt tells the sender your address is live and roughly when \
+         you were at your desk. Nothing is sent unless you choose it here.",
     );
     let chosen = Policy::from_stored(&config.read_receipts);
     receipt_choice.set_selection(
@@ -1082,7 +1087,9 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     set_accessible_name_and_description(
         &hold_back_remote_pictures,
         "Do not fetch pictures a message only points at",
-        "On by default. Fetching one tells the sender you opened the message.          Pictures the message carries are always shown; they are already here          and showing them tells nobody anything",
+        "On by default. Fetching one tells the sender you opened the message. \
+         Pictures the message carries are always shown; they are already here \
+         and showing them tells nobody anything",
     );
     read_sec.add(&hold_back_remote_pictures, 0, SizerFlag::All, 4);
 

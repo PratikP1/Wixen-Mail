@@ -2742,7 +2742,9 @@ impl WxMailApp {
                                         "The notification area icon could not be created: {why}"
                                     );
                                     let _ = a11y.announce(
-                                        "Wixen Mail could not put an icon in the notification                                          area, so closing the window will close the program.",
+                                        "Wixen Mail could not put an icon in \
+                                         the notification area, so closing the \
+                                         window will close the program.",
                                         crate::presentation::accessibility::announcements::Priority::High,
                                     );
                                 }
@@ -3477,6 +3479,11 @@ impl WxMailApp {
                         // decides nothing: it hands over an id like every other
                         // menu, and one handler serves both.
                         _ if id == ID_OPEN_WINDOW => {
+                            // Out of the taskbar first. Showing and raising a
+                            // minimised window leaves it minimised, so the
+                            // tray icon somebody clicked to get their window
+                            // back would do nothing they could see.
+                            frame.iconize(false);
                             frame.show(true);
                             frame.raise();
                         }
@@ -4429,7 +4436,9 @@ impl WxMailApp {
                     let _ = handover_tx.send_blocking(UIUpdate::HandedOver(argument));
                 }) {
                     tracing::warn!(
-                        "Wixen Mail could not listen for other copies of itself, so a link                          clicked elsewhere will open a second window: {why}"
+                        "Wixen Mail could not listen for other copies of \
+                         itself, so a link clicked elsewhere will open a \
+                         second window: {why}"
                     );
                 }
             }
@@ -8187,11 +8196,20 @@ fn do_an_edit_command(
                         Priority::High,
                     );
                 }
+                // The words are asked of the box rather than worked out from
+                // the two numbers. Those numbers count the way Windows counts,
+                // which is not the way Rust counts a string: a character from
+                // outside the basic plane is two of them and one of these, so
+                // indexing the value by them takes a run shifted by one for
+                // every emoji earlier in the box. Cut was the worse of the
+                // two, since it removed the right words by those same numbers
+                // and put different ones on the clipboard. Measured against a
+                // real control in `tests/text_selection_offsets.rs`.
                 EditCommand::Copy => {
-                    put_on_the_clipboard(&chosen_text(box_, from, to), a11y);
+                    put_on_the_clipboard(&box_.get_string_selection(), a11y);
                 }
                 EditCommand::Cut => {
-                    put_on_the_clipboard(&chosen_text(box_, from, to), a11y);
+                    put_on_the_clipboard(&box_.get_string_selection(), a11y);
                     box_.replace(from, to, "");
                 }
                 EditCommand::Paste => match Clipboard::get().get_text() {
@@ -8264,19 +8282,6 @@ struct EditParts<'a> {
     trees: &'a [TreeCtrl],
     state: &'a Arc<StdMutex<WxUIState>>,
     dates: crate::presentation::date_display::DateSettings,
-}
-
-/// The chosen run of a box's text.
-///
-/// Taken by character rather than by byte. `get_selection` counts characters
-/// the way the control does, and slicing a `String` by those numbers would cut
-/// a multi-byte character in half and panic on the first accented word.
-fn chosen_text(box_: &TextCtrl, from: i64, to: i64) -> String {
-    box_.get_value()
-        .chars()
-        .skip(from.max(0) as usize)
-        .take((to - from).max(0) as usize)
-        .collect()
 }
 
 /// Put words on the clipboard and say so, or say why not.
@@ -8705,7 +8710,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Shown and raised whatever came with it. A window that stayed
             // behind another program's would look exactly like a link that did
             // nothing, and somebody who cannot see the screen has only the
-            // announcement to tell the two apart.
+            // announcement to tell the two apart. Minimised counts as behind:
+            // showing and raising on their own leave it in the taskbar.
+            frame.iconize(false);
             frame.show(true);
             frame.raise();
             let _ = a11y.announce(
@@ -10343,7 +10350,8 @@ fn check_pop_mail(
         Ok(crate::service::protocols::MailAuth::Password(password)) => password,
         Ok(crate::service::protocols::MailAuth::OAuth2(_)) => {
             return fail(format!(
-                "{} is set to sign in through the browser, which POP servers do not accept.                  Give it a password instead.",
+                "{} is set to sign in through the browser, which POP servers do \
+                 not accept. Give it a password instead.",
                 account.name
             ));
         }
@@ -11242,6 +11250,10 @@ fn show_conversation_as_page(
     }
 
     frame.set_sizer(sizer, true);
+    // A window this new is never minimised. Written the same way as the other
+    // two so all three read alike and none of them is the one somebody has to
+    // remember is different.
+    frame.iconize(false);
     frame.show(true);
     frame.raise();
     let _ = a11y.announce(
@@ -15273,7 +15285,8 @@ mod edition_2024_semantics {
             // enforces that rather than the edition.
             assert!(
                 numbers.try_lock().is_err(),
-                "the guard now drops before the body; the lint guarding this                  pattern can be reconsidered and this comment is stale"
+                "the guard now drops before the body; the lint guarding this \
+                 pattern can be reconsidered and this comment is stale"
             );
         } else {
             panic!("2 should have been found");

@@ -174,10 +174,12 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
 /// can be read by a test.
 pub fn a_day_moved_in_outlook(how_many: usize) -> String {
     match how_many {
-        1 => "One day of a repeating meeting was moved in Outlook. Outlook does               not say which day it replaces, so it may be listed twice"
+        1 => "One day of a repeating meeting was moved in Outlook. Outlook does \
+              not say which day it replaces, so it may be listed twice"
             .to_string(),
         many => format!(
-            "{many} days of repeating meetings were moved in Outlook. Outlook              does not say which days they replace, so each may be listed twice"
+            "{many} days of repeating meetings were moved in Outlook. Outlook \
+             does not say which days they replace, so each may be listed twice"
         ),
     }
 }
@@ -5126,7 +5128,8 @@ mod tests {
         }
         assert_ne!(
             from_the_sync, from_the_editor,
-            "one sentence for two different outcomes tells somebody the wrong              thing about one of them"
+            "one sentence for two different outcomes tells somebody the wrong \
+             thing about one of them"
         );
     }
 

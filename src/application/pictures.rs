@@ -237,6 +237,105 @@ pub fn is_a_picture_we_carried(address: &str) -> bool {
     })
 }
 
+/// A picture lifted out of a body so it can be sent as a part of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToSend {
+    /// What the body's `cid:` reference names, with no angle brackets.
+    pub content_id: String,
+    /// The media type, for the part's `Content-Type`.
+    pub kind: String,
+    /// The picture itself, decoded.
+    pub bytes: Vec<u8>,
+    /// What it was described as, carried along for the plain half.
+    pub described: String,
+}
+
+/// Take the pictures out of a body about to be sent, leaving `cid:` behind.
+///
+/// # Why a body cannot go out with its pictures written into it
+///
+/// A picture written into the body is a `data:` address, which is how this
+/// program shows one and is not how mail carries one. Gmail and Outlook both
+/// drop `data:` pictures out of a message they receive, so a body sent as it
+/// is displayed looks right to the person who wrote it and arrives with
+/// nothing where each picture was. Nobody sending it would find out.
+///
+/// So the pictures come back out on the way to the server and go as their own
+/// parts, which is what `multipart/related` is for and what the same pictures
+/// arrived as before [`carry_the_pictures`] put them in. This is that function
+/// read backwards, and the pair has to stay a pair.
+pub fn pictures_out_of(html: &str) -> (String, Vec<ToSend>) {
+    let mut taken: Vec<ToSend> = Vec::new();
+    let rewritten = an_image_tag_re()
+        .replace_all(html, |caught: &regex::Captures<'_>| {
+            let tag = &caught[0];
+            let address = attribute_of(tag, "src").unwrap_or_default();
+            let described = attribute_of(tag, "alt").unwrap_or_default();
+            let Some(picture) = a_carried_picture(&address, &described, taken.len()) else {
+                return tag.to_string();
+            };
+            let referring = format!("cid:{}", picture.content_id);
+            taken.push(picture);
+            // Exactly, not [`replace_without_case`]: the address came out of
+            // this tag a line ago, so it matches as it stands, and comparing
+            // without case would lowercase a copy of the whole address to
+            // learn nothing. That address is the picture, megabytes of it.
+            tag.replace(&address, &referring)
+        })
+        .into_owned();
+    (rewritten, taken)
+}
+
+/// One carried picture decoded, or nothing when the address is not one.
+///
+/// Numbered by where it sits in the message rather than by anything from the
+/// picture itself. A name taken from the bytes would tell a recipient that two
+/// messages carried the same picture, and a name taken from the clock would
+/// say when it was written.
+fn a_carried_picture(address: &str, described: &str, already_taken: usize) -> Option<ToSend> {
+    use base64::Engine as _;
+
+    if !is_a_picture_we_carried(address) {
+        return None;
+    }
+    let (declared, encoded) = address.split_once(";base64,")?;
+    let kind = declared.strip_prefix("data:")?.to_ascii_lowercase();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .ok()?;
+    Some(ToSend {
+        content_id: format!("picture-{}@wixen-mail.invalid", already_taken + 1),
+        kind,
+        bytes,
+        described: html_escape::decode_html_entities(described).into_owned(),
+    })
+}
+
+/// What the plain half of a message should add about the pictures it carries.
+///
+/// Empty when it carries none, which is almost every message.
+///
+/// A page reads an `img` as no text whatever, and the plain half of an outgoing
+/// message is that reading. So without this a message with a picture in it goes
+/// out with a silent hole in its plain half where the picture was. The
+/// description is the one thing this module will not let anybody skip, and
+/// losing it here would lose it for exactly the people the rule is for: the
+/// ones reading in plain text.
+///
+/// At the end rather than in place, because the plain half is what the page
+/// rendered and there is no honest way to know where in it each picture fell.
+pub fn what_the_plain_text_should_say(pictures: &[ToSend]) -> String {
+    let described: Vec<&str> = pictures
+        .iter()
+        .map(|picture| picture.described.trim())
+        .filter(|described| !described.is_empty())
+        .collect();
+    if described.is_empty() {
+        return String::new();
+    }
+    format!("\n\nPictures in this message:\n{}", described.join("\n"))
+}
+
 /// A picture somebody is putting into a message they are writing.
 ///
 /// Carried, the same way a picture a message arrives with is carried, so the
@@ -252,13 +351,15 @@ pub fn a_picture_to_send(kind: &str, bytes: &[u8], described: &str) -> Result<St
 
     if described.trim().is_empty() {
         return Err(
-            "A picture needs a description, so somebody who cannot see it still knows              what you sent."
+            "A picture needs a description, so somebody who cannot see it \
+                    still knows what you sent."
                 .to_string(),
         );
     }
     if !worth_carrying(kind, bytes.len()) {
         return Err(format!(
-            "{kind} pictures cannot be put in a message here, or this one is larger              than {} megabytes. Attach it as a file instead.",
+            "{kind} pictures cannot be put in a message here, or this one is \
+             larger than {} megabytes. Attach it as a file instead.",
             MOST_ONE_PICTURE_MAY_BE / (1024 * 1024)
         ));
     }
@@ -411,6 +512,125 @@ mod tests {
         // Not a real PNG. Nothing here decodes it; what matters is that it is
         // bytes of a kind worth carrying and of a size under the limit.
         vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4]
+    }
+
+    #[test]
+    fn test_a_picture_leaves_the_body_before_it_is_sent() {
+        // The defect this exists for. A body sent as it is displayed carries
+        // its pictures as `data:` addresses, which Gmail and Outlook both drop
+        // out of a message they receive, so it arrives blank where every
+        // picture was and the person who sent it is never told.
+        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+
+        let (rewritten, parts) = pictures_out_of(&written);
+
+        assert_eq!(
+            parts.len(),
+            1,
+            "the picture stayed in the body: {rewritten}"
+        );
+        assert!(
+            !rewritten.contains("data:"),
+            "a data address went out to the server: {rewritten}"
+        );
+    }
+
+    #[test]
+    fn test_the_body_points_at_the_part_that_was_taken_out_of_it() {
+        // The two halves have to name the same thing. A body referring to one
+        // name and a part carrying another is a message whose pictures are all
+        // present and none of them shown, which is the same symptom as not
+        // having done any of this.
+        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+
+        let (rewritten, parts) = pictures_out_of(&written);
+
+        assert!(
+            rewritten.contains(&format!("cid:{}", parts[0].content_id)),
+            "the body does not refer to the part: {rewritten}"
+        );
+    }
+
+    #[test]
+    fn test_the_picture_is_carried_out_whole_and_still_described() {
+        // Decoded back to what went in, because the part carries bytes rather
+        // than the text they were written as. The description stays on the tag:
+        // it is what a screen reader reads at the other end, and losing it here
+        // would undo the one thing this module refuses to let anybody skip.
+        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+
+        let (rewritten, parts) = pictures_out_of(&written);
+
+        assert_eq!(
+            parts[0].bytes,
+            a_tiny_png(),
+            "the picture came back changed"
+        );
+        assert_eq!(parts[0].kind, "image/png");
+        assert!(rewritten.contains(r#"alt="A cat""#), "{rewritten}");
+    }
+
+    #[test]
+    fn test_every_picture_in_a_message_gets_a_name_of_its_own() {
+        // Two pictures sharing one name is a message where the second replaces
+        // the first everywhere it is shown. Nothing about one picture would
+        // look wrong, so this is only ever found with more than one.
+        let one = a_picture_to_send("image/png", &a_tiny_png(), "First").expect("a picture");
+        let two = a_picture_to_send("image/jpeg", &a_tiny_png(), "Second").expect("a picture");
+
+        let (_, parts) = pictures_out_of(&format!("<p>{one}</p><p>{two}</p>"));
+
+        assert_eq!(parts.len(), 2);
+        assert_ne!(
+            parts[0].content_id, parts[1].content_id,
+            "two pictures were given the same name"
+        );
+        assert_eq!(parts[1].kind, "image/jpeg", "the kinds were mixed up");
+    }
+
+    #[test]
+    fn test_the_plain_half_still_says_what_the_pictures_were() {
+        // A page reads an `img` as no text at all, so the plain half of a
+        // message goes out with a silent hole where each picture was. The
+        // description is the one thing this module refuses to let anybody
+        // skip, and dropping it here drops it for the people that rule is for.
+        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+        let (_, parts) = pictures_out_of(&written);
+
+        let said = what_the_plain_text_should_say(&parts);
+
+        assert!(said.contains("A cat"), "the description was lost: {said:?}");
+    }
+
+    #[test]
+    fn test_a_description_written_with_a_quote_in_it_reads_as_it_was_typed() {
+        // It goes into the markup escaped, so reading it straight back out
+        // would put `&quot;` in front of somebody in the plain half.
+        let written =
+            a_picture_to_send("image/png", &a_tiny_png(), r#"Ada's "best" cat"#).expect("one");
+        let (_, parts) = pictures_out_of(&written);
+
+        assert_eq!(parts[0].described, r#"Ada's "best" cat"#);
+    }
+
+    #[test]
+    fn test_a_message_with_no_pictures_adds_nothing_to_the_plain_half() {
+        // Almost every message. Anything added here would be added to all mail
+        // rather than the little of it that carries a picture.
+        assert!(what_the_plain_text_should_say(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_a_body_with_no_pictures_is_left_exactly_as_it_was() {
+        // Every message goes through this, and almost none of them carry a
+        // picture. Rewriting an ordinary body would put this in the path of
+        // all mail rather than the little of it this is about.
+        let ordinary = r#"<p>Hello</p><img src="https://example.com/tracker.gif">"#;
+
+        let (rewritten, parts) = pictures_out_of(ordinary);
+
+        assert_eq!(rewritten, ordinary);
+        assert!(parts.is_empty(), "something was taken out of a plain body");
     }
 
     #[test]

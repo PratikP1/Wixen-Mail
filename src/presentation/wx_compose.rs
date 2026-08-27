@@ -173,14 +173,36 @@ fn format_forward_subject(subject: &str) -> String {
     }
 }
 
+/// Whether a quote takes the original's pictures with it.
+///
+/// The two answers belong to the two things quoting is for, and giving both
+/// the same answer is wrong either way round. Replying with them sends a
+/// sender back what they already have; forwarding without them hands somebody
+/// a message with its contents removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThePictures {
+    /// Forwarding: the message is being passed on, so it goes on whole.
+    ComeAlong,
+    /// Replying: the person reading it is the one who sent them.
+    StayBehind,
+}
+
 /// Format a quoted body for reply.
 fn format_reply_body(quoted_body: &MessageBody) -> MessageBody {
-    quoted_under(quoted_body, "--- Original Message ---")
+    quoted_under(
+        quoted_body,
+        "--- Original Message ---",
+        ThePictures::StayBehind,
+    )
 }
 
 /// Format a forwarded body.
 fn format_forward_body(body: &MessageBody) -> MessageBody {
-    quoted_under(body, "---------- Forwarded message ----------")
+    quoted_under(
+        body,
+        "---------- Forwarded message ----------",
+        ThePictures::ComeAlong,
+    )
 }
 
 /// Put an original under a line saying what it is, leaving room to type above.
@@ -189,20 +211,25 @@ fn format_forward_body(body: &MessageBody) -> MessageBody {
 /// in front of markup renders as nothing, and text with a marker glued on is
 /// still text, so the one thing that must not happen is the join deciding the
 /// body is now the other kind.
-fn quoted_under(body: &MessageBody, marker: &str) -> MessageBody {
+fn quoted_under(body: &MessageBody, marker: &str, pictures: ThePictures) -> MessageBody {
     match body {
         MessageBody::Plain(text) => MessageBody::Plain(format!("\n\n{marker}\n{text}")),
-        // The pictures the original carried are taken out and their
-        // descriptions left. A body holds its pictures inline now, so quoting
-        // one whole means replying with every picture the sender sent: three
-        // ordinary banners turn a message of a hundred and thirty five bytes
-        // into a reply of nearly three megabytes, and the limit allows ten.
-        // Servers refuse messages that size.
         MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-            MessageBody::Html(format!(
-                "<p><br></p><p>{marker}</p>{}",
-                crate::application::pictures::without_carried_pictures(html)
-            ))
+            let quoted = match pictures {
+                // Passed on as they are. They leave the body again on the way
+                // to the server, where they go as parts of their own.
+                ThePictures::ComeAlong => html.to_string(),
+                // Taken out, with their descriptions left in their place. A
+                // body holds its pictures inline now, so quoting one whole
+                // means replying with every picture the sender sent: three
+                // ordinary banners turn a message of a hundred and thirty five
+                // bytes into a reply of nearly three megabytes. Servers refuse
+                // messages that size.
+                ThePictures::StayBehind => {
+                    crate::application::pictures::without_carried_pictures(html)
+                }
+            };
+            MessageBody::Html(format!("<p><br></p><p>{marker}</p>{quoted}"))
         }
     }
 }
@@ -2444,7 +2471,8 @@ fn insert_table(
         None => {
             let _ = a11y.announce(
                 &format!(
-                    "A table can be up to {} rows by {} columns.                      More than that cannot be read a cell at a time.",
+                    "A table can be up to {} rows by {} columns. More than that \
+                     cannot be read a cell at a time.",
                     editor_document::MAX_TABLE_ROWS,
                     editor_document::MAX_TABLE_COLUMNS
                 ),
@@ -2486,7 +2514,8 @@ fn insert_picture(
 
     let Some(kind) = kind_of_picture_file(&path) else {
         let _ = a11y.announce(
-            "That is not a kind of picture this can put in a message. Attach it as a              file instead.",
+            "That is not a kind of picture this can put in a message. Attach it \
+             as a file instead.",
             Priority::High,
         );
         return;
@@ -3055,6 +3084,55 @@ US Navy",
             html: "<h2>Original</h2>".into(),
         });
         assert!(matches!(body, MessageBody::Html(ref h) if h.contains("<h2>Original</h2>")));
+    }
+
+    #[test]
+    fn test_forwarding_a_message_passes_its_pictures_on() {
+        // Forwarding exists to hand somebody the message. Taking the pictures
+        // out of it leaves the recipient a note saying a picture was there,
+        // which is not what anybody forwarding a photograph meant to send, and
+        // the person forwarding it is never told it happened.
+        let picture = crate::application::pictures::a_picture_to_send(
+            "image/png",
+            &[0x89, b'P', b'N', b'G', 1, 2],
+            "A cat",
+        )
+        .expect("one");
+
+        let body = format_forward_body(&MessageBody::Html(format!("<p>Look</p>{picture}")));
+
+        let MessageBody::Html(html) = &body else {
+            panic!("html in, html out: {body:?}");
+        };
+        assert!(
+            html.contains("data:image/png;base64,"),
+            "the picture was dropped out of the forward: {html}"
+        );
+    }
+
+    #[test]
+    fn test_replying_still_does_not_send_the_pictures_back() {
+        // The other half of the same decision, and the reason the two cannot
+        // share one answer. The sender has these already, and quoting them
+        // turned a message of a hundred and thirty five bytes into a reply of
+        // nearly three megabytes.
+        let picture = crate::application::pictures::a_picture_to_send(
+            "image/png",
+            &[0x89, b'P', b'N', b'G', 1, 2],
+            "A cat",
+        )
+        .expect("one");
+
+        let body = format_reply_body(&MessageBody::Html(format!("<p>Look</p>{picture}")));
+
+        let MessageBody::Html(html) = &body else {
+            panic!("html in, html out: {body:?}");
+        };
+        assert!(
+            !html.contains("data:image"),
+            "the reply sent the pictures back: {html}"
+        );
+        assert!(html.contains("[Picture: A cat]"), "{html}");
     }
 
     #[test]
