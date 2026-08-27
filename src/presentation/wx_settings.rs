@@ -465,8 +465,9 @@ fn add_default_programs(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> 
     set_accessible_name_and_description(
         &choose,
         "Choose default programs in Windows",
-        "Opens the Windows settings screen where default programs are chosen. \
-         Wixen Mail cannot change this itself",
+        "Opens the Windows settings screen at Wixen Mail, where you choose \
+         which file types and links it opens. Wixen Mail cannot change this \
+         itself",
     );
     programs_sec.add(&choose, 0, SizerFlag::Left | SizerFlag::All, 4);
 

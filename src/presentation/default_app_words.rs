@@ -81,8 +81,9 @@ pub fn button_label() -> &'static str {
 /// does it.
 pub fn why_windows_asks() -> &'static str {
     "Windows decides which program opens email, calendar files and contact \
-     cards, and only you can change it. Wixen Mail can show you what is set \
-     now and take you to the Windows screen where you choose."
+     cards, and only you can change it. Wixen Mail lists itself as one of the \
+     programs you can pick, shows you what is set now, and takes you to the \
+     Windows screen where you choose."
 }
 
 /// What to announce when the startup check finds this program is not the

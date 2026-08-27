@@ -45,44 +45,54 @@
 //! - The class itself is registered under `Software\Classes\CLSID` with an
 //!   `InprocServer32` value, which is the in-process COM server registration.
 //!
+//! Also watched happen on this machine, using [`the setup tool`](setup):
+//!
+//! - The crawl scope rule and the search root can be added to the `SystemIndex`
+//!   catalog, read back, and removed again, leaving the catalog with exactly the
+//!   rules it had before.
+//! - Once added, `IncludedInCrawlScope` answers yes for a message URL under the
+//!   prefix, and the catalog moves into a full crawl straight away.
+//! - **Changing the crawl scope did not need administrator rights**, which was
+//!   not what was expected. Registering the classes still does. See
+//!   [`com::crawl_scope`] and the README for exactly what was run.
+//! - The library loads and its `DllRegisterServer` runs when the setup tool
+//!   calls it the way `regsvr32` would.
+//!
 //! Not verified, and not verifiable without installing this and running the real
 //! indexer:
 //!
 //! - That Windows actually loads this DLL, calls these methods in this order,
-//!   and accepts the chunks handed back.
+//!   and accepts the chunks handed back. **Nothing has ever seen the indexer ask
+//!   this handler for anything.** The scope rule has only been added on a
+//!   machine where the classes were not registered, because registering them
+//!   needs an administrator prompt.
 //! - That the indexer's own URL parser accepts a hyphen in the scheme name.
 //!   RFC 3986 allows one, and Microsoft recommends `companyName.scheme`, which
 //!   also contains a character outside the letters. If a real run rejects
 //!   `wixen-mail`, [`url::SCHEME`] is the single place to change.
 //! - Which account the indexer's host process runs as for this handler, which
 //!   decides whether it can read the database at all. See [`store`].
+//! - That any mail is ever found. That is one query away once somebody has run
+//!   the setup tool from an administrator prompt, and the README says how.
 //!
 //! Until somebody has installed this and watched the indexer pick an item up,
-//! treat the whole thing as unproven. It compiles and its pure parts are tested;
-//! that is a different claim from working.
+//! treat the whole thing as unproven. It compiles, its pure parts are tested,
+//! and the half that tells the indexer to look has been watched working; that is
+//! still a different claim from working.
 //!
-//! # Not built at all, and the reason this indexes nothing today
+//! # Limits to know before counting on this
 //!
-//! Registering a protocol handler tells the indexer how to read a URL. It does
-//! not tell it to go and look. That is a separate thing: a crawl scope rule,
-//! added through `ISearchCrawlScopeManager`, which says "this URL prefix is
-//! yours, go and index under it". Nothing here does that.
+//! It covers mail only, and the URL shape is mail-shaped, so contacts,
+//! calendar, tasks, notes and reminders are not in it. A message that arrived as
+//! HTML with no plain alternative contributes its subject, sender and date but
+//! no body text, because handing raw markup to the indexer would fill the index
+//! with tag names. There is no per-item security descriptor, so the index does
+//! not carry one, and nothing here catches a panic on the way out to Windows.
 //!
-//! So even fully registered on a machine, and even if every unverified item
-//! above turns out fine, this handler will be asked about exactly nothing. It
-//! is a working answer to a question the indexer has not been told to ask.
-//!
-//! That is the next piece of work and it has not been started. It is written
-//! here rather than in a note somewhere because the gap is invisible from the
-//! outside: registration succeeds, the indexer runs, no error appears anywhere,
-//! and no mail is ever found.
-//!
-//! Two other limits worth knowing before anybody counts on this. It covers mail
-//! only, and the URL shape is mail-shaped, so contacts, calendar, tasks, notes
-//! and reminders are not in it. And a message that arrived as HTML with no plain
-//! alternative contributes its subject, sender and date but no body text,
-//! because handing raw markup to the indexer would fill the index with tag
-//! names.
+//! One more, which arrived with the crawl scope work. A scope rule names one
+//! person's mail, so two people who both want this on one computer need two
+//! rules. The setup tool adds one at a time and says whose. There is no code
+//! anywhere that walks the machine's accounts and sets them all up.
 //!
 //! # How it is put together
 //!
@@ -97,7 +107,13 @@
 //! - [`store`] reads the database, read only.
 //! - [`registration`] works out which registry entries to write. The plan is
 //!   pure and tested; only the writing touches the registry.
+//! - [`scope`] works out which crawl scope rule tells the indexer to look, and
+//!   what a report about it may say. Pure.
+//! - [`setup`] reads the setup tool's command line. Pure.
 //! - [`com`] is the plumbing, and holds no decisions worth testing.
+//!
+//! The setup tool itself is `wixen-mail-search-setup.exe`, built from this same
+//! crate. `search-handler/README.md` says how to run it and what to look for.
 //!
 //! [`ISearchProtocol`]: https://learn.microsoft.com/en-us/windows/win32/api/searchapi/nn-searchapi-isearchprotocol
 //! [`IUrlAccessor`]: https://learn.microsoft.com/en-us/windows/win32/api/searchapi/nn-searchapi-iurlaccessor
@@ -107,5 +123,7 @@ pub mod chunks;
 pub mod com;
 pub mod record;
 pub mod registration;
+pub mod scope;
+pub mod setup;
 pub mod store;
 pub mod url;

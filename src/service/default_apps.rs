@@ -17,10 +17,12 @@
 //!
 //! 1. Say what this program can open, by writing the capability keys Windows
 //!    reads when it builds the list of candidates. [`capability_registry_entries`]
-//!    returns those as data. Nothing in this file writes them: the installer
-//!    does, because they belong to the installation rather than to a run of
-//!    the program, and because writing them from here would mean a running
-//!    program quietly editing the shell's registry.
+//!    returns those as data, and
+//!    [`crate::service::default_apps_registration`] writes and removes them.
+//!    They are split that way so what to write can be read and tested without
+//!    a registry anywhere near it. Until that second module existed nothing
+//!    ever wrote them, and Wixen Mail did not appear in the Windows list at
+//!    all, so nobody could choose it even if they wanted to.
 //! 2. Send the person to the Windows Settings page where they choose.
 //!    [`open_windows_default_apps_page`] does that and nothing more.
 //!
@@ -180,7 +182,11 @@ impl DefaultKind {
 /// One string for both the `ApplicationName` value and the name under
 /// `RegisteredApplications`, because Microsoft requires them to match and two
 /// literals is how they stop matching.
-const APPLICATION_NAME: &str = "Wixen Mail";
+///
+/// Public because [`crate::service::default_apps_registration`] writes and
+/// removes these entries, and removal has to name the same value that writing
+/// created. Two spellings would leave the pointer behind on an uninstall.
+pub const APPLICATION_NAME: &str = "Wixen Mail";
 
 /// What the Settings page says this program can do, in one sentence.
 ///
@@ -198,16 +204,43 @@ const APPLICATION_DESCRIPTION: &str =
 /// cannot write to `HKEY_LOCAL_MACHINE` on an ordinary account. And the
 /// association itself is per-user, so a machine-wide claim would be a claim
 /// one person could make on behalf of everybody who shares the computer.
-const CAPABILITY_KEY: &str = r"HKCU\Software\Wixen\Wixen Mail\Capabilities";
+/// Verified against this machine rather than taken from a page. Every
+/// application in `RegisteredApplications` here names a key of its own
+/// choosing: Thunderbird uses `Software\Clients\Mail\Mozilla Thunderbird`,
+/// Firefox uses `Software\Clients\StartMenuInternet\Firefox-...`, and
+/// foobar2000 and QRead both use a key under their own vendor name, which is
+/// the shape this follows.
+pub const CAPABILITY_KEY: &str = r"HKCU\Software\Wixen\Wixen Mail\Capabilities";
+
+/// The two keys above [`CAPABILITY_KEY`] that this program made to hold it.
+///
+/// Named so that removing the registration can take them away when they are
+/// empty, rather than leaving a trail of keys behind on an uninstall. Removal
+/// checks that each is empty first, so a sibling program that later keeps
+/// something under `Software\Wixen` does not lose it.
+pub const CAPABILITY_KEY_CONTAINERS: [&str; 2] =
+    [r"HKCU\Software\Wixen\Wixen Mail", r"HKCU\Software\Wixen"];
 
 /// Where Windows looks to find the key above.
 ///
 /// This is the only entry Windows reads without being told where to look, so
 /// it is the one that has to be right for any of the others to be seen.
-const REGISTERED_APPLICATIONS_KEY: &str = r"HKCU\Software\RegisteredApplications";
+///
+/// Under the current user, and that is a real place rather than a fallback.
+/// Read off this machine: `HKCU\Software\RegisteredApplications` holds
+/// `ZoomPBX`, which is registered nowhere else, and a duplicate of Firefox's
+/// entry. Both resolve, so a program with no administrator rights can put
+/// itself in this list.
+///
+/// **Never delete this key.** It belongs to Windows and holds every other
+/// program's entry. Removal takes out one named value.
+pub const REGISTERED_APPLICATIONS_KEY: &str = r"HKCU\Software\RegisteredApplications";
 
 /// Where the identifiers this program registers live.
-const CLASSES_KEY: &str = r"HKCU\Software\Classes";
+///
+/// **Never delete this key either.** It is the whole per-user class
+/// registration. Removal takes out the four identifier keys below it.
+pub const CLASSES_KEY: &str = r"HKCU\Software\Classes";
 
 /// The nameless value every registry key has, spelled once.
 const DEFAULT_VALUE: &str = "";
@@ -218,6 +251,28 @@ const DEFAULT_VALUE: &str = "";
 /// defaults are, and it works by asking somebody rather than by deciding.
 pub const DEFAULT_APPS_SETTINGS_URI: &str = "ms-settings:defaultapps";
 
+/// The same page, opened at this program rather than at the top of the list.
+///
+/// Microsoft added this in Windows 11 and it is the one supported way a
+/// program can have any say in this at all. `registeredAppUser` rather than
+/// `registeredAppMachine` because the registration is under the current user:
+/// naming the wrong one lands on the general list instead.
+///
+/// It matters most to the people this program is for. The general page is a
+/// list of every application on the machine, and finding one entry in it by
+/// keyboard means arrowing through the lot. This opens on Wixen Mail's own
+/// page, where the file types and the links it can open are the whole content.
+///
+/// The name is spelled with `%20` because it goes into a URI. It has to match
+/// the name under `RegisteredApplications` exactly, so it is built from
+/// [`APPLICATION_NAME`] rather than written out again.
+pub fn default_apps_settings_uri_for_this_program() -> String {
+    format!(
+        "{DEFAULT_APPS_SETTINGS_URI}?registeredAppUser={}",
+        APPLICATION_NAME.replace(' ', "%20")
+    )
+}
+
 /// The value under a `UserChoice` key that names the winner.
 const USER_CHOICE_VALUE: &str = "ProgId";
 
@@ -226,20 +281,19 @@ const EXECUTABLE_FILE_NAME: &str = "wixen-mail.exe";
 
 /// The registry entries that put this program in the list of candidates.
 ///
-/// Data rather than an action, on purpose. These belong to the installation,
-/// so the installer writes them, and returning them means the installer and
-/// the tests are reading one description of them instead of two that drift.
-/// Nothing in this file writes to the registry.
+/// Data rather than an action, on purpose, so that what gets written can be
+/// read and tested with no registry involved.
+/// [`crate::service::default_apps_registration`] applies them, and reads this
+/// same list to work out what to take away again, so writing and removing
+/// cannot drift apart.
 ///
 /// This form finds the executable itself, which is right for a running
-/// program and wrong for an installer, which knows the folder it is installing
-/// into and is not running from it. An installer should call
-/// [`capability_entries_for`] with the path it is about to install to.
+/// program and wrong for anything that knows a folder it is not running from.
+/// Such a caller should use [`capability_entries_for`] with the path in hand.
 ///
 /// If the executable's own path cannot be read, the commands fall back to a
 /// bare `wixen-mail.exe` and lean on the shell finding it. Said plainly
-/// because that is weaker than a full path and can fail: an installer with a
-/// path in hand should pass it.
+/// because that is weaker than a full path and can fail.
 pub fn capability_registry_entries() -> Vec<(String, String, String)> {
     let executable = std::env::current_exe()
         .map(|path| path.display().to_string())
@@ -255,6 +309,15 @@ pub fn capability_registry_entries() -> Vec<(String, String, String)> {
 /// None of this makes anything the default. It is the half of the supported
 /// flow that says what this program can open; the other half is a person
 /// choosing, in the page [`open_windows_default_apps_page`] opens.
+///
+/// The shape was checked against what is really on a Windows 11 machine
+/// rather than taken from a page. Thunderbird's mail registration is a
+/// `Capabilities` key holding `ApplicationName`, `ApplicationDescription` and
+/// `ApplicationIcon`, with `FileAssociations` and `URLAssociations` below it,
+/// an identifier per claimed type under `Software\Classes` carrying a
+/// `DefaultIcon` and a `shell\open\command` of `"...exe" "%1"`, and a value in
+/// `RegisteredApplications` naming the capability key. That is what is
+/// produced here.
 ///
 /// What is deliberately not here: `Software\Clients\Mail`, the key that
 /// claims the system MAPI client. Wixen Mail does not implement MAPI, so
@@ -335,6 +398,13 @@ pub fn capability_entries_for(executable_path: &str) -> Vec<(String, String, Str
 pub fn open_windows_default_apps_page() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
+        // This program's own page first, and the general list only if that
+        // does not open. The targeted form is a Windows 11 addition, so an
+        // older Windows 10 has to land somewhere rather than on an error, and
+        // the general page is where it landed before this existed.
+        if open::that(default_apps_settings_uri_for_this_program()).is_ok() {
+            return Ok(());
+        }
         open::that(DEFAULT_APPS_SETTINGS_URI).map_err(|problem| {
             Error::Other(format!(
                 "Windows would not open its default apps settings: {problem}"
@@ -1470,6 +1540,49 @@ mod tests {
         // `ms-settings:defaultapps` is the documented URI, and a typo in it
         // fails as a shell error somewhere far away from this line.
         assert_eq!(DEFAULT_APPS_SETTINGS_URI, "ms-settings:defaultapps");
+    }
+
+    #[test]
+    fn test_the_settings_page_opens_at_this_program_and_names_it_the_way_windows_knows_it() {
+        // Windows matches this against the name under RegisteredApplications.
+        // Spelled differently, it opens the general list of every application
+        // on the machine, which for somebody working by keyboard means
+        // arrowing through the lot to find one entry. Built from the same
+        // constant as the registration so the two cannot come apart.
+        let uri = default_apps_settings_uri_for_this_program();
+
+        assert_eq!(
+            uri,
+            "ms-settings:defaultapps?registeredAppUser=Wixen%20Mail"
+        );
+        assert!(uri.starts_with(DEFAULT_APPS_SETTINGS_URI), "{uri}");
+        assert!(
+            !uri.contains(' '),
+            "a space in a URI is not carried through the shell: {uri}"
+        );
+        assert_eq!(
+            uri.replace("%20", " ")
+                .rsplit_once('=')
+                .map(|(_, name)| name),
+            Some(APPLICATION_NAME),
+            "the page is opened at a name nothing is registered under"
+        );
+    }
+
+    #[test]
+    fn test_the_settings_page_names_the_user_registration_and_not_the_machine_one() {
+        // Windows takes `registeredAppUser` and `registeredAppMachine` and
+        // looks in different hives for each. This program registers under the
+        // current user, so the machine form would find nothing and fall back
+        // to the general list, with nothing to say why.
+        let uri = default_apps_settings_uri_for_this_program();
+
+        assert!(uri.contains("registeredAppUser="), "{uri}");
+        assert!(!uri.contains("registeredAppMachine"), "{uri}");
+        assert!(
+            CAPABILITY_KEY.starts_with(r"HKCU\"),
+            "the registration moved to the machine and this link did not"
+        );
     }
 
     #[test]

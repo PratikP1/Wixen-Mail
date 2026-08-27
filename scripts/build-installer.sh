@@ -161,6 +161,14 @@ echo
 echo "== release build =="
 cargo build --release
 
+# The Windows Search handler is its own crate with its own target folder, so
+# `cargo build` above does not touch it. The installer names both files it
+# builds and refuses to compile without them, which is the point: a release that
+# quietly shipped without the search handler would look complete and the feature
+# would simply not be there.
+echo "== search handler =="
+(cd search-handler && cargo build --release)
+
 echo "== setup executable, version $FULL_VERSION, file version $VERSION_INFO =="
 mkdir -p dist
 # The doubled slash is not a typo. Git Bash rewrites a leading /D into a

@@ -1271,7 +1271,13 @@ fn end_of(remote: &CalDavEvent) -> String {
 }
 
 /// Convert a CalDavEvent to a local CalendarEventEntry.
-fn caldav_event_to_local(
+///
+/// Reachable from [`crate::application::opening`] as well, which reads the
+/// same shape out of an `.ics` file somebody double-clicked and then clears
+/// the fields that say it came from a server. Shared rather than copied,
+/// because thirty field mappings written twice are thirty chances for the two
+/// to disagree about what an event is.
+pub(crate) fn caldav_event_to_local(
     remote: &CalDavEvent,
     account_id: &str,
     calendar_id: &str,

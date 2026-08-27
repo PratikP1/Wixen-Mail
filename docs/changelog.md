@@ -8,6 +8,70 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail now appears in the Windows list of default programs, so you can
+  choose it.** Until now it did not appear there at all. The list is built from
+  registry keys that say what a program can open, nothing ever wrote them, and
+  so there was no Wixen Mail to pick even for somebody who wanted it. That is
+  why the setting looked like it did nothing.
+
+  It is written for your account only, so it needs no administrator rights, and
+  it is written when Wixen Mail starts. Uninstalling removes it, and so does
+  erasing everything Wixen Mail stored.
+
+  **This still does not make Wixen Mail the default for anything.** Windows has
+  not let a program do that since Windows 8, and nothing here tries. What
+  changed is that Wixen Mail is now one of the programs on the Windows screen
+  where you choose. The button in Settings, General now opens that screen at
+  Wixen Mail rather than at the top of a list of every program on the computer.
+
+  Four things are claimed: `mailto:` links, `webcal:` links, `.ics` calendar
+  files, and `.vcf` contact cards.
+
+- **Opening a mail link, a calendar file or a contact card starts Wixen Mail
+  and does something with it.** This is the other half of the change above, and
+  without it choosing Wixen Mail would have opened a window that ignored what
+  it was given.
+
+  - A `mailto:` link opens a message ready to write, with the recipient,
+    subject, copy lines and text the link asked for already filled in.
+  - An `.ics` file or a `webcal:` link adds its events to the calendar kept on
+    this computer, and opens the calendar so you can see them. Opening the same
+    invitation twice updates the event rather than adding a second one.
+  - A `.vcf` file adds its cards to the contacts kept on this computer, and
+    opens contacts.
+
+  None of this sends anything anywhere. Everything read this way is filed under
+  the items kept on this computer, never under one of your accounts, so no sync
+  offers a stranger's invitation to your calendar server as something you
+  created.
+
+  A `mailto:` link can only fill in the recipient, the copy lines, the subject
+  and the text. Links are allowed to ask for other message headers and Wixen
+  Mail refuses: a link that could set who a message is from, or where the
+  replies go, is a link that could put somebody else's address on a message you
+  send. What was refused is written to the log.
+
+  The same four things can be given on the command line, and `--help` says so.
+
+- **Windows Search can be told to index your mail.** Off by default, and
+  offered as a tick box during installation rather than in settings, because
+  it registers something machine-wide and needs administrator rights.
+
+  **Experimental, and honestly so: nothing has yet seen Windows read a single
+  message through it.** The half that tells the indexer where to look has been
+  watched working on a real machine. The half where the indexer comes back and
+  asks for a message has never run, because that needs the parts that only an
+  installer can put in place. Treat it as unfinished until you have watched it
+  find something.
+
+  Everything indexed goes into the Windows Search index, which is not
+  encrypted and which any software on the computer can read. The mail cache
+  was never encrypted either, so this takes no protection away, but it does
+  widen who can read your mail, and that is why it is off and why the tick box
+  says so.
+
+  Mail only. Contacts, calendar, tasks and notes are not covered.
+
 - **Settings, General shows which program Windows opens email, calendar files
   and contact cards with**, and takes you to the Windows screen where that is
   chosen.

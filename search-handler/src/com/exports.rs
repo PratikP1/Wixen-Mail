@@ -16,7 +16,8 @@
 use super::factory::{Class, ClassFactory};
 use super::{is_success, nothing_is_in_use};
 use crate::registration::{
-    Entry, FILTER_CLSID_VALUE, Hive, PROTOCOL_CLSID_VALUE, entries, keys_to_remove, value_to_remove,
+    Entry, FILTER_CLSID_VALUE, Hive, PROTOCOL_CLSID, PROTOCOL_CLSID_VALUE, entries, keys_to_remove,
+    value_to_remove,
 };
 use windows::Win32::Foundation::{
     CLASS_E_CLASSNOTAVAILABLE, E_FAIL, E_POINTER, HMODULE, MAX_PATH, S_FALSE, S_OK,
@@ -27,8 +28,9 @@ use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleExW,
 };
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_LOCAL_MACHINE, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
-    RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW,
+    HKEY, HKEY_LOCAL_MACHINE, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_EXPAND_SZ,
+    RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegGetValueW,
+    RegOpenKeyExW, RegSetValueExW,
 };
 use windows_core::{GUID, HRESULT, HSTRING, Interface, PCWSTR};
 
@@ -116,6 +118,77 @@ pub extern "system" fn DllUnregisterServer() -> HRESULT {
 
     outcome
 }
+
+/// The library path the registry has against this handler's protocol class.
+///
+/// `None` when nothing is registered. Read rather than assumed, so the setup
+/// tool can say whether the file it was pointed at is the one Windows would
+/// actually load. Those two coming apart is what a moved or reinstalled
+/// application leaves behind, and the indexer's only sign of it is that no mail
+/// is ever found.
+pub fn registered_library() -> Option<String> {
+    read_string(
+        &format!(r"Software\Classes\CLSID\{PROTOCOL_CLSID}\InprocServer32"),
+        None,
+    )
+}
+
+/// The name Windows Search has against this handler's scheme.
+///
+/// `None` when the scheme is not registered at all. Read separately from the
+/// class above because the two are written to different places and either can
+/// be present without the other.
+pub fn registered_scheme_handler() -> Option<String> {
+    let (key, value) = value_to_remove();
+
+    read_string(key, Some(value))
+}
+
+/// One string value out of the machine's part of the registry.
+fn read_string(key: &str, name: Option<&str>) -> Option<String> {
+    let key = HSTRING::from(key);
+    let name = name.map(HSTRING::from);
+    let mut buffer = [0u16; LONGEST_VALUE];
+    // In bytes, which is what this call counts in, and it writes back how many
+    // it used.
+    let mut room = (buffer.len() * size_of::<u16>()) as u32;
+
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            &key,
+            match &name {
+                Some(name) => PCWSTR(name.as_ptr()),
+                None => PCWSTR::null(),
+            },
+            // Both kinds, because a path written by hand into a registry editor
+            // often arrives as the expandable kind and asking for one would
+            // report it as missing.
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&mut room),
+        )
+    };
+    if !is_success(result) {
+        return None;
+    }
+
+    // Back to characters, and without the terminator the call counts.
+    let used = (room as usize) / size_of::<u16>();
+    let text = String::from_utf16(&buffer[..used.saturating_sub(1).min(buffer.len())]).ok()?;
+
+    match text.is_empty() {
+        true => None,
+        false => Some(text),
+    }
+}
+
+/// The most a value read here can be, in characters.
+///
+/// Generous rather than exact. The longest thing read is a path to a library,
+/// and the only cost of the extra room is a buffer on the stack.
+const LONGEST_VALUE: usize = 1024;
 
 /// Put one value into the registry, making the key if it is not there.
 fn write_entry(entry: &Entry) -> bool {

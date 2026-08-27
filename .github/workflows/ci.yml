@@ -54,6 +54,15 @@ jobs:
     - name: Run tests
       run: cargo test --all-targets --verbose --no-fail-fast
 
+    # The search handler is a crate of its own rather than a workspace member,
+    # so every cargo command above walks straight past it. It had no check of
+    # any kind until scripts/build-installer.sh started building it, at which
+    # point a broken commit there would break installer builds with nothing
+    # having gone red first.
+    - name: Run the search handler's tests
+      run: cargo test --all-targets --verbose --no-fail-fast
+      working-directory: search-handler
+
   fmt:
     name: Rustfmt
     runs-on: windows-latest
@@ -72,6 +81,10 @@ jobs:
         
     - name: Check formatting
       run: cargo fmt --all -- --check
+
+    - name: Check the search handler's formatting
+      run: cargo fmt --all -- --check
+      working-directory: search-handler
 
   clippy:
     name: Clippy
@@ -109,6 +122,10 @@ jobs:
     
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Run clippy on the search handler
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      working-directory: search-handler
 
 
   audit:

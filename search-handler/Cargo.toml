@@ -14,6 +14,17 @@ license = "GPL-3.0-or-later"
 name = "wixen_mail_search"
 crate-type = ["cdylib", "rlib"]
 
+# The tool somebody runs to try this. Named in full rather than left to be
+# discovered, because the name is what ends up beside the application and in
+# the installer, and it should not change because a file was renamed.
+#
+# It is a separate program on purpose. The library registers itself by asking
+# Windows which file the running code came from, so a tool that called that
+# code directly would register the tool.
+[[bin]]
+name = "wixen-mail-search-setup"
+path = "src/bin/wixen-mail-search-setup.rs"
+
 [dependencies]
 # The same version and the same bundled build as the main application, so the
 # two are reading a database written by one library version rather than two.
@@ -47,10 +58,18 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 #                                   passed are None
 #   Win32_System_Registry           self-registration
 #   Win32_System_LibraryLoader      finding this DLL's own path to write into
-#                                   InprocServer32
+#                                   InprocServer32, and loading the DLL from the
+#                                   setup tool the way regsvr32 does
+#   Win32_Security_Authorization    ConvertSidToStringSid, which is how the setup
+#                                   tool turns the running account into the
+#                                   identifier a crawl scope rule names
+#   Win32_System_Threading          OpenProcessToken and GetCurrentProcess, to
+#                                   ask who this program is running as and
+#                                   whether it is elevated
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Storage_EnhancedStorage",
     "Win32_Storage_IndexServer",
     "Win32_System_Com",
@@ -58,6 +77,7 @@ windows = { version = "0.62.2", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_Search",
+    "Win32_System_Threading",
     "Win32_System_Variant",
 ] }
 

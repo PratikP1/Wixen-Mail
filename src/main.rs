@@ -89,6 +89,7 @@ fn main() {
         tracing::info!("Started read only: nothing will be changed at any server");
     }
     report_migration(migration.as_ref());
+    offer_this_program_to_windows();
 
     // Before the application is built, because an unknown name here has to
     // stop rather than start normally: a scan that walks the main window and
@@ -107,9 +108,15 @@ fn main() {
         }
     };
 
+    // What Windows handed over, when it started this program for a `mailto:`
+    // link or an `.ics` or `.vcf` file it is registered to open. Taken out of
+    // `run` here rather than read again, so there is one answer to what this
+    // start was asked to do.
+    let open = run.open;
+
     match WxMailApp::new() {
         Ok(app) => {
-            if let Err(e) = app.run(scan_target) {
+            if let Err(e) = app.run(scan_target, open) {
                 tracing::error!("UI error: {}", e);
                 log_crash(&format!("UI run error: {}", e));
                 show_error_dialog(&format!("Wixen Mail failed to run:\n{}", e));
@@ -122,6 +129,38 @@ fn main() {
             show_error_dialog(&format!("Wixen Mail failed to start:\n{}", e));
             std::process::exit(1);
         }
+    }
+}
+
+/// Say to Windows what this program can open, so a person can choose it.
+///
+/// Without this, Wixen Mail does not appear under Settings, Apps, Default apps
+/// at all, and somebody who wanted their mail links to open here had nothing
+/// to pick. It writes a per-user registration, which needs no administrator
+/// rights, and it does not make anything the default: Windows decides that
+/// from what the person chooses on that screen, and no program is allowed to
+/// choose for them.
+///
+/// On every start, because it is the start that knows where this copy is
+/// installed, and an upgrade into a different folder would otherwise leave
+/// every registered command naming an executable that is no longer there. It
+/// reads before it writes, so an ordinary start does nothing but a handful of
+/// registry reads.
+///
+/// A failure is logged and nothing else. Not being listed is a smaller problem
+/// than a dialog in front of somebody who only wanted to read their mail, and
+/// it is not silently absorbed: the log says which start could not do it.
+fn offer_this_program_to_windows() {
+    match wixen_mail::service::default_apps_registration::register_with_windows() {
+        Ok(true) => tracing::info!(
+            "Wixen Mail is now offered in the Windows list of default programs. \
+             It is not the default for anything: that is chosen in Windows settings"
+        ),
+        Ok(false) => {}
+        Err(why) => tracing::warn!(
+            "Wixen Mail could not offer itself in the Windows list of default programs, \
+             so it will not appear there: {why}"
+        ),
     }
 }
 
@@ -175,6 +214,17 @@ fn erase_all_data() -> i32 {
 
 /// Erase, now that it has been established that nothing else is running.
 fn finish_erasing(mut left_behind: Vec<String>) -> i32 {
+    // Before the data folder goes, because this is the part of an
+    // installation that lives outside it. Left behind, these keys tell Windows
+    // this program still opens .ics and .vcf files and mailto: links after it
+    // has been taken off the machine, and every one of them is an error naming
+    // a program that is no longer there.
+    if let Err(why) = wixen_mail::service::default_apps_registration::remove_registration() {
+        left_behind.push(format!(
+            "Wixen Mail may still be listed in the Windows default programs, {why}"
+        ));
+    }
+
     // Resolved once and used for both halves: the credentials named by what is
     // in the database, and then the folder the database is in.
     let resolved = AppPaths::resolve();

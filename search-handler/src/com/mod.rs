@@ -1,27 +1,37 @@
-//! The COM objects Windows Search loads, and nothing else.
+//! The Windows plumbing: the objects the indexer loads, and the calls that set
+//! them up.
 //!
 //! None of this can be unit tested. A COM vtable is only exercised by something
 //! that knows how to call one, and the only thing that will ever call these is
-//! the Windows indexer on a machine where the handler has been registered. So
-//! everything that makes a decision lives in [`crate::url`], [`crate::record`],
-//! [`crate::chunks`], [`crate::store`] and [`crate::registration`], where it is
-//! tested, and the objects here only translate between those and Windows.
+//! the Windows indexer on a machine where the handler has been registered. The
+//! setting-up half is worse: it talks to a system service that only exists on a
+//! real machine. So everything that makes a decision lives in [`crate::url`],
+//! [`crate::record`], [`crate::chunks`], [`crate::store`],
+//! [`crate::registration`], [`crate::scope`] and [`crate::setup`], where it is
+//! tested, and the code here only translates between those and Windows.
 //!
-//! Two rules hold everywhere in this module, because both are much harder to
-//! recover from here than in ordinary code:
+//! Two rules hold in the objects the indexer loads, because both are much harder
+//! to recover from there than in ordinary code. The setup tool is an ordinary
+//! program and only the second applies to it:
 //!
 //! - **Nothing may panic.** These functions are called across a boundary from a
 //!   Microsoft process. An unwind out of one of them ends that process. There
 //!   is no `unwrap`, no `expect`, no slicing by index and no arithmetic that can
 //!   overflow. A lock that has been poisoned is an error value, not a panic.
-//! - **Nothing is written anywhere.** No log, no file, no registry key except
-//!   during self-registration. A subject line or an address must never leave
-//!   this DLL by any route but the one the indexer asked for.
+//! - **Nothing private is written anywhere.** No log, no file, and nothing on
+//!   screen. A subject line, an address or a folder name must never leave this
+//!   crate by any route but the one the indexer asked for. The library writes
+//!   registry keys while registering itself and the setup tool writes registry
+//!   keys and crawl scope rules, and none of those carry anything out of
+//!   somebody's mailbox.
 
 pub mod accessor;
+pub mod account;
+pub mod crawl_scope;
 pub mod exports;
 pub mod factory;
 pub mod filter;
+pub mod library;
 pub mod protocol;
 pub mod values;
 

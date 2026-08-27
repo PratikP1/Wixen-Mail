@@ -486,9 +486,16 @@ impl WxMailApp {
     /// ordinary start, and the flag is parsed before this is called so a name
     /// nobody recognises stops the application rather than starting it
     /// normally and letting a scan report a pass for a window it never saw.
+    ///
+    /// `open` is what Windows handed over: the `mailto:` link somebody
+    /// followed, or the `.ics` or `.vcf` file they opened, when this program
+    /// holds that association. `None` for an ordinary start. It is acted on
+    /// after the window is on screen, because a composer parented to a frame
+    /// that is not shown yet has nowhere to be modal to.
     pub fn run(
         self,
         scan_target: Option<crate::presentation::scan_target::ScanTarget>,
+        open: Option<crate::application::opening::Opening>,
     ) -> Result<()> {
         let state = self.state.clone();
         let ui_rx = self.ui_rx.clone();
@@ -1536,6 +1543,13 @@ impl WxMailApp {
                     load_module_data(module, &switch_cache, account_id, &switch_tx);
                 }
             };
+
+            // Kept before the handlers below take their own clones, so that
+            // something Windows handed over on the way in can put the person
+            // in front of what it just added. Reading an invitation into the
+            // calendar and leaving them looking at the mailbox is a change
+            // they have to go and find.
+            let switch_for_what_was_opened = do_switch_module.clone();
 
             // ── Module button click handlers ─────────────────────────────
             for (btn, module) in module_buttons {
@@ -4199,6 +4213,26 @@ impl WxMailApp {
             // run, which has nobody to answer it.
             if scan_target.is_none() {
                 ask_about_the_alpha_once(&frame);
+            }
+
+            // What Windows handed over, if it handed over anything: the
+            // `mailto:` link somebody followed or the `.ics` or `.vcf` file
+            // they opened. After show, for the same reason as above, and
+            // after the alpha question so that a composer does not open
+            // behind it.
+            if let Some(opening) = open {
+                open_what_windows_handed_over(
+                    opening,
+                    AppHandles {
+                        state: &state,
+                        tx: &scan_tx,
+                        rt: &scan_rt,
+                    },
+                    &frame,
+                    &message_cache,
+                    &a11y,
+                    &switch_for_what_was_opened,
+                );
             }
 
             // The accessibility scan asks for one window by name and walks the
@@ -6877,6 +6911,172 @@ fn start_reply(
     open_compose(app, frame, cache, a11y, compose);
 }
 
+/// Act on what Windows handed this program when it started it.
+///
+/// Reached once, from `run`, after the window is on screen. Everything here
+/// arrived from outside: a link on a web page, or a file somebody was sent.
+/// It is read and shown, and nothing it says reaches any server.
+///
+/// Whatever happens is said three ways, because the three land differently:
+/// the status line for somebody watching, an announcement for somebody
+/// listening, and, when it went wrong, a dialog, because a failure that only
+/// appears in a status line is one a person misses and then wonders why their
+/// invitation did nothing.
+fn open_what_windows_handed_over(
+    opening: crate::application::opening::Opening,
+    app: AppHandles<'_>,
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    switch_to: &impl Fn(PimModule),
+) {
+    use crate::application::opening::Opening;
+
+    let AppHandles { state: _, tx, rt } = app;
+
+    let told = |words: &str| {
+        send_status(tx, rt, words);
+        let _ = a11y.announce(
+            words,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    };
+    let went_wrong = |why: &str| {
+        tracing::warn!("{why}");
+        send_status(tx, rt, why);
+        let _ = a11y.announce(
+            why,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        MessageDialog::builder(frame, why, "Wixen Mail could not open that")
+            .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+            .build()
+            .show_modal();
+    };
+
+    match opening {
+        Opening::Compose(asked) => {
+            // Named rather than swallowed. A link that tried to set `from` or
+            // `reply-to` did not do what its author expected, and a log is
+            // where somebody diagnosing "the link filled in the wrong thing"
+            // will look.
+            if !asked.ignored.is_empty() {
+                tracing::info!(
+                    "A mailto: link asked for headers Wixen Mail does not let a link set, \
+                     and they were dropped: {}",
+                    asked.ignored.join(", ")
+                );
+            }
+            open_compose(
+                app,
+                frame,
+                cache,
+                a11y,
+                ComposeMode::MailTo {
+                    to: asked.to.clone(),
+                    cc: asked.cc.clone(),
+                    bcc: asked.bcc.clone(),
+                    subject: asked.subject.clone(),
+                    body: asked.body.clone(),
+                },
+            );
+        }
+        Opening::CalendarFile(path) => {
+            let name = file_name_of(&path);
+            match cache {
+                None => went_wrong(&format!(
+                    "Wixen Mail could not open {name}, because the place it keeps \
+                     calendars and contacts is not available."
+                )),
+                Some(cache) => {
+                    let read = crate::application::opening::text_of(&path).and_then(|text| {
+                        crate::application::opening::read_calendar_file(cache, &text)
+                    });
+                    match read {
+                        Ok(read) => {
+                            told(&crate::application::opening::what_reading_the_calendar_did(
+                                read, &name,
+                            ));
+                            switch_to(PimModule::Calendar);
+                        }
+                        Err(why) => went_wrong(&format!("{why}")),
+                    }
+                }
+            }
+        }
+        Opening::ContactFile(path) => {
+            let name = file_name_of(&path);
+            match cache {
+                None => went_wrong(&format!(
+                    "Wixen Mail could not open {name}, because the place it keeps \
+                     calendars and contacts is not available."
+                )),
+                Some(cache) => {
+                    let read = crate::application::opening::text_of(&path).and_then(|text| {
+                        cache.import_contacts_from_vcard(
+                            crate::application::opening::WHERE_IMPORTED_THINGS_GO,
+                            &text,
+                        )
+                    });
+                    match read {
+                        Ok(read) => {
+                            told(
+                                &crate::application::importing_contacts::what_the_card_import_did(
+                                    &read,
+                                ),
+                            );
+                            switch_to(PimModule::Contacts);
+                        }
+                        Err(why) => went_wrong(&format!("{why}")),
+                    }
+                }
+            }
+        }
+        Opening::CalendarSubscription(address) => {
+            let Some(cache) = cache.clone() else {
+                went_wrong(
+                    "Wixen Mail could not follow that calendar, because the place it \
+                     keeps calendars is not available.",
+                );
+                return;
+            };
+            told("Fetching that calendar.");
+            // On the runtime rather than on the thread drawing the window. A
+            // calendar can be on the other side of the world and this is a
+            // fetch over the network; run here it would stop the window until
+            // it answered, which is how a screen reader hangs on a user.
+            let fetched = rt.block_on(async {
+                crate::service::ICalSubscriptionClient::new()
+                    .fetch_ics(&address)
+                    .await
+            });
+            match fetched
+                .and_then(|text| crate::application::opening::read_calendar_file(&cache, &text))
+            {
+                Ok(read) => {
+                    told(&crate::application::opening::what_reading_the_calendar_did(
+                        read, &address,
+                    ));
+                    switch_to(PimModule::Calendar);
+                }
+                Err(why) => went_wrong(&format!("{why}")),
+            }
+        }
+    }
+}
+
+/// The part of a path a person would call the file.
+///
+/// Read out, so it is the name rather than the whole path: a screen reader
+/// working through `C:\Users\somebody\Downloads\invite.ics` one character at a
+/// time to reach the only part that identifies it is a sentence nobody
+/// finishes listening to.
+fn file_name_of(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
 /// Extract selected message info for reply/forward.
 fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
     state
@@ -6923,7 +7123,14 @@ fn open_compose(
         // nothing, so it comes from the default account rather than from
         // whichever mailbox happened to be open when somebody opened the
         // contacts panel.
-        ComposeMode::New | ComposeMode::Draft(_) | ComposeMode::WriteTo { .. } => false,
+        // A message started from a `mailto:` link answers nothing either, so
+        // it goes out from the default account rather than from whichever
+        // mailbox happened to be open when the link was followed. It usually
+        // opens on a start with no mailbox open at all.
+        ComposeMode::New
+        | ComposeMode::Draft(_)
+        | ComposeMode::WriteTo { .. }
+        | ComposeMode::MailTo { .. } => false,
     };
     let (names, active) = state
         .lock()

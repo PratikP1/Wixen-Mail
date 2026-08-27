@@ -135,6 +135,23 @@ pub enum ComposeMode {
     },
     /// Edit an existing draft
     Draft(CompositionData),
+    /// A new message somebody started by following a `mailto:` link.
+    ///
+    /// Its own kind rather than a draft carrying the same fields, for two
+    /// reasons that both matter. A draft's body is this editor's own markup
+    /// coming back and is put into the page as HTML; a `mailto:` body is
+    /// plain text written by whoever made the link, so treating it as markup
+    /// would let a web page write tags into a message somebody is about to
+    /// send under their own name. And a draft already carries the signature it
+    /// was saved with, while this is a message being started, so it gets one.
+    MailTo {
+        to: String,
+        cc: String,
+        bcc: String,
+        subject: String,
+        /// Plain text, always. See above.
+        body: String,
+    },
 }
 
 /// Format a reply subject line: prepends "Re: " unless already present.
@@ -244,7 +261,14 @@ fn answering_of(mode: &ComposeMode) -> Option<crate::application::threading::Con
         ComposeMode::Draft(data) => data.answering.clone(),
         // A message to a group starts a conversation rather than joining one,
         // so it carries no thread headers, the same as any new message.
-        ComposeMode::New | ComposeMode::Forward { .. } | ComposeMode::WriteTo { .. } => None,
+        // A message started from a link starts a conversation rather than
+        // joining one, so it carries no thread headers either. RFC 6068 lets a
+        // link name `In-Reply-To`, and this program does not honour it: see
+        // `application::mailto` for why a link may not choose headers.
+        ComposeMode::New
+        | ComposeMode::Forward { .. }
+        | ComposeMode::WriteTo { .. }
+        | ComposeMode::MailTo { .. } => None,
     }
 }
 
@@ -253,7 +277,9 @@ fn compose_title(mode: &ComposeMode) -> &'static str {
     match mode {
         // A message to a group is a new message that already has its
         // addresses, so it is titled as one.
-        ComposeMode::New | ComposeMode::WriteTo { .. } => "Compose New Message",
+        ComposeMode::New | ComposeMode::WriteTo { .. } | ComposeMode::MailTo { .. } => {
+            "Compose New Message"
+        }
         ComposeMode::Reply { .. } => "Reply",
         ComposeMode::ReplyAll { .. } => "Reply All",
         ComposeMode::Forward { .. } => "Forward",
@@ -897,6 +923,39 @@ pub fn show_compose_dialog_full(
                 ));
             }
             subject_field.set_focus();
+        }
+        // Everything a link filled in, and a signature, because this is a
+        // message being started rather than one being reopened.
+        //
+        // The body goes in as plain text, never as markup. It was written by
+        // whoever made the link, which is to say by a web page, and putting a
+        // stranger's markup into a message somebody is about to send under
+        // their own name is the one thing this must not do.
+        //
+        // Focus lands on the subject when the link filled in the To line and
+        // left the subject empty, and on the To line when the link named
+        // nobody, which is what a "share this page" link produces. Either way
+        // it is the first box still needing a person.
+        ComposeMode::MailTo {
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+        } => {
+            to_field.set_value(to);
+            cc_field.set_value(cc);
+            bcc_field.set_value(bcc);
+            subject_field.set_value(subject);
+            set_body(&with_signature(
+                &MessageBody::Plain(body.clone()),
+                signature,
+            ));
+            if to.trim().is_empty() {
+                to_field.set_focus();
+            } else if subject.trim().is_empty() {
+                subject_field.set_focus();
+            }
         }
         // A draft carries whatever signature it was saved with. Adding one
         // here would put a second on every reopen.

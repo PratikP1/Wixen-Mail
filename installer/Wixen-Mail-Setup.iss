@@ -83,6 +83,19 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a shortcut on the desktop"; GroupDescription: "Shortcuts:"
 
+; Off unless somebody turns it on, because it decides who can read their mail.
+; The description says the whole of it rather than a friendly summary, and
+; NextButtonClick below asks again before setup goes ahead.
+;
+; Only offered when installing for everybody. The handler is a COM server the
+; Windows indexer loads into its own process, so it has to be registered under
+; HKEY_LOCAL_MACHINE, and an install for one user cannot write there. Offering a
+; checkbox that would fail is worse than not offering it.
+;
+; Whether it works at all is not established. Nothing has yet watched the Windows
+; indexer ask this handler for a single message. See docs\windows-search.md.
+Name: "searchindex"; Description: "Let Windows Search find my mail (experimental, and not yet proven to work). This copies subjects and message text into the Windows Search index, which is not encrypted: any software on this computer can read it."; GroupDescription: "Windows Search:"; Flags: unchecked; Check: IsAdminInstallMode
+
 [Files]
 Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
@@ -92,11 +105,45 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 ; Not recursive, because the folders below docs are notes to ourselves.
 Source: "..\docs\*.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 
+; The Windows Search handler and the tool that switches it on and off.
+;
+; Installed whatever the task above says, and on purpose. Turning this off later
+; needs the tool, so leaving a box unticked must not take away the only way to
+; undo what ticking it did. They are also the two files somebody needs to try
+; this by hand on a machine where the box was never ticked.
+;
+; Built by scripts/build-installer.sh, which builds the search handler crate as
+; a separate step because it has its own target folder. If these are missing,
+; this file fails to compile rather than shipping a setup with a checkbox that
+; does nothing.
+Source: "..\search-handler\target\release\wixen_mail_search.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\search-handler\target\release\wixen-mail-search-setup.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\search-handler\README.md"; DestDir: "{app}\docs"; DestName: "windows-search.md"; Flags: ignoreversion
+
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\wixen-mail.exe"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\wixen-mail.exe"; Tasks: desktopicon
 
 [Run]
+; Two commands rather than one, because the two halves want different accounts.
+;
+; The registry entries go under HKEY_LOCAL_MACHINE, so that half runs as setup,
+; which is elevated.
+;
+; The crawl scope rule names one person's mail: the URL it registers carries a
+; security identifier, and the handler uses it to find whose message store to
+; read. So that half runs as whoever started setup. Without runasoriginaluser it
+; would name the account typed at the elevation prompt, which on a machine where
+; a standard user borrowed an administrator's password is somebody else
+; entirely, and the rule would point at a mailbox that does not exist. Nothing
+; would report that: the install succeeds and no mail is ever found.
+;
+; Adding the crawl scope rule did not need administrator rights on the machine
+; this was tried on, which is what makes running it as the original user
+; possible at all.
+Filename: "{app}\wixen-mail-search-setup.exe"; Parameters: "register-classes"; Tasks: searchindex; StatusMsg: "Registering the Windows Search handler..."; Flags: runhidden waituntilterminated
+Filename: "{app}\wixen-mail-search-setup.exe"; Parameters: "add-scope"; Tasks: searchindex; StatusMsg: "Telling Windows Search where to look..."; Flags: runhidden waituntilterminated runasoriginaluser
+
 Filename: "{app}\wixen-mail.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -276,6 +323,91 @@ begin
             + 'It is still listed in Apps and Features. Removing it from there '
             + 'will report an error, which is harmless: the program it points '
             + 'at has gone.';
+end;
+
+// Ask again before letting Windows Search index somebody's mail.
+//
+// The checkbox already says what happens, and this asks a second time anyway,
+// because the two are not the same question. A checkbox in a list is skimmed;
+// this stops and requires an answer. What it protects against is somebody
+// ticking a row that reads like a feature and finding out afterwards that their
+// mail is readable by every program on the machine.
+//
+// Answering No unticks the box and carries on installing, rather than going
+// back to the page. Somebody who has just said "no, do not do that" has given a
+// clear answer and should not have to find the checkbox and undo it themselves.
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID <> wpSelectTasks then
+    Exit;
+  if not WizardIsTaskSelected('searchindex') then
+    Exit;
+
+  if MsgBox(
+       'Let Windows Search index your mail?' + #13#10#13#10
+       + 'The Windows Search index is not encrypted. It is a database under '
+       + 'ProgramData that any software running on this computer can read, and '
+       + 'it will keep its own copy of your subjects and message text.' + #13#10#13#10
+       + 'Turning this off later stops new mail going in. It does not remove '
+       + 'what is already there. Only rebuilding the Windows Search index does '
+       + 'that, and it takes hours.' + #13#10#13#10
+       + 'This is experimental. Nobody has yet seen the Windows indexer read a '
+       + 'single message through it, so it may simply find nothing.' + #13#10#13#10
+       + 'Yes turns it on. No installs Wixen Mail without it.',
+       mbConfirmation, MB_YESNO) <> IDYES then
+    WizardSelectTasks('!searchindex');
+end;
+
+// Take the Windows Search setup out before the files go.
+//
+// Here rather than in [UninstallRun] because Inno ignores what a [Run] entry
+// exits with, and this is a step that can genuinely fail: Group Policy can lock
+// crawl scope changes down. A cleanup that fails silently leaves the indexer
+// asking about mail that is no longer on the machine, and nothing anywhere says
+// so.
+//
+// Both commands are run whether or not the checkbox was ever ticked. Each does
+// nothing and reports success when there is nothing to undo, and running them
+// unconditionally also covers somebody who turned this on by hand afterwards.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Tool: String;
+  Outcome: Integer;
+  Leftovers: String;
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+
+  Tool := ExpandConstant('{app}\wixen-mail-search-setup.exe');
+  if not FileExists(Tool) then
+    Exit;
+
+  Leftovers := '';
+
+  { As the person uninstalling, because the rule names their mail and nobody
+    else's. Run elevated this would look for the administrator's rule, find
+    none, and report success having removed nothing. }
+  if not (ExecAsOriginalUser(Tool, 'remove-scope', '', SW_HIDE,
+                             ewWaitUntilTerminated, Outcome) and (Outcome = 0)) then
+    Leftovers := 'Windows Search has not been told to stop looking at this mail.';
+
+  { As setup, which is elevated, because the entries are under
+    HKEY_LOCAL_MACHINE. }
+  if not (Exec(Tool, 'unregister-classes', '', SW_HIDE,
+               ewWaitUntilTerminated, Outcome) and (Outcome = 0)) then
+    Leftovers := Leftovers + #13#10
+               + 'The Windows Search handler is still registered on this computer.';
+
+  if Leftovers <> '' then
+    MsgBox('Wixen Mail has been removed, but part of its Windows Search setup '
+           + 'could not be:' + #13#10#13#10 + Leftovers + #13#10#13#10
+           + 'To finish by hand, open Indexing Options, choose Modify, and '
+           + 'untick the Wixen Mail location. Press the Windows key, then type '
+           + 'Indexing Options.' + #13#10#13#10
+           + 'Anything already in the Windows Search index stays there either '
+           + 'way, until the index is rebuilt.',
+           mbInformation, MB_OK);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
