@@ -1101,10 +1101,33 @@ mod windows_tests {
             scratch
         }
 
+        /// Take away this test's own tree, and nothing above it.
+        ///
+        /// The two keys above this one are shared with every other test in
+        /// this module, and they used to be tidied here as well. That made
+        /// each test delete keys the others were working inside: `remove_if_
+        /// empty` asks whether a key is empty and then deletes it, and between
+        /// those two steps another test can have opened something below it. A
+        /// handle to a key that has since been deleted fails every call made
+        /// on it, so tests failed in ones and fives with nothing wrong in the
+        /// code they were about.
+        ///
+        /// It only showed under the whole library, where these twenty-two run
+        /// spread among four thousand others and are far likelier to be at
+        /// different points at the same moment. Run on their own they finish
+        /// in half a second and ten runs in a row passed.
+        ///
+        /// That mattered further than these tests. `scripts/guards.sh` decides
+        /// whether a guard still works by requiring the tests that go red to
+        /// be exactly the ones its record names, so tests that fail at random
+        /// make every one of those answers untrustworthy, not only the ones
+        /// about this file.
+        ///
+        /// What it costs: an empty `Software\Wixen\RegistrationTests` stays in
+        /// the registry after a run. That is inert, and it is worth more than
+        /// tests that interfere with each other.
         fn tidy_up(&self) {
             let _ = super::windows_registry::remove_tree(&self.root);
-            let _ = super::windows_registry::remove_if_empty(&format!(r"HKCU\{SCRATCH}"));
-            let _ = super::windows_registry::remove_if_empty(r"HKCU\Software\Wixen");
         }
     }
 
