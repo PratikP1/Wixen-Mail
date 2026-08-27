@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 289 records have arrived since and have not been through it.
+# 297 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8754,3 +8754,134 @@ before = """    let wide = Wide::new(tag);
     String::from_utf16_lossy(&buffer[..written as usize - 1])"""
 after = """    tag.to_string()"""
 red = ["service::spellcheck::windows_speller::tests::test_display_name_reads_a_locale_windows_always_knows"]
+
+# ── The bug hunt of 2026-08-27 ──────────────────────────────────────────────
+#
+# Six guards written against faults found by sweeping the boundaries that
+# recent work disturbed. Each break below was taken by hand and the whole of
+# the named suite run, twice for the two that share a file, because the first
+# measurement of one of them was wrong: it named four tests where the truth is
+# nine. Writing down what was expected rather than what happened is the one
+# thing the top of this file asks nobody to do, and it is easy to do anyway.
+#
+# The registry tests had to be repaired first. They deleted keys shared with
+# each other, so a full run failed at random: the same break gave one spurious
+# failure and then five. That makes every record in this file untrustworthy
+# rather than only the ones about that code, because a run decides a guard
+# still works by requiring the red set to match exactly.
+
+[[guard]]
+name = "a picture leaves the body before the message is sent"
+file = "src/application/pictures.rs"
+before = """    if !is_a_picture_we_carried(address) {
+        return None;
+    }"""
+after = """    if is_a_picture_we_carried(address) {
+        return None;
+    }"""
+red = [
+    "application::pictures::tests::test_a_description_written_with_a_quote_in_it_reads_as_it_was_typed",
+    "application::pictures::tests::test_a_picture_leaves_the_body_before_it_is_sent",
+    "application::pictures::tests::test_every_picture_in_a_message_gets_a_name_of_its_own",
+    "application::pictures::tests::test_the_body_points_at_the_part_that_was_taken_out_of_it",
+    "application::pictures::tests::test_the_picture_is_carried_out_whole_and_still_described",
+    "application::pictures::tests::test_the_plain_half_still_says_what_the_pictures_were",
+    "service::protocols::smtp::tests::test_a_picture_goes_out_as_a_part_rather_than_written_into_the_body",
+    "service::protocols::smtp::tests::test_the_plain_half_of_a_sent_message_says_what_the_picture_was",
+    "service::protocols::smtp::tests::test_the_sent_body_and_the_sent_picture_name_each_other",
+]
+
+[[guard]]
+name = "the plain half of a message says what its pictures were"
+file = "src/application/pictures.rs"
+before = """    format!("\\n\\nPictures in this message:\\n{}", described.join("\\n"))"""
+after = """    let _ = described;
+    String::new()"""
+red = [
+    "application::pictures::tests::test_the_plain_half_still_says_what_the_pictures_were",
+    "service::protocols::smtp::tests::test_the_plain_half_of_a_sent_message_says_what_the_picture_was",
+]
+
+[[guard]]
+name = "forwarding takes the original's pictures with it"
+file = "src/presentation/wx_compose.rs"
+before = """        "---------- Forwarded message ----------",
+        ThePictures::ComeAlong,"""
+after = """        "---------- Forwarded message ----------",
+        ThePictures::StayBehind,"""
+red = [
+    "presentation::wx_compose::tests::test_forwarding_a_message_passes_its_pictures_on",
+]
+
+[[guard]]
+name = "raising the window takes it out of the taskbar"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                            frame.iconize(false);
+                            frame.show(true);
+                            frame.raise();"""
+after = """                            frame.show(true);
+                            frame.raise();"""
+red = [
+    "test_nothing_raises_the_window_without_also_taking_it_out_of_the_taskbar",
+]
+
+[[guard]]
+name = "Cut and Copy ask the box what is selected"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                EditCommand::Cut => {
+                    put_on_the_clipboard(&box_.get_string_selection(), a11y);"""
+after = """                EditCommand::Cut => {
+                    put_on_the_clipboard(&box_.get_value(), a11y);"""
+red = [
+    "test_cut_and_copy_ask_the_box_rather_than_indexing_its_value",
+]
+
+[[guard]]
+name = "a sentence carrying the source indentation is found"
+file = "src/presentation/wx_settings.rs"
+suite = "house_style"
+before = """        "A read receipt tells the sender your address is live and roughly when \\
+         you were at your desk. Nothing is sent unless you choose it here.","""
+after = """        "A read receipt tells the sender your address is live and roughly when      \\
+         you were at your desk. Nothing is sent unless you choose it here.","""
+red = [
+    "test_no_sentence_is_written_with_the_source_indentation_inside_it",
+]
+
+[[guard]]
+name = "a second copy hands over rather than running alongside the first"
+file = "src/main.rs"
+suite = "wired"
+before = """        how_to_start(another_was_already_running, run.handed_over.as_deref())"""
+after = """        how_to_start(false, run.handed_over.as_deref())"""
+red = [
+    "test_a_second_copy_hands_over_rather_than_running_alongside_the_first",
+]
+
+[[guard]]
+name = "every item list is drawn in the font that was chosen"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                msg_list.set_font(&list_font);"""
+after = """                let _ = &list_font;"""
+red = [
+    "test_every_item_list_is_drawn_in_the_font_that_was_chosen",
+]
+
+# Two guards from the same stretch of work are deliberately not recorded here,
+# and the reasons are different.
+#
+# `test_no_source_file_carries_an_invisible_control_character` would need its
+# break to write a real control byte into a source file. The mechanism puts the
+# file back afterwards, but a run stopped in the middle would leave behind
+# exactly the thing that guard exists to find, and that byte cost an hour of
+# reading a regex that was correct and matched nothing. Taken by hand instead,
+# when it is taken.
+#
+# `test_a_selection_and_the_value_are_counted_the_same_way` measures wxdragon,
+# not this program: it asks a real control how it counts and would stay green
+# through any change made here. There is nothing in the tree to break that
+# would redden it. What guards the code that has to agree with that answer is
+# "Cut and Copy ask the box what is selected", above.

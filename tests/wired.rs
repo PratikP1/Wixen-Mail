@@ -2274,3 +2274,59 @@ fn test_nothing_raises_the_window_without_also_taking_it_out_of_the_taskbar() {
         );
     }
 }
+
+/// Cut and Copy take the words the box says are selected.
+///
+/// Not the value indexed by the two numbers the box reports. Those numbers
+/// count the way Windows counts, where a character from outside the basic
+/// plane is two positions, and a Rust string counts it as one, so indexing by
+/// them takes a run shifted by one for every emoji earlier in the box. Cut was
+/// the worse half of that: it removed the right words by those same numbers
+/// and put different ones on the clipboard.
+///
+/// `tests/text_selection_offsets.rs` measures the toolkit and would stay green
+/// through this coming back, because it re-states the rule rather than calling
+/// the code that follows it. So the rule is read out of the source here.
+///
+/// What this cannot see: a copy that reads the box into a variable on one line
+/// and puts that variable on the clipboard on another. Only the two spellings
+/// the fault actually had are caught, which is why the second half looks for
+/// the old shape by name rather than trusting the first half alone. Copying a
+/// list row is a different path and is deliberately not covered here: a list
+/// has no selected text to ask for.
+#[test]
+fn test_cut_and_copy_ask_the_box_rather_than_indexing_its_value() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let from_a_box: Vec<(usize, &str)> = app
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("put_on_the_clipboard(") && line.contains("box_"))
+        .collect();
+
+    assert_eq!(
+        from_a_box.len(),
+        2,
+        "{} places copy out of a text box rather than the two the Edit menu \
+         has, so this guard is no longer covering Cut and Copy",
+        from_a_box.len()
+    );
+    for (at, line) in from_a_box {
+        assert!(
+            line.contains("get_string_selection()"),
+            "line {} copies out of a text box without asking the box what is \
+             selected, so it is counting positions the way Rust counts rather \
+             than the way the box does:\n{line}",
+            at + 1
+        );
+    }
+
+    // And the shape it had when it was wrong, wherever it is written.
+    for (at, line) in app.lines().enumerate() {
+        assert!(
+            !(line.contains("get_value()") && line.contains(".skip(")),
+            "line {} indexes a box's value by a position count again:\n{line}",
+            at + 1
+        );
+    }
+}
