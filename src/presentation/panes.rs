@@ -91,7 +91,7 @@ impl Pane {
         let name = self.spoken(module);
         match holding {
             Holding::NoAccount => {
-                format!("{name}, no account yet. Press Ctrl+A to add one")
+                format!("{name}, no account yet. Press Ctrl+Shift+A to add one")
             }
             Holding::Items(0) => format!("{name}, empty"),
             Holding::Items(count) => format!("{name}, {count}"),
@@ -168,7 +168,7 @@ mod tests {
             let spoken = pane.arrival(PimModule::Mail, Holding::NoAccount);
 
             assert!(spoken.contains("no account"), "{spoken}");
-            assert!(spoken.contains("Ctrl+A"), "{spoken}");
+            assert!(spoken.contains("Ctrl+Shift+A"), "{spoken}");
         }
     }
 

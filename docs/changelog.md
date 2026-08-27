@@ -6,7 +6,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Ctrl+A` opened the Account Manager.** It means Select All in every other
+  Windows program, so pressing it while editing a note put an accounts dialog
+  in front of you instead of selecting your text. The Account Manager is on
+  `Ctrl+Shift+A` now.
+
 ### Added
+
+- **Cut, Copy, Paste and Select All are on the Edit menu**, with the keys you
+  expect: `Ctrl+X`, `Ctrl+C`, `Ctrl+V` and `Ctrl+A`. The Edit menu had none of
+  them.
+
+  What they do follows where you are. In a box you can type in, all four work
+  as usual. In a list or the sidebar, Copy puts the row you are on on the
+  clipboard and Select All selects every row. Cut and Paste need a box you can
+  type in, and say so rather than doing nothing quietly.
+
+  Select All refuses in a list of more than 5,000 rows and says why: selecting
+  that many at once stops the window answering, which takes your screen reader
+  with it.
 
 - **Wixen Mail now appears in the Windows list of default programs, so you can
   choose it.** Until now it did not appear there at all. The list is built from

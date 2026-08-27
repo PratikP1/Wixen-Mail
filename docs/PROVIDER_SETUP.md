@@ -215,7 +215,7 @@ verification is on, which is why the direct link is easier.
 
 #### 3. Configure Wixen Mail
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Type your Gmail address (e.g., `user@gmail.com`). Wixen Mail recognises
    the domain and fills in Gmail's server settings for you:
@@ -310,7 +310,7 @@ it.
 
 #### 1. Configure Wixen Mail
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Type your Outlook email address (`user@outlook.com`, `user@hotmail.com`,
    or your work address). Wixen Mail recognises the domain and fills in the
@@ -378,7 +378,7 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Type your Yahoo email address (e.g., `user@yahoo.com`). Wixen Mail fills
    in Yahoo's server settings:
@@ -437,7 +437,7 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Type your iCloud email address (@icloud.com, @me.com, or @mac.com).
    Wixen Mail fills in iCloud's server settings:
@@ -500,7 +500,7 @@ it.
 
 #### 3. Configure Wixen Mail
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. Enter the settings Bridge showed you by hand. Bridge runs on this
    computer rather than at an address Wixen Mail can recognise, so nothing
@@ -598,7 +598,7 @@ For email providers not listed above, you'll need to manually configure the sett
 
 ### Manual Configuration
 
-1. Press `Ctrl+A`, or open the Tools menu and choose Account Manager.
+1. Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager.
 2. Choose **Add Account**.
 3. If Wixen Mail does not recognise your provider from the email address,
    enter the settings by hand: IMAP server, port, and TLS; SMTP server,

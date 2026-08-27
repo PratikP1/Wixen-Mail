@@ -74,6 +74,17 @@ fn this_session() -> u32 {
 /// the mutex being seen and this being tried.
 #[cfg(target_os = "windows")]
 pub fn hand_over(argument: &str) -> Result<()> {
+    hand_over_on(&pipe_name(), argument)
+}
+
+/// The same, on a named pipe of the caller's choosing.
+///
+/// Split out so a test can use a pipe of its own. Without this the test used
+/// the real name, which meant that on a machine where somebody had Wixen Mail
+/// open, running the tests handed a link to their running program and opened a
+/// composer in front of them. That happened.
+#[cfg(target_os = "windows")]
+fn hand_over_on(pipe: &str, argument: &str) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
 
     const GENERIC_WRITE: u32 = 0x4000_0000;
@@ -102,7 +113,7 @@ pub fn hand_over(argument: &str) -> Result<()> {
         fn CloseHandle(handle: isize) -> i32;
     }
 
-    let name: Vec<u16> = std::ffi::OsStr::new(&pipe_name())
+    let name: Vec<u16> = std::ffi::OsStr::new(pipe)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
@@ -171,6 +182,12 @@ pub fn hand_over(_argument: &str) -> Result<()> {
 /// the cost is a second window rather than anything lost.
 #[cfg(target_os = "windows")]
 pub fn listen(taken: impl Fn(String) + Send + 'static) -> Result<()> {
+    listen_on(&pipe_name(), taken)
+}
+
+/// The same, on a named pipe of the caller's choosing. See [`hand_over_on`].
+#[cfg(target_os = "windows")]
+fn listen_on(pipe: &str, taken: impl Fn(String) + Send + 'static) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
 
     const PIPE_ACCESS_INBOUND: u32 = 0x0000_0001;
@@ -206,7 +223,7 @@ pub fn listen(taken: impl Fn(String) + Send + 'static) -> Result<()> {
         fn CloseHandle(handle: isize) -> i32;
     }
 
-    let name: Vec<u16> = std::ffi::OsStr::new(&pipe_name())
+    let name: Vec<u16> = std::ffi::OsStr::new(pipe)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
@@ -345,13 +362,19 @@ mod tests {
         // carries the message at all.
         use std::sync::mpsc;
 
+        // A pipe of this test's own, never the one the running program
+        // listens on. With the real name, running the tests on a machine where
+        // somebody had Wixen Mail open handed a link to their program and
+        // opened a composer in front of them.
+        let ours = format!(r"\\.\pipe\wixen-mail-handover-test-{}", std::process::id());
+
         let (heard, arrived) = mpsc::channel();
-        listen(move |argument| {
+        listen_on(&ours, move |argument| {
             let _ = heard.send(argument);
         })
         .expect("a listener");
 
-        hand_over("mailto:someone@example.com?subject=Hello").expect("the handover");
+        hand_over_on(&ours, "mailto:someone@example.com?subject=Hello").expect("the handover");
 
         let got = arrived
             .recv_timeout(std::time::Duration::from_secs(5))

@@ -130,6 +130,10 @@ menu_ids!(
     ID_VIEW_PREVIEW_PANE,
     ID_VIEW_MODULE_BUTTONS,
     ID_VIEW_ALL_INBOXES,
+    ID_EDIT_CUT,
+    ID_EDIT_COPY,
+    ID_EDIT_PASTE,
+    ID_EDIT_SELECT_ALL,
     ID_OPEN_WINDOW,
     ID_VIEW_COLUMNS,
     ID_NEXT_UNREAD,
@@ -354,6 +358,14 @@ struct PimPanelRefs {
     // Notes
     note_list: ListCtrl,
     notes_tree: TreeCtrl,
+    /// The three boxes in the main window somebody types into.
+    ///
+    /// Held so the Edit menu can find which one has focus. Everything else
+    /// people type into is in a dialog of its own, which has no menu bar and
+    /// whose native controls answer these keys themselves.
+    note_title: TextCtrl,
+    note_body: TextCtrl,
+    contacts_search: TextCtrl,
 }
 
 // ── WxMailApp ───────────────────────────────────────────────────────────────
@@ -1179,6 +1191,9 @@ impl WxMailApp {
                 tasks_tree: tasks_sb.tree,
                 note_list: notes_cp.note_list,
                 notes_tree: notes_sb.tree,
+                note_title: notes_cp.title_input,
+                note_body: notes_cp.body_input,
+                contacts_search: contacts_cp.search_input,
             };
 
             // The same font as the message list. Before this the size setting
@@ -3320,6 +3335,34 @@ impl WxMailApp {
                             left_panel.layout();
                         }
                         // Module navigation (Go menu + sidebar buttons)
+                        // Cut, copy, paste and select all, on whatever has
+                        // focus. Asked before anything else so a text box gets
+                        // its own keys back: these were taken over by putting
+                        // them on the menu, and Ctrl+A used to open a dialog.
+                        _ if an_edit_command(id).is_some() => {
+                            if let Some(command) = an_edit_command(id) {
+                                do_an_edit_command(
+                                    command,
+                                    EditParts {
+                                        boxes: &[
+                                            pim_refs.note_title,
+                                            pim_refs.note_body,
+                                            pim_refs.contacts_search,
+                                        ],
+                                        lists: &[
+                                            msg_list,
+                                            contact_list,
+                                            cal_event_list,
+                                            reminder_list,
+                                            task_list,
+                                            note_list,
+                                        ],
+                                        trees: &[folder_tree, pim_refs.contacts_tree],
+                                    },
+                                    &a11y,
+                                );
+                            }
+                        }
                         _ if id == ID_VIEW_ALL_INBOXES => {
                             // Mail first. This is on the View menu, which is
                             // reachable from every module, and a combined
@@ -4521,6 +4564,39 @@ impl WxMailApp {
         // They are on the Action menu with the rest of what acts on the thing
         // in front of you.
         let edit = Menu::builder()
+            // The four every Windows program has. They were missing entirely,
+            // and Ctrl+A was worse than missing: it opened the Account Manager,
+            // so the key that means Select All everywhere else put a dialog in
+            // front of somebody editing a note. Account Manager is on
+            // Ctrl+Shift+A now.
+            //
+            // A native text box handles these keys itself, so binding them here
+            // takes them over. Worth doing anyway: a menu is how somebody finds
+            // out a command exists, and it is the way in for anybody who cannot
+            // hold two keys at once. What they do is decided in
+            // `application::editing`, which also answers for the places where
+            // they mean nothing.
+            .append_item(
+                ID_EDIT_CUT,
+                "Cu&t\tCtrl+X",
+                "Move what is selected to the clipboard",
+            )
+            .append_item(
+                ID_EDIT_COPY,
+                "&Copy\tCtrl+C",
+                "Put what is selected on the clipboard",
+            )
+            .append_item(
+                ID_EDIT_PASTE,
+                "&Paste\tCtrl+V",
+                "Put what is on the clipboard here",
+            )
+            .append_item(
+                ID_EDIT_SELECT_ALL,
+                "Select &All\tCtrl+A",
+                "Select everything in the box or list you are in",
+            )
+            .append_separator()
             .append_item(
                 ID_SEARCH,
                 "&Search\tCtrl+F",
@@ -4931,7 +5007,7 @@ impl WxMailApp {
         let tools = Menu::builder()
             .append_item(
                 ID_ACCOUNT_MGR,
-                "&Account Manager\tCtrl+A",
+                "&Account Manager\tCtrl+Shift+A",
                 "Manage email accounts",
             )
             .append_separator()
@@ -7945,6 +8021,194 @@ fn the_chosen_list_font() -> Option<Font> {
         false,
         &face,
     )
+}
+
+/// Which of the four an id is, if it is one of them.
+fn an_edit_command(id: i32) -> Option<crate::application::editing::EditCommand> {
+    use crate::application::editing::EditCommand;
+    if id == ID_EDIT_CUT {
+        Some(EditCommand::Cut)
+    } else if id == ID_EDIT_COPY {
+        Some(EditCommand::Copy)
+    } else if id == ID_EDIT_PASTE {
+        Some(EditCommand::Paste)
+    } else if id == ID_EDIT_SELECT_ALL {
+        Some(EditCommand::SelectAll)
+    } else {
+        None
+    }
+}
+
+/// Cut, copy, paste or select all, on whatever has focus.
+///
+/// wxdragon offers no way to ask which window has focus, so each candidate is
+/// asked whether it has it. That is the whole reason the main window's three
+/// text boxes are held on `PimPanelRefs`: there is no other way to reach them
+/// from here.
+///
+/// The decision about what each command means where is in
+/// `application::editing` and not here. This only carries it out, and says
+/// whatever that decided should be said.
+fn do_an_edit_command(
+    command: crate::application::editing::EditCommand,
+    parts: EditParts<'_>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::editing::{Doing, EditCommand, Where, what_to_do};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let EditParts {
+        boxes,
+        lists,
+        trees,
+    } = parts;
+
+    // The box with focus, if one has it. Asked first because a text box is
+    // where these mean the most and where somebody expects them to work.
+    let focused_box = boxes.iter().find(|box_| box_.has_focus());
+    let focused_list = lists.iter().find(|list| list.has_focus());
+    let focused_tree = trees.iter().find(|tree| tree.has_focus());
+
+    let place = if let Some(box_) = focused_box {
+        if box_.is_editable() {
+            Where::AText
+        } else {
+            Where::AReadOnlyText
+        }
+    } else if let Some(list) = focused_list {
+        Where::AList {
+            rows: list.get_item_count().max(0) as usize,
+        }
+    } else if focused_tree.is_some() {
+        Where::ATree
+    } else {
+        Where::SomewhereElse
+    };
+
+    match what_to_do(command, place) {
+        Doing::NotHere(why) => {
+            let _ = a11y.announce(&why, Priority::High);
+        }
+        Doing::ToTheText => {
+            let Some(box_) = focused_box else {
+                return;
+            };
+            let (from, to) = box_.get_selection();
+            match command {
+                EditCommand::SelectAll => box_.select_all(),
+                EditCommand::Copy | EditCommand::Cut if from == to => {
+                    // Nothing chosen. Said rather than done silently, because
+                    // an empty clipboard afterwards looks like a copy that
+                    // failed and a person cannot see the selection.
+                    let _ = a11y.announce(
+                        &format!(
+                            "Nothing is selected, so there is nothing to {}.",
+                            command.name().to_lowercase()
+                        ),
+                        Priority::High,
+                    );
+                }
+                EditCommand::Copy => {
+                    put_on_the_clipboard(&chosen_text(box_, from, to), a11y);
+                }
+                EditCommand::Cut => {
+                    put_on_the_clipboard(&chosen_text(box_, from, to), a11y);
+                    box_.replace(from, to, "");
+                }
+                EditCommand::Paste => match Clipboard::get().get_text() {
+                    // `write_text` puts it where the cursor is and replaces
+                    // whatever was selected, which is what pasting means.
+                    Some(text) if !text.is_empty() => {
+                        box_.write_text(&text);
+                        let _ = a11y.announce("Pasted", Priority::Normal);
+                    }
+                    _ => {
+                        let _ = a11y.announce(
+                            "There is no text on the clipboard to paste.",
+                            Priority::High,
+                        );
+                    }
+                },
+            }
+        }
+        Doing::ChooseEveryRow => {
+            let Some(list) = focused_list else {
+                return;
+            };
+            let rows = list.get_item_count().max(0);
+            for row in 0..rows {
+                list.set_item_state(row as i64, ListItemState::Selected, ListItemState::Selected);
+            }
+            let _ = a11y.announce(&format!("{rows} rows selected"), Priority::Normal);
+        }
+        Doing::CopyWhatIsChosen => {
+            let words = if let Some(list) = focused_list {
+                let row = list.get_first_selected_item();
+                if row < 0 {
+                    String::new()
+                } else {
+                    // The columns a row shows, joined the way a row is read
+                    // out, so what lands on the clipboard is what was heard.
+                    (0..3)
+                        .map(|column| list.get_item_text(row as i64, column))
+                        .filter(|cell| !cell.trim().is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            } else if let Some(tree) = focused_tree {
+                tree.get_selection()
+                    .and_then(|item| tree.get_item_text(&item))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if words.trim().is_empty() {
+                let _ = a11y.announce(
+                    "Nothing is chosen here, so there is nothing to copy.",
+                    Priority::High,
+                );
+                return;
+            }
+            put_on_the_clipboard(&words, a11y);
+        }
+    }
+}
+
+/// The controls the Edit menu can act on, gathered rather than passed one by
+/// one, because `do_an_edit_command` would otherwise take eleven parameters.
+struct EditParts<'a> {
+    boxes: &'a [TextCtrl],
+    lists: &'a [ListCtrl],
+    trees: &'a [TreeCtrl],
+}
+
+/// The chosen run of a box's text.
+///
+/// Taken by character rather than by byte. `get_selection` counts characters
+/// the way the control does, and slicing a `String` by those numbers would cut
+/// a multi-byte character in half and panic on the first accented word.
+fn chosen_text(box_: &TextCtrl, from: i64, to: i64) -> String {
+    box_.get_value()
+        .chars()
+        .skip(from.max(0) as usize)
+        .take((to - from).max(0) as usize)
+        .collect()
+}
+
+/// Put words on the clipboard and say so, or say why not.
+///
+/// The clipboard can be held by another program, and a copy that quietly did
+/// nothing would be discovered at the paste.
+fn put_on_the_clipboard(words: &str, a11y: &Arc<Accessibility>) {
+    use crate::presentation::accessibility::announcements::Priority;
+    if Clipboard::get().set_text(words) {
+        let _ = a11y.announce("Copied", Priority::Normal);
+    } else {
+        let _ = a11y.announce(
+            "The clipboard would not take it. Another program may be holding it.",
+            Priority::High,
+        );
+    }
 }
 
 fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {

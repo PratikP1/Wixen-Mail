@@ -23,7 +23,7 @@ the fuller list.
 
 ## Add your account
 
-Press `Ctrl+A`, or open the Tools menu and choose Account Manager. Fill in your
+Press `Ctrl+Shift+A`, or open the Tools menu and choose Account Manager. Fill in your
 address and password, and the incoming and outgoing server details your provider
 publishes.
 

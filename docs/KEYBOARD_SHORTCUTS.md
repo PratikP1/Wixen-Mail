@@ -379,7 +379,25 @@ event, task, note or contact you are on is on the Action menu instead.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
+| Cut | `Ctrl+X` | Move what is selected to the clipboard |
+| Copy | `Ctrl+C` | Put what is selected on the clipboard |
+| Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
+| Select All | `Ctrl+A` | Select everything in the box or list you are in |
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
+
+**`Ctrl+A` used to open the Account Manager.** It is Select All now, which is
+what it means in every other Windows program, and the Account Manager moved to
+`Ctrl+Shift+A`. Before this, pressing Select All while editing a note put an
+accounts dialog in front of you.
+
+**What these do depends on where you are.** In a box you can type in, all four
+work as you would expect. In a list or the sidebar, Copy puts the row you are
+on on the clipboard, and Select All selects every row. Cut and Paste need a box
+you can type in, and say so rather than doing nothing.
+
+Select All refuses in a list of more than 5,000 rows and says why. Selecting
+that many at once stops the window answering, which would take your screen
+reader with it.
 
 One item, because Find has lived under Edit on Windows for thirty years and
 moving it would cost more than the short menu does. Marking a task done and
@@ -420,7 +438,7 @@ Five submenus hold the rest:
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Open Account Manager | `Ctrl+A` | Open multiple account management dialog |
+| Open Account Manager | `Ctrl+Shift+A` | Open multiple account management dialog |
 
 ### Contact Management
 
