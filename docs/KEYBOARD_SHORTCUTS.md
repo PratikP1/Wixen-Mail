@@ -687,6 +687,12 @@ A signature is the one that becomes formatting somewhere else: what you type is
 what a plain text reader sees, and the formatted half of the message is made
 from it. So there is no need to write HTML by hand to get a bold name.
 
+**Pictures.** Format, then Insert Picture, puts a picture in the message and
+asks you to describe it. The description is required: a picture nobody
+described cannot be read out to somebody who cannot see it. The picture travels
+inside the message, so the person receiving it does not have to fetch anything.
+PNG, JPEG, GIF and WebP up to 2 MB; anything else should be attached as a file.
+
 **Tables.** Format, then Insert Table, asks for rows and columns and whether the
 first row is column headers. Leave the headers on unless you have a reason not
 to: they are what lets the person receiving the message hear "Total, column 3"

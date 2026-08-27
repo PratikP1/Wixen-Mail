@@ -102,9 +102,17 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
             PartType::Text(text) => Some(text.as_ref().to_string()),
             _ => None,
         }),
+        // The pictures the message carries are written into the markup here,
+        // once, rather than every time it is shown. A `cid:` address means
+        // nothing to a browser, so without this a picture the message already
+        // holds cannot be drawn at all, while the ones it merely points at
+        // would be the only ones that appeared.
         body_html: first_of_kind(message.html_bodies(), |body| match body {
             PartType::Html(html) => Some(html.as_ref().to_string()),
             _ => None,
+        })
+        .map(|html| {
+            crate::application::pictures::carry_the_pictures(&html, &pictures_carried(&message))
         }),
         attachments,
         receipt_to: receipt_request(&message),
@@ -209,6 +217,31 @@ fn first_of_kind<'a>(
     of_kind: impl Fn(&PartType<'a>) -> Option<String>,
 ) -> Option<String> {
     parts.filter_map(|part| of_kind(&part.body)).next()
+}
+
+/// The pictures a message carries in itself, ready to be written into its body.
+///
+/// Only the parts a `cid:` address could name, and only kinds worth carrying.
+/// A part with no content id is a file the reader has rather than furniture for
+/// the body, and is left where it is.
+fn pictures_carried(
+    message: &mail_parser::Message<'_>,
+) -> Vec<crate::application::pictures::Carried> {
+    use crate::application::pictures::{Carried, plain_content_id, worth_carrying};
+    message
+        .parts
+        .iter()
+        .filter_map(|part| {
+            let named = plain_content_id(part.content_id()?);
+            let kind = content_type_of(part);
+            let bytes = part.contents();
+            worth_carrying(&kind, bytes.len()).then(|| Carried {
+                named,
+                kind,
+                bytes: bytes.to_vec(),
+            })
+        })
+        .collect()
 }
 
 /// Whether a part is furniture for the body rather than a file the reader has.

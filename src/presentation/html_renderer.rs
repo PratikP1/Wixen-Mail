@@ -3,7 +3,6 @@
 //! Renders HTML email content with security (XSS protection) and accessibility features.
 
 use crate::common::types::MessageBody;
-use ammonia::clean;
 use std::sync::OnceLock;
 
 // The patterns below are literals compiled once. An `expect` here can only fire
@@ -119,6 +118,51 @@ pub fn script_tag_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"(?is)<\s*script\b").expect("valid script tag regex"))
 }
 
+/// The cleaner, told to admit the pictures this application carried in.
+///
+/// `ammonia::clean` refuses `data:` addresses, which is right for a sender's
+/// own: one can be an SVG, and an SVG is a document that can run a script. The
+/// pictures written into a body by `pictures::carry_the_pictures` are not the
+/// sender's, they are raster formats only, and by then every `data:` address
+/// the sender wrote has already been taken out. So the filter admits exactly
+/// the shape this application writes and nothing else beginning `data:`.
+///
+/// Built once. It compiles a set of allowed tags and attributes, and doing that
+/// per message showed up when a folder of a thousand was opened.
+fn cleaner() -> &'static ammonia::Builder<'static> {
+    static CLEANER: OnceLock<ammonia::Builder<'static>> = OnceLock::new();
+    CLEANER.get_or_init(|| {
+        let mut builder = ammonia::Builder::default();
+        let mut schemes = builder.clone_url_schemes();
+        schemes.insert("data");
+        schemes.insert("cid");
+        builder.url_schemes(schemes);
+        builder.attribute_filter(|element, attribute, value| {
+            let looks_like_an_address = matches!(attribute, "src" | "href" | "background");
+            if !looks_like_an_address {
+                return Some(value.into());
+            }
+            let lowered = value.to_ascii_lowercase();
+            // Only ours, and only on a picture. A `data:` address anywhere else
+            // is a document the browser would run.
+            if lowered.starts_with("data:") {
+                return (element == "img"
+                    && crate::application::pictures::is_a_picture_we_carried(value))
+                .then(|| value.into());
+            }
+            // A `cid:` that reached here is one nothing could carry, so it
+            // names a part that is missing or too large. Dropping the address
+            // leaves the picture to be reported as held back, with whatever
+            // the sender called it.
+            if lowered.starts_with("cid:") {
+                return None;
+            }
+            Some(value.into())
+        });
+        builder
+    })
+}
+
 /// What the stored settings say about fetching pictures.
 ///
 /// Blocked when the settings cannot be read at all, which is the safe way to be
@@ -219,7 +263,7 @@ impl HtmlRenderer {
         // not about making one safe, and this same call sanitises a message on
         // its way out to somebody else: replacing a picture here would send
         // the words "Picture not shown" to the person being written to.
-        clean(html)
+        cleaner().clean(html).to_string()
     }
 
     /// The same, and how many pictures were held back.
@@ -231,7 +275,7 @@ impl HtmlRenderer {
         if self.plain_text_only {
             return (self.sanitize_html(html), 0);
         }
-        self.hold_back_what_would_be_fetched(&clean(html))
+        self.hold_back_what_would_be_fetched(&cleaner().clean(html).to_string())
     }
 
     /// Convert HTML to accessible plain text
@@ -586,6 +630,47 @@ pub struct LinkInfo {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_a_picture_the_message_carries_is_shown() {
+        // The whole point of carrying it. Before this the safe pictures were
+        // the ones that did not appear and the tracking ones were the ones
+        // that did.
+        use crate::application::pictures::{Carried, Fetching, carry_the_pictures};
+        let stored = carry_the_pictures(
+            r#"<img src="cid:logo@x" alt="Company logo">"#,
+            &[Carried {
+                named: "logo@x".to_string(),
+                kind: "image/png".to_string(),
+                bytes: vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+            }],
+        );
+
+        let (shown, held_back) =
+            HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_and_count_held_back(&stored);
+
+        assert_eq!(held_back, 0, "a carried picture was held back: {shown}");
+        assert!(shown.contains("data:image/png;base64,"), "{shown}");
+        assert!(shown.contains("Company logo"), "{shown}");
+    }
+
+    #[test]
+    fn test_a_drawing_the_sender_wrote_in_cannot_bring_a_script() {
+        // The reason the filter admits only what this application wrote. An
+        // SVG is a document and can run code, and a sender can write one
+        // straight into a `src`.
+        use crate::application::pictures::{Fetching, carry_the_pictures};
+        let stored = carry_the_pictures(
+            r#"<img src="data:image/svg+xml,<svg onload=alert(1)>" alt="Nasty">"#,
+            &[],
+        );
+
+        let (shown, _) =
+            HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_and_count_held_back(&stored);
+
+        assert!(!shown.contains("onload"), "a script survived: {shown}");
+        assert!(!shown.contains("svg"), "{shown}");
+    }
 
     #[test]
     fn test_a_message_being_written_keeps_its_pictures() {

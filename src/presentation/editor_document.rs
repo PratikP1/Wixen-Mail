@@ -850,6 +850,17 @@ fn table_markup(rows: usize, columns: usize, header: bool) -> String {
 /// `rows` is the body rows, so a table asked for with a header row has that
 /// many rows underneath it. `None` when the size is not one this will build,
 /// and then the caller says so rather than inserting something else.
+/// Put a piece of markup where the cursor is.
+///
+/// The markup is built by this application, not taken from anywhere, which is
+/// why it goes in whole. `insertHTML` replaces whatever was selected, which is
+/// what putting something where the cursor is means.
+pub fn insert_markup_script(markup: &str) -> String {
+    format!(
+        "(function () {{ document.execCommand('insertHTML', false, {markup:?});          document.getElementById({BODY_ID:?}).focus(); }})();"
+    )
+}
+
 pub fn insert_table_script(rows: usize, columns: usize, header: bool) -> Option<String> {
     if rows == 0 || columns == 0 || rows > MAX_TABLE_ROWS || columns > MAX_TABLE_COLUMNS {
         return None;

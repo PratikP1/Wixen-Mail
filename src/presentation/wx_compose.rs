@@ -42,6 +42,7 @@ const ID_FORMAT_FIRST: Id = ID_HIGHEST + 120;
 const ID_FORMAT_LAST: Id = ID_HIGHEST + 149;
 const ID_INSERT_LINK: Id = ID_HIGHEST + 150;
 const ID_INSERT_TABLE: Id = ID_HIGHEST + 152;
+const ID_INSERT_PICTURE: Id = ID_HIGHEST + 154;
 const ID_SPELL_CHECK: Id = ID_HIGHEST + 153;
 const ID_SPELL_CHANGE: Id = ID_HIGHEST + 154;
 const ID_SPELL_CHANGE_ALL: Id = ID_HIGHEST + 155;
@@ -395,6 +396,11 @@ fn show_format_menu(dialog: &Dialog) {
             ID_INSERT_TABLE,
             "Insert &Table...",
             "Add a table with proper column headers",
+        )
+        .append_item(
+            ID_INSERT_PICTURE,
+            "Insert &Picture...",
+            "Put a picture in the message, and describe it",
         )
         .build();
     dialog.popup_menu(&mut menu, None);
@@ -1056,6 +1062,10 @@ pub fn show_compose_dialog_full(
             let id = event.get_id();
             if id == ID_INSERT_LINK {
                 insert_link(&dialog, body_editor, &a11y);
+                return;
+            }
+            if id == ID_INSERT_PICTURE {
+                insert_picture(&dialog, body_editor, &a11y);
                 return;
             }
             if id == ID_INSERT_TABLE {
@@ -2431,6 +2441,88 @@ fn insert_table(
                 ),
                 Priority::High,
             );
+        }
+    }
+}
+
+/// Put a picture in the message, carried rather than pointed at.
+///
+/// Two questions, and the second is not optional. A picture nobody described
+/// cannot be read out to somebody who cannot see it, which is the whole reason
+/// this application takes the trouble it does over alt text everywhere else.
+/// Letting one be written here without a description would be the one place
+/// this application still made the problem it exists to solve.
+///
+/// Carried, so the person receiving it sees it without fetching anything from
+/// anywhere, and without being told when they opened the message.
+fn insert_picture(
+    dialog: &Dialog,
+    body_editor: WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::application::pictures::{a_picture_to_send, kind_of_picture_file};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let picker = FileDialog::builder(dialog)
+        .with_message("Choose a picture")
+        .with_wildcard("Pictures (*.png;*.jpg;*.jpeg;*.gif;*.webp)|*.png;*.jpg;*.jpeg;*.gif;*.webp")
+        .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+        .build();
+    if picker.show_modal() != ID_OK {
+        return;
+    }
+    let Some(path) = picker.get_path().filter(|chosen| !chosen.trim().is_empty()) else {
+        return;
+    };
+
+    let Some(kind) = kind_of_picture_file(&path) else {
+        let _ = a11y.announce(
+            "That is not a kind of picture this can put in a message. Attach it as a              file instead.",
+            Priority::High,
+        );
+        return;
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(why) => {
+            let _ = a11y.announce(
+                &format!("The picture could not be read: {why}"),
+                Priority::High,
+            );
+            return;
+        }
+    };
+
+    // Asked after the file is chosen and read, so nobody describes a picture
+    // that then turns out to be too large to send.
+    let asking = TextEntryDialog::builder(
+        dialog,
+        "Describe the picture, for somebody who cannot see it:",
+        "Describe the picture",
+    )
+    .build();
+    let answered = asking.show_modal();
+    let described = asking.get_value().unwrap_or_default();
+    asking.destroy();
+    if answered != ID_OK {
+        return;
+    }
+
+    match a_picture_to_send(kind, &bytes, &described) {
+        Ok(markup) => {
+            run_in_editor(
+                &body_editor,
+                &editor_document::insert_markup_script(&markup),
+            );
+            let _ = a11y.announce(
+                &format!("Picture added: {}", described.trim()),
+                Priority::Normal,
+            );
+        }
+        // Said outright, naming what was wrong. A picture that silently does
+        // not appear reads as the command being broken.
+        Err(why) => {
+            let _ = a11y.announce(&why, Priority::High);
         }
     }
 }

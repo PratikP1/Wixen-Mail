@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Pictures a message carries with it are shown.** They never were. A message
+  refers to its own pictures by an address a browser cannot follow, and those
+  addresses were being thrown away, so the only pictures that appeared were the
+  ones fetched from the internet. That was exactly the wrong way round: the
+  carried ones are already on your computer and cost nothing to show, and the
+  fetched ones are the ones that report you.
+
+- **You can put a picture in a message.** Format, Insert Picture. It is carried
+  in the message rather than pointed at, so the person receiving it sees it
+  without fetching anything and without being told when they opened it.
+
+  **It asks you to describe the picture, and will not add one without a
+  description.** That is deliberate. Everything else here exists because a
+  picture nobody described cannot be read out to somebody who cannot see it,
+  and this was the one place this application would still have let that happen.
+
+  PNG, JPEG, GIF and WebP, up to 2 MB. Anything else, attach as a file. SVG is
+  deliberately not carried: it is a document that can run a script.
+
 - **Pictures a message only points at are no longer fetched.** On by default,
   under Settings, Reading.
 
