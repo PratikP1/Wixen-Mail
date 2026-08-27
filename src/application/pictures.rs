@@ -107,9 +107,10 @@ pub fn plain_content_id(raw: &str) -> String {
 /// are written into the body itself. Done once, where the message is parsed,
 /// rather than every time it is shown.
 ///
-/// Any `data:` address the sender wrote is taken out first. What is left after
-/// this is only what this function put there, which is what lets the renderer
-/// admit `data:` pictures at all.
+/// The `data:` addresses a sender wrote are taken out first, so far as a
+/// pattern can, which keeps them out of the cache. It is not what makes
+/// admitting `data:` pictures safe: that is the renderer's own filter, and
+/// [`strip_data_addresses`] says why.
 pub fn carry_the_pictures(html: &str, carried: &[Carried]) -> String {
     use base64::Engine as _;
 
@@ -137,11 +138,17 @@ pub fn carry_the_pictures(html: &str, carried: &[Carried]) -> String {
     out
 }
 
-/// Take out every `data:` address in a `src`, whoever wrote it.
+/// Take out the `data:` addresses a sender wrote, so far as a pattern can.
 ///
-/// Run before this application writes its own, so what survives is only ours.
-/// A sender's `data:` picture is not passed along: it can be an SVG and an SVG
-/// can carry a script.
+/// This catches the ordinary double-quoted spelling and not the others, which
+/// is worth saying plainly because an earlier version of this comment claimed
+/// it was what made admitting `data:` pictures safe. It is not. What makes that
+/// safe is the renderer's own filter, which admits only the exact shape written
+/// below, on an `img`, and only in raster kinds. A raster picture cannot run
+/// code whatever its bytes turn out to be; an SVG can, and is never admitted.
+///
+/// So this is one layer of two, and the one that can be fooled. It stays
+/// because taking a sender's own out early keeps them out of the cache too.
 fn strip_data_addresses(html: &str) -> String {
     replace_without_case(html, "src=\"data:", "src=\"removed-data:")
 }
@@ -164,6 +171,57 @@ fn replace_without_case(haystack: &str, needle: &str, with: &str) -> String {
     }
     out.push_str(&haystack[at..]);
     out
+}
+
+/// Take the carried pictures back out, leaving what they were described as.
+///
+/// For quoting. A reply or a forward puts the whole of the original body into
+/// the new message, and once pictures are carried in the body that means
+/// sending every one of them back to the person who sent them. Measured on
+/// three ordinary banners: a message of a hundred and thirty five bytes quoted
+/// as two point nine megabytes, and the limit above would allow ten. Many
+/// servers refuse a message that size.
+///
+/// The description is kept, so the quote still reads as something rather than
+/// going silently blank.
+pub fn without_carried_pictures(html: &str) -> String {
+    // The whole tag first, then its attributes read out of it. Trying to
+    // capture the description inside one pattern does not work: the
+    // description is optional and comes after the address, so a lazy run
+    // before an optional group matches the empty string every time and every
+    // picture came back as "[Picture]" with the words thrown away.
+    an_image_tag_re()
+        .replace_all(html, |caught: &regex::Captures<'_>| {
+            let tag = &caught[0];
+            let address = attribute_of(tag, "src").unwrap_or_default();
+            if !is_a_picture_we_carried(&address) {
+                return tag.to_string();
+            }
+            match attribute_of(tag, "alt")
+                .map(|alt| alt.trim().to_string())
+                .filter(|alt| !alt.is_empty())
+            {
+                Some(alt) => format!("[Picture: {alt}]"),
+                None => "[Picture]".to_string(),
+            }
+        })
+        .into_owned()
+}
+
+/// A whole `img` tag.
+fn an_image_tag_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r#"(?is)<img\b[^>]*>"#).expect("valid image tag regex"))
+}
+
+/// One attribute's value out of a tag.
+fn attribute_of(tag: &str, name: &str) -> Option<String> {
+    let looking_for = format!(r#"(?i)\b{name}="([^"]*)""#);
+    regex::Regex::new(&looking_for)
+        .ok()?
+        .captures(tag)?
+        .get(1)
+        .map(|found| found.as_str().to_string())
 }
 
 /// Whether an address is a picture this application wrote into the body itself.
@@ -452,6 +510,60 @@ mod tests {
         assert!(!is_a_picture_we_carried("data:image/svg+xml;base64,AAAA"));
         assert!(!is_a_picture_we_carried("data:text/html;base64,AAAA"));
         assert!(!is_a_picture_we_carried("https://example.com/x.png"));
+    }
+
+    #[test]
+    fn test_quoting_a_message_does_not_send_its_pictures_back() {
+        // A body carries its pictures inline now, so quoting one whole means
+        // replying with every picture the sender sent. Measured before this
+        // was written: three ordinary banners turned a message of 135 bytes
+        // into 2.9 megabytes, and the per-message limit allows ten. Servers
+        // refuse messages that size.
+        let carried = carry_the_pictures(
+            r#"<p>Hello</p><img src="cid:p0" alt="Spring banner">"#,
+            &[Carried {
+                named: "p0".to_string(),
+                kind: "image/png".to_string(),
+                bytes: vec![7; 64 * 1024],
+            }],
+        );
+        assert!(carried.len() > 64 * 1024, "the picture was not carried");
+
+        let quoted = without_carried_pictures(&carried);
+
+        assert!(
+            quoted.len() < 200,
+            "the quote still carries the picture: {} bytes",
+            quoted.len()
+        );
+        assert!(quoted.contains("[Picture: Spring banner]"), "{quoted}");
+        assert!(
+            quoted.contains("Hello"),
+            "the message itself went: {quoted}"
+        );
+    }
+
+    #[test]
+    fn test_a_quoted_picture_nobody_described_still_leaves_a_mark() {
+        let carried = carry_the_pictures(
+            r#"<img src="cid:p0">"#,
+            &[Carried {
+                named: "p0".to_string(),
+                kind: "image/png".to_string(),
+                bytes: a_tiny_png(),
+            }],
+        );
+
+        assert_eq!(without_carried_pictures(&carried), "[Picture]");
+    }
+
+    #[test]
+    fn test_quoting_leaves_a_picture_that_was_only_pointed_at_alone() {
+        // It costs nothing to quote: it is an address, not the picture, and
+        // taking it out would change what the original said.
+        let pointed_at = r#"<img src="https://example.com/x.png" alt="A chart">"#;
+
+        assert_eq!(without_carried_pictures(pointed_at), pointed_at);
     }
 
     #[test]

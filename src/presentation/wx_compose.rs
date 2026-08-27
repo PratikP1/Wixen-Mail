@@ -192,8 +192,17 @@ fn format_forward_body(body: &MessageBody) -> MessageBody {
 fn quoted_under(body: &MessageBody, marker: &str) -> MessageBody {
     match body {
         MessageBody::Plain(text) => MessageBody::Plain(format!("\n\n{marker}\n{text}")),
+        // The pictures the original carried are taken out and their
+        // descriptions left. A body holds its pictures inline now, so quoting
+        // one whole means replying with every picture the sender sent: three
+        // ordinary banners turn a message of a hundred and thirty five bytes
+        // into a reply of nearly three megabytes, and the limit allows ten.
+        // Servers refuse messages that size.
         MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-            MessageBody::Html(format!("<p><br></p><p>{marker}</p>{html}"))
+            MessageBody::Html(format!(
+                "<p><br></p><p>{marker}</p>{}",
+                crate::application::pictures::without_carried_pictures(html)
+            ))
         }
     }
 }

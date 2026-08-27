@@ -5121,3 +5121,55 @@ fn test_the_body_reader_reaches_the_end_of_a_nested_handler() {
     );
     assert!(bodies[1].contains("ID_CANCEL"), "{}", bodies[1]);
 }
+
+/// No source file carries a control character nobody can see.
+///
+/// Twice in one session a regex was written with a backspace where a word
+/// boundary was meant, because the tool writing the file turned `\b` into the
+/// byte it names. The pattern then reads correctly in an editor, in `grep`, and
+/// in review, and matches nothing. The first one cost an hour and was found by
+/// printing the compiled pattern; the second was found only because the first
+/// had happened.
+///
+/// So this is the check rather than a third careful reading. Tab, newline and
+/// carriage return are the only ones a source file has any business holding.
+#[test]
+fn test_no_source_file_carries_an_invisible_control_character() {
+    let mut found = Vec::new();
+    for dir in ["src", "tests", "search-handler/src"] {
+        let mut files = Vec::new();
+        collect_rust_files(Path::new(dir), &mut files);
+        for path in files {
+            let Ok(bytes) = fs::read(&path) else {
+                continue;
+            };
+            for (at, byte) in bytes.iter().enumerate() {
+                if *byte < 0x20 && !matches!(byte, 0x09 | 0x0a | 0x0d) {
+                    let line = bytes[..at].iter().filter(|b| **b == b'\n').count() + 1;
+                    found.push(format!("{}:{line} holds byte {byte:#04x}", path.display()));
+                }
+            }
+        }
+    }
+
+    assert!(
+        found.is_empty(),
+        "these files hold a character nothing will show you, which is how a \
+         regex comes to read correctly and match nothing:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+fn collect_rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rust_files(&path, into);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            into.push(path);
+        }
+    }
+}

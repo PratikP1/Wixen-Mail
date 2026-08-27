@@ -8,6 +8,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Replying to a message no longer sends its pictures back.** Pictures now
+  travel inside the message, so quoting one whole meant replying with every
+  picture the sender sent: three ordinary banners turned a 135-byte message
+  into a 2.9 MB reply, and a message could carry ten. Many servers refuse
+  messages that size. A quote keeps the description in place of each picture.
+
 - **Pictures a message carries with it are shown.** They never were. A message
   refers to its own pictures by an address a browser cannot follow, and those
   addresses were being thrown away, so the only pictures that appeared were the
