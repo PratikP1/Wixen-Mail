@@ -53,6 +53,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   The same four things can be given on the command line, and `--help` says so.
 
+- **Wixen Mail is one copy now.** Clicking a `mailto:` link, or opening an
+  `.ics` or `.vcf` file, when Wixen Mail is already running brings the window
+  you already have to the front and opens the link there, instead of starting
+  a second whole mail client.
+
+  This matters more than tidiness. Two copies share one database and one
+  outbox, and the outbox has no record of who is sending, so both copies would
+  send the same queued message and the person on the other end would receive
+  it twice. A sent message cannot be recalled.
+
+  Starting Wixen Mail again when it is already open now brings the window you
+  have to the front, the same as every other Windows program.
+
+  If the copy already running cannot be reached, which can happen if it is in
+  the middle of closing, the new one starts normally rather than failing. The
+  worst case is the second window you would have had anyway.
+
 - **Windows Search can be told to index your mail.** Off by default, and
   offered as a tick box during installation rather than in settings, because
   it registers something machine-wide and needs administrator rights.

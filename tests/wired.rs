@@ -1961,6 +1961,59 @@ fn test_the_signature_editor_offers_no_box_that_reaches_no_message() {
     );
 }
 
+/// One copy runs, and the rest hand what they were given to it.
+///
+/// Three pieces, in three files, and any one of them missing turns this back
+/// into what it replaced: a second copy of the whole mail client for every link
+/// clicked, sharing one database and one outbox. The outbox has no notion of
+/// who is sending, so two copies both send the queued message and the person on
+/// the other end receives it twice, which cannot be taken back.
+///
+/// Checked here rather than trusted because the three are far apart and none of
+/// them fails loudly on its own. A copy that does not hand over just works, and
+/// a copy that does not listen just works, and the fault only shows up on
+/// somebody else's machine as mail sent twice.
+#[test]
+fn test_a_second_copy_hands_over_rather_than_running_alongside_the_first() {
+    let main = fs::read_to_string("src/main.rs").expect("the program's entry point");
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let squashed_main = without_whitespace(&main);
+    let squashed_app = without_whitespace(&app);
+
+    assert!(
+        squashed_main.contains("how_to_start(another_was_already_running"),
+        "src/main.rs does not ask whether another copy is running, so every link \
+         clicked starts a second whole mail client"
+    );
+    assert!(
+        squashed_main.contains("handover::hand_over(&argument)"),
+        "src/main.rs decides to hand over and then does not, so a second copy \
+         runs alongside the first"
+    );
+    assert!(
+        squashed_app.contains("handover::listen("),
+        "nothing listens for another copy, so every handover is refused and \
+         every link opens a second window"
+    );
+    assert!(
+        squashed_app.contains("UIUpdate::HandedOver(argument)=>"),
+        "a handover arrives and nothing answers it, so a link clicked while \
+         Wixen Mail is running does nothing at all"
+    );
+
+    // And the departing copy stops. Without the return it hands over and then
+    // opens a window as well, which is the fault plus a wasted message.
+    let at = squashed_main
+        .find("handover::hand_over(&argument)")
+        .expect("the handover");
+    let after = &squashed_main[at..squashed_main.len().min(at + 200)];
+    assert!(
+        after.contains("return"),
+        "the copy that hands over does not stop, so it hands over and then runs \
+         anyway: {after}"
+    );
+}
+
 /// Every long prose box says Markdown is understood in it.
 ///
 /// The four fields the item form builds are held to this by a test beside their

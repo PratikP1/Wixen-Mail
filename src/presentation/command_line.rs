@@ -61,6 +61,13 @@ pub struct Run {
     /// only way an argument arrives here without a flag in front of it. The
     /// window opens either way; this decides what it does once it is up.
     pub open: Option<Opening>,
+    /// The argument exactly as it arrived, kept beside the parsed form.
+    ///
+    /// A second copy hands this to the copy already running rather than the
+    /// parsed result, so the rules about what a link may ask for live in one
+    /// parser and are applied by whichever copy is going to act on it. See
+    /// [`crate::application::handover`].
+    pub handed_over: Option<String>,
 }
 
 impl Run {
@@ -70,6 +77,7 @@ impl Run {
             allowed: Allowed::EVERYTHING,
             scan_target: None,
             open: None,
+            handed_over: None,
         }
     }
 }
@@ -204,7 +212,10 @@ where
                     ));
                 }
                 match what_was_handed_over(handed_over) {
-                    Ok(opening) => run.open = Some(opening),
+                    Ok(opening) => {
+                        run.open = Some(opening);
+                        run.handed_over = Some(handed_over.to_string());
+                    }
                     // The reason from where it was known, not a second one on
                     // top. It already names the argument and says what this
                     // program opens.

@@ -25,6 +25,7 @@ pub mod due;
 pub mod filters;
 pub mod forget;
 pub mod from_message;
+pub mod handover;
 pub mod help;
 pub mod importing_contacts;
 pub mod item_fields;

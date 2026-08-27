@@ -4144,6 +4144,12 @@ impl WxMailApp {
             // the same two.
             let scan_tx = ui_tx.clone();
             let scan_rt = runtime.clone();
+            // Filled once the module switcher exists, which is after the
+            // timer that reads it. Until then a handover raises the window and
+            // opens nothing, which is the right answer for the fraction of a
+            // second before the window is up anyway.
+            let opens_a_handover: OpensAHandover = std::rc::Rc::new(RefCell::new(None));
+
             let timer = Timer::new(&frame);
             timer.on_tick({
                 let state = state.clone();
@@ -4168,12 +4174,24 @@ impl WxMailApp {
                 // is the event loop's business, and counting ticks to a minute
                 // was tried and never got there.
                 let looked_at = std::cell::Cell::new(std::time::Instant::now());
+                let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
                 move |_| {
                     let n = tick_count.get() + 1;
                     tick_count.set(n);
                     if n == 1 {
                         tracing::info!("First timer tick, event loop is running");
                     }
+                    // Cloned out before it is called, so the borrow does not
+                    // span an open that could reach back here.
+                    let open_a_handover = {
+                        let slot = std::rc::Rc::clone(&opens_a_handover);
+                        move |argument: &str| {
+                            let opens = slot.borrow().clone();
+                            if let Some(opens) = opens {
+                                opens(argument.to_string());
+                            }
+                        }
+                    };
                     while let Ok(update) = ui_rx.try_recv() {
                         handle_update(
                             &update,
@@ -4190,6 +4208,7 @@ impl WxMailApp {
                                 tx: &ui_tx,
                                 rt: &runtime,
                                 focus_home: &focus_home_cell,
+                                opens_a_handover: &open_a_handover,
                             },
                         );
                     }
@@ -4283,6 +4302,66 @@ impl WxMailApp {
             // they opened. After show, for the same reason as above, and
             // after the alpha question so that a composer does not open
             // behind it.
+            // What another copy hands over, from here on. The same call the
+            // line below makes for what this start was given, so a link
+            // followed now and a link followed in an hour do the same thing.
+            *opens_a_handover.borrow_mut() = Some(std::rc::Rc::new({
+                let state = state.clone();
+                let scan_tx = scan_tx.clone();
+                let scan_rt = scan_rt.clone();
+                let message_cache = message_cache.clone();
+                let a11y = a11y.clone();
+                let switch = switch_for_what_was_opened.clone();
+                move |argument: String| {
+                    // Nothing to open is a real handover: somebody started the
+                    // program again and the window has already been raised.
+                    if argument.trim().is_empty() {
+                        return;
+                    }
+                    match crate::application::opening::what_was_handed_over(&argument) {
+                        Ok(opening) => open_what_windows_handed_over(
+                            opening,
+                            AppHandles {
+                                state: &state,
+                                tx: &scan_tx,
+                                rt: &scan_rt,
+                            },
+                            &frame,
+                            &message_cache,
+                            &a11y,
+                            &switch,
+                        ),
+                        // Refused rather than opened. The argument came down a
+                        // pipe anything on this machine can write to, so it
+                        // gets the same reading a command line gets and the
+                        // same answer when it is not something this opens.
+                        Err(why) => {
+                            tracing::warn!("A handover was not something this opens: {why}");
+                            let _ = a11y.announce(
+                                &format!("{why}"),
+                                crate::presentation::accessibility::announcements::Priority::High,
+                            );
+                        }
+                    }
+                }
+            }));
+
+            // Listening starts once there is something to do with what arrives.
+            // A copy that cannot listen still works: the cost is a second
+            // window rather than anything lost, so it is logged and not fatal.
+            {
+                let handover_tx = scan_tx.clone();
+                if let Err(why) = crate::service::handover::listen(move |argument| {
+                    // Blocking, on a thread of its own whose only job is this.
+                    // Dropping it would mean a link that vanished.
+                    let _ = handover_tx.send_blocking(UIUpdate::HandedOver(argument));
+                }) {
+                    tracing::warn!(
+                        "Wixen Mail could not listen for other copies of itself, so a link                          clicked elsewhere will open a second window: {why}"
+                    );
+                }
+            }
+
             if let Some(opening) = open {
                 open_what_windows_handed_over(
                     opening,
@@ -7824,6 +7903,12 @@ fn what_the_cursor_was_on(tree: &TreeCtrl) -> Option<String> {
 /// which is after the icon needs to be able to reach it.
 type AnswersTheTray = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(i32)>>>>;
 
+/// What opens a link or a file another copy of Wixen Mail handed over.
+///
+/// A slot for the same reason as [`AnswersTheTray`]: the timer that receives a
+/// handover is built before the module switcher that opening one needs.
+type OpensAHandover = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(String)>>>>;
+
 fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
     let Some(root) = tree.get_root_item() else {
         return false;
@@ -8154,6 +8239,13 @@ struct UpdateTargets<'a> {
     /// browser takes focus partway through a load and the answer has to be
     /// recorded before that happens to still be true.
     focus_home: &'a Rc<std::cell::Cell<FocusHome>>,
+    /// What to do when another copy of Wixen Mail hands this one a link or a
+    /// file it was started for.
+    ///
+    /// A closure rather than the pieces, because opening one needs the module
+    /// switcher, and threading that through every update that has no interest
+    /// in it would be paying for this everywhere.
+    opens_a_handover: &'a dyn Fn(&str),
 }
 
 /// The database id of whichever folder is open right now, if any.
@@ -8217,10 +8309,25 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         tx,
         rt,
         focus_home: focus_home_cell,
+        opens_a_handover,
     } = targets;
 
     use crate::presentation::accessibility::announcements::Priority;
     match update {
+        // Another copy was started, handed over what it was given, and stopped.
+        UIUpdate::HandedOver(argument) => {
+            // Shown and raised whatever came with it. A window that stayed
+            // behind another program's would look exactly like a link that did
+            // nothing, and somebody who cannot see the screen has only the
+            // announcement to tell the two apart.
+            frame.show(true);
+            frame.raise();
+            let _ = a11y.announce(
+                crate::application::handover::what_to_say_when_handed(argument),
+                Priority::Normal,
+            );
+            opens_a_handover(argument);
+        }
         UIUpdate::FoldersLoaded(folders) => {
             {
                 let mut s = lock_state(state);

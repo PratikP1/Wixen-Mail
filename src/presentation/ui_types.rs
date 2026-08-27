@@ -296,6 +296,13 @@ pub struct CompositionData {
 /// UI update messages sent from async tasks to the UI thread
 #[derive(Clone, Debug)]
 pub enum UIUpdate {
+    /// Another copy of Wixen Mail was started and handed over what it was
+    /// given, which is empty when somebody simply started the program again.
+    ///
+    /// Carried as the argument rather than as something parsed, so the rules
+    /// about what a link may ask for are applied once, by the copy that is
+    /// going to act on it. See [`crate::application::handover`].
+    HandedOver(String),
     FoldersLoaded(Vec<String>),
     MessagesLoaded(Vec<MessageItem>),
     /// Folder names paired with their database ids.

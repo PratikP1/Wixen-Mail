@@ -9,6 +9,7 @@ pub mod credentials;
 pub mod default_apps;
 pub mod default_apps_registration;
 pub mod google_api;
+pub mod handover;
 pub mod ical_subscription;
 pub mod microsoft_graph;
 pub mod mime;

@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use wixen_mail::application::handover::{HowToStart, how_to_start};
 use wixen_mail::application::running::Claim;
 use wixen_mail::common::logging::{LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
@@ -42,12 +43,17 @@ fn main() {
     // would be deleting it out from under an open window. Bound to a name
     // rather than to `_`, which would drop it here and mark nothing.
     //
-    // A second copy is not stopped. Whether Wixen Mail should be one window or
-    // many is a separate question, and the marker only has to say that at
-    // least one is up. Both cases hold it, so closing the first while the
-    // second is still open does not clear the mark.
+    // Both cases hold it, so closing the first while a second is briefly up
+    // does not clear the mark. A second copy does not stay: it hands what it
+    // was given to the copy already running and stops, which is decided below
+    // once logging is up and a failure can be recorded.
+    let mut another_was_already_running = false;
     let _running = match wixen_mail::application::running::claim() {
-        Claim::Granted(marker) | Claim::AnotherIsRunning(marker) => Some(marker),
+        Claim::Granted(marker) => Some(marker),
+        Claim::AnotherIsRunning(marker) => {
+            another_was_already_running = true;
+            Some(marker)
+        }
         Claim::Unknown(why) => {
             // Deferred: logging is not up yet, and this is worth a line in the
             // log rather than nothing at all.
@@ -89,6 +95,33 @@ fn main() {
         tracing::info!("Started read only: nothing will be changed at any server");
     }
     report_migration(migration.as_ref());
+
+    // One copy, and the rest hand what they were given to it.
+    //
+    // Windows starts a fresh copy for every link clicked, and being the
+    // registered handler does not change that. Two copies share one database
+    // and one outbox, and the outbox has no notion of who is sending, so both
+    // would send the same queued message and the person on the other end would
+    // receive it twice. That is what this is for; the tidiness of one window is
+    // the smaller half.
+    //
+    // A failure to hand over is not an error. The copy holding the mutex may be
+    // shutting down, or may have gone between the mutex being seen and the pipe
+    // being tried, so this start carries on and becomes the copy that runs.
+    if let HowToStart::HandOver(argument) =
+        how_to_start(another_was_already_running, run.handed_over.as_deref())
+    {
+        match wixen_mail::service::handover::hand_over(&argument) {
+            Ok(()) => {
+                tracing::info!("Handed this start over to the copy already running");
+                return;
+            }
+            Err(why) => tracing::info!(
+                "The copy already running could not be reached, so this one will run: {why}"
+            ),
+        }
+    }
+
     offer_this_program_to_windows();
 
     // Before the application is built, because an unknown name here has to
