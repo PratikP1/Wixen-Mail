@@ -299,9 +299,23 @@ impl HtmlRenderer {
         machine_language: Option<&str>,
     ) -> String {
         let language = language_attribute(machine_language);
+        // Asked of the settings and of Windows together, so a machine set to
+        // reduce animation gets an immediate scroll whatever this application
+        // was told. The rule and the reason are in `application::scrolling`.
+        let scrolling = crate::application::scrolling::how_to_scroll(
+            crate::data::config::ConfigManager::load_stored()
+                .map(|stored| stored.app_config().smooth_scrolling)
+                .unwrap_or(false),
+            crate::application::scrolling::system_motion(),
+        )
+        .css_scroll_behavior();
         format!(
             r#"<!DOCTYPE html>
 <html{language}><head><meta charset="utf-8"><style>
+html {{ scroll-behavior: {scrolling}; }}
+@media (prefers-reduced-motion: reduce) {{
+    html {{ scroll-behavior: auto; }}
+}}
 body {{
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     font-size: 14px; line-height: 1.6;

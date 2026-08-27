@@ -54,7 +54,7 @@ pub struct SettingsWidgets {
     pub general_panel: Panel,
     pub compose_panel: Panel,
     pub reading_panel: Panel,
-    pub lang_panel: Panel,
+    pub permissions_panel: Panel,
     pub pim_panel: Panel,
     pub feedback_panel: Panel,
     pub advanced_panel: Panel,
@@ -78,6 +78,10 @@ pub struct SettingsWidgets {
     sort_then: Choice,
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
+    smooth_scrolling: CheckBox,
+    keep_selected_message_in_view: CheckBox,
+    keep_running_in_the_tray: CheckBox,
+    check_default_programs_at_startup: CheckBox,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -177,7 +181,18 @@ pub fn build_settings_dialog(
 
     // ── Tab 1: General
     let general_panel = Panel::builder(&notebook).build();
-    let (theme, font_size) = build_general_tab(&general_panel, config);
+    let GeneralTabControls {
+        theme,
+        font_size,
+        language,
+        check_before_send: check_spelling_before_send,
+        check_as_you_type: check_spelling_as_you_type,
+        smooth_scrolling,
+        keep_selected_message_in_view,
+        keep_running_in_the_tray,
+        choose_default_programs,
+        check_default_programs_at_startup,
+    } = build_general_tab(&general_panel, config);
     notebook.add_page(&general_panel, "General", true, None);
 
     // ── Tab 2: Compose
@@ -207,17 +222,11 @@ pub fn build_settings_dialog(
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
-    // ── Tab 4: Language & Spelling
-    let lang_panel = Panel::builder(&notebook).build();
-    let (
-        language,
-        check_spelling_before_send,
-        check_spelling_as_you_type,
-        allow_mail,
-        allow_pim,
-        send_contact_changes_everywhere,
-    ) = build_language_tab(&lang_panel, config);
-    notebook.add_page(&lang_panel, "Language", false, None);
+    // ── Tab 4: what this application may change
+    let permissions_panel = Panel::builder(&notebook).build();
+    let (allow_mail, allow_pim, send_contact_changes_everywhere) =
+        build_permissions_tab(&permissions_panel, config);
+    notebook.add_page(&permissions_panel, "Permissions", false, None);
 
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
@@ -254,6 +263,31 @@ pub fn build_settings_dialog(
 
     dlg.set_sizer(root_sizer, true);
 
+    // Windows is where this is chosen, and this is the only thing an
+    // application is allowed to do about it: take somebody there. The failure
+    // is reported rather than swallowed, because a button that opens nothing
+    // and says nothing is indistinguishable from a button that does not work.
+    choose_default_programs.on_click({
+        let d = dlg;
+        move |_ev| {
+            if let Err(why) = crate::service::default_apps::open_windows_default_apps_page() {
+                tracing::warn!("The Windows default programs page would not open: {why}");
+                // A message box rather than an announcement: a screen reader
+                // reads one out on its own, and this dialog carries no
+                // accessibility handle to announce through.
+                let said = MessageDialog::builder(
+                    &d,
+                    "The Windows settings page for default programs would not open. \
+                     It is under Settings, Apps, Default apps.",
+                    "Could not open Windows settings",
+                )
+                .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+                .build();
+                said.show_modal();
+            }
+        }
+    });
+
     ok_btn.on_click({
         let d = dlg;
         move |_ev| {
@@ -279,7 +313,7 @@ pub fn build_settings_dialog(
             &general_panel,
             &compose_panel,
             &reading_panel,
-            &lang_panel,
+            &permissions_panel,
             &pim_panel,
             &feedback_panel,
             &advanced_panel,
@@ -297,7 +331,7 @@ pub fn build_settings_dialog(
         general_panel,
         compose_panel,
         reading_panel,
-        lang_panel,
+        permissions_panel,
         pim_panel,
         feedback_panel,
         advanced_panel,
@@ -318,6 +352,10 @@ pub fn build_settings_dialog(
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        smooth_scrolling,
+        keep_selected_message_in_view,
+        keep_running_in_the_tray,
+        check_default_programs_at_startup,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -339,7 +377,267 @@ pub fn build_settings_dialog(
 // ── Tab builders ─────────────────────────────────────────────────────────────
 
 /// General settings: theme and font size.
-fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
+/// How views move: whether they slide, and whether they follow the cursor.
+///
+/// Smooth scrolling says outright that Windows can overrule it, because it
+/// can. [`crate::application::scrolling`] holds that rule and the reason: an
+/// animation setting somebody has already made once should not have to be made
+/// again in every program, and the way they would find out this one ignored
+/// them is by being made unwell.
+fn add_scrolling(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> (CheckBox, CheckBox) {
+    use crate::application::scrolling::{
+        SystemMotion, system_motion, what_the_machine_has_overruled,
+    };
+
+    let scroll_sec = section(panel, "Scrolling");
+
+    let smooth = CheckBox::builder(panel)
+        .with_label("&Slide when a view scrolls, rather than jumping")
+        .build();
+    set_accessible_name_and_description(
+        &smooth,
+        "Slide when a view scrolls, rather than jumping",
+        "Windows overrules this when it is set to reduce animation",
+    );
+    smooth.set_value(config.smooth_scrolling);
+    scroll_sec.add(&smooth, 0, SizerFlag::All, 4);
+
+    // Said only on a machine it is true of, rather than as a permanent caveat
+    // that the people it applies to cannot pick out from the people it does
+    // not. A ticked box doing nothing otherwise reads as a broken program.
+    if system_motion() == SystemMotion::Reduced {
+        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced);
+        let note = StaticText::builder(panel).with_label(&said).build();
+        set_accessible_name(&note, &said);
+        scroll_sec.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+    }
+
+    let keep_in_view = CheckBox::builder(panel)
+        .with_label("&Keep the chosen message in view when the list reloads")
+        .build();
+    set_accessible_name_and_description(
+        &keep_in_view,
+        "Keep the chosen message in view when the list reloads",
+        "Turning this off leaves the view where it is when a sync finishes. \
+         Your place in the list is not lost either way",
+    );
+    keep_in_view.set_value(config.keep_selected_message_in_view);
+    scroll_sec.add(&keep_in_view, 0, SizerFlag::All, 4);
+
+    sizer.add_sizer(&scroll_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    (smooth, keep_in_view)
+}
+
+/// Which program Windows opens email, calendar files and contact cards with.
+///
+/// Read rather than set. Since Windows 8 an application cannot make itself the
+/// default, so there is no button here that does it: there is a list saying
+/// what is set now, and a button that takes somebody to the Windows screen
+/// where they choose. A button promising more would be one that cannot keep
+/// its promise, which is guardrail 3.
+///
+/// Six rows, including the three Windows keeps no default for. Leaving those
+/// out would leave somebody looking for tasks in this list wondering whether
+/// they had missed it.
+fn add_default_programs(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> (Button, CheckBox) {
+    use crate::presentation::default_app_words::{button_label, row, why_windows_asks};
+    use crate::service::default_apps::{DefaultKind, is_default};
+
+    let programs_sec = section(panel, "Default programs");
+
+    let why = StaticText::builder(panel)
+        .with_label(why_windows_asks())
+        .build();
+    set_accessible_name(&why, why_windows_asks());
+    programs_sec.add(&why, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    // Each row is one whole sentence rather than a name and a state in two
+    // columns, because a screen reader reads a row and the halves have to
+    // arrive together to mean anything.
+    for kind in DefaultKind::ALL {
+        let said = row(kind, &is_default(kind));
+        let line = StaticText::builder(panel).with_label(&said).build();
+        set_accessible_name(&line, &said);
+        programs_sec.add(&line, 0, SizerFlag::Left | SizerFlag::All, 2);
+    }
+
+    let choose = Button::builder(panel).with_label(button_label()).build();
+    set_accessible_name_and_description(
+        &choose,
+        "Choose default programs in Windows",
+        "Opens the Windows settings screen where default programs are chosen. \
+         Wixen Mail cannot change this itself",
+    );
+    programs_sec.add(&choose, 0, SizerFlag::Left | SizerFlag::All, 4);
+
+    let check_at_startup = CheckBox::builder(panel)
+        .with_label("Check this &every time Wixen Mail starts")
+        .build();
+    set_accessible_name_and_description(
+        &check_at_startup,
+        "Check this every time Wixen Mail starts",
+        "Says so at startup when another program holds one of these. Off by \
+         default, because somebody who chose another program on purpose does \
+         not need telling about it every time",
+    );
+    check_at_startup.set_value(config.check_default_programs_at_startup);
+    programs_sec.add(&check_at_startup, 0, SizerFlag::Left | SizerFlag::All, 4);
+
+    sizer.add_sizer(&programs_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    (choose, check_at_startup)
+}
+
+/// What closing the window does.
+///
+/// Off by default, and deliberately so. Closing a window and having the program
+/// carry on is not what closing a window means to most people, and it is worse
+/// than most for somebody who cannot see the screen: the window goes, the
+/// reading stops, and nothing says the program is still there. So it is asked
+/// for rather than assumed, it is announced the first time it happens, and Quit
+/// always really quits.
+fn add_closing(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> CheckBox {
+    let close_sec = section(panel, "Closing the window");
+
+    let to_tray = CheckBox::builder(panel)
+        .with_label("Keep Wixen Mail running in the &notification area")
+        .build();
+    set_accessible_name_and_description(
+        &to_tray,
+        "Keep Wixen Mail running in the notification area",
+        "Closing the window hides it instead of ending the program. Quit still \
+         ends it. The notification area holds a menu with New Message, Check \
+         Mail and All Inboxes on it",
+    );
+    to_tray.set_value(config.keep_running_in_the_tray);
+    close_sec.add(&to_tray, 0, SizerFlag::All, 4);
+
+    sizer.add_sizer(&close_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    to_tray
+}
+
+/// What the General tab hands back.
+///
+/// A struct rather than a tuple because it carries seven controls now, and a
+/// seven-place tuple is a list nobody can read at the call site: swapping two
+/// of the check boxes would compile and save each other's setting.
+struct GeneralTabControls {
+    theme: Choice,
+    font_size: TextCtrl,
+    language: Choice,
+    check_before_send: CheckBox,
+    check_as_you_type: CheckBox,
+    smooth_scrolling: CheckBox,
+    keep_selected_message_in_view: CheckBox,
+    keep_running_in_the_tray: CheckBox,
+    choose_default_programs: Button,
+    check_default_programs_at_startup: CheckBox,
+}
+
+/// Which language spelling is checked in, and how the checking behaves.
+///
+/// Under General now rather than on a tab of its own. The default comes from
+/// the machine's own locale, which `data::config` reads when it writes a fresh
+/// settings file, so the first thing somebody sees is the language they
+/// already work in.
+fn add_language_and_spelling(
+    panel: &Panel,
+    config: &AppConfig,
+    sizer: &BoxSizer,
+) -> (Choice, CheckBox, CheckBox) {
+    // -- Language
+    //
+    // "Interface language" was the wrong label. Nothing here is translated, and
+    // this setting has only ever decided which dictionary the spell checker
+    // uses. The list was wrong too: it offered the same six languages whatever
+    // the machine had, so picking one it could not check set a value that
+    // changed nothing, and the only way to find that out was to write in that
+    // language and have every word of it called a mistake.
+    let lang_sec = section(panel, "Language and spelling");
+
+    let lang_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let lang_label = StaticText::builder(panel)
+        .with_label("Check spelling in:")
+        .build();
+
+    let languages = available_languages();
+    let lang_names: Vec<String> = languages
+        .iter()
+        .map(|language| {
+            if language.available {
+                language.name.clone()
+            } else {
+                // Shown and marked rather than hidden. A language with no
+                // dictionary is still worth offering, because installing one
+                // is something somebody can go and do.
+                format!("{} (no dictionary installed)", language.name)
+            }
+        })
+        .collect();
+    let lang_idx = languages
+        .iter()
+        .position(|language| language.tag == config.language)
+        .unwrap_or(0) as u32;
+    let lang_choice = Choice::builder(panel)
+        .with_choices(lang_names)
+        .with_selection(Some(lang_idx))
+        .build();
+    set_accessible_name_and_description(
+        &lang_choice,
+        "Check spelling in",
+        "Starts as the language this computer is set to",
+    );
+    lang_row.add(
+        &lang_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    lang_row.add(&lang_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    lang_sec.add_sizer(&lang_row, 0, SizerFlag::Expand, 0);
+
+    let check_before_send = CheckBox::builder(panel)
+        .with_label("&Check spelling before sending a message")
+        .build();
+    set_accessible_name(
+        &check_before_send,
+        "Check spelling before sending a message",
+    );
+    check_before_send.set_value(config.check_spelling_before_send);
+    lang_sec.add(&check_before_send, 0, SizerFlag::All, 4);
+
+    let check_as_you_type = CheckBox::builder(panel)
+        .with_label("&Mark misspelled words as I write")
+        .build();
+    set_accessible_name(&check_as_you_type, "Mark misspelled words as I write");
+    check_as_you_type.set_value(config.check_spelling_as_you_type);
+    lang_sec.add(&check_as_you_type, 0, SizerFlag::All, 4);
+
+    // What the marking is, said plainly, because it is not this application
+    // doing the announcing and somebody comparing it with another program
+    // should know why it sounds like their browser.
+    let marking_note = StaticText::builder(panel)
+        .with_label(
+            "Marked words are announced by your screen reader as you move over them. \
+             There is also a sound at the end of a word that is wrong, which is off \
+             until earcons are switched on under Feedback.",
+        )
+        .build();
+    lang_sec.add(&marking_note, 0, SizerFlag::All, 4);
+
+    let speller = crate::service::spellcheck::for_language(&config.language);
+    let checker_note = StaticText::builder(panel)
+        .with_label(&format!(
+            "Spelling is checked by {}.",
+            speller.source().describe()
+        ))
+        .build();
+    lang_sec.add(&checker_note, 0, SizerFlag::All, 4);
+
+    sizer.add_sizer(&lang_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    (lang_choice, check_before_send, check_as_you_type)
+}
+
+fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Appearance
@@ -402,8 +700,26 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl) {
     // in this program. A control that takes an answer and ignores it is worse
     // than no control, so they are gone rather than sitting switched off.
 
+    let (language, check_before_send, check_as_you_type) =
+        add_language_and_spelling(panel, config, &sizer);
+    let (smooth_scrolling, keep_selected_message_in_view) = add_scrolling(panel, config, &sizer);
+    let keep_running_in_the_tray = add_closing(panel, config, &sizer);
+    let (choose_default_programs, check_default_programs_at_startup) =
+        add_default_programs(panel, config, &sizer);
+
     panel.set_sizer(sizer, true);
-    (theme_choice, font_field)
+    GeneralTabControls {
+        theme: theme_choice,
+        font_size: font_field,
+        language,
+        check_before_send,
+        check_as_you_type,
+        smooth_scrolling,
+        keep_selected_message_in_view,
+        keep_running_in_the_tray,
+        choose_default_programs,
+        check_default_programs_at_startup,
+    }
 }
 
 /// Compose settings: preview before sending, what Sent keeps, drafts, signature.
@@ -937,60 +1253,15 @@ fn labelled_choice(
 const CONTACT_CHANGES_WHEN_THIS_IS_OFF: &str =
     "Off: a change goes only to the address book the contact came from.";
 
-fn build_language_tab(
-    panel: &Panel,
-    config: &AppConfig,
-) -> (Choice, CheckBox, CheckBox, CheckBox, CheckBox, CheckBox) {
+/// What Wixen Mail may change at a server, and how a contact edit travels.
+///
+/// This was the Language and Spelling tab, which held neither of those things
+/// on its own: the language picker and the two spelling boxes are under General
+/// now, and what was left is the two permissions and the contacts rule. Named
+/// for what it holds, because a tab named for something it does not contain is
+/// a tab nobody looks in for what it does.
+fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
-
-    // -- Language
-    //
-    // "Interface language" was the wrong label. Nothing here is translated, and
-    // this setting has only ever decided which dictionary the spell checker
-    // uses. The list was wrong too: it offered the same six languages whatever
-    // the machine had, so picking one it could not check set a value that
-    // changed nothing, and the only way to find that out was to write in that
-    // language and have every word of it called a mistake.
-    let lang_sec = section(panel, "Language");
-
-    let lang_row = BoxSizer::builder(Orientation::Horizontal).build();
-    let lang_label = StaticText::builder(panel)
-        .with_label("Check spelling in:")
-        .build();
-
-    let languages = available_languages();
-    let lang_names: Vec<String> = languages
-        .iter()
-        .map(|language| {
-            if language.available {
-                language.name.clone()
-            } else {
-                // Shown and marked rather than hidden. A language with no
-                // dictionary is still worth offering, because installing one
-                // is something somebody can go and do.
-                format!("{} (no dictionary installed)", language.name)
-            }
-        })
-        .collect();
-    let lang_idx = languages
-        .iter()
-        .position(|language| language.tag == config.language)
-        .unwrap_or(0) as u32;
-    let lang_choice = Choice::builder(panel)
-        .with_choices(lang_names)
-        .with_selection(Some(lang_idx))
-        .build();
-    set_accessible_name(&lang_choice, "Check spelling in");
-    lang_row.add(
-        &lang_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    lang_row.add(&lang_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
-    lang_sec.add_sizer(&lang_row, 0, SizerFlag::Expand, 0);
-
-    sizer.add_sizer(&lang_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Spell Check
     //
@@ -1076,57 +1347,8 @@ fn build_language_tab(
 
     sizer.add_sizer(&contacts_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-    let spell_sec = section(panel, "Spell Check");
-
-    let check_before_send = CheckBox::builder(panel)
-        .with_label("&Check spelling before sending a message")
-        .build();
-    set_accessible_name(
-        &check_before_send,
-        "Check spelling before sending a message",
-    );
-    check_before_send.set_value(config.check_spelling_before_send);
-    spell_sec.add(&check_before_send, 0, SizerFlag::All, 4);
-
-    let check_as_you_type = CheckBox::builder(panel)
-        .with_label("&Mark misspelled words as I write")
-        .build();
-    set_accessible_name(&check_as_you_type, "Mark misspelled words as I write");
-    check_as_you_type.set_value(config.check_spelling_as_you_type);
-    spell_sec.add(&check_as_you_type, 0, SizerFlag::All, 4);
-
-    // What the marking is, said plainly, because it is not this application
-    // doing the announcing and somebody comparing it with another program
-    // should know why it sounds like their browser.
-    let marking_note = StaticText::builder(panel)
-        .with_label(
-            "Marked words are announced by your screen reader as you move over them. \
-             There is also a sound at the end of a word that is wrong, which is off \
-             until earcons are switched on under Feedback.",
-        )
-        .build();
-    spell_sec.add(&marking_note, 0, SizerFlag::All, 4);
-
-    let speller = crate::service::spellcheck::for_language(&config.language);
-    let checker_note = StaticText::builder(panel)
-        .with_label(&format!(
-            "Spelling is checked by {}.",
-            speller.source().describe()
-        ))
-        .build();
-    spell_sec.add(&checker_note, 0, SizerFlag::All, 4);
-
-    sizer.add_sizer(&spell_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
-
     panel.set_sizer(sizer, true);
-    (
-        lang_choice,
-        check_before_send,
-        check_as_you_type,
-        allow_mail,
-        allow_pim,
-        send_contact_changes_everywhere,
-    )
+    (allow_mail, allow_pim, send_contact_changes_everywhere)
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -1687,6 +1909,10 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
 
     // Reading
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
+    cfg.smooth_scrolling = w.smooth_scrolling.get_value();
+    cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
+    cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
+    cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {
         1 => "date_oldest",
         2 => "sender_az",

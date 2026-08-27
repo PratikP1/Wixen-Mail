@@ -127,6 +127,17 @@ zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
 # arriving as somebody else's implementation detail.
 flate2 = "1.1.9"
 
+# Reading this application's own icon so the notification area can wear it.
+# wxWidgets takes a bitmap as raw pixels and the icon is an `.ico` file, so
+# something has to decode it, and nothing else in the tree had ever needed to
+# read an image.
+#
+# Three formats and no more: `ico` is the container, and `png` and `bmp` are the
+# two things an `.ico` holds. The rest of what this crate can decode is a
+# decoder somebody else's file could reach, which is attack surface for a
+# feature that reads one file this project ships itself.
+image = { version = "0.25", default-features = false, features = ["ico", "png", "bmp"] }
+
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.

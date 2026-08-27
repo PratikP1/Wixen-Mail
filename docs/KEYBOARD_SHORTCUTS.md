@@ -626,7 +626,7 @@ the fix is to remove one.
 Misspelled words are also marked as you write, and your screen reader announces
 them as you move over a marked word. That marking is the browser engine's, not
 this program's, which is why it sounds the way it does in your browser. Turn it
-off under Settings, Language, "Mark misspelled words as I write". The same
+off under Settings, General, "Mark misspelled words as I write". The same
 setting controls a short sound at the end of a word that is wrong, which is
 silent until you switch earcons on under Feedback.
 

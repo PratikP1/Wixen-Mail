@@ -117,6 +117,22 @@ fn test_every_handled_command_has_something_that_raises_it() {
         if path.ends_with("wx_context_menu.rs") {
             raised.extend(names_after(&text, "=> "));
         }
+
+        // The notification area's menu is described as data in `wx_tray.rs`
+        // and filled in from `wx_app.rs`, so neither file names an id beside a
+        // menu call. The ids are the fields of `TrayCommands` where it is
+        // built, which is the one place they are written down.
+        if path.ends_with("wx_app.rs") {
+            for field in [
+                "open_window:",
+                "new_message:",
+                "check_mail:",
+                "all_inboxes:",
+                "quit:",
+            ] {
+                raised.extend(names_after(&text, field));
+            }
+        }
     }
 
     let mut dead: Vec<String> = handled

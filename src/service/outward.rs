@@ -1357,7 +1357,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 42] = [
+    const A_CRATE_THAT_CANNOT: [&str; 43] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1403,6 +1403,11 @@ mod completeness {
         // Packs and unpacks cached message text in memory. A compressor takes
         // bytes and gives bytes back; it has no notion of a destination.
         "flate2",
+        // Decodes this application's own icon, which is compiled into the
+        // binary by `include_bytes!`, so the bytes it reads never came from
+        // anywhere. Built with the codecs off apart from ico, png and bmp, and
+        // a decoder has no notion of a destination either.
+        "image",
         "windows",
         "winresource",
         "boa_engine",

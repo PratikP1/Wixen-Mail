@@ -342,7 +342,7 @@ fn check_settings(
     );
     check(
         "settings language tab panel",
-        &widgets.lang_panel,
+        &widgets.permissions_panel,
         palette.main_surface(),
         into,
     );

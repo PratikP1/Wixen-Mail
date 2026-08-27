@@ -6,6 +6,7 @@ pub mod attachment_name;
 pub mod cache;
 pub mod caldav;
 pub mod credentials;
+pub mod default_apps;
 pub mod google_api;
 pub mod ical_subscription;
 pub mod microsoft_graph;

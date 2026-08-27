@@ -8,6 +8,61 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Settings, General shows which program Windows opens email, calendar files
+  and contact cards with**, and takes you to the Windows screen where that is
+  chosen.
+
+  It does not set it, because Windows has not allowed a program to make itself
+  the default since Windows 8. There is no button here promising otherwise. The
+  list says what is set now and the button says where it goes.
+
+  Tasks, reminders and notes are in the list saying Windows keeps no default
+  for them, rather than being left out, so you are not left wondering whether
+  you missed a row.
+
+  **Check this every time Wixen Mail starts** is there too, off by default. On,
+  it says at startup when another program holds one of these. Off is the
+  default because somebody who chose another program on purpose does not need
+  telling about it at every start.
+
+- **Wixen Mail can keep running in the notification area** when you close the
+  window, under Settings, General. Off by default, because closing a window and
+  having the program carry on is not what closing a window usually means.
+
+  The icon's menu holds the things worth reaching without opening the window:
+  Open Wixen Mail, New Message, Check Mail, All Inboxes, and Quit.
+
+  Three rules it follows. **Quit always really quits**, from the menu, the key
+  or the icon, because on Windows those arrive at the same place as the close
+  button and it would otherwise be a Quit that hid the window. **The window
+  never hides unless the icon is actually there**, so you cannot end up with a
+  program running behind no window and no way back into it. And **the first
+  time it hides, it says so aloud**, with how to really quit, because a window
+  that disappears is indistinguishable from a program that has ended if you
+  cannot see the screen.
+
+- **Scrolling can slide rather than jump**, under Settings, General. Off by
+  default, which is what everything did before.
+
+  It can only ever be honoured, never forced. When Windows is set to reduce
+  animation this setting is ignored and scrolling stays immediate, and the
+  settings screen says so on a machine where that is the case. Animated
+  movement makes some people ill, and somebody who has already told their
+  computer once should not have to find the same switch again in every
+  program, least of all by being made unwell by the one that ignored them.
+
+- **The chosen message can be kept in view when the list reloads**, under
+  Settings, General, on by default. A sync finishing no longer leaves your row
+  off screen. Only the view moves: your place in the list is never changed
+  either way, so this cannot lose your selection.
+
+- **Language and spelling have moved to General**, from a tab of their own.
+  The language still starts as the one this computer is set to. What was left
+  on that tab was neither language nor spelling: it was the two permissions
+  saying what Wixen Mail may change at a server, and the contacts rule. It is
+  called **Permissions** now, because a tab named for something it does not
+  contain is a tab nobody looks in for what it does.
+
 - **All Inboxes has a way in that does not depend on finding it.** One list of
   every account's inbox has been there all along, as the first row of the mail
   sidebar, and nothing named it: not a menu, not a key, not a line of the

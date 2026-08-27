@@ -74,6 +74,43 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
+    /// Say at startup when another program holds a default this could hold.
+    ///
+    /// Off by default. Somebody who has chosen another mail program on purpose
+    /// does not need telling about it every time they start this one, and a
+    /// message that appears every time is one that gets dismissed without
+    /// being read.
+    #[serde(default)]
+    pub check_default_programs_at_startup: bool,
+    /// Keep running in the notification area when the window is closed.
+    ///
+    /// Off by default. Closing a window and having the program carry on is not
+    /// what closing a window means to most people, and it is worse than most
+    /// for somebody who cannot see the screen: the window goes, the reading
+    /// stops, and nothing says the program is still there. So it is asked for
+    /// rather than assumed, it is announced the first time it happens, and
+    /// Quit always really quits. [`crate::application::closing`] holds those
+    /// rules, including the one that refuses to hide when no tray icon
+    /// appeared, which would leave a running program with no way back into it.
+    #[serde(default)]
+    pub keep_running_in_the_tray: bool,
+    /// Slide rather than jump when a view scrolls.
+    ///
+    /// Off by default, which is what everything did before this existed. It
+    /// can only ever be honoured: when Windows is set to reduce animation this
+    /// is ignored, because a vestibular reaction is not a preference and
+    /// somebody who has told their computer once should not have to tell every
+    /// program again. [`crate::application::scrolling`] holds that rule.
+    #[serde(default)]
+    pub smooth_scrolling: bool,
+    /// Bring the chosen message back into view when the list is rebuilt.
+    ///
+    /// On by default, which is what the list already did. Turning it off
+    /// leaves the view where it is when a sync finishes underneath somebody
+    /// reading down a list. The selection itself never moves either way, so
+    /// this cannot lose somebody their place, only leave it off screen.
+    #[serde(default = "default_true")]
+    pub keep_selected_message_in_view: bool,
     /// Open in All Inboxes rather than with no folder chosen.
     ///
     /// The folder tree comes up with nothing selected, deliberately: forcing
@@ -380,6 +417,10 @@ impl Default for AppConfig {
             keep_sent_mail_on_this_computer: false,
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
+            check_default_programs_at_startup: false,
+            keep_running_in_the_tray: false,
+            smooth_scrolling: false,
+            keep_selected_message_in_view: default_true(),
             language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),

@@ -130,6 +130,7 @@ menu_ids!(
     ID_VIEW_PREVIEW_PANE,
     ID_VIEW_MODULE_BUTTONS,
     ID_VIEW_ALL_INBOXES,
+    ID_OPEN_WINDOW,
     ID_VIEW_COLUMNS,
     ID_NEXT_UNREAD,
     ID_PREV_UNREAD,
@@ -2620,8 +2621,25 @@ impl WxMailApp {
             // Track preview-split state (starts unsplit / hidden)
             let preview_visible = std::cell::Cell::new(false);
 
+            // ── The notification area ─────────────────────────────────────
+            //
+            // Whether this close is a Quit. Quit and the window's close button
+            // both reach `on_close`, so without this the menu item saying Quit
+            // would hide the window instead of ending the program.
+            let really_quitting = std::rc::Rc::new(std::cell::Cell::new(false));
+            // The icon, or nothing when it was never asked for or would not
+            // install. `on_close` asks whether it is showing rather than
+            // whether it was wanted, because only a showing icon is a way back
+            // to a hidden window.
+            let tray: std::rc::Rc<RefCell<Option<crate::presentation::wx_tray::TrayIcon>>> =
+                std::rc::Rc::new(RefCell::new(None));
             // ── Menu events ─────────────────────────────────────────────
-            frame.on_menu({
+            // One dispatch, named, so the notification area's menu and the
+            // menu bar reach the same code. The tray hands over an id and
+            // nothing else; two handlers would be two places for the same
+            // command to drift apart.
+            let dispatch: std::rc::Rc<dyn Fn(i32)> = std::rc::Rc::new({
+                let really_quitting = std::rc::Rc::clone(&really_quitting);
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
@@ -2649,8 +2667,7 @@ impl WxMailApp {
                 // command moves the cursor onto it rather than loading it
                 // directly, so there is one path into a combined inbox and not
                 // two that could disagree.
-                move |event| {
-                    let id = event.get_id();
+                move |id: i32| {
                     let app = AppHandles {
                         state: &state,
                         tx: &ui_tx,
@@ -2740,7 +2757,8 @@ impl WxMailApp {
                                     // Said rather than done silently: nothing
                                     // happening is indistinguishable from a
                                     // key that does not work.
-                                    let _ = a11y.signal(FeedbackEvent::EdgeOfList, "no unread messages");
+                                    let _ = a11y
+                                        .signal(FeedbackEvent::EdgeOfList, "no unread messages");
                                 }
                             }
                         }
@@ -2755,7 +2773,13 @@ impl WxMailApp {
                                     Some(idx) if idx < s.messages.len() => {
                                         s.messages[idx].starred = !s.messages[idx].starred;
                                         let m = &s.messages[idx];
-                                        Some((m.message_id, m.uid, m.read, m.starred, m.subject.clone()))
+                                        Some((
+                                            m.message_id,
+                                            m.uid,
+                                            m.read,
+                                            m.starred,
+                                            m.subject.clone(),
+                                        ))
                                     }
                                     _ => None,
                                 }
@@ -2765,9 +2789,9 @@ impl WxMailApp {
                                     if let Some(cache) = message_cache.as_ref()
                                         && let Err(e) =
                                             cache.update_message_flags(cache_id, read, starred)
-                                        {
-                                            tracing::error!("Flag not saved: {}", e);
-                                        }
+                                    {
+                                        tracing::error!("Flag not saved: {}", e);
+                                    }
                                     let confirmed = if starred { "Flagged" } else { "Unflagged" };
                                     let _ = a11y.announce(
                                         &format!("{confirmed}: {subject}"),
@@ -2785,7 +2809,10 @@ impl WxMailApp {
                                     );
                                 }
                                 None => {
-                                    let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
+                                    let _ = a11y.signal(
+                                        FeedbackEvent::ActionRefused,
+                                        "no message selected",
+                                    );
                                 }
                             }
                         }
@@ -2818,7 +2845,8 @@ impl WxMailApp {
                                     "refresh",
                                 );
                             } else {
-                                let _ = a11y.signal(FeedbackEvent::ActionRefused, "no folder selected");
+                                let _ =
+                                    a11y.signal(FeedbackEvent::ActionRefused, "no folder selected");
                             }
                         }
                         // ── Raised by the context menus ───────────────────
@@ -2921,13 +2949,15 @@ impl WxMailApp {
                             // says why rather than doing nothing.
                             let module = lock_state(&state).active_module;
                             match module.container_kind() {
-                                Some(crate::application::new_item::ContainerKind::ContactGroup) => managers::rename_group(
-                                    &state,
-                                    &message_cache,
-                                    &frame,
-                                    &ui_tx,
-                                    &runtime,
-                                ),
+                                Some(crate::application::new_item::ContainerKind::ContactGroup) => {
+                                    managers::rename_group(
+                                        &state,
+                                        &message_cache,
+                                        &frame,
+                                        &ui_tx,
+                                        &runtime,
+                                    )
+                                }
                                 _ => send_refusal(
                                     &ui_tx,
                                     &runtime,
@@ -2966,14 +2996,25 @@ impl WxMailApp {
                                 &ui_tx,
                                 &runtime,
                             ) {
-                                open_compose(app, &frame, &message_cache, &a11y, ComposeMode::WriteTo { to });
+                                open_compose(
+                                    app,
+                                    &frame,
+                                    &message_cache,
+                                    &a11y,
+                                    ComposeMode::WriteTo { to },
+                                );
                             }
                         }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
                         }
                         _ if id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER => {
-                            move_or_copy_message(app, &message_cache, &frame, id == ID_COPY_TO_FOLDER);
+                            move_or_copy_message(
+                                app,
+                                &message_cache,
+                                &frame,
+                                id == ID_COPY_TO_FOLDER,
+                            );
                         }
                         _ if id == ID_CHOOSE_FOLDERS => {
                             choose_folders(app, &message_cache, &frame);
@@ -3012,9 +3053,7 @@ impl WxMailApp {
                             // is worse than no description.
                             let body = message_cache
                                 .as_ref()
-                                .and_then(|c| {
-                                    c.get_message_body(message.message_id).ok().flatten()
-                                })
+                                .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
                                 .map(|stored| match (stored.body_plain, stored.body_html) {
                                     (Some(plain), _) if !plain.trim().is_empty() => plain,
                                     (_, Some(html)) => {
@@ -3258,29 +3297,42 @@ impl WxMailApp {
                             );
                         }
                         // Context menu actions from WebView popup
-                        _ if id == ID_CTX_SELECT_ALL => { preview.select_all(); }
+                        _ if id == ID_CTX_SELECT_ALL => {
+                            preview.select_all();
+                        }
                         _ if id == ID_CTX_COPY_LINK => {
-                            {
-                        let s = lock_state(&state);
-                                if let Some(ref href) = s.context_link_href {
-                                    Clipboard::get().set_text(href);
-                                }
+                            let s = lock_state(&state);
+                            if let Some(ref href) = s.context_link_href {
+                                Clipboard::get().set_text(href);
                             }
                         }
                         _ if id == ID_CTX_SAVE_LINK => {
-                            {
-                        let s = lock_state(&state);
-                                if let Some(ref href) = s.context_link_href {
-                                    if let Some(safe) = HtmlRenderer::safe_external_url(href) {
-                                        let _ = open::that(&safe);
-                                    } else {
-                                        tracing::warn!("Refused to open unsafe link: {}", href);
-                                        say_the_link_was_refused(&a11y);
-                                    }
+                            let s = lock_state(&state);
+                            if let Some(ref href) = s.context_link_href {
+                                if let Some(safe) = HtmlRenderer::safe_external_url(href) {
+                                    let _ = open::that(&safe);
+                                } else {
+                                    tracing::warn!("Refused to open unsafe link: {}", href);
+                                    say_the_link_was_refused(&a11y);
                                 }
                             }
                         }
-                        _ if id == ID_QUIT => frame.close(false),
+                        // Quit really quits, and says so to the close handler
+                        // before asking it to close. Both this and the window's
+                        // own close button arrive there, so without the flag
+                        // the menu item that says Quit would hide the window
+                        // and leave a program somebody was sure they had ended.
+                        _ if id == ID_QUIT => {
+                            really_quitting.set(true);
+                            frame.close(false);
+                        }
+                        // Raised by the tray, and handled here so the tray
+                        // decides nothing: it hands over an id like every other
+                        // menu, and one handler serves both.
+                        _ if id == ID_OPEN_WINDOW => {
+                            frame.show(true);
+                            frame.raise();
+                        }
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
                             spawn_mail_sync(app, None);
@@ -3295,9 +3347,13 @@ impl WxMailApp {
                         _ if id == ID_NEW_DEFAULT => {
                             let module = lock_state(&state).active_module;
                             match module {
-                                PimModule::Mail => {
-                                    open_compose(app, &frame, &message_cache, &a11y, ComposeMode::New)
-                                }
+                                PimModule::Mail => open_compose(
+                                    app,
+                                    &frame,
+                                    &message_cache,
+                                    &a11y,
+                                    ComposeMode::New,
+                                ),
                                 PimModule::Contacts => managers::new_contact(
                                     &state,
                                     &message_cache,
@@ -3380,18 +3436,10 @@ impl WxMailApp {
                                             &ui_tx,
                                         );
                                     }
-                                    send_status(
-                                        &ui_tx,
-                                        &runtime,
-                                        "Getting older messages...",
-                                    );
+                                    send_status(&ui_tx, &runtime, "Getting older messages...");
                                     spawn_mail_sync(app, Some(folder));
                                 }
-                                None => send_status(
-                                    &ui_tx,
-                                    &runtime,
-                                    "Choose a folder first",
-                                ),
+                                None => send_status(&ui_tx, &runtime, "Choose a folder first"),
                             }
                         }
                         _ if id == ID_OPEN_DRAFT => {
@@ -3402,7 +3450,13 @@ impl WxMailApp {
                                 &ui_tx,
                                 &runtime,
                             ) {
-                                open_compose(app, &frame, &message_cache, &a11y, ComposeMode::Draft(draft));
+                                open_compose(
+                                    app,
+                                    &frame,
+                                    &message_cache,
+                                    &a11y,
+                                    ComposeMode::Draft(draft),
+                                );
                             }
                         }
                         _ if id == ID_NEW_MESSAGE => {
@@ -3424,7 +3478,10 @@ impl WxMailApp {
                                 &frame,
                                 &message_cache,
                                 &a11y,
-                                ComposeMode::Forward { subject: subj, body },
+                                ComposeMode::Forward {
+                                    subject: subj,
+                                    body,
+                                },
                             );
                         }
                         // Delete acts on whatever is in front of you. In Mail
@@ -3544,7 +3601,13 @@ impl WxMailApp {
                                     return;
                                 }
                                 send_status(&ui_tx, &runtime, &format!("Deleting {}...", subject));
-                                spawn_server_change(app, cache_id, uid, subject, ServerChange::Deleted(asked));
+                                spawn_server_change(
+                                    app,
+                                    cache_id,
+                                    uid,
+                                    subject,
+                                    ServerChange::Deleted(asked),
+                                );
                             } else {
                                 send_status(&ui_tx, &runtime, "No message selected to delete");
                             }
@@ -3556,7 +3619,12 @@ impl WxMailApp {
                                     if idx < s.messages.len() {
                                         s.messages[idx].read = !s.messages[idx].read;
                                         let msg = &s.messages[idx];
-                                        Some((msg.message_id, msg.uid, msg.read, msg.subject.clone()))
+                                        Some((
+                                            msg.message_id,
+                                            msg.uid,
+                                            msg.read,
+                                            msg.subject.clone(),
+                                        ))
                                     } else {
                                         None
                                     }
@@ -3570,14 +3638,25 @@ impl WxMailApp {
                                 let tx = ui_tx.clone();
                                 let stored_subject = subject.clone();
                                 runtime.spawn(async move {
-                                    let _ = tx.send(UIUpdate::MessageReadToggled(cache_id, new_read)).await;
-                                    let _ = tx.send(UIUpdate::StatusUpdated(format!("Marked {}: {}", label, stored_subject))).await;
+                                    let _ = tx
+                                        .send(UIUpdate::MessageReadToggled(cache_id, new_read))
+                                        .await;
+                                    let _ = tx
+                                        .send(UIUpdate::StatusUpdated(format!(
+                                            "Marked {}: {}",
+                                            label, stored_subject
+                                        )))
+                                        .await;
                                 });
                                 let _ = a11y.announce(
                                     &announce_msg,
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                 );
-                                let confirmed = if new_read { "Marked read" } else { "Marked unread" };
+                                let confirmed = if new_read {
+                                    "Marked read"
+                                } else {
+                                    "Marked unread"
+                                };
                                 let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
                                 spawn_server_change(
                                     app,
@@ -3621,20 +3700,26 @@ impl WxMailApp {
                                 }
                             }
                         }
-                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(&frame, &state, &message_cache, &a11y),
-                        _ if id == ID_NEW_CONTACT => {
-                            managers::new_contact(
-                                &state,
-                                &message_cache,
-                                &frame,
-                                &ui_tx,
-                                &runtime,
-                                &a11y,
-                            )
+                        _ if id == ID_ACCOUNT_MGR => {
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
                         }
-                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(&frame, &state, &message_cache, &a11y),
-                        _ if id == ID_SAVE => send_status(&ui_tx, &runtime, "No active draft to save"),
-                        _ if id == ID_SAVE_AS => send_status(&ui_tx, &runtime, "Save As: no message selected"),
+                        _ if id == ID_NEW_CONTACT => managers::new_contact(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                            &a11y,
+                        ),
+                        _ if id == ID_NEW_ACCOUNT => {
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
+                        }
+                        _ if id == ID_SAVE => {
+                            send_status(&ui_tx, &runtime, "No active draft to save")
+                        }
+                        _ if id == ID_SAVE_AS => {
+                            send_status(&ui_tx, &runtime, "Save As: no message selected")
+                        }
                         _ if id == ID_CONTACT_MGR => {
                             if managers::manage_contacts(
                                 &state,
@@ -3652,18 +3737,37 @@ impl WxMailApp {
                         // have its result dropped on the floor, so the dialog
                         // opened blank however much was stored and anything the
                         // user added, edited or deleted was lost on OK.
-                        _ if id == ID_FILTER_MGR => {
-                            managers::manage_filters(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
-                        }
-                        _ if id == ID_TAG_MGR => {
-                            managers::manage_tags(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
-                        }
-                        _ if id == ID_SIG_MGR => {
-                            managers::manage_signatures(&state, &message_cache, &frame, &ui_tx, &runtime, &a11y)
-                        }
-                        _ if id == ID_ADD_CALENDAR_BY_ADDRESS => {
-                            managers::add_calendar_by_address(&state, &message_cache, &frame, &ui_tx, &runtime)
-                        }
+                        _ if id == ID_FILTER_MGR => managers::manage_filters(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                            &a11y,
+                        ),
+                        _ if id == ID_TAG_MGR => managers::manage_tags(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                            &a11y,
+                        ),
+                        _ if id == ID_SIG_MGR => managers::manage_signatures(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                            &a11y,
+                        ),
+                        _ if id == ID_ADD_CALENDAR_BY_ADDRESS => managers::add_calendar_by_address(
+                            &state,
+                            &message_cache,
+                            &frame,
+                            &ui_tx,
+                            &runtime,
+                        ),
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
                             spawn_contacts_sync(app);
@@ -3739,7 +3843,11 @@ impl WxMailApp {
                                 s.offline_mode
                             };
                             sync_menu_check(&frame, ID_OFFLINE_MODE, new_mode);
-                            let label = if new_mode { "Offline mode enabled - outgoing mail will be queued" } else { "Online mode - outgoing mail will be sent immediately" };
+                            let label = if new_mode {
+                                "Offline mode enabled - outgoing mail will be queued"
+                            } else {
+                                "Online mode - outgoing mail will be sent immediately"
+                            };
                             send_status(&ui_tx, &runtime, label);
                             // The second status field only changes through
                             // this update, so without it the window kept
@@ -3752,20 +3860,43 @@ impl WxMailApp {
                         }
                         // Each of these also moves the column layout, so the
                         // headers and the menu never disagree about the order.
-                        _ if id == ID_SORT_DATE_NEWEST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::DateNewestFirst),
-                        _ if id == ID_SORT_DATE_OLDEST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::DateOldestFirst),
-                        _ if id == ID_SORT_SENDER_AZ => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderAZ),
-                        _ if id == ID_SORT_SENDER_ZA => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderZA),
-                        _ if id == ID_SORT_SUBJECT_AZ => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectAZ),
-                        _ if id == ID_SORT_SUBJECT_ZA => sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectZA),
-                        _ if id == ID_SORT_UNREAD_FIRST => sort_from_menu(app, &a11y, &column_layout, MailSortOption::UnreadFirst),
+                        _ if id == ID_SORT_DATE_NEWEST => sort_from_menu(
+                            app,
+                            &a11y,
+                            &column_layout,
+                            MailSortOption::DateNewestFirst,
+                        ),
+                        _ if id == ID_SORT_DATE_OLDEST => sort_from_menu(
+                            app,
+                            &a11y,
+                            &column_layout,
+                            MailSortOption::DateOldestFirst,
+                        ),
+                        _ if id == ID_SORT_SENDER_AZ => {
+                            sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderAZ)
+                        }
+                        _ if id == ID_SORT_SENDER_ZA => {
+                            sort_from_menu(app, &a11y, &column_layout, MailSortOption::SenderZA)
+                        }
+                        _ if id == ID_SORT_SUBJECT_AZ => {
+                            sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectAZ)
+                        }
+                        _ if id == ID_SORT_SUBJECT_ZA => {
+                            sort_from_menu(app, &a11y, &column_layout, MailSortOption::SubjectZA)
+                        }
+                        _ if id == ID_SORT_UNREAD_FIRST => {
+                            sort_from_menu(app, &a11y, &column_layout, MailSortOption::UnreadFirst)
+                        }
                         _ if id == ID_LOAD_SCALE_SAMPLE => {
                             tracing::info!(
                                 "Generating a sample mailbox of {} messages",
                                 SAMPLE_MAILBOX_SIZE
                             );
                             let generated = sample_mailbox(SAMPLE_MAILBOX_SIZE);
-                            tracing::info!("Generated {} messages, sending to the list", generated.len());
+                            tracing::info!(
+                                "Generated {} messages, sending to the list",
+                                generated.len()
+                            );
                             if let Err(e) = ui_tx.try_send(UIUpdate::MessagesLoaded(generated)) {
                                 tracing::error!("Sample mailbox never reached the list: {}", e);
                             }
@@ -3777,7 +3908,11 @@ impl WxMailApp {
                             // stuck, and by ear the difference between the
                             // right page and a list of pages is minutes.
                             let module = lock_state(&state).active_module;
-                            open_help(crate::application::help::for_module(module), &ui_tx, &runtime);
+                            open_help(
+                                crate::application::help::for_module(module),
+                                &ui_tx,
+                                &runtime,
+                            );
                         }
                         _ if id >= ID_HELP_TOPIC_FIRST
                             && id
@@ -3794,12 +3929,134 @@ impl WxMailApp {
                     }
                 }
             });
+            // ── Which program Windows opens things with ───────────────────
+            //
+            // Only when asked for. Somebody who has chosen another mail program
+            // on purpose does not need telling every time they start this one,
+            // and a message that appears every time is one that gets dismissed
+            // without being read.
+            //
+            // Reading the registry, which is fast and local, so it happens here
+            // rather than on a worker. If that ever stops being true it belongs
+            // off the interface thread.
+            if crate::data::config::ConfigManager::load_stored()
+                .map(|stored| stored.app_config().check_default_programs_at_startup)
+                .unwrap_or(false)
+            {
+                let found: Vec<_> = crate::service::default_apps::DefaultKind::ALL
+                    .into_iter()
+                    .map(|kind| (kind, crate::service::default_apps::is_default(kind)))
+                    .collect();
+                let said =
+                    crate::presentation::default_app_words::what_the_startup_check_found(&found);
+                if !said.is_empty() {
+                    let _ = a11y.announce(
+                        &said,
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                }
+            }
 
-            // ── Intercept close event for diagnostics ─────────────────
+            // Built now rather than earlier, because it needs `dispatch`:
+            // the tray hands over a command id and this is what answers it.
+            if crate::data::config::ConfigManager::load_stored()
+                .map(|stored| stored.app_config().keep_running_in_the_tray)
+                .unwrap_or(false)
+            {
+                let commands = crate::presentation::wx_tray::TrayCommands {
+                    open_window: ID_OPEN_WINDOW,
+                    new_message: ID_NEW_MESSAGE,
+                    check_mail: ID_CHECK_MAIL,
+                    all_inboxes: ID_VIEW_ALL_INBOXES,
+                    quit: ID_QUIT,
+                };
+                let raised_from_the_tray = {
+                    let dispatch = std::rc::Rc::clone(&dispatch);
+                    move |raised| dispatch(raised)
+                };
+                let put_it_there = crate::presentation::art::tray_picture().and_then(|picture| {
+                    crate::presentation::wx_tray::TrayIcon::new(
+                        picture,
+                        commands,
+                        None,
+                        raised_from_the_tray,
+                    )
+                });
+                match put_it_there {
+                    Ok(icon) => *tray.borrow_mut() = Some(icon),
+                    // Said out loud. Somebody who asked to keep the program in
+                    // the notification area and got no icon would otherwise
+                    // find out by closing the window and losing the program.
+                    Err(why) => {
+                        tracing::warn!("The notification area icon could not be created: {why}");
+                        let _ = a11y.announce(
+                            "Wixen Mail could not put an icon in the notification area, so                              closing the window will close the program.",
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                    }
+                }
+            }
+
+            // The menu bar's own events, handed to the same dispatch.
+            frame.on_menu({
+                let dispatch = std::rc::Rc::clone(&dispatch);
+                move |event| dispatch(event.get_id())
+            });
+
+            // ── Closing, which does not always mean closing ───────────────
+            //
+            // Three things reach here and they do not all mean the same thing.
+            // `application::closing` decides which, including the case that
+            // matters most: refusing to hide when no tray icon appeared, since
+            // that would leave a running program with no window, no icon and no
+            // way back into it.
             frame.on_close({
-                move |_event| {
-                    tracing::info!("Frame on_close fired, window is closing");
-                    frame.destroy();
+                let a11y = a11y.clone();
+                let really_quitting = really_quitting.clone();
+                let tray = tray.clone();
+                let said_it_once = std::rc::Rc::new(std::cell::Cell::new(false));
+                move |event| {
+                    use crate::application::closing::{Asked, Closing, what_closing_should_do};
+
+                    let asked = if really_quitting.get() {
+                        Asked::Quit
+                    } else {
+                        Asked::CloseTheWindow
+                    };
+                    let wanted = crate::data::config::ConfigManager::load_stored()
+                        .map(|stored| stored.app_config().keep_running_in_the_tray)
+                        .unwrap_or(false);
+                    let there_is_a_way_back =
+                        tray.borrow().as_ref().is_some_and(|icon| icon.is_showing());
+
+                    match what_closing_should_do(asked, wanted, there_is_a_way_back) {
+                        Closing::HideToTheTray => {
+                            if let WindowEventData::General(ref base) = event {
+                                base.veto();
+                            }
+                            frame.show(false);
+                            // Once per run. Hiding is indistinguishable from
+                            // quitting to somebody who cannot see the screen,
+                            // and a sentence repeated on every close is one
+                            // that gets dismissed without being heard.
+                            if !said_it_once.replace(true) {
+                                let _ = a11y.announce(
+                                    crate::application::closing::what_hiding_should_say(),
+                                    crate::presentation::accessibility::announcements::Priority::High,
+                                );
+                            }
+                        }
+                        Closing::LetItClose => {
+                            tracing::info!("Frame on_close fired, window is closing");
+                            // Taken away first. An icon left in the notification
+                            // area after the program has gone is one somebody
+                            // clicks and nothing answers.
+                            if let Some(icon) = tray.borrow().as_ref() {
+                                let _ = icon.remove();
+                            }
+                            frame.destroy();
+                        }
+                    }
                 }
             });
 
@@ -7741,6 +7998,22 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // a million native calls to render thirty visible lines.
             tracing::info!("Message list now holds {} rows", messages.len());
             msg_list.set_item_count(messages.len() as i64);
+            // Bring the chosen row back into view, if it is still there and the
+            // setting asks for it. Only the viewport moves: the selection is
+            // deliberately not touched, because re-selecting would move focus
+            // and take the screen reader's cursor with it, which is the fault
+            // the folder tree already had to be fixed for.
+            if crate::application::scrolling::Following::from_setting(
+                crate::data::config::ConfigManager::load_stored()
+                    .map(|stored| stored.app_config().keep_selected_message_in_view)
+                    .unwrap_or(true),
+            )
+            .should_scroll()
+                && let Some(chosen) = lock_state(state).selected_message_index
+                && chosen < messages.len()
+            {
+                msg_list.ensure_visible(chosen as i64);
+            }
             let unread = messages.iter().filter(|m| !m.read).count();
             let msg = what_a_mailbox_holds(messages.len(), unread);
             frame.set_status_text(&msg, 0);
