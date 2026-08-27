@@ -1313,8 +1313,7 @@ fn check_sig_edit(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRe
     );
     for (name, field) in [
         ("signature edit name field", &widgets.name_f),
-        ("signature edit plain text field", &widgets.content_f),
-        ("signature edit html field", &widgets.html_f),
+        ("signature edit signature field", &widgets.content_f),
     ] {
         check(name, field, palette.main_surface(), into);
     }

@@ -3061,7 +3061,6 @@ pub struct SigEditWidgets {
     pub name_f: TextCtrl,
     pub def_check: CheckBox,
     pub content_f: TextCtrl,
-    pub html_f: TextCtrl,
 }
 
 /// Build the Add/Edit Signature dialog without showing it.
@@ -3121,15 +3120,14 @@ pub fn build_sig_edit_dialog(
     );
     sizer.add(&content_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
-    let html_label = StaticText::builder(&dlg)
-        .with_label("&HTML version (optional):")
-        .build();
-    sizer.add(&html_label, 0, SizerFlag::Left | SizerFlag::All, 8);
-    let html_f = TextCtrl::builder(&dlg)
-        .with_style(TextCtrlStyle::MultiLine)
-        .build();
-    set_accessible_name(&html_f, "Signature, HTML version");
-    sizer.add(&html_f, 1, SizerFlag::Expand | SizerFlag::All, 8);
+    // There was a second box here, headed "HTML version (optional)", for
+    // writing the formatted signature by hand. It was stored, carried through
+    // three layers and written to the database, and the send path took
+    // `content_plain` and dropped the rest, so it never reached a message and
+    // said it had saved. Markdown in the box above is what it was for, and that
+    // works, so the box is gone rather than wired to a second way of saying the
+    // same thing. What anybody typed into it is still on the record and is not
+    // thrown away by editing a signature.
 
     let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&dlg)
@@ -3149,9 +3147,6 @@ pub fn build_sig_edit_dialog(
     if let Some(s) = existing {
         name_f.set_value(&s.name);
         content_f.set_value(&s.content_plain);
-        if let Some(ref html) = s.content_html {
-            html_f.set_value(html);
-        }
         def_check.set_value(s.is_default);
     }
 
@@ -3183,7 +3178,7 @@ pub fn build_sig_edit_dialog(
     // should not paint over, so nothing is set here and Windows decides.
     if let Some(palette) = palette {
         theme::paint(&dlg, palette.main_surface());
-        for field in [&name_f, &content_f, &html_f] {
+        for field in [&name_f, &content_f] {
             theme::paint(field, palette.main_surface());
         }
     }
@@ -3193,7 +3188,6 @@ pub fn build_sig_edit_dialog(
         name_f,
         def_check,
         content_f,
-        html_f,
     }
 }
 
@@ -3207,7 +3201,6 @@ fn show_sig_edit(
         name_f,
         def_check,
         content_f,
-        html_f,
     } = build_sig_edit_dialog(parent, existing, palette);
 
     // Read first, then destroy: the fields belong to the dialog.
@@ -3217,18 +3210,16 @@ fn show_sig_edit(
     // thing and says so where it fixed it.
     let answered = dlg.show_modal();
     let chosen = if answered == ID_OK {
-        let html_val = html_f.get_value();
         Some(SignatureEntry {
             id: existing
                 .map(|s| s.id.clone())
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
             content_plain: content_f.get_value(),
-            content_html: if html_val.trim().is_empty() {
-                None
-            } else {
-                Some(html_val)
-            },
+            // Kept as it was found rather than cleared. Nothing reads it and
+            // nothing offers to edit it any more, and quietly deleting what
+            // somebody typed is not this change's business.
+            content_html: existing.and_then(|s| s.content_html.clone()),
             is_default: def_check.get_value(),
         })
     } else {

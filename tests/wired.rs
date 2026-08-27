@@ -1864,6 +1864,40 @@ fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
     );
 }
 
+/// The signature editor offers no box that reaches no message.
+///
+/// It offered two. One was the signature; the other was headed "HTML version
+/// (optional)", was stored, was carried through three layers of conversion, was
+/// written to the database and was never read when a message was composed. The
+/// send path asks for the default signature, takes `content_plain` off it and
+/// drops the rest, so anybody who filled that box in was typing into nothing
+/// and was told it saved.
+///
+/// Both directions, because one alone rots. Checking only that the box is gone
+/// would pass on a build where the box that remains has also stopped being
+/// read; checking only that something is read would pass on a build that offers
+/// three boxes and reads one.
+#[test]
+fn test_the_signature_editor_offers_no_box_that_reaches_no_message() {
+    let managers = fs::read_to_string("src/presentation/wx_managers.rs").expect("the managers");
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        !managers.contains("Signature, HTML version"),
+        "the signature editor still offers a box for markup, and nothing on the \
+         send path reads it. The signature is written in Markdown now, which is \
+         what that box was for"
+    );
+
+    // And the one that is left is really read, so this does not pass by both
+    // halves being absent.
+    assert!(
+        app.contains("s.content_plain"),
+        "nothing on the send path takes the signature's text any more, so every \
+         box in that editor is now one that reaches no message"
+    );
+}
+
 /// Every long prose box says Markdown is understood in it.
 ///
 /// The four fields the item form builds are held to this by a test beside their

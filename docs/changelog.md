@@ -16,6 +16,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   message is made from it. The lines you type stay on separate lines, which
   is what a signature is.
 
+- **The signature editor no longer has a box that went nowhere.** Beside the
+  signature was a second box headed "HTML version (optional)", for writing the
+  formatted signature by hand. It saved, and it never reached a message: the
+  code that adds your signature took the plain text and dropped the rest. So
+  anybody who used it was typing into nothing and being told it had saved.
+  Markdown in the signature box is what it was for, and that works now, so the
+  box is gone. Anything you had typed into it is still on the record and is not
+  thrown away when you next edit a signature.
+
 - **The notes on a contact are read back with the structure you wrote.** It
   was the one long box in the application where Markdown did nothing. Worse,
   a contact's notes were not read aloud at all: a contact with half a page of
