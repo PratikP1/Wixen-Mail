@@ -31,6 +31,13 @@ pub enum Piece {
         text: String,
     },
     Quote(String),
+    /// A picture, and whatever the person who wrote it said it shows.
+    ///
+    /// Empty when they said nothing. Kept as a piece of its own rather than
+    /// dropped, because somebody who cannot see it otherwise has no way of
+    /// knowing a picture was ever there, and an image nobody described is the
+    /// sender's gap to be shown rather than ours to hide. Guardrail 9.
+    Image(String),
     /// Anything else: an ordinary paragraph.
     Paragraph(String),
 }
@@ -70,6 +77,9 @@ struct Collector {
     /// closing time announces a bullet as a numbered item and the reverse.
     in_item: Option<bool>,
     in_quote: bool,
+    /// Whether the words arriving now are a picture's description rather than
+    /// the text around it.
+    in_image: bool,
     /// How deep the lists go, and whether each is numbered. A list inside a
     /// list must not end the outer one, or its remaining items become
     /// paragraphs.
@@ -92,6 +102,17 @@ impl Collector {
                 self.in_item = Some(self.lists.last().copied().unwrap_or(false));
             }
             Event::Start(Tag::BlockQuote(_)) => self.in_quote = true,
+            // Closed first, so words before the picture stay their own piece
+            // rather than being swallowed into its description.
+            Event::Start(Tag::Image { .. }) => {
+                self.finish();
+                self.in_image = true;
+            }
+            Event::End(TagEnd::Image) => {
+                let described = std::mem::take(&mut self.text).trim().to_string();
+                self.in_image = false;
+                self.pieces.push(Piece::Image(described));
+            }
             Event::Text(run) | Event::Code(run) => self.text.push_str(&run),
             // A line break inside a paragraph is still the same paragraph, and
             // running the words together would join the last word of one line
@@ -146,6 +167,30 @@ fn depth_of(level: HeadingLevel) -> usize {
     }
 }
 
+/// Whether reading the text changed any of its words.
+///
+/// Compared with the spacing taken out, because reading always changes the
+/// spacing: a blank line between two paragraphs is what separates them and is
+/// not one of the words. Anything else that differs is markup that was applied,
+/// which means the read version is the one worth speaking.
+fn the_same_words(pieces: &[Piece], written: &str) -> bool {
+    fn only_the_words(text: &str) -> String {
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+    let read = pieces
+        .iter()
+        .map(|piece| match piece {
+            Piece::Heading { text, .. }
+            | Piece::Item { text, .. }
+            | Piece::Quote(text)
+            | Piece::Image(text)
+            | Piece::Paragraph(text) => text.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    only_the_words(&read) == only_the_words(written)
+}
+
 /// A long field as one passage to be read aloud, with its structure spoken.
 ///
 /// A heading read as an ordinary sentence is a heading nobody knows is one, and
@@ -156,9 +201,20 @@ fn depth_of(level: HeadingLevel) -> usize {
 /// is not made longer to listen to by a feature it never used.
 pub fn spoken(written: &str) -> String {
     let pieces = structure(written);
+    // Text with nothing marked up in it comes back exactly as written, so a
+    // plain note is not reflowed or made longer to listen to by a feature it
+    // never used.
+    //
+    // "Every piece is a paragraph" used to be the test for that, and it was
+    // wrong for anything marked up inside a paragraph. A note whose only
+    // markup was a link is all paragraphs, so it came back as its own source
+    // and was read out as brackets, parentheses and the whole address. What
+    // decides it now is whether reading it changed anything: if the words that
+    // came out match the words that went in, nothing was marked up.
     if pieces
         .iter()
         .all(|piece| matches!(piece, Piece::Paragraph(_)))
+        && the_same_words(&pieces, written)
     {
         return written.trim().to_string();
     }
@@ -172,6 +228,14 @@ pub fn spoken(written: &str) -> String {
             } => format!("numbered item, {text}"),
             Piece::Item { text, .. } => format!("bullet, {text}"),
             Piece::Quote(text) => format!("quote, {text}"),
+            Piece::Image(described) if described.is_empty() => {
+                // Said rather than skipped. The sender left no description,
+                // and that is worth knowing: it is why the picture cannot be
+                // read out, and it is their omission rather than this
+                // application's.
+                "image with no description".to_string()
+            }
+            Piece::Image(described) => format!("image, {described}"),
             Piece::Paragraph(text) => text.clone(),
         })
         .collect::<Vec<_>>()
@@ -399,11 +463,10 @@ mod markup {
                 Node::Text(text) => out.push_str(text),
                 Node::Element(element) => match element.name() {
                     "br" => out.push(' '),
-                    "img" => {
-                        if let Some(alt) = element.attr("alt") {
-                            out.push_str(alt);
-                        }
-                    }
+                    "img" => match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
+                        Some(alt) => out.push_str(alt),
+                        None => out.push_str("image with no description"),
+                    },
                     "script" | "style" => {}
                     _ => inline(child, out),
                 },
@@ -571,6 +634,13 @@ pub fn first_line(written: &str) -> String {
             | Piece::Item { text, .. }
             | Piece::Quote(text)
             | Piece::Paragraph(text) => text,
+            // A note that opens with a picture. The column says so rather than
+            // showing the row's first words as blank, which reads as a note
+            // with nothing in it.
+            Piece::Image(described) if described.is_empty() => {
+                "Image with no description".to_string()
+            }
+            Piece::Image(described) => format!("Image: {described}"),
         })
         .find(|text| !text.trim().is_empty())
         .unwrap_or_default()
@@ -578,6 +648,71 @@ pub fn first_line(written: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_a_link_in_a_note_is_read_as_its_words_and_not_as_its_address() {
+        // A note whose only markup is a link used to come back as its own
+        // source, so a screen reader read out the brackets, the parentheses
+        // and every character of the address in the middle of a sentence.
+        let said = spoken("See [the roadmap](https://example.com/very/long/path) for details.");
+
+        assert_eq!(said, "See the roadmap for details.");
+    }
+
+    #[test]
+    fn test_emphasis_in_a_note_is_read_as_words_and_not_as_asterisks() {
+        assert_eq!(
+            spoken("This is **important** to remember."),
+            "This is important to remember."
+        );
+    }
+
+    #[test]
+    fn test_a_note_with_nothing_marked_up_still_comes_back_exactly_as_written() {
+        // The reason the shortcut exists. A plain note must not be reflowed,
+        // and its blank lines are its own.
+        let plain = "Milk
+
+Bread and butter
+
+Something else";
+
+        assert_eq!(spoken(plain), plain);
+    }
+
+    #[test]
+    fn test_an_image_in_a_note_says_it_is_an_image() {
+        // Otherwise a picture reads as a bare run of words, and somebody who
+        // cannot see it has no way of knowing there was one.
+        let said = spoken(
+            "Before
+
+![Sales chart for Q3](chart.png)
+
+After",
+        );
+
+        assert!(said.contains("image, Sales chart for Q3"), "{said}");
+    }
+
+    #[test]
+    fn test_an_image_with_no_words_of_its_own_is_still_reported() {
+        // The sender left no alt text. Dropping it silently means somebody is
+        // never told a picture was there, which is the gap guardrail 9 is
+        // about: an upstream failure absorbed rather than shown.
+        let said = spoken(
+            "Before
+
+![](chart.png)
+
+After",
+        );
+
+        assert!(
+            said.contains("image with no description"),
+            "an image with no alt text vanished: {said}"
+        );
+    }
 
     #[test]
     fn test_a_signature_written_in_markdown_becomes_real_structure() {

@@ -8,6 +8,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Pictures a message only points at are no longer fetched.** On by default,
+  under Settings, Reading.
+
+  Fetching one tells the server it came from that you opened the message, from
+  this computer, at that moment. A single invisible one-pixel image is the
+  whole of how mail tracking works, and nearly every marketing message carries
+  one. Wixen Mail fetched them all, and nobody had chosen that.
+
+  Where a picture is held back, the message says so in its place, with the
+  sender's own description of it when they gave one, so you can tell what you
+  would be asking for before you ask. Pictures a message carries with it are a
+  different thing and are unaffected: they are already on your computer and
+  showing them tells nobody anything.
+
+- **A note or description whose only markup was a link read out as its source.**
+  A screen reader was given the brackets, the parentheses and every character
+  of the address in the middle of the sentence. It reads as words now. The
+  same applied to bold and to images.
+
+- **An image with no description used to vanish.** In a message, a note or a
+  task, an image the sender gave no alt text for was dropped silently, so
+  there was no way to know a picture had been there. It is now reported as an
+  image with no description, which is the sender's omission shown rather than
+  hidden.
+
 - **Changing the font or the font size did nothing until you restarted.** Both
   were read once, where the lists are built, so the settings screen appeared to
   ignore you. They now take effect when you press OK. This is the setting

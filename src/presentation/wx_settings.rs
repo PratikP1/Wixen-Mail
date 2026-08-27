@@ -79,6 +79,7 @@ pub struct SettingsWidgets {
     sort_then: Choice,
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
+    hold_back_remote_pictures: CheckBox,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
     keep_running_in_the_tray: CheckBox,
@@ -221,6 +222,7 @@ pub fn build_settings_dialog(
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        hold_back_remote_pictures,
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
@@ -355,6 +357,7 @@ pub fn build_settings_dialog(
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        hold_back_remote_pictures,
         smooth_scrolling,
         keep_selected_message_in_view,
         keep_running_in_the_tray,
@@ -888,6 +891,7 @@ const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your sign
 struct ReadingTabControls {
     sort_order: Choice,
     start_in_all_inboxes: CheckBox,
+    hold_back_remote_pictures: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -1068,11 +1072,20 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     receipt_row.add(&receipt_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     read_sec.add_sizer(&receipt_row, 0, SizerFlag::Expand, 0);
 
-    // A checkbox reading "Load remote images in messages" used to sit here,
-    // unticked, saved by nothing and read by nothing. Unticked is what a
-    // screen reader announced, and nothing anywhere honoured it. The sentence
-    // below says what happens instead, because being told the truth is worth
-    // more than a switch that was never wired to anything.
+    // There was a checkbox here once that saved nothing and was read by
+    // nothing, and then a sentence admitting the pictures were fetched and
+    // there was no switch. This is the switch, and it does what it says.
+    let hold_back_remote_pictures = CheckBox::builder(panel)
+        .with_label("Do not &fetch pictures a message only points at")
+        .build();
+    hold_back_remote_pictures.set_value(config.hold_back_remote_pictures);
+    set_accessible_name_and_description(
+        &hold_back_remote_pictures,
+        "Do not fetch pictures a message only points at",
+        "On by default. Fetching one tells the sender you opened the message.          Pictures the message carries are always shown; they are already here          and showing them tells nobody anything",
+    );
+    read_sec.add(&hold_back_remote_pictures, 0, SizerFlag::All, 4);
+
     let images_note = StaticText::builder(panel)
         .with_label(REMOTE_IMAGES_ARE_FETCHED)
         .build();
@@ -1196,6 +1209,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        hold_back_remote_pictures,
     }
 }
 
@@ -1958,6 +1972,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
 
     // Reading
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
+    cfg.hold_back_remote_pictures = w.hold_back_remote_pictures.get_value();
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
     // By the words shown rather than the row number. A row number needs the

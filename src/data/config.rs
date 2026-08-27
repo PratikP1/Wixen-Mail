@@ -74,6 +74,19 @@ pub struct AppConfig {
     /// was not there.
     #[serde(default = "default_true")]
     pub add_signature_automatically: bool,
+    /// Leave a picture a message only points at unfetched.
+    ///
+    /// On unless somebody turns it off, and this is the one setting in this
+    /// file that starts on and takes something away. Fetching such a picture
+    /// tells the server it came from that this message was opened, by this
+    /// computer, at this moment, which is the whole of how mail tracking
+    /// works: a single invisible pixel, in nearly every marketing message and
+    /// a good deal worse.
+    ///
+    /// A picture the message carries is not affected. It is already here and
+    /// showing it tells nobody anything.
+    #[serde(default = "default_true")]
+    pub hold_back_remote_pictures: bool,
     /// The typeface the item lists are drawn in.
     ///
     /// Empty means whatever Windows uses, which is the default and is stored
@@ -429,6 +442,7 @@ impl Default for AppConfig {
             keep_sent_mail_on_this_computer: false,
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
+            hold_back_remote_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
             keep_running_in_the_tray: false,

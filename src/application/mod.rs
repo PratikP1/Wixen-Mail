@@ -44,6 +44,7 @@ pub mod messages;
 pub mod new_item;
 pub mod occurrences;
 pub mod opening;
+pub mod pictures;
 pub mod pim_command;
 pub mod pop_sync;
 pub mod reading_habits;

@@ -69,6 +69,25 @@ fn newline_compact_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"\n\s*\n\s*\n+").expect("valid newline compact regex"))
 }
 
+/// A whole `<img>` tag, so it can be replaced rather than picked apart.
+pub fn img_tag_whole_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?is)<img\b[^>]*>").expect("valid whole image regex"))
+}
+
+/// One attribute out of a tag ammonia has written.
+///
+/// Only ever run over cleaned markup, where every value is in double quotes,
+/// which is why this can be a pattern rather than a parser.
+fn one_attribute(tag: &str, name: &str) -> Option<String> {
+    let looking_for = format!(r#"(?i)\b{name}="([^"]*)""#);
+    regex::Regex::new(&looking_for)
+        .ok()?
+        .captures(tag)?
+        .get(1)
+        .map(|found| found.as_str().to_string())
+}
+
 pub fn image_alt_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -100,10 +119,30 @@ pub fn script_tag_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"(?is)<\s*script\b").expect("valid script tag regex"))
 }
 
+/// What the stored settings say about fetching pictures.
+///
+/// Blocked when the settings cannot be read at all, which is the safe way to be
+/// wrong: a message shown without its remote pictures is a message somebody can
+/// still read, and one shown with them is a message that has already reported
+/// them.
+fn fetching_from_settings() -> crate::application::pictures::Fetching {
+    crate::application::pictures::Fetching::from_setting(
+        crate::data::config::ConfigManager::load_stored()
+            .map(|stored| stored.app_config().hold_back_remote_pictures)
+            .unwrap_or(true),
+    )
+}
+
 /// HTML renderer with sanitization
 pub struct HtmlRenderer {
     /// Whether to strip all HTML and return plain text
     plain_text_only: bool,
+    /// Whether a picture the message only points at may be fetched.
+    ///
+    /// Fetching one tells the server it came from that this message was opened,
+    /// by this computer, at this moment, which is the whole of how mail
+    /// tracking works. Held back unless somebody has said otherwise.
+    fetching: crate::application::pictures::Fetching,
 }
 
 /// One message in a combined conversation document.
@@ -131,6 +170,7 @@ impl HtmlRenderer {
     pub fn new() -> Self {
         Self {
             plain_text_only: false,
+            fetching: fetching_from_settings(),
         }
     }
 
@@ -138,6 +178,21 @@ impl HtmlRenderer {
     pub fn plain_text_only() -> Self {
         Self {
             plain_text_only: true,
+            // Nothing is fetched in plain text either way, since there is no
+            // browser to fetch with, but the field decides what the words say
+            // where a picture would have been.
+            fetching: fetching_from_settings(),
+        }
+    }
+
+    /// A renderer told outright whether pictures may be fetched.
+    ///
+    /// For tests, which must not depend on whatever this machine's settings
+    /// happen to say.
+    pub fn with_fetching(fetching: crate::application::pictures::Fetching) -> Self {
+        Self {
+            plain_text_only: false,
+            fetching,
         }
     }
 
@@ -160,7 +215,23 @@ impl HtmlRenderer {
             return html_escape::encode_text(&self.html_to_plain_text(html)).to_string();
         }
 
+        // Cleaning only. Holding pictures back is about reading a message,
+        // not about making one safe, and this same call sanitises a message on
+        // its way out to somebody else: replacing a picture here would send
+        // the words "Picture not shown" to the person being written to.
         clean(html)
+    }
+
+    /// The same, and how many pictures were held back.
+    ///
+    /// A caller that shows a message wants both: the markup to show and the
+    /// sentence to put above it. Counting a second time somewhere else would be
+    /// two answers to one question.
+    pub fn sanitize_and_count_held_back(&self, html: &str) -> (String, usize) {
+        if self.plain_text_only {
+            return (self.sanitize_html(html), 0);
+        }
+        self.hold_back_what_would_be_fetched(&clean(html))
     }
 
     /// Convert HTML to accessible plain text
@@ -196,6 +267,40 @@ impl HtmlRenderer {
         text = newline_compact_re().replace_all(&text, "\n\n").to_string();
 
         text.trim().to_string()
+    }
+
+    /// Hold back the pictures that would have to be fetched.
+    ///
+    /// Run over the cleaned markup rather than the sender's, so the tags being
+    /// matched are ones ammonia has already written and the shape of them is
+    /// known. A picture held back leaves the sender's own description in its
+    /// place, so somebody can tell what they would be asking for.
+    ///
+    /// Returns the markup and how many were held back, because the count is
+    /// what the sentence above the message reports and counting twice would be
+    /// two answers to one question.
+    fn hold_back_what_would_be_fetched(&self, cleaned: &str) -> (String, usize) {
+        use crate::application::pictures::{Showing, what_stands_in_for_it, what_to_do_about};
+
+        let mut held_back = 0;
+        let out = img_tag_whole_re()
+            .replace_all(cleaned, |caught: &regex::Captures<'_>| {
+                let tag = &caught[0];
+                let address = one_attribute(tag, "src").unwrap_or_default();
+                match what_to_do_about(&address, self.fetching) {
+                    Showing::ItIsCarried | Showing::ItWillBeFetched => tag.to_string(),
+                    Showing::HeldBack => {
+                        held_back += 1;
+                        let described = one_attribute(tag, "alt").unwrap_or_default();
+                        format!(
+                            "<span class=\"held-back\">{}</span>",
+                            html_escape::encode_text(&what_stands_in_for_it(&described))
+                        )
+                    }
+                }
+            })
+            .into_owned();
+        (out, held_back)
     }
 
     /// Extract alt text from images for accessibility
@@ -243,8 +348,10 @@ impl HtmlRenderer {
     /// the sentence with nothing said.
     pub fn wrap_body(&self, body: &MessageBody) -> String {
         let content = match body {
+            // Read rather than written, so pictures that would have to be
+            // fetched are held back here.
             MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-                self.sanitize_html(html)
+                self.sanitize_and_count_held_back(html).0
             }
             MessageBody::Plain(text) => format!(
                 "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
@@ -407,7 +514,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
             // The kind is taken, not worked out, for the reason on `ThreadPart`.
             let content = match &part.body {
                 MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-                    self.sanitize_html(html)
+                    self.sanitize_and_count_held_back(html).0
                 }
                 MessageBody::Plain(text) => format!(
                     "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
@@ -479,6 +586,64 @@ pub struct LinkInfo {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_a_message_being_written_keeps_its_pictures() {
+        // The same call sanitises a message on its way out to somebody else.
+        // Holding a picture back there would send them the words "Picture not
+        // shown" in place of the picture, which is worse than either answer.
+        use crate::application::pictures::Fetching;
+        let written = r#"<p>Look</p><img src="https://cdn.example/x.jpg" alt="A chart">"#;
+
+        let out = HtmlRenderer::with_fetching(Fetching::Blocked).sanitize_html(written);
+
+        assert!(
+            out.contains("cdn.example"),
+            "sanitising a message being written held a picture back, so the              recipient would be sent a note about it instead: {out}"
+        );
+    }
+
+    #[test]
+    fn test_a_tracking_pixel_is_not_fetched() {
+        // One invisible pixel is the whole of how mail tracking works. This is
+        // the test that says the default protects against it.
+        use crate::application::pictures::Fetching;
+        let (shown, held_back) = HtmlRenderer::with_fetching(Fetching::Blocked)
+            .sanitize_and_count_held_back(
+                r#"<p>Hello</p><img src="https://tracker.example/pixel.gif" width="1" height="1">"#,
+            );
+
+        assert_eq!(held_back, 1, "nothing was held back: {shown}");
+        assert!(
+            !shown.contains("tracker.example"),
+            "the address survived, so the browser will still fetch it: {shown}"
+        );
+        assert!(shown.contains("Hello"), "the message itself went: {shown}");
+    }
+
+    #[test]
+    fn test_a_held_back_picture_leaves_the_senders_words_in_its_place() {
+        use crate::application::pictures::Fetching;
+        let (shown, _) = HtmlRenderer::with_fetching(Fetching::Blocked)
+            .sanitize_and_count_held_back(
+                r#"<img src="https://cdn.example/x.jpg" alt="Our spring range">"#,
+            );
+
+        assert!(shown.contains("Our spring range"), "{shown}");
+        assert!(!shown.contains("cdn.example"), "{shown}");
+    }
+
+    #[test]
+    fn test_somebody_who_allows_them_gets_them() {
+        use crate::application::pictures::Fetching;
+        let (shown, held_back) = HtmlRenderer::with_fetching(Fetching::Allowed)
+            .sanitize_and_count_held_back(
+                r#"<img src="https://cdn.example/x.jpg" alt="Our spring range">"#,
+            );
+
+        assert_eq!(held_back, 0);
+        assert!(shown.contains("cdn.example"), "{shown}");
+    }
     use super::*;
 
     #[test]
