@@ -643,7 +643,16 @@ fn build_fields_onto<W: WxWidget>(
             continue;
         }
 
-        let label = StaticText::builder(parent).with_label(field.label).build();
+        // A check box carries its own label, so the text beside it would be the
+        // same words twice: read out once as a label and again as the control's
+        // name. An empty one is kept rather than dropped so the two columns
+        // still line up down the form.
+        let beside = if field.entry == Entry::Tick {
+            ""
+        } else {
+            field.label
+        };
+        let label = StaticText::builder(parent).with_label(beside).build();
         sizer.add(&label, 0, SizerFlag::Left | SizerFlag::Top, 8);
 
         let spoken = name_from_label(field.label);
@@ -915,7 +924,13 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
             Control::Whole(spin)
         }
         Entry::Tick => {
-            let c = CheckBox::builder(parent).with_label("").build();
+            // The label goes on the control, not on the static text beside it.
+            // Windows takes a native control's UI Automation name from its own
+            // window text, and `set_accessible_name` writes MSAA and nothing
+            // else, so a check box with an empty label is named for NVDA and
+            // unnamed for Narrator. A check box is the one field kind with
+            // somewhere of its own to put a label, so it uses it.
+            let c = CheckBox::builder(parent).with_label(field.label).build();
             let checked = existing_text.is_some_and(|text| matches!(text, "true" | "1" | "yes"));
             c.set_value(checked);
             Control::Tick(c)

@@ -1864,6 +1864,53 @@ fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
     );
 }
 
+/// No control that has a label of its own is built without one.
+///
+/// Windows takes a native control's UI Automation name, which is what Narrator
+/// reads, from the control's own window text. `set_accessible_name` writes
+/// MSAA, which is what NVDA reads, and nothing else. So a check box built with
+/// an empty label and named only in code has a name on one channel and none on
+/// the other, and it reads correctly right up until somebody uses the other
+/// screen reader.
+///
+/// Two check boxes in the item form were built that way, an event's "All day"
+/// and a note's "Pin to the top": the label went onto a static text beside the
+/// control, which is right for a text box and wrong for the one field kind that
+/// has somewhere of its own to put it.
+///
+/// `tests/checkbox_labels.rs` asks the built controls the same question, which
+/// is the stronger check. This one is cheap, and it covers every dialog rather
+/// than the ones a live test builds.
+#[test]
+fn test_no_control_with_a_label_of_its_own_is_built_without_one() {
+    let mut built_blank = Vec::new();
+    for file in sources() {
+        let text = fs::read_to_string(&file).expect("a source file");
+        let squashed = without_whitespace(&text);
+        for kind in [
+            "CheckBox",
+            "RadioButton",
+            "Button",
+            "ToggleButton",
+            "RadioBox",
+        ] {
+            if squashed.contains(&format!("{kind}::builder(&dlg).with_label(\"\")"))
+                || squashed.contains(&format!("{kind}::builder(parent).with_label(\"\")"))
+                || squashed.contains(&format!("{kind}::builder(&dialog).with_label(\"\")"))
+            {
+                built_blank.push(format!("{} builds a {kind} with no label", file.display()));
+            }
+        }
+    }
+
+    assert!(
+        built_blank.is_empty(),
+        "these carry no name on the UI Automation channel, so one screen reader \
+         hears them and the other hears an unnamed control:\n  {}",
+        built_blank.join("\n  ")
+    );
+}
+
 /// The signature editor offers no box that reaches no message.
 ///
 /// It offered two. One was the signature; the other was headed "HTML version

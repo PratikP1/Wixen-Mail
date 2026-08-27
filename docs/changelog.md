@@ -34,6 +34,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Two check boxes were unnamed under Narrator.** "All day" on an event and
+  "Pin to the top" on a note kept their label on the text beside them rather
+  than on the box itself. Windows takes a control's UI Automation name from
+  the control's own text, so both read correctly under NVDA, which uses the
+  other channel, and were an unnamed check box under Narrator. The label is on
+  the box now. Nothing about how they look or where Tab reaches them changes.
+
 - **Five menu items had to be pressed twice.** Inside an open menu, a letter
   is meant to run an item at once. Two items sharing a letter quietly turns
   that into press, press again, then Enter, and nothing tells you the letter
