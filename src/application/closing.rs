@@ -61,6 +61,35 @@ pub fn what_closing_should_do(
     }
 }
 
+/// What has to happen to the icon after somebody changes the setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheIconShould {
+    /// It was asked for and is not there.
+    BePutThere,
+    /// It is there and is no longer wanted.
+    BeTakenAway,
+    /// It already matches what was asked for.
+    StayAsItIs,
+}
+
+/// Bring the icon into line with the setting, without waiting for a restart.
+///
+/// The icon used to be made once, at startup, from whatever the setting said
+/// then. So somebody could tick the box, press OK, close the window, and have
+/// the program end: the setting was on, no icon had ever been made, and the
+/// rule above correctly refuses to hide a window with no way back to it. The
+/// setting looked like it did nothing, and nothing said why.
+///
+/// Refusing to hide was right and is not the fault. The fault was making the
+/// icon in one place and reading the setting in two.
+pub fn what_the_setting_change_means(wanted: bool, icon_is_there: bool) -> TheIconShould {
+    match (wanted, icon_is_there) {
+        (true, false) => TheIconShould::BePutThere,
+        (false, true) => TheIconShould::BeTakenAway,
+        _ => TheIconShould::StayAsItIs,
+    }
+}
+
 /// What to say the first time the window goes to the tray instead of closing.
 ///
 /// Said once per run rather than every time, because somebody who has learned
@@ -144,6 +173,46 @@ mod tests {
             hid,
             vec![(Asked::CloseTheWindow, true, true)],
             "something other than a close with a working tray icon hides the window"
+        );
+    }
+
+    #[test]
+    fn test_ticking_the_box_puts_the_icon_there_without_waiting_for_a_restart() {
+        // The bug this was written for. The icon was made once at startup from
+        // whatever the setting said then, so ticking the box, pressing OK and
+        // closing the window ended the program: the setting was on, no icon
+        // had ever been made, and the rule above correctly refused to hide a
+        // window with no way back. The refusal was right; making the icon in
+        // one place while reading the setting in two was not.
+        assert_eq!(
+            what_the_setting_change_means(true, false),
+            TheIconShould::BePutThere
+        );
+    }
+
+    #[test]
+    fn test_unticking_the_box_takes_the_icon_away_rather_than_leaving_it_there() {
+        // An icon left behind after the setting is off is one somebody clicks
+        // expecting the program to be in the notification area, when closing
+        // the window now really closes it.
+        assert_eq!(
+            what_the_setting_change_means(false, true),
+            TheIconShould::BeTakenAway
+        );
+    }
+
+    #[test]
+    fn test_nothing_happens_when_the_icon_already_matches_the_setting() {
+        // Opening settings and pressing OK without touching this must not
+        // rebuild the icon: rebuilding it makes it disappear and come back in
+        // the notification area for no reason.
+        assert_eq!(
+            what_the_setting_change_means(true, true),
+            TheIconShould::StayAsItIs
+        );
+        assert_eq!(
+            what_the_setting_change_means(false, false),
+            TheIconShould::StayAsItIs
         );
     }
 

@@ -2652,7 +2652,88 @@ impl WxMailApp {
             // menu bar reach the same code. The tray hands over an id and
             // nothing else; two handlers would be two places for the same
             // command to drift apart.
+            // The icon raises command ids, and the thing that answers them is
+            // built after this. So the follower reads it from here rather than
+            // capturing it, which is what lets the settings handler inside
+            // `dispatch` call the follower and the follower reach `dispatch`
+            // without either having to exist first.
+            let answers_the_tray: AnswersTheTray = std::rc::Rc::new(RefCell::new(None));
+            let follow_the_tray_setting = {
+                let tray = std::rc::Rc::clone(&tray);
+                let a11y = a11y.clone();
+                let answers_the_tray = std::rc::Rc::clone(&answers_the_tray);
+                move || {
+                    use crate::application::closing::{
+                        TheIconShould, what_the_setting_change_means,
+                    };
+                    let wanted = crate::data::config::ConfigManager::load_stored()
+                        .map(|stored| stored.app_config().keep_running_in_the_tray)
+                        .unwrap_or(false);
+                    let there = tray.borrow().is_some();
+                    match what_the_setting_change_means(wanted, there) {
+                        TheIconShould::StayAsItIs => {}
+                        TheIconShould::BeTakenAway => {
+                            // Taken out of the notification area, not just
+                            // dropped: an icon left behind is one somebody
+                            // clicks when closing the window now really closes.
+                            if let Some(icon) = tray.borrow().as_ref() {
+                                let _ = icon.remove();
+                            }
+                            *tray.borrow_mut() = None;
+                        }
+                        TheIconShould::BePutThere => {
+                            let commands = crate::presentation::wx_tray::TrayCommands {
+                                open_window: ID_OPEN_WINDOW,
+                                new_message: ID_NEW_MESSAGE,
+                                check_mail: ID_CHECK_MAIL,
+                                all_inboxes: ID_VIEW_ALL_INBOXES,
+                                quit: ID_QUIT,
+                            };
+                            let raised_from_the_tray = {
+                                let answers_the_tray = std::rc::Rc::clone(&answers_the_tray);
+                                move |raised| {
+                                    // Cloned out before it is called, so the
+                                    // borrow does not span a command that could
+                                    // come back here and take the icon away.
+                                    let answer = answers_the_tray.borrow().clone();
+                                    if let Some(answer) = answer {
+                                        answer(raised);
+                                    }
+                                }
+                            };
+                            let put_it_there =
+                                crate::presentation::art::tray_picture().and_then(|picture| {
+                                    crate::presentation::wx_tray::TrayIcon::new(
+                                        picture,
+                                        commands,
+                                        None,
+                                        raised_from_the_tray,
+                                    )
+                                });
+                            match put_it_there {
+                                Ok(icon) => *tray.borrow_mut() = Some(icon),
+                                // Said out loud. Somebody who asked to keep the
+                                // program in the notification area and got no
+                                // icon would otherwise find out by closing the
+                                // window and losing the program.
+                                Err(why) => {
+                                    tracing::warn!(
+                                        "The notification area icon could not be created: {why}"
+                                    );
+                                    let _ = a11y.announce(
+                                        "Wixen Mail could not put an icon in the notification                                          area, so closing the window will close the program.",
+                                        crate::presentation::accessibility::announcements::Priority::High,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            let follow_the_tray_setting = std::rc::Rc::new(follow_the_tray_setting);
+
             let dispatch: std::rc::Rc<dyn Fn(i32)> = std::rc::Rc::new({
+                let follow_the_tray_setting = std::rc::Rc::clone(&follow_the_tray_setting);
                 let really_quitting = std::rc::Rc::clone(&really_quitting);
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
@@ -3796,6 +3877,12 @@ impl WxMailApp {
                         }
                         _ if id == ID_SETTINGS => {
                             let palette = handle_settings(&frame, &ui_tx, &runtime, &a11y);
+                            // The notification area follows what was just
+                            // saved. Without this, ticking that box did nothing
+                            // until the next start, and closing the window
+                            // ended the program instead of hiding it, because
+                            // there was no icon to come back through.
+                            follow_the_tray_setting();
                             // Every widget startup paints once, painted
                             // again right now: the sidebar and content area
                             // of every module, and the main window's own
@@ -3971,45 +4058,21 @@ impl WxMailApp {
                 }
             }
 
-            // Built now rather than earlier, because it needs `dispatch`:
-            // the tray hands over a command id and this is what answers it.
-            if crate::data::config::ConfigManager::load_stored()
-                .map(|stored| stored.app_config().keep_running_in_the_tray)
-                .unwrap_or(false)
-            {
-                let commands = crate::presentation::wx_tray::TrayCommands {
-                    open_window: ID_OPEN_WINDOW,
-                    new_message: ID_NEW_MESSAGE,
-                    check_mail: ID_CHECK_MAIL,
-                    all_inboxes: ID_VIEW_ALL_INBOXES,
-                    quit: ID_QUIT,
-                };
-                let raised_from_the_tray = {
-                    let dispatch = std::rc::Rc::clone(&dispatch);
-                    move |raised| dispatch(raised)
-                };
-                let put_it_there = crate::presentation::art::tray_picture().and_then(|picture| {
-                    crate::presentation::wx_tray::TrayIcon::new(
-                        picture,
-                        commands,
-                        None,
-                        raised_from_the_tray,
-                    )
-                });
-                match put_it_there {
-                    Ok(icon) => *tray.borrow_mut() = Some(icon),
-                    // Said out loud. Somebody who asked to keep the program in
-                    // the notification area and got no icon would otherwise
-                    // find out by closing the window and losing the program.
-                    Err(why) => {
-                        tracing::warn!("The notification area icon could not be created: {why}");
-                        let _ = a11y.announce(
-                            "Wixen Mail could not put an icon in the notification area, so                              closing the window will close the program.",
-                            crate::presentation::accessibility::announcements::Priority::High,
-                        );
-                    }
-                }
-            }
+            // One closure that brings the icon into line with the setting,
+            // rather than a block that runs once at startup. It used to be the
+            // latter, which meant ticking the box in settings did nothing until
+            // the next start: the setting said yes, no icon had ever been made,
+            // and closing the window correctly refused to hide with no way
+            // back, so the program simply ended and nothing said why.
+            //
+            // Built here rather than earlier because it needs `dispatch`: the
+            // icon hands over a command id and that is what answers it.
+
+            // Now that there is something to answer a command, the icon can
+            // reach it, and the icon itself can be brought into line with the
+            // setting for the first time.
+            *answers_the_tray.borrow_mut() = Some(std::rc::Rc::clone(&dispatch));
+            follow_the_tray_setting();
 
             // The menu bar's own events, handed to the same dispatch.
             frame.on_menu({
@@ -7753,6 +7816,14 @@ fn what_the_cursor_was_on(tree: &TreeCtrl) -> Option<String> {
 ///
 /// `false` when the tree has no such row, which is a tree that has not been
 /// built yet. The caller says so rather than appearing to do nothing.
+/// What answers a command the notification area's icon raises.
+///
+/// A name rather than the type written out, because the type is a handle to a
+/// slot holding a shared closure and reads as punctuation at the point of use.
+/// The slot is empty until the thing that answers commands has been built,
+/// which is after the icon needs to be able to reach it.
+type AnswersTheTray = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(i32)>>>>;
+
 fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
     let Some(root) = tree.get_root_item() else {
         return false;
