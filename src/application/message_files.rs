@@ -223,6 +223,32 @@ pub fn written_into_an_archive(
     }
     archive.extend_from_slice(the_separator_for(message).as_bytes());
     escaped_for_an_archive(archive, &written_as_one_message(message, files));
+    // And the message ends where a line ends, whatever it arrived as.
+    //
+    // This used to be assumed rather than done, and the assumption held for
+    // every test in this file because each of them wrote a body ending in a
+    // line break. Given one that stops mid-line, the empty line above lands
+    // after the end of somebody's sentence instead of on a line of its own,
+    // the reader does not see a separator there, and every message after the
+    // first is read back as part of the first one's body. Three messages went
+    // in and one came out, and the file opened without complaint. Stored
+    // bodies stop mid-line often: markup ends `</html>` and text composed here
+    // ends on the last word somebody typed.
+    //
+    // Only when it is missing, so writing an archive out and reading it back
+    // gives the same archive rather than one growing a line ending each time.
+    // A body that did not end with one comes back with one, which the format
+    // cannot express otherwise: a message in an archive is a run of lines, and
+    // the line after the last of them is where the next message starts.
+    //
+    // Either ending counts. A message written the way this program writes one
+    // ends `\r\n`, and a message read out of a file written on another kind of
+    // computer ends with the second half of that alone. Both are a line that
+    // has ended, and asking only for the pair adds an empty line to every
+    // message of the second sort.
+    if !archive.ends_with(b"\n") {
+        archive.extend_from_slice(ENDS_A_LINE.as_bytes());
+    }
 }
 
 /// The line an archive puts in front of one message.
@@ -2068,6 +2094,50 @@ mod tests {
         assert_eq!(
             what_the_file_holds(an_archive().as_bytes()),
             FileHolds::ManyMessages
+        );
+    }
+}
+
+#[cfg(test)]
+mod what_the_archive_writer_assumes {
+    use super::*;
+
+    fn a_message_whose_body_stops_mid_line(subject: &str) -> ParsedMessage {
+        // No line ending after the body, which is what a stored body looks
+        // like far more often than not: markup ends `</html>` and text
+        // composed here ends on the last word somebody typed.
+        read_one_message(
+            format!("From: a@example.com\r\nSubject: {subject}\r\n\r\n<p>Body</p></html>")
+                .as_bytes(),
+        )
+        .expect("a message to parse")
+    }
+
+    #[test]
+    fn test_three_messages_written_into_an_archive_read_back_as_three() {
+        // Every archive test in this module writes a body that ends with a
+        // line break, so the writer's need for one had never been asked
+        // about. Given a body that stops mid-line the separator after it has
+        // somebody's sentence in front of it instead of an empty line, the
+        // reader does not see a separator there, and every message after the
+        // first is read back as part of the first one's body. Three go in and
+        // one comes out, and the file opens without complaint.
+        let mut archive = Vec::new();
+        for subject in ["One", "Two", "Three"] {
+            written_into_an_archive(
+                &mut archive,
+                &a_message_whose_body_stops_mid_line(subject),
+                &[],
+            );
+        }
+
+        let read = read_many_messages(&archive);
+
+        assert_eq!(
+            read.messages.len(),
+            3,
+            "{} of three messages came back out of the archive",
+            read.messages.len()
         );
     }
 }
