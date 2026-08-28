@@ -1,8 +1,10 @@
 //! Offline outbox queue persistence operations
 
 use super::{MessageCache, QueuedOutboxMessage};
+use crate::application::sending_later::{GoAfter, Readiness, readiness};
 use crate::common::{Error, Result};
-use rusqlite::params;
+use chrono::{DateTime, Local};
+use rusqlite::{OptionalExtension, params};
 
 /// What a queued message's row says it is doing.
 ///
@@ -30,15 +32,35 @@ fn waiting_label(subject: &str, attempts: i64, last_error: Option<&str>) -> Stri
 
 impl MessageCache {
     /// Queue message for later sending when offline
+    ///
+    /// With nothing holding it back, which is what Send has always meant: the
+    /// send loop takes it on its next pass.
     pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
+        self.queue_outbox_message_to_go(item, &GoAfter::AsSoonAsPossible)
+    }
+
+    /// Queue a message to go no sooner than a given moment.
+    ///
+    /// The moment and who put it there are written as one pair by
+    /// [`GoAfter::written_down`], so the reader and the writer cannot come to
+    /// answer the same question differently. A hold read back as a chosen time
+    /// would be announced as scheduled for ten seconds past nine, and a chosen
+    /// time read back as a hold would count down from three days.
+    pub fn queue_outbox_message_to_go(
+        &self,
+        item: &QueuedOutboxMessage,
+        when: &GoAfter,
+    ) -> Result<()> {
+        let (send_after, somebody_chose_it) = when.written_down();
         self.conn.execute(
-            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO outbox_queue (id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 &item.id, &item.account_id, &item.to_addr, &item.cc_addr, &item.bcc_addr,
                 &item.subject, &item.body, &item.body_html, &item.attachments,
                 &item.attempt_count, &item.last_error, &item.created_at,
-                &item.in_reply_to, &item.references,
+                &item.in_reply_to, &item.references, &send_after,
+                &somebody_chose_it,
             ],
         ).map_err(|e| Error::Other(format!("Failed to queue outbox message: {}", e)))?;
         Ok(())
@@ -46,8 +68,73 @@ impl MessageCache {
 
     /// Load queued outbox messages for an account
     pub fn load_outbox_messages(&self, account_id: &str) -> Result<Vec<QueuedOutboxMessage>> {
+        Ok(self
+            .queued_with_their_times(account_id)?
+            .into_iter()
+            .map(|(message, _)| message)
+            .collect())
+    }
+
+    /// The queued messages the send loop may take on this pass, oldest first.
+    ///
+    /// The ones it may not are left in the queue rather than skipped and
+    /// forgotten: they are still rows in the Outbox, and each of them can say
+    /// what it is waiting for.
+    ///
+    /// Which is which is answered by [`readiness`] and nowhere else. Asking the
+    /// database instead, by comparing the stored text against the clock, would
+    /// be a second answer to the same question, and it would get the dangerous
+    /// case wrong. Text that is not a time still compares: which side of the
+    /// clock it falls on depends on its first character, so a column holding
+    /// nothing, or a stray space, reads as a moment already past and the
+    /// message goes. Sending a message that was set for next week is the one
+    /// thing here that cannot be undone.
+    ///
+    /// `now` is passed in rather than read here, so the caller decides what
+    /// moment a whole pass is measured against and a test can name one.
+    pub fn outbox_messages_that_may_go_now(
+        &self,
+        account_id: &str,
+        now: DateTime<Local>,
+    ) -> Result<Vec<QueuedOutboxMessage>> {
+        Ok(self
+            .queued_with_their_times(account_id)?
+            .into_iter()
+            .filter(|(_, when)| matches!(readiness(when, now), Readiness::MayGoNow))
+            .map(|(message, _)| message)
+            .collect())
+    }
+
+    /// When one queued message may go, or `None` when there is no such row.
+    ///
+    /// What the Outbox row says it is doing, and what Undo Send asks before it
+    /// promises anything.
+    pub fn when_a_queued_message_may_go(&self, id: &str) -> Result<Option<GoAfter>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT send_after, somebody_chose_it FROM outbox_queue WHERE id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare the outbox query: {}", e)))?;
+
+        stmt.query_row(params![id], |row| {
+            Ok(GoAfter::read(
+                row.get::<_, Option<String>>(0)?.as_deref(),
+                row.get(1)?,
+            ))
+        })
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to read when the message may go: {}", e)))
+    }
+
+    /// One account's queue, each message beside when it may go, oldest first.
+    ///
+    /// One query for both, so the row and its time cannot be read out of step
+    /// with each other by two queries run a moment apart.
+    fn queued_with_their_times(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header
+            "SELECT id, account_id, to_addr, cc_addr, bcc_addr, subject, body, body_html, attachments, attempt_count, last_error, created_at, in_reply_to, references_header, send_after, somebody_chose_it
              FROM outbox_queue
              WHERE account_id = ?1
              ORDER BY created_at ASC"
@@ -55,7 +142,7 @@ impl MessageCache {
 
         let rows = stmt
             .query_map(params![account_id], |row| {
-                Ok(QueuedOutboxMessage {
+                let message = QueuedOutboxMessage {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
                     to_addr: row.get(2)?,
@@ -70,7 +157,10 @@ impl MessageCache {
                     created_at: row.get(11)?,
                     in_reply_to: row.get(12)?,
                     references: row.get(13)?,
-                })
+                };
+                let when =
+                    GoAfter::read(row.get::<_, Option<String>>(14)?.as_deref(), row.get(15)?);
+                Ok((message, when))
             })
             .map_err(|e| Error::Other(format!("Failed to query outbox messages: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -548,5 +638,229 @@ mod tests {
         assert_eq!(loaded[0].subject, "Sent long ago");
         assert!(loaded[0].in_reply_to.is_none());
         assert!(loaded[0].references.is_none());
+    }
+
+    /// A moment on this computer's clock, written the way the queue holds one.
+    fn at(text: &str) -> chrono::DateTime<chrono::Local> {
+        crate::common::moment::read(text)
+            .and_then(crate::common::moment::Moment::on_this_computer)
+            .expect("a real moment")
+    }
+
+    #[test]
+    fn test_a_message_queued_before_there_was_a_time_on_it_still_goes_at_once() {
+        // The columns arrive on a database with mail already waiting in it, so
+        // every row an older build queued has nothing in them. Those messages
+        // went the moment the send loop reached them and they still have to,
+        // or an upgrade strands somebody's Outbox in silence: nothing leaves,
+        // nothing says why, and Send appeared to work every time.
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let older =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            older
+                .queue_outbox_message(&queued(
+                    "old-1",
+                    "acc-1",
+                    "Queued long ago",
+                    "2026-01-01T09:00:00Z",
+                ))
+                .expect("a message to queue");
+            for column in ["send_after", "somebody_chose_it"] {
+                older
+                    .conn
+                    .execute(
+                        &format!("ALTER TABLE outbox_queue DROP COLUMN {column}"),
+                        [],
+                    )
+                    .expect("the column to come off, making this an older database");
+            }
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+
+        let loaded = reopened
+            .load_outbox_messages("acc-1")
+            .expect("the queue to load");
+        assert_eq!(loaded.len(), 1, "the queued message did not survive");
+        assert_eq!(loaded[0].subject, "Queued long ago");
+        assert_eq!(
+            reopened
+                .when_a_queued_message_may_go("old-1")
+                .expect("the row to be read"),
+            Some(GoAfter::AsSoonAsPossible),
+            "a message queued before any of this existed came back with a time on it"
+        );
+        assert_eq!(
+            reopened
+                .outbox_messages_that_may_go_now("acc-1", at("2026-08-24 09:00"))
+                .expect("the queue to be read")
+                .iter()
+                .map(|message| message.id.clone())
+                .collect::<Vec<_>>(),
+            ["old-1"],
+            "a message queued by an older build was held back and would never send"
+        );
+    }
+
+    #[test]
+    fn test_queueing_a_message_the_way_send_always_has_puts_no_time_on_it() {
+        // The other half of the upgrade, on a database made by this build.
+        // Send with nothing set has always meant gone on the next pass, and
+        // the column arriving must not quietly change that.
+        let cache = a_cache("outbox_no_time");
+        cache
+            .queue_outbox_message(&queued("a", "acc-1", "Going", "2026-08-24T09:00:00Z"))
+            .expect("a message to queue");
+
+        assert_eq!(
+            cache
+                .when_a_queued_message_may_go("a")
+                .expect("the row to be read"),
+            Some(GoAfter::AsSoonAsPossible)
+        );
+    }
+
+    #[test]
+    fn test_asking_when_a_message_that_is_not_queued_may_go_says_there_is_no_such_row() {
+        // Told apart from a row with nothing set, which may go now. A message
+        // that has already left and one that is about to are opposite answers.
+        let cache = a_cache("outbox_missing_row");
+
+        assert_eq!(
+            cache
+                .when_a_queued_message_may_go("never-queued")
+                .expect("the read to run"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_held_message_is_not_read_back_as_one_somebody_chose() {
+        // A restart in the middle of a hold must not turn it into something
+        // else. A held message read back as chosen would be announced as
+        // scheduled for ten seconds past nine, and a chosen one read back as
+        // held would count down from three days.
+        let cache = a_cache("outbox_who_set_it");
+        let moment = crate::application::sending_later::stored(at("2026-08-24 09:00:10"));
+        for (id, when) in [
+            ("held", GoAfter::Held(moment.clone())),
+            ("chosen", GoAfter::Chosen(moment.clone())),
+        ] {
+            cache
+                .queue_outbox_message_to_go(
+                    &queued(id, "acc-1", "Waiting", "2026-08-24T09:00:00Z"),
+                    &when,
+                )
+                .expect("a message to queue");
+
+            assert_eq!(
+                cache
+                    .when_a_queued_message_may_go(id)
+                    .expect("the row to be read"),
+                Some(when.clone()),
+                "a {id} message came back as something else"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_chosen_time_names_the_same_instant_after_it_has_been_written_down() {
+        // A time can arrive carrying somebody else's offset, from a picker set
+        // to another zone or from an imported row. What was chosen is an
+        // instant, so that is what has to survive being stored: keeping the
+        // clock face and dropping the offset moves the message by however many
+        // hours the two zones are apart, which for mail meant to land at nine
+        // in the morning somewhere is the whole point missed.
+        use chrono::FixedOffset;
+
+        let cache = a_cache("outbox_zone");
+        let nine_tomorrow = at("2026-08-25 09:00");
+        let india = FixedOffset::east_opt(5 * 3600 + 1800).expect("a real offset");
+        let written_there = nine_tomorrow.with_timezone(&india).to_rfc3339();
+
+        cache
+            .queue_outbox_message_to_go(
+                &queued("a", "acc-1", "Later", "2026-08-24T09:00:00Z"),
+                &GoAfter::Chosen(written_there),
+            )
+            .expect("a message to queue");
+
+        let read_back = cache
+            .when_a_queued_message_may_go("a")
+            .expect("the row to be read")
+            .expect("the row to be there");
+
+        assert_eq!(
+            readiness(&read_back, at("2026-08-24 09:00")),
+            Readiness::WaitingUntil(nine_tomorrow),
+            "the message moved by the difference between two zones"
+        );
+    }
+
+    #[test]
+    fn test_the_send_loop_is_given_only_the_messages_that_may_go_now() {
+        // Four rows that look the same in the queue and are not: one with
+        // nothing on it, one still inside its hold, one set for tomorrow, and
+        // one whose time nothing can read. Sending any of the last three early
+        // is the one act in this program that cannot be taken back.
+        let cache = a_cache("outbox_may_go");
+        let now = at("2026-08-24 09:00");
+        for (id, when) in [
+            ("nothing-set", GoAfter::AsSoonAsPossible),
+            (
+                "hold-over",
+                GoAfter::Held(crate::application::sending_later::stored(
+                    now - chrono::Duration::seconds(1),
+                )),
+            ),
+            (
+                "still-held",
+                GoAfter::Held(crate::application::sending_later::stored(
+                    now + chrono::Duration::seconds(5),
+                )),
+            ),
+            ("tomorrow", GoAfter::Chosen("2026-08-25 09:00".to_string())),
+            ("unreadable", GoAfter::Chosen("next tuesday".to_string())),
+        ] {
+            cache
+                .queue_outbox_message_to_go(
+                    &queued(
+                        id,
+                        "acc-1",
+                        id,
+                        &format!("2026-08-24T09:00:0{}Z", id.len() % 10),
+                    ),
+                    &when,
+                )
+                .expect("a message to queue");
+        }
+
+        let may_go: Vec<String> = cache
+            .outbox_messages_that_may_go_now("acc-1", now)
+            .expect("the queue to be read")
+            .into_iter()
+            .map(|message| message.id)
+            .collect();
+
+        assert_eq!(
+            may_go.len(),
+            2,
+            "the wrong messages were offered: {may_go:?}"
+        );
+        assert!(may_go.contains(&"nothing-set".to_string()));
+        assert!(
+            may_go.contains(&"hold-over".to_string()),
+            "a message whose hold had run out was still being held"
+        );
+        assert_eq!(
+            cache
+                .load_outbox_messages("acc-1")
+                .expect("the queue to load")
+                .len(),
+            5,
+            "the messages that may not go yet were taken out of the queue"
+        );
     }
 }

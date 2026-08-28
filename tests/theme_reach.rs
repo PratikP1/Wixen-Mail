@@ -836,6 +836,9 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
         text: "Subject: Test message\n\nThis is a test.".to_string(),
         landmarks: Vec::new(),
         warning: Some("This message could not be verified.".to_string()),
+        // The bar in this fixture is a real warning, which is what makes it
+        // exercise the warning styling this test is about.
+        looks_unsafe: true,
         attachments: vec![ReaderAttachment {
             message_row_id: 1,
             uid: 1,

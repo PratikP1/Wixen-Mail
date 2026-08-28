@@ -149,6 +149,37 @@ image = { version = "0.25", default-features = false, features = ["ico", "png", 
 # somebody else and a fault in a parser handling a stranger's file is reachable
 # by that stranger. Nothing here writes one.
 outlook-pst = "1.2.0"
+# Looking a name up in an organisation's directory while writing to somebody.
+# In a workplace most people you write to are in neither your own contacts nor
+# any message you have received, and this is the one place they are.
+#
+# Rustls with ring rather than the platform's own TLS, matching what the rest
+# of this project reaches for, and no default features: the crate otherwise
+# pulls in a second TLS stack beside the one already here.
+ldap3 = { version = "0.12.1", default-features = false, features = ["tls-rustls-ring"] }
+
+# Reading the certificate that came with a signed message: who it was issued
+# to, who issued it, and the window it is good for. Both of these were already
+# being built here as somebody else's transitive dependency, at these exact
+# versions, so naming them adds no code to the binary. They are named because
+# `service::signed_mail` calls them directly, and a dependency this code calls
+# should say so rather than arriving as another crate's implementation detail,
+# which is the same reason `flate2` is named above.
+#
+# No default features: `verify` and `verify-aws` are for checking one
+# certificate against another, which is chain building, and chain building
+# belongs to the machine's own root store rather than to this crate.
+x509-parser = { version = "0.18", default-features = false }
+# Checking that a signature really was made by the key in that certificate.
+# This is the one thing in reading signed mail that cannot be written here: an
+# RSA or ECDSA verification hand-rolled for a shipped product handling other
+# people's mail is exactly the code nobody should write twice.
+#
+# `ring` rather than the `cms` crate, which would also do the ASN.1: `cms` has
+# only ever published pre-release versions, and a pre-release is not something
+# to put under a security decision people will read as an answer. The ASN.1 is
+# written out longhand in `service::signed_mail` instead.
+ring = "0.17"
 
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and

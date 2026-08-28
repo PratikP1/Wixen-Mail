@@ -187,6 +187,8 @@ menu_ids!(
     ID_COPY_TO_FOLDER,
     ID_DELETE_OUTRIGHT,
     ID_SEND_RECEIPT,
+    ID_BLOCK_SENDER,
+    ID_BLOCK_DOMAIN,
     ID_ANSWER_ACCEPT,
     ID_ANSWER_TENTATIVE,
     ID_ANSWER_DECLINE,
@@ -3128,6 +3130,16 @@ impl WxMailApp {
                                 );
                             }
                         }
+                        _ if id == ID_BLOCK_SENDER || id == ID_BLOCK_DOMAIN => {
+                            block_the_sender(
+                                &state,
+                                &message_cache,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                                id == ID_BLOCK_DOMAIN,
+                            );
+                        }
                         _ if id == ID_ANSWER_ACCEPT
                             || id == ID_ANSWER_TENTATIVE
                             || id == ID_ANSWER_DECLINE =>
@@ -4915,6 +4927,22 @@ impl WxMailApp {
             )
             .build();
 
+        // Its own menu for the same reason the answers are: two ways to block
+        // belong together, and two more lines on a menu this long is more to
+        // arrow past for everybody who never blocks anybody.
+        let blocking_menu = Menu::builder()
+            .append_item(
+                ID_BLOCK_SENDER,
+                "&This Sender",
+                "File mail from this address in Junk from now on",
+            )
+            .append_item(
+                ID_BLOCK_DOMAIN,
+                "Everyone at This &Domain",
+                "File mail from anybody at this address's domain in Junk from now on",
+            )
+            .build();
+
         let copy_to_menu = Menu::builder()
             .append_item(
                 ID_COPY_TO_FOLDER,
@@ -5095,6 +5123,12 @@ impl WxMailApp {
 
         // The submenus go on last because wxWidgets only takes one once the
         // builder chain has finished.
+        // c, one of the six letters this menu has left.
+        message.append_submenu(
+            blocking_menu,
+            "Blo&ck",
+            "Stop hearing from this sender, or from everybody at their domain",
+        );
         message.append_submenu(
             answer_menu,
             // w, because every letter in the obvious places is claimed on this
@@ -10097,7 +10131,17 @@ fn flush_outbox(app: AppHandles<'_>) {
                 .await;
             return;
         };
-        let queued = match cache.load_outbox_messages(aid) {
+        // The ones that may go on this pass, not everything in the queue. A
+        // message held back for the moment somebody can still take it back,
+        // and one set for a time they chose, both stay where they are and are
+        // offered again on the next pass. Asking for the whole queue would
+        // send both immediately, which is the feature not existing.
+        //
+        // The moment is taken once, here, so a pass is measured against one
+        // clock reading rather than against a slightly later one for each
+        // message it looks at.
+        let now = chrono::Local::now();
+        let queued = match cache.outbox_messages_that_may_go_now(aid, now) {
             Ok(msgs) => msgs,
             Err(e) => {
                 let _ = tx
@@ -17227,4 +17271,126 @@ mod showing_the_mail_with_a_label {
         assert_eq!(listed.len(), 1, "{listed:#?}");
         assert_eq!(listed[0].subject, "The quarterly figures");
     }
+}
+
+/// Never hear from this sender again.
+///
+/// A block is a rule, made in one keystroke, so nothing new runs when mail
+/// arrives and the block sits in the rules list where somebody would look for
+/// it. Everything that decides belongs to [`crate::application::blocking`];
+/// what is here is finding out what it needs to know and carrying out its
+/// answer.
+fn block_the_sender(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    whole_domain: bool,
+) {
+    use crate::application::blocking;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let told = |said: &str, how: Priority| {
+        send_status(ui_tx, runtime, said);
+        let _ = a11y.announce(said, how);
+    };
+    let Some(cache) = cache.as_ref() else {
+        told(
+            "There is no mail on this computer to block.",
+            Priority::High,
+        );
+        return;
+    };
+    let (message, account, accounts) = {
+        let held = lock_state(state);
+        (
+            held.selected_message_index
+                .and_then(|at| held.messages.get(at).cloned()),
+            held.active_account_id.clone(),
+            held.accounts.clone(),
+        )
+    };
+    let (Some(message), Some(account)) = (message, account) else {
+        told(
+            "Select the message from the sender to block first.",
+            Priority::High,
+        );
+        return;
+    };
+
+    let block = match if whole_domain {
+        blocking::everyone_at_the_senders_domain(&message.from)
+    } else {
+        blocking::just_this_sender(&message.from)
+    } {
+        Ok(block) => block,
+        Err(why) => {
+            told(&why.to_string(), Priority::High);
+            return;
+        }
+    };
+
+    let folders = cache.get_folders_for_account(&account).unwrap_or_default();
+    let named: Vec<(&str, crate::common::types::FolderType)> = folders
+        .iter()
+        .map(|folder| {
+            (
+                folder.path.as_str(),
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+            )
+        })
+        .collect();
+    let junk = match blocking::where_blocked_mail_goes(named) {
+        blocking::BlockedMailGoesTo::TheJunkFolder(path) => path.to_string(),
+        // Each its own sentence, and each written where the deciding is done
+        // rather than here: a junk folder that is not there and a folder list
+        // nobody has asked for yet lead somewhere different.
+        blocking::BlockedMailGoesTo::NoJunkFolderFound => {
+            told(blocking::NO_JUNK_FOLDER_FOUND, Priority::High);
+            return;
+        }
+        blocking::BlockedMailGoesTo::NoFoldersKnownYet => {
+            told(blocking::NO_FOLDERS_KNOWN_YET, Priority::High);
+            return;
+        }
+    };
+
+    let rules = cache
+        .get_filter_rules_for_account(&account)
+        .unwrap_or_default();
+    let their_own: Vec<String> = accounts.iter().map(|held| held.email.clone()).collect();
+    let known = blocking::WhatIsAlreadyTrue {
+        their_own_addresses: &their_own,
+        rules_already_there: &rules,
+        how_to_leave_the_list: None,
+        the_message_was_from: Some(&message.from),
+    };
+    match blocking::may_block(&account, &block, &known) {
+        blocking::MayBlock::No(why) => {
+            told(&why, Priority::High);
+            return;
+        }
+        // Allowed, and there is something they should know first. Said before
+        // the block is made, not instead of making it.
+        blocking::MayBlock::YesButFirst(warning) => {
+            told(&warning, Priority::High);
+        }
+        blocking::MayBlock::Yes => {}
+    }
+
+    let made_at = chrono::Utc::now().to_rfc3339();
+    let rule = blocking::a_rule_that_blocks(&account, &block, &junk, &made_at);
+    let allowed = crate::application::allowed::allowed_for(&account);
+    if let Err(why) = cache.create_filter_rule(&rule) {
+        told(
+            &format!("The block could not be saved, so nothing was blocked. {why}"),
+            Priority::High,
+        );
+        return;
+    }
+    told(
+        &blocking::what_blocking_did(&block, &junk, allowed),
+        Priority::Normal,
+    );
 }

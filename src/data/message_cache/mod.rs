@@ -19,6 +19,7 @@ pub use messages::{IncomingMessage, MessageListRow};
 pub mod notes;
 mod outbox;
 pub mod reminders;
+pub mod saved_searches;
 mod searching;
 mod signatures;
 mod tags;
@@ -1459,6 +1460,66 @@ impl MessageCache {
                 ))
             })?;
 
+        // A search kept under a name, which sits in the folder tree beside real
+        // folders. Nearly the rule row above it, and deliberately shaped like
+        // it: `crate::application::saved_searches` writes its questions in the
+        // filter engine's words, so the columns that carry them are the same
+        // columns holding the same values.
+        //
+        // The name is folded for case here rather than by a check written
+        // beside every insert, which is how the rule table above says the same
+        // thing. Two searches whose names differ only in case are two rows a
+        // screen reader reads out identically, and the one somebody wants is
+        // whichever they did not open. What SQLite folds is A to Z: the
+        // stricter check, over the whole alphabet, is
+        // `saved_searches::name_for`, which is what the person typing a name
+        // meets first.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS saved_searches (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL COLLATE NOCASE,
+                all_or_any TEXT NOT NULL,
+                folder TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(account_id, name)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create saved_searches table: {}", e)))?;
+
+        // One row per question, carrying the four columns a stored filter rule
+        // carries. `position` is what keeps them in the order they were
+        // written: the order is what somebody hears when the search is read
+        // back to them, and a set of rows in a table has no order of its own.
+        //
+        // The questions go when the search does. The cascade does that once,
+        // for every way a search can be removed: one at a time, or all of an
+        // account's at once when the account itself goes. A delete written
+        // beside each of those callers is the one that gets forgotten.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS saved_search_questions (
+                search_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                field TEXT NOT NULL,
+                match_type TEXT NOT NULL DEFAULT 'contains',
+                pattern TEXT NOT NULL,
+                case_sensitive BOOLEAN DEFAULT 0,
+                PRIMARY KEY (search_id, position),
+                FOREIGN KEY(search_id) REFERENCES saved_searches(id) ON DELETE CASCADE
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create saved_search_questions table: {}",
+                    e
+                ))
+            })?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS contacts (
@@ -2137,6 +2198,23 @@ impl MessageCache {
         // message queued before attachments existed, which is the right answer
         // for all of them.
         self.ensure_column_exists("outbox_queue", "attachments", "TEXT NOT NULL DEFAULT ''")?;
+        // When a queued message may go, and whether a person chose that moment
+        // or the brief hold after Send put it there. The two are announced
+        // differently and counted differently, and a moment on its own cannot
+        // be told apart afterwards, so the flag is stored rather than guessed
+        // at from how far off the moment is.
+        //
+        // Nothing and nought on every row an older build queued, which reads as
+        // a message with nothing holding it back: it goes on the next pass of
+        // the send loop, exactly as it always did. An upgrade that got this
+        // wrong would leave a full Outbox that never empties and never says
+        // why. `application::sending_later` is what reads the pair.
+        self.ensure_column_exists("outbox_queue", "send_after", "TEXT")?;
+        self.ensure_column_exists(
+            "outbox_queue",
+            "somebody_chose_it",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // What kind of day an event is. Empty for every event stored before
         // there were categories, which is the right answer for all of them.
         self.ensure_column_exists("calendar_events", "categories", "TEXT NOT NULL DEFAULT ''")?;

@@ -18,6 +18,7 @@ use super::html_renderer::HtmlRenderer;
 use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
 use crate::common::types::MessageBody;
+use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
 
 /// A heading inside the composed text, for jump-to-next-heading.
@@ -51,6 +52,15 @@ pub struct ReaderDocument {
     /// Empty for a message with no attachments, and then the reader has no
     /// list at all rather than an empty one in the tab order of every message.
     pub attachments: Vec<ReaderAttachment>,
+    /// Whether the bar is there because something is wrong with this message.
+    ///
+    /// Told apart from the bar merely existing, because the bar now also holds
+    /// what a signature is worth, and a signed message nothing has flagged is
+    /// not an unsafe one. The reader picks its cue from this: sounding the
+    /// unsafe-message cue on an ordinary signed message would teach somebody
+    /// that the cue means nothing, and then it means nothing on the message
+    /// where it mattered.
+    pub looks_unsafe: bool,
 }
 
 /// The header block shown above a body.
@@ -269,6 +279,9 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         text: format!("{}\n\n{}\n", header_block, body),
         landmarks,
         warning: warning_for(message.safety, &message.safety_reasons),
+        // The bar this builds is the safety verdict, so it is there because
+        // something is wrong. A signature folded in later never sets this.
+        looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
         attachments: attachments_of(message),
     }
 }
@@ -293,7 +306,12 @@ pub fn read_whole(document: &ReaderDocument) -> String {
     if let Some(warning) = &document.warning {
         // First, not last. Somebody listening has not seen the bar, and a
         // warning that arrives after the message arrives after it was read.
-        spoken.push_str(warning);
+        //
+        // The top of the bar, not all of it. What the bar holds below
+        // `HOW_IT_WAS_CHECKED` is the account of a signature check, which is
+        // for somebody who has heard the verdict and wants to know how it was
+        // reached, not for everybody on the way past.
+        spoken.push_str(said_before_the_message(warning));
         spoken.push_str("\n\n");
     }
 
@@ -365,6 +383,114 @@ fn warning_for(level: crate::service::safety::Safety, reasons: &[String]) -> Opt
         .trim_end()
         .to_string()
     })
+}
+
+/// The line that opens the account of how a signature was checked.
+///
+/// It is both a heading for somebody reading the bar and the boundary
+/// [`said_before_the_message`] stops at, and it is one constant so those two
+/// cannot drift into disagreeing about where the top of the bar ends.
+const HOW_IT_WAS_CHECKED: &str = "More about this signature:";
+
+/// The line that opens what a signature can never settle, whatever it found.
+///
+/// Labelled rather than run on from the findings above it. "It does not show
+/// that the name shown as the sender is the person you have in mind" is true of
+/// every signature ever made, and read straight after the findings it sounds
+/// like something wrong with this certificate.
+const WHAT_A_SIGNATURE_IS_WORTH: &str = "What a signature does and does not show:";
+
+/// The bar's whole text once a signature verdict has been folded in.
+///
+/// The filter's verdict goes first and the signature's second, always in that
+/// order rather than worst first. Two reasons. A certificate for an address
+/// somebody controls is cheap, so a phishing message really can carry a
+/// signature that adds up, and opening such a message with its signature would
+/// lead with the most reassuring sentence in the bar, which is exactly what
+/// the forger bought it for. And a fixed order is one somebody can rely on: a
+/// bar that reshuffles itself by how bad the news is has to be read from the
+/// top every time to find out what is in it.
+///
+/// Underneath comes the account of how the signature was checked, which is
+/// where the length is. It is a jump away on the key the bar already answers
+/// to rather than ahead of the message, because a minute of certificate talk
+/// before every signed message is a minute people learn to talk over.
+fn signature_bar(filter_said: Option<&str>, report: &SignatureReport) -> String {
+    let mut lines: Vec<String> = filter_said.map(str::to_string).into_iter().collect();
+    lines.push(report.headline());
+    lines.extend(still_open(report));
+
+    lines.push(String::new());
+    lines.push(HOW_IT_WAS_CHECKED.to_string());
+    lines.extend(report.detail());
+
+    lines.push(String::new());
+    lines.push(WHAT_A_SIGNATURE_IS_WORTH.to_string());
+    lines.extend(report.limits().into_iter().map(String::from));
+
+    lines.join("\n")
+}
+
+/// The open questions that have to be heard beside the headline.
+///
+/// A check that has not come back is a real state and it is not good news, but
+/// [`SignatureReport::headline`] cannot say so: an answer nobody has yet is not
+/// a reason to call a signature worthless, so a message whose withdrawal check
+/// is still running gets the same first sentence as one where the check came
+/// back clean. Read alone, that sentence says the question was settled.
+///
+/// Withdrawal is the question that does this, and the only one, because it is
+/// the one whose other answer changes the headline: a certificate is withdrawn
+/// after its private key is stolen, and the headline says so when the answer
+/// comes back that way. So while it is unsettled it is said at the top, where
+/// the sentence it qualifies is.
+///
+/// Only when the headline would otherwise read as good news. Once it already
+/// says to read the message as though it were unsigned, nothing at the top is
+/// being taken for settled and this would be one more sentence in front of the
+/// mail for no gain.
+///
+/// The wording is `signed_mail`'s own for those findings, picked out rather
+/// than written again here. A second phrasing of one answer is how the two
+/// drift apart.
+fn still_open(report: &SignatureReport) -> Vec<String> {
+    if report.outcome != SignatureOutcome::Matches {
+        return Vec::new();
+    }
+    let unanswered = report.findings.iter().filter(|finding| {
+        matches!(
+            finding,
+            Finding::WithdrawalNotChecked
+                | Finding::WithdrawalStillBeingLookedInto
+                | Finding::WithdrawalCouldNotBeFoundOut { .. }
+        )
+    });
+    let mut said: Vec<String> = Vec::new();
+    for sentence in unanswered.map(Finding::spoken) {
+        // Once, however many signers left the same question open. The same
+        // sentence twice sounds like two separate problems.
+        if !said.contains(&sentence) {
+            said.push(sentence);
+        }
+    }
+    said
+}
+
+/// The part of the bar said before a word of the message.
+///
+/// Everything above [`HOW_IT_WAS_CHECKED`], which for a message with no
+/// signature verdict is the whole bar and leaves ordinary mail reading exactly
+/// as it did.
+///
+/// Public because the window that shows the bar also speaks it when a message
+/// opens, and that announcement wants the same short top of it that
+/// [`read_whole`] speaks. Announcing the whole bar would read a minute of
+/// certificate talk over somebody arriving at a message. One answer, asked
+/// here, rather than each surface deciding for itself where the top ends.
+pub fn said_before_the_message(bar: &str) -> &str {
+    bar.split_once(HOW_IT_WAS_CHECKED)
+        .map_or(bar, |(top, _)| top)
+        .trim_end()
 }
 
 /// Every attachment hanging off the messages of a conversation, in order.
@@ -456,6 +582,8 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
     ReaderDocument {
         title,
         text: format!("{heading}{}", reading.text),
+        // A document read out of a file, which nothing has judged.
+        looks_unsafe: false,
         landmarks,
         // A PDF gets no warning bar of its own. The bar says what the mail
         // provider's filter made of the message, and that verdict belongs to
@@ -540,6 +668,8 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
     ReaderDocument {
         title,
         text,
+        // A conversation, whose parts carry their own verdicts if any.
+        looks_unsafe: false,
         landmarks,
         // The worst verdict in the conversation. One reply being a phishing
         // attempt makes the whole thread worth a warning, and burying that
@@ -802,6 +932,34 @@ impl ReaderDocument {
     /// The previous landmark before a caret position, if there is one.
     pub fn previous_landmark(&self, from: usize) -> Option<&Landmark> {
         self.landmarks.iter().rev().find(|l| l.offset < from)
+    }
+
+    /// Fold a signature verdict into a document already composed.
+    ///
+    /// The filter's verdict keeps the top of the bar and the signature's goes
+    /// under it. They answer different questions and neither replaces the
+    /// other, so both are always there.
+    ///
+    /// `None` for a message that never said it was signed, which is nearly all
+    /// mail, and then nothing changes: no bar where there was none, no extra
+    /// word where there was one. A line on every message saying "not signed"
+    /// is a line people learn to talk past, and then the one that matters is
+    /// talked past too. So a caller asks
+    /// [`crate::service::signed_mail::layout_of`] about the message's
+    /// `Content-Type` first and only reads a signature when the answer is
+    /// something. Handing this the report
+    /// [`crate::service::signed_mail::examine_signed_message`] returns for
+    /// ordinary mail would put "this message says it is signed, but it carries
+    /// no signature to check" on every message in the mailbox.
+    ///
+    /// For one message. A conversation carries a signature per message, and
+    /// one verdict folded onto the whole thread would be said as though it
+    /// covered all of them.
+    pub fn with_signature(mut self, report: Option<&SignatureReport>) -> Self {
+        if let Some(report) = report {
+            self.warning = Some(signature_bar(self.warning.as_deref(), report));
+        }
+        self
     }
 }
 
@@ -1967,6 +2125,7 @@ mod warning_tests {
             landmarks: Vec::new(),
             warning: None,
             attachments: Vec::new(),
+            looks_unsafe: false,
         }
     }
 
@@ -2012,6 +2171,264 @@ mod warning_tests {
         for offset in 0..=document.text.chars().count() {
             assert_eq!(document.where_the_box_puts_it(offset), offset);
             assert_eq!(document.caret_at(offset), offset);
+        }
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use crate::service::safety::Safety;
+    use crate::service::signed_mail::SignerReport;
+
+    /// A report with one signer, put together by hand.
+    ///
+    /// Built rather than produced by checking a real signed message, because
+    /// what is under test here is what the reader does with an answer, not how
+    /// `service::signed_mail` reached it. That module has its own tests for the
+    /// reaching.
+    fn report(outcome: SignatureOutcome, findings: Vec<Finding>) -> SignatureReport {
+        SignatureReport {
+            outcome,
+            signer: None,
+            findings: findings.clone(),
+            unwrapped_content: None,
+            signers: vec![SignerReport {
+                outcome,
+                certificate: None,
+                findings,
+                signed_at: None,
+            }],
+        }
+    }
+
+    /// The everyday good case: it adds up, for the address it came from, and
+    /// every question that could have been asked was asked and came back well.
+    fn a_signature_that_holds() -> SignatureReport {
+        report(
+            SignatureOutcome::Matches,
+            vec![
+                Finding::ContentIsWhatWasSigned,
+                Finding::SignedByThatCertificatesKey,
+                Finding::CertificateNamesTheSender {
+                    address: "ada@example.com".to_string(),
+                },
+                Finding::CertificateNotWithdrawn,
+            ],
+        )
+    }
+
+    fn a_message(safety: Safety) -> ReaderDocument {
+        let mut item = super::tests::message();
+        item.safety = safety;
+        item.safety_reasons = vec!["A link says it goes one place and goes somewhere else.".into()];
+        single_message(
+            &item,
+            &MessageBody::Plain("The numbers are attached.".into()),
+            super::tests::aloud(),
+        )
+    }
+
+    #[test]
+    fn test_a_signed_message_says_what_its_signature_is_worth() {
+        // The whole gap this closes. `service::signed_mail` has been able to
+        // work out what a signature is worth and say it in a sentence for a
+        // while, and nothing put that sentence anywhere somebody would meet it.
+        let document = a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds()));
+
+        let bar = document
+            .warning
+            .expect("a signed message has something to say");
+        assert!(bar.contains("Signed for ada@example.com"), "got {bar}");
+    }
+
+    #[test]
+    fn test_a_signature_verdict_does_not_silence_the_filters_warning() {
+        // A message can be both suspicious and signed, and each answers a
+        // different question. Letting either overwrite the other loses one of
+        // them with nothing said.
+        let document = a_message(Safety::Phishing).with_signature(Some(&a_signature_that_holds()));
+
+        let bar = document
+            .warning
+            .expect("a flagged and signed message has two things to say");
+        assert!(bar.contains("phishing attempt"), "got {bar}");
+        assert!(bar.contains("Signed for ada@example.com"), "got {bar}");
+    }
+
+    #[test]
+    fn test_the_filters_verdict_is_heard_before_the_signature_verdict() {
+        // An S/MIME certificate for an address somebody controls is cheap, so
+        // a phishing message really can carry a signature that adds up. Open
+        // with the signature and the first thing heard on that message is its
+        // most reassuring sentence, which is what the forger paid for.
+        let document = a_message(Safety::Phishing).with_signature(Some(&a_signature_that_holds()));
+
+        let bar = document.warning.expect("should warn");
+        let filter = bar.find("phishing attempt").expect("the filter's verdict");
+        let signature = bar.find("Signed for").expect("the signature's verdict");
+        assert!(filter < signature, "got {bar}");
+    }
+
+    #[test]
+    fn test_the_account_of_the_check_waits_in_the_bar_rather_than_ahead_of_the_message() {
+        // Everything a check found, plus what a signature can never show, runs
+        // to about a minute of speech. Ahead of every signed message that is a
+        // minute somebody sits through before the mail starts, and the way
+        // people learn to sit through it is by stopping listening to the bar,
+        // including the sentence at the top that mattered.
+        let document = a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds()));
+        let bar = document.warning.clone().expect("should say something");
+
+        assert!(bar.contains("Nothing has been changed since"), "got {bar}");
+        assert!(
+            bar.contains("It does not show that anybody checked who the certificate was issued to"),
+            "got {bar}"
+        );
+
+        let spoken = read_whole(&document);
+        assert!(spoken.contains("Signed for ada@example.com"), "{spoken}");
+        assert!(
+            !spoken.contains("Nothing has been changed since"),
+            "{spoken}"
+        );
+        assert!(
+            !spoken.contains("It does not show that anybody checked"),
+            "{spoken}"
+        );
+    }
+
+    #[test]
+    fn test_a_check_that_has_not_come_back_is_heard_with_the_headline() {
+        // Not yet known is a real state and it is not good news. The headline
+        // cannot carry it on its own: an answer nobody has yet is no reason to
+        // call a signature worthless, so a message whose withdrawal check is
+        // still running gets word for word the same first sentence as one
+        // whose check came back clean. Left in the detail alone, the only
+        // thing said before the mail would be the sentence that reads as
+        // settled.
+        for open in [
+            Finding::WithdrawalStillBeingLookedInto,
+            Finding::WithdrawalNotChecked,
+            Finding::WithdrawalCouldNotBeFoundOut {
+                reason: "the list could not be reached".to_string(),
+            },
+        ] {
+            let unsettled = report(
+                SignatureOutcome::Matches,
+                vec![
+                    Finding::ContentIsWhatWasSigned,
+                    Finding::CertificateNamesTheSender {
+                        address: "ada@example.com".to_string(),
+                    },
+                    open.clone(),
+                ],
+            );
+
+            let spoken = read_whole(&a_message(Safety::Ordinary).with_signature(Some(&unsettled)));
+
+            assert!(
+                spoken.contains(&open.spoken()),
+                "{open:?} was left behind the key\n{spoken}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_answer_that_came_back_clean_does_not_take_up_room_at_the_top() {
+        // The other half of the rule. If a settled answer were said at the top
+        // too, the top would grow on every message and the open question would
+        // stop standing out from the rest of it.
+        let spoken = read_whole(
+            &a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds())),
+        );
+
+        assert!(!spoken.contains("has not been withdrawn"), "{spoken}");
+    }
+
+    #[test]
+    fn test_an_open_question_is_not_piled_on_top_of_a_headline_that_already_says_stop() {
+        // Once the headline says to read the message as though it were not
+        // signed, nothing at the top is being taken for settled, so a sentence
+        // about an unanswered check is one more thing in front of the mail for
+        // no gain.
+        let failed = report(
+            SignatureOutcome::DoesNotMatch,
+            vec![
+                Finding::ContentIsNotWhatWasSigned,
+                Finding::WithdrawalStillBeingLookedInto,
+            ],
+        );
+
+        let spoken = read_whole(&a_message(Safety::Ordinary).with_signature(Some(&failed)));
+
+        assert!(spoken.contains("does not match its signature"), "{spoken}");
+        assert!(!spoken.contains("still being looked into"), "{spoken}");
+    }
+
+    #[test]
+    fn test_a_message_with_no_signature_is_left_exactly_as_it_was() {
+        // Almost no message is signed. A line on every message saying "not
+        // signed" is a line people learn to talk straight past, and then the
+        // one that matters is talked past too. Nothing in the bar, nothing in
+        // the text, nothing extra said.
+        let plain = a_message(Safety::Ordinary);
+        let asked = a_message(Safety::Ordinary).with_signature(None);
+
+        assert_eq!(asked, plain);
+        assert_eq!(asked.warning, None);
+        assert_eq!(read_whole(&asked), read_whole(&plain));
+    }
+
+    #[test]
+    fn test_not_checked_did_not_match_and_not_signed_are_three_different_answers() {
+        // A signature this computer could not check has shown nothing. A
+        // signature that did not match has shown that something is wrong. A
+        // message with no signature was never making the claim. Collapsing any
+        // two of those tells somebody something that did not happen.
+        let could_not_check = report(
+            SignatureOutcome::NotChecked,
+            vec![Finding::SignatureKindNotUnderstood {
+                named: "an unfamiliar kind of".to_string(),
+            }],
+        );
+        let did_not_match = report(
+            SignatureOutcome::DoesNotMatch,
+            vec![Finding::ContentIsNotWhatWasSigned],
+        );
+        let heard = |report: Option<&SignatureReport>| {
+            read_whole(&a_message(Safety::Ordinary).with_signature(report))
+        };
+
+        let unchecked = heard(Some(&could_not_check));
+        let failed = heard(Some(&did_not_match));
+        let unsigned = heard(None);
+
+        assert!(
+            unchecked.contains("could not check the signature"),
+            "{unchecked}"
+        );
+        assert!(failed.contains("does not match its signature"), "{failed}");
+        assert!(!unsigned.to_lowercase().contains("signature"), "{unsigned}");
+        assert_ne!(unchecked, failed);
+        assert_ne!(unchecked, unsigned);
+        assert_ne!(failed, unsigned);
+    }
+
+    #[test]
+    fn test_a_signature_that_adds_up_still_says_what_it_is_not_worth() {
+        // The point of the whole feature. "Signed" is read as "genuine", which
+        // is the confusion somebody forging mail is counting on, so the good
+        // case is where the caveat has to be there rather than the one case it
+        // gets left off.
+        let holds = a_signature_that_holds();
+        let bar = a_message(Safety::Ordinary)
+            .with_signature(Some(&holds))
+            .warning
+            .expect("should say something");
+
+        for limit in holds.limits() {
+            assert!(bar.contains(limit), "the bar left out {limit:?}\n{bar}");
         }
     }
 }

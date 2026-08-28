@@ -552,7 +552,27 @@ impl ReaderWindow {
         // settings like every other event and can be switched off or moved to
         // a tone by somebody who reads their junk folder on purpose.
         if let Some(warning) = document.warning.as_deref() {
-            let _ = self.a11y.signal(FeedbackEvent::UnsafeMessage, warning);
+            // The top of the bar rather than the whole of it. The bar now also
+            // carries what a signature is worth, which runs to a dozen lines
+            // and would put a minute of certificate talk in front of the mail.
+            // The way somebody survives that is by learning to ignore the bar,
+            // including the sentence at the top of it that mattered.
+            let said = crate::presentation::reader_text::said_before_the_message(warning);
+            // And the cue is chosen by what the message is, not by whether the
+            // bar exists. A signed message that nothing has flagged is not an
+            // unsafe message, and sounding that cue on one would teach
+            // somebody the cue means nothing, which is the cue they most need
+            // to keep meaning something.
+            //
+            // Said rather than sounded when there is nothing wrong: the
+            // unsafe-message cue is a feedback event somebody can switch off
+            // or move to a tone, and there is no event for "here is something
+            // about this message", so an ordinary announcement carries it.
+            if document.looks_unsafe {
+                let _ = self.a11y.signal(FeedbackEvent::UnsafeMessage, said);
+            } else {
+                let _ = self.a11y.announce(said, Priority::Normal);
+            }
         }
 
         if let Some(bar) = warning {

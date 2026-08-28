@@ -8,6 +8,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can block a sender.** Action, Block, This Sender, or Everyone at This
+  Domain. Blocked mail is filed in Junk rather than deleted, because a block
+  is a filing decision and not a request to destroy anything: a block on a
+  whole domain catches a colleague sooner or later, and Junk is where people
+  already look for mail that has gone missing.
+
+  A block is an ordinary rule, so it appears in your rules list where you
+  would look for it, and it can be found and undone there. What it does not
+  do is said as well: your provider is not told and goes on accepting the
+  mail, and messages already received stay where they are.
+
+- **A message can be held before it goes, and taken back.** Send now holds a
+  message briefly rather than sending at once, so there is a moment to change
+  your mind. Ten seconds by default, adjustable, because reaching the undo
+  starts with hearing that it exists: the announcement has to finish before
+  anyone knows there is something to undo.
+
+  A message can also be set to go at a chosen time. A time in the past is
+  refused rather than sent immediately, and one more than a year ahead is
+  refused as a likely mistake.
+
+- **Mail signed with a certificate says what the signature is worth.** Only
+  when a message carries one, because a line on every message saying "not
+  signed" is a line people learn to talk past.
+
+  It never reads as a reassurance. A signature shows the address, not the
+  person, and the message says so every time, including when everything
+  checks out. A certificate that has been withdrawn is said plainly, and a
+  check still running is said as unanswered rather than as good news.
+
+  Where a message is both suspicious and signed, what is wrong with it is
+  always said first. A certificate for an address somebody controls is cheap,
+  so a message pretending to be from your bank really can carry a signature
+  that adds up, and leading with the signature would put the most reassuring
+  sentence first on exactly the message that least deserves it.
+
 - **You can answer a meeting invitation.** Action, Answer Invitation, then
   Accept, Tentative or Decline. The answer goes back to whoever called the
   meeting, so they learn where you stand instead of waiting.

@@ -35,6 +35,41 @@ pub struct FilterRule {
     pub enabled: bool,
 }
 
+/// Every field a rule may name, so a caller can ask before it runs.
+///
+/// A rule naming anything else cannot be evaluated, and what the engine
+/// answers about a message is no, because that is the only safe answer: a
+/// "not contains" reading as true would fire on the whole mailbox.
+///
+/// Safe is not the same as legible. No is also what a field this does know
+/// says about a message that does not match, so nothing downstream can tell a
+/// rule that found nothing from one this build cannot read at all. A saved
+/// search naming a misspelled field then reads as an empty folder, which is
+/// the failure that never gets reported: somebody believes they have no mail
+/// from their manager.
+///
+/// So the list is written down and a test below requires it to hold exactly
+/// the names the reading handles, in both directions. A name added to one and
+/// not the other is the shape this exists to stop.
+pub const A_FIELD_A_RULE_MAY_NAME: [&str; 11] = [
+    "subject",
+    "from",
+    "to",
+    "cc",
+    "date",
+    "message_id",
+    "body_plain",
+    "body_html",
+    "read",
+    "starred",
+    "deleted",
+];
+
+/// Whether a rule naming this field is one this build can evaluate.
+pub fn a_rule_may_name(field: &str) -> bool {
+    A_FIELD_A_RULE_MAY_NAME.contains(&field)
+}
+
 /// Filter engine for automatic message processing
 #[derive(Default)]
 pub struct FilterEngine {
@@ -81,6 +116,14 @@ impl FilterEngine {
         // only safe answer is no. Anything else, in particular a "not
         // contains" reading as true, would turn a rule naming a field we do
         // not have into one that fires on the whole mailbox.
+        //
+        // Safe, and not the whole answer: no is also what a field this does
+        // know says about a message that does not match, so a caller cannot
+        // tell "nothing matched" from "this cannot be evaluated at all". A
+        // saved search naming a field this build has never heard of reads as
+        // an empty folder, which is the wrong thing in the one way that never
+        // gets reported. [`A_FIELD_A_RULE_MAY_NAME`] is how a caller asks
+        // first, and there is a test below that it and this list agree.
         let known_field = match rule.field.as_str() {
             "subject" => Some(Some(message.subject.as_str())),
             "from" => Some(Some(message.from_addr.as_str())),
@@ -291,7 +334,7 @@ mod tests {
         // false, because an absent field left the matcher before it reached the
         // match type at all, so a rule for "no cc" could never fire and a rule
         // for "not empty" was right by accident.
-        let message = message_with_subject("Anything");
+        let message = super::tests::message_with_subject("Anything");
         assert!(message.cc.is_none());
         assert!(
             FilterEngine::matches(&field_rule("cc", "is_empty", ""), &message),
@@ -307,7 +350,7 @@ mod tests {
     fn test_an_absent_body_counts_as_empty_too() {
         // Same shape, and it matters more: a message whose body has not been
         // downloaded is exactly the case a "body is empty" rule is written for.
-        let message = message_with_subject("Anything");
+        let message = super::tests::message_with_subject("Anything");
         assert!(FilterEngine::matches(
             &field_rule("body_plain", "is_empty", ""),
             &message
@@ -322,7 +365,7 @@ mod tests {
     fn test_an_absent_field_still_fails_the_content_match_types() {
         // Absent is empty, not a match for everything. A "contains" rule must
         // not start firing on every message with no cc.
-        let message = message_with_subject("Anything");
+        let message = super::tests::message_with_subject("Anything");
         for match_type in ["contains", "equals", "starts_with", "ends_with"] {
             assert!(
                 !FilterEngine::matches(&field_rule("cc", match_type, "anything"), &message),
@@ -342,7 +385,7 @@ mod tests {
     fn test_an_unknown_field_matches_nothing_rather_than_everything() {
         // A rule naming a field this version does not know must not silently
         // become "true for all mail" and start moving the whole inbox.
-        let message = message_with_subject("Anything");
+        let message = super::tests::message_with_subject("Anything");
         for match_type in ["contains", "is_empty", "not_contains", "not_equals"] {
             assert!(
                 !FilterEngine::matches(&field_rule("invented_field", match_type, ""), &message),
@@ -356,7 +399,7 @@ mod tests {
     fn test_a_pattern_too_large_to_compile_is_refused_rather_than_hanging() {
         // A rule can be imported, so the pattern is not always something the
         // user typed. A compile that eats memory would take the window with it.
-        let message = message_with_subject("Anything");
+        let message = super::tests::message_with_subject("Anything");
         let huge = format!("(?:{}){{100}}", "a|b|c|d|e|f|g|h".repeat(200));
         assert!(!FilterEngine::matches(
             &field_rule("subject", "regex", &huge),
@@ -462,7 +505,7 @@ mod tests {
         }
     }
 
-    fn message_with_subject(subject: &str) -> CachedMessage {
+    pub(super) fn message_with_subject(subject: &str) -> CachedMessage {
         CachedMessage {
             id: 1,
             uid: 1,
@@ -831,5 +874,69 @@ mod tests {
             &rule("regex", "^Invoice #\\d+$", true),
             &message_with_subject("Invoice #4021")
         ));
+    }
+}
+
+#[cfg(test)]
+mod the_fields_a_rule_may_name {
+    use super::*;
+
+    /// A rule asking whether a field is empty.
+    ///
+    /// The one match type that answers the same way for every field, so the
+    /// answer says whether the field was read at all rather than anything
+    /// about this particular message.
+    fn asking_about(field: &str, match_type: &str) -> FilterRule {
+        FilterRule {
+            id: "asking".to_string(),
+            name: "asking".to_string(),
+            field: field.to_string(),
+            match_type: match_type.to_string(),
+            pattern: String::new(),
+            case_sensitive: false,
+            action: FilterAction::MarkAsRead,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn test_every_field_the_list_names_is_one_the_reading_really_handles() {
+        // The direction that matters most. A name on the list that the
+        // reading does not handle is worse than one missing from it: a caller
+        // asks first, is told the field is fine, runs the search, and gets an
+        // empty folder. Somebody then believes they have no mail from their
+        // manager.
+        let message = super::tests::message_with_subject("Anything");
+
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            let known = FilterEngine::matches(&asking_about(field, "is_not_empty"), &message)
+                || FilterEngine::matches(&asking_about(field, "is_empty"), &message);
+            assert!(
+                known,
+                "{field} is on the list of fields a rule may name and the reading answers no to \
+                 both is_empty and is_not_empty, which is what it answers for a field it has \
+                 never heard of"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_field_the_reading_does_not_handle_is_not_on_the_list() {
+        // The other direction, so the list cannot quietly grow past what the
+        // reading does. Spelled the ways somebody really gets it wrong.
+        for made_up in ["sender", "Subject", "body", "subj", "attachments", ""] {
+            assert!(
+                !a_rule_may_name(made_up),
+                "{made_up:?} is named as a field a rule may use and the reading does not handle it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_asking_first_tells_the_two_answers_apart() {
+        // The whole point. Without this a search naming a misspelled field and
+        // a search that really found nothing are one answer.
+        assert!(a_rule_may_name("from"));
+        assert!(!a_rule_may_name("frmo"));
     }
 }

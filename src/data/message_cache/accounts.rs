@@ -265,6 +265,11 @@ impl MessageCache {
         // the schema cascades and `foreign_keys` is on.
         self.clear_account_cache(account_id)?;
         self.clear_drafts(account_id)?;
+        // And the searches somebody saved under it. A saved search is a row in
+        // the folder tree of an account that no longer exists, so nothing can
+        // reach it, and the name and the question stay in a database that is
+        // not encrypted and does get backed up.
+        self.clear_saved_searches(account_id)?;
 
         self.conn
             .execute("DELETE FROM accounts WHERE id = ?1", params![account_id])

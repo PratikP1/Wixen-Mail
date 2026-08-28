@@ -1402,7 +1402,7 @@ fn the_wire_clock_face(one: &str) -> Option<chrono::NaiveDateTime> {
 /// order. Nothing is guessed at: a value outside this shape, including the
 /// empty string or a bare `P` naming no week, day, hour, minute or second at
 /// all, comes back as nothing rather than as a duration of zero.
-fn ical_duration(value: &str) -> Option<chrono::Duration> {
+pub(crate) fn ical_duration(value: &str) -> Option<chrono::Duration> {
     /// The digits in front of one unit letter, and what follows it.
     fn one_unit(rest: &str, letter: char) -> Option<(i64, &str)> {
         let (digits, after) = rest.split_once(letter)?;

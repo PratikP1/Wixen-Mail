@@ -183,6 +183,34 @@ impl Outward {
         }
         Ok(self.http.request(method, url))
     }
+
+    /// Asking a calendar server when the people invited to a meeting are free.
+    ///
+    /// A third door, and it exists because neither of the two above is honest
+    /// about this one request. Scheduling is defined as a question posted as a
+    /// document: it leaves the server as it found it, and it stores none of
+    /// the asker's own data there. So [`Self::changing`] would refuse it for
+    /// every account whose provider changes are switched off, which most are.
+    /// Somebody who said "do not alter anything of mine" did not say "do not
+    /// look anything up", and reading those as one answer makes the feature
+    /// unreachable for almost everybody, silently.
+    ///
+    /// Not folded into [`AskWith`] either, and that is the more interesting
+    /// half. That type's promise is that a changing verb cannot be passed
+    /// through the reading door at all, and a test ties its verbs to the list
+    /// of verbs that change something. `POST` is on that list and belongs
+    /// there: it is a changing verb everywhere else in this program. Adding it
+    /// to the safe list to make one exception fit would have turned a property
+    /// the compiler and a test both hold into a comment somebody has to read.
+    ///
+    /// So the exception is a door of its own, named for the one thing it is
+    /// for. What keeps it safe is not the verb: it is that nothing else may
+    /// call it, and that the caller sends the question to an address the
+    /// server itself named, having first refused one that points somewhere
+    /// else.
+    pub fn asking_when_people_are_free(&self, url: &str) -> Result<RequestBuilder> {
+        Ok(self.http.request(Method::POST, url))
+    }
 }
 
 /// One value, ready to be dropped into a query string.
@@ -478,7 +506,11 @@ const GATED: [&str; 7] = [
 /// had thought about. Moving one of these into the list above is what happens
 /// when it grows a write.
 #[cfg(test)]
-const TALKS_BUT_ONLY_READS: [&str; 3] = [
+const TALKS_BUT_ONLY_READS: [&str; 4] = [
+    // Searches an organisation's directory for somebody to write to. A search
+    // and nothing else: nothing at the directory changes, and nothing is
+    // written back to it.
+    "src/service/directory.rs",
     // Fetches a published calendar. GET, and nothing else.
     "src/service/ical_subscription.rs",
     // Asks Google whether a link is on its lists. POSTs, and they are
@@ -1005,7 +1037,7 @@ mod completeness {
     /// already written that way in this tree, and a module written that way
     /// with a real connect and a real write walked past this census twice. So
     /// where the crate name cannot answer, the socket's own name does.
-    const A_WAY_OUT_OF_THIS_PROGRAM: [&str; 9] = [
+    const A_WAY_OUT_OF_THIS_PROGRAM: [&str; 10] = [
         "reqwest",
         "lettre",
         "async_imap",
@@ -1013,6 +1045,7 @@ mod completeness {
         "tokio_native_tls",
         "tiny_http",
         "oauth2",
+        "ldap3",
         "tokio::net",
         "std::net",
     ];
@@ -1344,7 +1377,7 @@ mod completeness {
     ///
     /// `std::net` is a root with no crate behind it, so it appears in the
     /// census list and not here.
-    const A_CRATE_THAT_CAN_REACH_A_SERVER: [&str; 8] = [
+    const A_CRATE_THAT_CAN_REACH_A_SERVER: [&str; 9] = [
         "lettre",
         "reqwest",
         "oauth2",
@@ -1353,11 +1386,14 @@ mod completeness {
         "tokio-native-tls",
         "native-tls",
         "tokio",
+        // Opens a connection to whatever directory an account names, so a
+        // module using it reaches a server by definition.
+        "ldap3",
     ];
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 44] = [
+    const A_CRATE_THAT_CANNOT: [&str; 46] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1411,6 +1447,13 @@ mod completeness {
         // Reads an Outlook data file off this computer. It opens a file and
         // nothing else: no address in it names anywhere to go.
         "outlook-pst",
+        // Reads a certificate that arrived on a message. Certificates name
+        // places a checker could go to ask whether one has been withdrawn,
+        // and this reads the naming and goes nowhere itself.
+        "x509-parser",
+        // Does the arithmetic a signature check is made of. Numbers in,
+        // an answer out; it opens nothing.
+        "ring",
         "windows",
         "winresource",
         "boa_engine",
@@ -2125,5 +2168,87 @@ mod wiring {
             source.contains("SmtpClient::allowed_to_send"),
             "nothing ever builds a client that can send"
         );
+    }
+}
+
+#[cfg(test)]
+mod a_question_is_not_a_change {
+    use super::*;
+
+    #[test]
+    fn test_every_way_of_asking_is_a_verb_that_changes_nothing() {
+        // The whole reason this is a closed set rather than a bare method.
+        // A verb on this list goes out without the gate that guards changes,
+        // so one that could change something at a provider would be a change
+        // made with nobody's permission.
+        //
+        // POST is on the list, and it is the one that needs saying out loud:
+        // it is the verb a scheduling question is asked with, and asking a
+        // calendar server when somebody is free changes nothing there. What
+        // makes it safe is not the verb but where it may be sent, which
+        // `Outward::reading_with` decides.
+        for way in AskWith::EVERY {
+            let verb = way.verb().expect("a verb this build can ask with");
+            assert!(
+                matches!(
+                    verb,
+                    Method::GET | Method::HEAD | Method::OPTIONS | Method::POST
+                ) || verb.as_str() == "PROPFIND"
+                    || verb.as_str() == "REPORT",
+                "{verb} can change something at a provider and is on the list of ways to ask \
+                 a question, which goes out without the gate that guards changes"
+            );
+            assert_ne!(verb, Method::PUT, "{verb} writes");
+            assert_ne!(verb, Method::DELETE, "{verb} removes");
+            assert_ne!(verb, Method::PATCH, "{verb} changes");
+        }
+    }
+}
+
+#[cfg(test)]
+mod the_third_door {
+    use super::*;
+
+    #[test]
+    fn test_asking_when_people_are_free_is_not_refused_by_the_gate_on_changes() {
+        // The reason this door exists. Almost every installation has changes
+        // switched off, and a question that changes nothing must not be
+        // refused along with them: the refusal would be silent from where
+        // somebody is sitting, and the feature would simply never work.
+        let shut = Outward::read_only(reqwest::Client::new());
+
+        assert!(
+            shut.asking_when_people_are_free("https://example.com/outbox")
+                .is_ok(),
+            "a question that changes nothing was refused by the gate on changes"
+        );
+    }
+
+    #[test]
+    fn test_the_gate_on_changes_still_refuses_a_change() {
+        // The other half, so the door above cannot have been opened by
+        // loosening the gate rather than by going around it.
+        let shut = Outward::read_only(reqwest::Client::new());
+
+        assert!(
+            shut.changing(Method::POST, "https://example.com/thing", "send a message")
+                .is_err(),
+            "the gate on changes stopped refusing changes"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_door_still_cannot_carry_a_changing_verb() {
+        // And the property the whole `AskWith` type exists for is untouched:
+        // the exception was given a door of its own rather than added to the
+        // list of verbs that change nothing.
+        for way in AskWith::EVERY {
+            let verb = way.verb().expect("a fixed verb name to parse");
+            assert_ne!(
+                verb,
+                Method::POST,
+                "POST reached the reading door, which is the property this type is for"
+            );
+        }
     }
 }
