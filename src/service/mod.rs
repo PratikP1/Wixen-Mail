@@ -12,6 +12,7 @@ pub mod fonts;
 pub mod google_api;
 pub mod handover;
 pub mod ical_subscription;
+pub mod mailbox_archive;
 pub mod microsoft_graph;
 pub mod mime;
 pub mod oauth;

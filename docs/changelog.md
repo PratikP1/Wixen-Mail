@@ -8,23 +8,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **You can bring mail in from a file.** File, Import Messages. It reads a
-  single saved message or a whole mailbox archive, files it in the folder you
-  are looking at, and says how many arrived, how many were already there, and
-  how many could not be read.
+- **You can bring a whole mailbox in, folders and all.** File, Import Mailbox.
+  It takes a zip file, a folder you point it at, or a single saved message, and
+  keeps the shape your mail was in: a folder called Work with Invoices inside
+  it arrives the same way round.
 
-  Imported mail is marked as filed here rather than fetched, which is what
-  stops the next check for mail from deleting it: a sync removes anything the
-  server does not list, and a message read out of a file has never been on
-  anybody's server.
+  Everything lands in folders on this computer, under Imported, rather than in
+  one of your provider's folders. That is deliberate. Mail read out of a file
+  has never been on anybody's server, so a folder belonging to a server is the
+  one place it does not belong: every check for mail would compare it against
+  a provider that has never heard of it. Under Imported it belongs to nobody's
+  server and nothing can take it away.
 
-  Importing the same file twice does not produce two of everything. Mail
-  imported into an ordinary folder stays on this computer and will not appear
-  on your other devices, and the sentence says so.
+  Importing the same archive twice does not produce two of everything.
 
-  Writing mail back out to a file is not built yet. What is stored is a row
-  and the message text rather than the message as it arrived, and rebuilding
-  the original from those is a job of its own.
+  A name inside an archive is written by whoever made it, so a name that
+  cannot be used safely is refused and counted rather than quietly repaired
+  into something else, and the count is part of what you are told at the end.
+  An archive that would fill your disk is refused before it is read.
+
+- **You can write a mailbox back out to a file.** File, Export Mailbox. It
+  writes the folder you are looking at and everything inside it into one zip,
+  keeping the folder names.
+
+  Messages whose text has never been downloaded to this computer are left out
+  and counted, rather than written as empty messages and reported as a success.
+
+  Attachments do not go with it. What is kept about one is its name, its type
+  and its size; the file itself was never stored, so there is nothing to write.
+
+- **Both run out of the way of the window.** A mailbox of forty thousand
+  messages takes a while, and doing that work in the window would stop it
+  answering the keyboard and the screen reader for the whole time, which is
+  indistinguishable from the program having crashed. They say what they are
+  doing when they start, count as they go, and say what happened at the end.
 
 ### Fixed
 

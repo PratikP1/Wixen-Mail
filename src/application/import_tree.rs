@@ -486,9 +486,72 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
     said.spoken()
 }
 
+/// What somebody pointed at when they asked to import.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatWasChosen {
+    /// A zip file or a folder: folders of mail laid out inside it.
+    AnArchive,
+    /// One file holding mail, which is a folder of one.
+    MailInOneFile,
+}
+
+/// Which of the two this is, decided from how it begins.
+///
+/// From the bytes rather than the name, which is this module's rule throughout
+/// and holds here for the same reason: mail is saved with every ending there
+/// is and with none, and a zip somebody renamed is still a zip.
+///
+/// This exists because the two readers refuse each other. A single saved
+/// message handed to the archive reader is a file that does not begin the way
+/// a zip begins, so it comes back as not an archive, which is true and is not
+/// what somebody who picked one message needs to hear.
+pub fn what_was_chosen(a_folder: bool, opens_with: &[u8]) -> WhatWasChosen {
+    if a_folder {
+        return WhatWasChosen::AnArchive;
+    }
+    match message_files::what_the_file_holds(opens_with) {
+        FileHolds::NotMail => WhatWasChosen::AnArchive,
+        FileHolds::OneMessage | FileHolds::ManyMessages => WhatWasChosen::MailInOneFile,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_one_saved_message_is_not_sent_to_the_archive_reader() {
+        // The regression this was written for. Handing a single saved message
+        // to the reader that opens zip files gets "this is not an archive",
+        // which is true and useless: somebody picked one message and is told
+        // their file is the wrong kind.
+        assert_eq!(
+            what_was_chosen(false, b"From: a@example.com\r\nSubject: Hi\r\n\r\nBody\r\n"),
+            WhatWasChosen::MailInOneFile
+        );
+    }
+
+    #[test]
+    fn test_a_zip_and_a_folder_both_go_to_the_archive_reader() {
+        // A zip opens `PK`, which is not how mail opens, so it falls through
+        // to the archive reader without anything here knowing what a zip is.
+        assert_eq!(
+            what_was_chosen(false, b"PK\x03\x04rest of a zip"),
+            WhatWasChosen::AnArchive
+        );
+        assert_eq!(what_was_chosen(true, b""), WhatWasChosen::AnArchive);
+    }
+
+    #[test]
+    fn test_something_that_is_neither_goes_to_the_archive_reader() {
+        // A picture, a document, an empty file. The archive reader is the one
+        // with a sentence for each way a file can fail to be an archive, and
+        // saying "not mail" here would throw that away.
+        assert_eq!(
+            what_was_chosen(false, &[0x89, b'P', b'N', b'G']),
+            WhatWasChosen::AnArchive
+        );
+    }
 
     /// One ordinary message, as a file saved from a mail program holds it.
     fn one_message() -> &'static str {

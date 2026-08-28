@@ -2348,7 +2348,7 @@ fn test_importing_mail_reads_the_list_back_before_it_finishes() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
     let importing = app
-        .find("fn import_messages_into_this_folder")
+        .find("fn import_a_mailbox")
         .unwrap_or_else(|| panic!("the import command has been renamed or removed"));
     let ends = app[importing..]
         .find("\nfn ")
@@ -2356,21 +2356,35 @@ fn test_importing_mail_reads_the_list_back_before_it_finishes() {
         .unwrap_or(app.len());
     let body = &app[importing..ends];
 
+    // The tree rather than the message list, because an import makes folders
+    // and puts the mail in them: the folder somebody is looking at does not
+    // change, and the rows that have to appear are the new folders.
     assert!(
-        body.contains("load_folder_messages("),
-        "importing mail stores it and never asks the list to read itself back, \
-         so the mail is announced and not shown"
+        body.contains("folder_tree_updates("),
+        "importing mail makes folders and never asks the tree to read itself \
+         back, so the folders are announced and not shown"
     );
-    // After the sentence, not instead of it. Both have to happen, and the
-    // order is what makes the count and the list agree by the time somebody
-    // arrows into it.
-    let announced = body
-        .find("a11y.announce")
-        .unwrap_or_else(|| panic!("importing mail says nothing out loud:\n{body}"));
-    let reloaded = body.find("load_folder_messages(").expect("checked above");
+    // After the counts, not instead of them. Both have to happen, and the
+    // order is what makes the sentence and the tree agree by the time
+    // somebody arrows into it.
+    let counted = body
+        .find("say(UIUpdate::StatusUpdated(done))")
+        .unwrap_or_else(|| panic!("importing mail never says what it did:\n{body}"));
+    let reloaded = body.find("folder_tree_updates(").expect("checked above");
     assert!(
-        announced < reloaded,
-        "the list is read back before the sentence is said, so the two can \
+        counted < reloaded,
+        "the tree is read back before the counts are said, so the two can \
          disagree about what arrived"
+    );
+
+    // And the work is not done on the window's own helper. That helper draws,
+    // answers the keyboard and replies to the screen reader, so an archive of
+    // forty thousand messages done on it is a window that stops answering,
+    // which somebody who cannot see it hears as silence rather than as a slow
+    // job. The first version of this command did exactly that.
+    assert!(
+        body.contains("spawn_blocking"),
+        "importing mail is done on the window's own helper, which freezes it \
+         for as long as the import takes"
     );
 }

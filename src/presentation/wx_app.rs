@@ -82,6 +82,7 @@ menu_ids!(
     ID_NEW_DEFAULT,
     ID_OPEN_DRAFT,
     ID_IMPORT_MESSAGES,
+    ID_EXPORT_MESSAGES,
     ID_GET_OLDER,
     ID_QUIT,
     ID_SEARCH,
@@ -3615,7 +3616,17 @@ impl WxMailApp {
                             }
                         }
                         _ if id == ID_IMPORT_MESSAGES => {
-                            import_messages_into_this_folder(
+                            import_a_mailbox(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                        }
+                        _ if id == ID_EXPORT_MESSAGES => {
+                            export_a_mailbox(
                                 &state,
                                 &message_cache,
                                 &frame,
@@ -4598,8 +4609,13 @@ impl WxMailApp {
             // presses twice is a key in the way of one somebody presses daily.
             .append_item(
                 ID_IMPORT_MESSAGES,
-                "&Import Messages...",
-                "Read messages from a file into the folder you are looking at",
+                "&Import Mailbox...",
+                "Read mail in from a file or an archive, keeping the folders it was in",
+            )
+            .append_item(
+                ID_EXPORT_MESSAGES,
+                "&Export Mailbox...",
+                "Write this folder and everything inside it out to a file",
             )
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
@@ -6951,14 +6967,25 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
 /// [`WxUIState::message_list_limit`], which starts at
 /// [`FOLDER_LIST_PAGE_SIZE`] and grows when Get Older Messages asks for more.
 ///
-/// Bring messages in from a file into the folder being looked at.
+/// Bring a mailbox in from a file, keeping the folders it was in.
 ///
-/// Every decision belongs to [`crate::application::importing_messages`]; what
-/// is here is the file picker, the loop, and the reload at the end. That last
-/// one is the part this program has forgotten twice: writing rows does not
-/// redraw the list, so without it somebody is told their mail arrived and
-/// shown a folder that has not changed.
-fn import_messages_into_this_folder(
+/// The picker and the handing over, and nothing else. Where each folder lands
+/// is [`crate::application::import_tree`]'s answer, reading and writing the
+/// file is `service::mailbox_archive`'s, and what to say is
+/// [`crate::application::importing_messages`]'s.
+///
+/// Handed to a worker rather than done here, and that is not a nicety. This
+/// window has one helper that draws, answers the keyboard, and replies to the
+/// screen reader when it asks what is under the cursor. An archive of forty
+/// thousand messages done on that helper stops all three: arrow keys do
+/// nothing because the key press waits behind the import, nothing already
+/// queued to be spoken is spoken, and Escape does not cancel because it is in
+/// the same queue. To somebody who cannot see the screen that is silence, and
+/// silence is what a program that has died sounds like.
+///
+/// The first version of this command did the work here. It is the one shape
+/// the rest of this program goes out of its way to avoid.
+fn import_a_mailbox(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     frame: &Frame,
@@ -6966,117 +6993,415 @@ fn import_messages_into_this_folder(
     runtime: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
 ) {
-    use crate::application::importing_messages as bringing_in;
     use crate::presentation::accessibility::announcements::Priority;
 
     let refuse = |said: &str| {
         send_status(ui_tx, runtime, said);
         let _ = a11y.announce(said, Priority::High);
     };
-    let Some(cache) = cache.as_ref() else {
+    // Asked here as well as in the worker, so somebody with no mail store at
+    // all is told before a file picker opens rather than after they have
+    // chosen a file.
+    if cache.is_none() {
         refuse("There is nowhere to file mail on this computer yet.");
         return;
+    }
+    let Some(account) = lock_state(state).active_account_id.clone() else {
+        refuse(crate::application::importing_messages::CHOOSE_AN_ACCOUNT_FIRST);
+        return;
     };
-    let (account, folder_name, folder_id, limit) = {
-        let held = lock_state(state);
-        let folder = held.selected_folder.clone();
-        let folder_id = folder
-            .as_ref()
-            .and_then(|name| held.folder_ids.get(name).copied());
-        (
-            held.active_account_id.clone(),
-            folder,
-            folder_id,
-            held.message_list_limit,
-        )
-    };
-
-    // The folder's kind decides whether it may be imported into at all, and it
-    // is a column the server names rather than anything the path shows.
-    let kind = folder_id
-        .and_then(|id| cache.folder_kind(id).ok().flatten())
-        .unwrap_or(crate::common::types::FolderType::Custom);
-    let chosen = folder_name
-        .as_deref()
-        .map(|path| bringing_in::FolderChosen { path, kind });
 
     let picker = FileDialog::builder(frame)
-        .with_message("Import messages from a file")
-        .with_wildcard("Mail files (*.eml;*.mbox)|*.eml;*.mbox|All files (*.*)|*.*")
+        .with_message("Import a mailbox from a file")
+        .with_wildcard(
+            "Mailbox archives (*.zip;*.eml;*.mbox)|*.zip;*.eml;*.mbox|All files (*.*)|*.*",
+        )
         .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
         .build();
     if picker.show_modal() != ID_OK {
         // Cancelling is a decision and needs no sentence: there is no outcome.
         return;
     }
-    let Some(path) = picker.get_path() else {
+    let Some(chosen) = picker.get_path() else {
         refuse("No file was chosen.");
         return;
     };
-    let Ok(bytes) = std::fs::read(&path) else {
-        refuse("That file could not be read.");
-        return;
-    };
 
-    let landing = match bringing_in::importing(&bytes, account.as_deref(), chosen) {
-        bringing_in::Importing::Refused(said) => {
-            refuse(said);
+    // Said before the worker is even handed the job, the way Check Mail says
+    // its own opening sentence. A long job that says nothing until it finishes
+    // is a job somebody cannot tell from a key that did not work.
+    let starting = "Importing a mailbox. This can take a while for a large one.";
+    send_status(ui_tx, runtime, starting);
+    let _ = a11y.announce(starting, Priority::Normal);
+
+    let tx = ui_tx.clone();
+    let handle = runtime.handle().clone();
+    runtime.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        // The worker opens the cache itself rather than carrying the window's,
+        // which is how every other worker here reaches it: a database handle
+        // belongs to the thread that opened it and cannot be shared across
+        // one.
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            say(UIUpdate::StatusUpdated(
+                "There is nowhere to file mail on this computer yet.".to_string(),
+            ));
             return;
-        }
-        bringing_in::Importing::GoAhead(landing) => landing,
-    };
-    let (Some(folder_id), Some(account)) = (folder_id, account) else {
-        refuse(bringing_in::CHOOSE_A_FOLDER_FIRST);
-        return;
-    };
-
-    let mut brought_in = bringing_in::MessagesImported::default();
-    let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
-    let one_at_a_time: Vec<crate::common::Result<crate::service::mime::ParsedMessage>> =
-        match landing.read {
-            bringing_in::ReadAs::OneMessage => {
-                vec![crate::application::message_files::read_one_message(&bytes)]
-            }
-            bringing_in::ReadAs::OneAtATimeFromAnArchive => {
-                crate::application::message_files::each_message_read_from(&bytes).collect()
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(why) => {
+                say(UIUpdate::StatusUpdated(format!(
+                    "The mail already on this computer could not be opened, so \
+                     nothing was imported. {why}"
+                )));
+                return;
             }
         };
-    for read in one_at_a_time {
-        let what = bringing_in::WhatToDoWithIt::for_one_read(&read, &already_here);
-        if let (bringing_in::WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
-            file_one_imported_message(cache, message, folder_id, landing.written_down_as);
+        let done = fill_folders_from(&cache, &account, std::path::Path::new(&chosen), &say);
+        // Both, and in this order. The counts are said first, then the tree
+        // and the list are read back from what is stored, because a sentence
+        // saying mail arrived beside a tree that has not changed is the shape
+        // this program has shipped twice.
+        say(UIUpdate::StatusUpdated(done));
+        if let Ok(updates) = folder_tree_updates(&cache, &account) {
+            for update in updates {
+                say(update);
+            }
+        }
+    });
+}
+
+/// Read the archive and file every folder in it, saying how far it has got.
+///
+/// Answers with the closing sentence rather than saying it, so the caller
+/// decides how it is delivered and this stays testable in principle.
+fn fill_folders_from(
+    cache: &MessageCache,
+    account: &str,
+    at: &std::path::Path,
+    say: &dyn Fn(UIUpdate),
+) -> String {
+    use crate::application::import_tree;
+    use crate::application::importing_messages::{MessagesImported, WhatToDoWithIt};
+
+    // One saved message and a whole archive are two different readers, and
+    // each refuses what the other takes. Which one this is comes from how the
+    // file begins rather than from what it is called.
+    let opens_with = a_look_at_the_start_of(at);
+    if import_tree::what_was_chosen(at.is_dir(), &opens_with)
+        == import_tree::WhatWasChosen::MailInOneFile
+    {
+        return one_file_of_mail_brought_in(cache, account, at);
+    }
+
+    let mut archive = match crate::service::mailbox_archive::opened(at) {
+        Ok(archive) => archive,
+        Err(why) => return why.to_string(),
+    };
+    let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
+    let mut counted = plan.counted;
+    let mut brought_in = MessagesImported::default();
+
+    for folder in &plan.folders {
+        let Some(folder_id) = a_folder_on_this_computer(cache, account, &folder.path) else {
+            continue;
+        };
+        let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
+        for entry in &folder.entries {
+            let Ok(bytes) = archive.one_entry_read_through(&entry.named) else {
+                continue;
+            };
+            for read in messages_in(&bytes, entry.read) {
+                let what = WhatToDoWithIt::for_one_read(&read, &already_here);
+                if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
+                    file_one_imported_message(cache, message, folder_id);
+                }
+                brought_in.count_one(what);
+            }
+        }
+        // Under one subject and at the lowest urgency, so a count climbing
+        // through forty thousand is heard at its latest value rather than
+        // forty thousand times.
+        say(UIUpdate::StatusUpdated(format!(
+            "{} messages imported so far.",
+            brought_in.brought_in
+        )));
+    }
+    counted.messages = brought_in.brought_in;
+    import_tree::what_the_folder_import_did(&counted)
+}
+
+/// Write the folder being looked at, and everything inside it, out to a file.
+///
+/// Handed to a worker for the reason the import is: a folder of forty thousand
+/// messages written on the window's own helper is a window that stops
+/// answering, and somebody who cannot see it hears that as silence.
+fn export_a_mailbox(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let refuse = |said: &str| {
+        send_status(ui_tx, runtime, said);
+        let _ = a11y.announce(said, Priority::High);
+    };
+    if cache.is_none() {
+        refuse("There is no mail on this computer to write out.");
+        return;
+    }
+    let (account, folder) = {
+        let held = lock_state(state);
+        (held.active_account_id.clone(), held.selected_folder.clone())
+    };
+    let (Some(account), Some(folder)) = (account, folder) else {
+        refuse("Choose the folder to write out first.");
+        return;
+    };
+
+    let picker = FileDialog::builder(frame)
+        .with_message("Write this mailbox out to a file")
+        .with_default_file("mailbox.zip")
+        .with_wildcard("Mailbox archives (*.zip)|*.zip")
+        .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt)
+        .build();
+    if picker.show_modal() != ID_OK {
+        return;
+    }
+    let Some(chosen) = picker.get_path() else {
+        refuse("No file name was chosen.");
+        return;
+    };
+
+    let starting = "Writing the mailbox out. This can take a while for a large folder.";
+    send_status(ui_tx, runtime, starting);
+    let _ = a11y.announce(starting, Priority::Normal);
+
+    let tx = ui_tx.clone();
+    let handle = runtime.handle().clone();
+    runtime.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            say(UIUpdate::StatusUpdated(
+                "There is no mail on this computer to write out.".to_string(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(why) => {
+                say(UIUpdate::StatusUpdated(format!(
+                    "The mail on this computer could not be opened, so nothing \
+                     was written out. {why}"
+                )));
+                return;
+            }
+        };
+        say(UIUpdate::StatusUpdated(write_the_mailbox_out(
+            &cache,
+            &account,
+            &folder,
+            std::path::Path::new(&chosen),
+            &say,
+        )));
+    });
+}
+
+/// Write one folder and everything under it into an archive.
+fn write_the_mailbox_out(
+    cache: &MessageCache,
+    account: &str,
+    from: &str,
+    to: &std::path::Path,
+    say: &dyn Fn(UIUpdate),
+) -> String {
+    use crate::application::export_tree;
+    use crate::application::importing_messages::MessagesExported;
+
+    // The folder chosen and everything inside it, so exporting Work takes
+    // Work/Invoices with it. Anything else in the account is left alone.
+    let inside = format!("{from}/");
+    let folders: Vec<String> = cache
+        .get_folders_for_account(account)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| folder.path)
+        .filter(|path| path == from || path.starts_with(&inside))
+        .collect();
+
+    let mut writing = match crate::service::mailbox_archive::written_to(to) {
+        Ok(writing) => writing,
+        Err(why) => return why.to_string(),
+    };
+    let mut counted = MessagesExported::default();
+    let mut folders_written = 0;
+
+    for folder in export_tree::where_each_folder_goes(&folders) {
+        let Ok(Some(row)) = cache.get_folder(account, &folder.stored_at) else {
+            continue;
+        };
+        let messages = cache.get_message_list(row.id, account).unwrap_or_default();
+        let mut archive = Vec::new();
+        let mut written = 0;
+        for message in &messages {
+            let text = cache.get_message_body(message.id).ok().flatten();
+            let became = export_tree::added_to_the_archive(&mut archive, message, text.as_ref());
+            if became == export_tree::WhatBecameOfIt::WrittenOut {
+                written += 1;
+            }
+            became.counted_in(&mut counted);
+        }
+        match folder.once_written(written) {
+            export_tree::WhatTheFileHolds::AnArchiveOfItsMail(named) => {
+                if writing.start_a_file(&named).is_ok() && writing.write_into_it(&archive).is_ok() {
+                    folders_written += 1;
+                }
+            }
+            export_tree::WhatTheFileHolds::TheFolderAndNothingInIt(named) => {
+                if writing.add_a_folder_with_nothing_in_it(&named).is_ok() {
+                    folders_written += 1;
+                }
+            }
+        }
+        say(UIUpdate::StatusUpdated(format!(
+            "{} messages written out so far.",
+            counted.written
+        )));
+    }
+    if let Err(why) = writing.finish() {
+        return format!("The file could not be finished, so it may be unusable. {why}");
+    }
+    export_tree::what_the_folder_export_did(&export_tree::FoldersExported {
+        folders: folders_written,
+        messages: counted,
+    })
+}
+
+/// How a file begins, or nothing when it cannot be read.
+///
+/// Only the beginning. What a file holds is decided within its opening bytes
+/// or not at all, and the file may be a mailbox somebody has kept for twenty
+/// years.
+fn a_look_at_the_start_of(at: &std::path::Path) -> Vec<u8> {
+    use std::io::Read as _;
+
+    let mut opens_with = vec![0; crate::application::import_tree::ENOUGH_TO_TELL_WHAT_IT_HOLDS];
+    let Ok(mut file) = std::fs::File::open(at) else {
+        return Vec::new();
+    };
+    match file.read(&mut opens_with) {
+        Ok(how_much) => {
+            opens_with.truncate(how_much);
+            opens_with
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
+/// One file of mail brought in, into the folder imports go to.
+///
+/// The same folder an archive's own folders sit under, so somebody who
+/// imports a file and then an archive finds both in one place rather than
+/// having to remember which arrived how.
+fn one_file_of_mail_brought_in(
+    cache: &MessageCache,
+    account: &str,
+    at: &std::path::Path,
+) -> String {
+    use crate::application::importing_messages::{MessagesImported, WhatToDoWithIt};
+    use crate::application::{import_tree, message_files};
+
+    let Ok(bytes) = std::fs::read(at) else {
+        return "That file could not be read, so nothing was imported.".to_string();
+    };
+    let path = import_tree::where_imported_folders_go();
+    let Some(folder_id) = a_folder_on_this_computer(cache, account, &path) else {
+        return "The folder imported mail goes into could not be made, so nothing \
+                was imported."
+            .to_string();
+    };
+    let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
+    let read = match message_files::what_the_file_holds(&bytes) {
+        message_files::FileHolds::ManyMessages => {
+            crate::application::importing_messages::ReadAs::OneAtATimeFromAnArchive
+        }
+        _ => crate::application::importing_messages::ReadAs::OneMessage,
+    };
+
+    let mut brought_in = MessagesImported::default();
+    for message in messages_in(&bytes, read) {
+        let what = WhatToDoWithIt::for_one_read(&message, &already_here);
+        if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &message) {
+            file_one_imported_message(cache, message, folder_id);
         }
         brought_in.count_one(what);
     }
+    crate::application::importing_messages::what_the_mail_import_did(&brought_in)
+}
 
-    let said = bringing_in::what_the_mail_import_did(&brought_in);
-    send_status(ui_tx, runtime, &said);
-    let _ = a11y.announce(&said, Priority::Normal);
-    // The list is drawn from what is stored, so without this the mail that
-    // just arrived is announced and not shown.
-    load_folder_messages(
-        &Some(cache.clone()),
-        Some(folder_id),
-        Some(account),
-        limit,
-        ui_tx,
-    );
+/// Every message one entry of an archive holds.
+fn messages_in(
+    bytes: &[u8],
+    read: crate::application::importing_messages::ReadAs,
+) -> Vec<crate::common::Result<crate::service::mime::ParsedMessage>> {
+    use crate::application::importing_messages::ReadAs;
+    use crate::application::message_files;
+
+    match read {
+        ReadAs::OneMessage => vec![message_files::read_one_message(bytes)],
+        ReadAs::OneAtATimeFromAnArchive => message_files::each_message_read_from(bytes).collect(),
+    }
+}
+
+/// The folder an archive's folder lands in, made if it is not there yet.
+///
+/// Two steps rather than one. A folder saved without being told it has no
+/// server behind it is one the next check for mail tries to open at a provider
+/// that has never heard of it.
+fn a_folder_on_this_computer(cache: &MessageCache, account: &str, path: &str) -> Option<i64> {
+    if let Ok(Some(already)) = cache.get_folder(account, path) {
+        return Some(already.id);
+    }
+    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+    let id = cache
+        .save_folder(&crate::data::message_cache::CachedFolder {
+            id: 0,
+            account_id: account.to_string(),
+            name,
+            path: path.to_string(),
+            folder_type: crate::common::types::FolderType::Custom
+                .as_str()
+                .to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .ok()?;
+    let _ = cache.set_folder_server_facts(id, false, true);
+    Some(id)
 }
 
 /// Write one imported message and its text into the folder.
 fn file_one_imported_message(
-    cache: &Arc<MessageCache>,
+    cache: &MessageCache,
     message: &crate::service::mime::ParsedMessage,
     folder_id: i64,
-    written_down_as: crate::application::importing_messages::WrittenDownAs,
 ) {
-    use crate::application::importing_messages::WrittenDownAs;
-
-    let number = match written_down_as {
-        WrittenDownAs::FiledHereCountingUp => cache.next_local_uid(folder_id),
-        WrittenDownAs::FiledHereCountingDownFromTheTop => cache.next_reserved_uid(folder_id),
-    };
-    let Ok(uid) = number else {
+    // Counting up, because every folder an import writes into lives on this
+    // computer and no server numbers it.
+    let Ok(uid) = cache.next_local_uid(folder_id) else {
         return;
     };
     let filed_at = chrono::Utc::now().to_rfc3339();
@@ -7796,7 +8121,7 @@ fn save_as_draft(
 /// somebody spends writing.
 fn file_draft_copy(
     app: AppHandles<'_>,
-    cache: &Arc<MessageCache>,
+    cache: &MessageCache,
     draft: &crate::data::message_cache::CachedDraft,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -7861,7 +8186,7 @@ fn file_draft_copy(
 /// updates the row rather than leaving a trail. With automatic saving on, the
 /// alternative is one new message a minute for as long as somebody writes.
 fn replace_local_draft(
-    cache: &Arc<MessageCache>,
+    cache: &MessageCache,
     account: &crate::data::account::Account,
     folder: &str,
     draft: &crate::data::message_cache::CachedDraft,
