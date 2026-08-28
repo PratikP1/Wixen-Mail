@@ -27,11 +27,21 @@
 //! reading one takes that escaping back off. [`marks_before_from`] is where
 //! the two meet, and they have to stay a pair.
 //!
+//! # A mailbox does not fit in memory, so it is read in pieces
+//!
+//! The largest folder anybody has kept, exported as one file, is larger than
+//! this computer's memory. Finding where one message ends needs only the line
+//! going past and the one before it, so nothing here needs the file in hand:
+//! [`each_message_read_piece_by_piece`] takes whatever the bytes come from,
+//! reads a piece at a time, and gives up one message at a time. What is held is
+//! one message, whatever the mailbox weighs. That is also the one limit left,
+//! because a message is bounded in practice and a mailbox is not.
+//!
 //! # What is here and what is not
 //!
-//! Values in, values out. Nothing here opens a file, talks to a server or
-//! touches the database: what a file holds is decided from its bytes, never
-//! from its name, because a name can lie.
+//! Values in, values out, or a place to read them from. Nothing here opens a
+//! file, talks to a server or touches the database: what a file holds is
+//! decided from its bytes, never from its name, because a name can lie.
 //!
 //! Nothing is lost to a file being untidy. A message written in an alphabet
 //! nobody declared is kept and read as far as it can be. A stretch of the file
@@ -773,17 +783,28 @@ const NOTHING_THAT_READS_AS_A_MESSAGE: &str =
 /// is this with the results collected and the failures counted, for a file
 /// small enough that collecting them is no trouble.
 ///
-/// One definition of what a message in an archive is, used by both, rather
-/// than two walks of the same file that could come to disagree about where one
-/// message ends.
+/// For an archive that is already in memory. The same reading as
+/// [`each_message_read_piece_by_piece`], which is the one to use for a file on
+/// a disk, since it never holds more of the file than one message. One
+/// definition of what a message in an archive is, used by both, rather than two
+/// walks of the same file that could come to disagree about where one message
+/// ends.
 pub fn each_message_read_from(archive: &[u8]) -> impl Iterator<Item = Result<ParsedMessage>> + '_ {
-    each_message_in(without_a_byte_order_mark(archive)).map(|block| {
-        let raw = without_the_archives_escaping(without_the_separator(block));
-        match crate::service::mime::parse(&raw) {
-            Ok(message) if has_anything_in_it(&message) => Ok(message),
-            _ => Err(Error::Other(NOTHING_THAT_READS_AS_A_MESSAGE.to_string())),
-        }
-    })
+    each_message_read_piece_by_piece(archive)
+}
+
+/// One stretch of an archive, read as the message it holds.
+///
+/// The separator line in front of it and the archive's own escaping are the
+/// archive's, not the message's, and both come off here. One place rather than
+/// one for each way of walking a file, because a message that keeps the
+/// archive's furniture reads back with a header nothing understands.
+fn one_message_out_of(block: &[u8]) -> Result<ParsedMessage> {
+    let raw = without_the_archives_escaping(without_the_separator(block));
+    match crate::service::mime::parse(&raw) {
+        Ok(message) if has_anything_in_it(&message) => Ok(message),
+        _ => Err(Error::Other(NOTHING_THAT_READS_AS_A_MESSAGE.to_string())),
+    }
 }
 
 /// Whether anything was really read out of one stretch of an archive.
@@ -863,98 +884,14 @@ fn without_the_archives_escaping(message: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     Cow::Owned(put_back)
 }
 
-/// Every message in an archive, as a slice of the archive itself.
-///
-/// Slices rather than copies. An archive is somebody's whole mailbox, and
-/// copying each message out of it would hold the largest file this program
-/// opens twice over.
-fn each_message_in(archive: &[u8]) -> impl Iterator<Item = &[u8]> {
-    let mut left = archive;
-    std::iter::from_fn(move || {
-        if left.is_empty() {
-            return None;
-        }
-        let (message, rest) = left.split_at(where_the_next_message_starts(left));
-        left = rest;
-        // The line break before the next separator belongs to the separator
-        // rather than to the message, the same way the one before a boundary
-        // in a multipart message does. The last message has no separator after
-        // it, so it keeps every line break it ends with.
-        Some(if rest.is_empty() {
-            message
-        } else {
-            without_one_line_ending(message)
-        })
-    })
-}
-
 /// A block without the single line break that ends it, if it has one.
 fn without_one_line_ending(block: &[u8]) -> &[u8] {
     let block = block.strip_suffix(b"\n").unwrap_or(block);
     block.strip_suffix(b"\r").unwrap_or(block)
 }
 
-/// How far into a block the message after this one begins.
-///
-/// The length of the block when there is no message after this one. Scanning
-/// starts after the first line, so the separator this block opens with is not
-/// found as the start of the block itself.
-fn where_the_next_message_starts(block: &[u8]) -> usize {
-    let mut at = 0;
-    while let Some(newline) = block[at..].iter().position(|byte| *byte == b'\n') {
-        let line_before = &block[at..at + newline];
-        let line_starts = at + newline + 1;
-        if line_starts >= block.len() {
-            break;
-        }
-        if is_an_empty_line(line_before) && is_a_separator_line(one_line_at(block, line_starts)) {
-            return line_starts;
-        }
-        at = line_starts;
-    }
-    block.len()
-}
-
-/// The line beginning at this point, without the newline that ends it.
-fn one_line_at(block: &[u8], starts: usize) -> &[u8] {
-    let rest = &block[starts..];
-    match rest.iter().position(|byte| *byte == b'\n') {
-        Some(ends) => &rest[..ends],
-        None => rest,
-    }
-}
-
-/// Whether a line starts the next message, or is a line of this one that
-/// happens to begin the same way.
-///
-/// Beginning `From ` is not enough on its own. "From the desk of Charles
-/// Babbage" opens a great many messages, and splitting there takes the ending
-/// off one message and turns the rest into a second message with no sender and
-/// no subject. Both messages come out wrong and nothing says so.
-///
-/// So a clock time has to be there as well, and the caller checks that an
-/// empty line comes first. What that still cannot tell apart is a message
-/// quoting a whole separator line after a blank line, which is what somebody
-/// pasting part of an old archive into a message writes. The format has no
-/// answer to that beyond the escaping, which the archive that quoted it was
-/// supposed to have done.
-fn is_a_separator_line(line: &[u8]) -> bool {
-    line.starts_with(SEPARATOR_STARTS_WITH) && carries_a_clock_time(line)
-}
-
 /// The length of a time written as hours, minutes and seconds.
 const A_CLOCK_TIME_IS_THIS_LONG: usize = "10:00:00".len();
-
-/// Whether a line carries a time written as hours, minutes and seconds.
-///
-/// A separator line is `From`, a sender and a date, and the date is written
-/// the way C's `ctime` writes one: `Mon Jul 20 10:00:00 2026`. So it always
-/// carries a clock time, and a sentence that happens to begin `From ` almost
-/// never does. That is what tells the archive's own furniture from prose.
-fn carries_a_clock_time(line: &[u8]) -> bool {
-    line.windows(A_CLOCK_TIME_IS_THIS_LONG)
-        .any(reads_as_a_clock_time)
-}
 
 /// Whether eight bytes read as `12:34:56`.
 fn reads_as_a_clock_time(eight: &[u8]) -> bool {
@@ -988,6 +925,632 @@ const BYTE_ORDER_MARK: &[u8] = &[0xEF, 0xBB, 0xBF];
 /// message arrives with no sender.
 fn without_a_byte_order_mark(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix(BYTE_ORDER_MARK).unwrap_or(bytes)
+}
+
+// ── Reading an archive a piece at a time ────────────────────────────────────
+
+/// The most one message may be before it is refused rather than held.
+///
+/// A message is bounded and a mailbox is not, which is the whole difference
+/// this limit rests on. The most generous mail server anybody runs accepts
+/// about 150 megabytes, and what it accepts is the message with its files
+/// already encoded, so nothing that was ever sent or received comes near this.
+/// A file claiming a single message larger than this is a file built to be
+/// read, not a mailbox.
+///
+/// This is what is held at once, so it is also the memory an import of any
+/// mailbox costs, whatever the mailbox weighs.
+const MOST_ONE_MESSAGE_IS: usize = 256 * 1024 * 1024;
+
+/// How much of a file is taken from the disk at a time.
+///
+/// Nothing depends on it. It is here to be turned down in a test, because a
+/// piece boundary landing in the middle of a message, in the middle of a
+/// header, or in the middle of a separator line is exactly what a reader like
+/// this gets wrong, and a test cannot put one there without saying where the
+/// pieces end.
+const READ_A_PIECE_AT_A_TIME_OF: usize = 256 * 1024;
+
+/// How much of an archive is held while it is read a piece at a time.
+///
+/// A value rather than two constants, so a test can hand this small numbers and
+/// watch what happens at a piece boundary, and watch a refusal really happen. A
+/// limit nothing has ever reached is a limit nobody has watched work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HowMuchToHold {
+    /// The most one message may be before it is refused rather than held.
+    pub most_one_message_is: usize,
+    /// How much of the file is taken from the disk at a time.
+    pub how_much_is_read_at_once: usize,
+}
+
+impl Default for HowMuchToHold {
+    /// The limits this program ships with.
+    fn default() -> Self {
+        Self {
+            most_one_message_is: MOST_ONE_MESSAGE_IS,
+            how_much_is_read_at_once: READ_A_PIECE_AT_A_TIME_OF,
+        }
+    }
+}
+
+/// What to say about a single message longer than this program will hold.
+///
+/// The message is left out and the rest of the file is read, so this is a
+/// sentence about one message rather than about the import, and it says which
+/// of those two happened.
+fn one_message_is_longer_than_will_be_read(most: usize) -> Error {
+    Error::Other(format!(
+        "One message in the file is longer than {}, which is more than this program will read \
+         as a single message, so it was left out. The rest of the file was read.",
+        said_as_a_size(most)
+    ))
+}
+
+/// One size, in the largest unit that leaves a number somebody can hold.
+///
+/// These go into a sentence that gets read out. Two hundred and sixty eight
+/// million four hundred and thirty five thousand four hundred and fifty six is
+/// a number nobody can hold, and it is 256 megabytes.
+fn said_as_a_size(bytes: usize) -> String {
+    const ONE_MEGABYTE: usize = 1024 * 1024;
+    match bytes {
+        large if large >= ONE_MEGABYTE => format!("{} megabytes", large / ONE_MEGABYTE),
+        small => format!("{small} bytes"),
+    }
+}
+
+/// What to say when the file itself stopped being readable partway through.
+const THE_FILE_STOPPED_BEING_READABLE: &str =
+    "The file could not be read any further, so nothing after this point was imported";
+
+/// Every message an archive holds, taking the file a piece at a time.
+///
+/// For the mailbox that is too large to hold: a folder somebody has kept for
+/// twenty years, exported as one file, is bigger than this computer's memory,
+/// and the reader that needs the whole file in hand to find where one message
+/// ends is the reason such a file could not be imported at all. Here only one
+/// message is ever held, whatever the file weighs.
+///
+/// [`each_message_read_from`] is this handed a file that is already in memory.
+/// One definition of where a message ends, used by both, rather than two walks
+/// of the same file that could come to disagree.
+pub fn each_message_read_piece_by_piece(
+    reading: impl std::io::Read,
+) -> impl Iterator<Item = Result<ParsedMessage>> {
+    each_message_read_piece_by_piece_allowing(reading, HowMuchToHold::default())
+}
+
+/// The same, with the limits said out loud rather than taken as they ship.
+pub fn each_message_read_piece_by_piece_allowing(
+    reading: impl std::io::Read,
+    allowed: HowMuchToHold,
+) -> impl Iterator<Item = Result<ParsedMessage>> {
+    AnArchiveInPieces::of(reading, allowed).map(|block| one_message_out_of(&block?))
+}
+
+/// An archive being read a piece at a time, giving up one message at a time.
+struct AnArchiveInPieces<R> {
+    /// Where the bytes come from.
+    reading: R,
+    /// How much of it is taken at a time.
+    ///
+    /// The room below may be larger than this, because the mark at the front of
+    /// a file has to be gathered before it can be seen and a piece may be
+    /// smaller than the mark.
+    how_much_is_read_at_once: usize,
+    /// The room the piece in hand is read into.
+    ///
+    /// Kept and read into again rather than made afresh each time. A piece made
+    /// afresh is a piece written twice, once with nothing and once with the
+    /// file, and a mailbox is read in a great many pieces.
+    piece: Vec<u8>,
+    /// How much of that room the piece in hand fills.
+    filled: usize,
+    /// How much of that piece has been worked through.
+    worked_through: usize,
+    /// The message being put together out of the lines going past.
+    putting_together: OneMessageBeingPutTogether,
+    /// A message worked out while another was already being handed over.
+    ///
+    /// Only the end of the file can produce two at once: the line the file
+    /// stops on may be the separator that ends one message, and what is left
+    /// after it is a message of its own.
+    waiting: Option<Result<Vec<u8>>>,
+    /// Whether the front of the file has been looked at yet.
+    the_front_was_looked_at: bool,
+    /// Whether any of the file turned out to hold anything.
+    anything_was_read: bool,
+    /// Whether the last message has been given up.
+    the_last_one_is_out: bool,
+}
+
+impl<R: std::io::Read> AnArchiveInPieces<R> {
+    /// One archive, with nothing read from it yet.
+    fn of(reading: R, allowed: HowMuchToHold) -> Self {
+        // Never nought, because a piece of no bytes is a read that never
+        // reaches the end of the file.
+        let how_much_is_read_at_once = allowed.how_much_is_read_at_once.max(1);
+        Self {
+            reading,
+            how_much_is_read_at_once,
+            piece: vec![0; how_much_is_read_at_once.max(BYTE_ORDER_MARK.len())],
+            filled: 0,
+            worked_through: 0,
+            putting_together: OneMessageBeingPutTogether::holding_at_most(
+                allowed.most_one_message_is,
+            ),
+            waiting: None,
+            the_front_was_looked_at: false,
+            anything_was_read: false,
+            the_last_one_is_out: false,
+        }
+    }
+
+    /// The next stretch of the archive that holds one message.
+    fn next_block(&mut self) -> Option<Result<Vec<u8>>> {
+        if let Some(waiting) = self.waiting.take() {
+            return Some(waiting);
+        }
+        loop {
+            if self.worked_through == self.filled {
+                match self.another_piece() {
+                    // The file itself stopped being readable. What was read up
+                    // to here has been handed over already; nothing after it
+                    // is guessed at, and the half message in hand is not
+                    // offered as a whole one.
+                    Err(why) => {
+                        self.the_last_one_is_out = true;
+                        return Some(Err(why));
+                    }
+                    Ok(false) => return self.the_end(),
+                    Ok(true) => {}
+                }
+            }
+            if let Some(block) = self.up_to_the_next_message() {
+                return Some(block);
+            }
+        }
+    }
+
+    /// Take another piece of the file, or say there is no more of it.
+    fn another_piece(&mut self) -> Result<bool> {
+        if self.the_last_one_is_out {
+            return Ok(false);
+        }
+        loop {
+            self.filled = self.read_into(0, self.how_much_is_read_at_once)?;
+            self.worked_through = 0;
+            if !self.the_front_was_looked_at {
+                self.the_front_was_looked_at = true;
+                self.the_mark_at_the_front_taken_off()?;
+                if self.worked_through == self.filled {
+                    // A piece can be smaller than the mark, and then the whole
+                    // of the first piece was the mark. There is still a file
+                    // after it, and treating this as the end of one would turn
+                    // every archive saved by a Windows text editor into an
+                    // archive with nothing in it. Only ever once, because the
+                    // front is only looked at once.
+                    continue;
+                }
+            }
+            self.anything_was_read |= self.worked_through < self.filled;
+            return Ok(self.worked_through < self.filled);
+        }
+    }
+
+    /// Read into this stretch of the room, saying how much came.
+    ///
+    /// A read that was interrupted is asked again rather than treated as the
+    /// end of the file. It is the one failure that means nothing at all
+    /// happened, and taken for an ending it would cut somebody's mailbox off
+    /// wherever the interruption landed.
+    fn read_into(&mut self, from: usize, to: usize) -> Result<usize> {
+        loop {
+            return match self.reading.read(&mut self.piece[from..to]) {
+                Ok(read) => Ok(read),
+                Err(why) if why.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(why) => Err(Error::Other(format!(
+                    "{THE_FILE_STOPPED_BEING_READABLE}: {why}."
+                ))),
+            };
+        }
+    }
+
+    /// The mark a text editor may have written at the front, taken off.
+    ///
+    /// Before any of it is read as lines. The mark sits in front of the first
+    /// separator, so a whole archive left with it reads as one message and
+    /// every message in it after the first is lost.
+    ///
+    /// The mark is three bytes and a piece may be shorter than that, so enough
+    /// of the file is gathered to see it before it is looked for.
+    fn the_mark_at_the_front_taken_off(&mut self) -> Result<()> {
+        while self.filled < BYTE_ORDER_MARK.len() {
+            let read = self.read_into(self.filled, BYTE_ORDER_MARK.len())?;
+            if read == 0 {
+                break;
+            }
+            self.filled += read;
+        }
+        if self.piece[..self.filled].starts_with(BYTE_ORDER_MARK) {
+            self.worked_through = BYTE_ORDER_MARK.len();
+        }
+        Ok(())
+    }
+
+    /// Work through the piece in hand until one message is finished, or until
+    /// there is none of it left.
+    ///
+    /// One line at a time, and the line handed over is whatever of it arrived
+    /// in this piece. That is the whole of why a piece boundary cannot change
+    /// where a message ends: nothing here ever sees a piece, only lines and
+    /// parts of lines.
+    fn up_to_the_next_message(&mut self) -> Option<Result<Vec<u8>>> {
+        while self.worked_through < self.filled {
+            let rest = &self.piece[self.worked_through..self.filled];
+            let Some(ends) = rest.iter().position(|byte| *byte == b'\n') else {
+                // The line goes on past this piece. What of it arrived is taken
+                // now, and the rest of it arrives with the next piece.
+                self.putting_together.more_of_the_line(rest);
+                self.worked_through = self.filled;
+                return None;
+            };
+            self.putting_together.more_of_the_line(&rest[..ends]);
+            self.worked_through += ends + 1;
+            if let Some(finished) = self.putting_together.the_line_ended(true) {
+                return Some(finished);
+            }
+        }
+        None
+    }
+
+    /// What is left when the file has no more to give.
+    ///
+    /// The line the file stops on has ended, whether or not anything ended it,
+    /// and it may be the separator that ends the message before it. So the end
+    /// of a file can finish two messages at once, and the second of them waits.
+    fn the_end(&mut self) -> Option<Result<Vec<u8>>> {
+        if self.the_last_one_is_out {
+            return None;
+        }
+        self.the_last_one_is_out = true;
+        if !self.anything_was_read {
+            return None;
+        }
+        let ended_a_message = self.putting_together.the_line_ended(false);
+        let what_is_left = self.putting_together.what_is_left();
+        match ended_a_message {
+            Some(finished) => {
+                self.waiting = Some(what_is_left);
+                Some(finished)
+            }
+            None => Some(what_is_left),
+        }
+    }
+}
+
+impl<R: std::io::Read> Iterator for AnArchiveInPieces<R> {
+    type Item = Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_block()
+    }
+}
+
+/// The message being put together out of the lines going past.
+///
+/// Everything about where one message ends lives here, and it never sees more
+/// than one line at a time. A line arrives in as many parts as the reading
+/// happened to break it into.
+struct OneMessageBeingPutTogether {
+    /// The most of one message that will be held.
+    most_one_message_is: usize,
+    /// The message so far, its separator line and all.
+    holding: Vec<u8>,
+    /// Whether it has gone past what will be held.
+    it_is_longer_than_will_be_held: bool,
+    /// The line going past, kept here until it is known whether it is the
+    /// separator that starts the next message.
+    ///
+    /// Only lines that could be one are kept this way. Every other line goes
+    /// straight into the message, because there is nothing to decide about it.
+    the_line_kept_aside: Vec<u8>,
+    /// Whether the line going past is being kept aside at all.
+    the_line_is_kept_aside: bool,
+    /// Whether the line kept aside went past what will be held.
+    the_line_is_longer_than_will_be_held: bool,
+    /// What the line going past looks like, worked out as it goes.
+    line: WhatALineLooksLike,
+    /// Whether the line before it had nothing on it.
+    the_line_before_was_empty: bool,
+}
+
+impl OneMessageBeingPutTogether {
+    /// Nothing put together yet, and this much of it to be held.
+    fn holding_at_most(most_one_message_is: usize) -> Self {
+        Self {
+            most_one_message_is,
+            holding: Vec::new(),
+            it_is_longer_than_will_be_held: false,
+            the_line_kept_aside: Vec::new(),
+            the_line_is_kept_aside: false,
+            the_line_is_longer_than_will_be_held: false,
+            line: WhatALineLooksLike::default(),
+            the_line_before_was_empty: false,
+        }
+    }
+
+    /// Take however much of the line going past has arrived.
+    fn more_of_the_line(&mut self, bytes: &[u8]) {
+        // A separator is only a separator with an empty line in front of it, so
+        // that is the only line worth holding back to decide about. Deciding at
+        // the start of the line rather than at the end of it is what keeps a
+        // long line out of a second copy of itself.
+        if self.line.nothing_of_it_yet() && self.the_line_before_was_empty {
+            self.the_line_is_kept_aside = true;
+        }
+        self.line.more(bytes);
+        if !self.the_line_is_kept_aside {
+            self.keep(bytes);
+            return;
+        }
+        self.keep_aside(bytes);
+        if !self.line.might_open_like_a_separator() {
+            // It cannot be the separator after all, so it is part of this
+            // message and there is nothing left to decide.
+            self.the_line_belongs_to_this_message();
+        }
+    }
+
+    /// The line going past has ended, with or without a line break after it.
+    ///
+    /// A finished message comes back when the line that ended is the separator
+    /// in front of the next one.
+    fn the_line_ended(&mut self, ended_by_a_line_break: bool) -> Option<Result<Vec<u8>>> {
+        let starts_the_next_message = self.the_line_is_kept_aside && self.line.is_a_separator();
+        self.the_line_before_was_empty = self.line.is_an_empty_line();
+        self.line = WhatALineLooksLike::default();
+        if !starts_the_next_message {
+            self.the_line_belongs_to_this_message();
+            if ended_by_a_line_break {
+                self.keep(b"\n");
+            }
+            return None;
+        }
+        // The line break in front of a separator belongs to the separator
+        // rather than to the message, the same way the one in front of a
+        // boundary in a multipart message does.
+        let finished = self.what_is_left().map(|mut held| {
+            held.truncate(without_one_line_ending(&held).len());
+            held
+        });
+        self.holding = std::mem::take(&mut self.the_line_kept_aside);
+        if ended_by_a_line_break {
+            self.holding.push(b'\n');
+        }
+        self.it_is_longer_than_will_be_held = self.the_line_is_longer_than_will_be_held;
+        self.the_line_is_longer_than_will_be_held = false;
+        self.the_line_is_kept_aside = false;
+        Some(finished)
+    }
+
+    /// The message as it stands, and nothing kept for the next one.
+    fn what_is_left(&mut self) -> Result<Vec<u8>> {
+        let held = std::mem::take(&mut self.holding);
+        if self.it_is_longer_than_will_be_held {
+            return Err(one_message_is_longer_than_will_be_read(
+                self.most_one_message_is,
+            ));
+        }
+        Ok(held)
+    }
+
+    /// Put the line that was kept aside into the message it turned out to be
+    /// part of.
+    fn the_line_belongs_to_this_message(&mut self) {
+        self.the_line_is_kept_aside = false;
+        if self.the_line_is_longer_than_will_be_held {
+            self.the_line_is_longer_than_will_be_held = false;
+            self.stop_holding_it();
+            return;
+        }
+        let line = std::mem::take(&mut self.the_line_kept_aside);
+        self.keep(&line);
+    }
+
+    /// How much more of this message will be held.
+    fn room_left(&self) -> usize {
+        self.most_one_message_is
+            .saturating_sub(self.holding.len() + self.the_line_kept_aside.len())
+    }
+
+    /// Take these bytes into the message.
+    fn keep(&mut self, bytes: &[u8]) {
+        if self.it_is_longer_than_will_be_held {
+            return;
+        }
+        if bytes.len() > self.room_left() {
+            self.stop_holding_it();
+            return;
+        }
+        self.holding.extend_from_slice(bytes);
+    }
+
+    /// Take these bytes into the line being kept aside.
+    ///
+    /// The message itself is left alone when the line is too long for what is
+    /// left, because the line may yet turn out to be the separator that starts
+    /// the next message, and then the message in hand was never too long at
+    /// all.
+    fn keep_aside(&mut self, bytes: &[u8]) {
+        if self.the_line_is_longer_than_will_be_held {
+            return;
+        }
+        if bytes.len() > self.room_left() {
+            self.the_line_is_longer_than_will_be_held = true;
+            self.the_line_kept_aside = Vec::new();
+            return;
+        }
+        self.the_line_kept_aside.extend_from_slice(bytes);
+    }
+
+    /// Give up on holding this message, and give up the memory with it.
+    ///
+    /// What is kept is that it was too long, which is what gets said out loud
+    /// when the message ends. Reading goes on, because one message nobody can
+    /// hold is not a reason to lose the mailbox filed after it.
+    fn stop_holding_it(&mut self) {
+        self.it_is_longer_than_will_be_held = true;
+        self.holding = Vec::new();
+        self.the_line_kept_aside = Vec::new();
+    }
+}
+
+/// What the line going past looks like, worked out as it goes rather than from
+/// the whole of it.
+///
+/// A line can be longer than the piece the file is read in and longer than
+/// anything worth holding. Only two things are ever asked of one: whether it
+/// has nothing on it, and whether it is the line an archive puts in front of a
+/// message. Both are answered from its opening, its last few bytes and how long
+/// it is, so the answer does not depend on where the reading happened to break
+/// it.
+#[derive(Debug, Default)]
+struct WhatALineLooksLike {
+    /// How many of its bytes have gone past.
+    long: usize,
+    /// Its first few bytes, which is all that says how it opens.
+    opens_with: [u8; SEPARATOR_STARTS_WITH.len()],
+    /// How many of those have arrived.
+    opens_with_long: usize,
+    /// The last few bytes to have gone past.
+    ///
+    /// So a clock time broken across two pieces is still found. Seven is one
+    /// short of a clock time, which is the most that can be needed.
+    the_last_few: [u8; A_CLOCK_TIME_IS_THIS_LONG - 1],
+    /// How many of those there are.
+    the_last_few_long: usize,
+    /// Whether a clock time has gone past anywhere in it.
+    carries_a_clock_time: bool,
+}
+
+impl WhatALineLooksLike {
+    /// Take however much of the line has arrived.
+    fn more(&mut self, bytes: &[u8]) {
+        self.take_into_the_opening(bytes);
+        // Only for a line that opens the way a separator opens, because this is
+        // the one question here that costs anything and almost no line in a
+        // mailbox is asked it.
+        if !self.carries_a_clock_time && self.opens_like_a_separator() {
+            self.carries_a_clock_time = a_clock_time_is_in(self.the_last_few(), bytes);
+        }
+        self.take_into_the_last_few(bytes);
+        self.long += bytes.len();
+    }
+
+    /// Whether none of the line has arrived yet.
+    fn nothing_of_it_yet(&self) -> bool {
+        self.long == 0
+    }
+
+    /// The last few bytes to have gone past.
+    fn the_last_few(&self) -> &[u8] {
+        &self.the_last_few[..self.the_last_few_long]
+    }
+
+    /// Keep what is still missing from the opening.
+    fn take_into_the_opening(&mut self, bytes: &[u8]) {
+        let room = self.opens_with.len() - self.opens_with_long;
+        let taking = bytes.len().min(room);
+        self.opens_with[self.opens_with_long..self.opens_with_long + taking]
+            .copy_from_slice(&bytes[..taking]);
+        self.opens_with_long += taking;
+    }
+
+    /// Keep the last few bytes, whichever of these they are now.
+    fn take_into_the_last_few(&mut self, bytes: &[u8]) {
+        let room = self.the_last_few.len();
+        if bytes.len() >= room {
+            self.the_last_few
+                .copy_from_slice(&bytes[bytes.len() - room..]);
+            self.the_last_few_long = room;
+            return;
+        }
+        let losing = (self.the_last_few_long + bytes.len()).saturating_sub(room);
+        self.the_last_few
+            .copy_within(losing..self.the_last_few_long, 0);
+        let kept = self.the_last_few_long - losing;
+        self.the_last_few[kept..kept + bytes.len()].copy_from_slice(bytes);
+        self.the_last_few_long = kept + bytes.len();
+    }
+
+    /// Whether the line has nothing on it.
+    ///
+    /// One answer for two questions that turn out to be the same one: an empty
+    /// line is what ends a message's headers, and an empty line is what has to
+    /// sit in front of a separator for it to be a separator.
+    fn is_an_empty_line(&self) -> bool {
+        self.long == 0 || (self.long == 1 && self.opens_with[0] == b'\r')
+    }
+
+    /// Whether the line begins the way a separator begins.
+    ///
+    /// The space is the whole of what tells it apart from a `From:` header, and
+    /// getting that wrong reads every message's own sender line as a separator.
+    fn opens_like_a_separator(&self) -> bool {
+        self.opens_with_long == self.opens_with.len() && self.opens_with == *SEPARATOR_STARTS_WITH
+    }
+
+    /// Whether the line could still turn out to begin that way.
+    ///
+    /// Asked while the line is still arriving, when too few of its bytes have
+    /// come to say either way.
+    fn might_open_like_a_separator(&self) -> bool {
+        SEPARATOR_STARTS_WITH.starts_with(&self.opens_with[..self.opens_with_long])
+    }
+
+    /// Whether the line starts the next message, or is a line of this one that
+    /// happens to begin the same way.
+    ///
+    /// Beginning `From ` is not enough on its own. "From the desk of Charles
+    /// Babbage" opens a great many messages, and splitting there takes the
+    /// ending off one message and turns the rest into a second message with no
+    /// sender and no subject. Both messages come out wrong and nothing says so.
+    ///
+    /// So a clock time has to be there as well, and the caller checks that an
+    /// empty line comes first. What that still cannot tell apart is a message
+    /// quoting a whole separator line after a blank line, which is what
+    /// somebody pasting part of an old archive into a message writes. The
+    /// format has no answer to that beyond the escaping, which the archive that
+    /// quoted it was supposed to have done.
+    fn is_a_separator(&self) -> bool {
+        self.opens_like_a_separator() && self.carries_a_clock_time
+    }
+}
+
+/// Whether a clock time is anywhere in these bytes, or in the join between the
+/// few that went before and these.
+///
+/// A separator line is `From`, a sender and a date, and the date is written the
+/// way C's `ctime` writes one: `Mon Jul 20 10:00:00 2026`. So it always carries
+/// a clock time, and a sentence that happens to begin `From ` almost never
+/// does. That is what tells the archive's own furniture from prose.
+fn a_clock_time_is_in(went_before: &[u8], bytes: &[u8]) -> bool {
+    let mut over_the_join = [0u8; (A_CLOCK_TIME_IS_THIS_LONG - 1) * 2];
+    let joining = bytes.len().min(A_CLOCK_TIME_IS_THIS_LONG - 1);
+    over_the_join[..went_before.len()].copy_from_slice(went_before);
+    over_the_join[went_before.len()..went_before.len() + joining]
+        .copy_from_slice(&bytes[..joining]);
+    let over_the_join = &over_the_join[..went_before.len() + joining];
+    holds_a_clock_time(over_the_join) || holds_a_clock_time(bytes)
+}
+
+/// Whether a run of bytes holds a clock time anywhere in it.
+fn holds_a_clock_time(bytes: &[u8]) -> bool {
+    bytes
+        .windows(A_CLOCK_TIME_IS_THIS_LONG)
+        .any(reads_as_a_clock_time)
 }
 
 // ── Working out what a file holds ───────────────────────────────────────────
@@ -1295,6 +1858,217 @@ mod tests {
         let read = read_many_messages(an_archive().as_bytes());
 
         assert_eq!(subjects(&read), vec!["The first one", "The second one"]);
+    }
+
+    #[test]
+    fn test_an_archive_is_read_a_piece_at_a_time_without_ever_holding_the_whole_of_it() {
+        // The reason this exists. A mailbox somebody exported as one file can
+        // be larger than this computer's memory, and the reader that needs the
+        // whole file in hand to find where one message ends is the reason the
+        // import refused it. Read a piece at a time, only one message is ever
+        // held.
+        let one_at_a_time: Vec<String> = each_message_read_piece_by_piece(an_archive().as_bytes())
+            .filter_map(|message| message.ok())
+            .map(|message| message.subject)
+            .collect();
+
+        assert_eq!(one_at_a_time, vec!["The first one", "The second one"]);
+    }
+
+    /// What one reading of an archive found, in a shape two readings of it can
+    /// be compared in.
+    fn what_came_out(
+        read: impl Iterator<Item = Result<ParsedMessage>>,
+    ) -> Vec<std::result::Result<ParsedMessage, String>> {
+        read.map(|message| message.map_err(|why| why.to_string()))
+            .collect()
+    }
+
+    /// Every archive in this file that is awkward in a different way, and a few
+    /// that are only awkward.
+    ///
+    /// One list, so a test about how an archive is read is asked of all of them
+    /// rather than of the tidy one. Each of these is here because it once broke
+    /// something: a body opening a line with `From `, a quoted separator, a
+    /// message whose body stops mid-line, a file saved with a mark at the
+    /// front, eight-bit text nobody declared.
+    fn every_awkward_archive() -> Vec<Vec<u8>> {
+        let mut with_a_mark = vec![0xEF, 0xBB, 0xBF];
+        with_a_mark.extend_from_slice(an_archive().as_bytes());
+        let mut undeclared = b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n\
+             From: Ada Lovelace <ada@example.com>\r\nSubject: Caf"
+            .to_vec();
+        undeclared.push(0xE9);
+        undeclared.extend_from_slice(b"\r\n\r\nOn y va.\r\n");
+        let mut stops_mid_line = Vec::new();
+        for subject in ["One", "Two", "Three"] {
+            let message = read_one_message(
+                format!("From: a@example.com\r\nSubject: {subject}\r\n\r\n<p>Body</p></html>")
+                    .as_bytes(),
+            )
+            .expect("a message to parse");
+            written_into_an_archive(&mut stops_mid_line, &message, &[]);
+        }
+        let mut awkward: Vec<Vec<u8>> = vec![
+            an_archive().as_bytes().to_vec(),
+            with_a_mark,
+            undeclared,
+            stops_mid_line,
+            b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n\
+              From: Ada Lovelace <ada@example.com>\r\nSubject: A quotation\r\n\r\n\
+              She wrote this:\r\n\r\nFrom the desk of Charles Babbage, with thanks.\r\n"
+                .to_vec(),
+            b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n\
+              From: Ada Lovelace <ada@example.com>\r\nSubject: The old file\r\n\r\n\
+              Every message began like this:\r\n\
+              From charles@example.com Tue Jul 21 11:00:00 2026\r\n\
+              and then the headers followed.\r\n"
+                .to_vec(),
+            b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n\
+              From: Ada Lovelace <ada@example.com>\r\nSubject: A quotation\r\n\r\n\
+              >From the desk of Charles Babbage.\r\n>>From a line quoted twice.\r\n"
+                .to_vec(),
+            b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n\
+              From: Ada <ada@example.com>\r\nSubject: The first one\r\n\r\nOne.\r\n\r\n\
+              From nobody@example.com Tue Jul 21 11:00:00 2026\r\n\r\n\r\n\
+              From charles@example.com Wed Jul 22 12:00:00 2026\r\n\
+              From: Charles <charles@example.com>\r\nSubject: The third one\r\n\r\nThree.\r\n"
+                .to_vec(),
+        ];
+        // The same seeds the panic sweep uses, because the shape that breaks a
+        // reader is one byte in the wrong place rather than a whole new kind of
+        // file, and every one of these is a file somebody can choose.
+        awkward.extend(
+            [
+                &b""[..],
+                b"\r\n",
+                b"From ",
+                b"From \r\n",
+                b"From  10:00:00 \r\n\r\n\r\nFrom  10:00:00 \r\n",
+                b"\n\n\n\n",
+                b"\r\r\r\r",
+                b"\xef\xbb\xbf",
+                b"\xef\xbb",
+                b"From: only a header\r\n",
+                b"\r\nFrom a 10:00:00 b\r\nSubject: after an empty first line\r\n\r\nBody.\r\n",
+            ]
+            .into_iter()
+            .map(<[u8]>::to_vec),
+        );
+        awkward
+    }
+
+    /// An archive of three messages, the middle one much longer than the two
+    /// around it.
+    fn an_archive_whose_middle_message_is_long() -> Vec<u8> {
+        let mut archive = Vec::new();
+        for (subject, body) in [
+            ("The first one", "One.\r\n".to_string()),
+            (
+                "The long one",
+                "A line of somebody's message.\r\n".repeat(200),
+            ),
+            ("The third one", "Three.\r\n".to_string()),
+        ] {
+            written_into_an_archive(
+                &mut archive,
+                &ParsedMessage {
+                    subject: subject.to_string(),
+                    from: vec![EmailAddress::new("ada@example.com".to_string(), None)],
+                    body_plain: Some(body),
+                    ..ParsedMessage::default()
+                },
+                &[],
+            );
+        }
+        archive
+    }
+
+    #[test]
+    fn test_one_message_longer_than_will_be_held_is_left_out_and_the_rest_of_the_file_still_read() {
+        // The one limit that stays, and why it can. A mailbox has no size worth
+        // guessing at, so refusing one for being large is refusing somebody's
+        // mail. A single message does have one: the most generous mail server
+        // anybody runs stops well short of what is allowed here, so a file
+        // claiming a message larger than that was built rather than received.
+        //
+        // Left out rather than fatal. One message nobody can hold is not a
+        // reason to lose the mail filed after it, and it is said out loud so
+        // nobody has to notice a message missing to find out.
+        let archive = an_archive_whose_middle_message_is_long();
+        let holding_very_little = HowMuchToHold {
+            most_one_message_is: 500,
+            how_much_is_read_at_once: 16,
+        };
+
+        let read = what_came_out(each_message_read_piece_by_piece_allowing(
+            archive.as_slice(),
+            holding_very_little,
+        ));
+
+        let subjects: Vec<&str> = read
+            .iter()
+            .filter_map(|message| message.as_ref().ok())
+            .map(|message| message.subject.as_str())
+            .collect();
+        assert_eq!(subjects, vec!["The first one", "The third one"]);
+        let said: Vec<&String> = read
+            .iter()
+            .filter_map(|message| message.as_ref().err())
+            .collect();
+        assert_eq!(said.len(), 1, "{read:?}");
+        assert!(
+            said[0].contains("longer than 500 bytes") && said[0].contains("left out"),
+            "{}",
+            said[0]
+        );
+        // The size is said in a unit somebody can hold. What ships is 256
+        // megabytes, and a sentence reading "longer than 268435456" is a
+        // sentence nobody takes anything from.
+        assert_eq!(said_as_a_size(MOST_ONE_MESSAGE_IS), "256 megabytes");
+        // And the same file read with the limits this program ships with holds
+        // three ordinary messages, so the test above is about the limit rather
+        // than about the file.
+        assert_eq!(
+            what_came_out(each_message_read_piece_by_piece(archive.as_slice())).len(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_where_a_piece_of_the_file_ends_never_changes_where_a_message_ends() {
+        // The whole risk of reading a file in pieces. A piece boundary can land
+        // in the middle of a message, in the middle of a header, in the middle
+        // of a separator line, or between the two halves of the clock time that
+        // tells a separator from a sentence. So each of these files is read at
+        // every piece size there is for it, against the same file read as it
+        // ships, and all of them have to agree exactly: the same messages, in
+        // the same order, with the same failures.
+        //
+        // This was written while the reader that held the whole file was still
+        // here, and it compared the two. They agreed on every one of these
+        // files at every piece size, which is what made it safe to have one
+        // reader instead of two. What it asks now is the half that can still be
+        // asked: that where the pieces end changes nothing.
+        for archive in every_awkward_archive() {
+            let all_at_once = what_came_out(each_message_read_from(&archive));
+            for a_piece_of in 1..=archive.len().max(1) {
+                let in_pieces = what_came_out(each_message_read_piece_by_piece_allowing(
+                    archive.as_slice(),
+                    HowMuchToHold {
+                        how_much_is_read_at_once: a_piece_of,
+                        ..HowMuchToHold::default()
+                    },
+                ));
+
+                assert_eq!(
+                    in_pieces,
+                    all_at_once,
+                    "read {a_piece_of} bytes at a time, this file came out differently:\n{}",
+                    String::from_utf8_lossy(&archive)
+                );
+            }
+        }
     }
 
     #[test]
@@ -1709,6 +2483,57 @@ mod tests {
     }
 
     #[test]
+    fn test_the_escaping_is_undone_the_same_way_however_the_file_was_broken_into_pieces() {
+        // The escaping and the reading are a pair, and reading a piece at a
+        // time must not come between them. A line the sender wrote beginning
+        // `From ` went into the archive as `>From `, and it has to come back
+        // the way they wrote it whichever byte the reading happened to stop
+        // at, including in the middle of the mark itself.
+        //
+        // Asked as what the body really is rather than as agreement with
+        // another reading of it, because two readings running the same code
+        // agree with each other while both being wrong.
+        let awkward = ParsedMessage {
+            subject: "A quotation".to_string(),
+            from: vec![EmailAddress::new("ada@example.com".to_string(), None)],
+            body_plain: Some(
+                "From the desk of Charles.\r\n\
+                 >From a line somebody quoted.\r\n\
+                 >>From a line quoted twice.\r\n"
+                    .to_string(),
+            ),
+            ..ParsedMessage::default()
+        };
+        let mut written = Vec::new();
+        written_into_an_archive(&mut written, &awkward, &[]);
+        written_into_an_archive(&mut written, &awkward, &[]);
+
+        for a_piece_of in [1, 2, 3, 5, 8, 37, 1024] {
+            let read: Vec<ParsedMessage> = each_message_read_piece_by_piece_allowing(
+                written.as_slice(),
+                HowMuchToHold {
+                    how_much_is_read_at_once: a_piece_of,
+                    ..HowMuchToHold::default()
+                },
+            )
+            .filter_map(|message| message.ok())
+            .collect();
+
+            assert_eq!(
+                read.len(),
+                2,
+                "read {a_piece_of} bytes at a time, the archive came apart"
+            );
+            for message in read {
+                assert_eq!(
+                    message.body_plain, awkward.body_plain,
+                    "read {a_piece_of} bytes at a time, the escaping came back wrong"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_a_message_in_a_character_set_nobody_declared_is_kept_rather_than_dropped() {
         // Real archives are full of these: eight-bit text with nothing saying
         // which alphabet it is. The message is kept and what cannot be decoded
@@ -2094,6 +2919,124 @@ mod tests {
         assert_eq!(
             what_the_file_holds(an_archive().as_bytes()),
             FileHolds::ManyMessages
+        );
+    }
+}
+
+#[cfg(test)]
+mod a_mailbox_larger_than_this_computer_would_hold {
+    use super::*;
+    use crate::common::types::EmailAddress;
+
+    /// What the whole-entry reader used to refuse, and the reason this work
+    /// exists.
+    ///
+    /// Named here so the test below is measured against the door it opens
+    /// rather than against a number somebody picked.
+    const WHAT_ONE_ENTRY_USED_TO_BE_ALLOWED: u64 = 1024 * 1024 * 1024;
+
+    /// A mailbox larger than that, made up as it is read rather than held.
+    ///
+    /// Nothing on this computer holds a gigabyte of it. One message is built
+    /// once and handed out over and over, and the only thing that grows is the
+    /// count of what has gone past. That is what lets a test prove a real file
+    /// of this size can be read on a machine that could not hold one.
+    struct AMailboxTooLargeToHold {
+        /// One message with its separator, handed out again and again.
+        one_message: Vec<u8>,
+        /// How much of it is still to be handed over.
+        still_to_come: usize,
+        /// Where in the message the next piece starts.
+        at: usize,
+    }
+
+    impl AMailboxTooLargeToHold {
+        /// A mailbox of this many bytes, in messages of about this many.
+        fn of(bytes: usize, each_message_is_about: usize) -> Self {
+            let a_line = "A line of somebody's message, kept for twenty years. ".repeat(20);
+            let message = ParsedMessage {
+                subject: "The same message over and over".to_string(),
+                from: vec![EmailAddress::new("ada@example.com".to_string(), None)],
+                body_plain: Some(
+                    format!("{a_line}\r\n").repeat(each_message_is_about / a_line.len()),
+                ),
+                ..ParsedMessage::default()
+            };
+            let mut one_message = Vec::new();
+            written_into_an_archive(&mut one_message, &message, &[]);
+            // The empty line that has to sit in front of the next separator.
+            // Written by the writer for every message after the first, and this
+            // one message stands in for all of them.
+            one_message.extend_from_slice(b"\r\n");
+            Self {
+                one_message,
+                still_to_come: bytes,
+                at: 0,
+            }
+        }
+
+        /// How many whole messages a mailbox of this size holds.
+        fn how_many_messages(&self) -> usize {
+            self.still_to_come.div_ceil(self.one_message.len())
+        }
+    }
+
+    impl std::io::Read for AMailboxTooLargeToHold {
+        fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+            if self.still_to_come == 0 || into.is_empty() {
+                return Ok(0);
+            }
+            if self.at == self.one_message.len() {
+                self.at = 0;
+            }
+            let handing = into
+                .len()
+                .min(self.one_message.len() - self.at)
+                .min(self.still_to_come);
+            into[..handing].copy_from_slice(&self.one_message[self.at..self.at + handing]);
+            self.at += handing;
+            self.still_to_come -= handing;
+            Ok(handing)
+        }
+    }
+
+    #[test]
+    fn test_a_mailbox_larger_than_one_entry_was_ever_allowed_to_be_gives_up_every_message_in_it() {
+        // The whole point, on a file of the size that started it. A folder
+        // somebody has used for twenty years, exported as one file, goes past
+        // what a reader that held the entry would take, and exactly the person
+        // with the most mail to bring was the one who could not bring it.
+        //
+        // A real gigabyte and more of it goes past here. Nothing holds it: the
+        // file is made up as it is read, and the reader keeps one message at a
+        // time, so this runs on a machine that could not hold the file it is
+        // reading.
+        let more_than_was_allowed = WHAT_ONE_ENTRY_USED_TO_BE_ALLOWED as usize + 64 * 1024 * 1024;
+        let mailbox = AMailboxTooLargeToHold::of(more_than_was_allowed, 1024 * 1024);
+        let how_many = mailbox.how_many_messages();
+        assert!(how_many > 1000, "{how_many} messages is not a mailbox");
+
+        let mut read = 0;
+        let mut could_not_be_read = 0;
+        let mut the_first_body = None;
+        for message in each_message_read_piece_by_piece(mailbox) {
+            match message {
+                Ok(message) => {
+                    read += 1;
+                    the_first_body.get_or_insert(message.body_plain);
+                }
+                Err(_) => could_not_be_read += 1,
+            }
+        }
+
+        assert_eq!(could_not_be_read, 0);
+        assert_eq!(read, how_many, "{read} messages came out of {how_many}");
+        assert!(
+            the_first_body
+                .flatten()
+                .unwrap_or_default()
+                .contains("kept for twenty years"),
+            "the messages came out empty, so the count above says nothing"
         );
     }
 }

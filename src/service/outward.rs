@@ -1357,7 +1357,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 43] = [
+    const A_CRATE_THAT_CANNOT: [&str; 44] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1408,6 +1408,9 @@ mod completeness {
         // anywhere. Built with the codecs off apart from ico, png and bmp, and
         // a decoder has no notion of a destination either.
         "image",
+        // Reads an Outlook data file off this computer. It opens a file and
+        // nothing else: no address in it names anywhere to go.
+        "outlook-pst",
         "windows",
         "winresource",
         "boa_engine",

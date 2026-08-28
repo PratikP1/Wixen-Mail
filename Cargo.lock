@@ -3056,6 +3056,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "outlook-pst"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "299eace9d895cc31490927d7de779f8e8f3deb5fb6bd1e68eb192aa1da19bd47"
+dependencies = [
+ "byteorder",
+ "thiserror 2.0.19",
+ "tracing",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5644,7 +5655,7 @@ dependencies = [
 
 [[package]]
 name = "wixen-mail"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "aes-gcm",
  "ammonia",
@@ -5668,6 +5679,7 @@ dependencies = [
  "native-tls",
  "oauth2",
  "open",
+ "outlook-pst",
  "pdfpurr",
  "pulldown-cmark",
  "quick-xml 0.41.0",

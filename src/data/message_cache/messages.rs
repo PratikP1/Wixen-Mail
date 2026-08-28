@@ -1004,29 +1004,48 @@ impl MessageCache {
     /// Bounded, because a search that returns two hundred thousand rows is a
     /// search nobody can use and a list that takes a visible moment to fill.
     ///
-    /// Store an attachment record.
+    /// Store an attachment record without keeping the file.
     ///
-    /// The record, not the file. What the list and the details reading need is
-    /// the name, type and size; the bytes are fetched when someone opens or
-    /// saves the attachment.
+    /// The record, not the file: the name, type and size, which is what a list
+    /// and the details reading need. The attachment then has no copy on this
+    /// computer, which is an ordinary state and reads back as one.
+    ///
+    /// [`MessageCache::replace_attachments_with_content`] is the way to record
+    /// an attachment and keep its file.
     pub fn save_attachment(&self, attachment: &CachedAttachment) -> Result<i64> {
+        self.save_attachment_row(attachment, None)
+    }
+
+    /// The one statement that writes a row into `attachments`.
+    ///
+    /// `content_digest` names the file in `attachment_content`, or is `None`
+    /// when no file is kept for this attachment. One statement rather than two
+    /// nearly identical ones, so a column added later cannot be written by one
+    /// path and forgotten by the other.
+    pub(super) fn save_attachment_row(
+        &self,
+        attachment: &CachedAttachment,
+        content_digest: Option<&str>,
+    ) -> Result<i64> {
         self.conn
             .execute(
-                "INSERT INTO attachments (message_id, filename, mime_type, size, content_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO attachments
+                     (message_id, filename, mime_type, size, content_id, content_digest)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     attachment.message_id,
                     attachment.filename,
                     attachment.mime_type,
                     attachment.size,
                     attachment.content_id,
+                    content_digest,
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save attachment: {}", e)))?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// Record exactly this list of attachments for a message.
+    /// Record exactly this list of attachments for a message, keeping no files.
     ///
     /// Replaces rather than adds, because the same message gets parsed more
     /// than once: a body evicted from the cache is downloaded again, and
@@ -1037,21 +1056,26 @@ impl MessageCache {
     /// The order is the order given, which is the order the parser found them
     /// in, which is the order the reader lists them in, which is the position
     /// the bytes are taken from. All four have to be the same one.
+    ///
+    /// This is [`MessageCache::replace_attachments_with_content`] with no files
+    /// given, and the same function underneath, so the two cannot come to
+    /// different conclusions about what replacing a list means.
+    ///
+    /// Which means it lets go of any file already kept for this message: the
+    /// new list names none, and a file nothing names is not held. So use the
+    /// other one wherever the files are in hand, and this one only where they
+    /// genuinely are not.
     pub fn replace_attachments(
         &self,
         message_id: i64,
         attachments: &[CachedAttachment],
     ) -> Result<()> {
-        self.conn
-            .execute(
-                "DELETE FROM attachments WHERE message_id = ?1",
-                params![message_id],
-            )
-            .map_err(|e| Error::Other(format!("Failed to clear attachments: {}", e)))?;
-        for attachment in attachments {
-            self.save_attachment(attachment)?;
-        }
-        Ok(())
+        let without_files: Vec<super::attachment_content::AttachmentWithContent> = attachments
+            .iter()
+            .cloned()
+            .map(super::attachment_content::AttachmentWithContent::described_only)
+            .collect();
+        self.replace_attachments_with_content(message_id, &without_files)
     }
 
     /// Every attachment recorded for a message.

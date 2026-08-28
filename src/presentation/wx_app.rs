@@ -187,6 +187,9 @@ menu_ids!(
     ID_COPY_TO_FOLDER,
     ID_DELETE_OUTRIGHT,
     ID_SEND_RECEIPT,
+    ID_ANSWER_ACCEPT,
+    ID_ANSWER_TENTATIVE,
+    ID_ANSWER_DECLINE,
     ID_CHOOSE_FOLDERS,
 );
 
@@ -3125,6 +3128,27 @@ impl WxMailApp {
                                 );
                             }
                         }
+                        _ if id == ID_ANSWER_ACCEPT
+                            || id == ID_ANSWER_TENTATIVE
+                            || id == ID_ANSWER_DECLINE =>
+                        {
+                            use crate::application::invitations::Answer;
+                            let answer = if id == ID_ANSWER_ACCEPT {
+                                Answer::Accepted
+                            } else if id == ID_ANSWER_TENTATIVE {
+                                Answer::Tentative
+                            } else {
+                                Answer::Declined
+                            };
+                            answer_the_invitation(
+                                &state,
+                                &message_cache,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                                answer,
+                            );
+                        }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
                         }
@@ -4870,6 +4894,27 @@ impl WxMailApp {
         // The thing you have to do arrived as an email, and retyping its
         // subject into a task list is the clerical work software exists to
         // remove. All four keep the message where it is.
+        // Its own menu rather than three more lines on one that is already
+        // long, and because the three belong together: they are one question
+        // with three answers.
+        let answer_menu = Menu::builder()
+            .append_item(
+                ID_ANSWER_ACCEPT,
+                "&Accept",
+                "Tell whoever called the meeting that you will be there",
+            )
+            .append_item(
+                ID_ANSWER_TENTATIVE,
+                "&Tentative",
+                "Tell them you might be there",
+            )
+            .append_item(
+                ID_ANSWER_DECLINE,
+                "&Decline",
+                "Tell them you will not be there",
+            )
+            .build();
+
         let copy_to_menu = Menu::builder()
             .append_item(
                 ID_COPY_TO_FOLDER,
@@ -5050,6 +5095,14 @@ impl WxMailApp {
 
         // The submenus go on last because wxWidgets only takes one once the
         // builder chain has finished.
+        message.append_submenu(
+            answer_menu,
+            // w, because every letter in the obvious places is claimed on this
+            // menu already and two items sharing one turns a single keystroke
+            // into a cycle between them.
+            "Ans&wer Invitation",
+            "Answer a meeting invitation this message carries",
+        );
         message.append_submenu(
             copy_to_menu,
             "Cop&y to",
@@ -7113,16 +7166,24 @@ fn fill_folders_from(
         };
         let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
         for entry in &folder.entries {
-            let Ok(bytes) = archive.one_entry_read_through(&entry.named) else {
-                continue;
-            };
-            for read in messages_in(&bytes, entry.read) {
-                let what = WhatToDoWithIt::for_one_read(&read, &already_here);
-                if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
-                    file_one_imported_message(cache, message, folder_id);
+            // A piece at a time, never the whole entry. A mailbox somebody has
+            // kept for twenty years is one entry, and reading it whole is what
+            // used to refuse it: the limit was never about how much mail
+            // somebody is allowed to bring, it was about what one call could
+            // hold. Read this way nothing grows with the size of the file, so
+            // there is nothing left to refuse.
+            let _ = archive.one_entry_read_in_pieces(&entry.named, |reading| {
+                for read in
+                    crate::application::message_files::each_message_read_piece_by_piece(reading)
+                {
+                    let what = WhatToDoWithIt::for_one_read(&read, &already_here);
+                    if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
+                        file_one_imported_message(cache, message, folder_id);
+                    }
+                    brought_in.count_one(what);
                 }
-                brought_in.count_one(what);
-            }
+                Ok(())
+            });
         }
         // Under one subject and at the lowest urgency, so a count climbing
         // through forty thousand is heard at its latest value rather than
@@ -7134,6 +7195,176 @@ fn fill_folders_from(
     }
     counted.messages = brought_in.brought_in;
     import_tree::what_the_folder_import_did(&counted)
+}
+
+/// Answer the meeting invitation the message in front of somebody carries.
+///
+/// Every reason not to answer is asked by
+/// [`crate::application::answering::whether_it_can_be_answered`], which is the
+/// only thing that hands back something an answer can be built from. What is
+/// here is finding the invitation, sending what it produces, and saying what
+/// happened either way.
+///
+/// The refusals matter more than the sending. Sending mail is switched off in
+/// a new installation, deliberately, so for most people pressing Accept will
+/// explain that rather than send anything. A button that quietly did nothing
+/// would be worse than no button at all.
+fn answer_the_invitation(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    answer: crate::application::invitations::Answer,
+) {
+    use crate::application::answering;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let told = |said: &str, how: Priority| {
+        send_status(ui_tx, runtime, said);
+        let _ = a11y.announce(said, how);
+    };
+    let Some(cache) = cache.as_ref() else {
+        told(
+            "There is no mail on this computer to answer.",
+            Priority::High,
+        );
+        return;
+    };
+    let (message, account) = {
+        let held = lock_state(state);
+        (
+            held.selected_message_index
+                .and_then(|at| held.messages.get(at).cloned()),
+            held.active_account_id.clone(),
+        )
+    };
+    let (Some(message), Some(account)) = (message, account) else {
+        told(
+            "Select the message holding the invitation first.",
+            Priority::High,
+        );
+        return;
+    };
+
+    // The invitation travels as a part of the message, so it is read back out
+    // of what was stored when the message was opened rather than fetched
+    // again.
+    let parts: Vec<(String, Vec<u8>)> = cache
+        .attachments_with_content(message.message_id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| Some((file.described.mime_type, file.content?)))
+        .collect();
+    let Some(document) = answering::the_invitation_a_message_carries(&parts) else {
+        told(
+            "This message does not carry a meeting invitation. Open it once if \
+             you have not, so its parts are on this computer.",
+            Priority::High,
+        );
+        return;
+    };
+
+    let answering_as = the_address_this_account_answers_as(state, &account);
+    let ready = match answering::whether_it_can_be_answered(
+        &document,
+        &answering_as,
+        crate::application::allowed::allowed_for(&account),
+    ) {
+        Ok(ready) => ready,
+        // Each refusal has its own sentence, and this is the whole point of
+        // them: "sending is switched off" and "you were not invited" are
+        // different things to be told and lead somewhere different.
+        Err(why) => {
+            told(&why.why(), Priority::High);
+            return;
+        }
+    };
+
+    let to_send = match ready.the_answer_to_send(answer, chrono::Utc::now()) {
+        Ok(to_send) => to_send,
+        Err(why) => {
+            told(
+                &format!("The answer could not be written. {why}"),
+                Priority::High,
+            );
+            return;
+        }
+    };
+    let went = send_the_answer(state, cache, &to_send);
+    told(&ready.what_answering_did(answer, &went), Priority::Normal);
+}
+
+/// The address this account answers an invitation as.
+///
+/// The account's own, because an invitation names the guest by address and the
+/// answer has to come from the one that was invited.
+fn the_address_this_account_answers_as(state: &Arc<StdMutex<WxUIState>>, account: &str) -> String {
+    lock_state(state)
+        .accounts
+        .iter()
+        .find(|held| held.id == account)
+        .map(|held| held.email.clone())
+        .unwrap_or_default()
+}
+
+/// Put the answer in the queue that sends mail, and say how that went.
+fn send_the_answer(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Arc<MessageCache>,
+    to_send: &crate::application::answering::TheAnswerToSend,
+) -> crate::application::answering::HowItWent {
+    use crate::application::answering::HowItWent;
+
+    // The reply document goes out as a part of its own, and the queue carries
+    // its files by name rather than by content: a file is read at the moment
+    // of sending, so a document edited between Send and a retry goes out as
+    // the newer one. So this is written somewhere it will still be when the
+    // queue drains, and not into a temporary folder that may be swept first.
+    let written = match a_place_for_the_reply(&to_send.calendar_document) {
+        Ok(written) => written,
+        Err(why) => return HowItWent::DidNotSend { because: why },
+    };
+    let data = wx_compose::ComposeData {
+        to: to_send.to.address.clone(),
+        cc: String::new(),
+        bcc: String::new(),
+        subject: to_send.subject.clone(),
+        // Both halves the same words. An answer is one short sentence and has
+        // no markup in it, so the two alternatives would say the same thing
+        // either way.
+        body: to_send.body.clone(),
+        body_plain: to_send.body.clone(),
+        html_mode: false,
+        account_index: None,
+        attachments: vec![written],
+        answering: None,
+    };
+    match queue_for_sending(state, &Some(cache.clone()), &data) {
+        Ok(_) => HowItWent::Sent,
+        Err(because) => HowItWent::DidNotSend { because },
+    }
+}
+
+/// Write the reply document where it will still be when the queue drains.
+fn a_place_for_the_reply(document: &str) -> std::result::Result<std::path::PathBuf, String> {
+    let Ok(paths) = AppPaths::resolve() else {
+        return Err("there is nowhere on this computer to put the answer".to_string());
+    };
+    let folder = paths.cache_dir().join("answers");
+    std::fs::create_dir_all(&folder)
+        .map_err(|why| format!("the answer could not be written down: {why}"))?;
+    // A name nothing else will take, so two answers waiting in the queue at
+    // once do not land on one name and the second replace the first while the
+    // first is still waiting to go.
+    //
+    // Not the moment it was written. A date written out here is a date written
+    // in a second place, and this program keeps one writer for those on
+    // purpose; a guard in tests/house_style.rs says so and caught this.
+    let at = folder.join(format!("reply-{}.ics", uuid::Uuid::new_v4()));
+    std::fs::write(&at, document)
+        .map_err(|why| format!("the answer could not be written down: {why}"))?;
+    Ok(at)
 }
 
 /// Write the folder being looked at, and everything inside it, out to a file.
@@ -12143,19 +12374,42 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         // while everything past the first copy pointed at a part that is not
         // there. The order is the parser's, which is the order the reader
         // lists them in, which is the position the bytes are taken from.
-        let records: Vec<crate::data::message_cache::CachedAttachment> = parsed
-            .attachments
-            .iter()
-            .map(|attachment| crate::data::message_cache::CachedAttachment {
-                id: 0,
-                message_id: message_row_id,
-                filename: attachment.display_name(),
-                mime_type: attachment.mime_type.clone(),
-                size: attachment.size as i64,
-                content_id: None,
-            })
-            .collect();
-        if let Err(e) = cache.replace_attachments(message_row_id, &records) {
+        //
+        // The files themselves as well as their names, because this is the one
+        // moment they are in hand. The message was fetched to be read, it was
+        // parsed to be shown, and the parts came apart in the doing of it.
+        // Recording only the names threw them away, so an export wrote
+        // messages with their attachments missing and opening one had to ask
+        // the server again for something this computer had already had.
+        //
+        // Taken through one walk of the message rather than one per file: the
+        // other way parses the whole message again for each attachment, which
+        // on a message carrying twenty of them is twenty parses.
+        let files = crate::service::mime::attachments_with_bytes(&raw).unwrap_or_default();
+        let records: Vec<crate::data::message_cache::attachment_content::AttachmentWithContent> =
+            parsed
+                .attachments
+                .iter()
+                .enumerate()
+                .map(|(at, attachment)| {
+                    crate::data::message_cache::attachment_content::AttachmentWithContent {
+                        described: crate::data::message_cache::CachedAttachment {
+                            id: 0,
+                            message_id: message_row_id,
+                            filename: attachment.display_name(),
+                            mime_type: attachment.mime_type.clone(),
+                            size: attachment.size as i64,
+                            content_id: None,
+                        },
+                        // By position, which both lists are in: the walk that reads
+                        // the files and the parse that names them go through the
+                        // message the same way round. A file missing here is a file
+                        // the walk could not read, and the attachment still lists.
+                        content: files.get(at).map(|file| file.bytes.clone()),
+                    }
+                })
+                .collect();
+        if let Err(e) = cache.replace_attachments_with_content(message_row_id, &records) {
             tracing::warn!("Could not record the attachments: {}", e);
         }
 

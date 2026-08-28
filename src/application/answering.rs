@@ -702,6 +702,95 @@ fn the_guest_answering<'a>(
         })
 }
 
+/// The media type a meeting invitation arrives as.
+const AN_INVITATION_ARRIVES_AS: &str = "text/calendar";
+
+/// The invitation a message carries, when it carries one.
+///
+/// An invitation is an ordinary message with a calendar document attached, so
+/// finding it means looking through the parts rather than at the body. The
+/// media type says which part, whatever the part is named: senders call it
+/// `invite.ics`, `meeting.ics`, and nothing at all.
+///
+/// Only the first. A message carrying two calendar documents is not something
+/// a person can answer with one button, and picking one of them would answer
+/// about a meeting they were not shown.
+///
+/// The bytes have to read as text, because a calendar document is text by
+/// definition. A part that does not is a part this cannot answer about, which
+/// is different from a message with no invitation in it and is not worth
+/// telling them apart here: neither offers a button.
+pub fn the_invitation_a_message_carries(parts: &[(String, Vec<u8>)]) -> Option<String> {
+    parts
+        .iter()
+        .find(|(kind, _)| {
+            kind.split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .eq_ignore_ascii_case(AN_INVITATION_ARRIVES_AS)
+        })
+        .and_then(|(_, bytes)| String::from_utf8(bytes.clone()).ok())
+}
+
+#[cfg(test)]
+mod finding_the_invitation {
+    use super::*;
+
+    fn an_invitation() -> Vec<u8> {
+        b"BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nEND:VCALENDAR\r\n".to_vec()
+    }
+
+    #[test]
+    fn test_a_message_carrying_an_invitation_gives_it_up() {
+        let found = the_invitation_a_message_carries(&[
+            ("text/plain".to_string(), b"Are you free?".to_vec()),
+            ("text/calendar".to_string(), an_invitation()),
+        ]);
+
+        assert!(found.expect("an invitation").contains("METHOD:REQUEST"));
+    }
+
+    #[test]
+    fn test_the_media_type_is_read_whatever_follows_it() {
+        // Senders write the method and the character set on the same line,
+        // and the part is still a calendar document. Comparing the whole
+        // line finds none of them.
+        let found = the_invitation_a_message_carries(&[(
+            "TEXT/CALENDAR; charset=utf-8; method=REQUEST".to_string(),
+            an_invitation(),
+        )]);
+
+        assert!(found.is_some(), "the type was read as a whole line");
+    }
+
+    #[test]
+    fn test_a_message_with_no_calendar_part_carries_no_invitation() {
+        // Almost every message. Offering a button on one of these would ask
+        // somebody to answer a meeting nobody called.
+        assert!(
+            the_invitation_a_message_carries(&[
+                ("text/plain".to_string(), b"Hello".to_vec()),
+                ("image/png".to_string(), vec![0x89, b'P', b'N', b'G']),
+            ])
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_part_that_is_not_text_is_not_offered() {
+        // A calendar document is text by definition, so bytes that are not
+        // text are not one, whatever the part claims to be.
+        assert!(
+            the_invitation_a_message_carries(&[(
+                "text/calendar".to_string(),
+                vec![0xff, 0xfe, 0x00, 0x9f]
+            )])
+            .is_none()
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

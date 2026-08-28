@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.43.0"
+version = "0.44.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -137,6 +137,18 @@ flate2 = "1.1.9"
 # decoder somebody else's file could reach, which is attack surface for a
 # feature that reads one file this project ships itself.
 image = { version = "0.25", default-features = false, features = ["ico", "png", "bmp"] }
+# Reading an Outlook data file, which is what somebody moving off Outlook has
+# in their hands: one file holding their mail, calendar, contacts, tasks and
+# notes together. The format is Microsoft's, undocumented for most of its life,
+# and far too large to write a reader for here.
+#
+# This crate is Microsoft's own (github.com/microsoft/outlook-pst-rs), which is
+# the reason for choosing it over the fork that also writes: the owner of a
+# format is the one party that cannot be wrong about it, and only reading is
+# needed. Reading is also the whole of the risk, because the file comes from
+# somebody else and a fault in a parser handling a stranger's file is reachable
+# by that stranger. Nothing here writes one.
+outlook-pst = "1.2.0"
 
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and

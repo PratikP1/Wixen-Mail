@@ -4,6 +4,7 @@
 //! Split into domain-specific sub-modules for maintainability.
 
 mod accounts;
+pub mod attachment_content;
 pub mod bodies;
 mod calendar;
 pub mod calendars;
@@ -98,6 +99,9 @@ pub struct MessageCache {
     security: Option<SecurityService>,
     /// How much body text to keep. See [`bodies::BODY_CACHE_BUDGET_BYTES`].
     body_budget: i64,
+    /// How much attachment content to keep. See
+    /// [`attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES`].
+    attachment_budget: i64,
 }
 
 /// Cached folder information
@@ -132,7 +136,7 @@ pub struct CachedMessage {
 }
 
 /// Cached attachment information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CachedAttachment {
     pub id: i64,
     pub message_id: i64,
@@ -1157,6 +1161,7 @@ impl MessageCache {
             conn,
             security,
             body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
+            attachment_budget: attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES,
         };
         cache.initialize_schema()?;
 
@@ -1227,6 +1232,18 @@ impl MessageCache {
     #[must_use]
     pub fn keeping_bodies_under(mut self, budget_bytes: i64) -> Self {
         self.body_budget = budget_bytes;
+        self
+    }
+
+    /// The same cache, keeping less attachment content than the default.
+    ///
+    /// The counterpart of [`Self::keeping_bodies_under`], and there for the
+    /// same two reasons: a test can watch a file be dropped without building
+    /// half a gigabyte of attachments, and a setting has somewhere to plug in
+    /// if anyone ever asks for one.
+    #[must_use]
+    pub fn keeping_attachments_under(mut self, budget_bytes: i64) -> Self {
+        self.attachment_budget = budget_bytes;
         self
     }
 
@@ -1309,6 +1326,51 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create attachments table: {}", e)))?;
+
+        // Which file in the store this attachment is, or NULL when this
+        // computer does not have it. NULL for every attachment in a database
+        // written before the files were kept, which is the truthful answer for
+        // all of them. See `attachment_content` for the four ordinary reasons a
+        // file is not here.
+        self.ensure_column_exists("attachments", "content_digest", "TEXT")?;
+
+        // The files themselves, keyed by a digest of the file rather than by
+        // the message that carried it, so a spreadsheet sent round a thread a
+        // dozen times is held once.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS attachment_content (
+                digest TEXT PRIMARY KEY,
+                content BLOB NOT NULL,
+                bytes INTEGER NOT NULL,
+                last_read_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to create attachment_content table: {}", e))
+            })?;
+
+        // A file goes when the last attachment that carried it goes, whether
+        // that is a message being deleted, a folder or an account being
+        // cleared, or a message being recorded again with a different list.
+        // Written as a trigger because those are several paths and one of them
+        // is a foreign key cascade, which no Rust code here ever sees.
+        self.conn
+            .execute_batch(
+                "CREATE TRIGGER IF NOT EXISTS attachment_file_gone
+                 AFTER DELETE ON attachments
+                 WHEN old.content_digest IS NOT NULL
+                 BEGIN
+                     DELETE FROM attachment_content
+                     WHERE digest = old.content_digest
+                       AND NOT EXISTS (
+                           SELECT 1 FROM attachments
+                           WHERE content_digest = old.content_digest
+                       );
+                 END;",
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep the stored files tidy: {}", e)))?;
 
         self.conn
             .execute(
@@ -2296,6 +2358,20 @@ impl MessageCache {
             // it did nothing for this: account_id came first in both, and
             // SQLite can only search an index from its leftmost column.
             "CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON attachments(message_id)",
+            // Asked once for every attachment row removed, by the trigger that
+            // frees a file nothing carries any more, and again by the sweep
+            // that brings the store back under its budget. Without it both
+            // read the whole attachments table. Partial, because every one of
+            // those questions is about a digest and most rows have none: an
+            // existing database has none at all.
+            "CREATE INDEX IF NOT EXISTS idx_attachments_content_digest
+                 ON attachments(content_digest) WHERE content_digest IS NOT NULL",
+            // Both columns, so totalling the store and choosing what to drop
+            // read this rather than the table. The table is the one place in
+            // the database where a row is measured in megabytes, and reading a
+            // row to learn its size would read the file with it.
+            "CREATE INDEX IF NOT EXISTS idx_attachment_content_lru
+                 ON attachment_content(last_read_at, bytes)",
             "CREATE INDEX IF NOT EXISTS idx_tasks_task_list ON tasks(task_list_id)",
             "CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id)",
             // Only the events that repeat, which is what makes this worth

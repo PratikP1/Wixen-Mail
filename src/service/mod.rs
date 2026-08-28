@@ -17,6 +17,7 @@ pub mod microsoft_graph;
 pub mod mime;
 pub mod oauth;
 pub mod oauth_credentials;
+pub mod outlook_data_file;
 pub mod outward;
 pub mod pdf;
 pub mod protocols;

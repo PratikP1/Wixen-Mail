@@ -8,6 +8,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can answer a meeting invitation.** Action, Answer Invitation, then
+  Accept, Tentative or Decline. The answer goes back to whoever called the
+  meeting, so they learn where you stand instead of waiting.
+
+  Sending mail is switched off in a new installation, so for most people
+  pressing Accept will say so and name the setting that turns it on, rather
+  than appearing to work. That is deliberate: a button that quietly does
+  nothing is worse than no button.
+
+  Every other reason an invitation cannot be answered has its own sentence
+  too, because they lead somewhere different: this is a cancellation, this is
+  somebody else's answer, this was forwarded to you rather than sent to you,
+  nobody is named as having called the meeting. Answering one day of a
+  repeating meeting is refused rather than got wrong, because the answer would
+  reach the organiser as an answer to the whole series.
+
+- **Attachments are kept, so they can be sent on and written out.** Their
+  contents used to be thrown away the moment a message was read, so an export
+  wrote messages with their files missing and opening one asked the server
+  again for something this computer had already had.
+
+  Files up to 25 MB are kept, up to 512 MB in total, and the same file
+  arriving on twenty messages is kept once. A file too large to keep still
+  lists with its name, type and size, so a message with an attachment never
+  looks like a message without one.
+
+- **Outlook data files can be read.** Mail, appointments, contacts, tasks and
+  notes, in the folders they were in, from both the older and newer kinds of
+  file. A file with a password on it says so plainly.
+
+  What does not come across is counted and said: items the file would not give
+  up, attachments, and repeating appointments, which arrive as the single
+  appointment they first were.
+
+  **This has never been run against a real Outlook file.** There is no way to
+  make one to test against, so the reading of a real file is unproven.
+
+- **A mailbox larger than a gigabyte can be imported.** It is read a piece at
+  a time, so what it costs to import does not grow with how much mail somebody
+  has. Measured on 1.06 GB: it never held more than about 50 MB at once.
+
 - **You can bring a whole mailbox in, folders and all.** File, Import Mailbox.
   It takes a zip file, a folder you point it at, or a single saved message, and
   keeps the shape your mail was in: a folder called Work with Invoices inside

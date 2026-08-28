@@ -67,6 +67,55 @@ impl AttachmentInfo {
     }
 }
 
+/// One attachment, with the file itself.
+///
+/// [`AttachmentInfo`] describes an attachment without holding it, which is all
+/// a list of names needs. Storing a message or writing it back out needs the
+/// file too, and the two travel together here rather than as two lists that
+/// could stop lining up. Two lists is the shape that ends with somebody's
+/// invoice saved under the name of their holiday photograph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentWithBytes {
+    /// The name, type and size, exactly as [`parse`] reports them.
+    pub described: AttachmentInfo,
+    /// The file itself, decoded.
+    pub bytes: Vec<u8>,
+}
+
+/// Every attachment on a message, contents included.
+///
+/// One parse and one walk of the parts, in the order [`parse`] lists them, so
+/// the nth here is the nth there.
+///
+/// [`attachment_bytes`] answers the same question for a single attachment when
+/// the rest are not wanted. This exists because storing or exporting a message
+/// wants all of them, and calling that once per attachment parses the whole
+/// message again each time.
+pub fn attachments_with_bytes(raw: &[u8]) -> Result<Vec<AttachmentWithBytes>> {
+    let message = MessageParser::default()
+        .parse(raw)
+        .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
+
+    Ok(attachment_parts(&message)
+        .map(|part| AttachmentWithBytes {
+            described: described(part),
+            bytes: part.contents().to_vec(),
+        })
+        .collect())
+}
+
+/// How one attachment part is described.
+///
+/// In one place, so the list of names and the list of files that carry those
+/// names cannot come to different conclusions about a name, a type or a size.
+fn described(part: &mail_parser::MessagePart<'_>) -> AttachmentInfo {
+    AttachmentInfo {
+        filename: part.attachment_name().map(str::to_string),
+        mime_type: content_type_of(part),
+        size: part.contents().len(),
+    }
+}
+
 /// Decode a raw message.
 ///
 /// Fails only when there is nothing recognisable at all. A message missing a
@@ -77,13 +126,7 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         .parse(raw)
         .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
 
-    let attachments = attachment_parts(&message)
-        .map(|part| AttachmentInfo {
-            filename: part.attachment_name().map(str::to_string),
-            mime_type: content_type_of(part),
-            size: part.contents().len(),
-        })
-        .collect();
+    let attachments = attachment_parts(&message).map(described).collect();
 
     Ok(ParsedMessage {
         subject: message.subject().unwrap_or_default().to_string(),
@@ -700,6 +743,92 @@ mod tests {
             "index 1 of the list and index 1 of the bytes are different \
              attachments: got {text:?}"
         );
+    }
+
+    // ── Every attachment, with the file itself ──────────────────────────
+    //
+    // `parse` names the files a message carries and does not hold them, which
+    // is what a list needs and not enough to store or export one. These take
+    // the same walk of the parts and keep the bytes.
+
+    #[test]
+    fn test_the_files_come_back_in_the_order_the_list_shows_them() {
+        // The names and the files have to line up. A spacer sits between the
+        // two attachments so a second walk that counted parts differently
+        // would pair the second name with the spacer, which is somebody's
+        // invoice saved under their holiday photograph's name.
+        let raw = concat!(
+            "From: news@example.com\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/html\r\n",
+            "\r\n",
+            "<p>Hello <img src=\"cid:spacer\"></p>\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"first.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"first.txt\"\r\n",
+            "\r\n",
+            "the first one\r\n",
+            "--b\r\n",
+            "Content-Type: image/gif\r\n",
+            "Content-ID: <spacer>\r\n",
+            "Content-Disposition: inline\r\n",
+            "\r\n",
+            "GIF89a\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain; name=\"second.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"second.txt\"\r\n",
+            "\r\n",
+            "the second one\r\n",
+            "--b--\r\n"
+        );
+
+        let carried = attachments_with_bytes(raw.as_bytes()).expect("should parse");
+
+        let listed = parse(raw.as_bytes()).expect("should parse").attachments;
+        assert_eq!(carried.len(), listed.len(), "a different set of parts");
+        for (with_bytes, described) in carried.iter().zip(listed.iter()) {
+            assert_eq!(&with_bytes.described, described, "a name moved");
+        }
+        assert!(String::from_utf8_lossy(&carried[0].bytes).contains("the first one"));
+        assert!(String::from_utf8_lossy(&carried[1].bytes).contains("the second one"));
+    }
+
+    #[test]
+    fn test_the_files_arrive_decoded_rather_than_as_what_carried_them() {
+        // What is on the wire is base64. What gets stored and written back out
+        // has to be the file.
+        let raw = concat!(
+            "From: a@example.com\r\n",
+            "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "See attached.\r\n",
+            "--b\r\n",
+            "Content-Type: application/octet-stream; name=\"data.bin\"\r\n",
+            "Content-Disposition: attachment; filename=\"data.bin\"\r\n",
+            "Content-Transfer-Encoding: base64\r\n",
+            "\r\n",
+            "SGVsbG8sIHdvcmxkIQ==\r\n",
+            "--b--\r\n"
+        );
+
+        let carried = attachments_with_bytes(raw.as_bytes()).expect("should parse");
+
+        assert_eq!(carried.len(), 1);
+        assert_eq!(carried[0].bytes, b"Hello, world!");
+        assert_eq!(carried[0].described.size, b"Hello, world!".len());
+    }
+
+    #[test]
+    fn test_a_message_carrying_no_files_gives_back_an_empty_list() {
+        // Not an error. Most mail carries nothing, and the caller that stores
+        // the files has to be able to tell "none" from "could not be read".
+        let carried = attachments_with_bytes(plain_message().as_bytes()).expect("should parse");
+        assert!(carried.is_empty(), "invented {carried:?}");
     }
 
     #[test]

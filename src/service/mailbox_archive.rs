@@ -33,14 +33,19 @@
 //! program opens. Looking an archive over reads only the opening of each entry,
 //! because that is where the placer stops looking, so a plan for the whole
 //! archive can be made on a computer that could not hold it. Filling a folder
-//! then reads one entry through and lets it go again, and writing an export
-//! takes one message at a time, so the mail is in memory once on its way past
-//! rather than twice at rest.
+//! then reads one entry and lets it go again, and writing an export takes one
+//! message at a time, so the mail is in memory once on its way past rather than
+//! twice at rest.
 //!
-//! One entry is held whole while its mail is filed, and that is a real limit
-//! rather than a detail: a single folder saved as one file larger than
-//! [`HowMuchToAllow::most_one_thing_unpacks_to`] is left where it is with a
-//! sentence saying so, rather than half imported.
+//! An entry is read one of two ways, and the difference is what is held.
+//! [`MailboxArchive::one_entry_read_in_pieces`] holds none of it: it hands over
+//! somewhere to read from, a piece at a time, so the entry may be any size at
+//! all. That is what a folder of twenty years of mail saved as one file needs,
+//! and it is the way to read one.
+//! [`MailboxArchive::one_entry_read_through`] hands back the whole entry as
+//! bytes, which is simpler for a small one and is why
+//! [`HowMuchToAllow::most_one_thing_unpacks_to`] exists: it is a bound on that
+//! call rather than on what an archive may contain.
 //!
 //! # An archive is a stranger's file
 //!
@@ -112,8 +117,9 @@ struct EntryOpening {
 /// than every disk ever made. Reading it as far as it says fills this computer's
 /// memory or its disk, and the program stops. So there is a limit on every part
 /// of it that can grow, and each of these bounds something different: the first
-/// two bound what looking over an archive costs, and the last two bound what
-/// importing one costs.
+/// two bound what looking over an archive costs, the third bounds one way of
+/// reading an entry, and the last bounds what importing a whole archive costs
+/// however it is read.
 ///
 /// A value rather than four constants, so a test can hand this small numbers and
 /// watch a refusal really happen. A limit nothing has ever reached is a limit
@@ -136,12 +142,16 @@ pub struct HowMuchToAllow {
     /// The opening of every entry is kept until the whole archive has been
     /// placed, which is the one part of this that grows with the archive.
     pub most_held_while_looking_it_over: u64,
-    /// How much any one entry may unpack to when it is read through.
+    /// How much any one entry may unpack to when the whole of it is asked for
+    /// at once.
     ///
-    /// A whole entry is held while its mail is filed, so this is a limit of how
-    /// this program reads rather than of what an archive may contain: a single
-    /// folder larger than this is left where it is, with a sentence saying so,
-    /// rather than half imported.
+    /// A bound on one call rather than on what an archive may hold.
+    /// [`MailboxArchive::one_entry_read_through`] hands back the entry as
+    /// bytes, so the entry is in memory, and this is what keeps that from being
+    /// the whole of a mailbox.
+    /// [`MailboxArchive::one_entry_read_in_pieces`] holds none of the entry and
+    /// is not measured against this at all, which is how a folder larger than
+    /// this program's memory is imported rather than refused.
     pub most_one_thing_unpacks_to: u64,
     /// How much the whole archive may unpack to, added up as it is read.
     ///
@@ -157,9 +167,10 @@ impl Default for HowMuchToAllow {
     /// near what a hostile file asks for. A mailbox saved as one file per
     /// message runs to tens of thousands of them, so a hundred thousand is past
     /// all of that; the opening of every entry in one of those is a few hundred
-    /// megabytes, so half a gigabyte covers it; one folder as a single file is
-    /// the largest single thing, and a gigabyte of it is already more than this
-    /// program can hold and file comfortably.
+    /// megabytes, so half a gigabyte covers it; a gigabyte is more than enough
+    /// for the entries small enough to be worth asking for whole, and the
+    /// entries larger than that are read a piece at a time and never measured
+    /// against it.
     fn default() -> Self {
         Self {
             most_things_in_it: 100_000,
@@ -600,6 +611,61 @@ fn as_far_as_allowed(entry: &mut impl Read, allowed: u64) -> std::io::Result<Opt
     Ok(Some(unpacked))
 }
 
+/// What to say when an archive has unpacked as much as it is allowed to.
+///
+/// Said as a reading that failed rather than as a short one, because a folder
+/// of mail handed over with its last thousand messages missing is imported
+/// without complaint and nobody finds out until they go looking for one of
+/// them. What the person in front of the screen is told is the sentence
+/// [`the_whole_of_it_unpacks_to_more_than_will_be_read`] writes; this only has
+/// to stop the reading.
+const THERE_IS_NO_ROOM_LEFT: &str = "this archive has unpacked as much as it is allowed to";
+
+/// One entry being read, counting what really comes out of it.
+///
+/// A size recorded in an archive was written by whoever built the archive, so
+/// what is counted here is what really arrived. One byte past what is left is
+/// read on purpose, because that is the difference between an entry that fits
+/// exactly and one that does not.
+struct AsFarAsThereIsRoom<R> {
+    /// Where the bytes come from.
+    reading: R,
+    /// How much may still come out of this archive altogether.
+    room: u64,
+    /// How much really has.
+    came_out: u64,
+    /// Whether it asked for more than there was room for.
+    ran_out: bool,
+}
+
+impl<R: Read> AsFarAsThereIsRoom<R> {
+    /// One entry, with this much room left in the archive it came from.
+    fn of(reading: R, room: u64) -> Self {
+        Self {
+            reading,
+            room,
+            came_out: 0,
+            ran_out: false,
+        }
+    }
+}
+
+impl<R: Read> Read for AsFarAsThereIsRoom<R> {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        let one_more_than_is_left = self.room.saturating_sub(self.came_out).saturating_add(1);
+        let asking = into
+            .len()
+            .min(usize::try_from(one_more_than_is_left).unwrap_or(usize::MAX));
+        let read = self.reading.read(&mut into[..asking])?;
+        self.came_out = self.came_out.saturating_add(read as u64);
+        if self.came_out > self.room {
+            self.ran_out = true;
+            return Err(std::io::Error::other(THERE_IS_NO_ROOM_LEFT));
+        }
+        Ok(read)
+    }
+}
+
 impl MailboxArchive {
     /// One archive, with its entries put into a second order they can be found
     /// again in.
@@ -637,7 +703,14 @@ impl MailboxArchive {
         self.too_deep_to_follow
     }
 
-    /// One entry read the whole way through, for the moment its mail is filed.
+    /// One entry read the whole way through, handed back as bytes.
+    ///
+    /// The whole entry is in memory when this returns, so it is bounded by
+    /// [`HowMuchToAllow::most_one_thing_unpacks_to`] and refuses anything
+    /// larger. For a folder of mail saved as one file, which is the largest
+    /// thing an archive holds, use
+    /// [`MailboxArchive::one_entry_read_in_pieces`] instead: it holds none of
+    /// the entry and has no such limit.
     ///
     /// Only under a name the archive itself offered. For a folder that is the
     /// whole of the safety of this call: the name is joined to the folder
@@ -701,6 +774,74 @@ impl MailboxArchive {
         };
         self.unpacked_so_far = self.unpacked_so_far.saturating_add(all_of_it.len() as u64);
         Ok(all_of_it)
+    }
+
+    /// One entry handed over a piece at a time, for mail too large to hold.
+    ///
+    /// The same entry as [`MailboxArchive::one_entry_read_through`] and the
+    /// same name rule, and it is never held: what the caller is given is
+    /// somewhere to read from, and it reads as much as it wants at a time and
+    /// lets each piece go. So there is no limit here on how large one entry may
+    /// be, because there is nothing that grows with it. A folder somebody has
+    /// kept for twenty years and exported as one file is exactly the entry that
+    /// could not be read before and can be now.
+    ///
+    /// What the whole archive may unpack to still holds. That one is not about
+    /// memory: it is what stops a small hostile file filling this computer's
+    /// disk with what it unpacks to, an entry at a time. Reaching it partway
+    /// through an entry says so, and says that what was imported before that
+    /// point is on this computer.
+    ///
+    /// The reading is handed to a caller inside a call rather than given out as
+    /// a value, because the archive has to know how much really came out of it
+    /// before it is asked for anything else.
+    pub fn one_entry_read_in_pieces<T>(
+        &mut self,
+        named: &str,
+        take: impl FnOnce(&mut dyn Read) -> Result<T>,
+    ) -> Result<T> {
+        if !self.holds(named) {
+            return Err(Error::Other(format!(
+                "There is nothing called {named} in {}.",
+                self.opened_at.display()
+            )));
+        }
+        let opened_at = self.opened_at.clone();
+        let allowed = self.allowed;
+        let could_not_be_read = |why: &dyn std::fmt::Display| {
+            Error::Other(format!(
+                "{named} in {} could not be read: {why}.",
+                opened_at.display()
+            ))
+        };
+        let room_left = allowed
+            .most_the_whole_of_it_unpacks_to
+            .saturating_sub(self.unpacked_so_far);
+
+        let (what_the_caller_made, came_out, ran_out) = match &mut self.holding {
+            Holding::AZipFile(zip) => {
+                let entry = zip.by_name(named).map_err(|why| could_not_be_read(&why))?;
+                let mut counting = AsFarAsThereIsRoom::of(entry, room_left);
+                let made = take(&mut counting);
+                (made, counting.came_out, counting.ran_out)
+            }
+            Holding::AFolder(root) => {
+                let file =
+                    std::fs::File::open(root.join(named)).map_err(|why| could_not_be_read(&why))?;
+                let mut counting = AsFarAsThereIsRoom::of(file, room_left);
+                let made = take(&mut counting);
+                (made, counting.came_out, counting.ran_out)
+            }
+        };
+
+        self.unpacked_so_far = self.unpacked_so_far.saturating_add(came_out);
+        if ran_out {
+            return Err(the_whole_of_it_unpacks_to_more_than_will_be_read(
+                &opened_at,
+                allowed.most_the_whole_of_it_unpacks_to,
+            ));
+        }
+        what_the_caller_made
     }
 
     /// Whether one of the names the archive offered is this one.
@@ -1045,6 +1186,117 @@ mod tests {
                 one_message()
             );
         }
+    }
+
+    /// One entry read the whole way through, a piece at a time, gathered here
+    /// so a test can compare it with what went in.
+    ///
+    /// What the import does instead is hand each piece to a reader that gives
+    /// up one message at a time and keeps none of them, which is the point of
+    /// the call. Gathering it is what a test needs and what nothing else should
+    /// do.
+    fn gathered_a_piece_at_a_time(archive: &mut MailboxArchive, named: &str) -> Result<Vec<u8>> {
+        archive.one_entry_read_in_pieces(named, |reading| {
+            let mut gathered = Vec::new();
+            reading
+                .read_to_end(&mut gathered)
+                .map_err(|why| Error::Other(format!("{named} could not be read: {why}.")))?;
+            Ok(gathered)
+        })
+    }
+
+    #[test]
+    fn test_an_entry_larger_than_will_be_held_is_still_read_a_piece_at_a_time() {
+        // The reason any of this exists. A folder somebody has used for twenty
+        // years, exported as one file, is larger than what this program will
+        // hold in memory at once, and holding it was the only way an entry
+        // could be read. So the person with the most mail to bring was the one
+        // who could not bring it.
+        //
+        // Read a piece at a time nothing holds the entry, so the limit that
+        // said no does not apply and is not asked.
+        let place = a_place_to_work();
+        let long = a_long_mailbox();
+        let held: Vec<(&str, &[u8])> = vec![("Work/Invoices.mbox", &long)];
+        let far_less_than_the_entry = HowMuchToAllow {
+            most_one_thing_unpacks_to: 64,
+            ..HowMuchToAllow::default()
+        };
+
+        for at in [
+            a_zip_of(place.path(), &held),
+            a_folder_of(place.path(), &held),
+        ] {
+            let mut archive = opened_allowing(&at, far_less_than_the_entry).expect("it opens");
+
+            // Held whole, it is refused, and that refusal is the door this
+            // opens another way through rather than one it takes off.
+            assert!(
+                archive
+                    .one_entry_read_through("Work/Invoices.mbox")
+                    .is_err(),
+                "{} was held whole after all",
+                at.display()
+            );
+            assert_eq!(
+                gathered_a_piece_at_a_time(&mut archive, "Work/Invoices.mbox")
+                    .expect("an entry read a piece at a time is not refused for its size"),
+                long,
+                "{} came back changed",
+                at.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_reading_a_piece_at_a_time_still_stops_at_what_the_whole_archive_may_unpack_to() {
+        // The limit that still holds when nothing is held. It was never about
+        // memory: it is what stops a small hostile file filling this computer's
+        // disk with what it unpacks to, an entry at a time, and reading in
+        // pieces does not change that.
+        //
+        // Reached partway through an entry, what came out before it really did
+        // come out, and the sentence somebody hears says so rather than
+        // pretending the entry was refused whole.
+        let place = a_place_to_work();
+        let long = a_long_mailbox();
+        let held: Vec<(&str, &[u8])> = vec![("Work/Invoices.mbox", &long)];
+        let allowing_a_little = HowMuchToAllow {
+            most_the_whole_of_it_unpacks_to: 1000,
+            ..HowMuchToAllow::default()
+        };
+
+        const A_PIECE_AT_A_TIME: usize = 128;
+        let mut archive =
+            opened_allowing(&a_zip_of(place.path(), &held), allowing_a_little).expect("it opens");
+        let mut how_much_came_out = 0;
+        let refused = archive
+            .one_entry_read_in_pieces("Work/Invoices.mbox", |reading| {
+                let mut piece = [0u8; A_PIECE_AT_A_TIME];
+                while let Ok(read) = reading.read(&mut piece) {
+                    if read == 0 {
+                        break;
+                    }
+                    how_much_came_out += read;
+                }
+                Ok(())
+            })
+            .err()
+            .map(|why| why.to_string())
+            .expect("an archive that unpacks past its total is refused");
+
+        assert!(refused.contains("unpacks to more than"), "{refused}");
+        assert!(
+            refused.contains("was imported before this point"),
+            "{refused}"
+        );
+        // Never more than the archive was allowed to unpack to, and within one
+        // read of it, because the read that went past is refused rather than
+        // handed over in part.
+        assert!(
+            how_much_came_out <= 1000 && how_much_came_out + A_PIECE_AT_A_TIME >= 1000,
+            "{how_much_came_out} bytes came out where a thousand were allowed"
+        );
     }
 
     #[test]
