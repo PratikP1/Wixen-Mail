@@ -166,18 +166,25 @@ pub const WHERE_IMPORTED_THINGS_GO: &str = crate::application::new_item::LOCAL_A
 /// are.
 pub const IMPORTED_CALENDAR: &str = "imported-from-a-file";
 
-/// What reading a calendar file did, in numbers.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// What reading a calendar file did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EventsRead {
     /// Events that were not already here.
     pub added: usize,
     /// Events already here under the same identity, now brought up to date.
     pub brought_up_to_date: usize,
+    /// Who is asking, when the file was an invitation and not a plain meeting.
+    ///
+    /// A file carrying `METHOD:REQUEST` is somebody waiting for an answer, and
+    /// this used to be filed in silence: the meeting went into the calendar
+    /// and the sentence said one event was added, which was true and was not
+    /// the part that mattered.
+    pub an_invitation_from: Option<String>,
 }
 
 impl EventsRead {
     /// How many events the file turned out to hold.
-    pub fn altogether(self) -> usize {
+    pub fn altogether(&self) -> usize {
         self.added + self.brought_up_to_date
     }
 }
@@ -228,7 +235,31 @@ pub fn read_calendar_file(cache: &MessageCache, text: &str) -> Result<EventsRead
         }
         cache.save_calendar_event(&entry)?;
     }
+    read.an_invitation_from = who_is_asking(text);
     Ok(read)
+}
+
+/// Who is waiting for an answer, when the document is somebody asking.
+///
+/// Nothing for every other kind of calendar document, which is almost all of
+/// them: a meeting exported from another program, a subscribed feed, or a
+/// meeting somebody sent as a record rather than a question. Calling one of
+/// those an invitation would tell somebody to answer a person who never asked.
+///
+/// The name when the organiser gave one, and the address when they did not,
+/// because a sentence that says "an invitation from" and then stops is worse
+/// than one carrying an address somebody has to read.
+fn who_is_asking(text: &str) -> Option<String> {
+    use crate::application::invitations::{WhatItAsks, read_the_invitation, what_it_asks};
+
+    if what_it_asks(text) != WhatItAsks::Invitation {
+        return None;
+    }
+    let asked_by = read_the_invitation(text).ok()?.organiser?;
+    Some(match asked_by.name.filter(|name| !name.trim().is_empty()) {
+        Some(name) => name,
+        None => asked_by.address,
+    })
 }
 
 /// What to say once a calendar file has been read.
@@ -237,7 +268,7 @@ pub fn read_calendar_file(cache: &MessageCache, text: &str) -> Result<EventsRead
 /// screen reader announcing "2 1 0" is a person having to work out which
 /// number was which.
 pub fn what_reading_the_calendar_did(read: EventsRead, name: &str) -> String {
-    match (read.added, read.brought_up_to_date) {
+    let what_happened = match (read.added, read.brought_up_to_date) {
         (0, 0) => format!("{name} held no events, so nothing was added."),
         (added, 0) => format!("{added} {} added from {name}.", events(added)),
         (0, updated) => format!(
@@ -248,6 +279,16 @@ pub fn what_reading_the_calendar_did(read: EventsRead, name: &str) -> String {
             "{added} {} added from {name}, and {updated} already here brought up to date.",
             events(added)
         ),
+    };
+    // Said plainly, including the part that does not work. Answering from
+    // here is not built, and a sentence that named the invitation without
+    // saying so would read as though a button were somewhere to be found.
+    match read.an_invitation_from {
+        Some(asked_by) => format!(
+            "{what_happened} This is an invitation from {asked_by}, who is waiting for an \
+             answer. Wixen Mail cannot answer it yet, so reply to them by email."
+        ),
+        None => what_happened,
     }
 }
 
@@ -452,7 +493,7 @@ mod tests {
             what_reading_the_calendar_did(
                 EventsRead {
                     added: 3,
-                    brought_up_to_date: 0
+                    ..EventsRead::default()
                 },
                 "team.ics"
             )
@@ -461,8 +502,8 @@ mod tests {
         assert!(
             what_reading_the_calendar_did(
                 EventsRead {
-                    added: 0,
-                    brought_up_to_date: 2
+                    brought_up_to_date: 2,
+                    ..EventsRead::default()
                 },
                 "team.ics"
             )
@@ -472,6 +513,7 @@ mod tests {
             EventsRead {
                 added: 1,
                 brought_up_to_date: 4,
+                ..EventsRead::default()
             },
             "team.ics",
         );
@@ -486,7 +528,7 @@ mod tests {
         let one = what_reading_the_calendar_did(
             EventsRead {
                 added: 1,
-                brought_up_to_date: 0,
+                ..EventsRead::default()
             },
             "invite.ics",
         );
@@ -500,7 +542,8 @@ mod tests {
         assert_eq!(
             EventsRead {
                 added: 2,
-                brought_up_to_date: 3
+                brought_up_to_date: 3,
+                ..EventsRead::default()
             }
             .altogether(),
             5
@@ -599,6 +642,60 @@ mod tests {
         let (_folder, cache) = a_cache();
 
         assert!(read_calendar_file(&cache, "this is not a calendar").is_err());
+    }
+
+    /// A real invitation, which the constant above is not: it carries the line
+    /// that says somebody is asking, and names who is asking.
+    const SOMEBODY_ASKING: &str = "BEGIN:VCALENDAR\r\n\
+         VERSION:2.0\r\n\
+         METHOD:REQUEST\r\n\
+         BEGIN:VEVENT\r\n\
+         UID:asked@example.com\r\n\
+         DTSTART:20260901T090000Z\r\n\
+         DTEND:20260901T100000Z\r\n\
+         SUMMARY:Planning\r\n\
+         ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+         ATTENDEE;CN=Kit;PARTSTAT=NEEDS-ACTION:mailto:kit@example.com\r\n\
+         END:VEVENT\r\n\
+         END:VCALENDAR\r\n";
+
+    #[test]
+    fn test_an_invitation_is_said_to_be_one_rather_than_filed_in_silence() {
+        // Opening a calendar file put the meeting straight in the calendar and
+        // said how many events were added, which is true and is not the thing
+        // that matters: somebody is waiting for an answer, and nothing said so.
+        // Answering is not possible from here yet, and the sentence has to say
+        // that too rather than imply a button that is not there.
+        let (_folder, cache) = a_cache();
+
+        let read = read_calendar_file(&cache, SOMEBODY_ASKING).expect("the file would not read");
+        let said = what_reading_the_calendar_did(read, "invite.ics");
+
+        assert!(
+            said.contains("Ada Lovelace"),
+            "the sentence does not say who is asking: {said}"
+        );
+        assert!(
+            said.to_lowercase().contains("invitation"),
+            "the sentence does not say it is an invitation: {said}"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_calendar_file_is_not_called_an_invitation() {
+        // Almost every calendar file somebody opens is a meeting they were
+        // sent or exported, carrying no question at all. Calling one of those
+        // an invitation would tell somebody to answer a person who never
+        // asked.
+        let (_folder, cache) = a_cache();
+
+        let read = read_calendar_file(&cache, AN_INVITATION).expect("the file would not read");
+        let said = what_reading_the_calendar_did(read, "meeting.ics");
+
+        assert!(
+            !said.to_lowercase().contains("invitation"),
+            "a plain calendar file was called an invitation: {said}"
+        );
     }
 
     #[test]

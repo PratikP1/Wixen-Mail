@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Opening a meeting invitation says that it is one, and who is waiting.**
+  It used to go straight into the calendar and report that one event had been
+  added, which was true and was not the part that mattered: somebody was
+  waiting for an answer and nothing said so. The sentence now names them, and
+  says plainly that Wixen Mail cannot send the answer yet and you will need to
+  reply by email. An ordinary calendar file is not called an invitation.
+
+- **A guest whose name holds a semicolon keeps the whole of it.** Calendar
+  entries separate the extra details on a line with semicolons, and a value
+  that contains one is written in quotes for exactly that reason. The quotes
+  were being ignored, so somebody filed as "Smith; John", which is how a good
+  many company directories hand a name over, was cut at the semicolon and the
+  rest of their name was read as something else entirely. The same fault cut a
+  time zone whose name held a semicolon.
+
 - **Pictures you put in a message now reach the person you sent it to.** They
   did not. A picture was written into the body itself, which is how this
   program shows one and is not how mail carries one: Gmail and Outlook both

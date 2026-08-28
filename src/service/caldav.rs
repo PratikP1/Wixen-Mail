@@ -1202,7 +1202,7 @@ fn names_the_property(line: &str, property: &str) -> bool {
 /// caller is what keeps a parameter out of the value: a zone name is allowed
 /// a digit, `Etc/GMT+5`, and a reader that keeps the parameters has to know
 /// that.
-fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
+pub(crate) fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
     if !names_the_property(line, property) {
         return None;
     }
@@ -1222,7 +1222,7 @@ fn value_named_on<'a>(line: &'a str, property: &str) -> Option<&'a str> {
 /// property's own value read as fragments of each other: the colon inside
 /// the quotes was taken for the line's delimiter, and the real one, after
 /// the closing quote, was never reached.
-fn delimiter_colon(line: &str) -> Option<usize> {
+pub(crate) fn delimiter_colon(line: &str) -> Option<usize> {
     let mut quoted = false;
     for (at, ch) in line.char_indices() {
         match ch {
@@ -1556,7 +1556,7 @@ fn ical_parameter(ical: &str, property: &str, parameter: &str) -> Option<String>
 /// two cancelled days may each name a zone of their own, and a reader that
 /// asks the document rather than the line takes the first line's answer for
 /// both.
-fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<String> {
+pub(crate) fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<String> {
     let line = line.trim();
     if !names_the_property(line, property) {
         return None;
@@ -1590,8 +1590,8 @@ fn parameter_named_on(line: &str, property: &str, parameter: &str) -> Option<Str
 /// day that carries its own zone with it. Two scans would be two answers about
 /// quote marks and about letter case, and the column those cancelled days live
 /// in is read by three callers who all have to agree.
-fn parameter_among<'a>(parameters: &'a str, parameter: &str) -> Option<&'a str> {
-    for part in parameters.split(';') {
+pub(crate) fn parameter_among<'a>(parameters: &'a str, parameter: &str) -> Option<&'a str> {
+    for part in split_outside_quotes(parameters, ';') {
         let Some((named, value)) = part.split_once('=') else {
             continue;
         };
@@ -1606,6 +1606,33 @@ fn parameter_among<'a>(parameters: &'a str, parameter: &str) -> Option<&'a str> 
     None
 }
 
+/// Split on a character, ignoring any written inside a quoted value.
+///
+/// The quote marks exist for exactly this. A value holding the character that
+/// separates parameters is required to be quoted, and splitting on every one
+/// of them regardless cuts such a value in half: a zone named `Odd/Zone;Name`
+/// came back as `"Odd/Zone`, with the opening quote left on because the
+/// closing one went with the discarded half. A guest filed as `Smith; John`,
+/// which is how a good many directories hand a name over, came back the same
+/// way.
+pub(crate) fn split_outside_quotes(text: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut quoted = false;
+    let mut from = 0;
+    for (at, character) in text.char_indices() {
+        match character {
+            '"' => quoted = !quoted,
+            _ if character == separator && !quoted => {
+                parts.push(&text[from..at]);
+                from = at + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[from..]);
+    parts
+}
+
 /// A parameter value with the quote marks the standard allows taken off.
 ///
 /// The standard lets any parameter value be quoted and requires it of one
@@ -1616,7 +1643,7 @@ fn parameter_among<'a>(parameters: &'a str, parameter: &str) -> Option<&'a str> 
 ///
 /// A value quoted at one end only is left as it is. It is not a value this can
 /// repair, and guessing which end is missing would invent a name.
-fn unquoted(value: &str) -> &str {
+pub(crate) fn unquoted(value: &str) -> &str {
     value
         .strip_prefix('"')
         .and_then(|inner| inner.strip_suffix('"'))
@@ -2674,7 +2701,7 @@ const LONGEST_LINE: usize = 75;
 
 /// Lines written out as a document, each broken where the standard breaks a
 /// long one.
-fn written_out(lines: &[String]) -> String {
+pub(crate) fn written_out(lines: &[String]) -> String {
     lines
         .iter()
         .map(|line| folded(line))
@@ -2700,7 +2727,7 @@ fn written_out(lines: &[String]) -> String {
 /// document as indented and every long value in it would come back short. No
 /// calendar program writes a marker line past the limit; this writes out what a
 /// server sent, and what a server sends is not trusted.
-fn folded(line: &str) -> String {
+pub(crate) fn folded(line: &str) -> String {
     if line.len() <= LONGEST_LINE || opens_or_closes_a_component(line) {
         return line.to_string();
     }
@@ -2723,7 +2750,7 @@ fn folded(line: &str) -> String {
 
 /// How much of this text fits in that many octets without cutting a character
 /// in half.
-fn fits_in(text: &str, octets: usize) -> usize {
+pub(crate) fn fits_in(text: &str, octets: usize) -> usize {
     if text.len() <= octets {
         return text.len();
     }
@@ -4372,6 +4399,14 @@ mod tests {
                 "DTSTART;VALUE=DATE-TIME;TZID=Europe/London:20260305T090000",
                 "DTSTART",
                 Some("Europe/London"),
+            ),
+            // A quoted zone name carrying the character that separates
+            // parameters. The quote marks are there for exactly this, and
+            // splitting on every semicolon cuts the value in half.
+            (
+                "DTSTART;TZID=\"Odd/Zone;Name\":20260305T090000",
+                "DTSTART",
+                Some("Odd/Zone;Name"),
             ),
             (
                 "DTSTART;TZID=Europe/London;VALUE=DATE-TIME:20260305T090000",

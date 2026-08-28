@@ -5233,3 +5233,74 @@ fn collect_rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
         }
     }
 }
+
+/// The calendar format is read and written in one place.
+///
+/// Every one of these answers a question about the calendar line format: where
+/// a property's name ends, what a quoted value means, where a long line
+/// breaks. A second copy of any of them is the shape every data-losing defect
+/// in the calendar code has had, and it does not take time to go wrong: when
+/// the invitation work was written against a copy of these, two of the seven
+/// had already drifted before either was used. One refused to break a line
+/// that opens a component and the other did not; one read a quoted value
+/// carrying a semicolon whole and the other cut it in half, which truncated a
+/// guest filed as `Smith; John` at the semicolon.
+///
+/// What this cannot see: a copy written under a different name. It catches the
+/// way it happened, which was somebody needing the same answer and writing it
+/// out again beside their own work.
+#[test]
+fn test_the_calendar_line_format_is_answered_in_one_place_only() {
+    const ANSWERED_ONCE: &[&str] = &[
+        "value_named_on",
+        "delimiter_colon",
+        "parameter_among",
+        "parameter_named_on",
+        "written_out",
+        "folded",
+        "fits_in",
+    ];
+
+    let mut files = Vec::new();
+    collect_rust_files(Path::new("src"), &mut files);
+    assert!(
+        files.len() > 50,
+        "only {} files were read, so this guard is measuring almost nothing",
+        files.len()
+    );
+
+    for helper in ANSWERED_ONCE {
+        let defined_in: Vec<String> = files
+            .iter()
+            .filter(|path| {
+                // Either spelling of the opening, because some of these carry
+                // a lifetime and the rest do not, and a check that only knew
+                // one shape found none of them and passed by finding nothing.
+                fs::read_to_string(path).is_ok_and(|text| {
+                    text.contains(&format!("fn {helper}("))
+                        || text.contains(&format!("fn {helper}<"))
+                })
+            })
+            .map(|path| path.display().to_string())
+            .collect();
+
+        // `parameter_named_on` is the one exception and it is a narrow one:
+        // the calendar service is told which property to expect and the
+        // invitation reader is not, because it reads two properties the same
+        // way. The scanning underneath both is `parameter_among`, which is
+        // why that name is on this list too.
+        let allowed = if *helper == "parameter_named_on" {
+            2
+        } else {
+            1
+        };
+        assert_eq!(
+            defined_in.len(),
+            allowed,
+            "{helper} is answered in {} places, and the calendar format needs \
+             one answer:\n  {}",
+            defined_in.len(),
+            defined_in.join("\n  ")
+        );
+    }
+}
