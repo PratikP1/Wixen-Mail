@@ -2330,3 +2330,47 @@ fn test_cut_and_copy_ask_the_box_rather_than_indexing_its_value() {
         );
     }
 }
+
+/// A command that files mail reads the list back before it finishes.
+///
+/// Writing rows does not redraw anything. The list on screen is drawn from
+/// what is stored, at the moment it was last asked, so a command that stores
+/// something and stops leaves a true sentence beside a stale list. A sighted
+/// person may catch the mismatch; somebody listening has only the sentence,
+/// and either concludes the count is a lie or does the whole thing again.
+///
+/// This project has shipped that twice: contacts filed under a placeholder
+/// nothing read, and taking one day off a repeating meeting leaving by a path
+/// that skipped the reload. A guard was written after the second, and it
+/// watches one command in another file, so it does not cover this one.
+#[test]
+fn test_importing_mail_reads_the_list_back_before_it_finishes() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    let importing = app
+        .find("fn import_messages_into_this_folder")
+        .unwrap_or_else(|| panic!("the import command has been renamed or removed"));
+    let ends = app[importing..]
+        .find("\nfn ")
+        .map(|at| importing + at)
+        .unwrap_or(app.len());
+    let body = &app[importing..ends];
+
+    assert!(
+        body.contains("load_folder_messages("),
+        "importing mail stores it and never asks the list to read itself back, \
+         so the mail is announced and not shown"
+    );
+    // After the sentence, not instead of it. Both have to happen, and the
+    // order is what makes the count and the list agree by the time somebody
+    // arrows into it.
+    let announced = body
+        .find("a11y.announce")
+        .unwrap_or_else(|| panic!("importing mail says nothing out loud:\n{body}"));
+    let reloaded = body.find("load_folder_messages(").expect("checked above");
+    assert!(
+        announced < reloaded,
+        "the list is read back before the sentence is said, so the two can \
+         disagree about what arrived"
+    );
+}

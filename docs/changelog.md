@@ -6,6 +6,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **You can bring mail in from a file.** File, Import Messages. It reads a
+  single saved message or a whole mailbox archive, files it in the folder you
+  are looking at, and says how many arrived, how many were already there, and
+  how many could not be read.
+
+  Imported mail is marked as filed here rather than fetched, which is what
+  stops the next check for mail from deleting it: a sync removes anything the
+  server does not list, and a message read out of a file has never been on
+  anybody's server.
+
+  Importing the same file twice does not produce two of everything. Mail
+  imported into an ordinary folder stays on this computer and will not appear
+  on your other devices, and the sentence says so.
+
+  Writing mail back out to a file is not built yet. What is stored is a row
+  and the message text rather than the message as it arrived, and rebuilding
+  the original from those is a job of its own.
+
 ### Fixed
 
 - **Opening a meeting invitation says that it is one, and who is waiting.**

@@ -419,7 +419,10 @@ fn when_it_is(when_in_words: &str) -> String {
     if when.is_empty() {
         String::new()
     } else {
-        format!(", {when},")
+        // No comma at the end. The sentence this joins into ends with a full
+        // stop of its own, and closing the clause here as well put the two
+        // together: "at 9 am,. Ada Lovelace will be told."
+        format!(", {when}")
     }
 }
 
@@ -1156,6 +1159,35 @@ mod tests {
         assert!(said.starts_with("Accept Quarterly review"), "{said}");
         assert!(said.contains("Thursday 5 March at 9 am"), "{said}");
         assert!(said.contains("Ada Lovelace will be told"), "{said}");
+    }
+
+    #[test]
+    fn test_the_sentence_reads_as_one_a_person_could_have_written() {
+        // The time was joined on with a comma at each end and the sentence
+        // then ended with a full stop, so it came out "at 9 am,. Ada Lovelace
+        // will be told." Read aloud that is a stumble in the middle of the one
+        // sentence somebody hears before mail goes to a colleague.
+        //
+        // The test above could not see it: every clause it looks for is really
+        // there, and the punctuation between them is what was wrong. Checked
+        // with and without a time, because the two join up differently.
+        for when in ["Thursday 5 March at 9 am", ""] {
+            let invitation =
+                read_the_invitation(&an_invitation_that_arrived()).expect("an invitation");
+
+            let said = what_will_happen(&invitation, Answer::Accepted, when);
+
+            assert!(
+                !said.contains(",."),
+                "a comma runs into a full stop: {said}"
+            );
+            assert!(!said.contains(",,"), "two commas together: {said}");
+            assert!(
+                !said.contains(" ."),
+                "a space runs into a full stop: {said}"
+            );
+            assert!(!said.contains(".."), "two full stops together: {said}");
+        }
     }
 
     #[test]

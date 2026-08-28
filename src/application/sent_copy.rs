@@ -23,9 +23,8 @@
 //! delete it. [`crate::data::message_cache::MessageCache::file_message_here`]
 //! marks it, and the marker is what the forget step checks.
 
-use crate::common::types::EmailAddress;
 use crate::data::account::Account;
-use crate::data::message_cache::{IncomingMessage, MessageCache};
+use crate::data::message_cache::MessageCache;
 
 /// Somewhere a copy of a sent message can be put that is not this computer.
 ///
@@ -347,11 +346,16 @@ fn file_here(
 
     // A folder the server also fills needs a number the server will never
     // issue. See `next_reserved_uid`: taking the next one upward hides a real
-    // message forever and lets a later sync write over this copy.
-    let uid = if crate::application::local_folders::is_local(folder) {
-        cache.next_local_uid(row.id)
-    } else {
-        cache.next_reserved_uid(row.id)
+    // message forever and lets a later sync write over this copy. Which end to
+    // count from is asked of the one place that answers it, because an import
+    // asks the same question and the two must not differ.
+    let uid = match crate::application::importing_messages::WrittenDownAs::for_folder(folder) {
+        crate::application::importing_messages::WrittenDownAs::FiledHereCountingUp => {
+            cache.next_local_uid(row.id)
+        }
+        crate::application::importing_messages::WrittenDownAs::FiledHereCountingDownFromTheTop => {
+            cache.next_reserved_uid(row.id)
+        }
     }
     .map_err(|e| e.to_string())?;
 
@@ -359,44 +363,18 @@ fn file_here(
     // own. An empty date sorts the copy to whichever end of Sent nobody looks
     // at, which is the same as losing it for anybody reading by ear.
     let filed_at = chrono::Utc::now().to_rfc3339();
-    let message = IncomingMessage {
-        folder_id: row.id,
+    // Every column the two share is decided in one place, so a sent copy
+    // and an imported message cannot come to differ about them. Read,
+    // because the person whose Sent folder this lands in wrote it: filed
+    // unread it puts a bold row and a count on a folder of their own mail.
+    let message = crate::application::filing::a_row_filed_here(
+        &parsed,
+        row.id,
         uid,
-        message_id: parsed.message_id.clone().unwrap_or_default(),
-        subject: parsed.subject.clone(),
-        from_addr: addresses(&parsed.from),
-        to_addr: addresses(&parsed.to),
-        cc: Some(addresses(&parsed.cc)).filter(|cc| !cc.is_empty()),
-        // Where the sender asked replies to go, which on a message somebody
-        // sent is where they asked their correspondent to reply. Dropping it
-        // meant replying to your own sent copy went to your own address.
-        reply_to: Some(addresses(&parsed.reply_to)).filter(|to| !to.is_empty()),
-        date: parsed.date.clone().unwrap_or_else(|| filed_at.clone()),
-        internal_date: Some(filed_at),
-        size_bytes: Some(raw.len() as i64),
-        // The same chain the sync would store for this message, through the
-        // same function, so a reply filed here sits in the conversation it
-        // answers rather than starting a new one in this client's own list.
-        refs_header: crate::application::threading::as_stored(
-            &parsed.references,
-            parsed.in_reply_to.as_deref(),
-        ),
-        read: true,
-        starred: false,
-        answered: false,
-        draft: false,
-        deleted: false,
-        has_attachments: !parsed.attachments.is_empty(),
-        safety: crate::service::safety::Verdict::ordinary(),
-        gmail_message_id: None,
-        labels: None,
-        // Deliberately not `parsed.receipt_to`. On an outgoing message that
-        // header is this sender asking their recipient for a receipt, so
-        // carrying it onto their own copy would have the client offer to tell
-        // them they had read their own mail.
-        receipt_to: None,
-        pop_uidl: None,
-    };
+        raw.len(),
+        crate::application::filing::AlreadyRead::Yes,
+        &filed_at,
+    );
 
     let stored = cache
         .file_message_here(&message)
@@ -409,14 +387,6 @@ fn file_here(
         )
         .map_err(|e| e.to_string())?;
     Ok(())
-}
-
-/// Addresses as one line, the way the message list shows them.
-fn addresses(list: &[EmailAddress]) -> String {
-    list.iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// The account's Sent folder at its own mail server.

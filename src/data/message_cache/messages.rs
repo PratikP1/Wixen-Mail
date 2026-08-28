@@ -4,6 +4,7 @@ use super::{CachedAttachment, CachedMessage, MessageCache};
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
 use rusqlite::{OptionalExtension, params};
+use std::collections::HashSet;
 
 /// The first number handed to a row this program files into a synced folder.
 ///
@@ -355,6 +356,31 @@ impl MessageCache {
             )
             .optional()
             .map_err(|e| Error::Other(format!("Failed to look up the message: {}", e)))
+    }
+
+    /// Every message identifier the folder already holds.
+    ///
+    /// Asked once for an import rather than once per message, because an
+    /// archive somebody has kept for twenty years is tens of thousands of
+    /// messages and that many separate lookups is a visible wait.
+    ///
+    /// Identifiers that are empty are left out. The column stores "no
+    /// identifier" as an empty string, so keeping them would make one such
+    /// message in the folder match every message in the file that also lacks
+    /// one, and the import would bring in nothing.
+    pub fn message_ids_in_folder(&self, folder_id: i64) -> Result<HashSet<String>> {
+        let mut asking = self
+            .conn
+            .prepare_cached(
+                "SELECT message_id FROM messages WHERE folder_id = ?1 AND message_id != ''",
+            )
+            .map_err(|e| Error::Other(format!("Failed to ask what the folder holds: {}", e)))?;
+        let found = asking
+            .query_map(params![folder_id], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read what the folder holds: {}", e)))?;
+        found
+            .collect::<std::result::Result<HashSet<String>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read an identifier: {}", e)))
     }
 
     /// The next unused message number in a folder that has no server numbering.

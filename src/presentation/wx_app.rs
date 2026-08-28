@@ -81,6 +81,7 @@ menu_ids!(
     ID_NEW_MESSAGE,
     ID_NEW_DEFAULT,
     ID_OPEN_DRAFT,
+    ID_IMPORT_MESSAGES,
     ID_GET_OLDER,
     ID_QUIT,
     ID_SEARCH,
@@ -3613,6 +3614,16 @@ impl WxMailApp {
                                 );
                             }
                         }
+                        _ if id == ID_IMPORT_MESSAGES => {
+                            import_messages_into_this_folder(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                        }
                         _ if id == ID_NEW_MESSAGE => {
                             open_compose(app, &frame, &message_cache, &a11y, ComposeMode::New)
                         }
@@ -4580,6 +4591,15 @@ impl WxMailApp {
                 // the entire argument for the collision test.
                 "Open &Draft...\tCtrl+Shift+O",
                 "Reopen a message you saved to finish later",
+            )
+            .append_separator()
+            // No shortcut on either, for the reason Add a Calendar gives: this
+            // is done when somebody moves in or moves out, and a key nobody
+            // presses twice is a key in the way of one somebody presses daily.
+            .append_item(
+                ID_IMPORT_MESSAGES,
+                "&Import Messages...",
+                "Read messages from a file into the folder you are looking at",
             )
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
@@ -6931,6 +6951,155 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
 /// [`WxUIState::message_list_limit`], which starts at
 /// [`FOLDER_LIST_PAGE_SIZE`] and grows when Get Older Messages asks for more.
 ///
+/// Bring messages in from a file into the folder being looked at.
+///
+/// Every decision belongs to [`crate::application::importing_messages`]; what
+/// is here is the file picker, the loop, and the reload at the end. That last
+/// one is the part this program has forgotten twice: writing rows does not
+/// redraw the list, so without it somebody is told their mail arrived and
+/// shown a folder that has not changed.
+fn import_messages_into_this_folder(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::importing_messages as bringing_in;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let refuse = |said: &str| {
+        send_status(ui_tx, runtime, said);
+        let _ = a11y.announce(said, Priority::High);
+    };
+    let Some(cache) = cache.as_ref() else {
+        refuse("There is nowhere to file mail on this computer yet.");
+        return;
+    };
+    let (account, folder_name, folder_id, limit) = {
+        let held = lock_state(state);
+        let folder = held.selected_folder.clone();
+        let folder_id = folder
+            .as_ref()
+            .and_then(|name| held.folder_ids.get(name).copied());
+        (
+            held.active_account_id.clone(),
+            folder,
+            folder_id,
+            held.message_list_limit,
+        )
+    };
+
+    // The folder's kind decides whether it may be imported into at all, and it
+    // is a column the server names rather than anything the path shows.
+    let kind = folder_id
+        .and_then(|id| cache.folder_kind(id).ok().flatten())
+        .unwrap_or(crate::common::types::FolderType::Custom);
+    let chosen = folder_name
+        .as_deref()
+        .map(|path| bringing_in::FolderChosen { path, kind });
+
+    let picker = FileDialog::builder(frame)
+        .with_message("Import messages from a file")
+        .with_wildcard("Mail files (*.eml;*.mbox)|*.eml;*.mbox|All files (*.*)|*.*")
+        .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+        .build();
+    if picker.show_modal() != ID_OK {
+        // Cancelling is a decision and needs no sentence: there is no outcome.
+        return;
+    }
+    let Some(path) = picker.get_path() else {
+        refuse("No file was chosen.");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&path) else {
+        refuse("That file could not be read.");
+        return;
+    };
+
+    let landing = match bringing_in::importing(&bytes, account.as_deref(), chosen) {
+        bringing_in::Importing::Refused(said) => {
+            refuse(said);
+            return;
+        }
+        bringing_in::Importing::GoAhead(landing) => landing,
+    };
+    let (Some(folder_id), Some(account)) = (folder_id, account) else {
+        refuse(bringing_in::CHOOSE_A_FOLDER_FIRST);
+        return;
+    };
+
+    let mut brought_in = bringing_in::MessagesImported::default();
+    let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
+    let one_at_a_time: Vec<crate::common::Result<crate::service::mime::ParsedMessage>> =
+        match landing.read {
+            bringing_in::ReadAs::OneMessage => {
+                vec![crate::application::message_files::read_one_message(&bytes)]
+            }
+            bringing_in::ReadAs::OneAtATimeFromAnArchive => {
+                crate::application::message_files::each_message_read_from(&bytes).collect()
+            }
+        };
+    for read in one_at_a_time {
+        let what = bringing_in::WhatToDoWithIt::for_one_read(&read, &already_here);
+        if let (bringing_in::WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
+            file_one_imported_message(cache, message, folder_id, landing.written_down_as);
+        }
+        brought_in.count_one(what);
+    }
+
+    let said = bringing_in::what_the_mail_import_did(&brought_in);
+    send_status(ui_tx, runtime, &said);
+    let _ = a11y.announce(&said, Priority::Normal);
+    // The list is drawn from what is stored, so without this the mail that
+    // just arrived is announced and not shown.
+    load_folder_messages(
+        &Some(cache.clone()),
+        Some(folder_id),
+        Some(account),
+        limit,
+        ui_tx,
+    );
+}
+
+/// Write one imported message and its text into the folder.
+fn file_one_imported_message(
+    cache: &Arc<MessageCache>,
+    message: &crate::service::mime::ParsedMessage,
+    folder_id: i64,
+    written_down_as: crate::application::importing_messages::WrittenDownAs,
+) {
+    use crate::application::importing_messages::WrittenDownAs;
+
+    let number = match written_down_as {
+        WrittenDownAs::FiledHereCountingUp => cache.next_local_uid(folder_id),
+        WrittenDownAs::FiledHereCountingDownFromTheTop => cache.next_reserved_uid(folder_id),
+    };
+    let Ok(uid) = number else {
+        return;
+    };
+    let filed_at = chrono::Utc::now().to_rfc3339();
+    let row = crate::application::filing::a_row_filed_here(
+        message,
+        folder_id,
+        uid,
+        message.body_plain.as_ref().map_or(0, String::len),
+        crate::application::filing::AlreadyRead::No,
+        &filed_at,
+    );
+    let Ok(stored) = cache.file_message_here(&row) else {
+        return;
+    };
+    // The text as well as the row. Without it the message is in the list and
+    // opening it fetches from a server that has never held it.
+    let _ = cache.save_message_body(
+        stored,
+        message.body_plain.as_deref(),
+        message.body_html.as_deref(),
+    );
+}
+
 /// A read failure is announced rather than swallowed. An empty list because
 /// the query failed sounds exactly like an empty folder, and those are not the
 /// same thing to someone who cannot see the window.
