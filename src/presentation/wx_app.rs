@@ -10,7 +10,7 @@ use crate::common::Result;
 use crate::common::paths::AppPaths;
 use crate::common::types::MessageBody;
 use crate::data::account::Account;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::html_renderer::HtmlRenderer;
@@ -4025,28 +4025,45 @@ impl WxMailApp {
                             // the calendar with a list of messages: an answer
                             // to a question nobody asked, and one that took the
                             // screen away from what they were looking at.
-                            if let Some(q) = show_search_dialog(&frame) {
-                                // Read out and the lock let go before the
-                                // match, not held across it. Both arms lock
-                                // the same state again, so holding it here
-                                // would deadlock rather than merely being
-                                // untidy.
-                                let showing = {
-                                    let mut s = lock_state(&state);
-                                    // Kept so Save This Search has something
-                                    // to save. Mail only: the other modules
-                                    // search their own items, and a saved
-                                    // search is a question about messages.
-                                    if s.active_module == PimModule::Mail {
-                                        s.last_mail_search = Some(q.clone());
-                                    }
-                                    s.active_module
-                                };
+                            // Read out and the lock let go before the dialog,
+                            // not held across it. The dialog is modal and the
+                            // handlers it runs lock the same state again.
+                            //
+                            // The "In" list is offered while mail is showing
+                            // and not otherwise: "Current Folder" and "From
+                            // Only" mean nothing about a list of contacts, and
+                            // a box offering them there would be the same
+                            // promise nothing keeps, one module along.
+                            let (showing, folder_showing) = {
+                                let s = lock_state(&state);
+                                let folder = s
+                                    .selected_folder
+                                    .as_ref()
+                                    .and_then(|named| s.folder_ids.get(named))
+                                    .copied();
+                                (s.active_module, folder)
+                            };
+                            let offers = if showing == PimModule::Mail {
+                                what_the_in_box_offers(folder_showing)
+                            } else {
+                                Vec::new()
+                            };
+                            if let Some((q, looking_in)) = show_search_dialog(&frame, &offers) {
+                                // Kept so Save This Search has something to
+                                // save. Mail only: the other modules search
+                                // their own items, and a saved search is a
+                                // question about messages.
+                                if showing == PimModule::Mail {
+                                    lock_state(&state).last_mail_search = Some(q.clone());
+                                }
                                 managers::search_whatever_is_showing(
                                     showing,
                                     &state,
                                     &message_cache,
-                                    &q,
+                                    managers::WhatWasAsked {
+                                        typed: &q,
+                                        looking_in,
+                                    },
                                     &ui_tx,
                                     &runtime,
                                     &a11y,
@@ -5898,9 +5915,13 @@ fn save_this_search(
         name: name.clone(),
         join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
         questions: what_a_typed_search_asks(&typed),
-        // Everywhere in this account. The search box has a scope control that
-        // nothing reads, so there is no narrower answer here that would be
-        // true. See `docs/changelog.md`.
+        // Everywhere in this account, whatever the search box's "In" list was
+        // set to when the search ran. What is kept here is the typed words, not
+        // where they were looked for, so narrowing this would be narrowing on
+        // something nobody wrote down. The window that names the search says in
+        // a sentence that it asks about every message in the account, so
+        // somebody who has just searched one folder is told before they save
+        // it, rather than finding out when they open it.
         folder: None,
     };
     if let Err(e) = cache.create_saved_search(&account_id, &search) {
@@ -8057,7 +8078,9 @@ fn fill_folders_from(
     say: &dyn Fn(UIUpdate),
 ) -> String {
     use crate::application::import_tree;
-    use crate::application::importing_messages::{MessagesImported, WhatToDoWithIt};
+    use crate::application::importing_messages::{
+        MessagesImported, WhatToDoWithIt, file_one_imported_message,
+    };
 
     // One saved message and a whole archive are two different readers, and
     // each refuses what the other takes. Which one this is comes from how the
@@ -8095,7 +8118,9 @@ fn fill_folders_from(
                 {
                     let what = WhatToDoWithIt::for_one_read(&read, &already_here);
                     if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
-                        file_one_imported_message(cache, message, folder_id);
+                        brought_in.count_one_written(file_one_imported_message(
+                            cache, message, folder_id,
+                        ));
                     }
                     brought_in.count_one(what);
                 }
@@ -8376,6 +8401,14 @@ fn export_a_mailbox(
 }
 
 /// Write one folder and everything under it into an archive.
+///
+/// One message at a time into the file, rather than a folder built up in memory
+/// and handed over at the end. A folder is the largest thing this program
+/// handles and its messages now carry their files, so holding one whole is
+/// holding somebody's photographs as well as their mail. The folder's archive
+/// is started when the first message goes into it, which is why the name comes
+/// from [`export_tree::FolderInTheFile::an_archive_of_its_mail`] rather than
+/// from the answer that is only known at the end.
 fn write_the_mailbox_out(
     cache: &MessageCache,
     account: &str,
@@ -8384,7 +8417,6 @@ fn write_the_mailbox_out(
     say: &dyn Fn(UIUpdate),
 ) -> String {
     use crate::application::export_tree;
-    use crate::application::importing_messages::MessagesExported;
 
     // The folder chosen and everything inside it, so exporting Work takes
     // Work/Invoices with it. Anything else in the account is left alone.
@@ -8401,48 +8433,93 @@ fn write_the_mailbox_out(
         Ok(writing) => writing,
         Err(why) => return why.to_string(),
     };
-    let mut counted = MessagesExported::default();
-    let mut folders_written = 0;
+    let mut counted = export_tree::FoldersExported::default();
 
     for folder in export_tree::where_each_folder_goes(&folders) {
         let Ok(Some(row)) = cache.get_folder(account, &folder.stored_at) else {
             continue;
         };
         let messages = cache.get_message_list(row.id, account).unwrap_or_default();
-        let mut archive = Vec::new();
-        let mut written = 0;
+        let mut started = false;
         for message in &messages {
             let text = cache.get_message_body(message.id).ok().flatten();
-            let became = export_tree::added_to_the_archive(&mut archive, message, text.as_ref());
-            if became == export_tree::WhatBecameOfIt::WrittenOut {
-                written += 1;
-            }
+            // The files this computer kept when the message was read. An
+            // attachment it does not have comes back described and empty, which
+            // is what the count of files left out is made of.
+            let files = cache
+                .attachments_with_content(message.id)
+                .unwrap_or_default();
+            // The form a signed message arrived in, where this computer kept
+            // it. Written as it arrived, its signature survives the trip; put
+            // back together from the columns, it does not, and importing the
+            // export again says nothing about a signature at all. A store that
+            // cannot be read answers the way a message that never claimed a
+            // signature does, which writes the message and says nothing false.
+            let arrived_as = cache
+                .signed_original(message.id)
+                .unwrap_or(crate::data::message_cache::signed_original::SignedOriginal::NotSigned);
+            let mut one = Vec::new();
+            let became = export_tree::added_to_the_archive(
+                &mut one,
+                message,
+                text.as_ref(),
+                &files,
+                &arrived_as,
+            );
             became.counted_in(&mut counted);
+            if !became.was_written() {
+                continue;
+            }
+            // A part of the file that will not be written stops the whole
+            // export and is said out loud. Carrying on would leave a message
+            // counted as written that is not in the file, and hand somebody a
+            // count that reads like a backup they can trust.
+            if !started {
+                if let Err(why) = writing.start_a_file(&folder.an_archive_of_its_mail()) {
+                    return an_export_that_broke_off(&why);
+                }
+                started = true;
+                counted.folders += 1;
+            }
+            if let Err(why) = writing.write_into_it(&one) {
+                return an_export_that_broke_off(&why);
+            }
         }
-        match folder.once_written(written) {
-            export_tree::WhatTheFileHolds::AnArchiveOfItsMail(named) => {
-                if writing.start_a_file(&named).is_ok() && writing.write_into_it(&archive).is_ok() {
-                    folders_written += 1;
-                }
+        // A folder no message went into goes in as the folder and nothing
+        // else. Decided by what really went in rather than by what the folder
+        // holds, because those differ whenever a message's text was never
+        // downloaded, and an archive holding no messages is a file this
+        // program's own import turns away as not mail.
+        if !started {
+            if let Err(why) =
+                writing.add_a_folder_with_nothing_in_it(folder.the_folder_and_nothing_in_it())
+            {
+                return an_export_that_broke_off(&why);
             }
-            export_tree::WhatTheFileHolds::TheFolderAndNothingInIt(named) => {
-                if writing.add_a_folder_with_nothing_in_it(&named).is_ok() {
-                    folders_written += 1;
-                }
-            }
+            counted.folders += 1;
         }
         say(UIUpdate::StatusUpdated(format!(
             "{} messages written out so far.",
-            counted.written
+            counted.messages.written
         )));
     }
     if let Err(why) = writing.finish() {
         return format!("The file could not be finished, so it may be unusable. {why}");
     }
-    export_tree::what_the_folder_export_did(&export_tree::FoldersExported {
-        folders: folders_written,
-        messages: counted,
-    })
+    export_tree::what_the_folder_export_did(&counted)
+}
+
+/// What to say when the export stopped partway through.
+///
+/// Said instead of a count, never as well as one. A count of messages written
+/// is what somebody decides whether they have their mail by, and an export that
+/// stopped halfway has written fewer than it counted; put the two together and
+/// the number is the part they remember.
+fn an_export_that_broke_off(why: &crate::common::Error) -> String {
+    format!(
+        "The mailbox could not be written out all the way through, so the file \
+         is unfinished and should not be kept as a backup. {why}"
+    )
 }
 
 /// How a file begins, or nothing when it cannot be read.
@@ -8476,7 +8553,9 @@ fn one_file_of_mail_brought_in(
     account: &str,
     at: &std::path::Path,
 ) -> String {
-    use crate::application::importing_messages::{MessagesImported, WhatToDoWithIt};
+    use crate::application::importing_messages::{
+        MessagesImported, WhatToDoWithIt, file_one_imported_message,
+    };
     use crate::application::{import_tree, message_files};
 
     let Ok(bytes) = std::fs::read(at) else {
@@ -8497,28 +8576,14 @@ fn one_file_of_mail_brought_in(
     };
 
     let mut brought_in = MessagesImported::default();
-    for message in messages_in(&bytes, read) {
+    for message in crate::application::importing_messages::each_message_in(&bytes, read) {
         let what = WhatToDoWithIt::for_one_read(&message, &already_here);
         if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &message) {
-            file_one_imported_message(cache, message, folder_id);
+            brought_in.count_one_written(file_one_imported_message(cache, message, folder_id));
         }
         brought_in.count_one(what);
     }
     crate::application::importing_messages::what_the_mail_import_did(&brought_in)
-}
-
-/// Every message one entry of an archive holds.
-fn messages_in(
-    bytes: &[u8],
-    read: crate::application::importing_messages::ReadAs,
-) -> Vec<crate::common::Result<crate::service::mime::ParsedMessage>> {
-    use crate::application::importing_messages::ReadAs;
-    use crate::application::message_files;
-
-    match read {
-        ReadAs::OneMessage => vec![message_files::read_one_message(bytes)],
-        ReadAs::OneAtATimeFromAnArchive => message_files::each_message_read_from(bytes).collect(),
-    }
 }
 
 /// The folder an archive's folder lands in, made if it is not there yet.
@@ -8546,38 +8611,6 @@ fn a_folder_on_this_computer(cache: &MessageCache, account: &str, path: &str) ->
         .ok()?;
     let _ = cache.set_folder_server_facts(id, false, true);
     Some(id)
-}
-
-/// Write one imported message and its text into the folder.
-fn file_one_imported_message(
-    cache: &MessageCache,
-    message: &crate::service::mime::ParsedMessage,
-    folder_id: i64,
-) {
-    // Counting up, because every folder an import writes into lives on this
-    // computer and no server numbers it.
-    let Ok(uid) = cache.next_local_uid(folder_id) else {
-        return;
-    };
-    let filed_at = chrono::Utc::now().to_rfc3339();
-    let row = crate::application::filing::a_row_filed_here(
-        message,
-        folder_id,
-        uid,
-        message.body_plain.as_ref().map_or(0, String::len),
-        crate::application::filing::AlreadyRead::No,
-        &filed_at,
-    );
-    let Ok(stored) = cache.file_message_here(&row) else {
-        return;
-    };
-    // The text as well as the row. Without it the message is in the list and
-    // opening it fetches from a server that has never held it.
-    let _ = cache.save_message_body(
-        stored,
-        message.body_plain.as_deref(),
-        message.body_html.as_deref(),
-    );
 }
 
 /// A read failure is announced rather than swallowed. An empty list because
@@ -9363,9 +9396,20 @@ fn replace_local_draft(
         .get_folder(&account.id, folder)?
         .ok_or_else(|| crate::common::Error::Other("there is no Drafts folder".into()))?;
     let message_id = draft_message::message_id_for(&draft.id);
+    // Asked of the folder rather than counted up. An account's Drafts folder
+    // is the server's, and one past the highest number in a folder a server
+    // fills is the number that server is about to issue: the next check would
+    // see it as already held and never download the real message.
+    //
+    // Not marked as a row this program filed, which is the other half
+    // `file_message_here` does. That marker also says this computer holds the
+    // only copy, and a draft appended to the server is a case where it does
+    // not. Which of the two a draft row is depends on whether the append
+    // succeeded, and answering that here by guessing would trade one silent
+    // wrong answer for another.
     let uid = match cache.message_uid_by_message_id(row.id, &message_id)? {
         Some(uid) => uid,
-        None => cache.next_local_uid(row.id)?,
+        None => cache.next_uid_for_filing(row.id)?,
     };
 
     let stored = cache.upsert_message(&crate::data::message_cache::IncomingMessage {
@@ -9616,7 +9660,10 @@ fn open_for_scanning(
             std::mem::forget(reader);
         }
         ScanTarget::Search => {
-            let _ = show_search_dialog(frame);
+            // With a folder open, so the "In" list is offered with every one of
+            // its answers on it and the scan meets the box somebody using mail
+            // meets rather than the shorter one.
+            let _ = show_search_dialog(frame, &what_the_in_box_offers(Some(1)));
         }
         ScanTarget::Filters => managers::manage_filters(state, cache, frame, tx, rt, a11y),
         ScanTarget::Calendar => managers::manage_calendar(state, cache, frame, tx, rt, a11y),
@@ -12351,29 +12398,14 @@ fn check_pop_mail(
             say(UIUpdate::ConnectionStatusChanged(
                 ConnectionStatus::Connected,
             ));
-            let mut report = format!("{} new, {} on the server", result.fetched, result.on_server);
-            if result.removed_from_server > 0 {
-                // Said out loud, because it is mail leaving a server for good
-                // and the only warning anybody gets that the policy is running.
-                report.push_str(&format!(
-                    ", {} removed from the server",
-                    result.removed_from_server
-                ));
-            }
-            if result.waiting_on_the_setting > 0 {
-                // The other half, and it needs saying just as much. This
-                // account is set to clear its server and the setting is
-                // holding that back, so without a word here the mailbox
-                // quietly fills and the first sign is the provider refusing
-                // new mail.
-                report.push_str(&format!(
-                    ". {}",
-                    crate::application::allowed::removals_waiting_here(
-                        result.waiting_on_the_setting
-                    )
-                ));
-            }
-            say(UIUpdate::StatusUpdated(report));
+            // Worded in one place. This was the same three sentences written
+            // out again here, and the copy here fell behind: rules now file
+            // mail on a POP account too, and only the other copy says what
+            // they did, so a rule that could not file anything was carried out
+            // in silence.
+            say(UIUpdate::StatusUpdated(
+                crate::application::pop_sync::what_the_pop_check_did(&result),
+            ));
             // The links in each new message, against Google's lists, if the
             // reader turned that on and a key exists. Any of those missing
             // makes this nothing at all. Mail arriving over IMAP has had this
@@ -12406,6 +12438,13 @@ fn check_pop_mail(
                 for update in updates {
                     say(update);
                 }
+            }
+            // And the open list is read back, which only the tree was before.
+            // The tree carries counts; the rows are a separate picture, and
+            // rules now move mail out of the inbox on this account too, so a
+            // list left alone goes on showing a message that has gone.
+            if let Some(update) = folder_arrival_update(inbox, result.fetched) {
+                say(update);
             }
         }
         Err(e) => fail(e.to_string()),
@@ -13395,14 +13434,21 @@ fn read_attachment(
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let attachment = attachment.clone();
-    let (accounts, account_id) = {
+    // The account the message is in, not the one that happens to be open. In
+    // All Inboxes those differ routinely, and taking the open account and then
+    // falling back to whichever came first is how a fetch reaches the wrong
+    // server, against the other account's folder path, and comes back with
+    // whatever message there happens to share the UID. The same question the
+    // move and delete handlers ask, asked the same way.
+    let account = {
         let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            attachment.message_row_id,
+            s.active_account_id.as_deref(),
+        )
     };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
 
     rt.spawn_blocking(move || {
         let outcome = fetch_attachment_bytes(&handle, account, &attachment)
@@ -13421,14 +13467,15 @@ fn read_attachment(
 /// Ask where to put an attachment, then go and get it.
 ///
 /// The dialog runs here, on the UI thread, because a modal dialog has to.
-/// Everything after it is a network fetch and a write, so it goes to a worker:
-/// a message with a large attachment would otherwise freeze the window while it
-/// downloads, and a frozen window is one a screen reader reports as not
-/// responding.
+/// Everything after it is a read, possibly a network fetch, and a write, so it
+/// goes to a worker: reading twenty-five megabytes out of the database is real
+/// work, downloading it again is more, and either on the thread the window
+/// answers on is a freeze a screen reader reports as the program having
+/// stopped.
 ///
-/// The bytes are never cached. Attachments are the largest thing in a mailbox,
-/// and the whole message comes down again to take one part out of it, which is
-/// the trade that keeps the database small enough to sit in a profile folder.
+/// The bytes are kept when the message was opened, so an attachment this
+/// computer already has is read from here rather than downloaded again. See
+/// [`bytes_of_the_attachment`] for what happens when it does not have it.
 fn save_attachment(
     app: AppHandles<'_>,
     frame: &Frame,
@@ -13475,14 +13522,17 @@ fn save_attachment(
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let attachment = attachment.clone();
-    let (accounts, account_id) = {
+    // The account the message is in rather than the one on screen, for the
+    // reason on the same lines in `read_attachment`.
+    let account = {
         let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            attachment.message_row_id,
+            s.active_account_id.as_deref(),
+        )
     };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
 
     rt.spawn_blocking(move || {
         let outcome = fetch_and_write_attachment(&handle, account, &attachment, &destination);
@@ -13515,17 +13565,63 @@ fn fetch_and_write_attachment(
     Ok(())
 }
 
-/// Fetch the message an attachment hangs off and take the part out of it.
+/// The bytes of one attachment, from this computer if it has them.
 ///
 /// Shared by saving and by reading, which differ only in what they do with the
 /// bytes afterwards. Every failure comes back as a sentence rather than as a
 /// silence: the two commands each report it their own way.
+///
+/// Opens the store this computer keeps and hands the rest of the work to
+/// [`bytes_of_the_attachment`], which is the half that can be asked questions
+/// without a profile folder underneath it.
 fn fetch_attachment_bytes(
     handle: &tokio::runtime::Handle,
     account: Option<crate::data::account::Account>,
     attachment: &reader_text::ReaderAttachment,
 ) -> crate::common::Result<Vec<u8>> {
+    let paths = AppPaths::resolve()?;
+    let cache = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)?;
+    bytes_of_the_attachment(handle, &cache, account, attachment)
+}
+
+/// The kept copy, or the message fetched again to take the part out of it.
+///
+/// The kept copy first, because the message was already downloaded once to be
+/// read and its files were kept in the doing of it. Asking the server again for
+/// something already here costs a connection, the whole message a second time,
+/// and a wait somebody sits through with nothing to listen to.
+///
+/// **A copy that cannot be trusted is treated as a copy that is not here.**
+/// [`MessageCache::attachment_content_at`] hands back nothing for a file that
+/// no longer matches the digest it is filed under, so bytes that were
+/// half-written, truncated or corrupted fall through to the fetch below rather
+/// than being handed to somebody as their file or written out as an empty one.
+/// A file this computer never kept, one too large to keep, and one dropped to
+/// stay inside the budget all arrive here the same way and take the same road.
+///
+/// Called on a worker in both of its callers. Reading twenty-five megabytes out
+/// of SQLite and hashing it is real work, and on the thread the window answers
+/// on it would be indistinguishable, by ear, from the program having crashed.
+///
+/// No account is needed for the first half. Mail collected over POP and a copy
+/// of a sent message filed here have no server to go back to, and their files
+/// are exactly the ones this computer is holding the only copy of.
+fn bytes_of_the_attachment(
+    handle: &tokio::runtime::Handle,
+    cache: &crate::data::message_cache::MessageCache,
+    account: Option<crate::data::account::Account>,
+    attachment: &reader_text::ReaderAttachment,
+) -> crate::common::Result<Vec<u8>> {
     use crate::common::Error;
+
+    match cache.attachment_content_at(attachment.message_row_id, attachment.index) {
+        Ok(Some(kept)) => return Ok(kept),
+        Ok(None) => {}
+        // Not a failure to report. Whatever went wrong with the store, the
+        // message is still on the server and the road below still leads to the
+        // file, so this is a line in the log and nothing said out loud.
+        Err(e) => tracing::warn!("The kept copy of an attachment could not be read: {e}"),
+    }
 
     let account = account.ok_or_else(|| Error::Other("No account is set up".into()))?;
     let port = account
@@ -13533,8 +13629,6 @@ fn fetch_attachment_bytes(
         .trim()
         .parse::<u16>()
         .map_err(|_| Error::Other("The account has no usable IMAP port".into()))?;
-    let paths = AppPaths::resolve()?;
-    let cache = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)?;
     let folder = cache
         .folder_path_for_message(attachment.message_row_id)?
         .ok_or_else(|| Error::Other("The message is no longer in the folder list".into()))?;
@@ -13775,11 +13869,10 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
 /// reason `what_the_folder_sync_did` builds the status line's words the
 /// same way: the call site runs inside a closure on a background thread
 /// that a test cannot reach.
-fn folder_arrival_update(
-    folder_id: i64,
-    result: &crate::application::mail_sync::FolderSync,
-) -> Option<UIUpdate> {
-    (result.fetched > 0).then_some(UIUpdate::FolderMessagesArrived(folder_id))
+/// Takes the count rather than either check's own result, because both kinds
+/// of account ask this and the answer must not come to differ between them.
+fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
+    (fetched > 0).then_some(UIUpdate::FolderMessagesArrived(folder_id))
 }
 
 /// Fetch mail from the account's IMAP server into the cache.
@@ -13977,7 +14070,7 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                     say(UIUpdate::StatusUpdated(
                         crate::application::mail_sync::what_the_folder_sync_did(&result),
                     ));
-                    if let Some(update) = folder_arrival_update(*folder_id, &result) {
+                    if let Some(update) = folder_arrival_update(*folder_id, result.fetched) {
                         say(update);
                     }
                 }
@@ -14560,6 +14653,26 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
     dlg
 }
 
+/// What the search box's "In" list offers, and what each answer searches.
+///
+/// One list, so the words somebody hears and the search that runs cannot come
+/// apart. Two lists, or a list and a match on the chosen position, is exactly
+/// how a box comes to say "Current Folder" and search everywhere.
+///
+/// Current Folder is left out when no folder is open, because offering to
+/// search a folder that is not there is the same broken promise in a smaller
+/// form. Nothing indexes into this by a number written down anywhere: the
+/// position the list is built in is the position it is read back at.
+pub fn what_the_in_box_offers(folder_showing: Option<i64>) -> Vec<(&'static str, WhereToSearch)> {
+    let mut offered = vec![("All Folders", WhereToSearch::EveryFolder)];
+    if let Some(folder) = folder_showing {
+        offered.push(("Current Folder", WhereToSearch::OneFolder(folder)));
+    }
+    offered.push(("Subject Only", WhereToSearch::SubjectOnly));
+    offered.push(("From Only", WhereToSearch::SenderOnly));
+    offered
+}
+
 /// Build the Search dialog without showing it.
 ///
 /// Everything `show_search_dialog` used to do up to its own `.show_modal()`
@@ -14567,9 +14680,16 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
 /// splits Settings: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
 ///
-/// Returns the dialog alongside the field `show_search_dialog` still needs
-/// to read after a real `.show_modal()`.
-pub fn build_search_dialog(parent: &Frame, palette: Option<theme::Palette>) -> (Dialog, TextCtrl) {
+/// Returns the dialog alongside the two fields `show_search_dialog` still needs
+/// to read after a real `.show_modal()`. The "In" list is `None` when `offers`
+/// is empty, which is how a module that has no folders and no sender to narrow
+/// by gets a box with nothing on it that cannot be honoured: an inoperable
+/// control that announces itself as operable is worse than no control.
+pub fn build_search_dialog(
+    parent: &Frame,
+    palette: Option<theme::Palette>,
+    offers: &[(&'static str, WhereToSearch)],
+) -> (Dialog, TextCtrl, Option<Choice>) {
     let dlg = Dialog::builder(parent, "Search Messages")
         .with_size(450, 200)
         .build();
@@ -14594,24 +14714,30 @@ pub fn build_search_dialog(parent: &Frame, palette: Option<theme::Palette>) -> (
     );
     fields.add(&q_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
-    let s_label = StaticText::builder(&dlg).with_label("In:").build();
-    let scope = Choice::builder(&dlg)
-        .with_choices(
-            ["All Folders", "Current Folder", "Subject Only", "From Only"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
-        .with_selection(Some(0))
-        .build();
-    set_accessible_name(&scope, "Search in");
-    fields.add(
-        &s_label,
-        0,
-        SizerFlag::AlignCenterVertical | SizerFlag::All,
-        4,
-    );
-    fields.add(&scope, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    // Built from the same list the answer is read back out of, and only when
+    // there is a list. A module with nothing to narrow gets no box rather than
+    // a box whose answers would be thrown away.
+    let scope = (!offers.is_empty()).then(|| {
+        let s_label = StaticText::builder(&dlg).with_label("In:").build();
+        let scope = Choice::builder(&dlg)
+            .with_choices(
+                offers
+                    .iter()
+                    .map(|(named, _)| (*named).to_string())
+                    .collect(),
+            )
+            .with_selection(Some(0))
+            .build();
+        set_accessible_name(&scope, "Search in");
+        fields.add(
+            &s_label,
+            0,
+            SizerFlag::AlignCenterVertical | SizerFlag::All,
+            4,
+        );
+        fields.add(&scope, 1, SizerFlag::Expand | SizerFlag::All, 4);
+        scope
+    });
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -14652,18 +14778,38 @@ pub fn build_search_dialog(parent: &Frame, palette: Option<theme::Palette>) -> (
         theme::paint(&q_field, palette.main_surface());
     }
 
-    (dlg, q_field)
+    (dlg, q_field, scope)
 }
 
-fn show_search_dialog(parent: &Frame) -> Option<String> {
-    let (dlg, q_field) = build_search_dialog(parent, theme::current_from_stored_config());
+/// What somebody typed, and where they said to look for it.
+///
+/// `None` when the dialog was cancelled or the box was left empty. The scope is
+/// read out of the same list the box was built from, at the position the box
+/// says was chosen, so the words that were on screen and the search that runs
+/// are the same answer.
+///
+/// `offers` decides whether there is an "In" list at all. Empty means there is
+/// not, and then the answer is [`WhereToSearch::EveryFolder`], which is what
+/// searching a module that has no folders means.
+fn show_search_dialog(
+    parent: &Frame,
+    offers: &[(&'static str, WhereToSearch)],
+) -> Option<(String, WhereToSearch)> {
+    let (dlg, q_field, scope) =
+        build_search_dialog(parent, theme::current_from_stored_config(), offers);
 
-    if dlg.show_modal() == ID_OK {
-        let q = q_field.get_value();
-        if !q.trim().is_empty() { Some(q) } else { None }
-    } else {
-        None
+    if dlg.show_modal() != ID_OK {
+        return None;
     }
+    let typed = q_field.get_value();
+    if typed.trim().is_empty() {
+        return None;
+    }
+    let chosen = scope
+        .and_then(|chooser| chooser.get_selection())
+        .and_then(|at| offers.get(at as usize))
+        .map_or(WhereToSearch::EveryFolder, |(_, where_to)| *where_to);
+    Some((typed, chosen))
 }
 
 /// Show a dialog to create a new PIM item (Event, Reminder, Task, Note, etc.).
@@ -16650,21 +16796,13 @@ mod tests {
         // A watch that wakes for a flag change, or a folder with nothing
         // new to it, should tell the UI thread nothing: reloading a list
         // that has not changed is work with nothing to show for it.
-        let result = crate::application::mail_sync::FolderSync {
-            fetched: 0,
-            ..Default::default()
-        };
-        assert!(folder_arrival_update(7, &result).is_none());
+        assert!(folder_arrival_update(7, 0).is_none());
     }
 
     #[test]
     fn test_folder_arrival_update_names_the_folder_that_got_new_mail() {
-        let result = crate::application::mail_sync::FolderSync {
-            fetched: 3,
-            ..Default::default()
-        };
         assert!(matches!(
-            folder_arrival_update(7, &result),
+            folder_arrival_update(7, 3),
             Some(UIUpdate::FolderMessagesArrived(7))
         ));
     }
@@ -18801,8 +18939,462 @@ fn block_the_sender(
         );
         return;
     }
+    // Blocked mail is filed into the junk folder, and on a server account that
+    // folder is not downloaded unless somebody says so, which files the mail
+    // where they cannot open it. Switched on here, and said in the sentence
+    // below. Never over the top of somebody who switched it off themselves.
+    let mut junk_folder = blocking::what_the_junk_folder_needs(
+        &junk,
+        cache
+            .folder_choices(&account)
+            .unwrap_or_default()
+            .get(&junk)
+            .copied(),
+    );
+    if junk_folder == blocking::TheJunkFolder::IsSwitchedOnByBlocking
+        && let Err(why) = cache.set_folder_choice(&account, &junk, true)
+    {
+        tracing::warn!("The junk folder could not be switched on: {why}");
+        junk_folder = blocking::TheJunkFolder::IsNotBeingDownloaded;
+    }
     told(
-        &blocking::what_blocking_did(&block, &junk, allowed),
+        &blocking::what_blocking_did(&block, &junk, allowed, junk_folder),
         Priority::Normal,
     );
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+//
+// At the end of the file rather than beside the code they cover. `tests/wired.rs`
+// reads this source and stops at the first `#[cfg(test)]`, treating everything
+// before it as the shipped half; a test module put in the middle would hide
+// every function after it from those checks and quietly switch several of them
+// off.
+
+#[cfg(test)]
+mod what_an_export_holds {
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::attachment_content::AttachmentWithContent;
+    use crate::data::message_cache::{CachedAttachment, CachedFolder, CachedMessage};
+    use base64::Engine as _;
+
+    /// The account every message in these tests belongs to.
+    const THE_ACCOUNT: &str = "acc-1";
+
+    /// A store holding one folder, one message with text, and the file it
+    /// carries when `file` is given.
+    fn a_mailbox_holding(file: Option<&[u8]>) -> TempHome<MessageCache> {
+        let file = file.map(<[u8]>::to_vec);
+        TempHome::named("wixen_export_files_", move |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a store");
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: THE_ACCOUNT.to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            let message = cache
+                .save_message(&CachedMessage {
+                    id: 0,
+                    uid: 42,
+                    folder_id: 1,
+                    message_id: "<42@example.com>".to_string(),
+                    subject: "Quarterly report".to_string(),
+                    from_addr: "ada@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-08-24T09:00:00+00:00".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("a message");
+            // Text, because a message whose text is not on this computer is
+            // left out of an export altogether and this is about its files.
+            cache
+                .save_message_body(message, Some("The figures are attached."), None)
+                .expect("the text");
+            cache
+                .replace_attachments_with_content(
+                    message,
+                    &[AttachmentWithContent {
+                        described: CachedAttachment {
+                            id: 0,
+                            message_id: message,
+                            filename: "report.pdf".to_string(),
+                            mime_type: "application/pdf".to_string(),
+                            size: file.as_ref().map_or(4096, |bytes| bytes.len() as i64),
+                            content_id: None,
+                        },
+                        content: file.clone(),
+                    }],
+                )
+                .expect("the attachment");
+            cache
+        })
+    }
+
+    /// One folder's mail out of a written export.
+    fn the_mail_written_for(archive_at: &std::path::Path, folder: &str) -> String {
+        let mut archive = crate::service::mailbox_archive::opened(archive_at).expect("the export");
+        let bytes = archive
+            .one_entry_read_through(folder)
+            .unwrap_or_else(|why| panic!("{folder} is not in the export: {why}"));
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// Every name inside a written export, folders included.
+    fn names_in_the_zip(at: &std::path::Path) -> Vec<String> {
+        let file = std::fs::File::open(at).expect("the export");
+        let mut zip = zip::ZipArchive::new(file).expect("a zip");
+        (0..zip.len())
+            .map(|which| zip.by_index(which).expect("an entry").name().to_string())
+            .collect()
+    }
+
+    /// Write the whole of one account's inbox out, and say where it went.
+    fn exported(cache: &MessageCache, into: &TempHome<()>) -> (std::path::PathBuf, String) {
+        let at = into.path().join("mailbox.zip");
+        let said = write_the_mailbox_out(cache, THE_ACCOUNT, "INBOX", &at, &|_| {});
+        (at, said)
+    }
+
+    #[test]
+    fn test_an_exported_message_carries_the_file_it_arrived_with() {
+        // An archive that quietly leaves the files out is a backup that looks
+        // complete and is not, which is worse than one that says what it left
+        // behind. The files were kept when the message was read, so there is
+        // nothing to fetch and no reason not to write them.
+        let file: Vec<u8> = vec![0x00, 0xff, b'P', b'D', b'F', 0x1a, 0x7f, 0x10];
+        let cache = a_mailbox_holding(Some(&file));
+        let somewhere = TempHome::new(|_| ());
+
+        let (at, _) = exported(&cache, &somewhere);
+
+        let written = the_mail_written_for(&at, "INBOX.mbox");
+        assert!(
+            written.contains("report.pdf"),
+            "the file's name is not in the export:\n{written}"
+        );
+        let as_written = base64::engine::general_purpose::STANDARD.encode(&file);
+        assert!(
+            written.contains(&as_written),
+            "the file itself is not in the export:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_an_export_says_how_many_files_it_could_not_write() {
+        // A file this computer does not have cannot be written, and there is no
+        // fetching it here: an export of forty thousand messages is not the
+        // moment to open forty thousand connections. So it is counted and
+        // said, because the whole difference between a backup and a backup you
+        // can trust is knowing what is not in it.
+        let cache = a_mailbox_holding(None);
+        let somewhere = TempHome::new(|_| ());
+
+        let (_, said) = exported(&cache, &somewhere);
+
+        assert!(
+            said.contains("1 file"),
+            "nothing was said about the file that was left out: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_whose_mail_was_never_downloaded_goes_in_as_a_folder_not_an_empty_archive() {
+        // An archive holding no messages is a file this program's own import
+        // turns away as not mail, so a folder written that way goes into the
+        // export and is one nobody can bring back. The folder itself has to be
+        // there: an empty folder somebody has kept for years is part of the
+        // shape this export exists to keep.
+        //
+        // Which of the two it gets is decided by what really went in, not by
+        // what the folder holds. Here the folder holds one message and its text
+        // was never downloaded, so nothing went in.
+        let cache = a_mailbox_holding(Some(b"pdf"));
+        // Dropped the way the budget really drops one, so this is the state a
+        // real store arrives at rather than one reached by hand.
+        cache.evict_bodies_over(0).expect("to drop the text");
+        let somewhere = TempHome::new(|_| ());
+
+        let (at, _) = exported(&cache, &somewhere);
+
+        // Read as a zip rather than through this program's own archive reader,
+        // which refuses a file holding no messages before anything can look at
+        // what is in it. That refusal is worth knowing about and is not what
+        // this test is asking.
+        let held = names_in_the_zip(&at);
+        assert!(
+            !held.iter().any(|named| named.ends_with(".mbox")),
+            "an archive of no messages went into the file: {held:?}"
+        );
+        assert!(
+            held.iter().any(|named| named.starts_with("INBOX")),
+            "the folder itself was dropped from the file: {held:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_reaches_the_export_as_it_arrived() {
+        // Where the file comes from matters as much as what it holds. The
+        // export used to rebuild every message from the stored columns, which
+        // for a signed message means writing out something the signature was
+        // never made over: import it again and it reads as ordinary mail
+        // carrying a loose signature file, with nothing said at any point.
+        //
+        // End to end rather than at `added_to_the_archive`, because the thing
+        // that had to change is that the export asks the store for the form the
+        // message arrived in at all.
+        let cache = a_mailbox_holding(Some(b"pdf"));
+        let arrived = concat!(
+            "From: ada@example.com\r\n",
+            "Subject: Quarterly report\r\n",
+            "MIME-Version: 1.0\r\n",
+            "Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\";\r\n",
+            " micalg=sha-256; boundary=\"the-boundary\"\r\n",
+            "\r\n",
+            "--the-boundary\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "The figures are attached.\r\n",
+            "--the-boundary\r\n",
+            "Content-Type: application/pkcs7-signature; name=\"smime.p7s\"\r\n",
+            "\r\n",
+            "not a real signature, and it does not have to be\r\n",
+            "--the-boundary--\r\n",
+        );
+        cache
+            .keep_signed_original(1, arrived.as_bytes())
+            .expect("the form it arrived in");
+        let somewhere = TempHome::new(|_| ());
+
+        let (at, _) = exported(&cache, &somewhere);
+
+        let written = the_mail_written_for(&at, "INBOX.mbox");
+        assert!(
+            written.contains(arrived),
+            "the message was rebuilt rather than written as it arrived, so what \
+             came out cannot carry its signature:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_an_export_that_left_no_file_behind_says_nothing_about_files() {
+        // The sentence above is only worth hearing when it names something.
+        // Said every time, it is noise on every export anybody ever runs.
+        let file: Vec<u8> = vec![b'p', b'd', b'f'];
+        let cache = a_mailbox_holding(Some(&file));
+        let somewhere = TempHome::new(|_| ());
+
+        let (_, said) = exported(&cache, &somewhere);
+
+        assert!(
+            !said.to_lowercase().contains("file"),
+            "said something about files when every one of them was written: {said}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod opening_an_attachment_a_second_time {
+    use super::*;
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::attachment_content::AttachmentWithContent;
+    use crate::data::message_cache::{CachedAttachment, CachedFolder, CachedMessage};
+
+    /// The row id every message in these tests is stored under.
+    const THE_MESSAGE: i64 = 1;
+
+    /// A store holding one message carrying one file.
+    fn holding(file: &[u8]) -> TempHome<MessageCache> {
+        TempHome::named("wixen_attachment_reopen_", |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a store");
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc-1".to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            let message = cache
+                .save_message(&CachedMessage {
+                    id: 0,
+                    uid: 42,
+                    folder_id: 1,
+                    message_id: "<42@example.com>".to_string(),
+                    subject: "Quarterly report".to_string(),
+                    from_addr: "ada@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-08-24".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("a message");
+            cache
+                .replace_attachments_with_content(
+                    message,
+                    &[AttachmentWithContent {
+                        described: CachedAttachment {
+                            id: 0,
+                            message_id: message,
+                            filename: "report.pdf".to_string(),
+                            mime_type: "application/pdf".to_string(),
+                            size: file.len() as i64,
+                            content_id: None,
+                        },
+                        content: Some(file.to_vec()),
+                    }],
+                )
+                .expect("to keep the file");
+            cache
+        })
+    }
+
+    fn the_attachment() -> reader_text::ReaderAttachment {
+        reader_text::ReaderAttachment {
+            message_row_id: THE_MESSAGE,
+            uid: 42,
+            index: 0,
+            name: "report.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 0,
+        }
+    }
+
+    /// A runtime whose handle the fetch can be given, and which nothing in
+    /// these tests ever reaches: every one of them is about the half that
+    /// happens before a connection is opened.
+    fn a_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Runtime::new().expect("a runtime")
+    }
+
+    #[test]
+    fn test_a_file_this_computer_already_has_is_not_asked_for_again() {
+        // The whole point. Opening an attachment used to open a connection,
+        // download the entire message a second time and take one part out of
+        // it, for a file this computer had kept when the message was read.
+        //
+        // With no account there is nothing to connect to at all, so a call that
+        // comes back with the file is a call that never went near a server.
+        let cache = holding(b"the file that was kept");
+        let runtime = a_runtime();
+
+        let bytes = bytes_of_the_attachment(runtime.handle(), &cache, None, &the_attachment())
+            .expect("the file this computer already had");
+
+        assert_eq!(bytes, b"the file that was kept".to_vec());
+    }
+
+    #[test]
+    fn test_a_kept_copy_that_cannot_be_trusted_sends_it_back_to_the_server() {
+        // A kept copy that disagrees with what was kept is worse than no copy,
+        // so it must not be handed over and must not come back as an empty
+        // file that a save would write to disk. What it must do is take the
+        // road for a file that is not here, which is to fetch the message
+        // again. With no account that road ends in a sentence saying so, and
+        // that sentence is the proof it was taken.
+        let cache = holding(b"the file that was kept");
+        // Through a second connection to the same file, because writing bytes
+        // that do not match their digest is exactly what this program's own
+        // writer will not do. A half-written row or a corrupted database is
+        // where they come from.
+        rusqlite::Connection::open(cache.path().join("message_cache.db"))
+            .expect("the same database")
+            .execute(
+                "UPDATE attachment_content SET content = ?1",
+                rusqlite::params![b"not that file at all".to_vec()],
+            )
+            .expect("to change the stored bytes");
+        let runtime = a_runtime();
+
+        let refused = bytes_of_the_attachment(runtime.handle(), &cache, None, &the_attachment())
+            .expect_err("bytes that are not the file were handed over");
+
+        assert!(
+            refused.to_string().contains("No account"),
+            "stopped somewhere other than the fetch: {refused}"
+        );
+    }
+
+    #[test]
+    fn test_a_file_this_computer_never_kept_goes_to_the_server_for_it() {
+        // The ordinary miss: an attachment recorded before files were kept, one
+        // too large to keep, or one dropped to stay inside the budget. Same
+        // road as the untrusted copy above, and it has to stay that way.
+        let cache = holding(b"the file that was kept");
+        // Dropped the way the budget really drops one, rather than by reaching
+        // into the database, so this is the state a real store arrives at.
+        cache
+            .evict_attachment_content_over(0)
+            .expect("to drop the kept file");
+        let runtime = a_runtime();
+
+        let refused = bytes_of_the_attachment(runtime.handle(), &cache, None, &the_attachment())
+            .expect_err("invented a file nobody kept");
+
+        assert!(
+            refused.to_string().contains("No account"),
+            "stopped somewhere other than the fetch: {refused}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod what_the_search_box_offers_to_look_in {
+    use super::*;
+
+    #[test]
+    fn test_every_answer_the_box_offers_is_the_search_that_answer_names() {
+        // The box announced four answers and was read by nothing, so choosing
+        // Current Folder searched the whole account. What stops that coming
+        // back is that the words and the search they stand for are one list:
+        // the position a chooser reports is a position in this, never a number
+        // written down twice.
+        let offered = what_the_in_box_offers(Some(7));
+
+        assert_eq!(
+            offered,
+            vec![
+                ("All Folders", WhereToSearch::EveryFolder),
+                ("Current Folder", WhereToSearch::OneFolder(7)),
+                ("Subject Only", WhereToSearch::SubjectOnly),
+                ("From Only", WhereToSearch::SenderOnly),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_no_folder_open_means_no_offer_to_search_the_folder_showing() {
+        // Offering to search a folder that is not there is the same promise
+        // nothing keeps, in a smaller form.
+        let offered = what_the_in_box_offers(None);
+
+        assert!(
+            !offered.iter().any(|(named, _)| *named == "Current Folder"),
+            "offered to search a folder nobody has open"
+        );
+        assert!(
+            !offered
+                .iter()
+                .any(|(_, looking_in)| matches!(looking_in, WhereToSearch::OneFolder(_))),
+            "an answer narrowing to a folder survived with no folder to narrow to"
+        );
+    }
 }

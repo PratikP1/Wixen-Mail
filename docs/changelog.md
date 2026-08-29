@@ -150,7 +150,266 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   sighted reader a glance at the menu bar and costs somebody working by ear a
   walk through every menu.
 
+- **A new meeting now takes its guest list to Google and Outlook, which can
+  email the guests.** Until now the Who is coming box stayed on this computer:
+  it was used to work out when everybody was free, and nothing ever left. A
+  meeting you make here now carries that list up with it, so the people on it
+  are on the meeting at your provider rather than only in your own copy.
+
+  **Read this before you turn Allow Changes on.** Adding somebody to a meeting
+  at Google or Outlook can make that provider email them an invitation. Wixen
+  Mail does not send it, does not ask for it, and has no way to ask either
+  provider to stay quiet. Whether the mail goes out is their decision and it has
+  never been watched from here, so treat it as certain: assume that making a
+  meeting with three people on it sends three invitations, and try it with an
+  address of your own on the list first. Nothing in this program has been run
+  against a real account, so the first time you use it will be the first time
+  anyone has, and the people you invite will find out at the same moment you do.
+
+  This replaces what the Who is coming entry above says about the guest list
+  never being sent. The rest of that entry still holds: nothing here builds an
+  invitation of its own, and free/busy still sends nothing to anybody.
+
+  **Changing a meeting still sends no guest list at all,** and that is
+  deliberate rather than unfinished. Both providers read a guest list they are
+  given as the whole truth about who is invited. Somebody you added in Google's
+  own window is not in the copy here, so sending this list on a change would
+  take them off the meeting, and being uninvited is the other thing a provider
+  emails people about. Until that can be told apart from an ordinary change
+  against a real account, a change says nothing about guests, exactly as it says
+  nothing about how a meeting repeats.
+
+  What that costs, said plainly: adding or removing a guest on a meeting your
+  provider already holds does not reach your provider. Do that in Google
+  Calendar or Outlook.
+
+  Two smaller limits. A guest you wrote down as an address alone is sent as an
+  address alone, so nobody arrives at your provider under a name Wixen Mail made
+  up for them. And Outlook records whether a guest is required or optional,
+  while Wixen Mail has nowhere to keep that, so everybody it adds goes as
+  required.
+
 ### Fixed
+
+- **Blocking a sender did nothing at all on a POP account.** The rule was
+  written down, it appeared in the Rules Manager, it was switched on, and no
+  mail was ever moved by it. The check worked out which folder each message
+  belonged in and then threw the answer away. Nothing said so, so the only way
+  to find out was to notice that Junk stayed empty. Every rule that files mail
+  into a folder was in the same position, not only the ones blocking writes.
+
+  Rules that file mail now file it. The check also says what happened, in the
+  same words an IMAP account uses: how many messages your rules sorted, and how
+  many were left where they were when a rule names a folder the account no
+  longer has. A rule that is broken fails the same way on every message it
+  matches, so that reason is read out once however many messages it hit,
+  rather than once per message.
+
+- **Mail this program filed took a number the server was about to use.** Two
+  paths did this. A rule filing a message into a folder that lives on the mail
+  server, and importing a file of mail into one. Both gave the message the next
+  number after the highest one already in that folder.
+
+  On a server that is the number about to be handed to the next message to
+  arrive, so giving it away loses two messages quietly. The next check for mail
+  sees the number as one it already holds, so the message it really belongs to
+  is never downloaded and never appears. And if anything does fetch it, it is
+  written straight over the message that took the number, which leaves that
+  message's text sitting under somebody else's subject and sender. Both losses
+  are permanent and neither showed up anywhere.
+
+  Mail this program files now takes its number from the far end of the range,
+  which is where copies kept on this computer have always belonged, and is
+  marked as a copy this program filed so a later check leaves it alone. Which
+  end to count from is now worked out from the folder itself, in one place, so
+  the three paths that file mail cannot come to different answers again.
+  Importing into a folder on this computer, and moving a message between two of
+  them, which is what deleting mail on a POP account does, are unchanged.
+
+- **Exporting a signed message destroyed its signature.** The export rebuilt
+  every message from what is stored, which for signed mail means writing out
+  something the signature was never made over. What came out was ordinary mail
+  carrying a loose `smime.p7s` file: import it again and it reads as a message
+  that never claimed a signature, and nothing said so at any point.
+
+  A signature is a statement about an exact run of bytes, and reading a message
+  and writing it out again changes small things, such as the order of its
+  headers and where its lines wrap. Any one of those is enough.
+
+  Signed messages now go into the export exactly as they arrived, so the
+  signature survives the trip. That only works where this computer still has
+  the form the message came in, which is signed mail received since Wixen Mail
+  started keeping it, minus whatever the 128 MB budget has dropped. A signed
+  message without it is still written out whole, from what is stored, and
+  counted: "1 message is signed and went in without what proves it, because
+  this computer no longer has the form it arrived in." Losing the message to
+  save the signature would be the worse trade; saying nothing would be worse
+  than either.
+
+- **Opening or saving an attachment could ask the wrong account's server.** In
+  All Inboxes every row can come from a different account. Both commands used
+  the account you had open, and fell back to whichever account came first when
+  there was none, so the request went to one server carrying another server's
+  folder name and message number. What came back was whatever message happened
+  to be numbered the same there, saved under the name of the file you asked for.
+
+  Both now ask which account the message is in, the same way Move, Delete and
+  Send Read Receipt already did. When no account can be named, they say so
+  rather than reaching a server at random. There is now a check that holds all
+  six commands to it, because this was the third time the same fault was fixed
+  one place at a time.
+
+- **The "In" box on the Search window did nothing.** It offered All Folders,
+  Current Folder, Subject Only and From Only. It had a name, it took focus, and
+  every search read it and threw the answer away. Choose Current Folder and you
+  were handed every message in the account, with nothing on the screen to say
+  so, which reads as your folder holding mail it does not hold. That is worse
+  than having no box at all.
+
+  All four now do what they say. Current Folder searches the folder you have
+  open. Subject Only reads subject lines and nothing else, so a message whose
+  sender or whose text carries the word is not offered. From Only reads who sent
+  it. All Folders is what it always was: every folder, and the subject, the
+  sender, the first line and the message text.
+
+  Current Folder is only offered when you have a folder open. The box itself is
+  only offered while you are reading mail: "Current Folder" and "From Only" mean
+  nothing about a list of contacts, so searching contacts, the calendar, tasks,
+  notes or reminders asks for the words and nothing else.
+
+  One thing to know before you use it. **Edit, Save This Search keeps the words
+  you typed and not where you looked for them.** A search you ran in one folder
+  is saved as a search of the whole account. The window that names it says so in
+  a sentence while you are naming it, so you are told before you save rather
+  than when you next open it.
+
+- **A sign-in could be finished by something that was not your mail provider.**
+  When Wixen Mail sends you to Google or Microsoft to sign in, it sends a
+  one-time value with you and waits for your provider's browser tab to bring it
+  back. That is the check that says the reply came from where the request went.
+  The check was written as two questions, was there a value and did it differ,
+  so a reply carrying no value at all answered "no" to the first and walked
+  past. Anything that could reach the port could send a bare sign-in code and
+  have Wixen Mail exchange it, which would attach somebody else's mailbox to
+  your account. A reply with nothing to match is now refused like one that
+  matches nothing.
+
+- **The sign-in no longer listens on every network connection this computer
+  has.** While you were signing in, the listener that catches the reply from
+  your provider answered any machine that could reach this one, for the two
+  minutes the sign-in was open. It now answers only this computer.
+
+  The reason written down for not doing this earlier was wrong, which is worth
+  saying because it stood for several releases. It argued that narrowing to
+  `127.0.0.1` would stop the listener answering a browser that reached it over
+  IPv6. The address it was set to, `0.0.0.0`, is an IPv4 address: that listener
+  never answered an IPv6 connection either. Narrowing it takes away nothing that
+  was working.
+
+  **Still not established, and it was not established before this change
+  either:** no part of signing in has ever been run against a real browser and a
+  real mail provider, so nobody knows whether the round trip works at all. If a
+  sign-in ever hangs with the browser saying the connection was refused, the
+  answer is a second listener for IPv6, not going back to answering the network.
+
+- **A second way of building a sign-in URL has been taken out.** It was public,
+  nothing called it, and it built a weaker sign-in than the one the program
+  really uses: no proof-of-possession challenge, and Google's own parameters
+  sent to Microsoft as well. Anyone adding a second place to sign in would have
+  reached for it by name. The two questions its tests asked are now asked of the
+  builder a real sign-in goes through, which had never been fuzzed.
+
+- **An uninstall that cannot clear your mail now says so.** Uninstalling asks
+  Wixen Mail to erase its own data folder and credentials before the files go,
+  and that step is skipped when the program has already gone from its folder.
+  It has to be skipped: an uninstall that stopped there used to leave the
+  folder, the Start Menu entry and the uninstaller behind. What it also did was
+  skip in silence, and there was no note in your temporary folder either,
+  because the note is written by the program that never ran. The downloaded mail
+  stayed on the disk, unencrypted, with nothing anywhere saying so. That matches
+  the one uninstall this has been seen to happen on.
+
+  The uninstaller now stops and tells you: where the folder is, that the mail in
+  it is not encrypted, and how to remove the saved passwords and tokens from the
+  Windows credential store yourself.
+
+  **Not established:** whether this is what happened on that machine. It is a
+  gap in the script that would produce exactly that outcome and exactly that
+  silence, found by reading. Proving it needs a real uninstall on a machine
+  where the program has been removed from its folder first, which has not been
+  run. The Known limitation note further down this file, telling you to check
+  `%LOCALAPPDATA%\wixen-mail` yourself after uninstalling, stands until it is.
+
+- **[Installing and uninstalling](installing.md) said the uninstall note only
+  appears when something was left behind.** It is written every time now,
+  including when everything went, so a file that meant trouble under the old
+  rule means nothing under the new one. The guide now says to read the first
+  line rather than to count the file, and names the two cases that leave no note
+  at all.
+
+- **Blocked mail went to a folder this program never downloaded.** Blocking a
+  sender files their mail into Junk, and on an account kept on a mail server
+  Junk is not downloaded unless you ask for it. The folder list also leaves out
+  what is not downloaded. So blocked mail went to a folder that was neither
+  filled nor listed, and the reason blocking files mail away instead of
+  deleting it, that Junk is where you look when mail has gone missing, was not
+  true inside Wixen Mail.
+
+  That is worst in the case blocking is built for. Blocking a whole domain
+  catches a colleague at the same provider sooner or later, and that is the
+  moment you go looking in Junk.
+
+  Blocking now switches that folder on for the account, and says so in the
+  same breath: what it did, why, and that File, then Folders to Keep Up to
+  Date, is where to switch it off again. If you had already switched Junk off
+  yourself, blocking leaves your choice alone and tells you instead that
+  blocked mail is filed at the server where you will not be able to read it,
+  and how to turn the folder on.
+
+- **A sync said mail had been sorted by your rules when it had not.** A rule
+  that files mail into a folder can fail five different ways: the folder is
+  gone, the server refuses, or the server copies the message instead of moving
+  it. A sentence was written for each of those, and read by nothing at all.
+  Nothing showed it, nothing counted it, and nothing wrote it to the log. A
+  rule that files invoices and does not is a rule you believe is working.
+
+  The sync now says so. It counts how many messages were not filed as asked,
+  reads out the reasons, and writes every one to the log. Repeats are folded
+  together, because one broken rule fails the same way on every message it
+  matches and a hundred copies of one sentence is a status line nobody reaches
+  the end of. At most two different reasons are read out and the rest are
+  counted, so a bad sync cannot flood what you are listening to.
+
+- **A message the server put in two folders was counted as filed.** A mail
+  server without a move command copies the message and marks the original
+  instead. Some will not even mark it, which leaves the same message in two
+  folders. Wixen Mail treated that as a completed move: it filed the message
+  away on this computer and added it to "sorted by your rules". Being told 12
+  were sorted and then finding 12 duplicates is worse than being told nothing.
+
+  A copy is no longer counted as a move. The message stays listed where it
+  really is, both folders are named, and you are told which copy to delete. It
+  also stops a worse version of the same fault: with the message filed away
+  here, the next check for mail fetched the original again as though it were
+  new and made a third copy.
+
+- **One message could count as two sorted.** A rule that marked a message read
+  and a rule that filed it into a folder each added one to the same total, so
+  one message was reported as two. The count is what tells you how much your
+  rules did.
+
+- **A rule could ask the server to move a message into the folder it was
+  already in.** Rules run on whatever has just arrived in the folder being
+  checked, so a rule that files a sender into Invoices went on matching that
+  sender once their mail was in Invoices. Asking a mail server to move a
+  message into the folder it is in either fails, once per message on every
+  check for mail, or takes a copy, and nothing removes duplicates. A message
+  already where a rule wants it is now left alone.
+
+- **Moves a rule asked for could be dropped without a word.** When the folder
+  list for the account could not be read, nothing a rule filed into another
+  folder was filed, and the check for mail read exactly like one with no rules
+  in it. It now says how many messages stayed where they were, and why.
 
 - **A person looked up in a directory never had a company.** The lookup read
   the attribute a Windows directory keeps an employer in, and never asked the
@@ -169,6 +428,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   send it on: the arithmetic held, and the message read "signed for" that
   person's address "and not changed since" over words they had never written.
   The check now uses the words that will be read.
+
+- **Signed mail brought in from a file said nothing about its signature.** A
+  message read out of a saved message, a mailbox archive or an Outlook data
+  file went into the folder reading as ordinary mail. "Nothing here said this
+  was signed" and "signed, and it cannot be checked here" are different
+  statements, and the first one was false: the message did say it was signed,
+  and the import was the one place holding the exact bytes needed to check it.
+
+  Imported signed mail now keeps those bytes, so opening it says what the
+  signature is worth, and says it again every time you open it, the same as
+  mail that arrives over IMAP or POP. Where there was no room to keep them, the
+  message says the signature could not be checked here, which is never worded
+  as a signature that failed.
+
+  **Mail that was already on this computer before this version is not covered,
+  and cannot be.** A message whose text an older version downloaded has no copy
+  of the form it arrived in, and nothing left about it says whether it claimed
+  a signature. What a signed message leaves behind, a signature file called
+  `smime.p7s`, is exactly what an ordinary message that forwards a signed one to
+  you leaves behind as well, so going by that would announce ordinary mail as
+  signed. That is a worse answer than the one being fixed, so those messages go
+  on reading as unsigned. Mail on an IMAP server is covered again from the next
+  time its text is fetched, which happens on its own when older text is cleared
+  to stay within the size budget. Mail collected over POP before this version
+  has no server left to ask, so it stays as it is.
+
+- **The space kept for signed mail could pass its limit and never come back
+  down.** The limit is held by dropping the copies read longest ago, and a copy
+  is never dropped when there is no server to fetch the message from again,
+  because then it could not be got back. Mail collected over POP and mail
+  brought in from a file are both in that position, so a mailbox made mostly of
+  those had nothing that could be dropped, and the total grew with every signed
+  message and stayed. Once the limit is reached, new copies are no longer kept
+  rather than old ones destroyed, and those messages say their signature could
+  not be checked here.
+
+- **An import never said when a message could not be saved.** The sentence for
+  it was written and nothing ever filled in the count, so a message this
+  program read out of your file and then failed to write down went missing
+  while the closing count said everything had arrived. It is counted and said
+  now: "1 message was read from the file and could not be saved on this
+  computer."
 
 - **A malformed message could stop the reader.** A signed message with an
   empty part in it, which is legal and is also something a sender can craft on
@@ -253,15 +554,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   repeating meeting is refused rather than got wrong, because the answer would
   reach the organiser as an answer to the whole series.
 
-- **Attachments are kept, so they can be sent on and written out.** Their
-  contents used to be thrown away the moment a message was read, so an export
-  wrote messages with their files missing and opening one asked the server
-  again for something this computer had already had.
+- **Attachments are kept, so opening one again is instant and an export
+  carries it.** Their contents used to be thrown away the moment a message was
+  read, so an export wrote messages with their files missing and opening one
+  asked the server again for something this computer had already had.
+
+  Open an attachment a second time and it comes off this computer. No
+  connection, no waiting for the whole message to come down again, and it works
+  when you are offline. Export a mailbox and the files go into it with their
+  messages.
 
   Files up to 25 MB are kept, up to 512 MB in total, and the same file
-  arriving on twenty messages is kept once. A file too large to keep still
-  lists with its name, type and size, so a message with an attachment never
-  looks like a message without one.
+  arriving on twenty messages is kept once. Past 512 MB the ones you read
+  longest ago are dropped first, and a file on mail collected over POP or on a
+  copy of a message you sent is never dropped, because this computer holds the
+  only copy of it.
+
+  A file too large to keep still lists with its name, type and size, so a
+  message with an attachment never looks like a message without one. Opening
+  one of those asks the server, the way every attachment used to.
+
+  The kept copy is checked against a fingerprint taken when it was stored. If
+  the two disagree, which is what a half-written or damaged file looks like, it
+  is not used and the message is fetched from the server instead. You are never
+  handed bytes that are not your file, and never an empty one.
+
+  **These files are not encrypted**, and neither is anything else Wixen Mail
+  keeps on this computer. Keeping attachments means more of your mail sits in
+  the `cache` folder than before. See [Your privacy](privacy.md).
 
 - **Outlook data files can be read.** Mail, appointments, contacts, tasks and
   notes, in the folders they were in, from both the older and newer kinds of
@@ -304,8 +624,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Messages whose text has never been downloaded to this computer are left out
   and counted, rather than written as empty messages and reported as a success.
 
-  Attachments do not go with it. What is kept about one is its name, its type
-  and its size; the file itself was never stored, so there is nothing to write.
+  Attachments go with their messages. A file this computer does not have
+  cannot be written, and rather than leaving it out in silence the export
+  counts them and tells you at the end: "3 files could not go with their
+  messages, because they are not on this computer: open those messages once,
+  then export again." A backup that looks complete and is not is worse than one
+  that says what it left behind.
+
+  A folder is written one message at a time, so a folder of any size costs the
+  same to export. Nothing is held whole on the way past, which matters now that
+  the messages carry their files.
 
 - **Both run out of the way of the window.** A mailbox of forty thousand
   messages takes a while, and doing that work in the window would stop it
@@ -2146,12 +2474,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Being told to select an account, with no word about what for, now says what
   for.
 
-  Known limitation. The hint under the email address box, the one that tells
-  you to use an app password rather than your ordinary one, is still shown and
-  not spoken. It is rewritten on every keystroke while you type an address, so
-  speaking it would read a paragraph over you again and again. Attaching it to
-  the password box, so a screen reader reads it when you get there, is the
-  proper fix and has not been done yet.
+  Known limitation, since closed. The hint under the email address box, the one
+  that tells you to use an app password rather than your ordinary one, was
+  shown and not spoken. It is rewritten on every keystroke while you type an
+  address, so speaking it would read a paragraph over you again and again.
+  Attaching it to the password box, so a screen reader reads it when you get
+  there, was named here as the proper fix and has since been done: the box
+  carries the hint as its description.
 
 - **Fixed: the same loss in an Outlook calendar, and a meeting marked tentative
   came back confirmed.** A meeting that repeats, made here in an Outlook
@@ -3186,11 +3515,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   was opened. The reading window, which is where a message opens when you press
   Enter on it, shows text and fetches nothing.
 
-  Known limitation: there is still no way to stop that fetch. Blocking it is a
-  feature nobody has built, and the Reading tab now says so rather than
-  implying it is done. [What Wixen Mail sends, and where](privacy.md) now has
-  a section on it. What is written here was read out of the code, not
-  measured on the wire.
+  Known limitation, since closed: there was no way to stop that fetch, and
+  blocking it was a feature nobody had built. It is built now and on by
+  default, so a picture in a message is held back until you ask for it. See
+  "Pictures in a message are held back" further up. [What Wixen Mail sends, and
+  where](privacy.md) has a section on it. What is written here was read out of
+  the code, not measured on the wire.
 
 - **The signature setting on the Compose tab does something now.**
   "Automatically insert signature on new messages" was built ticked, handed
@@ -4021,14 +4351,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   an address book, and yet it was added into the total that gets read out. It is
   gone, so the number said is the number of contacts really removed.
 
-  Known limitation, and it is the reason that second count existed: **deleting a
-  contact here does not delete it in Google or Outlook.** It goes from this
-  computer and the address book keeps its copy, so the next sync brings it back.
-  Nothing says so at the time; the message after a delete is the contact's name
-  and the word deleted. Making a delete travel means keeping a note of what was
-  deleted while offline, which is a change to how contacts are stored rather
-  than a line of code, so it is not done here. If you want a contact gone from
-  your address book, delete it there.
+  Known limitation, since closed, and it is the reason that second count
+  existed: **deleting a contact here did not delete it in Google or Outlook.**
+  It went from this computer and the address book kept its copy, so the next
+  sync brought it back, and nothing said so at the time. Making a delete travel
+  meant keeping a note of what was deleted while offline, which is a change to
+  how contacts are stored rather than a line of code. That note is now kept and
+  a delete does travel, under Allow Changes.
 
 - **A contact file laid out with indentation is read again, and an import that
   added nothing now says why.** The card standard reads every line starting with
@@ -4362,12 +4691,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the change was already being kept safely and nothing had ever mentioned it.
 
   **What it does not do.** Adding the event again to a calendar you can change
-  is the only way to have it saved, which is what the sentence says. Moving the
-  event to another calendar is on the menu and does not work for this: the moved
-  row keeps the identifier and address it was stored under, so the next sync
-  either sends the change back to the calendar that would not take it or reports
-  that it does not know where the event lives. That is a separate gap and it is
-  not fixed here.
+  is the only way to have it saved, which is what the sentence says.
+
+  Moving the event to another calendar is a separate gap and still is. The
+  silent half described here has since been closed: the moved row used to keep
+  the identifier and address it was stored under, so the next sync either sent
+  the change back to the calendar that would not take it or reported that it did
+  not know where the event lived. Moving an event a provider holds is now
+  refused outright, and the refusal says so, rather than half-done in silence.
+  Making such a move actually work is still not built.
 
 - **A note that mentions the end of an event no longer destroys the event's
   repeat rule.** If you typed something like "Say END:VEVENT when you are done"
@@ -5459,10 +5791,12 @@ live account or a live calendar server:
   before anything is written: the later rule wins, and deleting drops the rest
   rather than moving a message into a folder on its way to the trash.
 
-  **Known limitation:** a rule that moves a message to a folder is named in the
-  log and not carried out. Moving needs a write to the server, and doing half of
-  it in the cache alone would show a message in a folder it is not in until the
-  next sync put it back.
+  **Known limitation, since closed:** a rule that moves a message to a folder
+  was named in the log and not carried out. Moving needs a write to the server,
+  and doing half of it in the cache alone would show a message in a folder it is
+  not in until the next sync put it back. Both halves are now done, at the
+  server and then in the cache, and what happens when either fails is said. See
+  "A rule that files mail into a folder now files it" further up.
 
 - **Signatures go on messages.** They could be written, named, marked as the
   default and stored, and none of that ever reached a message. One now goes on
@@ -5905,12 +6239,14 @@ live account or a live calendar server:
   always done for the same reason. Whether a screen reader then says "ticked"
   on each row is a thing only a screen reader run can answer.
 
-  **Known limitation:** a row still reports that it can take focus and can be
-  selected, and never that it currently is either. Answering for a row replaces
-  the platform's own flags rather than adding to them, so the row the cursor is
-  sitting on looks like any other. Fixing it means telling the rows which one is
-  selected, which is a change to how the list is set up rather than a missing
-  line.
+  **Known limitation, since closed:** a row reported that it could take focus
+  and could be selected, and never that it currently was either, so the row the
+  cursor was sitting on looked like any other. Answering for a row replaces the
+  platform's own flags rather than adding to them, so fixing it meant telling
+  the rows which one is current, a change to how the list is set up rather than
+  a missing line. That is done: the row under the cursor now reports itself as
+  focused and selected. Whether a screen reader says so is still a thing only a
+  screen reader run can answer.
 
 - **Getting started is now written for the person using the program.** Pressing
   F1 anywhere outside mail opened a page of build instructions: install Rust,
@@ -6899,11 +7235,11 @@ be added by its address, and an event read aloud says its category.
 ### Removed
 
 - **The Answered, Draft, and Tags columns.** They were offered in the column model with no data behind them, so switching one on would have given a column that read blank on every row. They return when IMAP flag sync lands and there is something real to put in them.
-- **The IMAP IDLE loop.** It announced arrivals on a timer with invented message numbers. That was harmless beside a client that invented everything else and is not harmless beside one that fetches real mail: it would announce mail that does not exist. Real IDLE needs a second connection, because the session cannot run other commands while it is idling, and it is tracked as its own piece of work.
+- **The IMAP IDLE loop.** It announced arrivals on a timer with invented message numbers. That was harmless beside a client that invented everything else and is not harmless beside one that fetches real mail: it would announce mail that does not exist. Real IDLE needs a second connection, because the session cannot run other commands while it is idling, and it is tracked as its own piece of work. **Since built:** the watcher further up this file is the real one, on a connection of its own, reporting mail the server actually named.
 
 ### Known limitations
 
-- Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet.
+- Sorting still happens in memory over the loaded folder rather than in SQL. That is fine for the folder sizes the application can currently reach, and it is the wrong shape for the hundreds of thousands of messages the storage design targets. The SQL ordering is written and tested; the listing query does not use it yet. **Since closed:** the listing query reads the stored column layout and sorts in SQL.
 - Feedback preferences are per channel, not per event. The per-event overrides exist in the model and have no interface yet, because a grid of nine events by four channels is not the choice most people are making.
 - Threading runs over the loaded folder rather than incrementally as mail arrives. The `References` headers are now stored by the sync, so conversations form from real mail; rethreading still happens when a folder is opened rather than as messages arrive.
 - **Check Mail brings down the newest 500 messages in each folder**, not the whole mailbox. Reading further back is Get older messages, `Shift+F9`, a page at a time. The count of what is on the server is reported, so the gap is visible rather than silent.
@@ -6949,7 +7285,7 @@ be added by its address, and an event read aloud says its category.
 - **Fixed iCalendar property lookup matching on a prefix.** Asking for `SUMMARY` was also satisfied by a crafted `SUMMARYX` line, letting a hostile feed feed values into fields that were never requested. A property name must now be followed by `:` or `;`.
 - **Fixed unvalidated URLs reaching the operating system shell.** Clicking a link in a message, or using Save Link As on it, passed the URL straight to `open::that`. On Windows that is ShellExecute, which launches executables, reaches UNC paths across the network, and invokes any protocol handler registered on the machine. A `file:///C:/Windows/System32/calc.exe` or `\\evil.example\share\payload.exe` link would have been handed over without a check. All four sites now go through `HtmlRenderer::safe_external_url`, which allows http, https, and mailto and refuses everything else. Refusals are logged rather than silently ignored.
 - **Replaced a hand-rolled JSON parser on an attacker-controlled path.** The context menu extracted a link href by scanning for `"href":"` and reading to the next quote, which breaks on the escaping `JSON.stringify` produces: a href containing a quote was silently truncated. It now uses `serde_json`, which was already a dependency.
-- **Fixed an HTML injection in plain-text rendering mode.** `html_to_plain_text` strips tags and then decodes entities, so a message body containing `&lt;script&gt;` came back out as live markup. That is correct as plain text and an injection the moment it reaches the WebView. `sanitize_html` now escapes its plain-text output, so what it returns is always safe to embed. The path was not reachable in a shipped build, because nothing constructs the plain-text renderer yet, but the trap was set for whoever wired it up. Found by fuzzing, not by the hostile-input corpus.
+- **Fixed an HTML injection in plain-text rendering mode.** `html_to_plain_text` strips tags and then decodes entities, so a message body containing `&lt;script&gt;` came back out as live markup. That is correct as plain text and an injection the moment it reaches the WebView. `sanitize_html` now escapes its plain-text output, so what it returns is always safe to embed. The path was not reachable in a shipped build at the time, because nothing constructed the plain-text renderer, but the trap was set for whoever wired it up. It has since been wired, so the escaping described here is what keeps that path safe rather than a precaution against a future one. Found by fuzzing, not by the hostile-input corpus.
 
 ### Changed
 

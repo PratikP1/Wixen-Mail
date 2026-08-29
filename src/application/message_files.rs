@@ -47,6 +47,19 @@
 //! nobody declared is kept and read as far as it can be. A stretch of the file
 //! that holds nothing readable is counted and said out loud rather than passed
 //! over, and the messages after it are still read.
+//!
+//! # Signed mail keeps the bytes it was read from
+//!
+//! One thing a parse cannot be turned back into is the message it was made
+//! from, and a signature is arithmetic over exactly those bytes. So a message
+//! that says it is signed travels out of here as [`MessageFromAFile`], with the
+//! bytes beside the parse, and whatever files it can hand them to the cache.
+//! Without that, mail brought in from a file goes into a folder reading as
+//! though it had never claimed a signature at all.
+//!
+//! Nothing is carried for ordinary mail, which is nearly all of it, because a
+//! mailbox is read a message at a time precisely so that no part of it is held
+//! twice.
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
@@ -61,6 +74,54 @@ use crate::service::mime::ParsedMessage;
 pub const NOT_A_MAIL_FILE: &str = "That file does not hold mail. Choose a message saved from a mail program, \
      or an archive of messages.";
 
+/// One message read out of a file, with the bytes it was read from where those
+/// are worth keeping.
+///
+/// A signature is arithmetic over exact bytes, and nothing a parse produces can
+/// be turned back into them: header order, folding, whitespace and transfer
+/// encoding all change on the way through, and any one of those makes a good
+/// signature read as bad. Reading a file is the one path that has those exact
+/// bytes in its hands, so a signed message brought in from a file can be
+/// checked later only if they travel this far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageFromAFile {
+    /// The message, read into the shape the rest of the program uses.
+    pub message: ParsedMessage,
+    /// The bytes it was read from, and nothing at all for ordinary mail.
+    ///
+    /// The archive's own furniture is not in here. The separator line in front
+    /// of a message and the escaping an archive puts on its body lines both
+    /// come off first, so what is kept is what the sender signed rather than
+    /// what the file happened to hold.
+    ///
+    /// Nothing for a message that never claimed a signature, which is nearly
+    /// all mail. A mailbox somebody has kept for twenty years is read one
+    /// message at a time so that no part of the file is ever held twice, and
+    /// carrying every message's bytes beside its parse would undo that.
+    pub the_form_it_arrived_in: Option<Vec<u8>>,
+}
+
+impl MessageFromAFile {
+    /// One message read out of these bytes, keeping them where it says it is
+    /// signed.
+    ///
+    /// The one place that decides, and it asks
+    /// [`crate::service::signed_mail::claims_a_signature`], which is the same
+    /// question [`crate::data::message_cache::MessageCache::keep_signed_original`]
+    /// asks before it writes anything. One function answering it in both
+    /// places rather than two answers that could drift: bytes kept here that
+    /// the cache then refuses are a copy of somebody's mailbox held for
+    /// nothing, and bytes dropped here that the cache would have kept leave a
+    /// signed message reading as ordinary mail.
+    fn read_out_of(raw: &[u8], message: ParsedMessage) -> Self {
+        Self {
+            the_form_it_arrived_in: crate::service::signed_mail::claims_a_signature(raw)
+                .then(|| raw.to_vec()),
+            message,
+        }
+    }
+}
+
 /// Read one message out of the bytes of a file that holds a single message.
 ///
 /// An `.eml` file is a raw internet message, which is what arrives from a
@@ -71,7 +132,7 @@ pub const NOT_A_MAIL_FILE: &str = "That file does not hold mail. Choose a messag
 /// and sometimes no sender, so handed a picture it answers with an empty
 /// message rather than an error, and the import reports one message brought in
 /// with nothing in it.
-pub fn read_one_message(bytes: &[u8]) -> Result<ParsedMessage> {
+pub fn read_one_message_as_it_arrived(bytes: &[u8]) -> Result<MessageFromAFile> {
     let bytes = without_a_byte_order_mark(bytes);
     match what_the_file_holds(bytes) {
         FileHolds::NotMail => Err(Error::Other(NOT_A_MAIL_FILE.to_string())),
@@ -81,13 +142,23 @@ pub fn read_one_message(bytes: &[u8]) -> Result<ParsedMessage> {
         // on the end of its body, and it opens without complaint, so nobody
         // finds out. Whatever routes a file here is meant to have asked what
         // it holds first, and one day it will not have.
-        FileHolds::ManyMessages => read_many_messages(bytes)
-            .messages
-            .into_iter()
+        //
+        // The first message and not every message. A mailbox somebody has kept
+        // for twenty years can arrive here, and reading all of it to take the
+        // first is the whole file held as parsed messages to answer a question
+        // about its opening few lines.
+        FileHolds::ManyMessages => each_message_read_from(bytes)
+            .flatten()
             .next()
             .ok_or_else(|| Error::Other(NOT_A_MAIL_FILE.to_string())),
-        FileHolds::OneMessage => crate::service::mime::parse(bytes),
+        FileHolds::OneMessage => crate::service::mime::parse(bytes)
+            .map(|message| MessageFromAFile::read_out_of(bytes, message)),
     }
+}
+
+/// The same, for a caller with no use for the bytes it arrived in.
+pub fn read_one_message(bytes: &[u8]) -> Result<ParsedMessage> {
+    read_one_message_as_it_arrived(bytes).map(|read| read.message)
 }
 
 // ── Writing a message out ───────────────────────────────────────────────────
@@ -202,6 +273,30 @@ pub fn written_as_one_message(message: &ParsedMessage, files: &[FileOnTheMessage
 
 // ── Writing an archive of many messages ─────────────────────────────────────
 
+/// What goes into an archive for one message.
+///
+/// Two answers rather than one, because rebuilding a message is lossless enough
+/// for ordinary mail and destroys a signature. A signature is a statement about
+/// a run of bytes: reading a message and writing it out again reorders headers
+/// and rewraps lines, and any one of those changes turns a good signature into
+/// a bad one. So where the bytes a message arrived as were kept, they are what
+/// the archive gets.
+///
+/// The alternative shape, a function that took the raw bytes as an `Option` and
+/// files beside it, would let a caller hand over both, which cannot be honoured
+/// and would have to be resolved somewhere. These are the two things that can
+/// really happen and nothing else is expressible.
+pub enum WhatToWrite<'a> {
+    /// The message put back together from the columns and the stored text,
+    /// carrying the files this computer has.
+    RebuiltFromWhatIsStored(&'a [FileOnTheMessage]),
+    /// The bytes the message arrived as, written through unchanged.
+    ///
+    /// The only form a signature survives in. Only signed mail has any, and
+    /// only where they were kept.
+    ExactlyAsItArrived(&'a [u8]),
+}
+
 /// Add one message to the end of an archive being written.
 ///
 /// One message at a time rather than a whole mailbox at once, because a
@@ -213,10 +308,19 @@ pub fn written_as_one_message(message: &ParsedMessage, files: &[FileOnTheMessage
 /// What comes out is what [`read_many_messages`] reads. Those two are a pair
 /// and have to stay one: the separator written here is the separator that
 /// reader recognises, and nothing else would notice if they stopped agreeing.
+///
+/// `holding` decides what goes under the separator. See [`WhatToWrite`]: for
+/// most mail it is the message rebuilt from what is stored, and for a signed
+/// message whose arrived-in bytes were kept it is those bytes, because a
+/// signature is a statement about bytes and rebuilding is what destroys it.
+///
+/// The separator line is built from the parsed message either way. It carries
+/// the sender and the date, both of which the columns hold, and it is not part
+/// of the message a signature covers.
 pub fn written_into_an_archive(
     archive: &mut Vec<u8>,
     message: &ParsedMessage,
-    files: &[FileOnTheMessage],
+    holding: WhatToWrite<'_>,
 ) {
     // In front of the separator rather than after the message, and that is
     // the whole of what keeps the round trip exact. The empty line belongs to
@@ -232,7 +336,12 @@ pub fn written_into_an_archive(
         archive.extend_from_slice(ENDS_A_LINE.as_bytes());
     }
     archive.extend_from_slice(the_separator_for(message).as_bytes());
-    escaped_for_an_archive(archive, &written_as_one_message(message, files));
+    match holding {
+        WhatToWrite::RebuiltFromWhatIsStored(files) => {
+            escaped_for_an_archive(archive, &written_as_one_message(message, files));
+        }
+        WhatToWrite::ExactlyAsItArrived(raw) => escaped_for_an_archive(archive, raw),
+    }
     // And the message ends where a line ends, whatever it arrived as.
     //
     // This used to be assumed rather than done, and the assumption held for
@@ -762,7 +871,7 @@ pub fn read_many_messages(archive: &[u8]) -> MessagesRead {
     let mut read = MessagesRead::default();
     for message in each_message_read_from(archive) {
         match message {
-            Ok(message) => read.messages.push(message),
+            Ok(message) => read.messages.push(message.message),
             // One unreadable stretch is ordinary in an archive somebody has
             // been keeping for years, and stopping at it would lose every
             // message filed after it.
@@ -789,7 +898,9 @@ const NOTHING_THAT_READS_AS_A_MESSAGE: &str =
 /// definition of what a message in an archive is, used by both, rather than two
 /// walks of the same file that could come to disagree about where one message
 /// ends.
-pub fn each_message_read_from(archive: &[u8]) -> impl Iterator<Item = Result<ParsedMessage>> + '_ {
+pub fn each_message_read_from(
+    archive: &[u8],
+) -> impl Iterator<Item = Result<MessageFromAFile>> + '_ {
     each_message_read_piece_by_piece(archive)
 }
 
@@ -799,10 +910,16 @@ pub fn each_message_read_from(archive: &[u8]) -> impl Iterator<Item = Result<Par
 /// archive's, not the message's, and both come off here. One place rather than
 /// one for each way of walking a file, because a message that keeps the
 /// archive's furniture reads back with a header nothing understands.
-fn one_message_out_of(block: &[u8]) -> Result<ParsedMessage> {
+fn one_message_out_of(block: &[u8]) -> Result<MessageFromAFile> {
     let raw = without_the_archives_escaping(without_the_separator(block));
     match crate::service::mime::parse(&raw) {
-        Ok(message) if has_anything_in_it(&message) => Ok(message),
+        // The bytes kept are these rather than the block they came out of, and
+        // that is the whole of what makes a signature still add up: the
+        // separator line and the escaping are the archive's own furniture, and
+        // either one left on is a changed message.
+        Ok(message) if has_anything_in_it(&message) => {
+            Ok(MessageFromAFile::read_out_of(&raw, message))
+        }
         _ => Err(Error::Other(NOTHING_THAT_READS_AS_A_MESSAGE.to_string())),
     }
 }
@@ -1017,7 +1134,7 @@ const THE_FILE_STOPPED_BEING_READABLE: &str =
 /// of the same file that could come to disagree.
 pub fn each_message_read_piece_by_piece(
     reading: impl std::io::Read,
-) -> impl Iterator<Item = Result<ParsedMessage>> {
+) -> impl Iterator<Item = Result<MessageFromAFile>> {
     each_message_read_piece_by_piece_allowing(reading, HowMuchToHold::default())
 }
 
@@ -1025,7 +1142,7 @@ pub fn each_message_read_piece_by_piece(
 pub fn each_message_read_piece_by_piece_allowing(
     reading: impl std::io::Read,
     allowed: HowMuchToHold,
-) -> impl Iterator<Item = Result<ParsedMessage>> {
+) -> impl Iterator<Item = Result<MessageFromAFile>> {
     AnArchiveInPieces::of(reading, allowed).map(|block| one_message_out_of(&block?))
 }
 
@@ -1713,6 +1830,13 @@ pub fn what_the_export_did(written: usize) -> String {
 mod tests {
     use super::*;
 
+    /// A message rebuilt from what is stored, carrying no files.
+    ///
+    /// Which is what every test here but the ones about signed mail is about.
+    pub(super) fn rebuilt_carrying_nothing() -> WhatToWrite<'static> {
+        WhatToWrite::RebuiltFromWhatIsStored(&[])
+    }
+
     /// One ordinary message, as an `.eml` file holds it.
     fn one_message() -> &'static str {
         concat!(
@@ -1783,6 +1907,140 @@ mod tests {
         assert!(read.body_plain.as_deref().unwrap().contains("algebraic"));
     }
 
+    /// A message really signed with a certificate, as a file holds one.
+    ///
+    /// Real OpenSSL output rather than anything written here to look signed. A
+    /// fixture built by hand would agree with whatever this module happened to
+    /// do about it and with nothing else, and the point of keeping these bytes
+    /// is that a checker can still make the arithmetic come out.
+    fn a_signed_message() -> Vec<u8> {
+        crate::service::signed_mail::for_tests::signed_beside()
+    }
+
+    /// One signed message inside an archive, put there as it stands.
+    ///
+    /// Not through [`written_into_an_archive`], which builds a message again
+    /// out of what was parsed: header order, folding and transfer encoding all
+    /// change on the way through, and any one of those makes a good signature
+    /// read as bad. What goes in here is what an archive exported by another
+    /// mail program holds, which is the file somebody actually brings.
+    fn an_archive_holding_a_signed_message() -> Vec<u8> {
+        let mut archive = b"From alice@example.com Mon Jul 20 10:00:00 2026\r\n".to_vec();
+        archive.extend_from_slice(&a_signed_message());
+        archive
+    }
+
+    #[test]
+    fn test_a_signed_message_read_out_of_a_file_keeps_the_bytes_its_signature_is_over() {
+        // Reading a file is the one path that has in its hands the exact bytes
+        // a signature was made over, and it used to drop them. The message went
+        // into the folder and read as ordinary mail, which is a different claim
+        // from "signed, and not checkable here" and a false one.
+        let raw = a_signed_message();
+
+        let read = read_one_message_as_it_arrived(&raw).expect("a signed message");
+
+        assert_eq!(
+            read.the_form_it_arrived_in.as_deref(),
+            Some(raw.as_slice()),
+            "the bytes came back changed, so the signature would read as a broken one"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_message_read_out_of_a_file_carries_no_second_copy_of_itself() {
+        // Nearly all mail. A mailbox somebody has kept for twenty years is read
+        // one message at a time so that no part of the file is ever held twice,
+        // and carrying every message's bytes beside its parse would undo that
+        // for the sake of the one message in a thousand that is signed.
+        let read =
+            read_one_message_as_it_arrived(one_message().as_bytes()).expect("an ordinary message");
+
+        assert_eq!(read.the_form_it_arrived_in, None);
+    }
+
+    #[test]
+    fn test_a_signed_message_read_out_of_an_archive_still_adds_up() {
+        // The bytes kept have to be the ones the signature was made over rather
+        // than the stretch of the archive they were read out of. The separator
+        // line in front and the archive's own escaping are the archive's
+        // furniture, and either one left on makes a good signature read as bad.
+        //
+        // Checked by running the real checker over what was kept, because
+        // comparing the bytes with the fixture only says the two are equal and
+        // this says the thing that matters comes out.
+        let read = each_message_read_from(&an_archive_holding_a_signed_message())
+            .next()
+            .expect("an archive with one message in it")
+            .expect("a signed message");
+
+        let kept = read
+            .the_form_it_arrived_in
+            .expect("a signed message kept nothing to check itself against");
+        assert_eq!(kept, a_signed_message());
+        let report = crate::service::signed_mail::examine_signed_message(
+            &kept,
+            "alice@example.com",
+            "2026-08-28T00:00:00Z".parse().expect("a fixed moment"),
+        );
+        assert_eq!(
+            report.outcome,
+            crate::service::signed_mail::SignatureOutcome::Matches,
+            "{:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn test_where_a_piece_of_the_file_ends_never_changes_what_a_signature_is_checked_against() {
+        // A signature is arithmetic over exact bytes, so one byte gained or
+        // lost at a piece boundary fails it in exactly the way a tampered
+        // message would, and from the outside there is nothing to tell the two
+        // apart. Every other reader in this file is asked the same question
+        // about where a message ends; this asks it about what was kept.
+        for a_piece_of in [1, 2, 3, 5, 8, 37, 1024] {
+            let read: Vec<Vec<u8>> = each_message_read_piece_by_piece_allowing(
+                an_archive_holding_a_signed_message().as_slice(),
+                HowMuchToHold {
+                    how_much_is_read_at_once: a_piece_of,
+                    ..HowMuchToHold::default()
+                },
+            )
+            .filter_map(|read| read.ok())
+            .filter_map(|read| read.the_form_it_arrived_in)
+            .collect();
+
+            assert_eq!(
+                read,
+                vec![a_signed_message()],
+                "read {a_piece_of} bytes at a time, what the signature would be checked \
+                 against came out different"
+            );
+        }
+    }
+
+    #[test]
+    fn test_what_is_kept_from_a_file_is_exactly_what_the_cache_would_store() {
+        // Two answers to one question is the shape every quiet defect in this
+        // program has had, and this one would be silent both ways round. A
+        // reader that keeps bytes the cache then refuses has held a copy of
+        // somebody's whole mailbox for nothing. A reader that drops bytes the
+        // cache would have kept leaves the message reading as ordinary mail,
+        // which is the wrong answer this whole change is about.
+        //
+        // So both ask `claims_a_signature`, and this asks it a third time over
+        // the same files rather than trusting that they agree.
+        for file in [a_signed_message(), one_message().as_bytes().to_vec()] {
+            let read = read_one_message_as_it_arrived(&file).expect("a message");
+
+            assert_eq!(
+                read.the_form_it_arrived_in.is_some(),
+                crate::service::signed_mail::claims_a_signature(&file),
+                "the reader and the cache disagree about whether this message is signed"
+            );
+        }
+    }
+
     #[test]
     fn test_reading_a_file_that_is_not_mail_says_so_rather_than_importing_a_blank() {
         // The parser is forgiving by design: a message with no headers at all
@@ -1841,7 +2099,7 @@ mod tests {
         // the file at once and then writing them all down.
         let one_at_a_time: Vec<String> = each_message_read_from(an_archive().as_bytes())
             .filter_map(|message| message.ok())
-            .map(|message| message.subject)
+            .map(|read| read.message.subject)
             .collect();
 
         // And it agrees with reading the lot, because they are one answer
@@ -1869,7 +2127,7 @@ mod tests {
         // held.
         let one_at_a_time: Vec<String> = each_message_read_piece_by_piece(an_archive().as_bytes())
             .filter_map(|message| message.ok())
-            .map(|message| message.subject)
+            .map(|read| read.message.subject)
             .collect();
 
         assert_eq!(one_at_a_time, vec!["The first one", "The second one"]);
@@ -1878,8 +2136,8 @@ mod tests {
     /// What one reading of an archive found, in a shape two readings of it can
     /// be compared in.
     fn what_came_out(
-        read: impl Iterator<Item = Result<ParsedMessage>>,
-    ) -> Vec<std::result::Result<ParsedMessage, String>> {
+        read: impl Iterator<Item = Result<MessageFromAFile>>,
+    ) -> Vec<std::result::Result<MessageFromAFile, String>> {
         read.map(|message| message.map_err(|why| why.to_string()))
             .collect()
     }
@@ -1907,7 +2165,7 @@ mod tests {
                     .as_bytes(),
             )
             .expect("a message to parse");
-            written_into_an_archive(&mut stops_mid_line, &message, &[]);
+            written_into_an_archive(&mut stops_mid_line, &message, rebuilt_carrying_nothing());
         }
         let mut awkward: Vec<Vec<u8>> = vec![
             an_archive().as_bytes().to_vec(),
@@ -1978,7 +2236,7 @@ mod tests {
                     body_plain: Some(body),
                     ..ParsedMessage::default()
                 },
-                &[],
+                rebuilt_carrying_nothing(),
             );
         }
         archive
@@ -2009,7 +2267,7 @@ mod tests {
         let subjects: Vec<&str> = read
             .iter()
             .filter_map(|message| message.as_ref().ok())
-            .map(|message| message.subject.as_str())
+            .map(|read| read.message.subject.as_str())
             .collect();
         assert_eq!(subjects, vec!["The first one", "The third one"]);
         let said: Vec<&String> = read
@@ -2437,7 +2695,7 @@ mod tests {
 
         let mut written = Vec::new();
         for message in &read.messages {
-            written_into_an_archive(&mut written, message, &[]);
+            written_into_an_archive(&mut written, message, rebuilt_carrying_nothing());
         }
         let again = read_many_messages(&written);
 
@@ -2470,7 +2728,7 @@ mod tests {
         };
 
         let mut written = Vec::new();
-        written_into_an_archive(&mut written, &awkward, &[]);
+        written_into_an_archive(&mut written, &awkward, rebuilt_carrying_nothing());
         let read = read_many_messages(&written);
 
         assert_eq!(
@@ -2505,11 +2763,11 @@ mod tests {
             ..ParsedMessage::default()
         };
         let mut written = Vec::new();
-        written_into_an_archive(&mut written, &awkward, &[]);
-        written_into_an_archive(&mut written, &awkward, &[]);
+        written_into_an_archive(&mut written, &awkward, rebuilt_carrying_nothing());
+        written_into_an_archive(&mut written, &awkward, rebuilt_carrying_nothing());
 
         for a_piece_of in [1, 2, 3, 5, 8, 37, 1024] {
-            let read: Vec<ParsedMessage> = each_message_read_piece_by_piece_allowing(
+            let read: Vec<MessageFromAFile> = each_message_read_piece_by_piece_allowing(
                 written.as_slice(),
                 HowMuchToHold {
                     how_much_is_read_at_once: a_piece_of,
@@ -2524,9 +2782,9 @@ mod tests {
                 2,
                 "read {a_piece_of} bytes at a time, the archive came apart"
             );
-            for message in read {
+            for read in read {
                 assert_eq!(
-                    message.body_plain, awkward.body_plain,
+                    read.message.body_plain, awkward.body_plain,
                     "read {a_piece_of} bytes at a time, the escaping came back wrong"
                 );
             }
@@ -2623,7 +2881,7 @@ mod tests {
             // import produced.
             for message in &read.messages {
                 let mut archive = Vec::new();
-                written_into_an_archive(&mut archive, message, &[]);
+                written_into_an_archive(&mut archive, message, rebuilt_carrying_nothing());
                 let _ = read_many_messages(&archive);
             }
         }
@@ -2751,8 +3009,8 @@ mod tests {
         assert_eq!(there_and_back(&written_here), written_here);
 
         let mut archive = Vec::new();
-        written_into_an_archive(&mut archive, &written_here, &[]);
-        written_into_an_archive(&mut archive, &written_here, &[]);
+        written_into_an_archive(&mut archive, &written_here, rebuilt_carrying_nothing());
+        written_into_an_archive(&mut archive, &written_here, rebuilt_carrying_nothing());
         let read = read_many_messages(&archive);
 
         assert_eq!(
@@ -2925,6 +3183,7 @@ mod tests {
 
 #[cfg(test)]
 mod a_mailbox_larger_than_this_computer_would_hold {
+    use super::tests::rebuilt_carrying_nothing;
     use super::*;
     use crate::common::types::EmailAddress;
 
@@ -2963,7 +3222,7 @@ mod a_mailbox_larger_than_this_computer_would_hold {
                 ..ParsedMessage::default()
             };
             let mut one_message = Vec::new();
-            written_into_an_archive(&mut one_message, &message, &[]);
+            written_into_an_archive(&mut one_message, &message, rebuilt_carrying_nothing());
             // The empty line that has to sit in front of the next separator.
             // Written by the writer for every message after the first, and this
             // one message stands in for all of them.
@@ -3023,7 +3282,7 @@ mod a_mailbox_larger_than_this_computer_would_hold {
             match message {
                 Ok(message) => {
                     read += 1;
-                    the_first_body.get_or_insert(message.body_plain);
+                    the_first_body.get_or_insert(message.message.body_plain);
                 }
                 Err(_) => could_not_be_read += 1,
             }
@@ -3043,6 +3302,7 @@ mod a_mailbox_larger_than_this_computer_would_hold {
 
 #[cfg(test)]
 mod what_the_archive_writer_assumes {
+    use super::tests::rebuilt_carrying_nothing;
     use super::*;
 
     fn a_message_whose_body_stops_mid_line(subject: &str) -> ParsedMessage {
@@ -3070,7 +3330,7 @@ mod what_the_archive_writer_assumes {
             written_into_an_archive(
                 &mut archive,
                 &a_message_whose_body_stops_mid_line(subject),
-                &[],
+                rebuilt_carrying_nothing(),
             );
         }
 

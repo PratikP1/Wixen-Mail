@@ -347,17 +347,12 @@ fn file_here(
     // A folder the server also fills needs a number the server will never
     // issue. See `next_reserved_uid`: taking the next one upward hides a real
     // message forever and lets a later sync write over this copy. Which end to
-    // count from is asked of the one place that answers it, because an import
-    // asks the same question and the two must not differ.
-    let uid = match crate::application::importing_messages::WrittenDownAs::for_folder(folder) {
-        crate::application::importing_messages::WrittenDownAs::FiledHereCountingUp => {
-            cache.next_local_uid(row.id)
-        }
-        crate::application::importing_messages::WrittenDownAs::FiledHereCountingDownFromTheTop => {
-            cache.next_reserved_uid(row.id)
-        }
-    }
-    .map_err(|e| e.to_string())?;
+    // count from is asked of the one place that answers it, because a rule
+    // filing a message and an import ask the same question and the three must
+    // not differ.
+    let uid = cache
+        .next_uid_for_filing(row.id)
+        .map_err(|e| e.to_string())?;
 
     // The moment it was sent, for a message with no usable Date header of its
     // own. An empty date sorts the copy to whichever end of Sent nobody looks

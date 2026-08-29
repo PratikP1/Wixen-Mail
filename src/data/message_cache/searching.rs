@@ -40,6 +40,79 @@ fn carries_punctuation(typed: &str) -> bool {
         .any(|c| !c.is_alphanumeric() && !c.is_whitespace())
 }
 
+/// Which mail a search looks at.
+///
+/// The search box offers these four and nothing else, so this is the whole of
+/// what "In" can mean. Two of them narrow where the search looks and two narrow
+/// which part of a message it reads, which is one control doing two jobs; that
+/// is what the box has always offered and this names it rather than changing
+/// it.
+///
+/// It exists because the box offered all four, announced itself to a screen
+/// reader as a working control, and was read by nothing: somebody chose Current
+/// Folder, got their whole account back, and had no way to see that they had.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhereToSearch {
+    /// Every folder of the account, across everything the index holds: the
+    /// subject, the sender, the first line and the message text.
+    EveryFolder,
+    /// One folder, named by its row here, across the same parts.
+    OneFolder(i64),
+    /// Every folder, and only the subject line.
+    SubjectOnly,
+    /// Every folder, and only who sent it.
+    SenderOnly,
+}
+
+/// A folder row is numbered from one, so nought names no folder.
+///
+/// Bound in place of a real folder for the three answers that do not narrow to
+/// one, so there is a single query shape rather than one per answer and a
+/// single list of what goes into it.
+const NO_FOLDER_IN_PARTICULAR: i64 = 0;
+
+impl WhereToSearch {
+    /// Which folder to narrow to, or [`NO_FOLDER_IN_PARTICULAR`].
+    fn folder(self) -> i64 {
+        match self {
+            Self::OneFolder(id) => id,
+            _ => NO_FOLDER_IN_PARTICULAR,
+        }
+    }
+
+    /// The part of the index this reads, written as an FTS5 column filter.
+    ///
+    /// Empty for the answers that read all of it. FTS5 takes `{column} :` in
+    /// front of an expression, and the expression is wrapped in brackets so the
+    /// filter covers every word of it rather than only the first.
+    fn only_the_column(self) -> &'static str {
+        match self {
+            Self::SubjectOnly => "{subject} : ",
+            Self::SenderOnly => "{from_addr} : ",
+            _ => "",
+        }
+    }
+
+    /// The columns the second, exact check reads.
+    ///
+    /// A term carrying punctuation is checked against the stored text as well
+    /// as against the index, because the index throws those characters away.
+    /// That check has to ask about the same part of a message the index filter
+    /// did: asking about all three would let a subject answer a search of
+    /// senders and undo the narrowing on exactly the terms that most need it.
+    fn columns_read_exactly(self) -> &'static str {
+        match self {
+            Self::SubjectOnly => "LOWER(m.subject) LIKE ?5 ESCAPE '!'",
+            Self::SenderOnly => "LOWER(m.from_addr) LIKE ?5 ESCAPE '!'",
+            _ => {
+                "LOWER(m.subject) LIKE ?5 ESCAPE '!'
+                  OR LOWER(m.from_addr) LIKE ?5 ESCAPE '!'
+                  OR LOWER(COALESCE(m.snippet, '')) LIKE ?5 ESCAPE '!'"
+            }
+        }
+    }
+}
+
 /// Turn what somebody typed into an FTS5 query.
 ///
 /// Every word is wrapped in quotes, which is the whole of the safety here.
@@ -309,20 +382,32 @@ impl MessageCache {
     /// three rows with three UIDs. Grouping on Gmail's own identifier
     /// collapses those back to one, and everywhere else that identifier is
     /// null and the grouping falls through to the row's own id.
+    /// `looking_in` is the answer the search box's "In" list gave. See
+    /// [`WhereToSearch`]: it narrows which folder is read, or which part of a
+    /// message is read, and it is read here rather than being offered and
+    /// ignored.
     pub fn search_messages(
         &self,
         account_id: &str,
         query: &str,
+        looking_in: WhereToSearch,
         limit: usize,
     ) -> Result<Vec<MessageListRow>> {
         let Some(matching) = as_a_search(query) else {
             return Ok(Vec::new());
         };
         let exactly = carries_punctuation(query);
+        // Wrapped rather than built into `as_a_search`, so the words somebody
+        // typed are turned into a search in one place whatever is being
+        // searched, and the narrowing is the only thing that differs.
+        let matching = match looking_in.only_the_column() {
+            "" => matching,
+            column => format!("{column}({matching})"),
+        };
 
         let mut stmt = self
             .conn
-            .prepare_cached(
+            .prepare_cached(&format!(
                 // MIN(m.id) is not decoration. SQLite documents that when min
                 // or max is used in an aggregate query, every bare column
                 // comes from that same input row, so the whole row is one
@@ -342,27 +427,32 @@ impl MessageCache {
                  INNER JOIN folders f ON m.folder_id = f.id
                  WHERE message_search MATCH ?1
                    AND f.account_id = ?2 AND m.deleted = 0
+                   -- Nought names no folder, because a folder row is numbered
+                   -- from one, so the three answers that do not narrow to one
+                   -- folder fall through here. The MATCH above is what chooses
+                   -- the rows either way, so this is a test on candidates
+                   -- rather than an index this gives up.
+                   AND (?6 = {NO_FOLDER_IN_PARTICULAR} OR m.folder_id = ?6)
                    -- Only when the term carries punctuation the index throws
                    -- away. ?4 is 0 for an ordinary word search and this whole
                    -- clause falls away; when it is 1 the rows the index
                    -- offered are checked against the text as well, which is a
                    -- comparison per candidate rather than per message.
                    --
-                   -- Deliberately the same three columns the old search
-                   -- covered, so nothing it used to get right is lost. The
-                   -- body is not among them: it is stored packed and SQL
-                   -- cannot read it. A punctuated term that appears only in
-                   -- message text is therefore not found, which is a narrower
-                   -- answer than the index alone would give and a wider one
-                   -- than a search that could not read bodies at all.
-                   AND (?4 = 0
-                        OR LOWER(m.subject) LIKE ?5 ESCAPE '!'
-                        OR LOWER(m.from_addr) LIKE ?5 ESCAPE '!'
-                        OR LOWER(COALESCE(m.snippet, '')) LIKE ?5 ESCAPE '!')
+                   -- The same parts of a message the index filter above reads,
+                   -- so a narrowed search stays narrow on exactly the terms
+                   -- that most need it. The body is not among them: it is
+                   -- stored packed and SQL cannot read it. A punctuated term
+                   -- that appears only in message text is therefore not found,
+                   -- which is a narrower answer than the index alone would
+                   -- give and a wider one than a search that could not read
+                   -- bodies at all.
+                   AND (?4 = 0 OR {exactly_in})
                  GROUP BY COALESCE(m.gmail_msgid, m.id)
                  ORDER BY m.date DESC, m.uid DESC
                  LIMIT ?3",
-            )
+                exactly_in = looking_in.columns_read_exactly()
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare search: {}", e)))?;
 
         let rows = stmt
@@ -373,6 +463,7 @@ impl MessageCache {
                     limit as i64,
                     i64::from(exactly),
                     super::like_pattern(query),
+                    looking_in.folder(),
                 ],
                 |row| {
                     Ok(MessageListRow {
@@ -422,6 +513,7 @@ impl MessageCache {
 #[cfg(test)]
 mod finding_things {
     use super::super::{CachedFolder, CachedMessage, MessageCache};
+    use super::WhereToSearch;
     use crate::common::temp_home::TempHome;
 
     fn cache(name: &str) -> (TempHome<MessageCache>, i64) {
@@ -461,6 +553,129 @@ mod finding_things {
         }
     }
 
+    // ── Where the search box says it is looking ─────────────────────────
+
+    #[test]
+    fn test_a_search_in_the_folder_showing_does_not_answer_with_another_folder() {
+        // The search box offers Current Folder. Answering with the whole
+        // account when somebody asked for one folder tells them their folder
+        // holds mail it does not hold, and there is nothing on the screen to
+        // show them otherwise.
+        let (cache, inbox) = cache("search_in_one_folder");
+        let elsewhere = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc".into(),
+                name: "Archive".into(),
+                path: "Archive".into(),
+                folder_type: "Archive".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a second folder");
+        cache
+            .save_message(&message(inbox, 1, "Refurbishment quote"))
+            .expect("one in the inbox");
+        cache
+            .save_message(&message(elsewhere, 2, "Refurbishment invoice"))
+            .expect("one somewhere else");
+
+        let found = cache
+            .search_messages("acc", "refurbishment", WhereToSearch::OneFolder(inbox), 50)
+            .expect("a search");
+
+        assert_eq!(
+            found.len(),
+            1,
+            "answered with mail from a folder nobody was looking at"
+        );
+        assert_eq!(found[0].subject, "Refurbishment quote");
+    }
+
+    #[test]
+    fn test_a_search_of_subjects_alone_does_not_answer_with_a_sender_or_a_body() {
+        // Subject Only means the subject line. A message whose sender or whose
+        // text carries the word is not a message whose subject does.
+        let (cache, folder) = cache("search_subjects_alone");
+        cache
+            .save_message(&message(folder, 1, "Refurbishment quote"))
+            .expect("one by subject");
+        let mut by_sender = message(folder, 2, "Tuesday");
+        by_sender.from_addr = "refurbishment@example.com".to_string();
+        cache.save_message(&by_sender).expect("one by sender");
+        let by_body = cache
+            .save_message(&message(folder, 3, "Wednesday"))
+            .expect("one by body");
+        cache
+            .save_message_body(by_body, Some("about the refurbishment"), None)
+            .expect("a body");
+
+        let found = cache
+            .search_messages("acc", "refurbishment", WhereToSearch::SubjectOnly, 50)
+            .expect("a search");
+
+        assert_eq!(
+            found.len(),
+            1,
+            "a search of subjects answered with something else: {:?}",
+            found.iter().map(|row| &row.subject).collect::<Vec<_>>()
+        );
+        assert_eq!(found[0].subject, "Refurbishment quote");
+    }
+
+    #[test]
+    fn test_a_search_of_senders_alone_does_not_answer_with_a_subject() {
+        // From Only means who sent it. The other half of the pair above, and
+        // needed on its own: one arm passing does not say the other narrows.
+        let (cache, folder) = cache("search_senders_alone");
+        cache
+            .save_message(&message(folder, 1, "Refurbishment quote"))
+            .expect("one by subject");
+        let mut by_sender = message(folder, 2, "Tuesday");
+        by_sender.from_addr = "refurbishment@example.com".to_string();
+        cache.save_message(&by_sender).expect("one by sender");
+
+        let found = cache
+            .search_messages("acc", "refurbishment", WhereToSearch::SenderOnly, 50)
+            .expect("a search");
+
+        assert_eq!(
+            found.len(),
+            1,
+            "a search of senders answered with a subject: {:?}",
+            found.iter().map(|row| &row.subject).collect::<Vec<_>>()
+        );
+        assert_eq!(found[0].subject, "Tuesday");
+    }
+
+    #[test]
+    fn test_a_narrowed_search_stays_narrow_when_the_word_carries_punctuation() {
+        // A word the index throws characters out of is checked against the
+        // stored text as well, and that second check has to read the same part
+        // of a message the first one did.
+        //
+        // This message is the case where the two answers differ. The index
+        // keeps "100" without the sign, so the sender really does match the
+        // index; the exact check then has to ask whether the sender carries
+        // "100%", and it does not. Asked of all three columns instead, the
+        // subject would answer for it and a search of senders would come back
+        // with a message whose sender was never searched.
+        let (cache, folder) = cache("narrowed_search_with_punctuation");
+        let mut from_that_desk = message(folder, 1, "Total 100% agreed");
+        from_that_desk.from_addr = "Invoicing 100 <billing@example.com>".to_string();
+        cache.save_message(&from_that_desk).expect("a message");
+
+        let found = cache
+            .search_messages("acc", "100%", WhereToSearch::SenderOnly, 50)
+            .expect("a search");
+
+        assert!(
+            found.is_empty(),
+            "a subject answered a search of senders: {:?}",
+            found.iter().map(|row| &row.subject).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn test_a_phrase_from_the_middle_of_a_message_can_be_found() {
         // The capability this replaced did not have. Search covered the
@@ -484,7 +699,7 @@ mod finding_things {
             .expect("a body");
 
         let found = cache
-            .search_messages("acc", "refurbishment", 50)
+            .search_messages("acc", "refurbishment", WhereToSearch::EveryFolder, 50)
             .expect("a search");
 
         assert_eq!(found.len(), 1, "a word in the message text was not found");
@@ -509,7 +724,7 @@ mod finding_things {
 
         assert_eq!(
             cache
-                .search_messages("acc", "Tuesday", 50)
+                .search_messages("acc", "Tuesday", WhereToSearch::EveryFolder, 50)
                 .expect("a search")
                 .len(),
             1,
@@ -528,7 +743,7 @@ mod finding_things {
             .expect("a message");
         assert_eq!(
             cache
-                .search_messages("acc", "refurbishment", 50)
+                .search_messages("acc", "refurbishment", WhereToSearch::EveryFolder, 50)
                 .expect("a search")
                 .len(),
             1
@@ -538,7 +753,7 @@ mod finding_things {
 
         assert!(
             cache
-                .search_messages("acc", "refurbishment", 50)
+                .search_messages("acc", "refurbishment", WhereToSearch::EveryFolder, 50)
                 .expect("a search")
                 .is_empty(),
             "a message that has been removed is still offered by search (id {id})"
@@ -580,7 +795,7 @@ mod finding_things {
 
         assert_eq!(
             reopened
-                .search_messages("acc", "refurbishment", 50)
+                .search_messages("acc", "refurbishment", WhereToSearch::EveryFolder, 50)
                 .expect("a search")
                 .len(),
             1,

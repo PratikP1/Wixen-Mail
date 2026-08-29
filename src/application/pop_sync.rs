@@ -19,6 +19,7 @@
 //! default is to leave everything, which costs them a mailbox that fills and
 //! saves them the case where this computer is the only copy and it is gone.
 
+use crate::application::summing_up::SummingUp;
 use crate::common::Result;
 
 /// What a sync of a POP mailbox did.
@@ -45,6 +46,47 @@ pub struct PopSync {
     /// reading the whole folder again. A check that downloaded nothing reports
     /// none, which is what keeps a message from being looked at twice.
     pub written: Vec<i64>,
+}
+
+/// What a check of a POP mailbox did, in the words the status line uses.
+///
+/// Named here rather than built where it is shown, for the reason the IMAP
+/// summary is: a sentence assembled at the call site cannot be argued about in
+/// a test, and the one this replaces was assembled inside a closure on a
+/// background thread where nothing could reach it. What the rules did comes
+/// from [`crate::application::mail_sync::say_what_the_rules_did`], so a reader
+/// hears the same words whichever kind of account the mail came from.
+///
+/// Not yet called. The POP check's status line is still put together where it
+/// is spoken, in the main window, which is a file another change owns as this
+/// is written, so the last step is a single call there in place of that
+/// assembly. Until it happens a POP reader hears what was downloaded and
+/// nothing about their rules, and the wording lives in two places, which is
+/// the state this function exists to end rather than one to keep.
+pub fn what_the_pop_check_did(result: &PopSync) -> String {
+    let mut said = SummingUp::opening(format!(
+        "{} new, {} on the server",
+        result.fetched, result.on_server
+    ));
+    if result.removed_from_server > 0 {
+        // Said out loud, because it is mail leaving a server for good and the
+        // only warning anybody gets that the policy is running.
+        said.count(format!(
+            "{} removed from the server",
+            result.removed_from_server
+        ));
+    }
+    if result.waiting_on_the_setting > 0 {
+        // The other half, and it needs saying just as much. This account is
+        // set to clear its server and the setting is holding that back, so
+        // without a word here the mailbox quietly fills and the first sign is
+        // the provider refusing new mail.
+        said.sentence(crate::application::allowed::removals_waiting_here(
+            result.waiting_on_the_setting,
+        ));
+    }
+    crate::application::mail_sync::say_what_the_rules_did(&result.filtered, &mut said);
+    said.spoken()
 }
 
 /// What the account said about clearing the server.
@@ -248,7 +290,16 @@ pub(crate) async fn sync<M: PopMailbox>(
         // signature nobody kept the bytes for is one nobody can ever check.
         // The call decides for itself whether there is anything to keep, and
         // for ordinary mail there is not.
-        cache.keep_signed_original(row, &raw)?;
+        //
+        // Logged and not fatal, the same as on the IMAP path. The message is
+        // already written down by the time this runs, so a failure here costs a
+        // verdict on one message and nothing else; ending the check on it would
+        // say the mail had not arrived when it had, and would return before the
+        // polite ending, which is the only thing that commits anything on a POP
+        // server.
+        if let Err(e) = cache.keep_signed_original(row, &raw) {
+            tracing::warn!("Could not keep the form a signed message arrived in: {e}");
+        }
         written.push(row);
     }
 
@@ -280,10 +331,28 @@ pub(crate) async fn sync<M: PopMailbox>(
     // no protocol gate, so somebody on POP could write rules, name them,
     // enable them, and never have one evaluated, while the changelog said
     // rules run on arriving mail with no exception written down.
-    let filtered = match filtering {
+    let mut filtered = match filtering {
         Some(rules) => crate::application::mail_sync::apply_rules(cache, rules, &written),
         None => crate::application::mail_sync::Filtered::default(),
     };
+    // And the filing they asked for, which nothing here carried out. The
+    // rules ran, the folder each message belonged in was worked out, and the
+    // answer was dropped: blocking a sender wrote the rule down, moved
+    // nothing, and said nothing about either half.
+    let (filed, could_not) =
+        file_where_the_rules_said(cache, account_id, folder_id, &filtered.to_move);
+    filtered.changed += filed;
+    for reason in &could_not {
+        // Logged as well as said, the same as the IMAP path. A status line is
+        // gone as soon as the next one replaces it, and the summary reads out
+        // the first few and says how many others there are; this is where
+        // those others are.
+        //
+        // Folder names and what went wrong, never a subject: a subject line is
+        // close enough to the message to be held to the same rule as its body.
+        tracing::warn!("A rule could not file a message: {reason}");
+    }
+    filtered.could_not_be_filed = could_not;
 
     Ok(PopSync {
         fetched: written.len(),
@@ -293,6 +362,78 @@ pub(crate) async fn sync<M: PopMailbox>(
         on_server: on_server.len(),
         written,
     })
+}
+
+/// Do the filing the rules asked for, and say how many really happened.
+///
+/// Nothing here reaches a server, and that is the whole difference from the
+/// IMAP side. Mail collected over POP is on this computer once it has been
+/// downloaded, and every folder a POP account has is on this computer too, so
+/// filing is a row moving between two local folders and there is nobody to ask
+/// first. That also settles which end of the new folder's numbering the row
+/// takes a number from: the cache works that out from the folder itself, so
+/// this cannot get it wrong and does not try.
+///
+/// One message at a time and one failure at a time. A rule that cannot be
+/// carried out on one message is not a reason to stop filing the rest, and the
+/// sentences it hands back are the IMAP path's own, so a reader hears the same
+/// words whichever kind of account the mail came from.
+fn file_where_the_rules_said(
+    cache: &crate::data::message_cache::MessageCache,
+    account_id: &str,
+    from_id: i64,
+    moves: &[crate::application::mail_sync::Moving],
+) -> (usize, Vec<String>) {
+    if moves.is_empty() {
+        return (0, Vec::new());
+    }
+    // Turning the folder name a rule uses into a folder needs the account's
+    // folder list. Without it nothing can be filed, and giving up quietly
+    // would make that check read exactly like a check with no rules in it. One
+    // sentence per message, as everywhere else here, so the count is right and
+    // the summary folds the repeats into one.
+    let every_one_of_them_dropped = || {
+        vec![
+            crate::application::mail_sync::THE_FOLDER_LIST_COULD_NOT_BE_READ.to_string();
+            moves.len()
+        ]
+    };
+    let Ok(folders) = cache.get_folders_for_account(account_id) else {
+        return (0, every_one_of_them_dropped());
+    };
+    // The folder the mail landed in, so a sentence can say where a message
+    // that was not filed actually is. It was written into a moment ago, so its
+    // absence here means the list itself is not to be trusted.
+    let Some(from) = folders.iter().find(|folder| folder.id == from_id) else {
+        return (0, every_one_of_them_dropped());
+    };
+
+    let mut done = 0;
+    let mut could_not = Vec::new();
+    for moving in moves {
+        let Some(into) =
+            crate::application::mail_sync::the_folder_a_rule_names(&folders, &moving.into)
+        else {
+            could_not.push(crate::application::mail_sync::no_folder_of_that_name(
+                &moving.into,
+            ));
+            continue;
+        };
+        // Already where the rule wants it, so there is nothing to do and
+        // nothing to report. Rules run on whatever has just arrived, and a
+        // rule that files a sender into a folder goes on matching that
+        // sender's mail once it is in that folder.
+        if into.id == from.id {
+            continue;
+        }
+        match cache.move_message(moving.message_row, into.id) {
+            Ok(()) => done += 1,
+            Err(why) => could_not.push(crate::application::mail_sync::it_is_still_where_it_was(
+                &into.name, &from.name, &why,
+            )),
+        }
+    }
+    (done, could_not)
 }
 
 /// One message as it came down, and where it is going.
@@ -642,6 +783,222 @@ Subject: Weekly roundup",
         assert_eq!(
             outcome.filtered.changed, 1,
             "a rule that matches the arriving message did not run"
+        );
+    }
+
+    /// Another of this account's folders. Every folder a POP account has lives
+    /// on this computer, so they all carry the reserved prefix.
+    fn a_folder_here(cache: &MessageCache, name: &str) -> i64 {
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: name.into(),
+                path: format!("{}/{name}", crate::application::local_folders::LOCAL_PREFIX),
+                folder_type: "Custom".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder")
+    }
+
+    /// A rule as the Rules Manager stores one.
+    fn a_rule(
+        name: &str,
+        pattern: &str,
+        action: &str,
+        value: Option<&str>,
+    ) -> crate::data::message_cache::MessageFilterRule {
+        crate::data::message_cache::MessageFilterRule {
+            id: format!("rule-{name}"),
+            account_id: "acct".into(),
+            name: name.into(),
+            field: "from".into(),
+            match_type: "contains".into(),
+            pattern: pattern.into(),
+            case_sensitive: false,
+            action_type: action.into(),
+            action_value: value.map(str::to_string),
+            enabled: true,
+            created_at: String::new(),
+        }
+    }
+
+    /// A check with these rules on, and everything they ask for allowed.
+    fn run_with_rules<M: PopMailbox>(
+        server: &M,
+        cache: &MessageCache,
+        folder_id: i64,
+        rules: &[crate::data::message_cache::MessageFilterRule],
+    ) -> Result<PopSync> {
+        let mut engine = crate::application::filters::FilterEngine::default();
+        engine.load_from_persisted(rules);
+        let filtering = crate::application::mail_sync::Filtering {
+            rules: &engine,
+            allowed: crate::application::allowed::Allowed {
+                mail: true,
+                personal_information: true,
+            },
+        };
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync(
+                server,
+                &Landing {
+                    cache,
+                    account_id: "acct",
+                    folder_id,
+                },
+                Housekeeping::CAUTIOUS,
+                false,
+                true,
+                Utc::now(),
+                Some(&filtering),
+            ))
+    }
+
+    #[test]
+    fn test_a_rule_that_files_mail_into_a_folder_really_files_it() {
+        // Blocking a sender writes exactly this rule and nothing else. Here
+        // the rules ran, the filing was worked out, and the answer was thrown
+        // away: the message stayed in the inbox, nothing was said, and the
+        // rule read as one that was working.
+        let (cache, inbox) = a_cache();
+        let junk = a_folder_here(&cache, "Junk");
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+
+        let done = run_with_rules(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            inbox,
+            &[a_rule(
+                "Blocked sender",
+                "news@example.com",
+                "move_to_folder",
+                Some("Junk"),
+            )],
+        )
+        .expect("the check runs");
+
+        assert_eq!(
+            cache
+                .get_message_list(junk, "acct")
+                .expect("the list")
+                .len(),
+            1,
+            "the rule filed nothing"
+        );
+        assert!(
+            cache
+                .get_message_list(inbox, "acct")
+                .expect("the list")
+                .is_empty(),
+            "the message is in the inbox as well, so it is in two places"
+        );
+        assert_eq!(done.filtered.changed, 1, "the filing was not counted");
+        assert!(
+            done.filtered.could_not_be_filed.is_empty(),
+            "{:?}",
+            done.filtered.could_not_be_filed
+        );
+    }
+
+    #[test]
+    fn test_a_rule_that_could_not_file_mail_says_so_once_however_many_it_matched() {
+        // A rule naming a folder somebody has since renamed fails the same way
+        // on every message it matches, so a check that brought down three of
+        // them holds three copies of one sentence. Kept one per message, so
+        // the count in front of them is right, and folded to a single reading
+        // when it is said, which is the rule about feedback that does not
+        // flood a reader.
+        let (cache, inbox) = a_cache();
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+        let mailbox = [
+            (1, "aaa", raw.as_slice()),
+            (2, "bbb", raw.as_slice()),
+            (3, "ccc", raw.as_slice()),
+        ];
+
+        let done = run_with_rules(
+            &Scripted::holding(&mailbox),
+            &cache,
+            inbox,
+            &[a_rule(
+                "Old folder",
+                "news@example.com",
+                "move_to_folder",
+                Some("Receipts"),
+            )],
+        )
+        .expect("the check runs");
+
+        assert_eq!(
+            done.filtered.could_not_be_filed.len(),
+            3,
+            "one sentence per message is what the count is read from: {:?}",
+            done.filtered.could_not_be_filed
+        );
+        assert_eq!(
+            done.filtered.changed, 0,
+            "filing that never happened was counted as done"
+        );
+        assert_eq!(
+            cache
+                .get_message_list(inbox, "acct")
+                .expect("the list")
+                .len(),
+            3,
+            "mail went missing over a rule that could not be carried out"
+        );
+
+        let said = what_the_pop_check_did(&done);
+        assert!(
+            said.contains("3 messages not filed as asked"),
+            "the check did not say how many were left where they were: {said}"
+        );
+        assert_eq!(
+            said.matches("Receipts").count(),
+            1,
+            "one broken rule was read out once per message it matched: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_check_says_how_much_the_rules_sorted() {
+        // The other direction, so the test above cannot be satisfied by a
+        // summary that says nothing at all. Filing that worked is worth a word
+        // too: mail moving out of the inbox on its own is otherwise a folder
+        // that quietly holds less than the reader expects.
+        let (cache, inbox) = a_cache();
+        a_folder_here(&cache, "Junk");
+        let raw = raw_message("From: news@example.com\r\nSubject: Weekly roundup", "Body");
+
+        let done = run_with_rules(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            inbox,
+            &[a_rule(
+                "Blocked sender",
+                "news@example.com",
+                "move_to_folder",
+                Some("Junk"),
+            )],
+        )
+        .expect("the check runs");
+
+        let said = what_the_pop_check_did(&done);
+        assert!(
+            said.contains("1 new, 1 on the server"),
+            "the check stopped saying what it downloaded: {said}"
+        );
+        assert!(
+            said.contains("1 sorted by your rules"),
+            "the check said nothing about the filing it did: {said}"
+        );
+        assert!(
+            !said.contains("not filed as asked"),
+            "a check where everything worked reported a failure: {said}"
         );
     }
 
@@ -1131,6 +1488,83 @@ X-Spam-Flag: YES\r\n\r\nbody";
                 "a row was reported that is not there"
             );
         }
+    }
+
+    /// A message that really is signed with a certificate, as it comes off the
+    /// wire.
+    fn a_signed_message() -> Vec<u8> {
+        crate::service::signed_mail::for_tests::signed_beside()
+    }
+
+    #[test]
+    fn test_a_signed_message_collected_over_pop_can_still_have_its_signature_checked() {
+        // POP matters more here than anywhere else. Once mail has been
+        // collected there is no asking the server for it again, and the copy
+        // this program keeps is the parsed text, which a signature cannot be
+        // checked against. Without the bytes, a signature collected this way is
+        // one nobody could ever check, and the message would read as mail that
+        // never claimed one.
+        //
+        // Run through the whole check rather than by calling the cache, because
+        // what is being asked is whether the running program does it.
+        let raw = a_signed_message();
+        let (cache, folder_id) = a_cache();
+
+        let done = run(
+            &Scripted::holding(&[(1, "aaa", &raw)]),
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the check runs");
+
+        assert_eq!(done.written.len(), 1);
+        assert_eq!(
+            cache.signed_original(done.written[0]).expect("read back"),
+            crate::data::message_cache::signed_original::SignedOriginal::Kept(raw)
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_whose_bytes_could_not_be_kept_is_still_a_check_that_worked() {
+        // Keeping the bytes costs a verdict on one message when it fails, and
+        // nothing else: the message itself is written down before this runs.
+        // Reported as a failure it reads as "your mail did not arrive", and it
+        // returns before the polite ending, which is the only thing that
+        // commits anything on a POP server. The same rule the IMAP path
+        // already follows for the same call.
+        let raw = a_signed_message();
+        let (cache, folder_id) = a_cache();
+        crate::data::message_cache::signed_original::for_tests::stop_it_keeping_signed_originals(
+            &cache,
+        )
+        .expect("a cache that can no longer keep them");
+        let server = Scripted::holding(&[(1, "aaa", &raw)]);
+
+        let done = run(
+            &server,
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("a verdict that could not be kept is not a failed mail check");
+
+        assert_eq!(done.fetched, 1);
+        let journal = server.journal();
+        assert!(
+            journal.contains(&Asked::Finished),
+            "the session was dropped instead of ended politely: {journal:?}"
+        );
+        assert_eq!(
+            cache
+                .get_message_list(folder_id, "acct")
+                .expect("the list")
+                .len(),
+            1,
+            "the mail went missing over a verdict that could not be kept"
+        );
     }
 
     #[test]

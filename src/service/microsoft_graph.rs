@@ -334,15 +334,35 @@ pub struct MsLocation {
     pub display_name: String,
 }
 
+/// One person invited to a meeting, as Graph names them.
+///
+/// One type for what is read and what is written, like the event around it. An
+/// answer is the guest's to give, so it is never sent: `null` in a change is
+/// an instruction as much as a value is, and neither of them is what an
+/// unanswered invitation means.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MsAttendee {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email_address: Option<MsEmailAddress>,
-    #[serde(default)]
+    /// What this person has answered. The server's to set.
+    #[serde(default, skip_serializing)]
     pub status: Option<MsAttendeeStatus>,
+    /// Whether Graph counts this person as required, optional, or a room.
+    /// [`REQUIRED`] is the only one this program can say.
     #[serde(default, rename = "type")]
     pub attendee_type: String,
 }
+
+/// The only kind of guest this program can name.
+///
+/// Graph takes `required`, `optional` or `resource`, and refuses anything
+/// else. The column a guest list is stored in here has no room for which one
+/// somebody meant, and neither has the box it is typed into, so everybody goes
+/// as required rather than as a word Graph would refuse. What that costs is
+/// that an optional guest read down from Outlook would go back up as a
+/// required one, which is why a change never carries this list at all.
+pub const REQUIRED: &str = "required";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

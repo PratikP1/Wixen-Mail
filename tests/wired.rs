@@ -1350,8 +1350,15 @@ fn test_no_two_controls_in_one_dialog_claim_the_same_alt_key() {
         };
         // Test code builds throwaway dialogs whose labels are not a person's
         // to press, and a notebook page is a scope of its own.
-        let production = text.split("#[cfg(test)]").next().unwrap_or_default();
-        for (name, body) in builder_bodies(production) {
+        //
+        // Cutting at the first `#[cfg(test)]` instead of skipping each one is
+        // how a check like this goes quietly blind. A test module sits in the
+        // middle of most files here, and everything after it is production
+        // code: 1,597 lines of `presentation::managers`, which builds dialogs,
+        // were never read by this. Two other guards still cut that way and
+        // between them cannot see about eight thousand lines.
+        let production = without_test_modules(&text);
+        for (name, body) in builder_bodies(&production) {
             if READ_AT_RUN_TIME_INSTEAD.contains(&name.as_str()) {
                 continue;
             }
@@ -2993,10 +3000,133 @@ fn test_a_signed_message_has_its_arrived_in_form_kept_when_it_arrives() {
          signature can never be checked again after the first time"
     );
 
+    // The download loop and not the whole file, which a comment naming the call
+    // was enough to satisfy.
     let pop = fs::read_to_string("src/application/pop_sync.rs").expect("the POP sync");
     assert!(
-        pop.contains("keep_signed_original("),
+        body_of(&pop, "async fn sync<M: PopMailbox>(").contains("keep_signed_original("),
         "a message collected over POP no longer has the form it arrived in kept, and POP has \
          no server to ask again, so its signature could never be checked at all"
+    );
+}
+
+/// Mail brought in from a file keeps the form it arrived in too.
+///
+/// The third way a message reaches this computer, and the one that hands over
+/// the exact bytes a signature was made over without anything having to be
+/// asked for. It kept none of them, so a signed message imported from a file,
+/// an archive of a mailbox or an Outlook data file went into the folder reading
+/// as mail that had never claimed a signature. That is a different statement
+/// from "signed, and not checkable here", and a false one.
+///
+/// Two halves, because the window has two ways in: one file somebody chose, and
+/// every entry inside an archive. Wiring one leaves the other silent.
+///
+/// What this cannot see: whether the bytes stored are the right ones, or
+/// whether anything reads them back. `application::importing_messages` runs the
+/// whole of it against a real database, from the file's bytes to what the
+/// reader would say about the signature afterwards.
+#[test]
+fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
+    let importing =
+        fs::read_to_string("src/application/importing_messages.rs").expect("the mail import");
+    assert!(
+        body_of(&importing, "pub fn file_one_imported_message(").contains("keep_signed_original("),
+        "mail brought in from a file no longer has the form it arrived in kept, so a signed \
+         message imported from an archive reads as one that never claimed a signature"
+    );
+
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    for importing_here in ["fn fill_folders_from(", "fn one_file_of_mail_brought_in("] {
+        assert!(
+            body_of(&app, importing_here).contains("file_one_imported_message("),
+            "{importing_here} writes imported mail its own way, so whatever the one place \
+             that files a message decides about signatures does not reach it"
+        );
+    }
+}
+
+/// Everything aimed at a chosen message asks which account that message is in.
+///
+/// In All Inboxes the account on screen and the account a row belongs to are
+/// routinely different, and taking the one on screen sends the work to the
+/// wrong server against the other account's folder path, where a message that
+/// happens to share a UID is a different message entirely. Worse, the shape
+/// this replaces fell back to whichever account came first in the list, so a
+/// command aimed at nothing in particular still reached a real server.
+///
+/// Third time, so this is a check rather than only another fix. Move and delete
+/// were corrected one at a time; opening and saving an attachment had the same
+/// fault and nothing noticed, because there was nothing that could.
+///
+/// What this cannot see: whether `owner_of` gives the right answer. That is
+/// measured in `presentation::wx_app::the_account_a_message_belongs_to`. This
+/// only says every handler asks it.
+#[test]
+fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    for aimed_at_a_row in [
+        "fn spawn_folder_move(",
+        "fn delete_if_local(",
+        "fn spawn_receipt(",
+        "fn spawn_server_change(",
+        "fn read_attachment(",
+        "fn save_attachment(",
+    ] {
+        assert!(
+            body_of(ship, aimed_at_a_row).contains("owner_of("),
+            "{aimed_at_a_row} works out the account for itself rather than asking which \
+             account the chosen message is in, so in All Inboxes it can reach a server the \
+             message was never on"
+        );
+    }
+}
+
+/// The "In" box on the search window reaches the search.
+///
+/// It offered All Folders, Current Folder, Subject Only and From Only, had an
+/// accessible name, took focus, and was read by nothing. Somebody who could not
+/// see the screen chose Current Folder, was handed every message in the account,
+/// and had no way to tell. That is worse than a control that does not exist: it
+/// says the results are about their folder.
+///
+/// Four calls, because taking any one of them out switches the box back off
+/// without breaking anything else. Without reading the chosen row the answer is
+/// whatever the first row says; without passing it on, the search runs the way
+/// it always did; without the query honouring it, the answer is the same rows
+/// under a different name.
+///
+/// What this cannot see: whether the right mail comes back. That is measured
+/// against a real database in `data::message_cache::searching`, which is also
+/// where a search narrowed to a folder, to subjects and to senders is held to
+/// answering with nothing else.
+#[test]
+fn test_the_in_box_on_the_search_window_reaches_the_search() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    let asking = body_of(ship, "fn show_search_dialog(");
+    assert!(
+        asking.contains("get_selection()"),
+        "the search window never asks the In box what was chosen, so every search runs \
+         whichever answer happens to be first"
+    );
+    assert!(
+        asking.contains("offers.get("),
+        "the chosen row is not read back out of the list the box was built from, so the words \
+         on the screen and the search that runs are two answers to one question"
+    );
+    assert!(
+        ship.contains("what_the_in_box_offers("),
+        "nothing builds the In box's list of answers, so the box cannot be offering any"
+    );
+
+    let managers = fs::read_to_string("src/presentation/managers.rs").expect("the managers");
+    assert!(
+        body_of(&managers, "pub fn search_messages(").contains("looking_in"),
+        "the mail search does not pass on where it was told to look, so the In box is read \
+         and thrown away one step further along than before"
     );
 }

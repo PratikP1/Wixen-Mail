@@ -24,9 +24,23 @@
 //! What that costs is written in the changelog: turning a repeat on or off on a
 //! meeting the provider already holds does not reach the provider.
 //!
-//! The guest list is never sent at all, so changing the room cannot uninvite
-//! everybody. Google's update is a merge rather than a replace, which is the
-//! other half of the same guarantee.
+//! The guest list follows the same rule, and for a sharper reason. It is sent
+//! when a meeting is made and never when one is changed, so changing the room
+//! cannot uninvite everybody: both providers read a guest list that is present
+//! as the whole truth about who is invited, the copy here is not the whole
+//! truth once somebody has been added in the provider's own window, and being
+//! uninvited is one of the things a provider emails people about. Google's
+//! update is a merge rather than a replace, which is the other half of the
+//! same guarantee.
+//!
+//! Sending it on a create can reach people, which nothing else in this module
+//! does. Adding somebody to a meeting at a provider is what makes that
+//! provider email them; nothing here builds that invitation, asks for it, or
+//! has any way to ask either provider to stay quiet. Whether it goes out is
+//! theirs to decide and no meeting made here has ever reached one, so the
+//! changelog and the warning beside Allow Changes both say to expect it and to
+//! try it on your own address first, rather than leaving it to be found by
+//! surprising a colleague.
 //!
 //! What that costs, said plainly: a field somebody empties here is sent as
 //! empty, and clears at the provider. That is deliberate, because after a sync
@@ -44,10 +58,12 @@ use crate::data::message_cache::SyncState;
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
 use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
-    GoogleApiClient, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride, GoogleReminders,
+    GoogleApiClient, GoogleAttendee, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride,
+    GoogleReminders,
 };
 use crate::service::microsoft_graph::{
-    MsDateTimeTimeZone, MsEventBody, MsGraphClient, MsGraphEvent, MsLocation,
+    MsAttendee, MsDateTimeTimeZone, MsEmailAddress, MsEventBody, MsGraphClient, MsGraphEvent,
+    MsLocation,
 };
 
 /// How a Google account's calendar is named in what is stored.
@@ -2785,6 +2801,41 @@ fn how_the_series_repeats(event: &CalendarEventEntry) -> Vec<String> {
     lines
 }
 
+/// The people a body may name as coming, which is nobody at all on a change.
+///
+/// Both providers read a guest list that is present as the whole truth about
+/// who is invited, and the copy on this computer is not the whole truth: a
+/// person added in Google's or Outlook's own window is not in it. Sent as a
+/// change, this list would take them off the meeting, and being uninvited is
+/// the other thing a provider emails people about. Nothing here can tell that
+/// case from an ordinary one, and it cannot be established without a live
+/// account, so a change carries no guest list at all. That is the same answer,
+/// for the same reason, that the repeat rule already gets.
+///
+/// A create is the safe half: the provider has never heard of the event, so
+/// there is nobody at its end for this list to be shorter than.
+///
+/// No route of its own, and that is the point. The list goes in the body of
+/// the same create every other field goes in, so it is refused before the
+/// network by the same gate, which
+/// `test_a_calendar_change_on_a_read_only_account_never_leaves_this_computer`
+/// already proves by listening rather than by reading an error.
+///
+/// Read through `who_is_coming`, which is the one reader of that column, so
+/// what goes out to a provider and what goes back into the box somebody typed
+/// it in cannot come to disagree about who is on the list.
+fn guests_a_body_may_name(
+    event: &CalendarEventEntry,
+    for_what: TheBodyIsFor,
+) -> Vec<crate::application::who_is_coming::Coming> {
+    match for_what {
+        TheBodyIsFor::ChangingIt => Vec::new(),
+        TheBodyIsFor::MakingIt => {
+            crate::application::who_is_coming::already_on(event.attendees_json.as_deref())
+        }
+    }
+}
+
 /// What a stored event becomes on its way to Google.
 ///
 /// Fails rather than sending a time nobody could read, for the same reason the
@@ -2885,6 +2936,23 @@ pub fn local_to_google_event(
             .to_string(),
         ),
         reminders,
+        // Naming somebody here is what can make Google email them. That is
+        // Google's own behaviour, nothing here asks for it, and switching it
+        // off would mean deciding for everybody that guests are never told.
+        // Said in the changelog rather than left to be found out.
+        attendees: guests_a_body_may_name(event, for_what)
+            .iter()
+            .map(|person| GoogleAttendee {
+                email: person.address.clone(),
+                // Empty for somebody stored as a bare address, which is left
+                // out of the body rather than sent. `who_is_coming` calls them
+                // by their address so a list read aloud has no silence in it,
+                // and sending that stand-in would make it what their
+                // colleagues see them called.
+                display_name: person.a_name_of_their_own().unwrap_or_default().to_string(),
+                ..Default::default()
+            })
+            .collect(),
         recurrence: match for_what {
             TheBodyIsFor::MakingIt => how_the_series_repeats(event),
             // Left out of a change on purpose, and that is what keeps a change
@@ -3207,6 +3275,22 @@ pub fn local_to_ms_event(
         is_reminder_on: Some(lead.is_some()),
         reminder_minutes_before_start: Some(lead.unwrap_or(0)),
         categories: categories_for_outlook(&event.categories),
+        // Naming somebody here is what can make Graph email them, for the same
+        // reason and with the same answer as on the Google side.
+        attendees: guests_a_body_may_name(event, for_what)
+            .iter()
+            .map(|person| MsAttendee {
+                email_address: Some(MsEmailAddress {
+                    // Empty for a guest stored as a bare address, for the same
+                    // reason as at Google: the stand-in a list is read aloud
+                    // with is not what anybody called them.
+                    name: person.a_name_of_their_own().unwrap_or_default().to_string(),
+                    address: person.address.clone(),
+                }),
+                attendee_type: crate::service::microsoft_graph::REQUIRED.to_string(),
+                ..Default::default()
+            })
+            .collect(),
         recurrence: repeats,
         ..Default::default()
     })
@@ -6537,6 +6621,167 @@ mod tests {
         );
     }
 
+    // ── Who a provider is told is coming ─────────────────────────────────
+
+    /// An event with two guests: one written down with a name, one an address
+    /// on its own.
+    fn an_event_two_people_are_coming_to() -> CalendarEventEntry {
+        CalendarEventEntry {
+            attendees_json: Some(
+                "[{\"email\":\"ada@example.com\",\"name\":\"Ada Lovelace\"},\
+                  {\"email\":\"sam@example.com\"}]"
+                    .to_string(),
+            ),
+            ..an_event_stored_here()
+        }
+    }
+
+    #[test]
+    fn test_a_new_meeting_tells_google_who_is_coming() {
+        // The guest list was kept on this computer and nothing carried it out,
+        // so a meeting made here arrived at Google with nobody on it and the
+        // people who were meant to be there were never asked.
+        let sent = serde_json::to_value(
+            local_to_google_event(&an_event_two_people_are_coming_to(), TheBodyIsFor::MakingIt)
+                .expect("a Google body"),
+        )
+        .expect("a body to write out");
+
+        let coming = sent["attendees"]
+            .as_array()
+            .unwrap_or_else(|| panic!("nobody was named as coming: {sent}"));
+        assert_eq!(coming.len(), 2, "{sent}");
+        assert_eq!(coming[0]["email"], serde_json::json!("ada@example.com"));
+        assert_eq!(coming[1]["email"], serde_json::json!("sam@example.com"));
+    }
+
+    #[test]
+    fn test_nobody_reaches_google_under_a_name_this_program_made_up_for_them() {
+        // A guest stored as an address alone is read out by their address, so
+        // a list read aloud has no silence in it. Sent as their name, that
+        // stand-in stops being one and becomes what everybody invited to the
+        // meeting sees them called. The same mistake was already made once on
+        // the way into the column this reads.
+        let sent = serde_json::to_value(
+            local_to_google_event(&an_event_two_people_are_coming_to(), TheBodyIsFor::MakingIt)
+                .expect("a Google body"),
+        )
+        .expect("a body to write out");
+
+        assert_eq!(
+            sent["attendees"][0]["displayName"],
+            serde_json::json!("Ada Lovelace"),
+            "{sent}"
+        );
+        assert!(
+            sent["attendees"][1].get("displayName").is_none(),
+            "sam@example.com was given a name nobody wrote down: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_google_is_never_told_what_a_guest_answered_or_which_of_them_is_you() {
+        // Both are the server's to say. An answer sent from here is this
+        // program replying on somebody else's behalf, and an empty one is a
+        // reply of "nothing", which is not what an unanswered invitation
+        // means.
+        let sent = serde_json::to_value(
+            local_to_google_event(&an_event_two_people_are_coming_to(), TheBodyIsFor::MakingIt)
+                .expect("a Google body"),
+        )
+        .expect("a body to write out");
+
+        for guest in sent["attendees"]
+            .as_array()
+            .unwrap_or_else(|| panic!("nobody was named as coming: {sent}"))
+        {
+            assert!(guest.get("responseStatus").is_none(), "{sent}");
+            assert!(guest.get("self").is_none(), "{sent}");
+        }
+    }
+
+    #[test]
+    fn test_a_new_meeting_tells_outlook_who_is_coming() {
+        let sent = serde_json::to_value(
+            local_to_ms_event(&an_event_two_people_are_coming_to(), TheBodyIsFor::MakingIt)
+                .expect("an Outlook body"),
+        )
+        .expect("a body to write out");
+
+        let coming = sent["attendees"]
+            .as_array()
+            .unwrap_or_else(|| panic!("nobody was named as coming: {sent}"));
+        assert_eq!(coming.len(), 2, "{sent}");
+        assert_eq!(
+            coming[0]["emailAddress"]["address"],
+            serde_json::json!("ada@example.com")
+        );
+        assert_eq!(
+            coming[0]["emailAddress"]["name"],
+            serde_json::json!("Ada Lovelace")
+        );
+        // Graph refuses an attendee whose type is not one of the three words
+        // it knows, and the column this is read from has no room for which
+        // one somebody chose, so everybody goes as required.
+        assert_eq!(coming[0]["type"], serde_json::json!("required"), "{sent}");
+        assert!(
+            coming[0].get("status").is_none(),
+            "an answer is the guest's to give: {sent}"
+        );
+        // The same rule as at Google: the address a list is read aloud with
+        // stands in for a missing name here and must not become one there.
+        assert_ne!(
+            coming[1]["emailAddress"]["name"],
+            serde_json::json!("sam@example.com"),
+            "sam@example.com was given a name nobody wrote down: {sent}"
+        );
+    }
+
+    #[test]
+    fn test_a_change_names_no_guests_at_either_provider() {
+        // The rule that keeps a change to the time of a meeting from
+        // uninviting the people on it. Both providers read a guest list that
+        // is present as the whole truth, and the copy here is not the whole
+        // truth: somebody added in Google's own window is not in it, and
+        // sending this list would take them off the meeting and have Google
+        // email them to say so. Nothing here can tell that case from an
+        // ordinary one without a live account, so a change says nothing about
+        // guests at all.
+        let coming_to_it = an_event_two_people_are_coming_to();
+
+        let google = serde_json::to_value(
+            local_to_google_event(&coming_to_it, TheBodyIsFor::ChangingIt).expect("a Google body"),
+        )
+        .expect("a body to write out");
+        let outlook = serde_json::to_value(
+            local_to_ms_event(&coming_to_it, TheBodyIsFor::ChangingIt).expect("an Outlook body"),
+        )
+        .expect("a body to write out");
+
+        assert!(google.get("attendees").is_none(), "{google}");
+        assert!(outlook.get("attendees").is_none(), "{outlook}");
+    }
+
+    #[test]
+    fn test_a_meeting_nobody_is_coming_to_sends_no_guest_list_at_all() {
+        // An empty list is not silence at either provider: it is an
+        // instruction to uninvite everybody. A meeting with no guests has to
+        // leave the field out rather than send it empty.
+        let alone = an_event_stored_here();
+
+        let google = serde_json::to_value(
+            local_to_google_event(&alone, TheBodyIsFor::MakingIt).expect("a Google body"),
+        )
+        .expect("a body to write out");
+        let outlook = serde_json::to_value(
+            local_to_ms_event(&alone, TheBodyIsFor::MakingIt).expect("an Outlook body"),
+        )
+        .expect("a body to write out");
+
+        assert!(google.get("attendees").is_none(), "{google}");
+        assert!(outlook.get("attendees").is_none(), "{outlook}");
+    }
+
     // ── The shape a time reaches each provider in ────────────────────────
 
     #[test]
@@ -7429,6 +7674,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_meeting_made_here_carries_its_guest_list_onto_the_wire() {
+        // The converter test beside this one proves the body is built. This
+        // one proves it leaves, because a body built and never sent is the
+        // failure this project has already shipped: eight update variants were
+        // handled in the window and sent by nothing. Read off the bytes the
+        // listener received, not off a promise about them.
+        for (provider, name, google) in [
+            (GOOGLE, GOOGLE_CALENDAR_NAME, true),
+            (MICROSOFT, MICROSOFT_CALENDAR_NAME, false),
+        ] {
+            let cache = temp_cache(&format!("push_guests_{provider}"));
+            let mut meeting = a_pending_event_in(&cache, provider, name, None);
+            meeting.attendees_json =
+                Some("[{\"email\":\"ada@example.com\",\"name\":\"Ada\"}]".to_string());
+            cache.save_calendar_event(&meeting).expect("the change");
+
+            let (address, listening) = answering_several(
+                "200 OK",
+                "application/json",
+                vec!["{\"id\":\"made-there\"}".to_string(), "{}".to_string()],
+            )
+            .await;
+            let at = format!("http://{address}");
+            if google {
+                sync_google_calendar(
+                    &cache,
+                    &GoogleApiClient::allowed_to_change_things_at(&at),
+                    "a-token",
+                    "acct",
+                )
+                .await
+                .expect("the sync to finish");
+            } else {
+                sync_microsoft_calendar(
+                    &cache,
+                    &MsGraphClient::allowed_to_change_things_at(&at),
+                    "a-token",
+                    "acct",
+                )
+                .await
+                .expect("the sync to finish");
+            }
+
+            let requests = heard(listening, "a new meeting")
+                .await
+                .expect("two requests");
+            let sent = body_of(&requests[0]);
+            assert!(
+                sent.to_string().contains("ada@example.com"),
+                "the guest list never reached {provider}: {}",
+                requests[0]
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_changing_an_event_leaves_its_repeat_rule_and_its_guests_alone() {
         // The two guarantees this whole unit rests on. Google merges a change
         // rather than replacing the event, and the converters never build
@@ -7594,6 +7895,7 @@ mod tests {
             show_as: "free".to_string(),
             status: "tentative".to_string(),
             categories: "Birthday".to_string(),
+            attendees_json: Some("[{\"email\":\"ada@example.com\",\"name\":\"Ada\"}]".to_string()),
             reminders_json: Some("[{\"minutes\":15}]".to_string()),
             recurrence_rule: crate::application::repeating::rule(
                 Repeat::Weekly,
@@ -7686,18 +7988,13 @@ mod tests {
             WhereItGoes {
                 field: FieldName::Attendees,
                 asked_of: OnADate,
-                at_google: Nothing(
-                    "attendees",
-                    "the guest list is used here to work out when everybody is free, and \
-                     nothing invites anybody: a create body naming attendees is an \
-                     invitation Google sends",
-                ),
-                at_outlook: Nothing(
-                    "attendees",
-                    "the guest list is used here to work out when everybody is free, and \
-                     nothing invites anybody: a create body naming attendees is an \
-                     invitation Graph sends",
-                ),
+                // On a create only, which this table asks for. A change names
+                // no guests at all, because both providers read the list as
+                // the whole truth and would uninvite anybody added at their
+                // end; `test_a_change_names_no_guests_at_either_provider` is
+                // the other half of this record.
+                at_google: Saying("attendees", "ada@example.com"),
+                at_outlook: Saying("attendees", "ada@example.com"),
             },
             WhereItGoes {
                 field: FieldName::Repeat,

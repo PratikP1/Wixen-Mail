@@ -12,7 +12,7 @@
 use crate::application::calendar::EditMeans;
 use crate::application::collection_sync;
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::contact_convert;
@@ -1779,7 +1779,7 @@ fn event_entry(
     }
 }
 
-/// Search every folder of the active account and show what turns up.
+/// Search the mail the search box was told to look at, and show what turns up.
 ///
 /// The dialog used to say "Searching: report..." and search nothing at all.
 /// Results replace the message list, and the status line says how many there
@@ -1792,7 +1792,7 @@ fn event_entry(
 pub fn search_messages(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
-    query: &str,
+    asked: WhatWasAsked<'_>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     a11y: &Arc<crate::presentation::accessibility::Accessibility>,
@@ -1800,11 +1800,12 @@ pub fn search_messages(
     /// Enough to be useful, few enough to fill the list without a pause.
     const LIMIT: usize = 500;
 
+    let WhatWasAsked { typed, looking_in } = asked;
     let (cache, account) = match manager_account(state, cache) {
         Ok(pair) => pair,
         Err(reason) => return send_refusal(tx, rt, reason),
     };
-    match cache.search_messages(&account, query, LIMIT) {
+    match cache.search_messages(&account, typed, looking_in, LIMIT) {
         Ok(rows) => {
             let items: Vec<crate::presentation::ui_types::MessageItem> = rows
                 .iter()
@@ -1818,20 +1819,20 @@ pub fn search_messages(
                 // not just the status bar.
                 let _ = a11y.signal(
                     crate::presentation::accessibility::feedback::Event::NothingFound,
-                    query,
+                    typed,
                 );
             } else {
                 send_status(
                     tx,
                     rt,
                     &if found == LIMIT {
-                        format!("First {} matches for {}", LIMIT, query)
+                        format!("First {} matches for {}", LIMIT, typed)
                     } else {
                         format!(
                             "{} match{} for {}",
                             found,
                             if found == 1 { "" } else { "es" },
-                            query
+                            typed
                         )
                     },
                 );
@@ -1853,24 +1854,46 @@ pub fn search_messages(
 ///
 /// Every module already had a search in the layer below, written and tested,
 /// and nothing called any of them. This is where they are called.
+///
+/// Where to look is only about mail, and the search box only offers it while
+/// mail is showing: "Current Folder" and "From Only" mean nothing about a list
+/// of contacts, and a box that offered them there would be the same broken
+/// promise one level along. The other modules search all of their own items and
+/// read the words alone.
 pub fn search_whatever_is_showing(
     module: crate::presentation::ui_types::PimModule,
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
-    query: &str,
+    asked: WhatWasAsked<'_>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     a11y: &Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     use crate::presentation::ui_types::PimModule;
+    let typed = asked.typed;
     match module {
-        PimModule::Mail => search_messages(state, cache, query, tx, rt, a11y),
-        PimModule::Calendar => search_calendar(state, cache, query, tx, rt, a11y),
-        PimModule::Contacts => search_contacts(state, cache, query, tx, rt, a11y),
-        PimModule::Reminders => search_reminders(state, cache, query, tx, rt, a11y),
-        PimModule::Tasks => search_tasks(state, cache, query, tx, rt, a11y),
-        PimModule::Notes => search_notes(state, cache, query, tx, rt, a11y),
+        PimModule::Mail => search_messages(state, cache, asked, tx, rt, a11y),
+        PimModule::Calendar => search_calendar(state, cache, typed, tx, rt, a11y),
+        PimModule::Contacts => search_contacts(state, cache, typed, tx, rt, a11y),
+        PimModule::Reminders => search_reminders(state, cache, typed, tx, rt, a11y),
+        PimModule::Tasks => search_tasks(state, cache, typed, tx, rt, a11y),
+        PimModule::Notes => search_notes(state, cache, typed, tx, rt, a11y),
     }
+}
+
+/// What somebody asked the search box for.
+///
+/// The words and where to look for them travel together rather than as two
+/// arguments a caller could hand over the wrong way round or, worse, forget to
+/// hand over at all. The whole reason this type exists is that the second half
+/// was offered on the screen and read by nothing for as long as the box had
+/// existed; a pair that has to be built at once is harder to drop again.
+#[derive(Debug, Clone, Copy)]
+pub struct WhatWasAsked<'a> {
+    /// The words typed into the box.
+    pub typed: &'a str,
+    /// The answer the "In" list gave. Only mail reads it.
+    pub looking_in: WhereToSearch,
 }
 
 /// How many results any one search hands back.
@@ -3180,7 +3203,17 @@ mod tests {
         let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
         let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
-        search_messages(&state, &cache, "acquisition", &tx, &rt, &a11y);
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "acquisition",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
 
         assert_eq!(
             a11y.take_visual_feedback().as_deref(),
@@ -3234,7 +3267,17 @@ mod tests {
         let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
         let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
-        search_messages(&state, &cache, "quarterly", &tx, &rt, &a11y);
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
 
         assert_eq!(
             a11y.take_visual_feedback(),
@@ -3300,7 +3343,10 @@ mod tests {
             PimModule::Contacts,
             &state,
             &cache,
-            "refurbishment",
+            WhatWasAsked {
+                typed: "refurbishment",
+                looking_in: WhereToSearch::EveryFolder,
+            },
             &tx,
             &rt,
             &a11y,

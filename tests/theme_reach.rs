@@ -611,7 +611,13 @@ fn check_confirm_delete(parent: &Frame, palette: theme::Palette, into: &mut Vec<
 /// other `Choice` this round paints around, so only the dialog and the
 /// search field are checked here.
 fn check_search(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let (dialog, q_field) = wx_app::build_search_dialog(parent, Some(palette));
+    // Built with a folder open, so the "In" box is there with every one of its
+    // answers on it and this checks the dialog somebody using mail really meets.
+    let (dialog, q_field, _scope) = wx_app::build_search_dialog(
+        parent,
+        Some(palette),
+        &wx_app::what_the_in_box_offers(Some(1)),
+    );
     check("search dialog", &dialog, palette.main_surface(), into);
     check("search query field", &q_field, palette.main_surface(), into);
 }

@@ -184,39 +184,6 @@ impl OAuthService {
         Ok((auth_url.to_string(), csrf_token, pkce_verifier))
     }
 
-    /// Legacy build_authorization_url (no PKCE, backward compat).
-    pub fn build_authorization_url(
-        provider: &str,
-        client_id: &str,
-        redirect_uri: &str,
-        state: &str,
-    ) -> Result<String> {
-        let p = Self::provider_by_name(provider).ok_or_else(|| {
-            Error::Authentication(format!("Unsupported OAuth provider: {}", provider))
-        })?;
-        let scopes = p.default_scopes.join(" ");
-        Ok(format!(
-            "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent",
-            p.auth_url,
-            percent_encode(client_id),
-            percent_encode(redirect_uri),
-            percent_encode(&scopes),
-            percent_encode(state),
-        ))
-    }
-
-    /// Exchange authorization code for tokens via HTTP POST (with optional PKCE verifier).
-    pub async fn exchange_code(
-        provider: &str,
-        code: &str,
-        client_id: &str,
-        client_secret: Option<&str>,
-        redirect_uri: &str,
-    ) -> Result<OAuthTokenSet> {
-        Self::exchange_code_with_pkce(provider, code, client_id, client_secret, redirect_uri, None)
-            .await
-    }
-
     /// Exchange authorization code with PKCE verifier.
     pub async fn exchange_code_with_pkce(
         provider: &str,
@@ -338,6 +305,24 @@ const REFRESH_MARGIN_MINUTES: i64 = 5;
 
 /// The local redirect listener port.
 const REDIRECT_PORT: u16 = 8087;
+
+/// The one address the redirect listener answers on.
+///
+/// This computer and nothing else. What arrives here is the authorization code
+/// that becomes somebody's mailbox, and the listener is open for two minutes
+/// while they sign in.
+const REDIRECT_HOST: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
+
+/// Where the listener that catches the sign-in binds.
+///
+/// A function rather than the address written out where it is bound, so a test
+/// can bind the same address on a port the operating system chooses and read
+/// back what a socket opened this way is really reachable at. Written out at
+/// the call site, the only thing a test could check was the spelling of a
+/// string.
+fn redirect_listener_address(port: u16) -> std::net::SocketAddr {
+    std::net::SocketAddr::from((REDIRECT_HOST, port))
+}
 
 /// The full redirect URI used in OAuth flows.
 fn local_redirect_uri() -> String {
@@ -535,9 +520,15 @@ fn read_callback(target: &str, expected_state: Option<&str>) -> Callback {
         return Callback::NotIt;
     };
 
+    // A reply is the answer to this sign-in only if it carries back the state
+    // that went out with the request. Asked as "is there one, and does it
+    // differ", a reply with no state at all made the whole condition false and
+    // the code was taken, so the one check that says this reply came from the
+    // provider could be walked past by leaving a parameter off.
     if let Some(expected) = expected_state
-        && let Some(state) = params.get("state")
-        && state.as_ref() != expected
+        && !params
+            .get("state")
+            .is_some_and(|state| state.as_ref() == expected)
     {
         return Callback::Mismatched;
     }
@@ -570,16 +561,29 @@ fn html_response(page: String) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> 
 /// `expected_state`: if provided, the `state` query param must match.
 /// `timeout_secs`: how long to wait before giving up (default 120).
 ///
-/// Known and not fixed here: this binds every interface rather than loopback,
-/// so for the two minutes it is open anything on the same network can reach it
-/// and be answered. Narrowing it to `127.0.0.1` is one word, but the redirect
-/// registered with both providers is `http://localhost:...` and Windows may
-/// resolve that name to `::1`, which a v4-only listener would not answer at
-/// all, so the change cannot be made safely without trying it against a real
-/// browser and a real provider. Nothing here has ever run against either.
+/// Bound to loopback, so only a browser on this computer can reach it. It used
+/// to bind every interface, which meant that for the two minutes a sign-in was
+/// open, anything on the same network could knock and be answered.
+///
+/// The reason written here for leaving it that way did not hold, and that is
+/// worth saying rather than quietly deleting. It argued that the redirect
+/// registered with both providers is `http://localhost:...`, that Windows may
+/// resolve that name to `::1`, and that a v4-only listener would not answer
+/// such a connection at all. The last step is where it goes wrong: `0.0.0.0`
+/// is the IPv4 wildcard, so the listener it describes was already v4-only and
+/// already refused `::1`. Narrowing to `127.0.0.1` takes nothing away that was
+/// working.
+///
+/// What is still unproven either way: whether a real browser sent to
+/// `http://localhost:8087` connects over IPv4 here at all. Nothing in this
+/// module has ever run against a real browser or a real provider, so that was
+/// unknown before the change and is unknown after it. If a sign-in is ever
+/// seen to hang with the browser reporting a refused connection, an IPv6
+/// loopback listener beside this one is the thing to try, not a return to
+/// every interface.
 fn wait_for_redirect_code(expected_state: Option<&str>, timeout_secs: u64) -> Result<String> {
-    let addr = format!("0.0.0.0:{}", REDIRECT_PORT);
-    let server = tiny_http::Server::http(&addr).map_err(|e| {
+    let addr = redirect_listener_address(REDIRECT_PORT);
+    let server = tiny_http::Server::http(addr).map_err(|e| {
         Error::Network(format!(
             "Failed to start OAuth redirect server on {}: {}",
             addr, e
@@ -954,18 +958,6 @@ async fn post_token_request(url: &str, params: &[(&str, &str)]) -> Result<OAuthT
     })
 }
 
-pub fn percent_encode(input: &str) -> String {
-    input
-        .bytes()
-        .flat_map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                vec![b as char]
-            }
-            _ => format!("%{:02X}", b).chars().collect(),
-        })
-        .collect()
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1002,6 +994,18 @@ mod tests {
         let uri = local_redirect_uri();
         assert!(uri.starts_with("http://localhost:"));
         assert!(uri.contains("/oauth/callback"));
+        // The address a provider sends the browser to and the address the
+        // listener opens are written separately, because the name registered
+        // with both providers is `localhost` and the socket has to name a
+        // number. The port is the part they can drift on, and a sign-in that
+        // drifts hangs for two minutes and then says it timed out.
+        assert!(
+            uri.contains(&format!(
+                ":{}/",
+                redirect_listener_address(REDIRECT_PORT).port()
+            )),
+            "{uri}"
+        );
     }
 
     // ── Token expiry ────────────────────────────────────────────────────
@@ -1112,6 +1116,9 @@ mod tests {
 
     #[test]
     fn test_fuzz_authorization_url_never_panics() {
+        // Aimed at the builder the application really signs in with. It used
+        // to fuzz a second one that nothing called, so the pieces below were
+        // never handed to the code a person's sign-in goes through.
         let pieces = [
             "gmail", "outlook", "", "\0", "\u{4f60}", "://", "?", "&", "#", " ",
         ];
@@ -1122,9 +1129,14 @@ mod tests {
             };
             let provider = pick(&mut rng);
             let client = pick(&mut rng);
+            let secret = pick(&mut rng);
             let redirect = pick(&mut rng);
-            let state = pick(&mut rng);
-            let _ = OAuthService::build_authorization_url(&provider, &client, &redirect, &state);
+            let _ = OAuthService::build_authorization_url_pkce(
+                &provider,
+                &client,
+                Some(&secret),
+                &redirect,
+            );
         }
     }
 
@@ -1138,17 +1150,40 @@ mod tests {
     }
 
     #[test]
-    fn test_build_authorization_url_legacy() {
-        let url = OAuthService::build_authorization_url(
+    fn test_a_gmail_sign_in_asks_for_a_refresh_token() {
+        // Without access_type=offline, Google hands back an access token and
+        // no refresh token, and the account stops working an hour later with
+        // nothing said. Asked of the builder the application really uses: this
+        // used to be asserted about a second builder that nothing called.
+        let (url, _state, _verifier) = OAuthService::build_authorization_url_pkce(
             "gmail",
             "client-123",
+            Some("secret"),
             "http://localhost/callback",
-            "state-abc",
         )
-        .unwrap();
-        assert!(url.contains("accounts.google.com"));
-        assert!(url.contains("client-123"));
-        assert!(url.contains("access_type=offline"));
+        .expect("gmail is a provider this program knows");
+
+        assert!(url.contains("accounts.google.com"), "{url}");
+        assert!(url.contains("client-123"), "{url}");
+        assert!(url.contains("access_type=offline"), "{url}");
+        // The proof against a code taken from somewhere else. Nothing built
+        // this URL without a challenge on it, and the exchange sends the
+        // verifier that goes with it.
+        assert!(url.contains("code_challenge"), "{url}");
+        assert!(url.contains("state="), "{url}");
+    }
+
+    #[test]
+    fn test_a_sign_in_url_is_refused_for_a_provider_this_program_does_not_know() {
+        assert!(
+            OAuthService::build_authorization_url_pkce(
+                "yahoo",
+                "id",
+                None,
+                "http://localhost/callback"
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1181,7 +1216,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_exchange_code_rejects_empty() {
-        let result = OAuthService::exchange_code("gmail", "", "id", Some("secret"), "uri").await;
+        let result =
+            OAuthService::exchange_code_with_pkce("gmail", "", "id", Some("secret"), "uri", None)
+                .await;
         assert!(result.is_err());
     }
 
@@ -1193,8 +1230,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_exchange_code_rejects_unknown_provider() {
-        let result =
-            OAuthService::exchange_code("unknown", "code", "id", Some("secret"), "uri").await;
+        let result = OAuthService::exchange_code_with_pkce(
+            "unknown",
+            "code",
+            "id",
+            Some("secret"),
+            "uri",
+            None,
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -1565,6 +1609,30 @@ mod tests {
     }
 
     #[test]
+    fn test_a_reply_carrying_no_state_at_all_stops_the_sign_in() {
+        // The check that a reply matches the request was written so that a
+        // reply with no state in it walked past it: the condition asked
+        // whether a state was present and whether it differed, so leaving the
+        // parameter off made it false and the code was taken.
+        //
+        // A code taken that way is not the provider's answer to this request.
+        // Anything that can reach the port can send one, and the sign-in then
+        // exchanges somebody else's authorization code and attaches their
+        // mailbox to this account. Omitting a parameter is the cheapest
+        // possible way to do it.
+        let callback = read_callback("/oauth/callback?code=somebody-elses-code", Some("s1"));
+
+        // Not printed on failure, deliberately. `Callback` has no `Debug` and
+        // is not getting one: it holds the authorization code, and a type that
+        // can print itself is one line away from being printed into a log.
+        assert!(
+            matches!(&callback, Callback::Mismatched),
+            "a reply carrying no state was taken as the answer to this sign-in"
+        );
+        assert!(matches!(callback.outcome(), Some(Err(_))));
+    }
+
+    #[test]
     fn test_a_provider_error_stops_the_sign_in() {
         let callback = read_callback("/oauth/callback?error=access_denied", Some("s1"));
         assert!(matches!(callback.outcome(), Some(Err(_))));
@@ -1592,13 +1660,14 @@ mod tests {
         // loopback listener on an OS-assigned port, the same way a browser
         // reaching the redirect would.
         //
-        // Deliberately not wait_for_redirect_code itself: that one binds
-        // every interface on the fixed port both providers have registered,
-        // which its own doc comment says has never been run against
-        // anything real. This is the split that lets the part deciding the
-        // answer be driven for real without also being the first thing in
-        // this codebase to open a socket on every interface.
-        let server = tiny_http::Server::http("127.0.0.1:0").expect("a loopback port");
+        // Deliberately not wait_for_redirect_code itself: that one binds the
+        // fixed port both providers have registered, which a test cannot
+        // rebind while anything else on the machine, including a real
+        // sign-in, is holding it. This is the split that lets the part
+        // deciding the answer be driven for real on a port the operating
+        // system picks.
+        let server =
+            tiny_http::Server::http(redirect_listener_address(0)).expect("a loopback port");
         let addr = server
             .server_addr()
             .to_ip()
@@ -1621,6 +1690,32 @@ mod tests {
             .expect("the listener thread should not panic")
             .expect("a well-formed redirect should hand back its code");
         assert_eq!(code, "a-genuine-authorization-code");
+    }
+
+    #[test]
+    fn test_the_sign_in_listener_answers_this_computer_and_nothing_on_the_network() {
+        // For the two minutes a sign-in is open, whatever this binds can be
+        // reached and answered, and what it is waiting for is the
+        // authorization code that becomes somebody's mailbox. Bound to every
+        // interface, every other machine on the coffee shop network can knock.
+        //
+        // Read off a real socket rather than off the spelling of a string: the
+        // address is bound on a port the operating system picks, and the
+        // listener is asked what it is now reachable at. A bind to every
+        // interface answers with an address that is not loopback, which is the
+        // whole of the finding.
+        let bound = std::net::TcpListener::bind(redirect_listener_address(0))
+            .expect("a port of the operating system's choosing");
+
+        let reachable_at = bound
+            .local_addr()
+            .expect("a bound listener knows its own address");
+
+        assert!(
+            reachable_at.ip().is_loopback(),
+            "the sign-in listens at {reachable_at}, which anything on the same \
+             network can reach"
+        );
     }
 
     #[test]

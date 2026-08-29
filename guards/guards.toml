@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 299 records have arrived since and have not been through it.
+# 301 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -458,11 +458,13 @@ after = """    if count == 0 {
 red = [
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
+    "application::contact_groups::tests::test_the_sidebar_selection_is_named_when_the_list_changes_to_match_it",
     "application::contacts_sync::tests::test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart",
     "application::contacts_sync::tests::test_every_clause_one_sync_can_say_is_still_read_as_sentences",
     "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
     "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
     "application::mail_sync::tests::test_a_folder_holding_one_message_does_not_say_one_messages",
+    "application::mail_sync::tests::test_a_sync_says_when_a_rule_could_not_file_mail",
     "application::tasks_sync::tests::test_a_list_that_went_is_said_rather_than_left_to_be_noticed",
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
@@ -3358,6 +3360,36 @@ before = """    if listing_contradicts_the_count(on_server.len(), counts.total) 
 after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
 red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
+]
+
+# ── A message the server copied is not a message the server moved ───────────
+#
+# A mail server without MOVE takes a copy and marks the original instead, and
+# some will not even mark it. That leaves one message in two folders. Both
+# answers used to fall through to the same two lines as a real move: the row
+# was filed away on this computer, hiding the copy that is really still there,
+# and the message was added to "sorted by your rules". Being told twelve were
+# sorted and then finding twelve duplicates is worse than being told nothing.
+#
+# The break below is the code exactly as it was. It also brings back the worse
+# half: with the row filed away, its uid leaves what the cache holds, so the
+# next check for mail fetches the original again as though it were new and the
+# rules file a third copy of it.
+
+[[guard]]
+name = "a message the server copied rather than moved is not counted as filed"
+file = "src/application/mail_sync.rs"
+before = """            Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
+                could_not.push(copied_and_the_original_marked(&from.name, &into.name));
+                continue;
+            }
+            Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
+                could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
+                continue;
+            }"""
+after = """            Ok(partly) => could_not.push(partly.spoken(&into.name)),"""
+red = [
+    "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -8892,9 +8924,37 @@ before = """            .is_ok_and(|size| size <= LARGEST_SIGNED_MESSAGE_KEPT_BY
 after = """            .is_ok_and(|size| size > LARGEST_SIGNED_MESSAGE_KEPT_BYTES)"""
 red = [
     "application::checking_signatures::end_to_end::test_a_signed_message_reopened_from_the_cache_says_what_it_said_the_first_time",
+    "application::importing_messages::end_to_end::test_a_signed_message_brought_in_from_a_file_can_still_have_its_signature_checked",
+    "application::pop_sync::tests::test_a_signed_message_collected_over_pop_can_still_have_its_signature_checked",
+    "data::message_cache::signed_original::tests::test_a_signed_message_there_was_no_room_for_still_says_it_was_signed",
     "data::message_cache::signed_original::tests::test_a_signed_message_too_large_to_keep_still_says_it_was_signed",
     "data::message_cache::signed_original::tests::test_dropping_one_to_stay_under_the_budget_leaves_it_saying_it_was_signed",
     "data::message_cache::signed_original::tests::test_the_form_a_signed_message_arrived_in_comes_back_byte_for_byte",
+]
+
+# ── Signed mail brought in from a file said nothing about its signature ─────
+#
+# Reading a file is the one path that has in its hands the exact bytes a
+# signature was made over, and it dropped them. The message went into the folder
+# reading as ordinary mail, which is a different claim from "signed, and not
+# checkable here" and a false one. Silence reads as ordinary mail, so nothing
+# about the message ever suggested there was anything to look at.
+#
+# The break leaves everything else about the import working, which is what the
+# defect looked like: the message arrives, the folder count is right, and the
+# only thing missing is the sentence nobody knows to expect.
+
+[[guard]]
+name = "signed mail brought in from a file keeps the bytes its signature is over"
+file = "src/application/importing_messages.rs"
+before = """    if let Some(raw) = &read.the_form_it_arrived_in
+        && let Err(e) = cache.keep_signed_original(stored, raw)
+    {
+        tracing::warn!("Could not keep the form an imported signed message arrived in: {e}");
+    }"""
+after = """    let _ = &read.the_form_it_arrived_in;"""
+red = [
+    "application::importing_messages::end_to_end::test_a_signed_message_brought_in_from_a_file_can_still_have_its_signature_checked",
 ]
 
 # Two guards from the same stretch of work are deliberately not recorded here,

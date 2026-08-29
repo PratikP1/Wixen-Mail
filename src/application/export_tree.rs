@@ -67,11 +67,13 @@
 //! waiting there.
 
 use crate::application::importing_messages::{MessagesExported, WritingOut};
-use crate::application::message_files;
+use crate::application::message_files::{self, FileOnTheMessage};
 use crate::application::summing_up::SummingUp;
 use crate::common::types::EmailAddress;
 use crate::data::message_cache::MessageListRow;
+use crate::data::message_cache::attachment_content::AttachmentWithContent;
 use crate::data::message_cache::bodies::MessageBody;
+use crate::data::message_cache::signed_original::SignedOriginal;
 use crate::service::attachment_name::safe_file_name;
 use crate::service::mime::ParsedMessage;
 use std::collections::HashSet;
@@ -158,8 +160,25 @@ fn the_message_this_one_answers(conversation: &[String]) -> Option<String> {
 /// What became of one stored message an export reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhatBecameOfIt {
-    /// Written into the folder's archive.
-    WrittenOut,
+    /// Written into the folder's archive, leaving `files_left_out` of the files
+    /// it carries behind because this computer does not have them.
+    ///
+    /// The message still goes in, files or no files. An attachment nobody kept
+    /// is listed on the message by name, type and size wherever it is read, and
+    /// leaving the whole message out over one missing file would lose the
+    /// twenty things about it that are here.
+    WrittenOut {
+        /// How many of its files this computer does not have. Usually nought.
+        files_left_out: usize,
+        /// Whether it says it is signed and the bytes that would prove it were
+        /// not kept, so what went into the file cannot carry the signature.
+        ///
+        /// Not a failure and not a reason to leave the message out. It is a
+        /// fact about the export that somebody has to be told, in the same way
+        /// and for the same reason as a file that could not go with its
+        /// message.
+        signature_could_not_be_kept: bool,
+    },
     /// Left out, because its text has never been downloaded to this computer.
     ///
     /// Not a failure and not a message to write out empty. Opening it once
@@ -170,19 +189,39 @@ pub enum WhatBecameOfIt {
 impl WhatBecameOfIt {
     /// Count this message in what the export says at the end.
     ///
-    /// Exactly one count moves, which is what makes the total worth saying:
-    /// the two of them have to add up to the number of messages the folder
-    /// held. A message that moved no count is one nobody is ever told about,
-    /// and one that moved two reports a mailbox as holding more than it does.
+    /// Exactly one of the message counts moves, which is what makes the total
+    /// worth saying: the two of them have to add up to the number of messages
+    /// the folder held. A message that moved no count is one nobody is ever
+    /// told about, and one that moved two reports a mailbox as holding more
+    /// than it does.
     ///
     /// Into the counts an export of a single folder already keeps, rather than
     /// a second pair meaning the same thing. Two counts of one fact is how the
-    /// same export comes to be described two ways.
-    pub fn counted_in(self, exported: &mut MessagesExported) {
+    /// same export comes to be described two ways. The files are counted here
+    /// too, for that reason: the caller adding them up itself would be a second
+    /// place that has to remember.
+    pub fn counted_in(self, exported: &mut FoldersExported) {
         match self {
-            Self::WrittenOut => exported.written += 1,
-            Self::LeftOutUntilItIsDownloaded => exported.not_on_this_computer += 1,
+            Self::WrittenOut {
+                files_left_out,
+                signature_could_not_be_kept,
+            } => {
+                exported.messages.written += 1;
+                exported.files_not_on_this_computer += files_left_out;
+                exported.signatures_that_could_not_be_kept +=
+                    usize::from(signature_could_not_be_kept);
+            }
+            Self::LeftOutUntilItIsDownloaded => exported.messages.not_on_this_computer += 1,
         }
+    }
+
+    /// Whether this message went into the archive.
+    ///
+    /// Asked by whatever writes the file, which starts the folder's archive
+    /// when the first message goes into it rather than before. See
+    /// [`FolderInTheFile::once_written`].
+    pub fn was_written(self) -> bool {
+        matches!(self, Self::WrittenOut { .. })
     }
 }
 
@@ -203,23 +242,94 @@ impl WhatBecameOfIt {
 /// it started, so whatever is writing should start the archive when the first
 /// message goes into it rather than before: an archive holding no messages is
 /// a file this program's own import refuses to open.
+/// The files a message carries go in with it, where this computer has them.
+/// They are kept when a message is read, so ordinarily it does. The ones it
+/// does not have are counted and come back in the answer, because an archive
+/// that quietly leaves files out is a backup that looks complete and is not.
+/// Nothing is fetched here: an export of forty thousand messages is not the
+/// moment to open forty thousand connections.
+///
+/// `arrived_as` is what the store holds of the form the message came in. A
+/// signed message is written from those bytes rather than rebuilt, because a
+/// signature is a statement about bytes and rebuilding a message reorders its
+/// headers and rewraps its lines: what came out was ordinary mail carrying a
+/// loose signature file, and importing it again said nothing about a signature
+/// at all. A signed message whose bytes were not kept is still written, from
+/// the columns like any other, and counted. Losing the message to save the
+/// signature would be the worse trade, and saying nothing would be the worst.
 pub fn added_to_the_archive(
     archive: &mut Vec<u8>,
     stored: &MessageListRow,
     text: Option<&MessageBody>,
+    files: &[AttachmentWithContent],
+    arrived_as: &SignedOriginal,
 ) -> WhatBecameOfIt {
     let Some(text) = text.filter(|text| is_really_there(text)) else {
         return WhatBecameOfIt::LeftOutUntilItIsDownloaded;
     };
-    message_files::written_into_an_archive(
-        archive,
-        &ending_where_a_line_ends(rebuilt_from_what_is_stored(stored, text)),
-        // The files a message carried cannot go with it. What is stored about
-        // one is its name, its type and its size; the file itself was never
-        // kept, so there is nothing here to write.
-        &[],
-    );
-    WhatBecameOfIt::WrittenOut
+    let carried = what_can_be_written_of(files);
+    let rebuilt = ending_where_a_line_ends(rebuilt_from_what_is_stored(stored, text));
+    match arrived_as {
+        SignedOriginal::Kept(raw) => message_files::written_into_an_archive(
+            archive,
+            &rebuilt,
+            message_files::WhatToWrite::ExactlyAsItArrived(raw),
+        ),
+        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+            message_files::written_into_an_archive(
+                archive,
+                &rebuilt,
+                message_files::WhatToWrite::RebuiltFromWhatIsStored(&carried.to_write),
+            );
+        }
+    }
+    WhatBecameOfIt::WrittenOut {
+        files_left_out: match arrived_as {
+            // Written as it arrived carries its own files, so none of them was
+            // left behind whatever the store has. Counting the store's answer
+            // here would report files missing from a message that has all of
+            // them.
+            SignedOriginal::Kept(_) => 0,
+            _ => carried.not_here,
+        },
+        signature_could_not_be_kept: matches!(arrived_as, SignedOriginal::NotKept),
+    }
+}
+
+/// What an export can write of one message's files, and what it cannot.
+struct TheFilesOnIt {
+    /// The ones this computer has, in the order the message carries them.
+    to_write: Vec<FileOnTheMessage>,
+    /// How many it does not have.
+    not_here: usize,
+}
+
+/// One message's files, split into the ones that can be written and a count of
+/// the ones that cannot.
+///
+/// One walk rather than a list built here and a count taken somewhere else, so
+/// the number somebody is told cannot come to disagree with what really went
+/// into the file.
+///
+/// The name is passed through exactly as it is stored, and the order is the
+/// order the files are recorded in, which is the order the parser found them
+/// and the position everything else counts to.
+fn what_can_be_written_of(files: &[AttachmentWithContent]) -> TheFilesOnIt {
+    let mut carried = TheFilesOnIt {
+        to_write: Vec::new(),
+        not_here: 0,
+    };
+    for file in files {
+        match &file.content {
+            Some(bytes) => carried.to_write.push(FileOnTheMessage {
+                named: Some(file.described.filename.clone()),
+                kind: file.described.mime_type.clone(),
+                bytes: bytes.clone(),
+            }),
+            None => carried.not_here += 1,
+        }
+    }
+    carried
 }
 
 /// The same message, with each half of its body ending where a line ends.
@@ -339,14 +449,24 @@ pub struct FolderInTheFile {
     pub named: String,
 }
 
-/// What the exported file holds for one folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WhatTheFileHolds {
-    /// An archive of the folder's mail, under this name.
-    AnArchiveOfItsMail(String),
-    /// The folder itself with nothing in it, under this name.
+impl FolderInTheFile {
+    /// The name an archive of this folder's mail goes into the file under.
     ///
-    /// A folder that holds no mail at all, and a folder whose every message
+    /// The ending comes from the export that writes one archive on its own, so
+    /// a folder inside this file is named the way a folder written out by
+    /// itself is and the two cannot drift apart.
+    ///
+    /// Asked at the moment the first message goes in rather than once the
+    /// folder is finished. Whatever writes the file starts the archive then, so
+    /// that a folder of forty thousand messages carrying their files is never
+    /// held in memory whole, and it has to name what it is starting.
+    pub fn an_archive_of_its_mail(&self) -> String {
+        format!("{}{AN_ARCHIVE_ENDS_WITH}", self.named)
+    }
+
+    /// The name the folder itself goes into the file under, with nothing in it.
+    ///
+    /// For a folder that holds no mail at all, and for one whose every message
     /// was left out for want of its text. Both are kept, because an empty
     /// folder somebody has had for years is part of the shape this export
     /// exists to keep and dropping it would lose it with nothing said.
@@ -354,26 +474,12 @@ pub enum WhatTheFileHolds {
     /// Neither is written as an archive holding no messages. An archive with
     /// nothing in it is a file this program's own import turns away as not
     /// mail, so a folder written that way would go into the export and be one
-    /// nobody could bring back.
-    TheFolderAndNothingInIt(String),
-}
-
-impl FolderInTheFile {
-    /// What the file holds for this folder, and under what name.
-    ///
-    /// Asked with the number of messages that really went into the archive,
-    /// rather than the number the folder holds. Those are different whenever a
-    /// message's text was never downloaded, and asking the wrong one opens an
-    /// archive for a folder and then puts nothing in it.
-    ///
-    /// So the answer comes after the messages rather than before them, and
-    /// whatever writes the file starts the archive when the first message
-    /// lands in the buffer instead of when the folder comes up.
-    pub fn once_written(&self, messages_written: usize) -> WhatTheFileHolds {
-        if messages_written == 0 {
-            return WhatTheFileHolds::TheFolderAndNothingInIt(self.named.clone());
-        }
-        WhatTheFileHolds::AnArchiveOfItsMail(format!("{}{AN_ARCHIVE_ENDS_WITH}", self.named))
+    /// nobody could bring back. Which of the two a folder gets is decided by
+    /// what really went in rather than by what the folder holds: those differ
+    /// whenever a message's text was never downloaded, and asking the wrong
+    /// one opens an archive for a folder and then puts nothing in it.
+    pub fn the_folder_and_nothing_in_it(&self) -> &str {
+        &self.named
     }
 }
 
@@ -515,6 +621,22 @@ pub struct FoldersExported {
     /// so somebody who exports one folder and then their whole mailbox hears
     /// one fact worded one way.
     pub messages: MessagesExported,
+    /// How many files the export could not write, because this computer does
+    /// not have them.
+    ///
+    /// Counted in files rather than in messages, because that is the thing
+    /// somebody is missing: one message carrying six of them is six files that
+    /// are not in the backup. An attachment is here whenever the message has
+    /// been opened, so ordinarily this is nought.
+    pub files_not_on_this_computer: usize,
+    /// How many messages went into the file saying they are signed, with
+    /// nothing in the export that could prove it.
+    ///
+    /// The bytes a signature is made over are kept for signed mail and dropped
+    /// under a budget, and mail signed before this program kept them has none.
+    /// Those messages export whole and their signatures do not survive the
+    /// trip, which is worth a sentence for the same reason a missing file is.
+    pub signatures_that_could_not_be_kept: usize,
 }
 
 /// What an export of a whole mailbox did, in the words somebody hears.
@@ -540,6 +662,41 @@ pub fn what_the_folder_export_did(written: &FoldersExported) -> String {
             many => format!(
                 "{many} messages were left out, because they have not been \
                  downloaded to this computer: open each one once, then export again"
+            ),
+        });
+    }
+    if written.files_not_on_this_computer > 0 {
+        // Written out in full for the same reason as the sentence above, and
+        // said at all because an archive that quietly leaves files out is a
+        // backup that looks complete and is not. The messages themselves are in
+        // the file: only the files are missing, and saying which it is saves
+        // somebody opening the export to find out.
+        said.sentence(match written.files_not_on_this_computer {
+            1 => "1 file could not go with its message, because it is not on \
+                  this computer: open that message once, then export again"
+                .to_string(),
+            many => format!(
+                "{many} files could not go with their messages, because they \
+                 are not on this computer: open those messages once, then \
+                 export again"
+            ),
+        });
+    }
+    if written.signatures_that_could_not_be_kept > 0 {
+        // The message is in the file and the proof of who wrote it is not.
+        // Said rather than left to be discovered, because the moment somebody
+        // needs a signature is years later and by then there is no getting it
+        // back. No advice on the end of it: unlike a missing file, there is
+        // nothing to do about this one, and inventing a step would be worse
+        // than saying so.
+        said.sentence(match written.signatures_that_could_not_be_kept {
+            1 => "1 message is signed and went in without what proves it, \
+                  because this computer no longer has the form it arrived in"
+                .to_string(),
+            many => format!(
+                "{many} messages are signed and went in without what proves \
+                 them, because this computer no longer has the form they \
+                 arrived in"
             ),
         });
     }
@@ -571,6 +728,7 @@ mod tests {
     use crate::common::types::Protocol;
     use crate::data::message_cache::IncomingMessage;
     use crate::service::safety::Safety;
+    use base64::Engine as _;
 
     /// One stored message, as a folder listing hands it over.
     fn a_stored_message() -> MessageListRow {
@@ -598,6 +756,42 @@ mod tests {
             receipt_to: None,
         }
     }
+
+    /// One attachment as the store hands it over: always described, and
+    /// carrying its file only when this computer kept one.
+    fn a_file_kept(named: &str, file: Option<&[u8]>) -> AttachmentWithContent {
+        AttachmentWithContent {
+            described: crate::data::message_cache::CachedAttachment {
+                id: 0,
+                message_id: 1,
+                filename: named.to_string(),
+                mime_type: "application/octet-stream".to_string(),
+                size: file.map_or(4096, <[u8]>::len) as i64,
+                content_id: None,
+            },
+            content: file.map(<[u8]>::to_vec),
+        }
+    }
+
+    /// One message into an archive, from mail that never claimed a signature.
+    ///
+    /// Which is what every test here is about except the three that are about
+    /// signed mail. Named once rather than written out at each of them, so what
+    /// each test is really asking stays legible.
+    fn ordinary_mail_added(
+        archive: &mut Vec<u8>,
+        stored: &MessageListRow,
+        text: Option<&MessageBody>,
+        files: &[AttachmentWithContent],
+    ) -> WhatBecameOfIt {
+        added_to_the_archive(archive, stored, text, files, &SignedOriginal::NotSigned)
+    }
+
+    /// What a message that went into the file whole comes back as.
+    const WENT_IN_WHOLE: WhatBecameOfIt = WhatBecameOfIt::WrittenOut {
+        files_left_out: 0,
+        signature_could_not_be_kept: false,
+    };
 
     /// The text of a message somebody has opened at least once.
     fn some_text() -> MessageBody {
@@ -754,7 +948,7 @@ mod tests {
         // outside exactly like an export that worked.
         let mut archive = Vec::new();
 
-        let what = added_to_the_archive(&mut archive, &a_stored_message(), None);
+        let what = ordinary_mail_added(&mut archive, &a_stored_message(), None, &[]);
 
         assert_eq!(what, WhatBecameOfIt::LeftOutUntilItIsDownloaded);
         assert!(
@@ -776,7 +970,8 @@ mod tests {
             body_html: None,
         };
 
-        let what = added_to_the_archive(&mut archive, &a_stored_message(), Some(&nothing_in_it));
+        let what =
+            ordinary_mail_added(&mut archive, &a_stored_message(), Some(&nothing_in_it), &[]);
 
         assert_eq!(what, WhatBecameOfIt::LeftOutUntilItIsDownloaded);
         assert!(archive.is_empty(), "an empty message went into the file");
@@ -796,13 +991,14 @@ mod tests {
             body_html: None,
         };
 
-        let what = added_to_the_archive(
+        let what = ordinary_mail_added(
             &mut archive,
             &a_stored_message(),
             Some(&empty_but_downloaded),
+            &[],
         );
 
-        assert_eq!(what, WhatBecameOfIt::WrittenOut);
+        assert_eq!(what, WENT_IN_WHOLE);
         assert!(!archive.is_empty(), "the message was left out of the file");
     }
 
@@ -823,9 +1019,9 @@ mod tests {
             stored.subject = format!("Message number {which}");
             stored.message_id = format!("note-{which}@example.com");
 
-            let what = added_to_the_archive(&mut archive, &stored, Some(&some_text()));
+            let what = ordinary_mail_added(&mut archive, &stored, Some(&some_text()), &[]);
 
-            assert_eq!(what, WhatBecameOfIt::WrittenOut);
+            assert_eq!(what, WENT_IN_WHOLE);
             sent.push(stored.subject);
         }
 
@@ -867,7 +1063,7 @@ mod tests {
                 let mut stored = a_stored_message();
                 stored.subject = format!("Message number {which}");
                 stored.message_id = format!("note-{which}@example.com");
-                added_to_the_archive(&mut archive, &stored, Some(&stops_mid_line));
+                ordinary_mail_added(&mut archive, &stored, Some(&stops_mid_line), &[]);
             }
 
             let read = message_files::read_many_messages(&archive);
@@ -906,7 +1102,7 @@ mod tests {
         };
         let mut archive = Vec::new();
 
-        added_to_the_archive(&mut archive, &a_stored_message(), Some(&written_here));
+        ordinary_mail_added(&mut archive, &a_stored_message(), Some(&written_here), &[]);
 
         let read = message_files::read_many_messages(&archive);
         assert_eq!(read.messages[0].body_plain.as_deref(), Some("One\nTwo\n"));
@@ -923,7 +1119,7 @@ mod tests {
         };
         let mut archive = Vec::new();
 
-        added_to_the_archive(&mut archive, &a_stored_message(), Some(&ends_properly));
+        ordinary_mail_added(&mut archive, &a_stored_message(), Some(&ends_properly), &[]);
 
         let read = message_files::read_many_messages(&archive);
         assert_eq!(read.messages[0].body_plain, ends_properly.body_plain);
@@ -1135,13 +1331,13 @@ mod tests {
 
         assert_eq!(folder.stored_at, "INBOX/Archive/2026");
         assert_eq!(
-            folder.once_written(4),
-            WhatTheFileHolds::AnArchiveOfItsMail(format!(
+            folder.an_archive_of_its_mail(),
+            format!(
                 "INBOX/Archive/2026{}",
                 WritingOut::AnArchive
                     .the_file_ends_with()
                     .expect("an archive names the ending its file should have")
-            ))
+            )
         );
     }
 
@@ -1159,36 +1355,37 @@ mod tests {
         // folder would go into the export that nobody could bring back.
         let folder = one_folder("Receipts 2019");
 
-        assert_eq!(
-            folder.once_written(0),
-            WhatTheFileHolds::TheFolderAndNothingInIt("Receipts 2019".to_string())
+        assert_eq!(folder.the_folder_and_nothing_in_it(), "Receipts 2019");
+        assert_ne!(
+            folder.the_folder_and_nothing_in_it(),
+            folder.an_archive_of_its_mail(),
+            "a folder with nothing in it would go into the file under the name \
+             an archive of its mail would have"
         );
     }
 
     #[test]
-    fn test_a_folder_whose_every_message_was_left_out_is_not_written_as_an_empty_archive() {
-        // The same answer as an empty folder, arrived at the other way: a
-        // folder somebody has only ever scrolled past has every message's
-        // columns and none of their text. Deciding from the number of messages
-        // the folder holds would open an archive for it and put nothing in
-        // one, which is the empty file the rule above exists to prevent.
-        let folder = one_folder("Newsletters");
+    fn test_a_folder_whose_every_message_was_left_out_puts_nothing_in_the_buffer() {
+        // A folder somebody has only ever scrolled past has every message's
+        // columns and none of their text. Whatever writes the file starts a
+        // folder's archive when the first message goes into it, so a folder
+        // where that never happens has to leave the buffer as empty as it
+        // started: anything at all in it would open an archive for a folder
+        // with no mail in it, and an archive holding no messages is a file this
+        // program's own import turns away as not mail.
+        //
+        // What the file then holds for that folder is measured end to end in
+        // `presentation::wx_app::what_an_export_holds`, against a real store.
         let mut archive = Vec::new();
         let mut written = 0;
         for _ in 0..3 {
-            if added_to_the_archive(&mut archive, &a_stored_message(), None)
-                == WhatBecameOfIt::WrittenOut
-            {
+            if ordinary_mail_added(&mut archive, &a_stored_message(), None, &[]).was_written() {
                 written += 1;
             }
         }
 
         assert_eq!(written, 0);
         assert!(archive.is_empty());
-        assert_eq!(
-            folder.once_written(written),
-            WhatTheFileHolds::TheFolderAndNothingInIt("Newsletters".to_string())
-        );
     }
 
     #[test]
@@ -1276,6 +1473,8 @@ mod tests {
                     written: 4,
                     not_on_this_computer: 2,
                 },
+                files_not_on_this_computer: 0,
+                signatures_that_could_not_be_kept: 0,
             }),
             what_the_folder_export_did(&FoldersExported {
                 folders: 1,
@@ -1283,6 +1482,17 @@ mod tests {
                     written: 1,
                     not_on_this_computer: 1,
                 },
+                files_not_on_this_computer: 1,
+                signatures_that_could_not_be_kept: 1,
+            }),
+            what_the_folder_export_did(&FoldersExported {
+                folders: 1,
+                messages: MessagesExported {
+                    written: 2,
+                    not_on_this_computer: 0,
+                },
+                files_not_on_this_computer: 5,
+                signatures_that_could_not_be_kept: 4,
             }),
         ];
 
@@ -1311,23 +1521,205 @@ mod tests {
         let text = some_text();
         let held = [Some(&text), None, Some(&text), None, None];
         let mut archive = Vec::new();
-        let mut counted = MessagesExported::default();
+        let mut counted = FoldersExported::default();
 
         for body in held {
-            added_to_the_archive(&mut archive, &a_stored_message(), body).counted_in(&mut counted);
+            ordinary_mail_added(&mut archive, &a_stored_message(), body, &[])
+                .counted_in(&mut counted);
         }
 
         assert_eq!(
-            counted.written + counted.not_on_this_computer,
+            counted.messages.written + counted.messages.not_on_this_computer,
             held.len(),
             "the counts do not add up to the messages the folder held: {counted:?}"
         );
         assert_eq!(
-            counted,
+            counted.messages,
             MessagesExported {
                 written: 2,
                 not_on_this_computer: 3,
             }
+        );
+    }
+
+    #[test]
+    fn test_a_file_this_computer_does_not_have_is_counted_rather_than_passed_over() {
+        // The whole point of counting them. An archive that quietly leaves a
+        // file out is a backup that looks complete and is not, and somebody
+        // finds out a year later when they go looking for the invoice.
+        let mut archive = Vec::new();
+        let mut counted = FoldersExported::default();
+
+        ordinary_mail_added(
+            &mut archive,
+            &a_stored_message(),
+            Some(&some_text()),
+            &[
+                a_file_kept("invoice.pdf", Some(b"the invoice")),
+                a_file_kept("photograph.jpg", None),
+                a_file_kept("notes.txt", None),
+            ],
+        )
+        .counted_in(&mut counted);
+
+        assert_eq!(counted.messages.written, 1, "the message was left out");
+        assert_eq!(
+            counted.files_not_on_this_computer, 2,
+            "the files this computer does not have were not counted"
+        );
+        let written = String::from_utf8_lossy(&archive);
+        assert!(
+            written.contains("invoice.pdf"),
+            "the file this computer does have was left out:\n{written}"
+        );
+    }
+
+    /// One signed message, as it came off the wire.
+    ///
+    /// Signed mail is `multipart/signed`: the words and the signature over
+    /// them, in that order, under one boundary. Nothing here checks the
+    /// signature, and it does not have to. What matters is that these exact
+    /// bytes come out again, because a signature is a statement about bytes and
+    /// any change at all makes a good one look like a bad one.
+    fn as_a_signed_message_arrived() -> Vec<u8> {
+        concat!(
+            "From: Ada Lovelace <ada@example.com>\r\n",
+            "To: Charles Babbage <charles@example.com>\r\n",
+            "Subject: Notes on the engine\r\n",
+            "MIME-Version: 1.0\r\n",
+            "Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\";\r\n",
+            " micalg=sha-256; boundary=\"the-boundary\"\r\n",
+            "\r\n",
+            "--the-boundary\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "The engine weaves algebraic patterns.\r\n",
+            "--the-boundary\r\n",
+            "Content-Type: application/pkcs7-signature; name=\"smime.p7s\"\r\n",
+            "Content-Transfer-Encoding: base64\r\n",
+            "\r\n",
+            "MIIBogYJKoZIhvcNAQcCoIIBkzCCAY8CAQExDTALBglghkgBZQMEAgE=\r\n",
+            "--the-boundary--\r\n",
+        )
+        .as_bytes()
+        .to_vec()
+    }
+
+    #[test]
+    fn test_a_signed_message_goes_into_the_archive_exactly_as_it_arrived() {
+        // Rebuilt from the stored columns, a signed message comes back out as
+        // ordinary mail carrying a loose signature file, and the signature is
+        // then a statement about bytes nobody has. Export and import it again
+        // and the verdict is gone, with nothing said at any point.
+        //
+        // The bytes it arrived as are kept for exactly this reason, so where
+        // they are here they are what goes into the file.
+        let arrived = as_a_signed_message_arrived();
+        let mut archive = Vec::new();
+
+        let what = added_to_the_archive(
+            &mut archive,
+            &a_stored_message(),
+            Some(&some_text()),
+            &[],
+            &SignedOriginal::Kept(arrived.clone()),
+        );
+
+        assert_eq!(what, WENT_IN_WHOLE);
+        let written = String::from_utf8_lossy(&archive).into_owned();
+        assert!(
+            written.contains(&String::from_utf8_lossy(&arrived).into_owned()),
+            "the message was rebuilt rather than written as it arrived, so its \
+             signature is now about bytes nobody has:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_whose_bytes_were_not_kept_is_still_written_out() {
+        // Only signed mail that arrived since the bytes started being kept has
+        // any, and the store drops them under a budget. Leaving those messages
+        // out of the export, or refusing the export over them, would lose the
+        // message to save the signature.
+        let mut archive = Vec::new();
+
+        let what = added_to_the_archive(
+            &mut archive,
+            &a_stored_message(),
+            Some(&some_text()),
+            &[],
+            &SignedOriginal::NotKept,
+        );
+
+        assert!(what.was_written(), "the message was left out altogether");
+        assert!(
+            !archive.is_empty(),
+            "nothing was written for a message counted as written"
+        );
+    }
+
+    #[test]
+    fn test_a_signature_the_export_could_not_keep_is_counted_rather_than_passed_over() {
+        // Same class of problem as an archive quietly leaving a file out. The
+        // message is in the file and the proof of who wrote it is not, and
+        // whoever kept the export finds out when they need it.
+        let mut counted = FoldersExported::default();
+
+        for arrived in [
+            SignedOriginal::Kept(as_a_signed_message_arrived()),
+            SignedOriginal::NotKept,
+            SignedOriginal::NotSigned,
+        ] {
+            let mut archive = Vec::new();
+            added_to_the_archive(
+                &mut archive,
+                &a_stored_message(),
+                Some(&some_text()),
+                &[],
+                &arrived,
+            )
+            .counted_in(&mut counted);
+        }
+
+        assert_eq!(counted.messages.written, 3);
+        assert_eq!(
+            counted.signatures_that_could_not_be_kept, 1,
+            "the signature that could not be kept was not counted, or one that \
+             could was counted as lost"
+        );
+    }
+
+    #[test]
+    fn test_a_message_carrying_a_file_writes_the_file_itself_and_not_only_its_name() {
+        // A name with nothing under it is exactly the empty-message failure the
+        // count of messages exists to prevent, one level down.
+        let file: Vec<u8> = vec![0x00, 0xff, b'P', b'D', b'F', 0x1a];
+        let mut archive = Vec::new();
+
+        ordinary_mail_added(
+            &mut archive,
+            &a_stored_message(),
+            Some(&some_text()),
+            &[a_file_kept("report.pdf", Some(&file))],
+        );
+
+        let read = message_files::read_many_messages(&archive);
+        assert_eq!(read.messages.len(), 1, "the message did not read back");
+        assert_eq!(
+            read.messages[0].attachments.len(),
+            1,
+            "the message came back carrying nothing"
+        );
+        assert_eq!(
+            read.messages[0].attachments[0].filename.as_deref(),
+            Some("report.pdf")
+        );
+        // And the file itself under that name, not a name with nothing under
+        // it. A file is written encoded, because a file is bytes and a line of
+        // it could otherwise read as the boundary and end the part early.
+        let as_written = base64::engine::general_purpose::STANDARD.encode(&file);
+        assert!(
+            String::from_utf8_lossy(&archive).contains(&as_written),
+            "the name went in and the file did not"
         );
     }
 
@@ -1343,6 +1735,8 @@ mod tests {
                 written: 4,
                 not_on_this_computer: 0,
             },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
         });
 
         assert_eq!(said, "Exported 4 messages from 3 folders");
@@ -1367,6 +1761,8 @@ mod tests {
                     written: 4,
                     not_on_this_computer: how_many,
                 },
+                files_not_on_this_computer: 0,
+                signatures_that_could_not_be_kept: 0,
             });
 
             let by_the_one_folder_export = what_the_mail_export_did(&MessagesExported {
@@ -1394,6 +1790,8 @@ mod tests {
                     written: 1,
                     not_on_this_computer: 0,
                 },
+                files_not_on_this_computer: 0,
+                signatures_that_could_not_be_kept: 0,
             }),
             "Exported 1 message from 1 folder"
         );

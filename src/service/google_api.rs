@@ -342,16 +342,27 @@ pub struct GoogleEventDateTime {
     pub time_zone: Option<String>,
 }
 
+/// One person invited to a meeting, as Google names them.
+///
+/// One type for what is read and what is written, like the event around it, so
+/// three of its four fields have to say what they do on the way out. A guest
+/// nobody wrote a name for leaves `displayName` out rather than sending an
+/// empty one, which Google would take as the name to show everybody. The other
+/// two are Google's to set: a reply sent from here would be this program
+/// answering an invitation on somebody else's behalf.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleAttendee {
     #[serde(default)]
     pub email: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub display_name: String,
-    #[serde(default)]
+    /// What this person has answered. The server's to set.
+    #[serde(default, skip_serializing)]
     pub response_status: String,
-    #[serde(rename = "self", default)]
+    /// Whether this guest is the account the event was read with. The server's
+    /// to set.
+    #[serde(rename = "self", default, skip_serializing)]
     pub is_self: bool,
 }
 

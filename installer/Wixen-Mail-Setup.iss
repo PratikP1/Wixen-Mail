@@ -359,6 +359,35 @@ begin
     WizardSelectTasks('!searchindex');
 end;
 
+// Say so when the step that erases the mail is going to be skipped.
+//
+// The [UninstallRun] entry below carries skipifdoesntexist, and it has to: an
+// uninstall whose executable had already been removed used to stop there and
+// leave the folder, the shortcut and unins000.exe behind, which is worse than
+// either finished state. What that flag also does is skip the step in silence.
+//
+// Skipped, the only thing left aiming at the data folder is the
+// [UninstallDelete] line at the end of this file, and it knows one location:
+// WIXEN_MAIL_DATA moves the folder somewhere that line cannot name. Whether
+// {localappdata} there resolves to the person whose mail it is or to the
+// account an elevated uninstall is running as has not been measured, and
+// guessing at it here would be the mistake ForgetTheOtherCopy above already
+// records making. Nothing writes the note in the temporary folder either,
+// because the note is written by the program that never ran.
+//
+// So the mail cache can stay on the disk, unencrypted, with nobody told. An
+// uninstall has been seen to end that way, and this is the one branch where no
+// part of the machinery would have said a word about it.
+//
+// Not an attempt to erase it from here. An uninstaller has no way to reach the
+// Windows credential store, and it would be guessing at the folder for the
+// reason above. Saying plainly what is still there, and where, is what this can
+// do honestly.
+function TheProgramIsAlreadyGone(): Boolean;
+begin
+  Result := not FileExists(ExpandConstant('{app}\wixen-mail.exe'));
+end;
+
 // Take the Windows Search setup out before the files go.
 //
 // Here rather than in [UninstallRun] because Inno ignores what a [Run] entry
@@ -378,6 +407,27 @@ var
 begin
   if CurUninstallStep <> usUninstall then
     Exit;
+
+  { Before the early exit below, because that one is about the search handler
+    and this is about somebody's mail. The folder is named as %LOCALAPPDATA%
+    rather than expanded here on purpose: expanded, it would print whatever
+    account the uninstaller is running as, which is the question above that has
+    not been measured. Unexpanded, the person reading it pastes it into File
+    Explorer and lands in their own. }
+  if TheProgramIsAlreadyGone() then
+    MsgBox('Wixen Mail could not clear its own data, because the program was '
+           + 'already gone from this computer before the uninstall ran.' + #13#10#13#10
+           + 'Your mail and settings are still on this computer, in:' + #13#10
+           + '%LOCALAPPDATA%\wixen-mail' + #13#10#13#10
+           + 'The downloaded mail in that folder is not encrypted. Paste that '
+           + 'path into File Explorer and delete the folder yourself if you '
+           + 'want it gone. If you told Wixen Mail to keep its files somewhere '
+           + 'else, look there instead.' + #13#10#13#10
+           + 'Your saved passwords and sign-in tokens are still in the Windows '
+           + 'credential store. Open Credential Manager, choose Windows '
+           + 'Credentials, and remove the entries whose names begin with '
+           + 'wixen-mail.',
+           mbInformation, MB_OK);
 
   Tool := ExpandConstant('{app}\wixen-mail-search-setup.exe');
   if not FileExists(Tool) then

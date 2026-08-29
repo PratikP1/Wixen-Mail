@@ -1,6 +1,7 @@
 //! Message persistence operations
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
+use crate::application::importing_messages::WrittenDownAs;
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
 use rusqlite::{OptionalExtension, params};
@@ -296,15 +297,89 @@ impl MessageCache {
     /// keys messages on folder and number together, so carrying the old one
     /// across collides with whatever already holds it there and the move fails
     /// while the interface says it happened.
+    ///
+    /// Which end of the new folder's numbering it takes a number from is
+    /// worked out here rather than asked of the caller, and
+    /// [`Self::numbering_in`] says why.
+    ///
+    /// A row landing in a folder a server fills is also marked as one this
+    /// program filed. The two halves go together: the reserved end is read as
+    /// the lowest number carrying that marker, so an unmarked row there hands
+    /// the same number to the next message filed, and the step that forgets
+    /// mail the server no longer lists reads the same marker, so an unmarked
+    /// row is one the next sync deletes. Getting the number right and leaving
+    /// the marker off swaps one silent loss for another.
     pub fn move_message(&self, message_id: i64, into_folder: i64) -> Result<()> {
-        let uid = self.next_local_uid(into_folder)?;
+        let numbering = self.numbering_in(into_folder)?;
+        let uid = match numbering {
+            WrittenDownAs::FiledHereCountingUp => self.next_local_uid(into_folder)?,
+            WrittenDownAs::FiledHereCountingDownFromTheTop => {
+                self.next_reserved_uid(into_folder)?
+            }
+        };
+        // Set, never cleared. Moving a copy of a sent message into the Trash
+        // on this computer leaves it a copy this program filed, and clearing
+        // the marker there would offer it to the next sync as something to
+        // reconcile against a server that has never heard of it.
+        let mark = matches!(numbering, WrittenDownAs::FiledHereCountingDownFromTheTop);
         self.conn
             .execute(
-                "UPDATE messages SET folder_id = ?1, uid = ?2 WHERE id = ?3",
-                params![into_folder, uid, message_id],
+                "UPDATE messages
+                 SET folder_id = ?1, uid = ?2,
+                     filed_here = CASE WHEN ?4 THEN 1 ELSE filed_here END
+                 WHERE id = ?3",
+                params![into_folder, uid, message_id, mark],
             )
             .map_err(|e| Error::Other(format!("Failed to move the message: {}", e)))?;
         Ok(())
+    }
+
+    /// The number to give a row this program is filing into a folder.
+    ///
+    /// The one answer to that question, so the paths that file mail cannot
+    /// come to differ about it. Three of them ask: a rule filing a message, a
+    /// copy of something just sent, and a message read out of a file. Each
+    /// used to decide for itself, and two of the three decided wrongly.
+    pub fn next_uid_for_filing(&self, folder_id: i64) -> Result<u32> {
+        match self.numbering_in(folder_id)? {
+            WrittenDownAs::FiledHereCountingUp => self.next_local_uid(folder_id),
+            WrittenDownAs::FiledHereCountingDownFromTheTop => self.next_reserved_uid(folder_id),
+        }
+    }
+
+    /// Which end of a folder's numbering a row this program files there takes
+    /// its number from.
+    ///
+    /// Asked of the folder rather than of whoever is filing. A parameter here
+    /// would be a second place to answer a question that already has one
+    /// answer, and the wrong answer is silent for as long as the account
+    /// exists: [`Self::next_local_uid`] in a folder a server fills hands out
+    /// the number that server is about to issue. Nothing a caller can pass is
+    /// wrong when there is nothing to pass, which is the whole reason this
+    /// takes only the folder.
+    ///
+    /// The path is what says which kind of folder it is, and the kind column
+    /// does not: a Trash on this computer and a Trash on the server are both
+    /// Trash, and only the reserved prefix tells them apart. Asked of the one
+    /// place that owns that answer, so a folder added there is a folder this
+    /// answers about, and so an import and a move cannot come to differ.
+    pub fn numbering_in(&self, folder_id: i64) -> Result<WrittenDownAs> {
+        let path: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT path FROM folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))?;
+        Ok(match path {
+            Some(path) => WrittenDownAs::for_folder(&path),
+            // No such folder, so the move below fails on the foreign key and
+            // this only decides which number it fails with. Reserving is the
+            // answer that cannot collide with a number a server will issue.
+            None => WrittenDownAs::FiledHereCountingDownFromTheTop,
+        })
     }
 
     /// When each POP message in a folder was downloaded.
@@ -1248,6 +1323,7 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::WhereToSearch;
 
     fn incoming(folder_id: i64, uid: u32, subject: &str) -> super::IncomingMessage {
         super::IncomingMessage {
@@ -1294,7 +1370,9 @@ mod tests {
         cache.upsert_message(&in_inbox).unwrap();
         cache.upsert_message(&in_work).unwrap();
 
-        let found = cache.search_messages("acc", "quarterly", 50).unwrap();
+        let found = cache
+            .search_messages("acc", "quarterly", WhereToSearch::EveryFolder, 50)
+            .unwrap();
 
         assert_eq!(found.len(), 1, "the same message twice: {found:#?}");
     }
@@ -1313,7 +1391,9 @@ mod tests {
             .upsert_message(&incoming(inbox, 2, "Quarterly figures again"))
             .unwrap();
 
-        let found = cache.search_messages("acc", "quarterly", 50).unwrap();
+        let found = cache
+            .search_messages("acc", "quarterly", WhereToSearch::EveryFolder, 50)
+            .unwrap();
 
         assert_eq!(found.len(), 2, "{found:#?}");
     }
@@ -1475,6 +1555,133 @@ mod tests {
             in_trash.len(),
             2,
             "one of the two did not arrive: {in_trash:#?}"
+        );
+    }
+
+    /// The number a stored row is filed under now.
+    fn uid_of(cache: &super::super::MessageCache, row: i64) -> u32 {
+        cache
+            .get_message(row)
+            .expect("the lookup")
+            .expect("the message")
+            .uid
+    }
+
+    /// A folder that lives on this computer, which no server numbers.
+    fn folder_here(cache: &super::super::MessageCache, name: &str) -> i64 {
+        folder(
+            cache,
+            &format!("{}/{name}", crate::application::local_folders::LOCAL_PREFIX),
+        )
+    }
+
+    #[test]
+    fn test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone() {
+        // The move asked for one past the highest number in use, which in a
+        // folder a server fills is the number that server is about to hand
+        // out. Two messages are then lost at once and neither says anything:
+        // the sync reads that number as already held and never fetches the
+        // real message, and anything that does fetch it writes over the row
+        // that took its number.
+        let cache = fresh("move_into_a_folder_a_server_fills");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        for uid in 1..=10 {
+            cache
+                .upsert_message(&incoming(archive, uid, "From the server"))
+                .unwrap();
+        }
+        let filed = cache
+            .upsert_message(&incoming(inbox, 1, "Filed by a rule"))
+            .unwrap();
+
+        cache.move_message(filed, archive).unwrap();
+
+        assert!(
+            !cache.stored_uids(archive).unwrap().contains(&11),
+            "the row filed here holds the number the server is about to issue, \
+             so that message is never fetched"
+        );
+        // And when the server does issue it, the real message arrives beside
+        // the filed one rather than on top of it.
+        let real = cache
+            .upsert_message(&incoming(archive, 11, "The real eleventh"))
+            .unwrap();
+        assert_ne!(real, filed, "the arriving message wrote over the filed one");
+        let held = cache.get_message_list(archive, "acc").unwrap();
+        assert_eq!(held.len(), 12, "a message went missing: {held:#?}");
+        assert!(
+            held.iter().any(|m| m.subject == "Filed by a rule"),
+            "the filed message was replaced by the one the server sent"
+        );
+        assert!(
+            held.iter().any(|m| m.subject == "The real eleventh"),
+            "the real message never arrived"
+        );
+    }
+
+    #[test]
+    fn test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here() {
+        // The other half of the same fix, and the half that is easy to miss.
+        // The reserved end is read as the lowest number carrying the marker,
+        // so an unmarked row there hands the same number to the next message
+        // filed. The step that forgets mail the server no longer lists reads
+        // the same marker, and the server has never heard of this number, so
+        // an unmarked row is one the next sync deletes.
+        let cache = fresh("a_filed_row_is_marked_as_filed");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        let first = cache
+            .upsert_message(&incoming(inbox, 1, "The first"))
+            .unwrap();
+        let second = cache
+            .upsert_message(&incoming(inbox, 2, "The second"))
+            .unwrap();
+
+        cache.move_message(first, archive).unwrap();
+        cache.move_message(second, archive).unwrap();
+
+        assert!(cache.was_filed_here(first).unwrap(), "left unmarked");
+        assert_ne!(
+            uid_of(&cache, first),
+            uid_of(&cache, second),
+            "the second filed message took the first one's number"
+        );
+        cache
+            .forget_message(archive, uid_of(&cache, first))
+            .unwrap();
+        assert!(
+            cache.get_message(first).unwrap().is_some(),
+            "a sync that found the number was not on the server deleted the message"
+        );
+    }
+
+    #[test]
+    fn test_a_message_moved_into_a_folder_on_this_computer_still_counts_upward() {
+        // A folder no server numbers has nothing at the top of the range to
+        // reserve anything from, and this is the ordinary case: everything a
+        // POP account has, and every account's Outbox. Counting up is what it
+        // did before and what it must go on doing.
+        let cache = fresh("move_into_a_folder_here");
+        let inbox = folder_here(&cache, "Inbox");
+        let trash = folder_here(&cache, "Trash");
+        cache
+            .upsert_message(&incoming(trash, 4, "Already there"))
+            .unwrap();
+        let row = cache
+            .upsert_message(&incoming(inbox, 1, "Going to the trash"))
+            .unwrap();
+
+        cache.move_message(row, trash).unwrap();
+
+        assert_eq!(
+            uid_of(&cache, row),
+            5,
+            "a folder on this computer numbered a message from the reserved end"
+        );
+        assert!(
+            !cache.was_filed_here(row).unwrap(),
+            "a move within this computer changed what the row says about itself"
         );
     }
 
@@ -2097,7 +2304,9 @@ mod tests {
             ["One", "Two"]
         );
 
-        let from_a_search = cache.search_messages("acc", "Suspended", 50).unwrap();
+        let from_a_search = cache
+            .search_messages("acc", "Suspended", WhereToSearch::EveryFolder, 50)
+            .unwrap();
         assert_eq!(
             from_a_search
                 .iter()
@@ -2630,7 +2839,9 @@ mod tests {
             .unwrap();
 
         for query in ["quarterly", "ADA", "numbers"] {
-            let found = cache.search_messages("acc-1", query, 50).unwrap();
+            let found = cache
+                .search_messages("acc-1", query, WhereToSearch::EveryFolder, 50)
+                .unwrap();
             assert_eq!(found.len(), 1, "searching for {} found nothing", query);
         }
     }
@@ -2656,7 +2867,9 @@ mod tests {
             "\u{00D6}zt\u{00FC}rk",
             "\u{00F6}zt\u{00FC}rk",
         ] {
-            let found = cache.search_messages("acc-1", query, 50).unwrap();
+            let found = cache
+                .search_messages("acc-1", query, WhereToSearch::EveryFolder, 50)
+                .unwrap();
             assert_eq!(found.len(), 1, "searching for {query} found nothing");
         }
     }
@@ -2671,7 +2884,10 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(
-            cache.search_messages("acc-1", "report", 5).unwrap().len(),
+            cache
+                .search_messages("acc-1", "report", WhereToSearch::EveryFolder, 5)
+                .unwrap()
+                .len(),
             5
         );
     }
@@ -2685,7 +2901,7 @@ mod tests {
             .unwrap();
         assert!(
             cache
-                .search_messages("acc-1", "   ", 50)
+                .search_messages("acc-1", "   ", WhereToSearch::EveryFolder, 50)
                 .unwrap()
                 .is_empty()
         );
@@ -2705,7 +2921,9 @@ mod tests {
         cache
             .save_message(&listing_message(folder_id, 23, "100 units", "2026-07-25"))
             .unwrap();
-        let found = cache.search_messages("acc-1", "100%", 50).unwrap();
+        let found = cache
+            .search_messages("acc-1", "100%", WhereToSearch::EveryFolder, 50)
+            .unwrap();
         assert_eq!(found.len(), 1, "the percent sign acted as a wildcard");
         assert!(found[0].subject.contains("100%"));
     }
@@ -2718,7 +2936,7 @@ mod tests {
             .unwrap();
         assert!(
             cache
-                .search_messages("someone-else", "private", 50)
+                .search_messages("someone-else", "private", WhereToSearch::EveryFolder, 50)
                 .unwrap()
                 .is_empty()
         );
@@ -2733,7 +2951,7 @@ mod tests {
         cache.delete_message(id).unwrap();
         assert!(
             cache
-                .search_messages("acc-1", "gone", 50)
+                .search_messages("acc-1", "gone", WhereToSearch::EveryFolder, 50)
                 .unwrap()
                 .is_empty()
         );

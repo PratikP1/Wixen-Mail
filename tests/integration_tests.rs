@@ -441,27 +441,12 @@ fn test_oauth_providers_available() {
     assert_eq!(providers[1].name, "outlook");
 }
 
-#[test]
-fn test_oauth_url_generation() {
-    let url = OAuthService::build_authorization_url(
-        "gmail",
-        "my-client-id",
-        "http://localhost:8080/callback",
-        "random-state",
-    )
-    .unwrap();
-
-    assert!(url.starts_with("https://accounts.google.com/o/oauth2/v2/auth"));
-    assert!(url.contains("my-client-id"));
-    assert!(url.contains("response_type=code"));
-    assert!(url.contains("access_type=offline"));
-}
-
-#[test]
-fn test_oauth_url_unknown_provider() {
-    let result = OAuthService::build_authorization_url("yahoo", "id", "uri", "state");
-    assert!(result.is_err());
-}
+// What used to be here asked two questions of a second authorization URL
+// builder that nothing in the application called: no PKCE challenge, and the
+// Google-only parameters sent to every provider. Both questions are now asked
+// of the builder a real sign-in goes through, beside it in `service::oauth`,
+// because a test of a path nobody reaches proves only that the path still
+// compiles.
 
 #[test]
 fn test_oauth_token_expiry_check() {

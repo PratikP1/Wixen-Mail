@@ -272,9 +272,14 @@ pub const NO_FOLDERS_KNOWN_YET: &str = "Nothing has been blocked. This account h
 /// be gone here and still in the inbox on a phone. The same mailbox would
 /// answer differently depending on which device somebody opened.
 ///
-/// And the junk folder already exists, is already recognised, is already
-/// searched, and is already synced. Nothing has to be created on somebody's
-/// server for a block to work.
+/// And the junk folder already exists, is already recognised and is already
+/// searched, so nothing has to be created on somebody's server for a block to
+/// work.
+///
+/// It was not already downloaded, which this used to say it was. On a server
+/// account the sync leaves it out by default, so the folder blocked mail is
+/// filed into was one this program never fetched and never listed. See
+/// [`TheJunkFolder`], which is what blocking now does about that.
 pub fn where_blocked_mail_goes<'a>(
     folders: impl IntoIterator<Item = (&'a str, FolderType)>,
 ) -> BlockedMailGoesTo<'a> {
@@ -285,6 +290,62 @@ pub fn where_blocked_mail_goes<'a>(
     match folders.find(|(_, kind)| *kind == FolderType::Spam) {
         Some((path, _)) => BlockedMailGoesTo::TheJunkFolder(path),
         None => BlockedMailGoesTo::NoJunkFolderFound,
+    }
+}
+
+/// What blocking has to do about the junk folder before a block can work.
+///
+/// # Why a block switches a folder on
+///
+/// Filing mail into Junk only helps if Junk is a folder this program
+/// downloads, and on a server account it is not: the sync leaves it out by
+/// default, because downloading a spam folder costs the whole of it. The
+/// folder tree leaves out what is not downloaded, for its own good reason, so
+/// the two together sent blocked mail to a folder that was neither filled nor
+/// listed. The recovery route this feature promises was empty inside the
+/// program.
+///
+/// That lands exactly on the case blocking was designed around. A block on a
+/// whole domain catches a colleague sooner or later, and the person then goes
+/// looking in Junk, which is the point of filing there rather than deleting.
+///
+/// So blocking switches the folder on. It is a change nobody asked for in so
+/// many words, and it is the change that makes the one they did ask for mean
+/// anything: mail filed where it cannot be opened has been destroyed as far as
+/// they are concerned. It is announced in the same breath, it is undone in one
+/// place, and it is never done over the top of somebody who said no.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheJunkFolder {
+    /// Already downloaded, or kept on this computer. Nothing to do.
+    AlreadyKeptUpToDate,
+    /// Nobody has said either way, and a server account does not download its
+    /// junk folder unless somebody does, so blocking switches it on.
+    IsSwitchedOnByBlocking,
+    /// Not downloaded, and blocking has not changed that. Either somebody
+    /// switched it off, which blocking does not overrule, or switching it on
+    /// did not work. What they have to do about it is the same either way.
+    IsNotBeingDownloaded,
+}
+
+/// What blocking has to do about the junk folder on this account.
+///
+/// `already_chosen` is what somebody has said about that folder. `None` is
+/// "never asked", which is not the same as "asked and said no": they look the
+/// same as a `false` and mean opposite things, which is the distinction
+/// [`crate::application::mail_sync::FolderChoices`] exists to keep.
+pub fn what_the_junk_folder_needs(
+    junk_folder: &str,
+    already_chosen: Option<bool>,
+) -> TheJunkFolder {
+    // A folder on this computer is always there to be opened. The choice only
+    // decides what is downloaded from a server, and this folder has none.
+    if crate::application::local_folders::is_local(junk_folder) {
+        return TheJunkFolder::AlreadyKeptUpToDate;
+    }
+    match already_chosen {
+        Some(true) => TheJunkFolder::AlreadyKeptUpToDate,
+        Some(false) => TheJunkFolder::IsNotBeingDownloaded,
+        None => TheJunkFolder::IsSwitchedOnByBlocking,
     }
 }
 
@@ -506,20 +567,83 @@ const WHAT_IT_DOES_NOT_DO: &str = "This does not tell your mail provider anythin
      arrives here. Messages that already arrived stay where they are.";
 
 /// What to say before a block is made.
-pub fn what_blocking_will_do(block: &Block, junk_folder: &str, allowed: Allowed) -> String {
+pub fn what_blocking_will_do(
+    block: &Block,
+    junk_folder: &str,
+    allowed: Allowed,
+    junk: TheJunkFolder,
+) -> String {
     format!(
-        "{} will go to {junk_folder} from now on. {WHAT_IT_DOES_NOT_DO}{}",
+        "{} will go to {junk_folder} from now on.{} {WHAT_IT_DOES_NOT_DO}{}",
         whose_mail(block),
+        what_will_happen_to_the_junk_folder(junk_folder, junk),
         but_mail_changes_are_off(allowed)
     )
 }
 
 /// What to say once it has been made.
-pub fn what_blocking_did(block: &Block, junk_folder: &str, allowed: Allowed) -> String {
+pub fn what_blocking_did(
+    block: &Block,
+    junk_folder: &str,
+    allowed: Allowed,
+    junk: TheJunkFolder,
+) -> String {
     format!(
-        "{} now goes to {junk_folder}. {WHAT_IT_DOES_NOT_DO}{}",
+        "{} now goes to {junk_folder}.{} {WHAT_IT_DOES_NOT_DO}{}",
         whose_mail(block),
+        what_happened_to_the_junk_folder(junk_folder, junk),
         but_mail_changes_are_off(allowed)
+    )
+}
+
+/// Where somebody chooses which folders are downloaded.
+///
+/// Named once, because every sentence here sends them to it and a menu path
+/// written out three times is a menu path that drifts.
+const WHERE_FOLDERS_ARE_CHOSEN: &str = "File, then Folders to Keep Up to Date";
+
+/// Why a junk folder nobody downloads makes a block worth nothing.
+const A_FOLDER_NOT_DOWNLOADED_CANNOT_BE_READ: &str =
+    "Blocked mail filed into a folder that is not downloaded cannot be read here at all.";
+
+/// What to say about the junk folder, once the block has been made.
+fn what_happened_to_the_junk_folder(junk_folder: &str, junk: TheJunkFolder) -> String {
+    match junk {
+        // Nothing. A line that counts the nothings teaches somebody to stop
+        // listening to the one that matters.
+        TheJunkFolder::AlreadyKeptUpToDate => String::new(),
+        TheJunkFolder::IsSwitchedOnByBlocking => format!(
+            " {junk_folder} was not being downloaded to this computer, so it has been switched \
+             on. {A_FOLDER_NOT_DOWNLOADED_CANNOT_BE_READ} To stop downloading it, use \
+             {WHERE_FOLDERS_ARE_CHOSEN}."
+        ),
+        TheJunkFolder::IsNotBeingDownloaded => it_is_not_being_downloaded(junk_folder),
+    }
+}
+
+/// What to say about the junk folder, before the block is made.
+fn what_will_happen_to_the_junk_folder(junk_folder: &str, junk: TheJunkFolder) -> String {
+    match junk {
+        TheJunkFolder::AlreadyKeptUpToDate => String::new(),
+        TheJunkFolder::IsSwitchedOnByBlocking => format!(
+            " {junk_folder} is not being downloaded to this computer, so blocking will switch it \
+             on. {A_FOLDER_NOT_DOWNLOADED_CANNOT_BE_READ} To stop downloading it, use \
+             {WHERE_FOLDERS_ARE_CHOSEN}."
+        ),
+        TheJunkFolder::IsNotBeingDownloaded => it_is_not_being_downloaded(junk_folder),
+    }
+}
+
+/// What to say when the junk folder stays undownloaded either way.
+///
+/// The same before and after, because it is a state rather than something
+/// that happened: somebody switched that folder off, or switching it on did
+/// not work, and what they have to do about it is the same.
+fn it_is_not_being_downloaded(junk_folder: &str) -> String {
+    format!(
+        " {junk_folder} is not being downloaded to this computer, so blocked mail is filed there \
+         at the server and you will not be able to read it here. To download that folder, use \
+         {WHERE_FOLDERS_ARE_CHOSEN}."
     )
 }
 
@@ -1266,6 +1390,70 @@ mod tests {
 
     // ── What is said before and after ───────────────────────────────────
 
+    /// An account whose junk folder is already downloaded, which is the case
+    /// where blocking has nothing to say about the folder at all.
+    const ALREADY_THERE: TheJunkFolder = TheJunkFolder::AlreadyKeptUpToDate;
+
+    #[test]
+    fn test_blocking_says_that_it_switched_the_junk_folder_on() {
+        // Switching something on for somebody without saying so is a change
+        // they find out about when their folder list has grown and mail they
+        // did not ask for is in it. Said in the same breath as the block,
+        // with what it is for and where to undo it.
+        let block = just_this_sender("spam@example.com").expect("an address");
+        let sentence = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            TheJunkFolder::IsSwitchedOnByBlocking,
+        );
+
+        assert!(
+            sentence.contains("switched on"),
+            "the sentence did not say the folder was switched on: {sentence}"
+        );
+        assert!(
+            sentence.contains("Folders to Keep Up to Date"),
+            "the sentence did not say where to undo it: {sentence}"
+        );
+    }
+
+    #[test]
+    fn test_blocking_says_when_the_junk_folder_is_not_being_downloaded() {
+        // Somebody who switched it off keeps their choice and is told what it
+        // now costs: blocked mail is filed at the server and never arrives
+        // here, so it cannot be read or got back in this program.
+        let block = just_this_sender("spam@example.com").expect("an address");
+        let sentence = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            TheJunkFolder::IsNotBeingDownloaded,
+        );
+
+        assert!(
+            sentence.contains("not being downloaded"),
+            "the sentence did not say the folder is not downloaded: {sentence}"
+        );
+        assert!(
+            sentence.contains("Folders to Keep Up to Date"),
+            "the sentence did not say how to turn it on: {sentence}"
+        );
+    }
+
+    #[test]
+    fn test_a_junk_folder_already_being_downloaded_is_not_mentioned_at_all() {
+        // A line that says the nothings teaches somebody to stop listening to
+        // the one that matters.
+        let block = just_this_sender("spam@example.com").expect("an address");
+        let sentence = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+
+        assert!(
+            !sentence.contains("Folders to Keep Up to Date"),
+            "somebody was told to go and change a setting for no reason: {sentence}"
+        );
+    }
+
     #[test]
     fn test_what_is_said_before_and_after_both_say_what_blocking_does_not_do() {
         // Two things somebody will otherwise assume, and be wrong about for
@@ -1274,8 +1462,8 @@ mod tests {
         let block = just_this_sender("spam@example.com").expect("an address");
 
         for sentence in [
-            what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING),
-            what_blocking_did(&block, "Junk", Allowed::EVERYTHING),
+            what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE),
+            what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE),
         ] {
             assert!(sentence.contains("spam@example.com"), "{sentence}");
             assert!(sentence.contains("Junk"), "{sentence}");
@@ -1295,8 +1483,8 @@ mod tests {
         // The same facts, and not the same words: one is about what will
         // happen and one is about what has happened.
         let block = just_this_sender("spam@example.com").expect("an address");
-        let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING);
-        let after = what_blocking_did(&block, "Junk", Allowed::EVERYTHING);
+        let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+        let after = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
 
         assert_ne!(before, after);
         assert!(before.contains("will go"), "{before}");
@@ -1306,7 +1494,7 @@ mod tests {
     #[test]
     fn test_a_domain_block_says_it_covers_everyone_there() {
         let block = everyone_at_the_senders_domain("spam@example.com").expect("a domain");
-        let sentence = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING);
+        let sentence = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
 
         assert!(sentence.contains("everyone"), "{sentence}");
         assert!(sentence.contains("example.com"), "{sentence}");
@@ -1321,8 +1509,8 @@ mod tests {
         let block = just_this_sender("spam@example.com").expect("an address");
 
         for sentence in [
-            what_blocking_will_do(&block, "Junk", Allowed::NOTHING),
-            what_blocking_did(&block, "Junk", Allowed::NOTHING),
+            what_blocking_will_do(&block, "Junk", Allowed::NOTHING, ALREADY_THERE),
+            what_blocking_did(&block, "Junk", Allowed::NOTHING, ALREADY_THERE),
         ] {
             assert!(
                 sentence.contains("Allowed Changes"),
@@ -1330,8 +1518,70 @@ mod tests {
             );
         }
         assert!(
-            !what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING).contains("Allowed Changes"),
+            !what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE)
+                .contains("Allowed Changes"),
             "the warning was shown when nothing is holding the block back"
+        );
+    }
+
+    // ── The folder blocked mail is filed into ───────────────────────────
+
+    #[test]
+    fn test_blocking_switches_the_junk_folder_on_when_nobody_has_said_either_way() {
+        // The whole recovery route this feature promises. A server account
+        // does not download its junk folder unless somebody says so, and the
+        // folder tree leaves out what is not downloaded, so blocked mail went
+        // to a folder that was neither filled nor listed. A block on a whole
+        // domain catches a colleague sooner or later, and that is the case
+        // where the person goes looking in Junk and finds nothing there.
+        assert_eq!(
+            what_the_junk_folder_needs("INBOX/Junk", None),
+            TheJunkFolder::IsSwitchedOnByBlocking
+        );
+    }
+
+    #[test]
+    fn test_somebody_who_switched_the_junk_folder_off_is_not_overruled() {
+        // "Never asked" and "asked and said no" look the same as a `false`
+        // and mean opposite things, which is why the answer is an `Option`.
+        // Blocking a sender is not a reason to undo a choice somebody made in
+        // Folders to Keep Up to Date; it is a reason to say what that choice
+        // now costs them.
+        assert_eq!(
+            what_the_junk_folder_needs("INBOX/Junk", Some(false)),
+            TheJunkFolder::IsNotBeingDownloaded
+        );
+    }
+
+    #[test]
+    fn test_a_junk_folder_already_being_downloaded_needs_nothing() {
+        assert_eq!(
+            what_the_junk_folder_needs("INBOX/Junk", Some(true)),
+            TheJunkFolder::AlreadyKeptUpToDate
+        );
+    }
+
+    #[test]
+    fn test_a_junk_folder_on_this_computer_needs_nothing_switching_on() {
+        // A POP account keeps its junk folder here, and the choice only
+        // decides what is downloaded from a server. Reading it as "never
+        // asked" would switch on a folder that is always there anyway and
+        // say so for no reason.
+        //
+        // The path comes from the module that makes it rather than being
+        // typed out here: it starts with a character no mailbox name carries,
+        // and a hand-written copy of it would be an ordinary path that this
+        // test would then pass against for the wrong reason.
+        let junk_here =
+            crate::application::local_folders::for_account(crate::common::types::Protocol::Pop3)
+                .iter()
+                .find(|folder| folder.kind == FolderType::Spam)
+                .expect("a POP account keeps a junk folder on this computer")
+                .path();
+
+        assert_eq!(
+            what_the_junk_folder_needs(&junk_here, None),
+            TheJunkFolder::AlreadyKeptUpToDate
         );
     }
 
@@ -1358,8 +1608,14 @@ mod tests {
         ];
         for block in [&one, &all] {
             for allowed in [Allowed::EVERYTHING, Allowed::NOTHING] {
-                every_sentence.push(what_blocking_will_do(block, "Junk", allowed));
-                every_sentence.push(what_blocking_did(block, "Junk", allowed));
+                for junk in [
+                    TheJunkFolder::AlreadyKeptUpToDate,
+                    TheJunkFolder::IsSwitchedOnByBlocking,
+                    TheJunkFolder::IsNotBeingDownloaded,
+                ] {
+                    every_sentence.push(what_blocking_will_do(block, "Junk", allowed, junk));
+                    every_sentence.push(what_blocking_did(block, "Junk", allowed, junk));
+                }
             }
         }
 

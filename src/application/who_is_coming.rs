@@ -32,6 +32,21 @@ pub struct Coming {
     pub address: String,
 }
 
+impl Coming {
+    /// The name somebody really wrote down for this person, or nothing when
+    /// all they gave was an address.
+    ///
+    /// One answer, because three places need it and two of them are on the way
+    /// out of this program. [`called`](Self::called) stands an address in for a
+    /// missing name so a list read aloud has no silence in it, and that
+    /// stand-in must never be written anywhere it would be read as what the
+    /// person is called: stored, it goes to a provider on the next sync; sent,
+    /// it is what their colleagues see in the invitation.
+    pub fn a_name_of_their_own(&self) -> Option<&str> {
+        (!the_same_person(&self.called, &self.address)).then_some(self.called.as_str())
+    }
+}
+
 /// The people a typed guest list names, each once, in the order they were
 /// written.
 pub fn typed_in(typed: &str) -> Vec<Coming> {
@@ -118,8 +133,7 @@ pub fn as_stored(invited: &[Coming], held: Option<&str>) -> Option<String> {
             // and writing that back as their name would be this program
             // inventing one: stored, it goes to the provider on the next sync
             // as what that person is called.
-            name: (!the_same_person(&person.called, &person.address))
-                .then(|| person.called.clone()),
+            name: person.a_name_of_their_own().map(str::to_string),
             status: answered
                 .iter()
                 .find(|(address, _)| the_same_person(address, &person.address))

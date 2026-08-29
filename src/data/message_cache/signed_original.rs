@@ -138,9 +138,52 @@ impl MessageCache {
         // `replace_attachments_with_content`: the body cache once had an
         // eviction function nothing outside its own tests called, so the
         // documented budget was never applied to anything.
-        if let Err(e) = self.keep_signed_originals_within_budget() {
+        if let Err(e) = self.stay_within_the_budget_after_keeping(message_id) {
             tracing::warn!("Could not bring the kept signed messages back under their limit: {e}");
         }
+        Ok(())
+    }
+
+    /// Bring the total back under the budget, this message's bytes giving way
+    /// last of all.
+    ///
+    /// The sweep drops the least recently read, and it can only drop what can
+    /// be fetched again. Two kinds of mail have no server behind them and are
+    /// exempt: mail this program filed itself, which is everything an import
+    /// brings in, and mail collected over POP. A cache holding enough of either
+    /// has a sweep that frees nothing, so without this the total climbs with
+    /// every signed message brought in and never comes down, and the limit
+    /// `docs/privacy.md` names would be passed in silence.
+    ///
+    /// The message just written is the one that gives way rather than an older
+    /// one, because it is the one that can be got back: the file it was read
+    /// out of is still where it was, and the older ones have nowhere to be
+    /// fetched from at all.
+    fn stay_within_the_budget_after_keeping(&self, message_id: i64) -> Result<()> {
+        let over = self.kept_signed_original_bytes()? - self.signed_original_budget;
+        if over <= 0 {
+            return Ok(());
+        }
+        if self.evict_signed_originals_over(self.signed_original_budget)? < over {
+            self.forget_the_bytes_kept_for(message_id)?;
+        }
+        Ok(())
+    }
+
+    /// Drop the bytes kept for one message, leaving the row saying it was
+    /// signed.
+    ///
+    /// The bytes and never the row, everywhere this is done, for the reason on
+    /// [`Self::evict_signed_originals_over`]: taking the row would turn a
+    /// signed message into one that never claimed a signature, which reads as
+    /// ordinary mail and says nothing at all.
+    fn forget_the_bytes_kept_for(&self, message_id: i64) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE signed_original SET original = NULL, bytes = 0 WHERE message_id = ?1",
+                rusqlite::params![message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to drop a kept signed message: {}", e)))?;
         Ok(())
     }
 
@@ -244,8 +287,13 @@ impl MessageCache {
     ///
     /// Mail with no server to fetch it from again is never a candidate, the
     /// same rule the body and attachment sweeps follow. For those two it is the
-    /// content itself that would be destroyed; here it is the only evidence
-    /// left that the message was signed at all, and neither can be got back.
+    /// content itself that would be destroyed; here it is the last chance
+    /// anybody has of checking that signature, and neither can be got back.
+    ///
+    /// So this sweep can free nothing at all, on a cache holding enough of
+    /// that mail. What keeps the total bounded there is
+    /// [`Self::stay_within_the_budget_after_keeping`], which refuses to keep
+    /// the newest rather than destroying an older one.
     ///
     /// Takes the number as an argument so a test can name a small budget rather
     /// than build a hundred megabytes of mail to watch one go.
@@ -279,19 +327,38 @@ impl MessageCache {
             if total <= budget_bytes {
                 break;
             }
-            self.conn
-                .execute(
-                    "UPDATE signed_original SET original = NULL, bytes = 0
-                     WHERE message_id = ?1",
-                    rusqlite::params![message_id],
-                )
-                .map_err(|e| {
-                    Error::Other(format!("Failed to drop a kept signed message: {}", e))
-                })?;
+            self.forget_the_bytes_kept_for(message_id)?;
             total -= bytes;
             freed += bytes;
         }
         Ok(freed)
+    }
+}
+
+/// A cache that has stopped being able to keep these bytes, for the tests of
+/// other modules.
+///
+/// Every path that keeps them has to decide what to do when the keeping fails,
+/// and the two answers are not the same size: losing the bytes costs a verdict
+/// on one message, and reporting it as a failure tells somebody their mail did
+/// not arrive. Without a way to make it fail on purpose, those paths could only
+/// ever be tested with nothing going wrong, which is the half that was never in
+/// question.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use super::*;
+
+    /// Make keeping the form a signed message arrived in fail from here on.
+    ///
+    /// What a disk that has filled or a database another program has locked
+    /// looks like from inside this program: the write is refused and everything
+    /// else about the message has already happened.
+    pub(crate) fn stop_it_keeping_signed_originals(cache: &MessageCache) -> Result<()> {
+        cache
+            .conn
+            .execute("DROP TABLE signed_original", [])
+            .map_err(|e| Error::Other(format!("Failed to break the cache for a test: {}", e)))?;
+        Ok(())
     }
 }
 
@@ -449,6 +516,120 @@ mod tests {
             SignedOriginal::NotKept
         );
         assert_eq!(cache.kept_signed_original_bytes().expect("total"), 0);
+    }
+
+    /// A cache that keeps only this much of the form signed mail arrived in.
+    fn a_cache_keeping_at_most(budget_bytes: i64) -> TempHome<MessageCache> {
+        TempHome::named("wixen_signed_original_budget_", |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None)
+                .expect("cache")
+                .keeping_signed_originals_under(budget_bytes);
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc-1".to_string(),
+                    name: "Imported".to_string(),
+                    path: "\u{1}Local/Imported".to_string(),
+                    folder_type: "Custom".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            cache
+        })
+    }
+
+    /// A message with no server behind it, the way an import leaves one.
+    ///
+    /// The marker is what the sweep reads: a row this program filed itself has
+    /// nowhere to fetch the message from again, so the bytes kept for it are
+    /// never a candidate to be dropped. Mail collected over POP is the same
+    /// case by a different column.
+    fn a_message_filed_here(cache: &MessageCache, uid: u32) -> i64 {
+        cache
+            .file_message_here(&crate::data::message_cache::IncomingMessage {
+                folder_id: 1,
+                uid,
+                message_id: format!("<{uid}@example.com>"),
+                subject: "The meeting moved".to_string(),
+                from_addr: "alice@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-08-28".to_string(),
+                internal_date: None,
+                size_bytes: None,
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message filed here")
+    }
+
+    #[test]
+    fn test_the_kept_signed_messages_stay_within_their_budget_when_none_can_be_dropped() {
+        // The sweep only drops what can be fetched again. Mail this program
+        // filed itself, which is everything an import brings in, and mail
+        // collected over POP have no server behind them, so dropping their
+        // bytes would leave a signature nobody could ever check again, and both
+        // are exempt from the sweep.
+        //
+        // Which means the sweep can free nothing at all. Without a ceiling of
+        // its own, importing a mailbox where every message is signed writes a
+        // second copy of the whole of it, and the limit the documentation names
+        // is passed silently and never comes back down.
+        let raw = signed_beside();
+        let room_for_one = raw.len() as i64;
+        let cache = a_cache_keeping_at_most(room_for_one);
+
+        for uid in 1..=4 {
+            let row = a_message_filed_here(&cache, uid);
+            cache.keep_signed_original(row, &raw).expect("asked");
+        }
+
+        assert!(
+            cache.kept_signed_original_bytes().expect("the total") <= room_for_one,
+            "the kept signed messages went past their budget with nothing able to bring \
+             them back under it"
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_there_was_no_room_for_still_says_it_was_signed() {
+        // The rule this whole area turns on, restated for the one refusal that
+        // is new. Not keeping the bytes has to leave the message saying it is
+        // signed and not checkable here. Saying nothing is what ordinary mail
+        // says, and saying the signature failed is an accusation.
+        //
+        // The message that gives way is the one just read out of the file,
+        // rather than one already here, because that one can be got back: the
+        // file it came from is still where it was, and the older ones have
+        // nowhere to be fetched from at all.
+        let raw = signed_beside();
+        let cache = a_cache_keeping_at_most(raw.len() as i64);
+        let first = a_message_filed_here(&cache, 1);
+        let second = a_message_filed_here(&cache, 2);
+
+        cache.keep_signed_original(first, &raw).expect("asked");
+        cache.keep_signed_original(second, &raw).expect("asked");
+
+        assert_eq!(
+            cache.signed_original(second).expect("read"),
+            SignedOriginal::NotKept
+        );
+        assert_eq!(
+            cache.signed_original(first).expect("read"),
+            SignedOriginal::Kept(raw)
+        );
     }
 
     #[test]

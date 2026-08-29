@@ -111,19 +111,85 @@ pub fn what_the_folder_sync_did(result: &FolderSync) -> String {
         // that from unexplained into expected.
         said.count("read again after the server renumbered it");
     }
-    if result.filtered.changed > 0 {
-        said.count(format!("{} sorted by your rules", result.filtered.changed));
+    say_what_the_rules_did(&result.filtered, &mut said);
+    said.spoken()
+}
+
+/// Add what the rules did to a summary, in one place.
+///
+/// Here rather than in each summary that needs it, because both kinds of
+/// account run the same rules and a second wording would let one of them go
+/// quiet without anything saying so. A POP check files mail on this computer
+/// and an IMAP sync files it at the server, and what happened to the reader's
+/// rules is the same sentence either way.
+pub(crate) fn say_what_the_rules_did(filtered: &Filtered, said: &mut SummingUp) {
+    if filtered.changed > 0 {
+        said.count(format!("{} sorted by your rules", filtered.changed));
     }
-    if result.filtered.held_back > 0 {
+    if filtered.held_back > 0 {
         // Said, not passed over. A rule that files invoices into a folder and
         // does not is a rule somebody believes is working, and the reason is a
         // setting they can change.
         said.count(format!(
             "{} left alone because changing mail is not allowed",
-            result.filtered.held_back
+            filtered.held_back
         ));
     }
-    said.spoken()
+    if filtered.could_not_be_filed.is_empty() {
+        return;
+    }
+    // Said, not passed over. These sentences were built, handed back and
+    // read by nothing: not shown, not counted, not even logged. A rule
+    // that files invoices and does not is a rule somebody believes is
+    // working, and this is the only thing that says otherwise.
+    // "Not filed as asked" rather than "could not be filed", because two
+    // of the five ways this goes wrong did put the message in the folder
+    // and left a copy behind as well. A clause the sentence after it has
+    // to correct is a clause that was not worth saying.
+    said.count(format!(
+        "{} not filed as asked",
+        crate::service::caldav::how_many(filtered.could_not_be_filed.len(), "message")
+    ));
+    let reasons = the_different_reasons(&filtered.could_not_be_filed);
+    for reason in reasons.iter().take(REASONS_SAID_ALOUD) {
+        said.sentence(*reason);
+    }
+    // Counted rather than dropped. Every one of them is in the log, and
+    // somebody told two of four knows there are two more to look for.
+    match reasons.len().saturating_sub(REASONS_SAID_ALOUD) {
+        0 => {}
+        1 => said.sentence("1 other reason is in the log"),
+        more => said.sentence(format!("{more} other reasons are in the log")),
+    }
+}
+
+/// How many different reasons a folder sync reads out.
+///
+/// A status line is heard from the first word to the last, so every extra
+/// sentence is one more somebody listens through before the next thing that
+/// happened. Two is enough to tell one thing going wrong from several
+/// different things going wrong, and the rest are in the log.
+const REASONS_SAID_ALOUD: usize = 2;
+
+/// The reasons filing failed, each said once, in the order they happened.
+///
+/// One rule naming a folder somebody has since renamed fails on every message
+/// it matches, so a hundred messages produce a hundred copies of one sentence.
+/// Said a hundred times that is the flood this project's rule about bounded
+/// feedback exists to stop, and the repeats say nothing the first copy did
+/// not: the count in front of them already says how many messages there were.
+///
+/// A list rather than a set, because the order somebody hears them in should
+/// be the order they happened in, and because the list is short by the time it
+/// gets here.
+fn the_different_reasons(sentences: &[String]) -> Vec<&str> {
+    let mut different: Vec<&str> = Vec::new();
+    for sentence in sentences {
+        if !different.contains(&sentence.as_str()) {
+            different.push(sentence);
+        }
+    }
+    different
 }
 
 /// The rules to run on arriving mail, and what may be done as a result.
@@ -138,7 +204,17 @@ pub struct Filtering<'a> {
 /// What the rules did, and what they were not allowed to do.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Filtered {
-    /// How many arriving messages a rule touched.
+    /// How many arriving messages had everything their rules asked for done.
+    ///
+    /// Messages, counted once each, and only when the whole of what the rules
+    /// asked for really happened. Both halves of the work used to add to this:
+    /// [`apply_rules`], which writes flags and tags here, and
+    /// [`carry_out_the_moves`], which reaches the server. So one message that a
+    /// rule marked read and another rule filed was counted twice, and a message
+    /// whose move the server then refused was counted anyway.
+    ///
+    /// A message with a move still to do is left for the mover to count, which
+    /// is the only place that knows whether it happened.
     pub changed: usize,
     /// How many were left alone because moving or deleting is not allowed.
     ///
@@ -146,18 +222,16 @@ pub struct Filtered {
     /// into a folder and does not, on a build where writing to the server is
     /// off, is a rule somebody believes is working.
     pub held_back: usize,
-    /// How many asked for something this program cannot do yet.
-    ///
-    /// Kept apart from `changed` because that count is what says how much the
-    /// rules sorted, and counting a rule that did nothing as having sorted a
-    /// message tells somebody their rules are working when they are not.
-    pub not_built_yet: usize,
     /// Mail a rule meant to file that could not be filed, one sentence each.
     ///
-    /// Said rather than logged. A rule that files invoices and does not is a
+    /// Said as well as logged. A rule that files invoices and does not is a
     /// rule somebody believes is working, and this project's own rule is that
     /// a warning nobody gets is not a warning. Sentences rather than a count,
     /// because which folder and why are the useful part.
+    ///
+    /// One per message, and the summary folds the repeats: the same rule fails
+    /// the same way on every message it matches, and a hundred copies of one
+    /// sentence is the flood the rule about bounded feedback exists to stop.
     pub could_not_be_filed: Vec<String>,
     /// Messages a rule says belong in another folder.
     ///
@@ -517,8 +591,13 @@ pub(crate) fn apply_rules(
             });
         }
         match carry_out(cache, &message, &outcome) {
-            Ok(Carried::Something) => done.changed += 1,
-            Ok(Carried::NothingBuiltYet) => done.not_built_yet += 1,
+            Ok(Carried::Everything) => done.changed += 1,
+            // Counted by `carry_out_the_moves` when the move has really
+            // happened, and not here as well. Counting it in both places made
+            // one message two in "sorted by your rules" whenever a rule marked
+            // it read and another filed it, and counting it here alone
+            // reported a move the server went on to refuse as done.
+            Ok(Carried::ExceptTheMove) => {}
             Err(e) => tracing::warn!("A rule could not be carried out: {}", e),
         }
     }
@@ -536,7 +615,7 @@ fn carry_out(
         // Locally. Taking it off the server is the move-to-trash path, which
         // is somebody's own deliberate action rather than a rule's.
         cache.delete_message(id)?;
-        return Ok(Carried::Something);
+        return Ok(Carried::Everything);
     }
     if outcome.read.is_some() || outcome.starred.is_some() {
         cache.update_message_flags(
@@ -548,23 +627,27 @@ fn carry_out(
     for tag in &outcome.tags {
         cache.add_tag_to_message(id, tag)?;
     }
-    let did_something =
-        outcome.read.is_some() || outcome.starred.is_some() || !outcome.tags.is_empty();
-    Ok(match did_something {
-        true => Carried::Something,
-        false => Carried::NothingBuiltYet,
+    Ok(match outcome.move_to.is_some() {
+        true => Carried::ExceptTheMove,
+        false => Carried::Everything,
     })
 }
 
-/// Whether carrying out a message's rules actually changed anything.
+/// Whether everything a message's rules asked for has now been done.
 ///
-/// A rule whose only action is one this program cannot do yet leaves the
-/// message exactly as it was, and saying so is the difference between a count
-/// that means "your rules sorted this much" and one that does not.
+/// A move is the one action this half cannot finish, because it needs a
+/// server. It used to be reported as an action this program cannot do at all,
+/// which stopped being true when moves were built: the count of rules nobody
+/// had built counted rules that were carried out a moment later, and the
+/// message was counted a second time when the move landed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Carried {
-    Something,
-    NothingBuiltYet,
+    /// Everything the rules asked for is done.
+    Everything,
+    /// Everything but the move, which reaches the server in
+    /// [`carry_out_the_moves`] and is counted there, once, when it has really
+    /// happened.
+    ExceptTheMove,
 }
 
 /// Do the moves the rules asked for, and say how many really happened.
@@ -579,43 +662,67 @@ pub(crate) enum Carried {
 async fn carry_out_the_moves<M: Mailbox>(
     controller: &M,
     cache: &MessageCache,
-    from: &str,
+    from: &ImapFolder,
     from_id: i64,
     moves: &[Moving],
 ) -> (usize, Vec<String>) {
-    let mut refused = Vec::new();
+    let mut could_not = Vec::new();
     if moves.is_empty() {
-        return (0, refused);
+        return (0, could_not);
     }
+    // Everything below turns the folder name a rule uses into a folder on the
+    // server, which takes the account's folder list. Without it nothing can be
+    // filed, and giving up quietly made that sync read exactly like a sync
+    // with no rules in it. One sentence per message, as everywhere else here,
+    // so the count is right and the summary folds the repeats into one.
+    let every_one_of_them_dropped =
+        || vec![THE_FOLDER_LIST_COULD_NOT_BE_READ.to_string(); moves.len()];
     let Ok(Some(account_id)) = cache.account_of_folder(from_id) else {
-        return (0, refused);
+        return (0, every_one_of_them_dropped());
     };
     let Ok(folders) = cache.get_folders_for_account(&account_id) else {
-        return (0, refused);
+        return (0, every_one_of_them_dropped());
     };
     let mut done = 0;
     for moving in moves {
-        let Some(into) = folders
-            .iter()
-            .find(|f| f.name.eq_ignore_ascii_case(&moving.into) || f.path == moving.into)
-        else {
-            refused.push(format!(
-                "A rule files mail into {}, which this account does not have, so it was left where it is",
-                moving.into
-            ));
+        let Some(into) = the_folder_a_rule_names(&folders, &moving.into) else {
+            could_not.push(no_folder_of_that_name(&moving.into));
             continue;
         };
+        // Already where the rule wants it, so there is nothing to do and
+        // nothing to report. Rules run on whatever has just arrived in
+        // whichever folder is being checked, so a rule that files a sender
+        // into a folder goes on matching that sender's mail once it is in
+        // that folder. Asking a server to move a message into the folder it
+        // is in either fails, once per message on every check for mail, or
+        // takes a copy, and nothing anywhere removes duplicates.
+        if into.id == from_id {
+            continue;
+        }
         // What really happened, not just whether it failed. A server without
-        // MOVE copies and flags instead, which leaves the message in both
-        // folders, and that is somebody's mail being in two places.
-        match controller.move_message(from, moving.uid, &into.path).await {
+        // MOVE copies instead, which leaves the message in both folders, and
+        // that is somebody's mail being in two places.
+        match controller
+            .move_message(&from.path, moving.uid, &into.path)
+            .await
+        {
             Ok(crate::service::protocols::imap::Moved::Moved) => {}
-            Ok(partly) => refused.push(partly.spoken(&into.name)),
+            // Copied, not moved. Not counted as sorted, and the row here is
+            // left where it is: the message really is still in this folder,
+            // so moving the row would hide a second copy that exists. It also
+            // keeps this uid in what the cache holds, which is what stops the
+            // next sync fetching the original again as though it were new mail
+            // and filing a third copy of it.
+            Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
+                could_not.push(copied_and_the_original_marked(&from.name, &into.name));
+                continue;
+            }
+            Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
+                could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
+                continue;
+            }
             Err(why) => {
-                refused.push(format!(
-                    "A message could not be filed into {}, so it is still in {from}: {why}",
-                    into.name
-                ));
+                could_not.push(it_is_still_where_it_was(&into.name, &from.name, &why));
                 continue;
             }
         }
@@ -625,7 +732,7 @@ async fn carry_out_the_moves<M: Mailbox>(
         match cache.move_message(moving.message_row, into.id) {
             Ok(()) => {}
             Err(why) => {
-                refused.push(format!(
+                could_not.push(format!(
                     "A message was filed into {} at the server but not here yet: {why}",
                     into.name
                 ));
@@ -634,7 +741,92 @@ async fn carry_out_the_moves<M: Mailbox>(
         }
         done += 1;
     }
-    (done, refused)
+    (done, could_not)
+}
+
+/// What to say when the account's folder list could not be read at all.
+///
+/// Nothing a rule files elsewhere can be filed without it, so this is every
+/// move that sync asked for, dropped before it reached the server.
+pub(crate) const THE_FOLDER_LIST_COULD_NOT_BE_READ: &str = "The folder list for this account could not be read, so nothing a rule files into another \
+     folder was filed, and every one of those messages is where it was";
+
+/// The folder a rule means, out of the ones the account has.
+///
+/// By name or by path, because a rule can be written either way: the Rules
+/// Manager offers folders by the name somebody reads, and blocking a sender
+/// writes the path of the Junk folder it found. One place answers it for both
+/// kinds of account, so a rule that files mail on one cannot quietly file
+/// nothing on the other.
+pub(crate) fn the_folder_a_rule_names<'a>(
+    folders: &'a [CachedFolder],
+    named: &str,
+) -> Option<&'a CachedFolder> {
+    folders
+        .iter()
+        .find(|folder| folder.name.eq_ignore_ascii_case(named) || folder.path == named)
+}
+
+/// What to say when a rule names a folder the account does not have.
+///
+/// Renaming a folder leaves every rule that files into it naming something
+/// that is no longer there, and the rule goes on looking enabled in the Rules
+/// Manager for as long as nobody opens it.
+pub(crate) fn no_folder_of_that_name(named: &str) -> String {
+    format!(
+        "A rule files mail into {named}, which this account does not have, so it was left where it is"
+    )
+}
+
+/// What to say when the filing itself would not happen.
+///
+/// Both folders by name and the reason after them, so the sentence says where
+/// the message actually is rather than only that something went wrong.
+pub(crate) fn it_is_still_where_it_was(
+    into: &str,
+    from: &str,
+    why: &impl std::fmt::Display,
+) -> String {
+    format!("A message could not be filed into {into}, so it is still in {from}: {why}")
+}
+
+/// The sentence both copying answers open with, so they cannot drift apart.
+///
+/// Both folders by name. [`crate::service::protocols::imap::Moved::spoken`]
+/// says "this folder", which is right beside a message somebody is looking at
+/// and names nothing in a sync summary: the summary is about a folder the
+/// reader is not necessarily in, and several folders are summed up in a row.
+///
+/// One fact to a sentence, because this is read aloud. Written as one sentence
+/// it ran "so it is in both folders, because it would not mark the one left
+/// behind", which is a listener holding a clause open while the reason for it
+/// arrives.
+fn copied_rather_than_moved(from: &str, into: &str) -> String {
+    format!(
+        "A rule filed a message into {into} and the server copied it rather than moving it, \
+         so the message is now in both {into} and {from}."
+    )
+}
+
+/// What to say when the server copied a message and marked the original.
+fn copied_and_the_original_marked(from: &str, into: &str) -> String {
+    format!(
+        "{} The one in {from} is marked for removal and goes when that folder is tidied up.",
+        copied_rather_than_moved(from, into)
+    )
+}
+
+/// What to say when the server copied a message and left the original alone.
+///
+/// Kept apart from the marked case because they are different facts about
+/// somebody's mail. A copy marked for removal goes on its own; one nothing
+/// marked stays until somebody deletes it, and filing it again makes a third.
+fn copied_and_the_original_left(from: &str, into: &str, why: &str) -> String {
+    format!(
+        "{} The server would not mark the copy left behind: {why}. \
+         Delete the one in {from} yourself. Filing it again would make a third copy.",
+        copied_rather_than_moved(from, into)
+    )
 }
 
 pub(crate) async fn sync_folder<M: Mailbox>(
@@ -715,15 +907,19 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // half with a server. Each one reaches the server first and the cache
     // second, so a move the server refuses leaves the message where it is
     // rather than showing it somewhere it is not.
-    let (filed, could_not) = carry_out_the_moves(
-        controller,
-        cache,
-        &folder.path,
-        folder_id,
-        &filtered.to_move,
-    )
-    .await;
+    let (filed, could_not) =
+        carry_out_the_moves(controller, cache, folder, folder_id, &filtered.to_move).await;
     filtered.changed += filed;
+    for reason in &could_not {
+        // Logged as well as said. The summary reads out the first few and says
+        // how many others there are, and this is where those others are. A
+        // status line is also gone as soon as the next one replaces it.
+        //
+        // Folder names and what the server answered, never a subject: a
+        // subject line is close enough to the message to be held to the same
+        // rule as its body.
+        tracing::warn!("A rule could not file a message: {reason}");
+    }
     filtered.could_not_be_filed = could_not;
 
     // Messages already held, whose flags may have changed elsewhere. The
@@ -1174,96 +1370,6 @@ mod tests {
         );
     }
 
-    /// A rule whose only action is one this program cannot carry out is not
-    /// counted as having sorted anything.
-    ///
-    /// Moving to a folder is named in the Rules Manager and does nothing: it
-    /// needs the folder's id and a write to the server, and doing half of it
-    /// in the cache alone would show somebody a message in a folder it is not
-    /// in until the next sync put it back. That part is deliberate. Counting
-    /// it as done was not, and it is the worse half: the count is what says
-    /// how much the rules sorted, so a rule that files invoices and does not
-    /// reported that it had.
-    #[test]
-    fn test_a_rule_that_only_moves_is_not_counted_as_having_done_anything() {
-        use crate::application::filters::FilterEngine;
-        use crate::data::message_cache::MessageFilterRule;
-
-        let dir = tempfile::tempdir().expect("a temporary folder");
-        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
-        let folder_id = cache
-            .save_folder(&CachedFolder {
-                id: 0,
-                account_id: "acct".into(),
-                name: "Inbox".into(),
-                path: "INBOX".into(),
-                folder_type: "Inbox".into(),
-                unread_count: 0,
-                total_count: 0,
-            })
-            .expect("a folder");
-        let id = cache
-            .upsert_message(&IncomingMessage {
-                folder_id,
-                uid: 1,
-                message_id: "inv-1@example.com".into(),
-                subject: "Invoice #4021".into(),
-                from_addr: "billing@example.com".into(),
-                to_addr: "me@example.com".into(),
-                cc: None,
-                reply_to: None,
-                date: "2026-07-31T09:00:00+00:00".into(),
-                internal_date: None,
-                size_bytes: None,
-                refs_header: None,
-                read: false,
-                starred: false,
-                answered: false,
-                draft: false,
-                deleted: false,
-                has_attachments: false,
-                safety: crate::service::safety::Verdict::ordinary(),
-                gmail_message_id: None,
-                labels: None,
-                receipt_to: None,
-                pop_uidl: None,
-            })
-            .expect("a message");
-
-        let mut engine = FilterEngine::default();
-        engine.load_from_persisted(&[MessageFilterRule {
-            id: "r1".into(),
-            account_id: "acct".into(),
-            name: "File the invoices".into(),
-            field: "subject".into(),
-            match_type: "contains".into(),
-            pattern: "Invoice".into(),
-            case_sensitive: false,
-            action_type: "move_to_folder".into(),
-            action_value: Some("Invoices".into()),
-            enabled: true,
-            created_at: "2026-07-31T00:00:00Z".into(),
-        }]);
-
-        let done = apply_rules(
-            &cache,
-            &Filtering {
-                rules: &engine,
-                allowed: crate::application::allowed::Allowed::EVERYTHING,
-            },
-            &[id],
-        );
-
-        assert_eq!(
-            done.changed, 0,
-            "a rule that could not be carried out was counted as having sorted the message"
-        );
-        assert_eq!(
-            done.not_built_yet, 1,
-            "nothing recorded that a rule was left undone"
-        );
-    }
-
     #[test]
     fn test_a_rule_that_only_marks_read_still_runs_on_an_account_that_may_not_be_changed() {
         // Only the rules that reach the server are held back. Marking read is
@@ -1449,6 +1555,13 @@ mod tests {
         /// Every move this server was asked to make, so a test can check that
         /// a rule that files mail really reached it.
         moved: std::cell::RefCell<Vec<(String, u32, String)>>,
+        /// What this server answers a move with.
+        ///
+        /// A server without MOVE copies the message and leaves the original,
+        /// which is the answer that puts somebody's mail in two folders. There
+        /// was no way to write a test about it: this double always answered
+        /// that the move had happened.
+        answers_a_move_with: crate::service::protocols::imap::Moved,
         /// Which uids the header fetch was asked for, so a test can check that
         /// a sync asked for the right ones rather than only that it ended up
         /// with the right rows.
@@ -1472,6 +1585,7 @@ mod tests {
                 highest_modseq: None,
                 asked_for: std::cell::RefCell::new(Vec::new()),
                 refuse_list_uids: false,
+                answers_a_move_with: crate::service::protocols::imap::Moved::Moved,
             }
         }
     }
@@ -1486,7 +1600,7 @@ mod tests {
             self.moved
                 .borrow_mut()
                 .push((from.to_string(), uid, into.to_string()));
-            Ok(crate::service::protocols::imap::Moved::Moved)
+            Ok(self.answers_a_move_with.clone())
         }
 
         async fn folder_counts(
@@ -1819,6 +1933,302 @@ mod tests {
                 .len(),
             1,
             "the message is not in the folder here"
+        );
+    }
+
+    /// An account with an inbox, a folder to file into, and the rules given.
+    ///
+    /// Each rule is an action and its value, in the order they are written,
+    /// which is the order the engine settles them in. Three tests need exactly
+    /// this and differ only in the rules and in what the server answers, which
+    /// is the thing each of them is about.
+    fn an_account_with_rules(
+        rules: &[(&str, Option<&str>)],
+    ) -> (
+        tempfile::TempDir,
+        MessageCache,
+        i64,
+        i64,
+        ImapFolder,
+        crate::application::filters::FilterEngine,
+    ) {
+        use crate::data::message_cache::MessageFilterRule;
+
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        let inbox = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Inbox".into(),
+                path: "INBOX".into(),
+                folder_type: "Inbox".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("an inbox");
+        let invoices = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Invoices".into(),
+                path: "INBOX/Invoices".into(),
+                folder_type: "Custom".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to file into");
+
+        let written: Vec<MessageFilterRule> = rules
+            .iter()
+            .enumerate()
+            .map(|(nth, (action, value))| MessageFilterRule {
+                id: format!("r{nth}"),
+                account_id: "acct".into(),
+                name: format!("Rule {nth}"),
+                field: "subject".into(),
+                match_type: "contains".into(),
+                pattern: "Invoice".into(),
+                case_sensitive: false,
+                action_type: (*action).to_string(),
+                action_value: value.map(str::to_string),
+                enabled: true,
+                created_at: "2026-08-24T00:00:00Z".into(),
+            })
+            .collect();
+        let mut engine = crate::application::filters::FilterEngine::default();
+        engine.load_from_persisted(&written);
+
+        let folder = ImapFolder {
+            name: "Inbox".into(),
+            display_path: "INBOX".into(),
+            path: "INBOX".into(),
+            folder_type: FolderType::Inbox,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+        };
+        (dir, cache, inbox, invoices, folder, engine)
+    }
+
+    /// One invoice on the server, waiting for the rules to be run over it.
+    fn a_server_holding_one_invoice() -> Scripted {
+        Scripted {
+            on_server: vec![7],
+            headers: vec![ImapMessage {
+                subject: "Invoice #4021".to_string(),
+                ..message(7)
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn sync_with_rules(
+        server: &Scripted,
+        cache: &MessageCache,
+        folder: &ImapFolder,
+        folder_id: i64,
+        engine: &crate::application::filters::FilterEngine,
+    ) -> FolderSync {
+        let filtering = Filtering {
+            rules: engine,
+            allowed: crate::application::allowed::Allowed::EVERYTHING,
+        };
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(sync_folder(
+                server,
+                cache,
+                folder,
+                folder_id,
+                50,
+                Some(&filtering),
+            ))
+            .expect("the sync to finish")
+    }
+
+    #[test]
+    fn test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted() {
+        // A server without MOVE copies the message and marks the original for
+        // removal. One that will not even mark it leaves the message in both
+        // folders, and that answer used to fall through to the same two lines
+        // as a real move: the row was filed here and the message counted into
+        // "sorted by your rules", while the sentence explaining it was thrown
+        // away. Somebody told 12 were sorted who then finds 12 duplicates has
+        // been actively misled.
+        let (_dir, cache, inbox, invoices, folder, engine) =
+            an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+        let server = Scripted {
+            answers_a_move_with: crate::service::protocols::imap::Moved::CopiedAndNotFlagged(
+                "it does not allow that flag".to_string(),
+            ),
+            ..a_server_holding_one_invoice()
+        };
+
+        let done = sync_with_rules(&server, &cache, &folder, inbox, &engine);
+
+        assert_eq!(
+            done.filtered.changed, 0,
+            "a message the server left in two folders was counted as sorted"
+        );
+        let said = what_the_folder_sync_did(&done);
+        assert!(
+            said.contains("Inbox") && said.contains("Invoices"),
+            "the sentence did not name both folders the message is in: {said}"
+        );
+        assert!(
+            said.contains("in both Invoices and Inbox"),
+            "the sentence did not say the message is in two named places: {said}"
+        );
+        // The row is left where it is, because the message really is still
+        // there. Filing it here would hide a second copy that exists, and it
+        // would take this uid out of what the cache holds, so the next sync
+        // would fetch the original again as new mail and file a third copy.
+        assert_eq!(
+            cache
+                .get_message_list_sorted(inbox, "acct", None, Some(50))
+                .expect("the inbox reads")
+                .len(),
+            1,
+            "the copy still in the inbox at the server is not listed here"
+        );
+        assert_eq!(
+            cache
+                .get_message_list_sorted(invoices, "acct", None, Some(50))
+                .expect("the folder reads")
+                .len(),
+            0,
+            "the message was filed here as though the move had happened"
+        );
+    }
+
+    #[test]
+    fn test_no_sentence_about_filing_carries_a_subject_line() {
+        // A subject is close enough to the message to be held to the same rule
+        // as its body, and every one of these sentences goes to the log.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("move_to_folder", Some("A folder nobody has"))]);
+
+        let done = sync_with_rules(
+            &a_server_holding_one_invoice(),
+            &cache,
+            &folder,
+            inbox,
+            &engine,
+        );
+
+        assert_eq!(done.filtered.could_not_be_filed.len(), 1);
+        for reason in &done.filtered.could_not_be_filed {
+            assert!(
+                !reason.contains("4021") && !reason.contains("Invoice #"),
+                "a sentence that goes to the log named the message: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_a_rule_marks_read_and_files_is_counted_once() {
+        // Two halves count: `apply_rules` writes the flags on this computer,
+        // and `carry_out_the_moves` reaches the server, and each of them added
+        // one to the same total. So one message matching a rule that marks it
+        // read and a rule that files it was reported as two messages sorted,
+        // and there was no test at this seam to notice.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("mark_as_read", None), ("move_to_folder", Some("Invoices"))]);
+
+        let done = sync_with_rules(
+            &a_server_holding_one_invoice(),
+            &cache,
+            &folder,
+            inbox,
+            &engine,
+        );
+
+        assert_eq!(
+            done.filtered.changed, 1,
+            "one message was counted once for each half of what its rules asked for"
+        );
+    }
+
+    #[test]
+    fn test_moves_that_never_got_as_far_as_the_server_are_not_passed_over() {
+        // Two ways this gives up before it starts: the folder's account
+        // cannot be read, and that account's folder list cannot be. Both
+        // handed back nothing at all, so every move the rules asked for was
+        // dropped and the sync read exactly like a sync with no rules in it.
+        let (_dir, cache, _inbox, _invoices, folder, _engine) = an_account_with_rules(&[]);
+        let a_folder_that_is_not_there = 9_999;
+
+        let (filed, could_not) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(carry_out_the_moves(
+                &Scripted::default(),
+                &cache,
+                &folder,
+                a_folder_that_is_not_there,
+                &[Moving {
+                    message_row: 1,
+                    uid: 7,
+                    into: "Invoices".to_string(),
+                }],
+            ));
+
+        assert_eq!(filed, 0, "a move was counted where none was attempted");
+        assert_eq!(
+            could_not.len(),
+            1,
+            "a move that never got as far as the server was passed over in silence"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_never_files_a_message_into_the_folder_it_is_already_in() {
+        // Rules run on whatever has just arrived in whichever folder is being
+        // checked, so a rule that files a sender into Invoices goes on
+        // matching that sender once their mail is in Invoices. Asking a server
+        // to move a message into the folder it is already in either fails,
+        // once per message on every check for mail, or takes a copy, and
+        // nothing anywhere removes duplicates.
+        //
+        // Blocking writes exactly this rule, and blocking now switches the
+        // junk folder on, so this is no longer a folder nobody downloads: mail
+        // filed into Junk comes back down on the next check as newly arrived
+        // there, and the block matches it again.
+        let (_dir, cache, _inbox, invoices, _folder, engine) =
+            an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+        let its_own_folder = ImapFolder {
+            name: "Invoices".into(),
+            display_path: "INBOX/Invoices".into(),
+            path: "INBOX/Invoices".into(),
+            folder_type: FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+        };
+
+        let server = a_server_holding_one_invoice();
+        let done = sync_with_rules(&server, &cache, &its_own_folder, invoices, &engine);
+
+        assert_eq!(
+            done.filtered.to_move.len(),
+            1,
+            "the rule did not match the message, so this test proves nothing"
+        );
+        assert!(
+            server.moved.borrow().is_empty(),
+            "the server was asked to move a message into the folder it is in: {:?}",
+            server.moved.borrow()
+        );
+        assert_eq!(
+            done.filtered.changed, 0,
+            "a message already in the right folder was counted as sorted again"
+        );
+        assert!(
+            done.filtered.could_not_be_filed.is_empty(),
+            "a message already where the rule wants it was reported as a problem: {:?}",
+            done.filtered.could_not_be_filed
         );
     }
 
@@ -2696,7 +3106,6 @@ mod tests {
             filtered: Filtered {
                 changed: 4,
                 held_back: 5,
-                not_built_yet: 0,
                 to_move: Vec::new(),
                 could_not_be_filed: Vec::new(),
             },
@@ -2712,6 +3121,131 @@ mod tests {
              3 changed elsewhere, 2 removed elsewhere, read again after the \
              server renumbered it, 4 sorted by your rules, 5 left alone \
              because changing mail is not allowed"
+        );
+    }
+
+    #[test]
+    fn test_a_sync_says_when_a_rule_could_not_file_mail() {
+        // Five sentences were built for the five ways filing can fail, handed
+        // back, and read by nothing at all: not shown, not counted, not even
+        // logged. A rule that files invoices and does not is a rule somebody
+        // believes is working, and this is the only thing that would tell them
+        // otherwise.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 3,
+            total_on_server: 3,
+            filtered: Filtered {
+                could_not_be_filed: vec![
+                    "A rule files mail into Invoices, which this account does not have, so it \
+                     was left where it is"
+                        .to_string(),
+                ],
+                ..Filtered::default()
+            },
+            ..FolderSync::default()
+        });
+
+        assert!(
+            said.contains("1 message not filed as asked"),
+            "the sync did not say that filing failed: {said}"
+        );
+        assert!(
+            said.contains("Invoices"),
+            "the sync did not say which folder or why: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_hundred_messages_that_failed_the_same_way_are_one_sentence() {
+        // This project's own rule is that feedback must be bounded and must
+        // not flood under a syncing mailbox. A rule naming a folder somebody
+        // has since renamed fails on every message it matches, so the sentence
+        // explaining it arrives once per message. Repeated it is a status line
+        // nobody reaches the end of, and it says nothing the first copy did
+        // not: the count in front of it already says how many messages.
+        let same = "A rule files mail into Invoices, which this account does not have, so it was \
+                    left where it is";
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 100,
+            total_on_server: 100,
+            filtered: Filtered {
+                could_not_be_filed: vec![same.to_string(); 100],
+                ..Filtered::default()
+            },
+            ..FolderSync::default()
+        });
+
+        assert!(
+            said.contains("100 messages not filed as asked"),
+            "the count of messages was lost: {said}"
+        );
+        assert_eq!(
+            said.matches("which this account does not have").count(),
+            1,
+            "one reason was said more than once: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_sync_that_failed_several_different_ways_says_a_few_and_counts_the_rest() {
+        // Different reasons cannot be folded into each other, so the only
+        // bound left is a limit. Two, and the rest in the log: a status line
+        // is read from the first word to the last, and every extra sentence
+        // is one more a person listens through before the next thing that
+        // happened. Two is enough to tell one thing going wrong from several
+        // different things going wrong.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 4,
+            total_on_server: 4,
+            filtered: Filtered {
+                could_not_be_filed: vec![
+                    "The first thing that went wrong".to_string(),
+                    "The second thing that went wrong".to_string(),
+                    "The third thing that went wrong".to_string(),
+                    "The fourth thing that went wrong".to_string(),
+                ],
+                ..Filtered::default()
+            },
+            ..FolderSync::default()
+        });
+
+        assert!(said.contains("The first thing"), "{said}");
+        assert!(said.contains("The second thing"), "{said}");
+        assert!(
+            !said.contains("The third thing"),
+            "every reason was read out, so a bad sync floods the status line: {said}"
+        );
+        assert!(
+            said.contains("2 other reasons are in the log"),
+            "the reasons that were not read out were not accounted for: {said}"
+        );
+    }
+
+    #[test]
+    fn test_one_reason_left_over_is_not_read_out_as_reasons_are() {
+        // The same shape as "1 messages": a count and its verb have to agree,
+        // and this line is read aloud.
+        let said = what_the_folder_sync_did(&FolderSync {
+            folder: "Inbox".to_string(),
+            held: 3,
+            total_on_server: 3,
+            filtered: Filtered {
+                could_not_be_filed: vec![
+                    "The first thing that went wrong".to_string(),
+                    "The second thing that went wrong".to_string(),
+                    "The third thing that went wrong".to_string(),
+                ],
+                ..Filtered::default()
+            },
+            ..FolderSync::default()
+        });
+
+        assert!(
+            said.contains("1 other reason is in the log"),
+            "a count and its verb do not agree: {said}"
         );
     }
 

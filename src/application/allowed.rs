@@ -163,10 +163,21 @@ pub fn removals_waiting_here(count: usize) -> String {
 ///
 /// One sentence per idea, and the irreversible parts last, because that is the
 /// part somebody has to still be listening for.
+///
+/// The guest list is in that group and is the only part of it on the personal
+/// information half: everything else that half allows changes somebody's own
+/// things, and this one can reach their colleagues. "May", not "will",
+/// because which of the two it is has never been seen: whether a provider
+/// emails a guest added this way is the provider's decision, nothing here asks
+/// either of them to stay quiet, and no meeting made here has ever reached
+/// one. Telling somebody to expect the mail and try it on themselves first is
+/// the honest instruction under that uncertainty.
 pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has been run against a real account yet, \
-     so expect bugs. Reading your mail is the part that has been used. A message \
-     that has been sent cannot be recalled, and a message deleted from a server \
-     may have been the only copy.";
+     so expect bugs. Reading your mail is the part that has been used. A meeting \
+     you make here takes its guest list to Google or Outlook, which may email the \
+     guests to invite them, so try it with an address of your own first. A \
+     message that has been sent cannot be recalled, and a message deleted from a \
+     server may have been the only copy.";
 
 /// Everything that has an opinion about what may be changed.
 ///
@@ -339,6 +350,24 @@ mod tests {
         // sentence beside the two boxes that turn them on.
         assert!(EXPERIMENTAL_WARNING.contains("experimental"));
         assert!(EXPERIMENTAL_WARNING.contains("real account"));
+    }
+
+    #[test]
+    fn test_the_warning_says_that_making_a_meeting_can_email_the_guests() {
+        // The personal information half used to reach only somebody's own
+        // things. A meeting made here now carries its guest list to Google or
+        // Outlook, and adding a guest is what makes a provider email them, so
+        // this is the one thing the box turns on that reaches other people and
+        // cannot be taken back. A warning that only exists in a changelog is a
+        // warning nobody gets, and this is the sentence beside the box.
+        assert!(
+            EXPERIMENTAL_WARNING.contains("email"),
+            "{EXPERIMENTAL_WARNING}"
+        );
+        assert!(
+            EXPERIMENTAL_WARNING.contains("guest"),
+            "{EXPERIMENTAL_WARNING}"
+        );
     }
 
     #[test]

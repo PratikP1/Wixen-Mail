@@ -529,6 +529,44 @@ mod tests {
         assert!(said.contains("the store is locked"), "{said}");
     }
 
+    /// The sentence the uninstaller shows when the erase step could not run.
+    ///
+    /// Held here rather than only in the installer script for the reason the
+    /// mutex name already is: the two have to say the same thing, and a script
+    /// nothing reads is a script that drifts.
+    const WHAT_AN_UNINSTALL_SAYS_WHEN_IT_COULD_NOT_ERASE: &str =
+        "Your mail and settings are still on this computer";
+
+    #[test]
+    fn test_an_uninstall_that_cannot_run_the_erase_step_says_so() {
+        // The installer script is the artefact and it cannot be run from here,
+        // so what this can see is what the script says, not what an uninstall
+        // does. That is the reason for the test rather than an excuse for it:
+        // the one case nobody was told about is a case only the script decides.
+        //
+        // The erase step is allowed to be skipped when the program is already
+        // gone, and it has to be: without that, an uninstall whose executable
+        // had been removed stopped there and left the folder, the shortcut and
+        // the uninstaller behind. Skipped in silence, though, it leaves the
+        // whole data folder, and the mail cache in it is not encrypted.
+        // Nothing writes the note in that case either, because the note is
+        // written by the program that never ran, so the person is told nothing
+        // by anything.
+        let installer = std::fs::read_to_string("installer/Wixen-Mail-Setup.iss")
+            .expect("the installer script");
+
+        assert!(
+            installer.contains("skipifdoesntexist"),
+            "the erase step no longer skips a missing program, so this record is \
+             stale: measure what an uninstall does now rather than editing it"
+        );
+        assert!(
+            installer.contains(WHAT_AN_UNINSTALL_SAYS_WHEN_IT_COULD_NOT_ERASE),
+            "an uninstall that could not run the erase step says nothing, so the \
+             mail cache is left on the disk with nobody told"
+        );
+    }
+
     #[test]
     fn test_two_accounts_with_one_provider_are_both_listed() {
         // The service name is per provider and the account name is per

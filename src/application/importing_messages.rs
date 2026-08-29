@@ -5,10 +5,15 @@
 //! mail, where it goes, what to do about a message that is here already, and
 //! what somebody is told at the end.
 //!
-//! Values in, values out. Nothing here opens a file, talks to a server or
-//! touches the database. Nothing here reaches a server at all, in fact, which
-//! is worth saying plainly: an import writes to this computer and stops, so it
-//! is not one of the changes [`crate::application::allowed`] gates.
+//! Nothing here opens a file or talks to a server, and one thing here writes to
+//! the database: [`file_one_imported_message`], which is the single place a
+//! message read out of a file becomes a row in a folder. It lives here rather
+//! than in the window because getting it wrong loses somebody's mail quietly,
+//! and here it can be run against a real database in a test.
+//!
+//! Nothing here reaches a server at all, which is worth saying plainly: an
+//! import writes to this computer and stops, so it is not one of the changes
+//! [`crate::application::allowed`] gates.
 //!
 //! # The one question that can lose somebody's mail
 //!
@@ -227,12 +232,12 @@ impl WhatToDoWithIt {
     /// every message filed after it, which is the whole reason the reader
     /// answers once per message rather than once per file.
     pub fn for_one_read(
-        read: &Result<crate::service::mime::ParsedMessage>,
+        read: &Result<message_files::MessageFromAFile>,
         already_here: &std::collections::HashSet<String>,
     ) -> Self {
         match read {
             Err(_) => Self::ItCouldNotBeRead,
-            Ok(message) => what_to_do_with(message.message_id.as_deref(), already_here),
+            Ok(read) => what_to_do_with(read.message.message_id.as_deref(), already_here),
         }
     }
 }
@@ -268,6 +273,113 @@ pub fn what_to_do_with(
         }
         _ => WhatToDoWithIt::BringItIn,
     }
+}
+
+/// Every message one file of mail holds, one at a time.
+///
+/// One at a time and never gathered into a list, which is the whole of why this
+/// is a function rather than two lines at each place that imports. A mailbox
+/// somebody has kept for twenty years is the largest file this program opens,
+/// and a list of its messages holds all of it a second time as parsed text, on
+/// top of the file itself, and a third time for a mailbox of signed mail. Taken
+/// one at a time each message is filed and let go before the next is read.
+///
+/// A file holding one message and a file holding many are two different
+/// readers, and each refuses what the other takes, so the caller says which
+/// this is. [`importing`] and [`message_files::what_the_file_holds`] are what
+/// answer that, from the bytes rather than from the file's name.
+pub fn each_message_in(
+    bytes: &[u8],
+    read: ReadAs,
+) -> Box<dyn Iterator<Item = Result<message_files::MessageFromAFile>> + '_> {
+    match read {
+        ReadAs::OneMessage => Box::new(std::iter::once(
+            message_files::read_one_message_as_it_arrived(bytes),
+        )),
+        ReadAs::OneAtATimeFromAnArchive => Box::new(message_files::each_message_read_from(bytes)),
+    }
+}
+
+// ── Writing one message into a folder ───────────────────────────────────────
+
+/// Whether one message read out of a file reached the folder.
+///
+/// A different question from [`WhatToDoWithIt`], and about this computer rather
+/// than about the file: a full disk and a database another program has locked
+/// are the two ways a message somebody's file held perfectly well does not
+/// arrive. Answered rather than logged, because trying again may well work and
+/// nobody can decide to when nothing said so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhetherItWasWrittenDown {
+    /// It is in the folder.
+    ItIsInTheFolder,
+    /// It is not, and somebody is told how many were not.
+    ItCouldNotBeSavedHere,
+}
+
+/// Write one message read out of a file into a folder on this computer.
+///
+/// The one place that files an imported message, so the single messages and
+/// the messages inside an archive cannot come to be written down differently.
+///
+/// Three things go in and all three have to. The row, without which there is no
+/// message. Its text, without which the message is in the list and opening it
+/// asks a server that has never held it. And, where the message says it is
+/// signed, the bytes it arrived as: a signature is arithmetic over exactly
+/// those, so a signed message filed without them reads afterwards as though it
+/// had never claimed a signature at all.
+pub fn file_one_imported_message(
+    cache: &crate::data::message_cache::MessageCache,
+    read: &message_files::MessageFromAFile,
+    folder_id: i64,
+) -> WhetherItWasWrittenDown {
+    // Which end of the folder's numbering to take from is asked of the folder,
+    // which is the only thing that knows. This used to count up on the grounds
+    // that an import writes into a folder on this computer, and that is not
+    // true: the folder is whichever one somebody chose, and every folder an
+    // IMAP account has except the Outbox is on the server. Counting up there
+    // takes the number the server is about to issue, and the message it
+    // belongs to is then written straight over the imported one, leaving the
+    // imported text under somebody else's headers.
+    let Ok(uid) = cache.next_uid_for_filing(folder_id) else {
+        return WhetherItWasWrittenDown::ItCouldNotBeSavedHere;
+    };
+    let filed_at = chrono::Utc::now().to_rfc3339();
+    let row = crate::application::filing::a_row_filed_here(
+        &read.message,
+        folder_id,
+        uid,
+        read.message.body_plain.as_ref().map_or(0, String::len),
+        crate::application::filing::AlreadyRead::No,
+        &filed_at,
+    );
+    let Ok(stored) = cache.file_message_here(&row) else {
+        return WhetherItWasWrittenDown::ItCouldNotBeSavedHere;
+    };
+    // Logged rather than counted as a message that did not arrive, because the
+    // row did: it is in the folder and the count is about messages that are
+    // not. Counting it would send somebody to import the file again, and the
+    // second import would recognise the row already there and file nothing.
+    if let Err(e) = cache.save_message_body(
+        stored,
+        read.message.body_plain.as_deref(),
+        read.message.body_html.as_deref(),
+    ) {
+        tracing::warn!("Could not store the text of an imported message: {e}");
+    }
+    // Nothing at all for ordinary mail, which is nearly all of it: the reader
+    // above carries these only for a message that says it is signed, and the
+    // cache asks the same question again before it writes anything.
+    //
+    // A failure here is logged and not fatal. It costs a verdict rather than
+    // the message, and the reader says the signature could not be checked here
+    // rather than saying it failed, which are opposite pieces of news.
+    if let Some(raw) = &read.the_form_it_arrived_in
+        && let Err(e) = cache.keep_signed_original(stored, raw)
+    {
+        tracing::warn!("Could not keep the form an imported signed message arrived in: {e}");
+    }
+    WhetherItWasWrittenDown::ItIsInTheFolder
 }
 
 // ── Saying what the import did ──────────────────────────────────────────────
@@ -315,6 +427,18 @@ impl MessagesImported {
             WhatToDoWithIt::BringItIn => self.brought_in += 1,
             WhatToDoWithIt::ItIsAlreadyHere => self.already_here += 1,
             WhatToDoWithIt::ItCouldNotBeRead => self.could_not_be_read += 1,
+        }
+    }
+
+    /// Count what became of one message the import tried to write down.
+    ///
+    /// Nothing moves when it arrived, which is nearly always. The count and the
+    /// sentence for it were both written before anything filled it in, so a
+    /// message this program read perfectly well and then failed to save went
+    /// missing while the closing count said everything had arrived.
+    pub fn count_one_written(&mut self, whether: WhetherItWasWrittenDown) {
+        if whether == WhetherItWasWrittenDown::ItCouldNotBeSavedHere {
+            self.not_written_down += 1;
         }
     }
 }
@@ -575,6 +699,47 @@ mod tests {
             panic!("an ordinary message into a folder on this computer was refused: {asked:?}");
         };
         assert_eq!(lands.written_down_as, WrittenDownAs::FiledHereCountingUp);
+    }
+
+    #[test]
+    fn test_each_kind_of_file_is_read_by_the_reader_that_suits_it() {
+        // Both directions. An archive read as a single message comes back as
+        // the first message's headers with every later message stuck on the end
+        // of its body, and it opens without complaint, so nobody finds out. A
+        // single message read as an archive is a different parse again.
+        let from_an_archive: Vec<String> =
+            each_message_in(an_archive().as_bytes(), ReadAs::OneAtATimeFromAnArchive)
+                .flatten()
+                .map(|read| read.message.subject)
+                .collect();
+        let from_one_file: Vec<String> =
+            each_message_in(one_message().as_bytes(), ReadAs::OneMessage)
+                .flatten()
+                .map(|read| read.message.subject)
+                .collect();
+
+        assert_eq!(from_an_archive, vec!["The first one", "The second one"]);
+        assert_eq!(from_one_file, vec!["Notes on the engine"]);
+    }
+
+    #[test]
+    fn test_a_file_that_is_not_mail_is_still_refused_by_the_reader_that_takes_it() {
+        // The refusal has to survive being read one message at a time. A
+        // picture read as a single message answers with an empty message unless
+        // something says otherwise, and the import reports one message brought
+        // in with nothing in it.
+        let refused: Vec<String> =
+            each_message_in(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR", ReadAs::OneMessage)
+                .filter_map(|read| read.err())
+                .map(|why| why.to_string())
+                .collect();
+
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(
+            refused[0].contains(message_files::NOT_A_MAIL_FILE),
+            "{}",
+            refused[0]
+        );
     }
 
     #[test]
@@ -958,8 +1123,8 @@ mod tests {
             an_archive_with_a_bad_stretch_in_the_middle().as_bytes(),
         ) {
             let what = WhatToDoWithIt::for_one_read(&read, &already);
-            if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
-                brought_in.push(message.subject.clone());
+            if let (WhatToDoWithIt::BringItIn, Ok(read)) = (what, &read) {
+                brought_in.push(read.message.subject.clone());
             }
             counted.count_one(what);
         }
@@ -1077,7 +1242,7 @@ mod tests {
     }
 
     /// One ordinary message, as a file saved from a mail program holds it.
-    fn one_message() -> &'static str {
+    pub(super) fn one_message() -> &'static str {
         concat!(
             "From: Ada Lovelace <ada@example.com>\r\n",
             "To: Charles Babbage <charles@example.com>\r\n",
@@ -1106,5 +1271,289 @@ mod tests {
             "\r\n",
             "Two.\r\n",
         )
+    }
+}
+
+/// Bringing a file of mail in and then opening what came in.
+///
+/// Separate from the tests above because these go through a real database
+/// rather than values handed about. What the tests above prove is that the
+/// decisions are right; what these prove is that a message read out of a file
+/// really lands in a folder, and that opening it afterwards says what it says.
+#[cfg(test)]
+mod end_to_end {
+    use super::tests::one_message;
+    use super::*;
+    use crate::application::checking_signatures::{SignatureCheck, for_message};
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CachedFolder, MessageCache};
+
+    /// An empty cache with one folder in it, the way an import finds one.
+    fn a_cache() -> (TempHome<MessageCache>, i64) {
+        let cache = TempHome::named("wixen_message_import_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "Imported".to_string(),
+                path: "\u{1}Local/Imported".to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        (cache, folder_id)
+    }
+
+    /// A folder of this account that the mail server fills and numbers.
+    ///
+    /// The helper above makes one that lives on this computer, and every test
+    /// here used it, so the whole family of imports into a folder a server
+    /// also fills had no test at all.
+    fn a_folder_on_the_server(cache: &MessageCache) -> i64 {
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "Archive".to_string(),
+                path: "Archive".to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder")
+    }
+
+    /// A message a sync has just brought down from the server.
+    fn from_the_server(
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+    ) -> crate::data::message_cache::IncomingMessage {
+        crate::data::message_cache::IncomingMessage {
+            folder_id,
+            uid,
+            message_id: format!("<{uid}@example.com>"),
+            subject: subject.to_string(),
+            from_addr: "someone@example.com".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            reply_to: None,
+            date: "2026-07-26T10:00:00+00:00".to_string(),
+            internal_date: None,
+            size_bytes: Some(512),
+            refs_header: None,
+            read: false,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: crate::service::safety::Verdict::ordinary(),
+            gmail_message_id: None,
+            labels: None,
+            receipt_to: None,
+            pop_uidl: None,
+        }
+    }
+
+    #[test]
+    fn test_a_message_imported_into_a_folder_the_server_fills_leaves_its_numbers_alone() {
+        // Which end of a folder's numbering an imported message takes from is
+        // worked out when the import is set up, written down as
+        // `written_down_as`, and the filing never asked for it. So every
+        // imported message counted up from the highest number in use, which in
+        // a folder a server fills is the number that server is about to hand
+        // out. The message that number really belongs to is then written on
+        // top of the imported one, and the imported text stays behind under
+        // somebody else's headers.
+        let (cache, _on_this_computer) = a_cache();
+        let archive = a_folder_on_the_server(&cache);
+        for uid in 1..=10 {
+            cache
+                .upsert_message(&from_the_server(archive, uid, "From the server"))
+                .expect("the folder fills up");
+        }
+        let read = message_files::read_one_message_as_it_arrived(one_message().as_bytes())
+            .expect("an ordinary message");
+
+        let written = file_one_imported_message(&cache, &read, archive);
+
+        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        // The server hands out the number it was about to hand out.
+        cache
+            .upsert_message(&from_the_server(archive, 11, "The real eleventh"))
+            .expect("the message arrives");
+
+        let listed = cache
+            .get_message_list(archive, "acct")
+            .expect("the folder listing");
+        assert_eq!(listed.len(), 12, "a message went missing: {listed:?}");
+        assert!(
+            listed
+                .iter()
+                .any(|row| row.subject == "Notes on the engine"),
+            "the imported message was written over by the one the server sent"
+        );
+        assert!(
+            listed.iter().any(|row| row.subject == "The real eleventh"),
+            "the message the server sent never arrived"
+        );
+    }
+
+    /// A file holding one message that really is signed with a certificate.
+    ///
+    /// Real OpenSSL output rather than something written here to look signed,
+    /// because the thing being asked is whether a checker can still make the
+    /// arithmetic come out over what was kept.
+    fn a_signed_file() -> Vec<u8> {
+        crate::service::signed_mail::for_tests::signed_beside()
+    }
+
+    /// What the reader would say about the signature of a message just filed.
+    fn opening(cache: &MessageCache, row: i64) -> SignatureCheck {
+        for_message(
+            cache,
+            row,
+            "alice@example.com",
+            "2026-08-28T00:00:00Z".parse().expect("a fixed moment"),
+        )
+    }
+
+    /// The one row a file of one message leaves in a folder.
+    fn the_row_in(cache: &MessageCache, folder_id: i64) -> i64 {
+        let listed = cache
+            .get_message_list(folder_id, "acct")
+            .expect("the folder listing");
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        listed[0].id
+    }
+
+    #[test]
+    fn test_a_signed_message_brought_in_from_a_file_can_still_have_its_signature_checked() {
+        // The gap this closes. Mail read out of a file arrives as the exact
+        // bytes a signature was made over, which is the one thing a signature
+        // can be checked against, and the import threw them away. The message
+        // went into the folder and read as ordinary mail: not "signed, and not
+        // checkable here", which is true, but "nothing said this was signed",
+        // which is a different claim and a false one.
+        let (cache, folder_id) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(&a_signed_file())
+            .expect("a signed message");
+
+        let written = file_one_imported_message(&cache, &read, folder_id);
+
+        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        let check = opening(&cache, the_row_in(&cache, folder_id));
+        let SignatureCheck::Checked(report) = check else {
+            panic!("an imported signed message says nothing about its signature: {check:?}");
+        };
+        assert_eq!(
+            report.outcome,
+            crate::service::signed_mail::SignatureOutcome::Matches,
+            "{:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn test_an_imported_signed_message_is_checked_every_time_it_is_opened() {
+        // Not only the first time. The bytes are what makes that possible, and
+        // an import that worked out the answer once and stored it would go on
+        // saying a withdrawn certificate was sound.
+        let (cache, folder_id) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(&a_signed_file())
+            .expect("a signed message");
+        file_one_imported_message(&cache, &read, folder_id);
+        let row = the_row_in(&cache, folder_id);
+
+        assert_eq!(opening(&cache, row), opening(&cache, row));
+    }
+
+    #[test]
+    fn test_an_ordinary_message_brought_in_from_a_file_still_says_nothing_about_signatures() {
+        // Nearly all mail, and the bar has to stay off it. A line on every
+        // imported message saying anything at all about signatures is a line
+        // people learn to talk past, and then the one that matters is talked
+        // past too. Nothing is stored for these either.
+        let (cache, folder_id) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(one_message().as_bytes())
+            .expect("an ordinary message");
+
+        file_one_imported_message(&cache, &read, folder_id);
+
+        assert_eq!(
+            opening(&cache, the_row_in(&cache, folder_id)),
+            SignatureCheck::NotSigned
+        );
+        assert_eq!(cache.kept_signed_original_bytes().expect("the total"), 0);
+    }
+
+    #[test]
+    fn test_a_message_that_could_not_be_saved_here_is_counted_rather_than_dropped() {
+        // The import has a sentence for this and nothing ever said it. Writing
+        // a row can fail on a full disk or a locked database, and the failure
+        // was swallowed, so the file's messages went missing one at a time
+        // while the closing count said everything had arrived.
+        //
+        // A folder that is not there is the same refusal the database gives for
+        // any of those: the row names a folder it cannot be attached to.
+        let (cache, _) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(one_message().as_bytes())
+            .expect("an ordinary message");
+        let no_such_folder = 9999;
+
+        let written = file_one_imported_message(&cache, &read, no_such_folder);
+
+        assert_eq!(written, WhetherItWasWrittenDown::ItCouldNotBeSavedHere);
+        let mut counted = MessagesImported::default();
+        counted.count_one_written(written);
+        assert_eq!(counted.not_written_down, 1);
+    }
+
+    #[test]
+    fn test_a_message_that_arrived_is_counted_as_nothing_going_wrong() {
+        // The other direction, so the test above cannot pass by everything
+        // being nought.
+        let (cache, folder_id) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(one_message().as_bytes())
+            .expect("an ordinary message");
+
+        let mut counted = MessagesImported::default();
+        counted.count_one_written(file_one_imported_message(&cache, &read, folder_id));
+
+        assert_eq!(counted.not_written_down, 0);
+    }
+
+    #[test]
+    fn test_an_imported_message_carries_its_text_and_survives_the_next_check_for_mail() {
+        // Two things the import cannot get wrong, asked here because this is
+        // the one place that writes the row. Without the text, opening the
+        // message asks a server that has never held it. Without the marker the
+        // database puts on a row this program filed itself, the next check for
+        // mail sees a message the server does not have and takes it away, along
+        // with the only copy of its text there was.
+        let (cache, folder_id) = a_cache();
+        let read = message_files::read_one_message_as_it_arrived(one_message().as_bytes())
+            .expect("an ordinary message");
+
+        file_one_imported_message(&cache, &read, folder_id);
+
+        let row = the_row_in(&cache, folder_id);
+        assert!(
+            cache
+                .get_message_body(row)
+                .expect("the text")
+                .and_then(|body| body.body_plain)
+                .unwrap_or_default()
+                .contains("algebraic"),
+            "the message went into the folder with no text under it"
+        );
+        assert!(
+            cache.was_filed_here(row).expect("the marker"),
+            "the next check for mail would take this message away"
+        );
     }
 }

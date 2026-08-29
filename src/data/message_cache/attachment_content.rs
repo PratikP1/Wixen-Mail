@@ -113,6 +113,39 @@ fn now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// The bytes, when they are still the file the digest they are filed under was
+/// made from.
+///
+/// A kept copy that disagrees with what was kept is worse than no copy, because
+/// it is handed to somebody as their file and nothing says otherwise. The store
+/// is keyed by a digest of the file itself, so the key already answers this: if
+/// the bytes do not hash to it, the row is a half-written one, a truncated one,
+/// or a corrupted one, and the answer is the same as for a file that was never
+/// kept, which is to fetch the message from the server again.
+///
+/// The row is left where it is rather than deleted. Reading is not the place to
+/// write, and the bytes are worth nothing either way; what they cost is one
+/// hash of a file that is at most
+/// [`LARGEST_ATTACHMENT_KEPT_BYTES`], on a worker rather than on the thread the
+/// window answers on.
+///
+/// Nothing about the file is logged, not its name and not its contents. That it
+/// happened is the whole of what the log gets.
+fn still_the_file_it_is_filed_as(
+    digest: Option<&str>,
+    content: Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
+    let content = content?;
+    if digest == Some(digest_of(&content).as_str()) {
+        return Some(content);
+    }
+    tracing::warn!(
+        "A stored attachment is not the file it is filed as, so the message it \
+         is on will be fetched again."
+    );
+    None
+}
+
 impl MessageCache {
     /// Record exactly this list of attachments for a message, files and all.
     ///
@@ -186,6 +219,15 @@ impl MessageCache {
                 .map_err(|e| Error::Other(format!("Failed to store an attachment: {}", e)))?;
         }
 
+        // A message is recorded because somebody has just opened it, so its
+        // files have just been used, whether they were written here a moment
+        // ago or were already here from the last time. Without this the second
+        // case keeps the note from the first opening: `INSERT OR IGNORE` leaves
+        // an existing row exactly as it was, so the file belonging to the
+        // message on screen would be the oldest thing in the store and the
+        // first the sweep below takes.
+        self.mark_files_of_message_read(message_id)?;
+
         replacing
             .commit()
             .map_err(|e| Error::Other(format!("Failed to finish storing attachments: {}", e)))?;
@@ -194,10 +236,10 @@ impl MessageCache {
         // function that was written, tested, and called by nothing outside its
         // own tests, so the cache grew without limit while the documentation
         // described a budget that was never applied.
-        // Here rather than left to a caller. The body cache had an eviction
-        // function that was written, tested, and called by nothing outside its
-        // own tests, so the cache grew without limit while the documentation
-        // described a budget that was never applied.
+        //
+        // After the commit above, so a sweep that fails leaves the message
+        // recorded rather than rolling it back, and never inside the same
+        // transaction as the write it is tidying up after.
         if let Err(e) = self.keep_attachment_content_within_budget() {
             tracing::warn!("Could not bring the stored attachments back under their limit: {e}");
         }
@@ -280,28 +322,33 @@ impl MessageCache {
     /// something else. The whole message's files rather than only the one
     /// asked for: opening one attachment out of a message is that message
     /// being worked with.
+    ///
+    /// Bytes that are no longer the file they are filed as come back as `None`
+    /// too. See [`still_the_file_it_is_filed_as`].
     pub fn attachment_content_at(
         &self,
         message_id: i64,
         position: usize,
     ) -> Result<Option<Vec<u8>>> {
-        let found: Option<Option<Vec<u8>>> = self
+        let found: Option<(Option<String>, Option<Vec<u8>>)> = self
             .conn
             .query_row(
-                "SELECT c.content FROM attachments a
+                "SELECT a.content_digest, c.content FROM attachments a
                  LEFT JOIN attachment_content c ON c.digest = a.content_digest
                  WHERE a.message_id = ?1 ORDER BY a.id LIMIT 1 OFFSET ?2",
                 rusqlite::params![message_id, position as i64],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|e| Error::Other(format!("Failed to read an attachment: {}", e)))?;
 
-        let content = found.flatten();
-        if content.is_some() {
-            self.mark_files_of_message_read(message_id)?;
-        }
-        Ok(content)
+        let Some(content) = found.and_then(|(digest, content)| {
+            still_the_file_it_is_filed_as(digest.as_deref(), content)
+        }) else {
+            return Ok(None);
+        };
+        self.mark_files_of_message_read(message_id)?;
+        Ok(Some(content))
     }
 
     /// Note that a message's files have just been read, so dropping the least
@@ -666,6 +713,43 @@ mod tests {
         assert_eq!(cache.cached_attachment_bytes().expect("a total"), 0);
     }
 
+    // ── A stored copy that cannot be trusted ────────────────────────────
+
+    #[test]
+    fn test_a_stored_file_that_no_longer_matches_its_digest_is_not_handed_back() {
+        // A kept copy that disagrees with what was kept is worse than no copy
+        // at all: it is handed to somebody as their file. The store is keyed by
+        // a digest of the file, so a row whose bytes do not hash to the key
+        // they are filed under is a row nothing should believe, and the answer
+        // is the same as for a file that was never kept, which is to fetch the
+        // message again.
+        let cache = attachment_cache();
+        let message = a_message(&cache, 30);
+        cache
+            .replace_attachments_with_content(
+                message,
+                &[carrying(message, "report.pdf", b"the file that was kept")],
+            )
+            .expect("to store");
+
+        // What a half-written row, a truncated file or a corrupted database
+        // looks like from here: the key is untouched and the bytes under it
+        // are not the ones it was made from.
+        cache
+            .conn
+            .execute(
+                "UPDATE attachment_content SET content = ?1",
+                rusqlite::params![b"something else entirely".to_vec()],
+            )
+            .expect("to change the stored bytes");
+
+        assert_eq!(
+            cache.attachment_content_at(message, 0).expect("to read"),
+            None,
+            "handed back bytes that are not the file they are filed as"
+        );
+    }
+
     // ── The same file on more than one message ──────────────────────────
 
     #[test]
@@ -896,6 +980,53 @@ mod tests {
             cache.attachment_content_at(newer, 0).expect("to read"),
             Some(b"bbbbbbbbbb".to_vec()),
             "the file just read was dropped"
+        );
+    }
+
+    #[test]
+    fn test_opening_a_message_again_puts_its_files_at_the_back_of_the_queue_to_go() {
+        // Opening a message records it again, files and all, and a file already
+        // here is left where it is rather than written twice. That must not
+        // leave the note of when it was last used sitting at the moment it
+        // first arrived, because then the file belonging to the message
+        // somebody has open is the oldest thing in the store and the first
+        // dropped: the sweep that runs at the end of that very save would take
+        // it, and the attachment they are looking at would need fetching again
+        // between one opening and the next.
+        let cache = attachment_cache();
+        let looked_at = a_message(&cache, 31);
+        let elsewhere = a_message(&cache, 32);
+        cache
+            .replace_attachments_with_content(
+                looked_at,
+                &[carrying(looked_at, "open.pdf", b"aaaaaaaaaa")],
+            )
+            .expect("to store");
+        cache
+            .replace_attachments_with_content(
+                elsewhere,
+                &[carrying(elsewhere, "other.pdf", b"bbbbbbbbbb")],
+            )
+            .expect("to store");
+
+        // Opening the first one again, which is what re-reading a message does.
+        cache
+            .replace_attachments_with_content(
+                looked_at,
+                &[carrying(looked_at, "open.pdf", b"aaaaaaaaaa")],
+            )
+            .expect("to store again");
+
+        cache
+            .evict_attachment_content_over(10)
+            .expect("to sweep down to one file");
+
+        assert!(
+            cache
+                .attachment_content_at(looked_at, 0)
+                .expect("to read")
+                .is_some(),
+            "dropped the file belonging to the message that was just opened"
         );
     }
 

@@ -222,9 +222,11 @@ fn attachment_parts<'a>(
 /// The contents of one attachment, by its position in the list.
 ///
 /// Decoded, so what comes back is the file rather than the base64 that carried
-/// it. The message has to be fetched again to call this: attachments are the
-/// largest thing in a mailbox, and keeping every one of them would undo the
-/// work that keeps the cache small enough to sit in a profile folder.
+/// it. This takes a part out of a message already in hand; it is the road for
+/// a file this computer does not have, since the files of a message that has
+/// been read are kept in
+/// [`crate::data::message_cache::attachment_content`] and read from there
+/// instead of the whole message being downloaded a second time.
 ///
 /// The index is the one [`ParsedMessage::attachments`] used. Anything else is
 /// a different attachment saved under the name of the one that was asked for.

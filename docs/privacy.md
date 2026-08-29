@@ -30,6 +30,21 @@ drive out unless the disk itself is encrypted. Turn on BitLocker if that matters
 is the same position as Outlook's offline folders and Thunderbird's local store, and it is
 stated here rather than left to be discovered.
 
+### Attachments are kept too
+
+When you open a message, the files it carries are kept in the `cache` folder alongside its
+text. That is what lets you open an attachment a second time without waiting for the whole
+message to come down again, and what puts your files into an export. Like everything else in
+that folder, **they are not encrypted**.
+
+This is more of your mail on disk than earlier versions kept, and it is worth knowing if you
+share the computer or carry it around. A single file is kept up to 25 MB, and all of them
+together up to 512 MB; past that, the ones you read longest ago are dropped. The same file
+arriving on twenty messages is stored once.
+
+Nothing about an attachment is written to the log. The log records counts and byte totals, not
+file names and not contents.
+
 ### Signed mail is kept twice
 
 A message signed with a certificate is stored twice: once the ordinary way, as text and
@@ -44,10 +59,21 @@ as the message arrived, and never again, so opening the same message a second ti
 nothing about it.
 
 This applies only to mail that says it is signed, which is a small share of most mailboxes.
-Ordinary mail is stored once, as it always was. The second copy is dropped when you delete the
-message, when a signed message is larger than 25 MB, and when the space these copies use
-passes 128 MB, oldest first. When it has been dropped, the message says its signature could
-not be checked here, and says plainly that this is not the same as a signature that failed.
+Ordinary mail is stored once, as it always was. It applies however the message reached this
+computer: fetched from an IMAP server, collected over POP, or brought in from a saved message,
+a mailbox archive or an Outlook data file.
+
+The second copy is dropped when a signed message is larger than 25 MB, and when the space these
+copies use passes 128 MB, the ones read longest ago going first. Two kinds of mail are never
+dropped that way, because there would be no getting them back: mail collected over POP, and
+mail brought in from a file. Once those fill the 128 MB, no further copies are kept, rather
+than existing ones being destroyed to make room. Deleting a message drops its second copy too,
+again except for those two kinds, where dropping it would leave nothing to restore if you
+undeleted the message.
+
+Whenever there is no second copy, for any of these reasons, the message says its signature
+could not be checked here, and says plainly that this is not the same as a signature that
+failed.
 
 ### Contact groups stay here
 
@@ -109,7 +135,10 @@ organisation gives you.
 ## Asking when the people invited to a meeting are free
 
 Nothing is asked until you choose Find when everyone is free in the event window. Filling
-in the guest list sends nothing anywhere.
+in the guest list sends nothing to anybody on the way to asking, and asking sends nothing
+to the people named.
+
+Saving the meeting is a separate matter, covered below.
 
 When you do ask, the question goes to your own calendar server, and it names the whole
 guest list in one request. So that server learns that you are thinking about a meeting
@@ -132,6 +161,23 @@ agreed to. You are told the server does not offer this instead.
 
 Nothing about the answer reaches the log. The log records that a server did not answer and
 why, and never who was asked about or what came back.
+
+## Saving a meeting with people on it
+
+This only happens if you have turned on Allow Changes in Settings. With it off, everything
+below stays on this computer.
+
+A meeting you make in a Google or Outlook calendar goes up to that provider with its guest
+list, so the people you named are on the meeting there and not only in your copy. Adding
+somebody to a meeting is what makes a provider email them an invitation. Wixen Mail does
+not send that mail and has no way to ask either provider not to, so assume that saving a
+new meeting tells everybody on it. Try it with an address of your own first.
+
+Changing a meeting your provider already holds sends no guest list at all. Adding or
+removing a guest there has to be done in Google Calendar or Outlook.
+
+Syncing a calendar does not write anybody's address to the log. It records which calendar
+was synced and how many events moved.
 
 ## Pictures a message points at
 
@@ -251,6 +297,7 @@ sensitive, and if you find something that is, that is a bug worth reporting on i
 Uninstalling removes everything: the program, your accounts, your settings, the downloaded
 mail, and your saved passwords and sign-in tokens. It writes a note in your temporary folder
 every time, `wixen-mail-uninstall.log`, saying what went and naming anything it could not
-remove, so a leftover is something you are told about rather than something you find. Your
-mail itself is untouched, because it is on your provider's server and Wixen Mail only ever
-held a copy.
+remove, so a leftover is something you are told about rather than something you find. Two
+cases leave no note, and [Installing and uninstalling](installing.md) says which and what to
+check by hand. Your mail itself is untouched, because it is on your provider's server and
+Wixen Mail only ever held a copy.

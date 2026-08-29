@@ -111,7 +111,8 @@ Uninstall.
 downloaded mail, and your saved passwords and sign-in tokens. It writes a note in your
 temporary folder every time, `wixen-mail-uninstall.log`, saying what went and naming
 anything it could not remove, so a leftover is something you are told about rather than
-something you find.
+something you find. Two cases are the exception, and Checking what an uninstall did, below,
+says which.
 
 Your mail itself is not affected. It is on your provider's server, and Wixen Mail only ever
 held a copy. Signing in from a new installation, or from any other mail application, brings
@@ -120,6 +121,22 @@ it all back.
 If you are moving Wixen Mail to another drive rather than getting rid of it, copy
 `%LOCALAPPDATA%\wixen-mail` somewhere safe before you uninstall.
 
-If something could not be removed, Wixen Mail writes the reason to
-`wixen-mail-uninstall.log` in your temporary folder. Paste `%TEMP%` into File Explorer to
-find it. That file existing at all means something was left behind, and it says what.
+### Checking what an uninstall did
+
+Wixen Mail writes `wixen-mail-uninstall.log` to your temporary folder every time, whether
+or not anything was left behind. Paste `%TEMP%` into File Explorer to find it, and read the
+first line: it either says everything was removed, or names what was not. The file being
+there is not itself a sign of trouble.
+
+Two cases leave no note at all, because the note is written by the program and in both of
+these the program never ran:
+
+- The program was already gone from its folder before you uninstalled, so the step that
+  clears your data was skipped. The uninstaller tells you this on screen when it happens.
+- You closed the uninstaller before it finished.
+
+Either way, check `%LOCALAPPDATA%\wixen-mail` yourself. If that folder is still there, the
+downloaded mail in it is still there too, and it is not encrypted. Delete the folder to be
+rid of it. Your saved passwords and sign-in tokens live in the Windows credential store,
+not in that folder: open Credential Manager, choose Windows Credentials, and remove any
+entry whose name begins with `wixen-mail`.
