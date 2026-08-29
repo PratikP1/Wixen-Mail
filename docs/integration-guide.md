@@ -2,7 +2,7 @@
 
 _Rewritten 2026-08-29. The previous version was a three-phase build plan from
 early in the project. All three phases finished, but the document went on
-describing Phase 1 as in progress, counted 64 tests against the 5,269 that run
+describing Phase 1 as in progress, counted 64 tests against the 5,430 that run
 today, and ticked a 95% coverage target that was never met. It is kept as a
 record of how the layers were joined, not as a plan._
 

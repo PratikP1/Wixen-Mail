@@ -36,14 +36,18 @@ Written 2026-08-29.
   run against a real server.
 
 ## Known state of the plan
-- 8 phases, 40 requirements, each traced to exactly one phase.
-- About 160 acceptance criteria, almost all marked `[D]` for derived, because
-  the source backlog states none. They are unreviewed. STATE.md holds at
-  "ready to plan once the derived acceptance criteria are reviewed".
-- Three decisions in the roadmap are Pratik's and are written as criteria that
-  say decide and record, not as work to start: the signing certificate, the
-  notes sync target, and whether to encrypt the local cache.
+- 8 phases, 44 requirements, each traced to exactly one phase. It was 40 at
+  onboarding; four were added by splitting requirements that turned out to be
+  two pieces of work each.
+- The acceptance criteria are reviewed, all eight phases, on 2026-08-29. Almost
+  all are marked `[D]` for derived, because the source backlog states none, so
+  each was read back against the tree rather than taken as given. Six were
+  corrected for being untestable as written and are listed in STATE.md.
+- Two of the three decisions are answered. Notes get a backend chosen by account
+  type behind one seam, split into PIM-04, PIM-07 and PIM-08. The cache is not
+  encrypted, recorded as a decision rather than left as an omission. The signing
+  certificate is still Pratik's, and SHIP-01 stays open on it.
 
 ## Recommended Next Step
-- Review the `[D]` acceptance criteria in `.planning/REQUIREMENTS.md`, then
-  `/gsd-manager`.
+- `/gsd-discuss-phase 1`, then plan it. The review gate STATE.md was holding at
+  is cleared.

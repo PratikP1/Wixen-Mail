@@ -101,8 +101,10 @@ reported the system's name for those controls and never the one the code set,
 and every `set_accessible_name` call in the tree could have been deleted without
 it noticing.
 
-3362 tests pass: 3282 unit and 80 integration, measured 2026-08-09 with
-`cargo test --all-targets`. Several are fuzz tests over generated hostile
+5,430 tests pass: 5,269 unit and 161 integration, counted 2026-08-29 with
+`cargo test --all-targets -- --list`. The previous figure here, 3,362 from
+2026-08-09, is what a number without its command and its date turns into.
+Several are fuzz tests over generated hostile
 input, covering the HTML renderer, the calendar-document parsers, OAuth token
 expiry, and account validation.
 

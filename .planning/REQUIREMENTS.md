@@ -136,18 +136,29 @@ write path added by this milestone passes through that gate.
 
 ### Search
 
-- [ ] **SEARCH-01**: The Search window's scope selector actually scopes the search.
-  - Evidence: `src/presentation/wx_app.rs` line 14777 and line 19634 both build the offered
-    scopes, starting `("All Folders", WhereToSearch::EveryFolder)`. The changelog records that
-    nothing reads the choice, so a saved search always covers the whole account.
-  - [S] `docs/changelog.md`, Saved Searches section: "The In box on the Search window (All
-    Folders, Current Folder, Subject Only, From Only) is still not read by anything... That is
-    a defect in Search, not in saving one."
-  - [D] Choosing Current Folder returns results from the current folder only, and choosing
-    Subject Only or From Only restricts which fields matched.
-  - [D] A saved search stores the scope it was saved with and reruns with that scope.
-  - [D] The results view says which scope produced them, so a short result list is legible as
+- [ ] **SEARCH-01**: A saved search keeps the whole scope it was saved with, not half of it.
+  - Evidence: rewritten 2026-08-29. The previous evidence said the scope selector is read by
+    nothing, quoting a changelog line that has since been corrected as false, and cited two
+    sites building the offered scopes where the second is a test. There is one builder,
+    `what_the_in_box_offers` at `src/presentation/wx_app.rs` line 14776, and the live search
+    honours every scope it offers: `src/data/message_cache/searching.rs` line 393 takes
+    `looking_in: WhereToSearch` and narrows on it, with tests for `OneFolder`, `SubjectOnly`
+    and `SenderOnly` at lines 584, 614 and 639. Saving a search keeps half of that.
+    `SavedSearch` carries `folder: Option<String>` (`src/application/saved_searches.rs` line
+    543) and nothing else about scope, because `what_a_typed_search_asks` at line 350 always
+    writes the three questions in `WHAT_A_TYPED_SEARCH_LOOKS_AT`, which is
+    `["subject", "from", "to"]`. Choose From Only, save it, and it reruns across subject,
+    sender and recipients.
+  - [D] A search saved with Subject Only or From Only reruns with that same restriction rather
+    than across all three fields.
+  - [D] The folder half keeps working as it does today, so a saved search's folder and its
+    field restriction are written and read back together rather than by two paths that can
+    come to disagree.
+  - [D] Opening a saved search shows the scope it holds, so a narrow result list is legible as
     a narrow scope rather than as an empty mailbox.
+  - [D] A search saved by an older version, which has no field restriction stored, reruns
+    across all three fields as it does today. The reader's answer for a missing restriction and
+    the writer's answer for an unrestricted search are the same answer, written once.
 
 - [ ] **SEARCH-02**: Save and run a search over message text that eviction has cleared.
   - Evidence: bodies are split out with a size budget and least-recently-read eviction in
@@ -199,10 +210,18 @@ write path added by this milestone passes through that gate.
     rather than left unticked forever.
 
 - [ ] **SCALE-02**: Hold one connection open instead of signing in again per fetch.
-  - Evidence: the inventory records that every body fetch and every attachment save opens its
-    own connection and signs in again, citing `src/application/opening.rs` and
-    `src/application/attaching.rs`. The mail-at-scale plan budgets one connection for IDLE and
-    two or three for fetching, and notes Gmail allows fifteen per account and punishes more.
+  - Evidence: corrected 2026-08-29. The claim is right and the citation was not:
+    `src/application/opening.rs` and `src/application/attaching.rs` exist but neither opens a
+    connection. The sign-ins are in the interface. `src/application/mail_session.rs` line 21,
+    `a_session_at`, is the purpose-built helper that signs in for one piece of work, and it has
+    three callers: `deleting_at_the_server.rs` line 112, `sent_copy.rs` line 245 and
+    `wx_app.rs` line 9517. Eight further sites in `src/presentation/wx_app.rs` (lines 11504,
+    11818, 11978, 12454, 13007, 13747, 13812 and 14086) bypass it, each building a
+    `MailController` of its own, calling `connect_imap`, and calling `disconnect_imap` on the
+    way out. `src/application/mail_controller.rs` line 278, `require_imap`, is the single lock
+    a held session would live behind. The mail-at-scale plan budgets one connection for IDLE
+    and two or three for fetching, and notes Gmail allows fifteen per account and punishes
+    more.
   - [S] `docs/changelog.md` known limitations: "Holding one connection open needs reconnect
     handling that is not built."
   - [D] Opening several messages in a row reuses one authenticated session rather than
@@ -211,6 +230,9 @@ write path added by this milestone passes through that gate.
     also fails, rather than surfacing a bare protocol error.
   - [D] The number of concurrent connections per account is bounded by a stated budget, and
     the bound has a test.
+  - [D] A test counts the sites that build a `MailController` and connect without going through
+    the sign-in helper. Eight bypasses accumulated behind a helper written to stop exactly
+    that, and nothing counted them.
 
 - [ ] **SCALE-03**: Fetch a whole mailbox, not only the newest 500 per folder.
   - Evidence: `src/application/mail_sync.rs` brings the newest 500 per folder on Check Mail;
@@ -489,8 +511,16 @@ write path added by this milestone passes through that gate.
     round trip.
   - [D] Resetting an event returns it to the default rather than to silence, matching
     `channels_for`, which falls back to the default when there is no entry.
-  - [D] `tests/house_style.rs` no longer needs a "control no screen writes" exception for this
-    setting.
+  - [D] A test counts the screens that reach `set_event_channels`, so a per-event override the
+    model can hold and no screen can set fails at once rather than being found five months
+    later.
+  - [D] Corrected 2026-08-29. This criterion used to ask that `tests/house_style.rs` "no longer
+    need a control no screen writes exception for this setting", which nothing could satisfy:
+    there is no such exception. What is there, at line 122, is
+    `A_CONTROL_NO_SCREEN_WRITES`, a list of phrases a document may not use, guarding against
+    prose promising a per-account Allow Changes setting no screen writes. Same trap, different
+    setting, and it reads documents rather than counting call sites. The per-event case needs
+    its own check, and the criterion above is it.
 
 - [ ] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
   - Evidence: `src/presentation/date_display.rs` holds a hardcoded `MONTHS` array starting
@@ -531,8 +561,18 @@ write path added by this milestone passes through that gate.
     `scripts/build-installer.sh` appends the commit it built from. `docs/ALPHA_TESTING.md`
     states the installer is not signed.
   - [S] `docs/ALPHA_TESTING.md`: "The installer is not signed."
-  - [D] The published installer carries a valid Authenticode signature and SmartScreen does not
-    present the unknown-publisher warning.
+  - [D] The published installer and the executable inside it both carry a valid Authenticode
+    signature, with a timestamp countersignature, so the signature stays valid after the
+    certificate expires.
+  - [D] What SmartScreen does is stated, not promised. Corrected 2026-08-29: this used to
+    require that the unknown-publisher warning stop appearing, which a valid signature does not
+    buy. Only an EV certificate carries reputation from the first download, and EV is the last
+    resort here, behind SignPath Foundation and Azure Trusted Signing. A correctly signed
+    installer from either of those still shows the warning until reputation accrues, so the
+    requirement would have failed on the right decision.
+  - [D] While the warning remains, `docs/installing.md` keeps its walkthrough, including that
+    the Run button does not exist until More info is activated and that the button focus lands
+    on first is Don't run. Telling a screen reader user to press Enter cancels the install.
   - [D] The signing key never enters the repository or the build log, following the project's
     secrets rule.
   - [D] The verification is done against the published release asset, not against a local
@@ -588,20 +628,34 @@ write path added by this milestone passes through that gate.
   - [D] If it is not encrypted, the wording in the product and the docs is unchanged and this
     requirement closes as a recorded decision, not as a silent drop.
 
-- [ ] **SHIP-05**: Verify the Linux and macOS builds.
-  - Evidence: roadmap Cross-Platform is unticked. `Cargo.toml` gates Windows dependencies
-    behind `[target.'cfg(windows)'.dependencies]`. `CLAUDE.md` records that `wxAccessible` and
-    `UiaRaiseNotificationEvent` exist only on Windows and both compile and silently do nothing
-    elsewhere.
+- [ ] **SHIP-05**: The crate builds and its tests pass on Linux and on macOS.
+  - Evidence: split from the disclosure below on 2026-08-29, because building on a platform and
+    telling its users what does not work there are different pieces of work with different
+    gates. Roadmap Cross-Platform is unticked. `Cargo.toml` gates Windows dependencies behind
+    `[target.'cfg(windows)'.dependencies]`. Nothing in CI builds the crate off Windows: every
+    `runs-on:` in `.github/workflows/` is `windows-latest` except one `ubuntu-latest` job at
+    `ci.yml` line 133, which runs `cargo audit` and reads `Cargo.lock` without building.
   - [S] Roadmap Cross-Platform, unticked.
+  - [D] A CI job builds the crate and runs the test suite on Linux, and another on macOS, so a
+    Windows-only assumption fails on the commit that adds it rather than on the day somebody
+    tries a port.
+  - [D] No criterion here claims the application is accessible on Linux or macOS, or usable
+    there. Building is not the same claim.
+
+- [ ] **SHIP-06**: Off Windows, the application says what its accessibility layer does not do.
+  - Evidence: `CLAUDE.md` records that `wxAccessible` and `UiaRaiseNotificationEvent` exist
+    only on Windows, and that both compile and silently do nothing elsewhere. A build that
+    compiles and announces nothing is the failure mode this project has fixed repeatedly: the
+    switch that does nothing, with no way to tell from the inside.
   - [S] A macOS or Linux port needs its own bridge for each of those two, not a framework
     change.
-  - [D] The crate builds and the test suite passes on Linux and on macOS in CI.
-  - [D] Where the accessibility layer silently does nothing on those platforms, the build says
-    so at startup rather than presenting a client that looks accessible and is not. That is
-    guardrail 3: no stub presented as complete.
-  - [D] No criterion here claims the application is accessible on Linux or macOS. Building is
-    not the same claim.
+  - [D] On a platform where the accessibility bridge is absent, the application says so where
+    somebody will meet it, at startup and in Help, rather than presenting a client that looks
+    accessible and is not. That is guardrail 3: no stub presented as complete.
+  - [D] The disclosure is derived from what is actually compiled in, not from a hardcoded
+    platform list, so adding a real bridge removes the warning without anyone remembering to.
+  - [D] This closes on the disclosure. It does not close on a working bridge, and no wording
+    here may be read as claiming one.
 
 ### Every number the project quotes
 
@@ -652,13 +706,24 @@ write path added by this milestone passes through that gate.
   - [D] A current number replaces the stale one, with its date, and the low areas are
     attributed rather than treated as a number to raise.
 
-- [ ] **PERF-06**: Test count re-measured.
-  - Evidence: 3,362 tests (3,282 unit, 80 integration), measured 2026-08-09.
+- [ ] **PERF-06**: Every document that quotes a test count quotes the same measurement.
+  - Evidence: three documents give three numbers. `docs/IMPLEMENTATION_STATUS.md` line 104 says
+    3,362 (3,282 unit, 80 integration) measured 2026-08-09. `docs/changelog.md` and
+    `docs/integration-guide.md` say 5,269 "that run today".
+    `cargo test --all-targets -- --list` on 2026-08-29 counts 5,430: 5,269 unit and 161
+    integration. So the 5,269 is the unit count wearing the label of the total, and it is the
+    split, not the number, that catches that.
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
-  - [D] The count in the status document matches what `cargo test` reports on the current tree,
-    with the date it was taken.
-  - [D] The count is split the same way it is today (unit against integration) so the two
-    numbers stay comparable across dates.
+  - [D] Every count in the documentation carries the command it came from and the date it was
+    taken, so a number that has moved reads as a stale measurement rather than as a current
+    fact.
+  - [D] The count is split unit against integration, which is the distinction the three
+    numbers now in the tree disagree about.
+  - [D] Nothing asserts that a number written in a document equals what `cargo test` reports.
+    Corrected 2026-08-29: that is what this requirement used to ask for, and it is false the
+    next time anyone adds a test. A check on a number here checks that its command and its date
+    are present and that documents agree with each other, never that the number has not
+    moved.
 
 - [ ] **PERF-07**: A whole-tree mutation run, once, with a real result.
   - Evidence: scoped runs only. mime and error on 2026-07-26; filters, due, tagging and
@@ -730,8 +795,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | READ-03 | Phase 4 | Pending |
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
+| PIM-06 | Phase 5 | Pending |
 | PIM-03 | Phase 5 | Pending |
 | PIM-04 | Phase 5 | Pending |
+| PIM-07 | Phase 5 | Pending |
+| PIM-08 | Phase 5 | Pending |
 | PIM-05 | Phase 5 | Pending |
 | FEEDBACK-01 | Phase 6 | Pending |
 | FEEDBACK-02 | Phase 6 | Pending |
@@ -741,6 +809,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SHIP-03 | Phase 7 | Pending |
 | SHIP-04 | Phase 7 | Pending |
 | SHIP-05 | Phase 7 | Pending |
+| SHIP-06 | Phase 7 | Pending |
 | PERF-01 | Phase 8 | Pending |
 | PERF-02 | Phase 8 | Pending |
 | PERF-03 | Phase 8 | Pending |

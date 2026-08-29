@@ -59,7 +59,7 @@ and all three personal information sync paths.
 
 ### Active
 
-This milestone is the outstanding work: the two "not built" sections of the inventory. 40
+This milestone is the outstanding work: the two "not built" sections of the inventory. 44
 requirements in `.planning/REQUIREMENTS.md`, grouped into folders and conversations, search
 honesty, mail at scale on the wire, writing and reading a message in full, the other five
 modules, how the application speaks, installing and updating, and measurement.
@@ -130,8 +130,8 @@ before it can become one.
 
 ## Context
 
-**Brownfield, large, and honest about itself.** 259,723 lines under `src/`, 3,362 tests as of
-2026-08-09, 501 guard records in `guards/guards.toml`, line coverage last measured at 60.4% on
+**Brownfield, large, and honest about itself.** 259,723 lines under `src/`, 5,430 tests counted
+2026-08-29, 501 guard records in `guards/guards.toml`, line coverage last measured at 60.4% on
 2026-07-26. The project's own status documents are unusually candid and are the reason this
 milestone could be scoped from evidence rather than guesswork.
 

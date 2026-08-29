@@ -22,7 +22,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 Phase: 1 of 8 (Folders and conversations)
 Plan: none yet
-Status: Phase 1 reviewed and ready to plan. Phases 2 to 8 awaiting review.
+Status: All eight phases reviewed. Ready to plan.
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
 
@@ -33,7 +33,32 @@ Status: Phase 1 reviewed and ready to plan. Phases 2 to 8 awaiting review.
 - FOLDER-03 keeps local pinning as this phase's work, and now says the stored shape must let
   IMAP subscription back it later, with the decision about which wins recorded before the
   second half is built rather than settled by whichever code path runs last.
-Last activity: 2026-08-29, roadmap created from the ingested documents and the codebase map
+
+**Phases 2 to 8 reviewed 2026-08-29.** Every `[D]` criterion was read back against the tree.
+Two decisions were answered, two requirements were split, and six criteria were corrected for
+being untestable as written. Recorded here because a criterion nothing can satisfy passes a
+review that only reads it.
+
+| Requirement | What was wrong | What it says now |
+|-------------|----------------|------------------|
+| SEARCH-01 | Said the scope selector is read by nothing, quoting a changelog line since corrected as false, and cited a test as a second production site | The live search honours all four scopes and has tests. A saved search keeps the folder half and not the field half, because `what_a_typed_search_asks` always writes `["subject", "from", "to"]` |
+| SCALE-02 | Cited `opening.rs` and `attaching.rs`, which exist and open no connections | Names `a_session_at`, its three callers, and the eight sites in `wx_app.rs` that bypass it |
+| FEEDBACK-01 | Asked for the removal of a `tests/house_style.rs` exception that does not exist; the real constant it echoed guards documents about a different setting | Asks for a test that counts the screens reaching `set_event_channels` |
+| SHIP-01 | Required that SmartScreen stop warning, which a valid signature does not buy | Separates the signature, which is verifiable, from reputation, which only an EV certificate carries and EV is the last resort here |
+| SHIP-05 | Mixed building on a platform with disclosing what does not work there | Split. SHIP-05 is the build and its CI jobs; SHIP-06 is the disclosure |
+| PERF-06 | Asked that a number in a document equal what `cargo test` reports, which is false the next time anyone adds a test | Asks that every count carry its command and its date, and that documents agree with each other |
+
+Two decisions were also answered in the same pass and are recorded under Blockers below:
+PIM-04's notes backend, which split into PIM-04, PIM-07 and PIM-08, and SHIP-04's encryption
+question, answered as a recorded decision not to.
+
+Two things the review found that were not criteria at all. The traceability table had 40 rows
+against 44 headings, having missed every requirement added by a split; it is now generated from
+the headings so it cannot drift again. And three documents gave three different test counts, of
+which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
+5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
+
+Last activity: 2026-08-29, all eight phases' acceptance criteria reviewed against the tree
 
 Progress: [..........] 0%
 
@@ -77,9 +102,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- **Awaiting review, phases 2 to 8.** Every acceptance criterion marked **[D]** was derived by
-  a model from the code and the status documents, not stated by Pratik or by a source. Phase 1
-  is reviewed; the rest are not, and no phase should be planned before its own review.
+- ~~**Awaiting review, phases 2 to 8.**~~ Reviewed 2026-08-29. Every acceptance criterion
+  marked **[D]** was derived by a model from the code and the status documents, not stated by
+  Pratik or by a source, so each was read back against the tree. The review's own record, with
+  what each correction changed, is under Current Position above.
 - ~~**Row count discrepancy.**~~ Resolved 2026-08-29. The file has 33 rows and 33 is right.
   The 27 came from the inventory agent's own summary of the document it had just written, and
   was passed into the roadmapper's brief without anyone counting the file. Nothing was dropped:
@@ -108,6 +134,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-08-29
-Stopped at: PROJECT.md, REQUIREMENTS.md, ROADMAP.md and STATE.md written from the ingested
-documents and the codebase map. Nothing planned or executed yet.
+Stopped at: all eight phases reviewed, 44 requirements traced, six criteria corrected for being
+untestable as written. Nothing planned or executed yet.
 Resume file: None

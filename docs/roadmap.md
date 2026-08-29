@@ -205,7 +205,9 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ### Packaging
 - [x] Windows installer, built with Inno Setup rather than MSI or NSIS
 - [ ] Auto-update mechanism
-- [ ] Desktop shortcuts
+- [x] Desktop and Start menu shortcuts. The installer creates the Start menu entry and offers
+      the desktop one as a task. Neither carries the application icon yet: that is one
+      `IconFilename` on each `[Icons]` entry, and it is SHIP-03 in the plan.
 
 ### Performance
 - [x] Virtual scrolling, for the message list and for every other list in the application

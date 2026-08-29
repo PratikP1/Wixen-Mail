@@ -223,10 +223,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   there to try again with. Other changes made in the same sitting are saved
   either way; a refusal used to throw them away with it.
 
-- **Seven things the documentation said that were not true.** These pages ship
+- **Things the documentation said that were not true.** These pages ship
   inside the installer and sit beside the program, so a page that describes a
   feature you do not have is a page that wastes your time. A cross-document
-  comparison found seven contradictions, and each was settled against the code
+  comparison on 2026-08-29 found seven contradictions, and a second pass over
+  the same set that afternoon found two more. Each was settled against the code
   rather than by picking the newer page.
 
   The roadmap ticked threaded view as complete. It is not: the Thread View item
@@ -244,7 +245,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   a planned library, described a source file deleted in February, and promised
   the shortcut customisation that does not exist. The integration guide has been
   rewritten: it was a three-phase build plan whose phases all finished, counting
-  64 tests against the 5,269 that run today.
+  64 tests against the 5,430 that run today.
+
+  The second pass was checking that number and found two more. Three pages gave
+  three different test counts, and the newest of them, 5,269, was the unit count
+  wearing the label of the total. The suite is 5,430: 5,269 unit and 161
+  integration, from `cargo test --all-targets -- --list` on 2026-08-29. Every
+  count in these pages now carries the command it came from and the date it was
+  taken, so a number that has moved reads as an old measurement rather than as a
+  current fact.
+
+  The other was an unticked box rather than a ticked one. The roadmap listed
+  desktop shortcuts as still to do; the installer has created the Start menu
+  entry and offered the desktop shortcut for some time. What is missing is the
+  application icon on them, which is one setting on each, and the roadmap now
+  says that instead. Checking that something is built takes one path; checking
+  that something is not built takes a search that comes back empty, which is why
+  the unticked half of a list gets read less carefully than the ticked half.
 
 - **When a key does nothing, the reason is no longer said as a progress note.**
   Twenty-eight of these went to the status line: "Choose a message first", "Add

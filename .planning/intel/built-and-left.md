@@ -128,7 +128,7 @@ dependency in `Cargo.toml`, so none of the targets below has a number attached.
 | A real 100,000+ message mailbox | Nothing. The design targets 200,000 rows; the largest thing exercised is a loopback server | roadmap Phase 8; mail-at-scale title |
 | Idle memory under 100 MB | Nothing. Listed as a success metric with no measurement | roadmap Success Metrics |
 | Line coverage | 60.4%, measured 2026-07-26 with `cargo llvm-cov --lib --summary-only`, stale since | IMPLEMENTATION_STATUS |
-| Test count | 3,362 tests (3,282 unit, 80 integration), measured 2026-08-09 | IMPLEMENTATION_STATUS |
+| Test count | 5,430 tests (5,269 unit, 161 integration), counted 2026-08-29 with `cargo test --all-targets -- --list` | Measured against the tree |
 | Mutation testing | Scoped runs only: mime and error (2026-07-26); filters, due dates, tagging and signatures (2026-08-01, 157 mutants); the four message-disposition modules (2026-08-12, 66 mutants, 1 survivor). A whole-tree run is about two days and has never been done | IMPLEMENTATION_STATUS |
 | Accessibility scanning | Automated scanning covers roughly half of WCAG; five findings at the last read, all inside WebView2's own tree | IMPLEMENTATION_STATUS |
 

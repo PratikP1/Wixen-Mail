@@ -56,8 +56,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Phase 1
 **Requirements**: SEARCH-01, SEARCH-02, SEARCH-03
 **Success Criteria** (what must be TRUE):
-  1. Choosing Current Folder, Subject Only or From Only changes the results, and a saved search reruns with the scope it was saved with.
-  2. The results say which scope produced them, so a short list reads as a narrow scope rather than as an empty mailbox.
+  1. A search saved with Subject Only or From Only reruns with that restriction, not across subject, sender and recipients. The live search already honours all four scopes; only the saved one loses half of what it was given.
+  2. Opening a saved search shows the scope it holds, so a short list reads as a narrow scope rather than as an empty mailbox.
   3. A search whose terms need body text says, before it runs, how much of the mailbox has body text stored, and offers to fetch the rest.
   4. A user defines a smart folder from the same rule vocabulary the filters use, and it appears in the folder tree listing what matches now rather than a snapshot.
 **Plans**: TBD
@@ -98,8 +98,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A task moves to another list in one action and ends in exactly one list, including when the move fails at the provider.
   2. Move and copy work in contacts, calendar, tasks, notes and reminders with the same two keyboard commands in every module, on the Action menu because they act on the selection.
   3. A recurring event appears on every date it occurs in the week and month views, with a moved or cancelled occurrence shown on the date it really is.
-  4. A note edited here reaches its chosen sync target and a change at the target reaches here, or the settings screen says notes do not sync yet rather than offering a switch that does nothing.
-  5. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist.
+  4. A local note is a first-class Markdown document, and a synced note reaches the backend its account type chooses, through one seam. Where an account type has no backend yet, the settings screen says so rather than offering a switch that does nothing.
+  5. The seam is shaped so a hosted note service can be added later without a migration. Preparing for it means the seam does not forbid it, not that anything half exists.
+  6. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist.
 **Plans**: TBD
 **UI hint**: yes
 
@@ -116,15 +117,16 @@ Decimal phases appear between their surrounding integers in numeric order.
 **UI hint**: yes
 
 ### Phase 7: Installing, updating and what is stored
-**Goal**: A build reaches a user without a publisher warning, tells them when there is a newer one, and is honest about what it leaves on their disk.
+**Goal**: A build reaches a user signed, tells them when there is a newer one, tells them plainly what it leaves on their disk, and does not promise a publisher warning will be gone when the certificate chosen cannot buy that.
 **Depends on**: Nothing new; can run alongside Phases 1 to 6
-**Requirements**: SHIP-01, SHIP-02, SHIP-03, SHIP-04, SHIP-05
+**Requirements**: SHIP-01, SHIP-02, SHIP-03, SHIP-04, SHIP-05, SHIP-06
 **Success Criteria** (what must be TRUE):
-  1. The published installer carries a valid Authenticode signature and SmartScreen shows no unknown-publisher warning, verified against the published release asset rather than a local build.
+  1. The published installer and the executable inside it both carry a valid Authenticode signature with a timestamp countersignature, verified against the published release asset rather than a local build. What SmartScreen then does is stated, not promised: only an EV certificate carries reputation from the first download, and while the warning remains, `docs/installing.md` keeps the walkthrough that gets a screen reader user past it.
   2. The application can tell the user a newer version exists, as a deliberate action or an explicit setting, never as a silent background fetch, and declining leaves the current version working.
-  3. Installing offers a desktop shortcut and creates a Start menu entry, and uninstalling removes both.
-  4. The cache encryption question is answered and recorded: either the database is encrypted with its key in the OS credential store and an existing database migrates without losing a message, or the limitation is restated as permanent for this milestone.
-  5. The crate builds and the suite passes on Linux and macOS in CI, and those builds say at startup that the accessibility layer does nothing there.
+  3. The installed shortcuts carry the application icon. The installer already creates both the desktop shortcut and the Start menu entry, so this is `IconFilename` on the two `[Icons]` entries and nothing else.
+  4. The cache is not encrypted, and that is said once and clearly where a user meets it: the first-run screen and the page about what is stored. It says what the limitation is and is not, distinguishing another user of the same computer, kept out by Windows, from somebody who takes the drive out, who is not unless the disk is encrypted.
+  5. The crate builds and the suite passes on Linux and on macOS in CI.
+  6. On a platform where the accessibility bridge is absent, the application says so at startup and in Help, derived from what is actually compiled in rather than from a hardcoded platform list. This closes on the disclosure, not on a working bridge.
 **Plans**: TBD
 
 ### Phase 8: Every number the project quotes
@@ -134,7 +136,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Success Criteria** (what must be TRUE):
   1. Memory with 1,000 cached messages, cold start to a usable message list, and idle memory each have a recorded number carrying the date, the machine and the build it came from.
   2. The message list is exercised against 200,000 synthetic rows, the sort, filter and scroll paths each produce a number, and a test asserts the virtual text callback issues no SQLite query.
-  3. Line coverage and the test count in the status document match the current tree and carry the date they were taken, with the low-coverage areas attributed to the untested network transport rather than treated as a number to raise.
+  3. Every count in the documentation carries the command it came from and the date it was taken, and the documents agree with each other. Nothing asserts that a written number equals what a tool reports today, because that is false the next time anyone adds a test. Low coverage is attributed to the untested network transport rather than treated as a number to raise.
   4. One whole-tree mutation run completes, its report is read after the process exits, and every survivor is either killed with a test or recorded with a reason.
   5. Each target is either met or revised with the reason written down.
 **Plans**: TBD
@@ -159,7 +161,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 ## Notes on this roadmap
 
 **Granularity.** `.planning/config.json` sets no granularity, so the default is standard,
-which suggests four to six phases. This roadmap has eight. Compressing 40 requirements into
+which suggests four to six phases. This roadmap has eight. Compressing 44 requirements into
 five phases would have produced phases with no coherent verifiable capability, which the
 granularity guidance says to avoid: derive phases from the work, then use granularity as
 compression guidance rather than as a target. Two thin candidates were folded rather than left
