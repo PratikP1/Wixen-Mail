@@ -1087,12 +1087,20 @@ fn the_directory_this_account_names(account_id: &str) -> Option<Directory> {
 /// clearing them really does stop anything being sent: an entry left behind
 /// would be a directory with no address, asked on every keystroke and
 /// refusing every time.
-fn remember_where_to_look_people_up(account_id: &str, url: &str, search_under: &str) {
+/// Answers what went wrong, or `None` when nothing did. It used to write the
+/// failure to a log, and the window went on to say "Account added". The two
+/// boxes are part of that account's own page, so somebody who filled them in
+/// and heard the account was added has been told the whole page was kept.
+fn remember_where_to_look_people_up(
+    account_id: &str,
+    url: &str,
+    search_under: &str,
+) -> Option<String> {
     let mut settings = match crate::data::config::ConfigManager::load_stored() {
         Ok(settings) => settings,
         Err(why) => {
             tracing::warn!("Where to look people up could not be saved: {why}");
-            return;
+            return Some(format!("{why}"));
         }
     };
     let url = url.trim();
@@ -1117,7 +1125,9 @@ fn remember_where_to_look_people_up(account_id: &str, url: &str, search_under: &
     }
     if let Err(why) = settings.save() {
         tracing::warn!("Where to look people up could not be saved: {why}");
+        return Some(format!("{why}"));
     }
+    None
 }
 
 fn show_edit(
@@ -1152,11 +1162,23 @@ fn show_edit(
         let id = existing
             .map(|a| a.id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        remember_where_to_look_people_up(
+        // Said here rather than handed back, because what the window says
+        // next is about the account and this is about one page of it. High,
+        // so it is heard beside the ordinary confirmation that follows.
+        if let Some(why) = remember_where_to_look_people_up(
             &id,
             &w.directory_url_f.get_value(),
             &w.directory_base_f.get_value(),
-        );
+        ) {
+            let _ = a11y.announce(
+                &format!(
+                    "Where this account looks people up could not be saved, so that box is \
+                     empty again the next time you open it. Everything else on this page was \
+                     kept. ({why})"
+                ),
+                Priority::High,
+            );
+        }
 
         Some(Account {
             id,

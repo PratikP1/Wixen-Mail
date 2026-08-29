@@ -221,6 +221,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   there to try again with. Other changes made in the same sitting are saved
   either way; a refusal used to throw them away with it.
 
+- **Marking a message read or flagged says so when it could not be kept.**
+  Both are applied to the row straight away and read out at once, so a
+  keystroke never waits on the network. A refusal from your mail server was
+  already put back and explained. A refusal from the copy on this computer was
+  written to a log: the row went on showing the new state, what you heard
+  stayed wrong, and the change went back on its own the next time the folder
+  was opened, with nothing said. It is put back at once now, and the reason is
+  read out. Flagging from the toolbar used to go further and say "Flagged" and
+  play the tone that means it worked, then send the flag to your server; it
+  does neither unless the change was kept.
+
+- **The answer to "what may Wixen Mail change" says when it could not be
+  saved.** The question is asked once, the first time Wixen Mail runs. If the
+  answer could not be written down it was put in a log, and what you chose was
+  quietly not in force. It now says so, and says what happens instead: nothing
+  is changed until the question is answered again, which it asks next time it
+  starts.
+
+- **Muting message reading says when it will not last.** Turning it off is what
+  you do before opening mail in a shared room, and remembering it is the whole
+  point of the setting. If it could not be remembered, the toggle worked and
+  nothing said that mail would be read aloud again at the next start. It now
+  says which way round you will find it.
+
+- **The directory boxes on an account say when they could not be saved.** Where
+  an account looks people up is stored apart from the account itself. If that
+  failed the window still said "Account added", so a page you filled in came
+  back with one box empty and no reason given.
+
+- **A password left in the database by an older version is cleared the next
+  time too.** Moving one into the Windows credential store is two steps: put it
+  there, then clear the old copy. If the clearing failed, nothing ever looked
+  again, because every later start read the password from the store and never
+  saw the column. The database is the half that gets copied and backed up, and
+  it is meant to hold no secrets at all, so the clearing is now tried on every
+  start until it works.
+
 - **The Account Manager says why the accounts could not be saved.** It used to
   say the reason was in the log, which is a place somebody working by ear has
   no way to open. The reason is read out and shown.

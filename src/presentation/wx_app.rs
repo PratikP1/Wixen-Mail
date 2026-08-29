@@ -2944,13 +2944,20 @@ impl WxMailApp {
                             // Confirm through the interface channel, which mute
                             // never silences, so the toggle is never silent.
                             sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
-                            persist_mute_preference(muted);
+                            let said = match (muted, persist_mute_preference(muted)) {
+                                (true, Kept::Yes) => "Message reading muted".to_string(),
+                                (false, Kept::Yes) => "Message reading unmuted".to_string(),
+                                // The whole reason this setting is stored is
+                                // that somebody in a shared room should not
+                                // have to switch reading off again every
+                                // session. Saying "muted" and nothing else
+                                // leaves them expecting that next time, which
+                                // is the one situation this exists to prevent.
+                                (true, Kept::No(why)) => not_remembered("muted", "unmuted", &why),
+                                (false, Kept::No(why)) => not_remembered("unmuted", "muted", &why),
+                            };
                             let _ = a11y.announce(
-                                if muted {
-                                    "Message reading muted"
-                                } else {
-                                    "Message reading unmuted"
-                                },
+                                &said,
                                 crate::presentation::accessibility::announcements::Priority::High,
                             );
                         }
@@ -3008,11 +3015,24 @@ impl WxMailApp {
                             };
                             match toggled {
                                 Some((cache_id, uid, read, starred, subject)) => {
-                                    if let Some(cache) = message_cache.as_ref()
-                                        && let Err(e) =
-                                            cache.update_message_flags(cache_id, read, starred)
-                                    {
-                                        tracing::error!("Flag not saved: {}", e);
+                                    // Nothing is confirmed and nothing goes to
+                                    // the server unless it was kept here
+                                    // first. This used to log the refusal and
+                                    // then say "Flagged" and play the tone
+                                    // that means it worked.
+                                    let kept = match message_cache.as_ref() {
+                                        Some(cache) => write_flags_or_put_the_row_back(
+                                            cache,
+                                            app.state,
+                                            app.tx,
+                                            cache_id,
+                                            (read, starred),
+                                            (read, !starred),
+                                        ),
+                                        None => true,
+                                    };
+                                    if !kept {
+                                        return;
                                     }
                                     let confirmed = if starred { "Flagged" } else { "Unflagged" };
                                     let _ = a11y.announce(
@@ -4604,7 +4624,7 @@ impl WxMailApp {
             // screen yet has nowhere to be modal to. Skipped during a scan
             // run, which has nobody to answer it.
             if scan_target.is_none() {
-                ask_about_the_alpha_once(&frame);
+                ask_about_the_alpha_once(&frame, &a11y);
             }
 
             // What Windows handed over, if it handed over anything: the
@@ -7598,23 +7618,50 @@ fn sync_menu_check(frame: &Frame, id: Id, checked: bool) {
     }
 }
 
+/// Whether a preference was written down, and why not when it was not.
+enum Kept {
+    Yes,
+    No(String),
+}
+
+/// What to say when a preference took effect and could not be remembered.
+///
+/// `now` is what it is, `next_time` is what it goes back to. Both are named,
+/// because "it did not save" leaves somebody working out for themselves which
+/// way round they will find it, and the whole point of hearing this is to know
+/// what to expect at the next start.
+fn not_remembered(now: &str, next_time: &str, why: &str) -> String {
+    format!(
+        "Message reading {now} for now. It could not be remembered, so it will be {next_time} \
+         again the next time Wixen Mail starts. ({why})"
+    )
+}
+
 /// Store the mute preference so it survives a restart.
 ///
 /// Someone who works in a shared room should not have to switch mail reading
-/// off again every session. A failure here is logged rather than surfaced: the
-/// toggle itself has already taken effect, so the session is correct even if
-/// the preference does not stick.
-fn persist_mute_preference(muted: bool) {
+/// off again every session, and that is the whole of what this setting is for.
+/// A failure used to be logged and nothing else, on the reasoning that the
+/// toggle had already taken effect so the session was correct. The session is,
+/// and the next one is not: mail starts being read aloud again in the room
+/// this was switched off for, with nothing having said it would.
+///
+/// So it answers, and the caller says which of the two happened.
+fn persist_mute_preference(muted: bool) -> Kept {
     let mut mgr = match crate::data::config::ConfigManager::load_stored() {
         Ok(mgr) => mgr,
         Err(e) => {
             tracing::warn!("Mute preference not saved, config unreadable: {}", e);
-            return;
+            return Kept::No(format!("{e}"));
         }
     };
     mgr.app_config_mut().mute_message_reading = muted;
-    if let Err(e) = mgr.save() {
-        tracing::warn!("Mute preference not saved: {}", e);
+    match mgr.save() {
+        Ok(()) => Kept::Yes,
+        Err(e) => {
+            tracing::warn!("Mute preference not saved: {}", e);
+            Kept::No(format!("{e}"))
+        }
     }
 }
 
@@ -10397,6 +10444,50 @@ fn reread_folder_if_open(
     }
 }
 
+/// Write a message's read and flagged state, and put the row back if it fails.
+///
+/// Both are applied to the row on screen first and announced at once, because
+/// waiting on a round trip before confirming a keystroke makes the application
+/// feel broken. `spawn_server_change` already puts the row back when the
+/// server refuses; the write to this computer did not, and it is the half
+/// nothing else corrects. The row went on showing a state nothing holds, the
+/// announcement that had already been made stayed wrong, and the change went
+/// back on its own the next time the folder was read, with nothing said.
+///
+/// So it is put back here and the reason said, the same way a refusal from the
+/// server is. `was` is what the row held before the change, which the caller
+/// knows and this cannot ask for: reading it back out of a database that has
+/// just refused a write is asking the same broken thing twice.
+///
+/// Answers whether the change stuck, so a caller that goes on to confirm it
+/// out loud, or to send it to the server, can stop instead. One did neither:
+/// it logged the refusal and then announced "Flagged" and played the
+/// confirming tone.
+fn write_flags_or_put_the_row_back(
+    cache: &MessageCache,
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    cache_id: i64,
+    wanted: (bool, bool),
+    was: (bool, bool),
+) -> bool {
+    let (read, starred) = wanted;
+    let Err(e) = cache.update_message_flags(cache_id, read, starred) else {
+        return true;
+    };
+    tracing::error!("Failed to update flags for message {cache_id}: {e}");
+    {
+        let mut s = lock_state(state);
+        if let Some(row) = s.messages.iter_mut().find(|m| m.message_id == cache_id) {
+            (row.read, row.starred) = was;
+        }
+    }
+    let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+        "That change could not be saved on this computer, so it has been put back: {e}"
+    )));
+    false
+}
+
 /// Process a single UIUpdate, updating widgets + accessibility.
 fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     let UpdateTargets {
@@ -11022,9 +11113,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                         .map(|m| m.starred)
                         .unwrap_or(false)
                 });
-                if let Err(e) = cache.update_message_flags(*cache_id, *new_read, starred) {
-                    tracing::error!("Failed to update flags for message {}: {}", cache_id, e);
-                }
+                // The answer is not read here: this arm is also how a refused
+                // server change is put back, and there is nothing further to
+                // stop.
+                let _ = write_flags_or_put_the_row_back(
+                    cache,
+                    state,
+                    tx,
+                    *cache_id,
+                    (*new_read, starred),
+                    (!*new_read, starred),
+                );
             }
             msg_list.refresh(true, None);
         }
@@ -11082,9 +11181,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                         .map(|m| m.read)
                         .unwrap_or(false)
                 });
-                if let Err(e) = cache.update_message_flags(*cache_id, read, *new_starred) {
-                    tracing::error!("Failed to update flags for message {}: {}", cache_id, e);
-                }
+                let _ = write_flags_or_put_the_row_back(
+                    cache,
+                    state,
+                    tx,
+                    *cache_id,
+                    (read, *new_starred),
+                    (read, !*new_starred),
+                );
             }
             msg_list.refresh(true, None);
         }
@@ -17129,6 +17233,52 @@ mod what_the_status_line_says {
     }
 
     #[test]
+    fn test_a_read_or_flagged_state_that_will_not_save_is_put_back_and_said() {
+        // What this cannot see: whether either arm runs, or whether the
+        // sentence is the right one. It reads the window's own text.
+        //
+        // Both arms apply the change to the row on screen first and announce
+        // it at once, which is right: a keystroke that waits on a round trip
+        // feels broken. A refusal from the server was already put back and
+        // said. A refusal from the database was written to a log, and that is
+        // the half nothing else corrects: the row goes on showing a state
+        // nothing holds, the announcement stays wrong, and the change goes
+        // back on its own the next time the folder is read.
+        //
+        // So there is one place that writes those flags, and it is the place
+        // that puts the row back. Two callers writing their own is how one of
+        // them ended up only logging.
+        let source = the_window_itself();
+        let writes: Vec<&str> = source
+            .lines()
+            .filter(|line| line.contains("update_message_flags("))
+            .collect();
+        assert_eq!(
+            writes.len(),
+            1,
+            "a message's flags are written somewhere other than \
+             write_flags_or_put_the_row_back, so that write can refuse in \
+             silence: {writes:?}"
+        );
+
+        let putting_back = source
+            .split_once("fn write_flags_or_put_the_row_back(")
+            .expect("the one place that writes a message's flags")
+            .1;
+        let body = &putting_back[..putting_back.find("\n}\n").unwrap_or(putting_back.len())];
+        assert!(
+            body.contains("(row.read, row.starred) = was"),
+            "the write no longer puts the row on screen back, so a refused \
+             change stays on screen until the folder is read again"
+        );
+        assert!(
+            body.contains("UIUpdate::ErrorOccurred"),
+            "the write no longer says a refused change was put back, so the \
+             row changes under the cursor with nothing said"
+        );
+    }
+
+    #[test]
     fn test_every_arm_that_shows_something_says_it_or_is_named_as_quiet() {
         // What this cannot see: whether any arm runs. It reads the window's own
         // text. An arm that is unreachable is counted as sound, and a sentence
@@ -17729,7 +17879,7 @@ mod edition_2024_semantics {
 /// An upgrade from before this existed counts as the first time, deliberately:
 /// somebody who has been using this already has had writing switched on
 /// without ever being told it is unproven, and they should hear it once.
-fn ask_about_the_alpha_once(frame: &Frame) {
+fn ask_about_the_alpha_once(frame: &Frame, a11y: &Accessibility) {
     let Ok(mut settings) = crate::data::config::ConfigManager::load_stored() else {
         // No settings to read means no settings to write, so asking would
         // throw the answer away. Nothing writes in that state anyway:
@@ -17747,7 +17897,20 @@ fn ask_about_the_alpha_once(frame: &Frame) {
     if let Err(e) = settings.save() {
         // Said rather than swallowed. Somebody who chose read-only and had it
         // silently not stick would be trusting a setting that is not there.
+        //
+        // This said so and then wrote a line to a log, which is not a place
+        // anybody is told to look and not somewhere a screen reader goes. It
+        // is spoken and shown now, and it says what is true while it is
+        // unsaved: nothing is allowed to change anything, because that is what
+        // an unreadable answer means everywhere else it is read.
         tracing::error!("Could not save what you chose: {e}");
+        let _ = a11y.announce(
+            &format!(
+                "What you chose could not be saved, so Wixen Mail will change nothing until \
+                 it is answered again. You will be asked next time it starts. ({e})"
+            ),
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
     }
 }
 

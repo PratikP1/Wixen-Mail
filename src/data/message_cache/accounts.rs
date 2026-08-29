@@ -188,7 +188,24 @@ impl MessageCache {
         });
 
         match credentials::stored_password(in_the_store, in_the_row) {
-            StoredPassword::Ready(password) => password,
+            StoredPassword::Ready(password) => {
+                // The credential store holds it and the column still does.
+                // That is what a clearing that failed leaves behind, and
+                // nothing used to look again: once the store had the password
+                // every later load read it from there and never saw the
+                // column, so one failed write left the old copy in the
+                // database for good. The database is meant to hold no secrets
+                // at all, which is the whole reason the credential store is
+                // used, so the clearing is tried on every load until it works.
+                if !in_the_row.is_empty()
+                    && let Err(e) = self.forget_stored_password(account_id)
+                {
+                    tracing::warn!(
+                        "The password for {account_id} is in the credential store, but the old copy is still in the database: {e}"
+                    );
+                }
+                password
+            }
             StoredPassword::NeedsMoving(encrypted) => self.move_password(account_id, &encrypted),
             StoredPassword::Missing => String::new(),
         }
@@ -517,6 +534,38 @@ mod tests {
 
         let old = stored.iter().find(|a| a.id == "old").expect("the old row");
         assert!(old.allow_deleting_here);
+    }
+
+    #[test]
+    fn test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too() {
+        // Moving a password out of the database is two writes, and only the
+        // first was ever tried again. Once the credential store held it, every
+        // later load read it from there and never looked at the column, so a
+        // clearing that failed once left the encrypted copy in the database
+        // for good. The database is the copyable, backup-safe half by design,
+        // and "no secrets at all" is the whole reason the credential store is
+        // used, so a permanent exception to it is not something to leave.
+        let cache = a_cache("old_copy_left_behind");
+        let account = an_account("acc-both", "ada@example.com", "secret123");
+        cache.save_account(&account).expect("the account to save");
+        // The state a failed clearing leaves: in the store, and still in the
+        // column as the older version wrote it.
+        cache
+            .conn
+            .execute(
+                "UPDATE accounts SET password = ?1 WHERE id = ?2",
+                params!["c2VjcmV0MTIz", "acc-both"],
+            )
+            .expect("the older shape to be written");
+
+        let loaded = cache.load_accounts().expect("the accounts to load");
+
+        assert_eq!(loaded[0].password, "secret123");
+        assert_eq!(
+            password_column(&cache, "acc-both"),
+            "",
+            "the old copy is still in the database, and nothing will look again"
+        );
     }
 
     #[test]
