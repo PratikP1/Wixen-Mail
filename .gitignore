@@ -45,3 +45,26 @@ mutants.out.old/
 # Pages made from the documents at run time, so the help button opens HTML
 # rather than raw Markdown. Generated beside their sources, never edited.
 docs/*.html
+
+# GSD Core's own tooling, installed by
+# `npx @opengsd/gsd-core@latest --claude --local --profile=full`.
+# Thirteen megabytes of vendored framework that any checkout can reinstall,
+# so it does not belong in the history. What is NOT ignored, deliberately:
+#
+#   .claude/guardrails/  ours, with its own tests. It is a guard like the
+#                          ones in guards/, and a guard nobody can see is a
+#                          guard nobody maintains.
+#   .claude/skills/      ours, already tracked.
+#   .planning/           GSD's planning artifacts are meant to live with the
+#                          repo and be reviewed like any other document.
+.claude/agents/
+.claude/commands/
+.claude/gsd-core/
+.claude/hooks/
+.claude/scripts/
+.claude/gsd-migration-journal/
+.claude/gsd-file-manifest.json
+.claude/gsd-install-state.json
+.claude/.gsd-profile
+.claude/.gsd-runtime
+.claude/VERSION

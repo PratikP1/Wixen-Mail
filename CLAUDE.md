@@ -75,6 +75,29 @@ Unit tests live in `#[cfg(test)] mod tests` beside the code they cover. Cross-la
 `tests/integration_tests.rs`. Async code uses `tokio-test`; anything touching the filesystem uses
 `tempfile` rather than real user directories.
 
+**This binds GSD too, and GSD disagrees by default.** GSD Core is installed here and plans work
+through `.planning/`. Its planner decides per task whether the test comes first, and with
+`workflow.tdd_mode` off, which is its default, it decides opportunistically. That is not the
+rule here.
+`workflow.tdd_mode` is `true` in `.planning/config.json`, which makes every eligible task
+`type: tdd` and checks the RED and GREEN gate commits. `.claude/guardrails/tdd-mode-check.js`
+runs at session start and says so if the setting drifts back off; it is silent when the setting
+is right and has its own tests:
+
+```bash
+node --test .claude/guardrails/tdd-mode-check.test.js
+```
+
+The setting and the check exist rather than only this paragraph, for the reason the rest of this
+file keeps giving: a rule that lives in a document is one somebody has to notice being broken.
+The only exceptions are the ones GSD already lists for `tdd="true"`: configuration-only files,
+documentation, glue code wiring already-tested components, styling. Anything that changes
+behaviour gets a failing test first; if a change seems to need an exception, say so and ask.
+
+GSD's vendored tooling under `.claude/` is gitignored and reinstallable with
+`npx @opengsd/gsd-core@latest --claude --local --profile=full`. `.claude/guardrails/` and
+`.planning/` are tracked on purpose.
+
 Network-dependent code (IMAP, SMTP, POP3, Google, Microsoft Graph, CalDAV, iCal subscriptions) is
 tested against parsing and error-mapping logic, not live servers. Keep the transport thin and the
 parsing pure so the pure part is testable.
