@@ -1885,10 +1885,9 @@ fn documents_people_read() -> Vec<PathBuf> {
 }
 
 /// Pages about how this is built, where a machine name is the subject.
-const FOR_SOMEBODY_BUILDING_IT: [&str; 7] = [
+const FOR_SOMEBODY_BUILDING_IT: [&str; 6] = [
     "docs/architecture.md",
     "docs/contributing.md",
-    "docs/wxdragon-integration.md",
     "docs/integration-guide.md",
     "docs/accessibility-framework-evaluation.md",
     "docs/principles.md",

@@ -1,7 +1,14 @@
 # Requirements Backlog
 
 _Consolidated from 11 requirements and specification documents._
-_Last updated: 2026-03-01_
+_Last updated: 2026-08-29. Previously 2026-03-01, and five months stale: it
+claimed all v1.0 requirements were implemented while listing as outstanding
+several things that had shipped._
+
+Read [what does and does not work](../IMPLEMENTATION_STATUS.md) for the current
+answer. This document is the backlog, not the status: it says what is wanted and
+whether it exists, not whether it has been used against a real account. Nothing
+that writes to a mail server has been.
 
 This document replaces the individual `*_REQUIREMENTS.md`, `PHASE8_*`, `PHASE9_*`, `PHASE10_*`, `PHASE11_*`, and `MISSING_FUNCTIONALITY_REQUIREMENTS.md` files that previously lived in the repository root.
 
@@ -9,13 +16,20 @@ This document replaces the individual `*_REQUIREMENTS.md`, `PHASE8_*`, `PHASE9_*
 
 ## Completed Requirements
 
-All v1.0 feature requirements have been implemented. The original requirement documents are preserved here as a summary for traceability.
+The original requirement documents are preserved here as a summary for
+traceability. "Done" below means the code is present and reached. It does not
+mean it has been exercised against a real mail account, and the items marked
+**Done (plumbing)** were never anything else.
+
+One correction to the 2026-03-01 text: OAuth tokens are no longer persisted in
+SQLite. They live in the Windows credential store, and the database holds no
+secrets at all.
 
 ### Contact Management (formerly Phase 8)
 Layered architecture with SQLite-backed CRUD, fuzzy search, vCard 3.0 import/export, composition-time autocomplete, contact groups and distribution lists. **Status: Done.**
 
 ### OAuth 2.0 Authentication (formerly Phase 9)
-Provider metadata for Gmail and Outlook, authorization flow UI, real HTTP token exchange via reqwest, token refresh with persistence in SQLite. **Status: Done.**
+Provider metadata for Gmail and Outlook, authorization flow UI, real HTTP token exchange via reqwest, token refresh, with the tokens kept in the Windows credential store rather than SQLite. **Status: Done.**
 
 ### Offline Mode & Queued Send (formerly Phase 10)
 Explicit offline mode toggle in View menu, SQLite outbox queue with CRUD, queue flush to SMTP on reconnect, outbox count and sync status indicators in the status bar. **Status: Done.**
@@ -45,16 +59,17 @@ Storage, database, cache, search (FTS), and attachment subsystems all moved from
 
 ## Remaining Work (Post-v1.0)
 
-These items are not blockers for v1.0 release but are tracked for future development.
+Checked against the tree on 2026-08-29. Ten items below had shipped and were
+still listed as outstanding; each now says so and where it lives.
 
 ### Near-Term Enhancements
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| Full PGP encryption/decryption | Sign and encrypt messages (currently detection-only) | Medium |
+| Full PGP encryption/decryption | Still detection only. S/MIME signature checking has since been built (`service/signed_mail.rs`); PGP has not | Medium |
 | Attachment inline preview | Preview images, PDFs, text files in-app | Medium |
-| Saved search / virtual folders | Persist search queries as virtual mailboxes | Low |
-| Color-coded tags | Visual tag indicators in message list | Low |
+| ~~Saved search / virtual folders~~ | Built. `application/saved_searches.rs`; saved searches appear in the folder tree | Done |
+| ~~Color-coded tags~~ | Built. `application/tagging.rs`; labels show in the mail list | Done |
 | Folder favorites | Pin frequently used folders | Low |
 | Spam filtering integration | Hook into external spam classifier | Low |
 
@@ -62,7 +77,7 @@ These items are not blockers for v1.0 release but are tracked for future develop
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| Virtual scrolling | Efficient rendering for 100K+ message folders | High |
+| ~~Virtual scrolling~~ | Built. The message list and every PIM list run in native virtual mode | Done |
 | Memory profiling | Target <150MB with 1000 cached messages | Medium |
 | Startup time | Target <2 seconds cold start | Medium |
 | Large mailbox testing | Validate with real-world 100K+ mailboxes | Medium |
@@ -71,9 +86,9 @@ These items are not blockers for v1.0 release but are tracked for future develop
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| Windows installer (MSI/NSIS) | Packaged installer with desktop shortcuts | High |
+| ~~Windows installer~~ | Built, as Inno Setup rather than MSI or NSIS. See `installer/` | Done |
 | Auto-update mechanism | Check for and apply updates | Medium |
-| Theme customization | Dark mode, high contrast themes | Medium |
+| ~~Theme customization~~ | Built. `presentation/theme.rs`; every module and dialog is painted | Done |
 | Linux/macOS validation | Verify cross-platform builds | Low |
 
 ### Future Protocols & Integrations
@@ -81,10 +96,10 @@ These items are not blockers for v1.0 release but are tracked for future develop
 | Item | Description | Priority |
 |------|-------------|----------|
 | Exchange Web Services (EWS) | Native Exchange protocol for calendar/contacts | Low |
-| Microsoft Graph API | Modern Office 365 integration | Low |
-| CardDAV / CalDAV | Contacts and calendar sync protocols | Low |
+| ~~Microsoft Graph API~~ | Built, for contacts, calendar and tasks. `service/microsoft_graph.rs` | Done |
+| CalDAV | Client built and signs in (`service/caldav.rs`); never run against a real server. CardDAV not built | Medium |
 | JMAP protocol | Modern, efficient email protocol | Low |
-| Calendar integration | Parse and display iCalendar invites | Medium |
+| ~~Calendar integration~~ | Built. Invitations are read, answered and filed | Done |
 | Plugin/extension system | Third-party extensibility | Low |
 
 ---

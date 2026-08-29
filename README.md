@@ -79,7 +79,6 @@ cargo build
 - [Brand](docs/brand.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
-- [How the interface is built](docs/wxdragon-integration.md)
 
 ### Development history
 

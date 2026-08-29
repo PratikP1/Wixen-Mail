@@ -221,6 +221,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   there to try again with. Other changes made in the same sitting are saved
   either way; a refusal used to throw them away with it.
 
+- **Seven things the documentation said that were not true.** These pages ship
+  inside the installer and sit beside the program, so a page that describes a
+  feature you do not have is a page that wastes your time. A cross-document
+  comparison found seven contradictions, and each was settled against the code
+  rather than by picking the newer page.
+
+  The roadmap ticked threaded view as complete. It is not: the Thread View item
+  on the View menu is disabled, and the roadmap now says so and points at the
+  conversation window, which does work. Two pages promised keyboard shortcut
+  customisation; shortcuts are fixed, and the two pages that said otherwise are
+  corrected or gone. The accessibility target is stated as WCAG 2.2 Level AA
+  everywhere now, where three pages said 2.1. The requirements backlog was five
+  months stale and listed as outstanding ten things that had shipped, including
+  saved searches, virtual scrolling, theme colours, the installer and reading
+  calendar invitations.
+
+  "How the interface is built" has been retired. It called the interface toolkit
+  a planned library, described a source file deleted in February, and promised
+  the shortcut customisation that does not exist. The integration guide has been
+  rewritten: it was a three-phase build plan whose phases all finished, counting
+  64 tests against the 5,269 that run today.
+
 - **When a key does nothing, the reason is no longer said as a progress note.**
   Twenty-eight of these went to the status line: "Choose a message first", "Add
   an account first", "No saved drafts", why a move was refused, why a copy

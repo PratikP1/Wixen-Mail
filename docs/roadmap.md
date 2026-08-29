@@ -77,7 +77,10 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Message List View
 - [x] Display message list with sortable columns
-- [x] Thread view with conversation grouping
+- [ ] Thread view with conversation grouping. The Thread View item is on the
+      View menu and disabled: the data model carries the identifiers, and
+      nothing groups the list by them. Opening one conversation works. Press
+      Enter on a message to see the messages around it as a tree.
 - [x] Unread/starred message indicators
 - [x] Quick search/filter functionality
 
@@ -228,7 +231,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - Fast startup time (< 2 seconds)
 - Low memory footprint (< 100MB idle)
 - 100% keyboard accessible
-- WCAG 2.1 Level AA compliance
+- WCAG 2.2 Level AA compliance
 - Support for major screen readers (NVDA, JAWS, Narrator)
 
 ## Contributing

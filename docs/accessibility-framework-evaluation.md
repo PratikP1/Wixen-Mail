@@ -1,3 +1,10 @@
+---
+type: ADR
+status: Superseded
+superseded_by: docs/development/wxdragon-migration.md
+date: 2026-07-26
+---
+
 > **Superseded, 2026-07-26.** This document evaluated accessibility frameworks
 > for an egui user interface and recommended egui plus AccessKit. The project
 > does not use egui. It uses wxWidgets through wxdragon, where the controls are

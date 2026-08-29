@@ -78,7 +78,8 @@
   
 - **Keyboard Handler**:
   - Centralized keyboard shortcut management
-  - Custom key binding support
+  - Shortcuts are fixed. `register_shortcut` is called once at startup and
+    nothing in Settings reaches it, so there is no way to rebind a key.
   - Focus traversal management
   
 - **Focus Manager**:

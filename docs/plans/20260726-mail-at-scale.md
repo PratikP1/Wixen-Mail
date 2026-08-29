@@ -1,6 +1,44 @@
 # Mail at scale: receiving, storage, and a message list that holds 200,000 rows
 
-_Written 2026-07-26. Status: agreed, not yet implemented._
+_Written 2026-07-26. Status reviewed 2026-08-29 against the code, section by
+section below._
+
+## What is built, as of 2026-08-29
+
+Every step in [Sequence](#sequence) is now in the tree. The status line above
+said "not yet implemented" for a month after most of it landed, which is why a
+document ingest flagged this plan as contradicting the status documents.
+
+| Step | State | Evidence in the tree |
+|------|-------|----------------------|
+| 1. Split bodies out of the messages table | Built | `src/data/message_cache/bodies.rs` |
+| 2. Convert the message list to virtual mode | Built | `wx_app.rs` registers a virtual text callback; `message_rows.rs` and `pim_rows.rs` answer per cell |
+| 3. oauth2 5 and XOAUTH2 | Built | the IMAP AUTHENTICATE XOAUTH2 exchange, exercised by the loopback harness in `common/answering.rs` |
+| 4. async-imap behind a transport seam | Built | `async-imap 0.11.3` in `Cargo.toml`; the seam is not named `MailTransport` as this plan proposed |
+| 5. Body fetch on demand with an eviction budget | Built | `bodies.rs`: fetched when displayed, evicted least-recently-read past a budget |
+| 6. IDLE, then CONDSTORE incremental sync | Built | IDLE watch and renewal in `service/protocols/imap.rs`; `changed_since` in `application/mail_sync.rs` |
+| Columns: sorting, order, visibility | Built | `wx_columns::show_column_dialog` |
+
+Two things this plan describes are **not** in the tree, and nothing else records
+them, which is the reason to keep this document rather than retire it:
+
+- **Three tiers of storage.** `bodies.rs` keeps one cache under a size budget
+  with least-recently-read eviction. The hot, warm and cold split in
+  [Storage](#storage) was not built.
+- **Exchange.** [Exchange](#exchange) proposes a path; the Microsoft work that
+  shipped went through Graph for contacts, calendar and tasks, not through this.
+
+None of it has run against a real mail account. "Built" here means the code is
+present and reached, tested against parsing and against loopback servers. See
+[what does and does not work](../IMPLEMENTATION_STATUS.md).
+
+## Feedback channels, revisited
+
+The table at the end of this document listed earcons as Not started and braille
+as Nothing exists. Both have since been built: `presentation/accessibility/`
+carries `feedback.rs`, `sound_scheme.rs` and `sound_scheme_import.rs`, and
+speech and braille ride the one screen reader notification. The table is left as
+written, because it records what was true when the plan was made.
 
 This plan covers implementing IMAP, storing hundreds of thousands of messages,
 and presenting them in a list a screen reader user can actually work in. It also
