@@ -58,9 +58,17 @@ write path added by this milestone passes through that gate.
     tree announces for that folder becomes zero.
   - [D] Emptying a folder confirms first, naming the folder and the number of messages it is
     about to remove.
-  - [D] All five operations write to the server, so all five pass through `Allowed::mail`.
-    With mail writes off, which is what a new install has, each is refused with a message
-    saying why rather than attempted and failed.
+  - [D] An operation on a folder the server holds passes through `Allowed::mail`. With mail
+    writes off, which is what a new install has, it is refused with a message saying why
+    rather than attempted and failed.
+  - [D] An operation on a local folder does not. `src/application/local_folders.rs` exists
+    because a POP account has no server folders at all: POP3 is one mailbox, so sent, drafts,
+    trash and junk live on this computer. An IMAP account has one local folder too, the
+    outbox. `local_folders::is_local` already tells the two apart, and gating a purely local
+    operation behind a server-write permission would refuse a POP user their own folders for
+    a reason that does not apply to them.
+  - [D] Which of the two a folder is, is decided by `local_folders::is_local` and nowhere
+    else. A second answer to that question is how the two would drift.
 
 - [ ] **FOLDER-02**: Nested folder hierarchy in the folder tree.
   - Evidence: the inventory records the tree as one flat level, so `Archive/2026` reads as its
@@ -82,8 +90,14 @@ write path added by this milestone passes through that gate.
     folders", not built.
   - [D] A user pins and unpins a folder by keyboard from the folder tree, and pinned folders
     appear in a group at the top of the tree in a stable order.
-  - [D] Pinning is a local preference: it never writes to the server and never passes through
-    `Allowed`.
+  - [D] Pinning is a local preference first: it writes only on this computer, never to the
+    server, and never passes through `Allowed`. That is what this phase builds.
+  - [D] The stored shape allows IMAP subscription to back it later without a migration.
+    `src/service/protocols/imap.rs` line 840 already has `set_subscribed`, and subscription is
+    what other mail clients mean by marking a folder you care about, so the two will meet.
+  - [D] Which wins when they disagree is recorded as a decision before the second half is
+    built, not left to whichever code path runs last. A local pin and a server subscription
+    are two answers to one question, and this project has been bitten by that shape before.
   - [D] The pinned group announces itself as a group, so a screen reader user can tell a
     pinned copy of Inbox from the real one.
 
@@ -361,17 +375,32 @@ write path added by this milestone passes through that gate.
   - [D] The Action menu carries move and copy because they act on the selection; File, New
     stays for making things.
 
-- [ ] **PIM-03**: Show recurring events across weeks and months.
-  - Evidence: the changelog records the week and month recurring display as switched off and
-    saying so. `src/application/occurrences.rs` and `repeating.rs` hold the recurrence model;
-    `src/application/calendar.rs` is 11,154 lines.
-  - [S] `docs/changelog.md` line 1425: weeks and months is not built, so both say so and are
+- [ ] **PIM-06**: Week and month calendar views. Reviewed in 2026-08-29: these do not exist,
+  and PIM-03 assumed they did.
+  - Evidence: `src/presentation/wx_calendar_module.rs` lines 46 to 57 say the views are not
+    built and disable Prev and Next, naming them "Previous period, not built yet". The
+    calendar is one flat event list loaded by account, not by date range.
+  - [S] `docs/changelog.md` line 1424: "Day, Week and Month, three views this program cannot
+    draw".
+  - [D] A week view and a month view exist, each showing the events in its range, reachable
+    and navigable by keyboard alone.
+  - [D] Prev and Next are enabled in those views and move by one period, announcing the range
+    they moved to rather than only redrawing.
+  - [D] A screen reader can work through a view's events in date order without the user
+    having to reconstruct the grid from cell labels. This is the criterion most likely to need
+    a real screen reader run to settle, and it is why this is its own requirement.
+
+- [ ] **PIM-03**: Show recurring events across the calendar's date ranges. Depends on PIM-06.
+  - Evidence: `src/application/occurrences.rs` and `repeating.rs` hold the recurrence model;
+    `src/application/calendar.rs` is 11,154 lines. The display this expands into is PIM-06's
+    work, not this one's.
+  - [S] `docs/changelog.md` line 1448: weeks and months is not built, so both say so and are
     switched off.
   - [S] Two stated limitations already sit next to this: editing or deleting a series needs
     the series already stored locally, and a weekly rule naming two or more days is a named
     known limitation of the recurrence editor.
-  - [D] A recurring event appears on every date it occurs in week and month views, expanded
-    from the rule rather than from stored copies.
+  - [D] A recurring event appears on every date it occurs in whichever view is showing,
+    expanded from the rule rather than from stored copies.
   - [D] An exception to a series (moved or cancelled occurrence) shows on the date it really
     is, and announces that it differs from the series.
   - [D] The two stated limitations above are either fixed or restated in the product where the
@@ -382,15 +411,48 @@ write path added by this milestone passes through that gate.
     in `src/data/message_cache/` exist; there is no `notes_sync.rs` beside the other five
     `*_sync.rs` files.
   - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer.
-  - [D] Which target a note syncs to is decided and written down before anything is built,
-    because Google Keep, Microsoft To Do notes, IMAP-backed notes and CardDAV notes are four
-    different answers with four different shapes.
-  - [D] A note edited on this computer reaches the chosen target, and one changed at the
-    target reaches this computer, through the same `*_sync.rs` shape the other four use,
-    including its own sync marker.
+  - **Decided 2026-08-29 by Pratik.** Not one target. A note has a backend chosen by the
+    account it belongs to, the local note itself is a first-class Markdown document, and the
+    seam is shaped so a hosted service can be added later without a migration. That is three
+    pieces of work, split into PIM-04, PIM-07 and PIM-08 below.
+  - [D] A note is a Markdown document. `pulldown-cmark` is already a dependency and
+    `application/long_text.rs`, `sign_off.rs` and `presentation/editor_document.rs` already
+    render Markdown, so the content model reuses what signatures use rather than inventing a
+    second one.
+  - [D] The stored form is the Markdown source. What a note round-trips through any backend is
+    that source, so a note edited here and read back is byte-identical when nothing changed.
+  - [D] A screen reader reads the rendered structure, not the raw source: headings announce as
+    headings and lists as lists, the way a contact's notes already do.
   - [D] Note sync goes through `Allowed::personal_information`.
-  - [D] Until the target is live, the settings screen says notes do not sync yet, rather than
+  - [D] Until a backend is live, the settings screen says notes do not sync yet, rather than
     offering a switch that does nothing.
+
+- [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
+  - Evidence: nothing exists for any backend. `src/service/caldav.rs` handles no VJOURNAL and
+    `src/service/microsoft_graph.rs` covers no OneNote, both checked 2026-08-29. The five
+    existing `*_sync.rs` files are the shape to follow.
+  - [D] One trait or enum decides where a note goes, and the account's protocol picks the
+    backend. An account with no notes backend keeps its notes local and says so, rather than
+    the feature being present or absent depending on who the user is.
+  - [D] The backends are added one at a time, each behind the same seam, and adding the second
+    changes nothing about the first. Which one comes first is a scheduling decision, not an
+    architectural one.
+  - [D] A note that cannot be sent is not silently dropped. It stays local, is marked as
+    waiting, and the sync summary says why, the way a calendar change that cannot be sent
+    already does.
+  - [D] No backend claims to work against a real server until it has run against one. Nothing
+    in this project has.
+
+- [ ] **PIM-08**: The notes seam is ready for a hosted service without a migration.
+  - Evidence: none. This is preparation for a service that does not exist yet, so it is the
+    requirement most at risk of building for an imagined shape.
+  - [D] The seam PIM-07 defines takes a hosted backend as one more implementation, with no
+    change to the stored form and no migration of existing notes.
+  - [D] What the seam assumes about a backend is written down: identity, conflict resolution,
+    and what happens to a note whose backend is removed from an account.
+  - [D] Nothing in this milestone ships a hosted client, a network call to one, or a setting
+    offering one. Preparing for it means the seam does not forbid it, not that anything half
+    exists. A switch that does nothing is the failure this project has fixed repeatedly.
 
 - [ ] **PIM-05**: CardDAV for contacts.
   - Evidence: `src/service/caldav.rs` (8,149 lines) covers calendars only.
@@ -491,14 +553,17 @@ write path added by this milestone passes through that gate.
   - [D] The check compares the plain `0.x.y` version and ignores `+build` metadata, matching
     `src/common/version.rs` and SemVer ordering.
 
-- [ ] **SHIP-03**: Desktop and Start menu shortcuts.
-  - Evidence: no shortcut creation in `src/` or referenced from the Inno Setup script beyond
-    what Inno does by default. Listed alongside auto-update in the inventory.
+- [ ] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
+  the shortcuts themselves are already built.
+  - Evidence: `installer/Wixen-Mail-Setup.iss` line 84 declares a `desktopicon` task, and the
+    `[Icons]` block at lines 123 to 125 creates both the Start menu entry and the desktop
+    shortcut. Inno removes both on uninstall. `SetupIconFile=..ssets\icon.ico` is set at
+    line 49 and `assets/icon.ico` exists, but neither `[Icons]` entry sets `IconFilename`, so
+    the shortcuts use whatever icon the executable carries. Inno creates no shortcuts by
+    default; the previous evidence line said it does, inherited from the inventory.
   - [S] `docs/development/requirements-backlog.md`, platform, priority Medium.
-  - [D] Installing offers a desktop shortcut and creates a Start menu entry, both with the
-    application's real name and icon.
-  - [D] Uninstalling removes both, leaving nothing behind that a screen reader will still read
-    from the Start menu.
+  - [D] Both `[Icons]` entries set `IconFilename` to the bundled icon, so the shortcut a user
+    sees in the Start menu and on the desktop is the application's own.
 
 - [ ] **SHIP-04**: Encrypt the local cache, or decide not to and say so once and clearly.
   - Evidence: `src/data/message_cache/mod.rs` stores mail in plain SQLite.
@@ -510,11 +575,16 @@ write path added by this milestone passes through that gate.
   - [S] Secrets are already out of the database: passwords and tokens live in the Windows
     credential store through `keyring`, so the database can be copied without carrying
     credentials.
-  - [D] The decision is made and recorded before anything is built: encrypt the whole database,
-    or state the limitation as permanent for this milestone.
-  - [D] If it is encrypted, the key lives in the OS credential store like every other secret,
-    an existing unencrypted database migrates without losing a message, and losing the key is
-    explained to the user before it can happen.
+  - **Decided 2026-08-29 by Pratik: not encrypted, and said so once and clearly.** The
+    database stays copyable and backup-safe, which the design leans on, and the protection
+    rests on Windows keeping other users out of the folder and on full-disk encryption for a
+    stolen drive. The remaining work is saying that where a user meets it, not building
+    anything.
+  - [D] The product says it plainly where somebody deciding whether to trust it reads: the
+    first-run screen and the page about what is stored, not only in the changelog.
+  - [D] It says what the limitation is and is not. Another user of the same computer is kept
+    out by Windows; somebody who takes the drive out is not, unless the disk itself is
+    encrypted.
   - [D] If it is not encrypted, the wording in the product and the docs is unchanged and this
     requirement closes as a recorded decision, not as a silent drop.
 

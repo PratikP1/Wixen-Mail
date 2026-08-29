@@ -93,7 +93,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 5: The other five modules keep up
 **Goal**: Contacts, calendar, tasks, notes and reminders support the same moves mail already does, and the two that currently go nowhere get somewhere to go.
 **Depends on**: Nothing new; can run alongside Phases 1 to 4
-**Requirements**: PIM-01, PIM-02, PIM-03, PIM-04, PIM-05
+**Requirements**: PIM-01, PIM-02, PIM-03, PIM-04, PIM-05, PIM-06, PIM-07, PIM-08
 **Success Criteria** (what must be TRUE):
   1. A task moves to another list in one action and ends in exactly one list, including when the move fails at the provider.
   2. Move and copy work in contacts, calendar, tasks, notes and reminders with the same two keyboard commands in every module, on the Action menu because they act on the selection.

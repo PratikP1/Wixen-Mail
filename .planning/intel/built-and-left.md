@@ -88,7 +88,7 @@ Present and reached, never run against the real thing. This is the section where
 | QRESYNC, so a folder resumes rather than re-lists its UIDs | absent from `src/service/protocols/imap.rs` | roadmap Phase 2, unticked |
 | Gmail X-GM-THRID conversations and X-GM-RAW server-side search, blocked on the IMAP library | — | roadmap Phase 2; changelog Known limitations |
 | Moving a task between lists; move and copy for anything but mail | no move-between-lists path in `src/application/tasks_sync.rs` | IMPLEMENTATION_STATUS; ALPHA_TESTING |
-| Holding one connection open. Every body fetch and every attachment save opens its own connection and signs in again | `src/application/opening.rs`, `src/application/attaching.rs` | changelog Known limitations: "Holding one connection open needs reconnect handling that is not built" |
+| Holding one connection open. Every body fetch and every attachment save opens its own connection and signs in again | `src/presentation/wx_app.rs` pairs `connect_imap` with `disconnect_imap` at 11819/11852, 11980/12000 and 13008/13034; `src/application/mail_controller.rs` line 278 | changelog Known limitations: "Holding one connection open needs reconnect handling that is not built" |
 | Handing an attachment to Windows to open. Deliberate; PDFs are the exception and are read in-app | `src/service/pdf.rs` is the only reader | changelog Known limitations |
 | Full PGP encryption and decryption. Detection only | `src/service/security.rs` | requirements-backlog Near-Term, Medium |
 | Attachment inline preview for images and text | — | requirements-backlog Near-Term, Medium |
@@ -96,13 +96,13 @@ Present and reached, never run against the real thing. This is the section where
 | Drag-and-drop attachment insertion and inline image insertion | no `DropTarget` or `OnDropFiles` in `src/` | roadmap Phase 4, unticked |
 | Spell check while typing, jumping between misspellings, native screen reader announcement. Waits on a rich editor control | `src/application/spell_session.rs` checks on send only | roadmap Phase 4, marked partial |
 | Network status detection to toggle offline mode automatically; sync conflict resolution | no connectivity probe in `src/` | roadmap Phase 7, unticked |
-| Auto-update mechanism; desktop shortcuts | no update check in `src/` | roadmap Phase 8; requirements-backlog Platform, Medium |
+| Auto-update mechanism | no update check in `src/`. Desktop and Start menu shortcuts are built: `installer/Wixen-Mail-Setup.iss` declares a `desktopicon` task at line 84 and creates both in `[Icons]` at 123 to 125 | roadmap Phase 8; requirements-backlog Platform, Medium |
 | Per-event feedback overrides. They exist in the model with no interface | `src/presentation/accessibility/feedback.rs` | changelog Known limitations |
 | Incremental rethreading as mail arrives. Rethreading happens when a folder is opened | `src/application/threading.rs` | changelog Known limitations |
 | Junk folder sync. Deliberate; the folder can still be opened | — | changelog Known limitations |
 | Whole-mailbox fetch. Check Mail brings the newest 500 per folder, the rest via `Shift+F9` a page at a time | `src/application/mail_sync.rs` | changelog Known limitations |
 | Localised dates. Month names and relative wording are English on every machine | `src/presentation/date_display.rs` | changelog Known limitations, line 6946 |
-| Calendar recurring-event display across weeks and months. Switched off and says so | — | changelog line 1425 |
+| Calendar recurring-event display across weeks and months. The week and month views themselves do not exist: `src/presentation/wx_calendar_module.rs` lines 46 to 57 disable Prev and Next as "not built yet" | — | changelog line 1448 |
 | Notes syncing anywhere. They stay on this computer | notes are cache-only | ALPHA_TESTING |
 | Local cache encryption | `src/data/message_cache/mod.rs` | ALPHA_TESTING; CONCERNS |
 | A signed installer | `installer/` | ALPHA_TESTING: "The installer is not signed" |

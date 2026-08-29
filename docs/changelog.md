@@ -39,9 +39,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     saves a search of that kind yet.
   - The message list shows the newest 500 results. The count that is read out is
     the true one, and it says "The newest 500 are shown" when there are more.
-  - The In box on the Search window (All Folders, Current Folder, Subject Only,
-    From Only) is still not read by anything, so a saved search always covers
-    the whole account. That is a defect in Search, not in saving one.
+  - A saved search remembers the folder it was made in, but not whether you
+    asked for Subject Only or From Only. Those two narrow a live search
+    correctly; a saved one re-runs across the subject, the sender and the
+    recipients. Saving a From Only search and getting subject matches back is
+    the case to watch.
 
 - **A saved search says when it cannot run, instead of saying it found nothing.**
   A search written by a newer version of Wixen Mail, or one naming a part of a

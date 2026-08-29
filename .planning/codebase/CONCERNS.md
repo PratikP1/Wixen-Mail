@@ -68,14 +68,19 @@ observed during this pass and marked as such.
   first real run against Gmail, Outlook/Graph, or a CalDAV server is the first time these paths
   are exercised end to end.
 
-### Search "In box" scope selector is wired but not read
+### A saved search does not carry the field restriction the live search honoured
 
-- Stated: `docs/changelog.md` (Unreleased, Saved Searches section): "The In box on the Search
-  window (All Folders, Current Folder, Subject Only, From Only) is still not read by anything, so
-  a saved search always covers the whole account. That is a defect in Search, not in saving one."
-- Impact: a UI control exists and presents choices to the user that have no effect. This is a
-  "wired but unexercised by its own logic" defect — the opposite of dead code (live code, dead
-  effect).
+- Corrected 2026-08-29. The changelog previously said the In box was "not read by anything".
+  It is: `wx_app.rs` line 4071 takes `looking_in` from the dialog, line 4085 passes it on, and
+  `data/message_cache/searching.rs` branches on it at lines 403, 454 and 466
+  (`only_the_column`, `columns_read_exactly`, `folder`). A live search honours all four
+  choices.
+- What is actually missing is narrower. `SavedSearch` (`application/saved_searches.rs` line
+  543) stores `folder` but has no field for Subject Only or From Only, and `wx_app.rs` line
+  4078 keeps only the typed string in `last_mail_search`, so Save This Search never sees the
+  restriction.
+- Impact: a saved From Only search re-runs across subject, sender and recipients, returning
+  more than it was asked for. The control is read; the saving drops half of what it read.
 
 ### Saved search cannot express "search inside message text that was cleared"
 
