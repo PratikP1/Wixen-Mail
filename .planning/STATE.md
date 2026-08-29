@@ -1,6 +1,12 @@
 ---
-gsd_state_version: '1.0'
+gsd_state_version: 1.0
+current_phase: 1
+current_phase_name: Folders and conversations
 status: planning
+stopped_at: Phase 1 context gathered
+last_updated: "2026-08-29T23:51:34.170Z"
+last_activity: 2026-08-29, all eight phases' acceptance criteria reviewed against the tree
+state_head: 1482488ab8a5dfef542554395b8545df7fb409e9
 progress:
   total_phases: 8
   completed_phases: 0
@@ -22,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 Phase: 1 of 8 (Folders and conversations)
 Plan: none yet
-Status: All eight phases reviewed. Ready to plan.
+Status: Phase 1 discussed, CONTEXT.md written. Ready to plan phase 1.
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
 
@@ -30,6 +36,7 @@ Status: All eight phases reviewed. Ready to plan.
   accounts, which have no server folders at all, and for the IMAP outbox.
   `local_folders::is_local` already draws that line and is now named as the single place that
   decides it. Server folders keep the gate; local ones do not.
+
 - FOLDER-03 keeps local pinning as this phase's work, and now says the stored shape must let
   IMAP subscription back it later, with the decision about which wins recorded before the
   second half is built rather than settled by whichever code path runs last.
@@ -65,6 +72,7 @@ Progress: [..........] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: not measured
 - Total execution time: not measured
@@ -76,6 +84,7 @@ Progress: [..........] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: none yet
 - Trend: not measured
 
@@ -91,8 +100,10 @@ ahead:
 - No EWS. Microsoft blocks third-party EWS from 1 October 2026. Exchange goes through Graph.
 - Writes split into `mail` and `personal_information` in `src/application/allowed.rs`, with
   three places that must agree. Mail writes are off for a new install.
+
 - The message list stays native virtual mode, because only the native control gives UI
   Automation the real set size.
+
 - The cached mail database is not encrypted, and the docs say so. Phase 7 decides whether that
   changes.
 
@@ -106,16 +117,28 @@ None yet.
   marked **[D]** was derived by a model from the code and the status documents, not stated by
   Pratik or by a source, so each was read back against the tree. The review's own record, with
   what each correction changed, is under Current Position above.
+
 - ~~**Row count discrepancy.**~~ Resolved 2026-08-29. The file has 33 rows and 33 is right.
   The 27 came from the inventory agent's own summary of the document it had just written, and
   was passed into the roadmapper's brief without anyone counting the file. Nothing was dropped:
   all 33 are accounted for in REQUIREMENTS.md. Raising it rather than reconciling to the number
   in the brief is what kept six rows in scope.
+
 - ~~**Phase 5, PIM-04**~~ answered 2026-08-29: not one target. A backend chosen by account
   type behind one seam, the local note a first-class Markdown document, and the seam shaped so
   a hosted service can be added later without a migration. Split into PIM-04, PIM-07, PIM-08.
+
 - ~~**Phase 7, SHIP-04**~~ answered 2026-08-29: the cache is not encrypted. The remaining work
   is saying so where a user meets it, not building anything.
+
+- **Phase 1 grew in discussion, and the roadmap has not caught up.** Its five
+  success criteria describe nesting a flat tree. `01-CONTEXT.md` describes one
+  branch per account, a shared "On this computer" group whose folders belong to
+  no account, a migration that moves existing mail between rows, five settings,
+  and three IMAP verbs that do not exist yet (CREATE, RENAME, DELETE mailbox).
+  Nothing is outside the phase's domain. The planner is told in CONTEXT.md's
+  boundary section; the roadmap's criteria should be brought into line before
+  the phase is verified against them.
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
   otherwise, and none may be rewritten to.
@@ -133,7 +156,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-29
-Stopped at: all eight phases reviewed, 44 requirements traced, six criteria corrected for being
-untestable as written. Nothing planned or executed yet.
-Resume file: None
+Last session: 2026-08-29T23:51:34.160Z
+Stopped at: Phase 1 context gathered. 38 decisions, 5 settings, nothing planned
+or executed yet.
+Resume file: .planning/phases/01-folders-and-conversations/01-CONTEXT.md
