@@ -238,7 +238,6 @@ an unencrypted machine. See [Installing and uninstalling](installing.md).
   - Application preferences
   - Account settings
   - UI customization
-  - Keyboard shortcuts
   - Accessibility options
   - Privacy settings
 

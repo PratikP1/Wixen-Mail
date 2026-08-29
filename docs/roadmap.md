@@ -133,7 +133,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ### Message Organization
 - [x] Tagging system
 - [x] Message flags and markers (read, starred, deleted)
-- [ ] Color coding
+- [x] Color coding
 - [ ] Folder favorites
 - [ ] Smart folders based on rules
 
@@ -188,7 +188,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ## Phase 8: Release Preparation (Planned)
 
 ### Packaging
-- [ ] Windows installer (MSI or NSIS)
+- [x] Windows installer, built with Inno Setup rather than MSI or NSIS
 - [ ] Auto-update mechanism
 - [ ] Desktop shortcuts
 

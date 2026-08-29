@@ -48,13 +48,15 @@ This document is a chronological record of the Wixen Mail implementation from pr
 
 - **HTML sanitization**: ammonia crate (XSS protection, JS removal, event handler stripping)
 - **HTML renderer**: `sanitize_html()`, `html_to_plain_text()`, alt text extraction, link extraction
-- **Accessibility for HTML**: Plain text fallback, WCAG 2.1 AA compliance
+- **Accessibility for HTML**: Plain text fallback, WCAG 2.1 AA compliance. The target is WCAG 2.2 AA now.
 - **Advanced features**: Message tagging, email signatures (multiple per account), advanced search (FTS, date/sender/attachment filters), message rules engine with regex
 
 ## Phase 6: Provider Support & Multi-Account
 
 - **Email provider presets**: Gmail, Outlook, Yahoo, iCloud, ProtonMail (5 presets, auto-detect from email domain)
-- **OAuth 2.0**: Authorization flow UI, provider-specific scopes, token refresh, SQLite persistence, real HTTP exchange via reqwest
+- **OAuth 2.0**: Authorization flow UI, provider-specific scopes, token refresh, real HTTP exchange via reqwest.
+  Tokens were persisted in SQLite at the time. They moved to the Windows credential store later, and the
+  database now holds no secrets at all.
 - **Multiple accounts**: CRUD with enable/disable, account switcher, per-account data isolation, compose-from selector
 
 ## Phase 7: Offline Mode & Polish

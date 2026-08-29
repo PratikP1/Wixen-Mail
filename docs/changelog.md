@@ -232,7 +232,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   conversation window, which does work. Two pages promised keyboard shortcut
   customisation; shortcuts are fixed, and the two pages that said otherwise are
   corrected or gone. The accessibility target is stated as WCAG 2.2 Level AA
-  everywhere now, where three pages said 2.1. The requirements backlog was five
+  wherever it is stated as current, where three pages said 2.1. Two pages that
+  record history still quote 2.1, and say beside it what the target is now. The requirements backlog was five
   months stale and listed as outstanding ten things that had shipped, including
   saved searches, virtual scrolling, theme colours, the installer and reading
   calendar invitations.
