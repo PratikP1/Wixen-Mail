@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 301 records have arrived since and have not been through it.
+# 309 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8972,3 +8972,107 @@ red = [
 # through any change made here. There is nothing in the tree to break that
 # would redden it. What guards the code that has to agree with that answer is
 # "Cut and Copy ask the box what is selected", above.
+
+[[guard]]
+name = "a sign-in the credential store would not keep is refused rather than reported as authorized"
+file = "src/service/oauth.rs"
+before = """        self.store_tokens(&tokens)?;"""
+after = """        let _ = self.store_tokens(&tokens);"""
+red = [
+    "service::oauth::when_the_credential_store_refuses::test_nothing_keeps_going_after_a_token_it_could_not_keep",
+]
+
+# The first measurement of this one reddened nothing, which is the whole reason
+# the check above it exists. The test beside it proves `store_tokens` reports a
+# refusal; nothing asked whether either caller reads the answer, and that is
+# exactly where the defect was. Taking the break by hand is what found it.
+
+[[guard]]
+name = "an account whose password or tokens will not go is not deleted"
+file = "src/data/message_cache/accounts.rs"
+before = """        if !still_stored.is_empty() {
+            return Err(Error::Security(format!("""
+after = """        if false {
+            return Err(Error::Security(format!("""
+red = [
+    "data::message_cache::accounts::tests::test_an_account_whose_secrets_will_not_go_is_not_deleted",
+    "data::message_cache::accounts::tests::test_one_account_that_will_not_go_does_not_throw_away_the_other_edits",
+]
+
+[[guard]]
+name = "a calendar whose sign-in could not be kept is not added"
+file = "src/application/calendar_source.rs"
+before = """    sign_in::store(&row.id, user_name, password)
+        .map_err(|_| "The sign-in could not be saved on this computer. Try again.".to_string())?;"""
+after = """    let _ = sign_in::store(&row.id, user_name, password);"""
+red = [
+    "application::calendar_source::tests::test_a_calendar_whose_sign_in_will_not_be_kept_is_not_added_at_all",
+]
+
+[[guard]]
+name = "a read or flagged state the database refused is put back on the row and said"
+file = "src/presentation/wx_app.rs"
+before = """        if let Some(row) = s.messages.iter_mut().find(|m| m.message_id == cache_id) {
+            (row.read, row.starred) = was;
+        }
+    }
+    let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+        "That change could not be saved on this computer, so it has been put back: {e}"
+    )));
+    false"""
+after = """        let _ = (s.messages.len(), was);
+    }
+    true"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_a_read_or_flagged_state_that_will_not_save_is_put_back_and_said",
+]
+
+[[guard]]
+name = "a refused move is said on the refusal channel rather than the status line"
+file = "src/presentation/managers.rs"
+before = """                Some(Moved::Refused(why)) => {
+                    let _ = tx.try_send(UIUpdate::CommandRefused(why));
+                    return;
+                }"""
+after = """                Some(Moved::Refused(why)) => Ok(why),"""
+red = [
+    "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
+]
+
+[[guard]]
+name = "a password left in the database by an older version is cleared on every load, not once"
+file = "src/data/message_cache/accounts.rs"
+before = """                if !in_the_row.is_empty()
+                    && let Err(e) = self.forget_stored_password(account_id)
+                {"""
+after = """                if false
+                    && let Err(e) = self.forget_stored_password(account_id)
+                {"""
+red = [
+    "data::message_cache::accounts::tests::test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too",
+]
+
+[[guard]]
+name = "the reason a command did nothing does not go out as a status line"
+file = "src/presentation/wx_app.rs"
+before = """        return send_refusal(tx, rt, "No message store is available");
+    };
+    let chosen = {"""
+after = """        return send_status(tx, rt, "No message store is available");
+    };
+    let chosen = {"""
+red = [
+    "presentation::wx_app::what_the_status_line_says::test_a_refusal_is_not_written_to_the_status_line",
+]
+
+[[guard]]
+name = "nothing but the seam and the uninstall sweep opens a credential entry of its own"
+file = "src/service/credentials.rs"
+before = """fn write_secret(account_id: &str, password: &str) -> Result<()> {
+    secret_store::write(KEYRING_SERVICE, account_id, password)"""
+after = """fn write_secret(account_id: &str, password: &str) -> Result<()> {
+    let _ = keyring::Entry::new(KEYRING_SERVICE, account_id);
+    secret_store::write(KEYRING_SERVICE, account_id, password)"""
+red = [
+    "service::secret_store::tests::test_only_the_seam_and_the_uninstall_open_a_credential_entry_of_their_own",
+]

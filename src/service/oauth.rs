@@ -1785,6 +1785,40 @@ mod when_the_credential_store_refuses {
     }
 
     #[test]
+    fn test_nothing_keeps_going_after_a_token_it_could_not_keep() {
+        // The test below proves `store_tokens` reports a refusal. It says
+        // nothing about whether anybody reads that answer, and the defect all
+        // this is about was exactly there: the write already knew it had
+        // failed, and the sign-in went on to return the tokens and be
+        // announced as authorized. Breaking the `?` in `authorize` reddened
+        // nothing, which is how this check came to be written.
+        //
+        // Neither caller can be run: one opens a browser and waits for a
+        // redirect, the other refreshes against a provider. So this reads them.
+        let shipped = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string("src/service/oauth.rs").expect("this file to be readable"),
+        );
+        let calls: Vec<&str> = shipped
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.contains("self.store_tokens("))
+            .collect();
+        assert_eq!(
+            calls.len(),
+            2,
+            "a sign-in is kept somewhere other than the browser flow and the \
+             refresh, or one of those two stopped keeping it: {calls:?}"
+        );
+        for call in calls {
+            assert!(
+                call.ends_with("?;"),
+                "a sign-in that could not be kept is carried on from rather than \
+                 refused, which is what made a failed write report success: {call}"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_security_problem_out_of_this_file_only_ever_means_one_thing() {
         // The account manager decides which of two sentences somebody hears by
         // asking which kind of problem it was: a sign-in the provider refused,
