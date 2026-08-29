@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/comparison.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How Wixen Mail compares",
+  "summary": "Compares Wixen Mail with Thunderbird and Outlook on accessibility findings, listing where it is behind and ahead.",
+  "scope": ["Thunderbird", "Outlook", "screen reader accessibility", "keyboard shortcuts", "missing features", "server write permissions"],
+  "cross_refs": ["docs/KEYBOARD_SHORTCUTS.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/development/wxdragon-migration.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "WXDragon Migration Progress",
+  "summary": "Records the completed migration of Wixen Mail's presentation layer from egui/eframe to wxdragon, with phase checklists and final file inventory.",
+  "scope": ["presentation layer", "wxdragon", "egui/eframe", "dialog windows", "accessibility re-integration", "wx_app.rs", "wx_compose.rs", "wx_managers.rs"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,31 @@
+{
+  "source_path": "docs/roadmap.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Wixen Mail - Project Roadmap",
+  "summary": "Phased roadmap of Wixen Mail features with completion checkboxes, plus vision and success metrics.",
+  "scope": [
+    "IMAP",
+    "SMTP",
+    "POP3",
+    "user interface",
+    "message composition",
+    "contact management",
+    "search and filtering",
+    "email rules",
+    "security features",
+    "OAuth 2.0",
+    "multi-account",
+    "offline mode",
+    "release packaging",
+    "CalDAV calendar integration",
+    "Microsoft Graph API",
+    "accessibility",
+    "screen readers"
+  ],
+  "cross_refs": ["contributing.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Status-tracking roadmap: checkbox feature lists across 8 phases, no ADR decision/consequences sections, no user stories or acceptance criteria, no API/schema contracts. 'Success Metrics' section (startup <2s, <100MB idle, 100% keyboard accessible, WCAG 2.2 Level AA, NVDA/JAWS/Narrator support) is a PRD-like signal but is one short section against a document that is otherwise progress tracking, so DOC over PRD. Threaded view is unticked with an explanation that the View menu item is disabled and nothing groups the list."
+}

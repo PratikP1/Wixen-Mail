@@ -1,0 +1,28 @@
+{
+  "source_path": "docs/privacy.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "What Wixen Mail sends, and where",
+  "summary": "Explains what data Wixen Mail stores locally, who it talks to, and which network-touching features are on or off by default.",
+  "scope": [
+    "local storage folder",
+    "credential store",
+    "message cache",
+    "attachments",
+    "signed mail raw copies",
+    "contact groups",
+    "LDAP directory lookup",
+    "free/busy lookup",
+    "calendar sync",
+    "remote images",
+    "phishing heuristics",
+    "Google Safe Browsing link checking",
+    "logging",
+    "uninstall"
+  ],
+  "cross_refs": ["installing.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

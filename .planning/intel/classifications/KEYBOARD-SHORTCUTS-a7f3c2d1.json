@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/KEYBOARD_SHORTCUTS.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Wixen Mail Keyboard Shortcuts",
+  "summary": "Reference of all keyboard shortcuts in Wixen Mail, organized by category with module navigation, item reading, and item actions.",
+  "scope": ["keyboard shortcuts", "module navigation", "mail", "contacts", "calendar", "reminders", "tasks", "notes", "item reading", "delete confirmation"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

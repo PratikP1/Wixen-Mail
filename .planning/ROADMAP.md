@@ -1,0 +1,190 @@
+# Roadmap: Wixen Mail
+
+## Overview
+
+Wixen Mail is at 0.45.0 with most of the product already built. This milestone is the
+outstanding work: the two "not built" sections of `.planning/intel/built-and-left.md`, and
+nothing else. The journey runs from the shape of the mailbox (folders a user can manage,
+nested where the server nests them, conversations collapsed to one row), through a search that
+says what it covers, through syncing a large mailbox without re-listing it, out to the
+composer and the reader, across the five modules that are not mail, into the channels the
+application speaks through, then to how a build reaches a user, and ends by replacing every
+estimate the project quotes with a measurement.
+
+Two things bound every phase. First, nothing here has ever run against a real mail account, so
+no success criterion claims behaviour against a live server. Second, anything that writes to a
+server passes through `src/application/allowed.rs`, where mail writes are off for a new
+install and three places must agree before anything goes out.
+
+Live-account validation of the thirteen "built but unproven" rows is real work and is
+deliberately not this milestone.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [ ] **Phase 1: Folders and conversations** - Make and manage folders, nest them, pin them, and collapse the list to one row per conversation
+- [ ] **Phase 2: Search that says what it covers** - The scope selector scopes, the coverage is disclosed, and a rule can be a folder
+- [ ] **Phase 3: Mail at scale on the wire** - Resume rather than re-list, hold one connection, fetch a whole mailbox, and never pick a conflict winner silently
+- [ ] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
+- [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere, recurring events across weeks and months, notes that sync, contacts over CardDAV
+- [ ] **Phase 6: How the application speaks** - Per-event feedback channels, dates in the user's language, and a scan that names what it cannot judge
+- [ ] **Phase 7: Installing, updating and what is stored** - A signed installer, an update check, shortcuts, the cache encryption decision, and the other two platforms
+- [ ] **Phase 8: Every number the project quotes** - Replace the estimates with measurements
+
+## Phase Details
+
+### Phase 1: Folders and conversations
+**Goal**: A user can shape and work through their mail by its own structure: folders they can make and manage, nested the way the server nests them, favourites at the top, and conversations collapsed to one row.
+**Depends on**: Nothing (first phase)
+**Requirements**: FOLDER-01, FOLDER-02, FOLDER-03, THREAD-01, THREAD-02
+**Success Criteria** (what must be TRUE):
+  1. A user creates, renames, deletes, marks read and empties a folder from the folder tree using the keyboard alone, and each is refused with a reason rather than attempted when mail writes are off.
+  2. A folder named `Archive/2026` reads as `2026` nested under `Archive`, with its level announced by the native tree control, and the tree remembers what was collapsed across a restart.
+  3. A user pins a folder and it stays in a labelled group at the top of the tree across a restart, without ever writing to the server.
+  4. The View menu's thread view is enabled, and switching it collapses the list to one row per conversation announcing subject, message count and unread count.
+  5. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 2: Search that says what it covers
+**Goal**: A search returns what the user asked for, and says plainly what it could not reach.
+**Depends on**: Phase 1
+**Requirements**: SEARCH-01, SEARCH-02, SEARCH-03
+**Success Criteria** (what must be TRUE):
+  1. Choosing Current Folder, Subject Only or From Only changes the results, and a saved search reruns with the scope it was saved with.
+  2. The results say which scope produced them, so a short list reads as a narrow scope rather than as an empty mailbox.
+  3. A search whose terms need body text says, before it runs, how much of the mailbox has body text stored, and offers to fetch the rest.
+  4. A user defines a smart folder from the same rule vocabulary the filters use, and it appears in the folder tree listing what matches now rather than a snapshot.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 3: Mail at scale on the wire
+**Goal**: Sync a large mailbox without re-listing it, without signing in again for every message, and without silently choosing a winner when two copies disagree.
+**Depends on**: Phase 1
+**Requirements**: SCALE-01, SCALE-02, SCALE-03, SCALE-04, SCALE-05, SCALE-06
+**Success Criteria** (what must be TRUE):
+  1. Reopening a folder that was synced before resumes from the stored sync state instead of re-listing every UID, and a `UIDVALIDITY` change announces the resync rather than doing it quietly.
+  2. Opening several messages in a row reuses one authenticated session, and a dropped connection reconnects once and says so if the retry also fails.
+  3. A user can ask for a whole folder, the list is usable from the first chunk, and progress speaks as one superseding topic instead of hundreds of updates.
+  4. A folder listing reads no body text, and an existing user database opens and migrates to the split storage without losing a message.
+  5. Losing the network puts the application offline and announces it once; regaining it offers to go back online rather than flushing the outbox unasked.
+  6. When a local copy and a server copy have both changed, the user is shown both and chooses, and nothing is pushed until they do.
+**Plans**: TBD
+
+### Phase 4: Writing and reading a message in full
+**Goal**: A message can be composed with everything it needs to carry, and read with everything it arrived carrying.
+**Depends on**: Nothing new; can run alongside Phases 1 to 3
+**Requirements**: WRITE-01, WRITE-02, WRITE-03, READ-01, READ-02, READ-03
+**Success Criteria** (what must be TRUE):
+  1. A file dropped on the composer attaches, and every drop action has a keyboard equivalent at least as quick to reach.
+  2. Inserting an inline image requires alt text or an explicit decorative mark, and both survive a draft save and reload.
+  3. Misspellings are marked as they are typed, a keyboard command moves between them, and landing on one speaks the word and its suggestions without flooding a long paste.
+  4. An image or a text attachment previews in the application, announcing any description the sender supplied and saying plainly when there is none.
+  5. A user reads a PGP-encrypted message they hold the key for, and a message that cannot be decrypted says why instead of reading as empty.
+  6. A spam classifier verdict is available to the filter rules that already exist, shown with its source named, never as a silent deletion.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 5: The other five modules keep up
+**Goal**: Contacts, calendar, tasks, notes and reminders support the same moves mail already does, and the two that currently go nowhere get somewhere to go.
+**Depends on**: Nothing new; can run alongside Phases 1 to 4
+**Requirements**: PIM-01, PIM-02, PIM-03, PIM-04, PIM-05
+**Success Criteria** (what must be TRUE):
+  1. A task moves to another list in one action and ends in exactly one list, including when the move fails at the provider.
+  2. Move and copy work in contacts, calendar, tasks, notes and reminders with the same two keyboard commands in every module, on the Action menu because they act on the selection.
+  3. A recurring event appears on every date it occurs in the week and month views, with a moved or cancelled occurrence shown on the date it really is.
+  4. A note edited here reaches its chosen sync target and a change at the target reaches here, or the settings screen says notes do not sync yet rather than offering a switch that does nothing.
+  5. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 6: How the application speaks
+**Goal**: The user controls what is spoken, brailled, sounded and shown, reads dates in their own language, and the project knows which parts of WCAG its scans can and cannot judge.
+**Depends on**: Phases 1 to 5, so the scan coverage list covers the surface those phases add
+**Requirements**: FEEDBACK-01, FEEDBACK-02, FEEDBACK-03
+**Success Criteria** (what must be TRUE):
+  1. A user sets Speech, Earcon, Braille and Visual independently for each of the sixteen events from the Settings Feedback tab, by keyboard, and the setting survives a restart.
+  2. Month names, day names and relative wording follow the machine's locale, falling back to English silently where there is no translation.
+  3. The accessibility scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so "roughly half" becomes a list.
+  4. The interactions only a human screen reader pass can cover are written down as a scoped list, and each of the five WebView2 findings is either fixed or recorded as upstream with the upstream named.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 7: Installing, updating and what is stored
+**Goal**: A build reaches a user without a publisher warning, tells them when there is a newer one, and is honest about what it leaves on their disk.
+**Depends on**: Nothing new; can run alongside Phases 1 to 6
+**Requirements**: SHIP-01, SHIP-02, SHIP-03, SHIP-04, SHIP-05
+**Success Criteria** (what must be TRUE):
+  1. The published installer carries a valid Authenticode signature and SmartScreen shows no unknown-publisher warning, verified against the published release asset rather than a local build.
+  2. The application can tell the user a newer version exists, as a deliberate action or an explicit setting, never as a silent background fetch, and declining leaves the current version working.
+  3. Installing offers a desktop shortcut and creates a Start menu entry, and uninstalling removes both.
+  4. The cache encryption question is answered and recorded: either the database is encrypted with its key in the OS credential store and an existing database migrates without losing a message, or the limitation is restated as permanent for this milestone.
+  5. The crate builds and the suite passes on Linux and macOS in CI, and those builds say at startup that the accessibility layer does nothing there.
+**Plans**: TBD
+
+### Phase 8: Every number the project quotes
+**Goal**: Replace the estimates with measurements, so no figure in the documents is both aspirational and undated.
+**Depends on**: Phase 3 for the scale targets; the rest can be measured against any build
+**Requirements**: PERF-01, PERF-02, PERF-03, PERF-04, PERF-05, PERF-06, PERF-07
+**Success Criteria** (what must be TRUE):
+  1. Memory with 1,000 cached messages, cold start to a usable message list, and idle memory each have a recorded number carrying the date, the machine and the build it came from.
+  2. The message list is exercised against 200,000 synthetic rows, the sort, filter and scroll paths each produce a number, and a test asserts the virtual text callback issues no SQLite query.
+  3. Line coverage and the test count in the status document match the current tree and carry the date they were taken, with the low-coverage areas attributed to the untested network transport rather than treated as a number to raise.
+  4. One whole-tree mutation run completes, its report is read after the process exits, and every survivor is either killed with a test or recorded with a reason.
+  5. Each target is either met or revised with the reason written down.
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1, 2, 3, 4, 5, 6, 7, 8. Phases 4, 5 and 7 depend on nothing
+the earlier phases produce and can be reordered if something makes that useful.
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Folders and conversations | 0/TBD | Not started | - |
+| 2. Search that says what it covers | 0/TBD | Not started | - |
+| 3. Mail at scale on the wire | 0/TBD | Not started | - |
+| 4. Writing and reading a message in full | 0/TBD | Not started | - |
+| 5. The other five modules keep up | 0/TBD | Not started | - |
+| 6. How the application speaks | 0/TBD | Not started | - |
+| 7. Installing, updating and what is stored | 0/TBD | Not started | - |
+| 8. Every number the project quotes | 0/TBD | Not started | - |
+
+## Notes on this roadmap
+
+**Granularity.** `.planning/config.json` sets no granularity, so the default is standard,
+which suggests four to six phases. This roadmap has eight. Compressing 40 requirements into
+five phases would have produced phases with no coherent verifiable capability, which the
+granularity guidance says to avoid: derive phases from the work, then use granularity as
+compression guidance rather than as a target. Two thin candidates were folded rather than left
+standing: composing and reading became one phase, and the accessibility scan coverage target
+joined the feedback phase instead of the measurement phase.
+
+**Blockers known at roadmap time.**
+- SHIP-01 is blocked on a certificate decision that is Pratik's.
+- PIM-04 needs a sync target chosen before anything can be built.
+- SHIP-04 is a decision before it is an implementation.
+- SCALE-01 depends on what async-imap 0.11.3 actually exposes; the fallback is already
+  specified in the mail-at-scale plan.
+- Nothing in Phases 1 to 8 can be finished against a real mail account, because no account has
+  ever been used. Where a requirement's last mile needs one, the criterion stops short and says
+  so.
+
+**Project skill in play.** `.claude/skills/cutting-a-release/SKILL.md` owns the mechanics of
+publishing: the Release workflow runs only on manual dispatch, the level chosen decides whether
+GitHub publishes a prerelease or a full release, and `docs/changelog.md` must carry an
+`[Unreleased]` entry for every user-visible change before dispatch. Phase 7 follows it rather
+than inventing a release path.
+
+**Every task in every phase is red, green, refactor.** `workflow.tdd_mode` is `true`, so every
+eligible task is `type: tdd` with RED and GREEN gate commits. `bash scripts/check.sh` must stay
+green: fmt, clippy with `-D warnings`, tests, release build.
+
+---
+*Roadmap created: 2026-08-29*

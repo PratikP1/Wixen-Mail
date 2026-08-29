@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/accessibility-framework-evaluation.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Accessibility Framework Evaluation for Wixen Mail",
+  "summary": "Evaluated Rust GUI frameworks and recommended egui plus AccessKit for Windows screen reader support; superseded by the wxdragon migration.",
+  "scope": ["egui", "AccessKit", "native-windows-gui", "Tauri", "Windows UI Automation", "screen reader support", "keyboard navigation", "WCAG 2.1 AA"],
+  "cross_refs": ["docs/development/wxdragon-migration.md", "ACCESSIBILITY.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Frontmatter declares type: ADR with status: Superseded and superseded_by: docs/development/wxdragon-migration.md, so locked is false. Content matches: trade-off comparison ending in one chosen path."
+}

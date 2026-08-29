@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/TROUBLESHOOTING.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Wixen Mail Troubleshooting Guide",
+  "summary": "Troubleshooting guide listing symptoms and step-by-step solutions for connection, authentication, provider, message, performance, accessibility, attachment, composition and search issues.",
+  "scope": ["connection issues", "authentication", "email providers", "messages and folders", "performance", "accessibility", "attachments", "composition", "search", "IMAP", "SMTP"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

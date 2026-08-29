@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/PROVIDER_SETUP.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Email Provider Setup Guides",
+  "summary": "Setup instructions for Gmail, Outlook, Yahoo, iCloud and ProtonMail accounts, and what mail, contacts, calendar and tasks sync per provider.",
+  "scope": ["Gmail", "Outlook / Office 365", "Yahoo Mail", "iCloud Mail", "ProtonMail Bridge", "IMAP", "POP", "contacts sync", "calendar sync", "tasks sync", "Google Tasks", "Microsoft To Do"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

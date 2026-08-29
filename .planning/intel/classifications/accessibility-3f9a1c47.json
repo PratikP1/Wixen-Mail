@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/accessibility.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Accessibility",
+  "summary": "Explains Wixen Mail's accessibility approach by audience: WCAG 2.2 AA target, screen reader support, contrast, colour, and themes, plus unfinished areas.",
+  "scope": ["WCAG 2.2 Level AA", "UI Automation", "MSAA", "NVDA", "Narrator", "JAWS", "braille", "contrast", "themes", "high contrast"],
+  "cross_refs": ["KEYBOARD_SHORTCUTS.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

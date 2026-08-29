@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/brand.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "The Wixen brand",
+  "summary": "Brand guidelines for the Wixen family: the fox mark, asset files, alt text, three-colour palette with contrast floors, type scale, and usage rules.",
+  "scope": ["Wixen brand mark", "brand assets (SVG, PNG, ICO)", "alt text", "colour palette", "contrast ratios", "type scale", "theme::brand", "scripts/make-brand.py", "scripts/make-icon.py"],
+  "cross_refs": ["assets/brand/wixen-fox.svg", "assets/brand/wixen-badge.svg", "assets/brand/wixen-wordmark.svg", "assets/brand/wixen-lockup.svg", "assets/brand/wixen.ico", "src/presentation/theme.rs", "scripts/make-brand.py", "scripts/render_svg.py", "scripts/make-icon.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Prose-heavy design guideline document with rationale. Contains some constraint-like content (contrast floors enforced as tests, family rule, minimum type multiplier) that reads SPEC-adjacent, but there are no APIs, schemas, or protocol definitions and no decision/consequences or user-story sections. Classified DOC."
+}

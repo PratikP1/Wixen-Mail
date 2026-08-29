@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/BETA_RELEASE.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How a release goes out",
+  "summary": "Runbook for publishing a Wixen Mail build: SmartScreen wording for testers, manual workflow_dispatch release trigger, quality gate, and published artifacts.",
+  "scope": ["release workflow", "workflow_dispatch", "version bump levels", "GitHub Release artifacts", "installer", "SmartScreen warning", "changelog"],
+  "cross_refs": ["changelog.md", "IMPLEMENTATION_STATUS.md", ".github/workflows/release.yml", "scripts/build-installer.sh", "installer/Wixen-Mail-Setup.iss"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

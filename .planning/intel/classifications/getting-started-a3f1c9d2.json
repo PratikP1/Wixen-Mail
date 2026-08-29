@@ -1,0 +1,24 @@
+{
+  "source_path": "docs/getting-started.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Getting started",
+  "summary": "Tutorial for new Wixen Mail users: what works, adding an account, the six areas and their keys, mailbox navigation, help.",
+  "scope": ["Wixen Mail", "account setup", "credential store", "Mail", "Contacts", "Calendar", "Reminders", "Tasks", "Notes", "keyboard shortcuts"],
+  "cross_refs": [
+    "contributing.md",
+    "ALPHA_TESTING.md",
+    "PROVIDER_SETUP.md",
+    "privacy.md",
+    "KEYBOARD_SHORTCUTS.md",
+    "TROUBLESHOOTING.md",
+    "USER_GUIDE.md",
+    "accessibility.md",
+    "IMPLEMENTATION_STATUS.md",
+    "changelog.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/IMPLEMENTATION_STATUS.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Implementation status",
+  "summary": "Status report on which Wixen Mail features work, which do not, and how verification is done.",
+  "scope": ["Wixen Mail", "SMTP sending", "IMAP receiving", "POP3", "local cache", "six modules", "accessibility", "provider sync", "quality gates", "mutation testing"],
+  "cross_refs": ["ALPHA_TESTING.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

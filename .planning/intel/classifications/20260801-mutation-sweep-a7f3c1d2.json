@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/plans/20260801-mutation-sweep.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Mutation sweep: everything not yet asked",
+  "summary": "Plan and running notes for a staged cargo-mutants sweep across remaining modules, with ordering rationale and findings so far.",
+  "scope": ["mutation testing", "cargo-mutants", "common", "service/protocols", "data", "application", "presentation", "mutants.toml", "scripts/mutants.sh"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "No frontmatter, no Decision/Consequences, no user stories or acceptance criteria, no API/schema contracts. Prose plus one ordering table and run instructions -> DOC (runbook/plan)."
+}

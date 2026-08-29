@@ -1,0 +1,31 @@
+{
+  "source_path": "docs/architecture.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Wixen Mail - Architecture Overview",
+  "summary": "Layered architecture overview of Wixen Mail covering UI, accessibility, application, service, and data layers, plus technology stack, threading, security, and testing.",
+  "scope": [
+    "presentation layer",
+    "accessibility layer",
+    "keyboard handler",
+    "account manager",
+    "message manager",
+    "search engine",
+    "IMAP client",
+    "SMTP client",
+    "POP3 client",
+    "security service",
+    "cache service",
+    "SQLite message cache",
+    "credential store",
+    "configuration manager",
+    "threading model",
+    "error handling",
+    "testing strategy"
+  ],
+  "cross_refs": ["installing.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Explanatory architecture overview: prose plus component responsibility lists, no Status field, no Decision/Consequences pair, no user stories or acceptance criteria. Contains Rust struct data models and a directory layout, which are SPEC-leaning signals, but they illustrate the design rather than define contracts, so DOC is dominant. Re-read from disk after the 2026-08-29 correction: the Keyboard Handler section now states shortcuts are fixed, register_shortcut is called once at startup, and nothing in Settings can rebind a key. The Configuration Manager settings list still names 'Keyboard shortcuts' as a settings category, which reads as tension with that correction; flagged for the synthesizer, not resolved here."
+}

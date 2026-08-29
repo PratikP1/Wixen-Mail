@@ -1,0 +1,29 @@
+{
+  "source_path": "docs/integration-guide.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How the mail protocols were connected to the interface",
+  "summary": "Record of how the four layers were joined, the mail_controller seam, and where the old three-phase plan's phases ended up.",
+  "scope": [
+    "presentation layer",
+    "application layer",
+    "service layer",
+    "data layer",
+    "mail_controller",
+    "UIUpdate",
+    "Tokio async runtime",
+    "IMAP",
+    "SMTP",
+    "message cache",
+    "HTML sanitization"
+  ],
+  "cross_refs": [
+    "architecture.md",
+    "IMPLEMENTATION_STATUS.md",
+    "changelog.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

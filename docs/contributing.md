@@ -188,7 +188,10 @@ Wixen-Mail/
 2. **Extensions**: Plugin system
 3. **Cross-platform**: Linux and macOS support
 
-See [what is planned next](roadmap.md) for the task list.
+See [the roadmap](roadmap.md) for what a user can see is built. The working
+plan, with the phases being built and each requirement traced to one, is
+`.planning/ROADMAP.md` in the repository. It is not a link, because these
+pages ship inside the installer and `.planning/` does not go with them.
 
 ## Getting Help
 

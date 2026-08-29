@@ -1,0 +1,34 @@
+{
+  "source_path": "docs/plans/20260726-mail-at-scale.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Mail at scale: receiving, storage, and a message list that holds 200,000 rows",
+  "summary": "Implementation plan for IMAP receiving, tiered message storage, virtual-mode message list, column control, threading, and read-key behaviour, with a 2026-08-29 per-section build status.",
+  "scope": [
+    "IMAP receiving",
+    "async-imap 0.11.3",
+    "XOAUTH2 and oauth2 5",
+    "Exchange and Microsoft Graph",
+    "SQLite message cache",
+    "body cache and eviction budget",
+    "FTS5 search",
+    "virtual mode message list",
+    "column sorting, order and visibility",
+    "F8 columns dialog",
+    "threading (JWZ, X-GM-THRID)",
+    "conversation tree",
+    "space bar reading model",
+    "feedback channels (speech, earcon, braille, visual)"
+  ],
+  "cross_refs": [
+    "../IMPLEMENTATION_STATUS.md",
+    "../principles.md",
+    "src/data/message_cache/bodies.rs",
+    "src/service/protocols/imap.rs",
+    "src/application/mail_sync.rs"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Design/plan document with strong SPEC signals (library trade-off table, storage tiers and indices, IMAP command sequences, keybinding and column tables) plus decision-style rationale but no ADR frontmatter, no Status/Decision/Consequences structure, and multiple decisions rather than one, so not ADR. Updated 2026-08-29 with a per-section status: all six Sequence steps marked built, and two parts explicitly never built (three-tier storage; the Exchange path, since Microsoft work shipped via Graph). Doc also notes the earcon/braille status table is left as originally written though both are now built. Nothing has run against a real mail account."
+}

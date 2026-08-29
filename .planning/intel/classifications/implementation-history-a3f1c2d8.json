@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/development/implementation-history.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Implementation History",
+  "summary": "Chronological record of Wixen Mail implementation phases, the wxdragon migration, and architecture refactoring.",
+  "scope": ["Wixen Mail", "project phases", "IMAP", "SMTP", "UI implementation", "SQLite message cache", "HTML rendering", "provider presets", "OAuth 2.0", "offline mode", "wxdragon migration", "architecture refactoring"],
+  "cross_refs": ["docs/accessibility-framework-evaluation.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

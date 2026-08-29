@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/changelog.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Changelog",
+  "summary": "Running record of notable user-visible changes to Wixen Mail, versioned with SemVer, with an Unreleased section and known limitations.",
+  "scope": ["changelog", "versioning", "saved searches", "calendar event attendees", "free/busy lookup", "recipient autocomplete", "LDAP directory"],
+  "cross_refs": ["https://semver.org/"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,5 +1,16 @@
 # Wixen Mail - Project Roadmap
 
+> **Where the plan lives now.** The working plan is `.planning/ROADMAP.md`, kept
+> by GSD. It holds the eight phases of outstanding work, each requirement traced
+> to a phase, and acceptance criteria marked by whether a source stated them or a
+> model derived them.
+>
+> This page is the shipped roadmap: what a person using Wixen Mail can see is
+> built and what is coming. It records state, not the plan. When the two
+> disagree, `.planning/ROADMAP.md` is right, and this page is the one to correct.
+> Two documents answering one question is how this repository's documentation
+> drifted before; keeping their jobs apart is the fix.
+
 _Last updated: 2026-08-23_
 
 ## Vision
@@ -24,7 +35,10 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Native Windows controls with built-in Windows UIA
 - [x] Implement accessibility layer for screen reader support (NVDA, JAWS, Narrator)
 - [x] Define comprehensive keyboard shortcuts system (25+)
-- [ ] Create accessibility testing framework
+- [x] Create accessibility testing framework. `.github/workflows/accessibility.yml`
+      runs Axe.Windows and an MSAA name scan; `nvda.yml` drives a real copy of
+      NVDA and checks what it said aloud. The wide manual pass with a screen
+      reader is a separate thing and has not happened.
 - [x] Document accessibility features and keyboard commands
 
 ## Phase 2: Mail Protocol Support (Complete)
@@ -158,7 +172,8 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Real HTTP token exchange
 - [x] Token refresh logic
 - [x] Token persistence
-- [ ] Local callback server for OAuth redirect
+- [x] Local callback server for OAuth redirect. `src/service/oauth.rs` serves
+      `http://localhost:<port>/oauth/callback` and checks the CSRF state
 
 ### Multiple Account Support
 - [x] Account management UI (add, update, delete, enable/disable)
@@ -214,9 +229,9 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Additional Features
 - [x] Theme customization (light, dark, and Windows high contrast)
-- [~] Calendar integration (CalDAV). The client exists and signs in; there is
-      no screen yet for adding a calendar by its own address rather than
-      through an account
+- [~] Calendar integration (CalDAV). The client exists, signs in, and a calendar
+      can be added by its own address (`src/presentation/wx_add_calendar.rs`).
+      It has never been run against a real calendar server
 - [ ] Full PGP/S-MIME encryption and decryption
 - [ ] Exchange Web Services (EWS)
 - [x] Microsoft Graph API, for Outlook and Microsoft 365 contacts and calendars

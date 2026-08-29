@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/plans/20260823-earcon-sound-schemes.md",
+  "type": "ADR",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Earcons: real sounds, more events, and sound schemes",
+  "summary": "Plan replacing Windows-only Beep() earcons with rodio-played sound files, new events, and importable CC0 sound schemes.",
+  "scope": ["earcons", "rodio", "audio playback", "sound schemes", "zip import", "WAV format", "feedback module", "EarconPlayer"],
+  "cross_refs": ["CREDITS.md", "sound-schemes/soft-chimes/"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Plan document containing explicit trade-off analysis ending in chosen paths (rodio over PlaySoundW/tinyaudio; WAV as default format; CC0 sources only, Pixabay rejected). ADR signals dominate over DOC prose. Not a numbered ADR file and no Accepted status field, so locked is false; status line records phase progress (Phases 1-4 done, Phase 5 blocked on wixen.app), not ADR acceptance state."
+}

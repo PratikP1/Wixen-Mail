@@ -1,0 +1,711 @@
+# Requirements: Wixen Mail
+
+**Defined:** 2026-08-29
+**Core Value:** Making correspondence and personal information legible to people who cannot see it.
+**Milestone:** The outstanding work. Drawn from the two "not built" sections of
+`.planning/intel/built-and-left.md` and from nothing else.
+
+## How to read the acceptance criteria
+
+The source PRD, `docs/development/requirements-backlog.md`, states no user stories and no
+acceptance criteria anywhere, and the eleven predecessor documents that might have held them
+are not in the repository. Every criterion below was written for this milestone rather than
+quoted from a source. Two markers say where each line came from, and they are the whole point
+of this section:
+
+| Marker | Meaning |
+|---|---|
+| **[S]** | **Stated.** Quoted or condensed from a document in this repository, or from a line of code. The source is named in the requirement's Evidence line. |
+| **[D]** | **Derived.** Written by a model from the code, the codebase map in `.planning/codebase/` and the status documents. Nobody has approved it yet. Treat it as a proposal, not as a decision. |
+
+Read every **[D]** line as "this is what the evidence suggests done should mean". Pratik
+reviews these before any phase is planned. Changing a **[D]** line needs no justification;
+changing an **[S]** line means changing a source document too.
+
+Each requirement carries an **Evidence** line naming what was actually checked, so a later
+reader can re-run the check rather than trust the conclusion.
+
+## The caveat that binds every criterion
+
+Nothing in Wixen Mail has ever run against a real mail account or a real provider. No
+criterion below claims behaviour against a live server, and none may be rewritten to. Where a
+requirement can only be finished against a live account, the criterion says so and stops
+there.
+
+Server-write paths inherit `src/application/allowed.rs`: `Allowed::mail` is `false` for a new
+install and `Allowed::personal_information` is `true`, and three places (command line,
+application setting, per-account setting) must all agree before anything goes out. Any new
+write path added by this milestone passes through that gate.
+
+## v1 Requirements
+
+### Folders
+
+- [ ] **FOLDER-01**: Create, rename and delete a mail folder; mark a whole folder read; empty
+  a folder.
+  - Evidence: `grep -rn "create_folder|rename_folder|delete_folder" src/` finds no mail-folder
+    match (the only hits are the notes module's `btn_delete_folder` and two test names). The
+    public API of `src/service/protocols/imap.rs` runs list_folders, set_subscribed,
+    folder_counts, select_folder, search_uids, all_uids, fetch_headers, fetch_body,
+    fetch_flags, set_flag, mark_as_read, copy_message, move_message, remove_by_message_id,
+    uids_with_message_id, remove_these, append_message, delete_message, logout, stop. There is
+    no CREATE, RENAME or DELETE mailbox command.
+  - [S] The inventory records this as not built, cited to `docs/IMPLEMENTATION_STATUS.md`,
+    `docs/ALPHA_TESTING.md` and roadmap Phase 2.
+  - [D] From the folder tree, a user creates, renames and deletes a folder with the keyboard
+    alone, and the tree shows the result without the user having to re-navigate to find it.
+  - [D] Marking a folder read sets every unread message in it read and the unread count the
+    tree announces for that folder becomes zero.
+  - [D] Emptying a folder confirms first, naming the folder and the number of messages it is
+    about to remove.
+  - [D] All five operations write to the server, so all five pass through `Allowed::mail`.
+    With mail writes off, which is what a new install has, each is refused with a message
+    saying why rather than attempted and failed.
+
+- [ ] **FOLDER-02**: Nested folder hierarchy in the folder tree.
+  - Evidence: the inventory records the tree as one flat level, so `Archive/2026` reads as its
+    full path. `src/presentation/wx_app.rs` builds the folder tree.
+    `src/service/protocols/imap.rs` already returns `ImapFolder` values from `list_folders`,
+    including SPECIAL-USE, so the delimiter and path information needed to nest is arriving.
+  - [S] Recorded as a known limitation in the `[Unreleased]` section of `docs/changelog.md`.
+  - [D] A folder named `Archive/2026` appears as `2026` nested under `Archive`, and a screen
+    reader announces its level from the native `TreeCtrl` rather than from the label text.
+  - [D] Collapsing and expanding work by keyboard, and the tree remembers what was collapsed
+    across a restart.
+  - [D] Unread counts on a collapsed parent account for its children, and the announcement
+    says which of the two numbers it is giving.
+
+- [ ] **FOLDER-03**: Pin frequently used folders as favourites.
+  - Evidence: no favourites path in `src/`. The requirements backlog lists it as post-v1.0,
+    priority Low.
+  - [S] Recorded in `docs/development/requirements-backlog.md` as "Pin frequently used
+    folders", not built.
+  - [D] A user pins and unpins a folder by keyboard from the folder tree, and pinned folders
+    appear in a group at the top of the tree in a stable order.
+  - [D] Pinning is a local preference: it never writes to the server and never passes through
+    `Allowed`.
+  - [D] The pinned group announces itself as a group, so a screen reader user can tell a
+    pinned copy of Inbox from the real one.
+
+### Conversations
+
+- [ ] **THREAD-01**: Collapse the message list to one row per conversation.
+  - Evidence: `src/presentation/wx_app.rs` line 102 declares `ID_THREAD_VIEW`, line 5026 adds
+    the menu item, and line 582 calls `item.enable(false)` on it. The command exists and is
+    switched off. Threading itself is built: `src/application/threading.rs` and
+    `src/presentation/wx_thread_view.rs`, reachable by pressing Enter on a message.
+  - [S] Recorded in `docs/IMPLEMENTATION_STATUS.md` under "What does not work" and in roadmap
+    Phase 3.
+  - [D] The View menu item that is disabled today is enabled, and switching it on replaces the
+    per-message rows with one row per conversation.
+  - [D] A collapsed conversation row announces the conversation subject, the number of
+    messages in it and how many are unread, assembled from the visible columns the way any
+    other row is.
+  - [D] Expanding a conversation row and moving into it is keyboard-only, with no drag and no
+    chord, per WCAG 2.5.7.
+  - [D] Switching the view back gives the message list unchanged, with focus on the message
+    the user was on.
+
+- [ ] **THREAD-02**: Rethread incrementally as mail arrives, not only when a folder is opened.
+  - Evidence: `src/application/threading.rs` rethreads on folder open. The mail-at-scale plan
+    specifies incremental assignment: each arriving message looks up its references against an
+    index on `message_id` and joins an existing thread or starts one.
+  - [S] Recorded as a known limitation in `docs/changelog.md`; the algorithm is specified in
+    `docs/plans/20260726-mail-at-scale.md` under "Threading algorithm".
+  - [S] A late message can join two existing trees, and the plan names that merge as the case
+    worth testing.
+  - [D] A message arriving while a folder is open joins its thread without the folder being
+    reopened, and the row it joins updates in place.
+  - [D] The merge case has a test that fails if the two trees are left separate.
+  - [D] Rethreading on arrival does not re-announce rows the user is not on, so a syncing
+    mailbox does not flood the announcement queue.
+
+### Search
+
+- [ ] **SEARCH-01**: The Search window's scope selector actually scopes the search.
+  - Evidence: `src/presentation/wx_app.rs` line 14777 and line 19634 both build the offered
+    scopes, starting `("All Folders", WhereToSearch::EveryFolder)`. The changelog records that
+    nothing reads the choice, so a saved search always covers the whole account.
+  - [S] `docs/changelog.md`, Saved Searches section: "The In box on the Search window (All
+    Folders, Current Folder, Subject Only, From Only) is still not read by anything... That is
+    a defect in Search, not in saving one."
+  - [D] Choosing Current Folder returns results from the current folder only, and choosing
+    Subject Only or From Only restricts which fields matched.
+  - [D] A saved search stores the scope it was saved with and reruns with that scope.
+  - [D] The results view says which scope produced them, so a short result list is legible as
+    a narrow scope rather than as an empty mailbox.
+
+- [ ] **SEARCH-02**: Save and run a search over message text that eviction has cleared.
+  - Evidence: bodies are split out with a size budget and least-recently-read eviction in
+    `src/data/message_cache/bodies.rs`. The changelog records that an old message may have
+    headers here and no text, and that nothing built into the program saves a search of that
+    kind.
+  - [S] `docs/changelog.md`: "Message text is cleared to stay within a size budget, so an old
+    message may have headers here and no text. Nothing built into the program saves a search
+    of that kind yet."
+  - [S] The mail-at-scale plan requires the disclosure: FTS covers subject and sender for
+    everything and body text only for bodies actually fetched, and "the search UI must say
+    so". A search that silently covers 4% of a mailbox while looking like it covers all of it
+    is the same failure in another costume.
+  - [D] A search whose terms need body text says, before it runs, how much of the mailbox has
+    body text stored, and offers to fetch the rest rather than returning a short answer that
+    looks complete.
+  - [D] A saved search of that kind reruns without silently narrowing as more bodies are
+    evicted.
+
+- [ ] **SEARCH-03**: Smart folders defined by a rule.
+  - Evidence: saved searches are built (`src/application/saved_searches.rs`) and appear in the
+    folder tree. Filters with regex and rule actions are built
+    (`src/application/filters.rs`). Nothing joins the two into a folder that updates itself.
+  - [S] `docs/development/requirements-backlog.md`, near-term, priority Low; roadmap Phase 5.
+  - [D] A user defines a smart folder from the same rule vocabulary that filters use, and it
+    appears in the folder tree beside saved searches.
+  - [D] Opening a smart folder lists the messages matching its rule now, not a snapshot from
+    when it was made.
+  - [D] A smart folder never writes to the server: it is a view over the local cache and
+    passes through no `Allowed` gate.
+
+### Mail at scale on the wire
+
+- [ ] **SCALE-01**: Resume a folder rather than re-listing its UIDs.
+  - Evidence: QRESYNC is absent from `src/service/protocols/imap.rs`. The mail-at-scale plan
+    records that async-imap surfaces no QRESYNC helper, so deletions need a periodic UID set
+    comparison. CONDSTORE `changed_since` is built and in use in
+    `src/application/mail_sync.rs`.
+  - [S] Roadmap Phase 2 leaves QRESYNC unticked. The SPEC states the library cost and the UID
+    set comparison as the accepted substitute.
+  - [D] Opening a folder that was synced before does not re-list every UID in it; the sync
+    resumes from the stored `UIDVALIDITY`, highest UID and `HIGHESTMODSEQ`.
+  - [D] Deletions made elsewhere are found by the periodic UID set comparison, and the
+    comparison is bounded so it does not run on every folder open.
+  - [D] A `UIDVALIDITY` change discards and resyncs the folder and announces that it did,
+    rather than doing it quietly.
+  - [D] Whether QRESYNC itself is reachable is decided against async-imap 0.11.3 and written
+    down; if it is not, the UID set comparison is the answer and the roadmap line is corrected
+    rather than left unticked forever.
+
+- [ ] **SCALE-02**: Hold one connection open instead of signing in again per fetch.
+  - Evidence: the inventory records that every body fetch and every attachment save opens its
+    own connection and signs in again, citing `src/application/opening.rs` and
+    `src/application/attaching.rs`. The mail-at-scale plan budgets one connection for IDLE and
+    two or three for fetching, and notes Gmail allows fifteen per account and punishes more.
+  - [S] `docs/changelog.md` known limitations: "Holding one connection open needs reconnect
+    handling that is not built."
+  - [D] Opening several messages in a row reuses one authenticated session rather than
+    reconnecting per message.
+  - [D] A dropped connection reconnects once and retries the fetch, and says so if the retry
+    also fails, rather than surfacing a bare protocol error.
+  - [D] The number of concurrent connections per account is bounded by a stated budget, and
+    the bound has a test.
+
+- [ ] **SCALE-03**: Fetch a whole mailbox, not only the newest 500 per folder.
+  - Evidence: `src/application/mail_sync.rs` brings the newest 500 per folder on Check Mail;
+    the rest arrives a page at a time through Get Older Messages, bound to `Shift+F9` at
+    `src/presentation/wx_app.rs` line 5245.
+  - [S] Recorded as a known limitation in `docs/changelog.md`.
+  - [S] The mail-at-scale plan already specifies the shape: envelopes newest first in chunks
+    of 500 to 1000, then snippet backfill in the background, with rows showing an empty
+    snippet until theirs arrives.
+  - [D] A user can ask for a whole folder and the request continues in the background, newest
+    first, with the list usable from the first chunk.
+  - [D] Progress uses the announcement queue's topic superseding, so a long fetch speaks its
+    final count once instead of four hundred updates.
+  - [D] An empty snippet means "not fetched yet" and the column says so rather than implying
+    the message has no body.
+
+- [ ] **SCALE-04**: Split storage into envelope, body cache and attachments.
+  - Evidence: `src/data/message_cache/bodies.rs` keeps one body cache under a size budget with
+    least-recently-read eviction. The hot, warm and cold split the plan describes was not
+    built, and `docs/plans/20260726-mail-at-scale.md` is the only record of it in the
+    repository.
+  - [S] The SPEC states the tiers: envelope always local at about 1 KB each, roughly 200 MB at
+    200,000 messages; body cache fetched on open and evicted least-recently-used against a
+    budget defaulting to 500 MB; attachments never fetched automatically.
+  - [S] Schema changes are additive: `CREATE TABLE IF NOT EXISTS` and `ensure_column_exists`,
+    never dropping or renaming a shipped column.
+  - [D] A folder listing query reads no body text, and a test asserts the query text does not
+    touch the body tables.
+  - [D] An existing user database opens and migrates without losing a message, and the
+    migration has a test over a database written by the previous schema.
+  - [D] The attachment tier is never populated by a sync; attachments arrive only when
+    something asks for one.
+
+- [ ] **SCALE-05**: Detect network status and offer offline mode rather than only accepting a
+  manual toggle.
+  - Evidence: `grep -rni "is_online|network_status|connectivity" src/` returns nothing. The
+    offline toggle and outbox are built (`src/application/mail_controller.rs`,
+    `mail_session.rs`), with indicators in the status bar.
+  - [S] Roadmap Phase 7 leaves "network status detection to toggle offline mode
+    automatically" unticked.
+  - [D] Losing the network puts the application into offline mode without the user finding the
+    View menu, and the change is announced once, not per failed request.
+  - [D] Regaining the network offers to go back online rather than doing it silently, because
+    a queued outbox flushing without being asked is publishing as a side effect.
+  - [D] The status bar indicator and the announcement agree, so a deaf user and a blind user
+    are told the same thing (guardrail 5, feedback must be distinct and bounded).
+
+- [ ] **SCALE-06**: Resolve sync conflicts rather than letting the last write win.
+  - Evidence: no conflict resolution path in `src/`. Roadmap Phase 7 leaves it unticked. The
+    five `*_sync.rs` files total over 38,000 lines and none has met a live account.
+  - [S] Roadmap Phase 7, unticked.
+  - [D] When the local copy and the server copy of an item have both changed, the user is
+    shown both and chooses, rather than one silently replacing the other.
+  - [D] Choosing is keyboard-only and the two versions are announced as a labelled pair, not
+    as two unlabelled panes.
+  - [D] Until a conflict is resolved the item is not pushed, so an unresolved conflict cannot
+    become a silent overwrite at the provider.
+  - [D] Conflict handling is testable without a live account: the test drives two divergent
+    local states through the same code path the sync uses.
+
+### Writing and reading a message
+
+- [ ] **WRITE-01**: Drag and drop, or paste, a file into a message as an attachment.
+  - Evidence: `grep -rn "DropTarget|OnDropFiles|drop_target" src/` returns nothing. Roadmap
+    Phase 4 leaves it unticked. Attachment handling itself is built in
+    `src/application/attaching.rs`.
+  - [S] Roadmap Phase 4, unticked.
+  - [S] WCAG 2.5.7 forbids drag-only interaction, and the mail-at-scale plan names column
+    reordering as the classic place applications ignore that.
+  - [D] Dropping a file onto the composer attaches it, and every drop action has a keyboard
+    equivalent that is at least as quick to reach.
+  - [D] Attaching announces the file name and size, and refusing a file says which file and
+    why.
+
+- [ ] **WRITE-02**: Insert an image inline in an HTML message.
+  - Evidence: compose supports HTML and plain modes (`src/application/draft_message.rs`), and
+    no inline image insertion path exists. Roadmap Phase 4, unticked.
+  - [S] Roadmap Phase 4, unticked.
+  - [D] Inserting an image asks for alt text and will not insert without either alt text or an
+    explicit mark that the image is decorative.
+  - [D] The inserted image survives a draft save and reload with its alt text intact.
+  - [D] Guardrail 9 applies: where the sender cannot supply alt text, the message says so
+    rather than the application quietly inserting an unlabelled image.
+
+- [ ] **WRITE-03**: Spell check while typing, with jumps between misspellings.
+  - Evidence: `src/application/spell_session.rs` checks on send only. Roadmap Phase 4 records
+    this as partial and notes it waits on a rich editor control. wxdragon is pinned at 0.9.17
+    with the `richtext` feature already enabled in `Cargo.toml`.
+  - [S] Roadmap Phase 4, marked partial: "Spell check while typing, jumping between
+    misspellings, native screen reader announcement. Waits on a rich editor control."
+  - [D] A misspelling is marked as it is typed, and a keyboard command moves to the next and
+    previous misspelling.
+  - [D] Landing on a misspelling announces the word and the suggestions through the screen
+    reader channel, not only through a visual squiggle (guardrail 5: no cue by one modality
+    alone).
+  - [D] Checking while typing does not flood the announcement queue on a long paste.
+  - [D] Whether the richtext control can carry the marks is settled first and written down; if
+    it cannot, the requirement is re-scoped rather than half-built.
+
+- [ ] **READ-01**: Preview an image or a text attachment in the application.
+  - Evidence: `src/service/pdf.rs` is the only in-app reader, using the sibling `pdfpurr`
+    crate. The requirements backlog lists inline preview as post-v1.0, priority Medium.
+    Handing an attachment to Windows to open is declined, so preview is the only path.
+  - [S] `docs/development/requirements-backlog.md`, post-v1.0, Medium.
+  - [D] An image attachment previews in the application, and the preview announces any alt
+    text or description the sender supplied and says plainly when none exists.
+  - [D] A text attachment previews as text the screen reader can navigate by line, not as an
+    image of text.
+  - [D] Attachment content is untrusted input: a preview never executes anything and a file
+    that fails to parse is refused with a message naming the file, not rendered partially.
+
+- [ ] **READ-02**: Full PGP encryption and decryption.
+  - Evidence: `src/service/security.rs` does detection only, and does hold `aes_gcm` primitives
+    for other purposes. `src/service/signed_mail.rs` (6,738 lines) does S/MIME verification.
+    No PGP key handling, encryption or decryption path exists.
+  - [S] `docs/development/requirements-backlog.md`: still detection only, post-v1.0, Medium.
+    The same source records that S/MIME signature checking has since been built while PGP has
+    not.
+  - [D] A user imports a private key and reads an encrypted message they hold the key for.
+  - [D] A user encrypts and signs an outgoing message, and sending it passes through
+    `Allowed::mail`, which is off for a new install.
+  - [D] A message that cannot be decrypted says why (no key, wrong key, damaged) rather than
+    reading as empty, which is the failure the note editor stub taught this project to avoid.
+  - [D] Keys are secrets, so they follow the project's secrets rule: never in
+    `message_cache.db`, never logged.
+
+- [ ] **READ-03**: Hook into an external spam classifier.
+  - Evidence: filters with rule actions are built (`src/application/filters.rs`), phishing risk
+    scoring is built (`src/service/security.rs`), Safe Browsing lives in
+    `src/service/safebrowsing/`. No external spam classifier integration exists. Junk folder
+    sync is declined, so the classifier's verdict has to land locally.
+  - [S] `docs/development/requirements-backlog.md`, near-term, priority Low; roadmap Phase 5.
+  - [D] A classifier verdict is available to the filter rule vocabulary, so a user files spam
+    with the rules they already have rather than through a second parallel system.
+  - [D] The verdict is shown as a stated score with its source named, never as a silent
+    deletion.
+  - [D] Guardrail 9 applies: if the classifier is unreachable or returns nothing, the
+    application says so rather than treating silence as "not spam".
+
+### The other five modules
+
+- [ ] **PIM-01**: Move a task from one list to another.
+  - Evidence: no move-between-lists path in `src/application/tasks_sync.rs`. Task lists and
+    tasks are cached and synced (`src/data/message_cache/`, `tasks_sync.rs`,
+    `src/service/tasks_api.rs`).
+  - [S] Recorded as not built in `docs/IMPLEMENTATION_STATUS.md` and `docs/ALPHA_TESTING.md`.
+  - [D] A user moves a task to another list by keyboard, and the task appears in the target
+    list and is gone from the source list in one action, not two.
+  - [D] The move goes through `Allowed::personal_information`, which is on for a new install,
+    and is refused with a reason when that gate is off.
+  - [D] A move that fails at the provider leaves the task in exactly one list, never in both
+    and never in neither.
+
+- [ ] **PIM-02**: Move and copy items in the modules that are not mail.
+  - Evidence: `src/service/protocols/imap.rs` has `copy_message` and `move_message` for mail.
+    The inventory records move and copy as missing for everything else.
+  - [S] Recorded as not built in `docs/IMPLEMENTATION_STATUS.md` and `docs/ALPHA_TESTING.md`.
+  - [D] Contacts, events, notes and reminders each support move and copy between their
+    containers with the same two keyboard commands in every module, because one key means one
+    thing in every module here.
+  - [D] Copy leaves the original untouched and move does not, and each announces which it did.
+  - [D] The Action menu carries move and copy because they act on the selection; File, New
+    stays for making things.
+
+- [ ] **PIM-03**: Show recurring events across weeks and months.
+  - Evidence: the changelog records the week and month recurring display as switched off and
+    saying so. `src/application/occurrences.rs` and `repeating.rs` hold the recurrence model;
+    `src/application/calendar.rs` is 11,154 lines.
+  - [S] `docs/changelog.md` line 1425: weeks and months is not built, so both say so and are
+    switched off.
+  - [S] Two stated limitations already sit next to this: editing or deleting a series needs
+    the series already stored locally, and a weekly rule naming two or more days is a named
+    known limitation of the recurrence editor.
+  - [D] A recurring event appears on every date it occurs in week and month views, expanded
+    from the rule rather than from stored copies.
+  - [D] An exception to a series (moved or cancelled occurrence) shows on the date it really
+    is, and announces that it differs from the series.
+  - [D] The two stated limitations above are either fixed or restated in the product where the
+    user meets them, not left only in the changelog.
+
+- [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
+  - Evidence: notes are cache-only. `src/presentation/wx_notes_module.rs` and the notes tables
+    in `src/data/message_cache/` exist; there is no `notes_sync.rs` beside the other five
+    `*_sync.rs` files.
+  - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer.
+  - [D] Which target a note syncs to is decided and written down before anything is built,
+    because Google Keep, Microsoft To Do notes, IMAP-backed notes and CardDAV notes are four
+    different answers with four different shapes.
+  - [D] A note edited on this computer reaches the chosen target, and one changed at the
+    target reaches this computer, through the same `*_sync.rs` shape the other four use,
+    including its own sync marker.
+  - [D] Note sync goes through `Allowed::personal_information`.
+  - [D] Until the target is live, the settings screen says notes do not sync yet, rather than
+    offering a switch that does nothing.
+
+- [ ] **PIM-05**: CardDAV for contacts.
+  - Evidence: `src/service/caldav.rs` (8,149 lines) covers calendars only.
+    `docs/development/requirements-backlog.md` states CardDAV is not built. Contact CRUD,
+    groups and vCard 3.0 import and export are built in `src/application/contacts_sync.rs` and
+    `importing_contacts.rs`, so the vCard half of CardDAV already exists.
+  - [S] `docs/development/requirements-backlog.md`: "CardDAV not built", post-v1.0, Medium.
+  - [D] A user adds a CardDAV address book by its own address, the way a calendar can already
+    be added by its address.
+  - [D] Contacts sync both ways through CardDAV, reusing the existing vCard reader and writer
+    rather than a second one.
+  - [D] CardDAV writes go through `Allowed::personal_information`, and the settings screen
+    says this path has never met a real server.
+  - [D] The XML and vCard parsing is pure and unit-testable without a server, per the project's
+    thin-transport rule; the transport itself stays untested until a live account exists, and
+    the requirement says so rather than claiming otherwise.
+
+### How the application speaks
+
+- [ ] **FEEDBACK-01**: Set feedback channels per event, not only globally.
+  - Evidence: `src/presentation/accessibility/feedback.rs` already holds the model:
+    `FeedbackSettings.per_event: Vec<(Event, BTreeSet<Channel>)>`, `set_event_channels`,
+    `channels_for`, and serialisation through `to_stored` and `from_stored`. Searching
+    `src/presentation/` for `per_event` or `set_event_channels` outside that one file returns
+    nothing, so no screen writes it.
+  - [S] `docs/changelog.md` known limitations: per-event feedback overrides exist in the model
+    with no interface.
+  - [S] Four channels are independent by design: Speech, Earcon, Braille, Visual. An earcon
+    does nothing for a deaf-blind user, who reads braille, and speech does nothing for them
+    either.
+  - [D] The Settings Feedback tab lets a user turn each of the four channels on or off for each
+    of the 16 events, by keyboard, and the chosen state is announced when focus lands on it.
+  - [D] A saved override survives a restart, through the existing `to_stored` and `from_stored`
+    round trip.
+  - [D] Resetting an event returns it to the default rather than to silence, matching
+    `channels_for`, which falls back to the default when there is no entry.
+  - [D] `tests/house_style.rs` no longer needs a "control no screen writes" exception for this
+    setting.
+
+- [ ] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
+  - Evidence: `src/presentation/date_display.rs` holds a hardcoded `MONTHS` array starting
+    "January" at line 101 and formats from it at line 384. `DateOrder` already offers
+    MonthFirst and DayFirst and `DateStyle` offers Absolute and RelativeWithinWeek, so the
+    shape for a locale decision exists; only the strings are English.
+  - [S] `docs/changelog.md` line 6946: month names and relative wording are English on every
+    machine.
+  - [D] Month names, day names and relative wording ("2 days ago") come from the machine's
+    locale, and `DateOrder` follows it rather than being a separate setting the user has to
+    find.
+  - [D] A locale with no translation falls back to English and says nothing about it in the
+    UI, because a visible fallback notice on every row is worse than the fallback.
+  - [D] The existing tests over `date_display` keep passing under a forced English locale, so
+    the change is testable without a machine set to another language.
+
+- [ ] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
+  - Evidence: `.github/workflows/accessibility.yml` runs Axe.Windows over UI Automation and
+    `scripts/msaa-names.ps1` over MSAA, per window; `.github/workflows/nvda.yml` drives a real
+    copy of NVDA. `docs/IMPLEMENTATION_STATUS.md` records roughly half of WCAG covered and five
+    findings at the last read, all inside WebView2's own tree.
+  - [S] Automated checks catch roughly half of accessibility defects and do not replace testing
+    with real assistive technology. Structure present is not experience good.
+  - [D] The scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so
+    "roughly half" becomes a list rather than an estimate.
+  - [D] The five WebView2 findings are re-read and each is either fixed, or recorded as
+    upstream with the upstream named (guardrail 9: do not silently absorb upstream failures).
+  - [D] The gap between what the scans cover and what only a manual screen reader pass can
+    cover is written down as the list of interactions a human still has to walk, so the manual
+    pass has a scope instead of being open-ended.
+  - [D] No criterion here claims the manual pass has happened. Pratik decides when screen
+    reader testing runs.
+
+### Installing, updating and what is stored
+
+- [ ] **SHIP-01**: A signed installer.
+  - Evidence: `installer/Wixen-Mail-Setup.iss` builds an Inno Setup installer;
+    `scripts/build-installer.sh` appends the commit it built from. `docs/ALPHA_TESTING.md`
+    states the installer is not signed.
+  - [S] `docs/ALPHA_TESTING.md`: "The installer is not signed."
+  - [D] The published installer carries a valid Authenticode signature and SmartScreen does not
+    present the unknown-publisher warning.
+  - [D] The signing key never enters the repository or the build log, following the project's
+    secrets rule.
+  - [D] The verification is done against the published release asset, not against a local
+    build.
+  - [D] This is blocked on a certificate decision that is Pratik's. Until it is made, the
+    requirement stays open and the docs keep saying the installer is unsigned.
+
+- [ ] **SHIP-02**: Check for and apply updates.
+  - Evidence: `grep -rni "check_for_update|auto_update|update_check" src/` returns nothing.
+    `src/common/version.rs` already carries the version and build metadata, and
+    `.github/workflows/release.yml` publishes releases.
+  - [S] `docs/development/requirements-backlog.md`, platform, priority Medium; roadmap Phase 8.
+  - [D] The application can tell the user a newer version exists, and the check is a
+    deliberate action or an explicit setting, never a silent background fetch, because
+    publishing and fetching both happen on purpose here.
+  - [D] Applying an update is the user's decision and the current version keeps working if the
+    update is declined.
+  - [D] The check compares the plain `0.x.y` version and ignores `+build` metadata, matching
+    `src/common/version.rs` and SemVer ordering.
+
+- [ ] **SHIP-03**: Desktop and Start menu shortcuts.
+  - Evidence: no shortcut creation in `src/` or referenced from the Inno Setup script beyond
+    what Inno does by default. Listed alongside auto-update in the inventory.
+  - [S] `docs/development/requirements-backlog.md`, platform, priority Medium.
+  - [D] Installing offers a desktop shortcut and creates a Start menu entry, both with the
+    application's real name and icon.
+  - [D] Uninstalling removes both, leaving nothing behind that a screen reader will still read
+    from the Start menu.
+
+- [ ] **SHIP-04**: Encrypt the local cache, or decide not to and say so once and clearly.
+  - Evidence: `src/data/message_cache/mod.rs` stores mail in plain SQLite.
+    `src/service/security.rs` already uses `aes_gcm` with `Aes256Gcm` at lines 222 and 423, so
+    the primitive is in the tree. `CLAUDE.md` states the cache is not encrypted and that the
+    docs must not claim otherwise.
+  - [S] `CLAUDE.md`: "Encrypting it means encrypting the whole database, which is a decision
+    with a build cost, not something to imply in a feature list."
+  - [S] Secrets are already out of the database: passwords and tokens live in the Windows
+    credential store through `keyring`, so the database can be copied without carrying
+    credentials.
+  - [D] The decision is made and recorded before anything is built: encrypt the whole database,
+    or state the limitation as permanent for this milestone.
+  - [D] If it is encrypted, the key lives in the OS credential store like every other secret,
+    an existing unencrypted database migrates without losing a message, and losing the key is
+    explained to the user before it can happen.
+  - [D] If it is not encrypted, the wording in the product and the docs is unchanged and this
+    requirement closes as a recorded decision, not as a silent drop.
+
+- [ ] **SHIP-05**: Verify the Linux and macOS builds.
+  - Evidence: roadmap Cross-Platform is unticked. `Cargo.toml` gates Windows dependencies
+    behind `[target.'cfg(windows)'.dependencies]`. `CLAUDE.md` records that `wxAccessible` and
+    `UiaRaiseNotificationEvent` exist only on Windows and both compile and silently do nothing
+    elsewhere.
+  - [S] Roadmap Cross-Platform, unticked.
+  - [S] A macOS or Linux port needs its own bridge for each of those two, not a framework
+    change.
+  - [D] The crate builds and the test suite passes on Linux and on macOS in CI.
+  - [D] Where the accessibility layer silently does nothing on those platforms, the build says
+    so at startup rather than presenting a client that looks accessible and is not. That is
+    guardrail 3: no stub presented as complete.
+  - [D] No criterion here claims the application is accessible on Linux or macOS. Building is
+    not the same claim.
+
+### Every number the project quotes
+
+- [ ] **PERF-01**: Memory under 150 MB with 1,000 cached messages, measured.
+  - Evidence: no `benches/` directory and no `criterion` or `divan` in `Cargo.toml`, so no
+    target below has a number attached. No memory profiling has been run.
+  - [S] `docs/development/requirements-backlog.md`, performance and scale, Medium.
+  - [D] A repeatable measurement produces a number for resident memory with 1,000 cached
+    messages, recorded with the date, the machine and the build it came from.
+  - [D] The number is either under 150 MB or the target is revised with the reason, rather
+    than the target quietly remaining aspirational.
+
+- [ ] **PERF-02**: Cold start under 2 seconds, measured.
+  - Evidence: startup time optimisation is unticked in roadmap Phase 8; nothing measures it.
+  - [S] Roadmap Phase 8; `docs/development/requirements-backlog.md`.
+  - [D] Cold start is measured from process start to the message list being usable, not to the
+    window appearing, because an empty window is not a usable inbox.
+  - [D] The measurement is repeatable and recorded with the date, the machine and the build.
+
+- [ ] **PERF-03**: A real mailbox of 100,000 messages or more, exercised.
+  - Evidence: the design targets 200,000 rows; the largest thing exercised is a loopback
+    server. The mail-at-scale plan requires the virtual text callback to read from an in-memory
+    page cache and never touch SQLite, with pages of 200 rows around the viewport and a
+    placeholder on a cache miss.
+  - [S] Roadmap Phase 8; `docs/plans/20260726-mail-at-scale.md`.
+  - [S] Sorting 200,000 rows in memory on a header click is a multi-second freeze, and a freeze
+    is an accessibility failure, not a performance one.
+  - [D] The list is exercised against 200,000 synthetic rows, which needs no network and no
+    live account, and the sort, filter and scroll paths each produce a recorded number.
+  - [D] A test asserts the virtual text callback issues no SQLite query.
+  - [D] No criterion here claims a real provider mailbox was used. Synthetic rows answer the
+    list question; the provider question waits for a live account.
+
+- [ ] **PERF-04**: Idle memory under 100 MB, measured.
+  - Evidence: listed as a success metric in `docs/roadmap.md` with no measurement.
+  - [S] Roadmap success metrics.
+  - [D] Idle memory is measured after startup with a cache present and no user activity, and
+    recorded with the date, machine and build.
+  - [D] The number is either under 100 MB or the target is revised with the reason.
+
+- [ ] **PERF-05**: Line coverage re-measured.
+  - Evidence: 60.4%, measured 2026-07-26 with `cargo llvm-cov --lib --summary-only`, stale
+    since. Roughly 275 commits have landed since.
+  - [S] `docs/IMPLEMENTATION_STATUS.md`.
+  - [S] Coverage is the cheap wide sweep answering only "what never runs at all", and low
+    coverage in `service/protocols`, `service/oauth` and the provider clients is the network
+    transport that has never met a live account, tracked as work rather than as a testing gap.
+  - [D] A current number replaces the stale one, with its date, and the low areas are
+    attributed rather than treated as a number to raise.
+
+- [ ] **PERF-06**: Test count re-measured.
+  - Evidence: 3,362 tests (3,282 unit, 80 integration), measured 2026-08-09.
+  - [S] `docs/IMPLEMENTATION_STATUS.md`.
+  - [D] The count in the status document matches what `cargo test` reports on the current tree,
+    with the date it was taken.
+  - [D] The count is split the same way it is today (unit against integration) so the two
+    numbers stay comparable across dates.
+
+- [ ] **PERF-07**: A whole-tree mutation run, once, with a real result.
+  - Evidence: scoped runs only. mime and error on 2026-07-26; filters, due, tagging and
+    signatures on 2026-08-01 with 157 mutants; the four message-disposition modules on
+    2026-08-12 with 66 mutants and 1 survivor. A whole-tree run is about two days and has never
+    been done. `guards/guards.toml` holds 501 records, of which 192 had been hand-verified as
+    of 2026-08-12.
+  - [S] `docs/IMPLEMENTATION_STATUS.md` and `CLAUDE.md`.
+  - [S] `scripts/mutants.sh` refuses to summarise a partial or degenerate run: a build that
+    failed before any mutant ran, mutants recorded unviable without distinguishing "compiler
+    rejected it" from "compiler never started", and a run where the suite was never once run
+    against a changed line.
+  - [S] `--since main` compares main with itself, finds nothing, and now says so. Name a real
+    tag or commit.
+  - [D] One whole-tree run completes and its report is read after the process exits, not from a
+    partial `mutants.out`.
+  - [D] Mutants that never reached a compiler are re-run rather than counted, since that
+    failure comes and goes on this machine and says nothing about the mutant.
+  - [D] Every survivor is either killed with a test or recorded with a reason, and the surviving
+    list becomes the input to the next round rather than a headline number.
+
+## v2 Requirements
+
+Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
+section and is real work; none is declined.
+
+| Requirement | Reason for deferral |
+|---|---|
+| Gmail X-GM-THRID conversations and X-GM-RAW server-side search | Blocked on the IMAP library, not on this codebase. Roadmap Phase 2 and `docs/changelog.md` both record it that way. |
+| The Exchange path described in `docs/plans/20260726-mail-at-scale.md` | The Microsoft work that shipped went through Graph for contacts, calendar and tasks. With EWS declined, this section proposes a path nothing needs. |
+| JMAP | `docs/development/requirements-backlog.md`, future, priority Low. |
+| Plugin and extension system | `docs/development/requirements-backlog.md`, future, priority Low. |
+| Setting Wixen Mail as the actual Windows default mail client | Windows does not allow a program to make itself default. `src/service/default_apps_registration.rs` registers what it can and the product already says plainly that it cannot set the default. |
+
+## Out of Scope
+
+Declined on purpose. Each is a decision recorded in the sources, not an omission.
+
+| Feature | Reason |
+|---------|--------|
+| Exchange Web Services | Microsoft begins blocking third-party EWS against Exchange Online on 1 October 2026, with full retirement by April 2027. `docs/plans/20260726-mail-at-scale.md`: "We will not write EWS." |
+| Handing an attachment to Windows to open | Deliberate. PDFs are the exception and are read in-app through `src/service/pdf.rs`. Recorded in `docs/changelog.md` known limitations. |
+| Junk folder sync | Deliberate. The folder can still be opened. Recorded in `docs/changelog.md` known limitations. |
+| Live-account validation of the built-but-unproven paths | Real work, and real risk, but not this milestone. It is the 13 rows of "built but unproven" in `.planning/intel/built-and-left.md`. |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| FOLDER-01 | Phase 1 | Pending |
+| FOLDER-02 | Phase 1 | Pending |
+| FOLDER-03 | Phase 1 | Pending |
+| THREAD-01 | Phase 1 | Pending |
+| THREAD-02 | Phase 1 | Pending |
+| SEARCH-01 | Phase 2 | Pending |
+| SEARCH-02 | Phase 2 | Pending |
+| SEARCH-03 | Phase 2 | Pending |
+| SCALE-01 | Phase 3 | Pending |
+| SCALE-02 | Phase 3 | Pending |
+| SCALE-03 | Phase 3 | Pending |
+| SCALE-04 | Phase 3 | Pending |
+| SCALE-05 | Phase 3 | Pending |
+| SCALE-06 | Phase 3 | Pending |
+| WRITE-01 | Phase 4 | Pending |
+| WRITE-02 | Phase 4 | Pending |
+| WRITE-03 | Phase 4 | Pending |
+| READ-01 | Phase 4 | Pending |
+| READ-02 | Phase 4 | Pending |
+| READ-03 | Phase 4 | Pending |
+| PIM-01 | Phase 5 | Pending |
+| PIM-02 | Phase 5 | Pending |
+| PIM-03 | Phase 5 | Pending |
+| PIM-04 | Phase 5 | Pending |
+| PIM-05 | Phase 5 | Pending |
+| FEEDBACK-01 | Phase 6 | Pending |
+| FEEDBACK-02 | Phase 6 | Pending |
+| FEEDBACK-03 | Phase 6 | Pending |
+| SHIP-01 | Phase 7 | Pending |
+| SHIP-02 | Phase 7 | Pending |
+| SHIP-03 | Phase 7 | Pending |
+| SHIP-04 | Phase 7 | Pending |
+| SHIP-05 | Phase 7 | Pending |
+| PERF-01 | Phase 8 | Pending |
+| PERF-02 | Phase 8 | Pending |
+| PERF-03 | Phase 8 | Pending |
+| PERF-04 | Phase 8 | Pending |
+| PERF-05 | Phase 8 | Pending |
+| PERF-06 | Phase 8 | Pending |
+| PERF-07 | Phase 8 | Pending |
+
+**Coverage:**
+- v1 requirements: 40 total
+- Mapped to phases: 40
+- Unmapped: 0
+
+## Where these came from
+
+Every requirement above traces to one row of `.planning/intel/built-and-left.md`, in one of
+two sections and no others:
+
+- "Not built, named in a document as wanted": 33 rows in the file. Three are declined by the
+  user (EWS, handing an attachment to Windows, junk folder sync). Four more deferred to v2
+  above, producing five v2 entries because one row named two items. The remaining 26 rows
+  produced 32 requirements, because six rows named more than one thing each: folder favourites
+  with smart folders and spam filtering, moving a task with move and copy generally,
+  drag-and-drop with inline images, network status with conflict resolution, auto-update with
+  desktop shortcuts, and JMAP with the plugin system.
+- "Not built, performance and scale targets never measured": 8 rows, producing 8
+  requirements. Seven are PERF-01 to PERF-07; the eighth, accessibility scanning coverage, is
+  FEEDBACK-03, placed with the accessibility work rather than with the performance work
+  because it measures the same thing that phase is about.
+
+**Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
+has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
+it had just written, and reached the brief without anyone counting the file. All 33 rows are
+accounted for above, so nothing was dropped.
+
+---
+*Requirements defined: 2026-08-29*
+*Last updated: 2026-08-29 after the first roadmap pass. Every [D] line is awaiting Pratik's review.*

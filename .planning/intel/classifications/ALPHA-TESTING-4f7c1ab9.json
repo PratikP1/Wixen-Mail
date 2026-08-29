@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/ALPHA_TESTING.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Testing Wixen Mail",
+  "summary": "Alpha tester guide describing which parts are exercised, the Allow Changes permissions, read-only flags, and what feedback helps most.",
+  "scope": ["alpha testing", "Allow Changes permissions", "read-only mode", "Gmail OAuth sign-in limits", "screen reader feedback", "message list", "sign-in"],
+  "cross_refs": ["PROVIDER_SETUP.md#choosing-a-sign-in-method"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

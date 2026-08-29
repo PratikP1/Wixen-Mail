@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/principles.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Principles",
+  "summary": "Prose rationale answering four questions about Wixen Mail's purpose, what it strengthens, what it replaces, and the failure modes it invites.",
+  "scope": ["Wixen Mail", "accessibility", "screen readers", "open protocols", "IMAP", "SMTP", "POP3", "CalDAV", "iCalendar", "announcements", "HTML sanitization", "CI checks", "releases"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

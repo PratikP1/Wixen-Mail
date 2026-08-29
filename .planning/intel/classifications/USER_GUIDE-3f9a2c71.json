@@ -1,0 +1,13 @@
+{
+  "source_path": "docs/USER_GUIDE.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Wixen Mail User Guide",
+  "summary": "End-user guide covering account setup, mail, search, threads, attachments, other modules, keyboard shortcuts, accessibility, and troubleshooting.",
+  "scope": ["account setup", "reading and managing email", "composing email", "search", "thread view", "attachments", "contacts", "calendar", "reminders", "tasks", "notes", "keyboard shortcuts", "accessibility features", "troubleshooting", "message filters", "signatures", "tags", "sync"],
+  "cross_refs": ["PROVIDER_SETUP.md", "accessibility.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
