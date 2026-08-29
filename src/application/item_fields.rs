@@ -47,6 +47,8 @@ pub enum FieldName {
     DueDate,
     DueTime,
     Location,
+    /// Who is coming, as a list of addresses somebody types.
+    Attendees,
     Notes,
     Priority,
     ShowAs,
@@ -90,6 +92,13 @@ pub enum Entry {
     Line,
     /// Several lines.
     Paragraph,
+    /// A list of people, one to a line.
+    ///
+    /// Several lines like [`Entry::Paragraph`] and not the same thing: this
+    /// holds addresses rather than prose, so it is never read as markdown and
+    /// never read aloud as a paragraph, and what somebody needs told about it
+    /// is how to write a person down rather than what formatting is understood.
+    People,
     /// A date, entered with a date control rather than typed into a box.
     Date,
     /// A time of day.
@@ -226,6 +235,15 @@ static EVENT: &[Field] = &[
         label: "&Location",
         help: "A room, an address, or a link to a meeting",
         entry: Entry::Line,
+        required: false,
+    },
+    Field {
+        name: FieldName::Attendees,
+        label: "Wh&o is coming",
+        help: "One person to a line, as a name and an address or just an \
+               address. Used to work out when everybody is free. No invitation \
+               is sent.",
+        entry: Entry::People,
         required: false,
     },
     Field {
@@ -617,6 +635,22 @@ impl Filled {
             }
         }
 
+        // A guest list with words in it and nobody reachable in it. Read for
+        // the question about when everybody is free that is nobody at all, so
+        // the answer comes back "nobody has been invited" while the box in
+        // front of the person is full of names, and the guest list stored on
+        // the event is empty. Saying so at Save is the one moment they can put
+        // it right.
+        let guests = self.text(FieldName::Attendees);
+        if !guests.trim().is_empty()
+            && crate::application::who_is_coming::typed_in(guests).is_empty()
+        {
+            found.push(Problem {
+                field: field(FieldName::Attendees),
+                said: "Give each person an address, like ada@example.com".to_string(),
+            });
+        }
+
         found
     }
 }
@@ -931,6 +965,39 @@ mod tests {
     #[test]
     fn test_a_correctly_filled_event_has_no_problems() {
         assert_eq!(a_valid_event().problems(ItemKind::Event), vec![]);
+    }
+
+    #[test]
+    fn test_a_guest_list_naming_nobody_reachable_is_refused_rather_than_dropped() {
+        // Names with no addresses on them. Read for the free/busy question
+        // that is nobody at all, so the answer comes back "nobody has been
+        // invited" while the box in front of the person is full of people,
+        // and the guest list stored on the event is empty. Saying so when
+        // Save is pressed is the one moment they can put it right.
+        let mut filled = a_valid_event();
+        filled.put(FieldName::Attendees, "Ada and Charles");
+
+        let problems = filled.problems(ItemKind::Event);
+
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].field.name, FieldName::Attendees);
+    }
+
+    #[test]
+    fn test_a_guest_list_that_names_people_properly_is_accepted() {
+        // Both ways round, or the check above would pass against a rule that
+        // refuses every guest list there is.
+        let mut filled = a_valid_event();
+        filled.put(
+            FieldName::Attendees,
+            "Ada Lovelace <ada@example.com>\ncharles@example.com",
+        );
+
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
+
+        // And an empty box is not a problem: most events have no guests.
+        filled.put(FieldName::Attendees, "   ");
+        assert_eq!(filled.problems(ItemKind::Event), vec![]);
     }
 
     #[test]

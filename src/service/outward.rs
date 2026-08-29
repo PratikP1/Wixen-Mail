@@ -1393,7 +1393,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 46] = [
+    const A_CRATE_THAT_CANNOT: [&str; 47] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1454,6 +1454,10 @@ mod completeness {
         // Does the arithmetic a signature check is made of. Numbers in,
         // an answer out; it opens nothing.
         "ring",
+        // Reads what this machine calls its own time zone, out of a registry
+        // key on Windows and a file on the other two. It asks nobody: the
+        // whole point of it is that the answer is already on the computer.
+        "iana-time-zone",
         "windows",
         "winresource",
         "boa_engine",
@@ -2182,18 +2186,18 @@ mod a_question_is_not_a_change {
         // so one that could change something at a provider would be a change
         // made with nobody's permission.
         //
-        // POST is on the list, and it is the one that needs saying out loud:
-        // it is the verb a scheduling question is asked with, and asking a
-        // calendar server when somebody is free changes nothing there. What
-        // makes it safe is not the verb but where it may be sent, which
-        // `Outward::reading_with` decides.
+        // POST is deliberately not on it, and that is the half worth saying
+        // out loud. A scheduling question is asked with POST and changes
+        // nothing at the server, so it looked like a candidate for this list.
+        // Putting it here would have made every POST in the program a request
+        // that goes out without the gate, to buy one exception. The exception
+        // got a door of its own instead, `asking_when_people_are_free`, and
+        // `the_third_door` below holds that line from the other side.
         for way in AskWith::EVERY {
             let verb = way.verb().expect("a verb this build can ask with");
             assert!(
-                matches!(
-                    verb,
-                    Method::GET | Method::HEAD | Method::OPTIONS | Method::POST
-                ) || verb.as_str() == "PROPFIND"
+                matches!(verb, Method::GET | Method::HEAD | Method::OPTIONS)
+                    || verb.as_str() == "PROPFIND"
                     || verb.as_str() == "REPORT",
                 "{verb} can change something at a provider and is on the list of ways to ask \
                  a question, which goes out without the gate that guards changes"

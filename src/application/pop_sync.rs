@@ -242,6 +242,13 @@ pub(crate) async fn sync<M: PopMailbox>(
             parsed.body_plain.as_deref(),
             parsed.body_html.as_deref(),
         )?;
+        // And the bytes themselves, where this is signed mail, because a
+        // signature can only ever be checked against exactly those. It matters
+        // more here than anywhere: POP has no server to ask again, so a
+        // signature nobody kept the bytes for is one nobody can ever check.
+        // The call decides for itself whether there is anything to keep, and
+        // for ordinary mail there is not.
+        cache.keep_signed_original(row, &raw)?;
         written.push(row);
     }
 

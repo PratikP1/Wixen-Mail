@@ -125,7 +125,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Advanced search filters (date range, sender, recipient, attachments)
 - [x] Unread-only / starred-only filters
 - [x] Tag-based filtering
-- [ ] Saved search folders (virtual folders)
+- [x] Saved search folders (virtual folders)
 
 ### Message Organization
 - [x] Tagging system

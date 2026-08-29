@@ -70,6 +70,7 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                     Chrome {
                         palette: None,
                         a11y: &a11y,
+                        asking: None,
                     },
                     DateSettings::default(),
                     None,
@@ -118,6 +119,7 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 Some(Prefill {

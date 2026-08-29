@@ -190,6 +190,20 @@ pub struct AppConfig {
     /// application-wide one.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
+    /// The directory each account looks people up in, by account id.
+    ///
+    /// Empty on a fresh installation and on every settings file written before
+    /// this existed, and that is the privacy decision rather than an
+    /// oversight. Looking a name up sends what somebody is typing to a server
+    /// before they have decided to send anything at all, so it happens only
+    /// for an account where somebody has named the directory it should go to.
+    ///
+    /// Kept here, keyed by account id, rather than as a field on `Account`,
+    /// for the same reason `allowed_per_account` above is: `Account` is built
+    /// in eleven places, and a map that answers "no directory" for an id it
+    /// has never seen cannot be got wrong by one of them forgetting a field.
+    #[serde(default)]
+    pub directories: HashMap<String, crate::service::directory::Directory>,
     /// Whether a change to a contact goes to every address book that has that
     /// contact, or only to the one it came from.
     ///
@@ -452,6 +466,7 @@ impl Default for AppConfig {
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
             allowed_per_account: HashMap::new(),
+            directories: HashMap::new(),
             send_contact_changes_everywhere: default_true(),
             last_filed_into: HashMap::new(),
             read_receipts: crate::application::receipts::Policy::Never
@@ -482,6 +497,22 @@ impl AppConfig {
             .copied()
             .unwrap_or(self.allowed_changes)
             .and(self.allowed_changes)
+    }
+
+    /// The directory this account looks people up in, if it names one.
+    ///
+    /// `None` means nothing is ever asked of any server while somebody types a
+    /// recipient, which is what a fresh installation does.
+    ///
+    /// An entry with both boxes left blank counts as naming nothing. An entry
+    /// with one of them filled in is handed back as it stands, so that
+    /// `service::directory` can say which part is missing: it writes those
+    /// sentences, and a second opinion here would be a second answer to the
+    /// same question.
+    pub fn directory_for(&self, account_id: &str) -> Option<&crate::service::directory::Directory> {
+        self.directories.get(account_id).filter(|directory| {
+            !directory.url.trim().is_empty() || !directory.search_under.trim().is_empty()
+        })
     }
 
     /// Validate configuration values
@@ -1145,6 +1176,82 @@ mod permission_tests {
         // message here and sends nothing, the other can put four bytes of a
         // link on the wire. They cannot share a switch.
         assert!(!AppConfig::default().check_links_with_google);
+    }
+}
+
+#[cfg(test)]
+mod looking_people_up_at_an_organisation {
+    use super::*;
+    use crate::service::directory::Directory;
+
+    fn a_directory() -> Directory {
+        Directory {
+            url: "ldaps://directory.example.com".to_string(),
+            search_under: "ou=people,dc=example,dc=com".to_string(),
+            sign_in_as: None,
+        }
+    }
+
+    #[test]
+    fn test_a_new_installation_looks_nobody_up_anywhere() {
+        // The privacy decision, made testable. Every letter typed into a To
+        // line would otherwise go to a server, before anybody has decided to
+        // send anything, and this is a mail program rather than a program for
+        // an organisation. Nothing goes out until somebody has named the
+        // directory it should go to.
+        assert_eq!(AppConfig::default().directory_for("any-account"), None);
+    }
+
+    #[test]
+    fn test_an_account_that_names_a_directory_is_looked_up_in_that_one() {
+        let mut settings = AppConfig::default();
+        settings
+            .directories
+            .insert("work".to_string(), a_directory());
+
+        assert_eq!(settings.directory_for("work"), Some(&a_directory()));
+    }
+
+    #[test]
+    fn test_one_account_naming_a_directory_does_not_name_it_for_the_others() {
+        // A personal mailbox on the same computer must not have its
+        // recipients sent to an employer's directory.
+        let mut settings = AppConfig::default();
+        settings
+            .directories
+            .insert("work".to_string(), a_directory());
+
+        assert_eq!(settings.directory_for("personal"), None);
+    }
+
+    #[test]
+    fn test_a_directory_with_nothing_filled_in_is_no_directory_at_all() {
+        // An entry left behind by somebody clearing the boxes must not become
+        // a search against an empty address on every keystroke.
+        let mut settings = AppConfig::default();
+        settings.directories.insert(
+            "work".to_string(),
+            Directory {
+                url: "   ".to_string(),
+                search_under: String::new(),
+                sign_in_as: None,
+            },
+        );
+
+        assert_eq!(settings.directory_for("work"), None);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_directories_existed_still_reads() {
+        // Every settings file on every machine was written before this, and
+        // one that refuses to parse takes every other setting with it.
+        let earlier = r#"{"version":"0.1.0","download_folder":".","theme":"default",
+            "font_size":12,"log_level":"info"}"#;
+
+        let parsed: AppConfig = serde_json::from_str(earlier).expect("an earlier settings file");
+
+        assert!(parsed.directories.is_empty());
+        assert_eq!(parsed.directory_for("work"), None);
     }
 }
 

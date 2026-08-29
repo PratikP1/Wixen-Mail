@@ -1352,11 +1352,22 @@ fn test_no_two_controls_in_one_dialog_claim_the_same_alt_key() {
         // to press, and a notebook page is a scope of its own.
         let production = text.split("#[cfg(test)]").next().unwrap_or_default();
         for (name, body) in builder_bodies(production) {
+            if READ_AT_RUN_TIME_INSTEAD.contains(&name.as_str()) {
+                continue;
+            }
             let mut claimed: std::collections::HashMap<char, Vec<String>> =
                 std::collections::HashMap::new();
             for label in mnemonic_labels(body) {
                 if let Some(key) = alt_key_of(&label) {
-                    claimed.entry(key).or_default().push(label);
+                    // The same words twice are one control, not two. A label is
+                    // written once for the screen and again as the accessible
+                    // name of the control beside it, and counting those as a
+                    // clash would report every properly named control in the
+                    // program as fighting itself.
+                    let seen = claimed.entry(key).or_default();
+                    if !seen.contains(&label) {
+                        seen.push(label);
+                    }
                 }
             }
             for (key, labels) in claimed {
@@ -1414,23 +1425,50 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
     found
 }
 
-/// Every `with_label("...")` literal in one body that carries a mnemonic.
+/// Dialogs whose labels this cannot judge by reading them.
+///
+/// One entry, and it is here because the answer it would give would be wrong
+/// rather than because the answer is inconvenient.
+///
+/// The account window builds every control in one function and then shows a
+/// third of them at a time: two pages, and on the second page only the fields
+/// for the protocol and the sign-in method the account actually uses. Reading
+/// the source finds twenty-four labels sharing one scope and calls six letters
+/// a clash, and at least two of those are the IMAP field and the POP field that
+/// replaced it, which no person can ever see together.
+///
+/// So this reports imaginary faults there and would be quieted by rewording
+/// labels to satisfy it, which helps nobody. What that window needs is a check
+/// that builds it, walks it to each page for each protocol, and reads the
+/// labels of the controls that are actually showing. `advance_to_connection_page`,
+/// `return_to_identity_page` and `is_shown()` already exist for exactly that,
+/// and `tests/account_edit_protocol_fields.rs` already drives them. That check
+/// is not written, and until it is, the mnemonics on that window are unchecked
+/// by anything. Said here rather than left as a green run.
+const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog"];
+
+/// Every literal in one body that claims an Alt key.
 ///
 /// A page of a notebook is its own scope, so a body that builds one is split
 /// on the call that adds a page and each page read separately.
+///
+/// Any quoted run, not only `with_label("...")`. Reading that one call was a
+/// check that looked like it covered every dialog and covered almost none of
+/// one: the account window builds twenty of its twenty-two labels through small
+/// `tf`, `cb`, `choice` and `spin` helpers, so this saw two of them and called
+/// the window clean while four letters on one page each meant two things. A
+/// guard with a blind spot that shape is worse than no guard, because the run
+/// is green and somebody believes it.
+///
+/// Anything with no `&` before a letter is not a mnemonic and falls out at
+/// [`alt_key_of`], so ordinary sentences and format strings cost nothing.
 fn mnemonic_labels(body: &str) -> Vec<String> {
-    let mut labels = Vec::new();
     let scope = body.split("add_page").next().unwrap_or(body);
-    let mut from = 0;
-    while let Some(at) = scope[from..].find("with_label(\"") {
-        let start = from + at + "with_label(\"".len();
-        let Some(len) = scope[start..].find('"') else {
-            break;
-        };
-        labels.push(scope[start..start + len].to_string());
-        from = start + len;
-    }
-    labels
+    scope
+        .lines()
+        .flat_map(quoted_runs)
+        .map(str::to_string)
+        .collect()
 }
 
 /// The letter a label claims, when it claims one.
@@ -1827,6 +1865,8 @@ fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
         ),
         ("ID_REFRESH_FOLDER", "read this folder again"),
         ("ID_GET_OLDER", "fetch older messages in this folder"),
+        ("ID_RENAME_SEARCH", "rename the chosen saved search"),
+        ("ID_DELETE_SEARCH", "remove the chosen saved search"),
         (
             "ID_CHOOSE_FOLDERS",
             "choose which folders are kept up to date",
@@ -2386,5 +2426,577 @@ fn test_importing_mail_reads_the_list_back_before_it_finishes() {
         body.contains("spawn_blocking"),
         "importing mail is done on the window's own helper, which freezes it \
          for as long as the import takes"
+    );
+}
+
+/// Every command a sentence names is a command somebody can reach.
+///
+/// The failure this catches is not a dead handler, which the sweeps at the top
+/// of this file already find. It is the opposite direction: a sentence shown to
+/// a person that names a command which was never built. "Sending in 10 seconds.
+/// Undo Send takes it back." was shown on every held message, and there was no
+/// Undo Send on any menu, on any key, or on any button. The words were written
+/// alongside the module that decided when a message could still be caught, and
+/// the last step was never taken.
+///
+/// It is worse heard than seen. Somebody looking at a menu bar knows in a glance
+/// that a command is not there. Somebody working by ear opens every menu, finds
+/// nothing, and has no way to tell a missing command from one they walked past.
+///
+/// # How a command is told from a label
+///
+/// By its first word. A command is named for the doing of it and starts with a
+/// verb: Undo Send, Save Draft, Attach File. A label names a thing and does not:
+/// Postal Code, Job Title, Email Address. Without that distinction this check
+/// asked every capitalised phrase in the program to be a menu item and wanted a
+/// hundred and sixty exceptions, which is a check nobody would have read.
+///
+/// # What counts as reachable
+///
+/// Anything the windows put in front of somebody: a menu item, a button, a tab,
+/// a field. Not menus alone, because half of these commands are buttons in a
+/// dialog and demanding a menu entry for each would be asking for the wrong
+/// thing. So this asks only that the words appear somewhere a person could
+/// meet them.
+///
+/// What this cannot see, and it is a lot: whether the command works, whether it
+/// is enabled when the sentence appears, whether the control carrying those
+/// words is reachable by keyboard, or whether it is ever shown. A string sitting
+/// in a window's source unused satisfies this check. It answers one question
+/// only, and it is the question that went wrong: was this command ever built at
+/// all. It reads one-line literals, so a sentence assembled from parts or
+/// wrapped across lines is invisible to it.
+#[test]
+fn test_every_command_a_sentence_names_is_reachable() {
+    let reachable = words_the_windows_show();
+    let mut promised: Vec<(String, String)> = Vec::new();
+
+    for path in sources().into_iter().chain(application_sources()) {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let shown = without_test_modules(&text);
+        for phrase in capitalised_phrases(&shown) {
+            if !names_a_command(&phrase) {
+                continue;
+            }
+            // Carried inside a label rather than equal to it, because a phrase
+            // stops at the first word written in lower case: the menu offers
+            // "Folders to Keep Up to Date" and the phrase read out of it is
+            // "Keep Up". Asking for equality would report a dozen live commands
+            // as missing.
+            if reachable.iter().any(|label| label.contains(&phrase)) {
+                continue;
+            }
+            if NOT_A_COMMAND.contains(&phrase.as_str()) {
+                continue;
+            }
+            if promised.iter().any(|(seen, _)| seen == &phrase) {
+                continue;
+            }
+            promised.push((phrase, path.display().to_string()));
+        }
+    }
+
+    assert!(
+        promised.is_empty(),
+        "these are written in sentences as commands, and nothing in any window \
+         carries those words, so there is nothing for somebody to press. Either \
+         build the command or add it to NOT_A_COMMAND: {promised:#?}"
+    );
+}
+
+/// Whether a phrase is named for doing something rather than for being something.
+///
+/// The first word decides it. This is a guess and it is meant to be: a phrase it
+/// waves through is a phrase this check never looks at, which is why the list
+/// holds the verbs commands here are actually named with rather than a
+/// dictionary.
+fn names_a_command(phrase: &str) -> bool {
+    let Some(first) = phrase.split_whitespace().next() else {
+        return false;
+    };
+    STARTS_A_COMMAND.contains(&first)
+}
+
+/// What closes a sentence, so a run of capitals cannot read across two of them.
+const ENDS_A_SENTENCE: &[char] = &['.', '!', '?', ':', ';'];
+
+/// The verbs the commands in this program are named with.
+const STARTS_A_COMMAND: &[&str] = &[
+    "Accept", "Add", "Answer", "Attach", "Block", "Change", "Check", "Choose", "Clear", "Close",
+    "Compose", "Confirm", "Copy", "Create", "Cut", "Decline", "Delete", "Edit", "Empty", "Export",
+    "Find", "Flag", "Forward", "Get", "Hide", "Import", "Insert", "Keep", "Load", "Manage", "Mark",
+    "Move", "Open", "Paste", "Preview", "Print", "Refresh", "Remove", "Rename", "Reply", "Reset",
+    "Save", "Search", "Select", "Send", "Show", "Sign", "Sort", "Star", "Take", "Undo", "Unstar",
+];
+
+/// Every run of words any window puts in front of somebody.
+///
+/// Menu labels, button labels, tab names, field names: whatever is written as a
+/// string in the layer that builds the windows, with the mnemonic ampersand, the
+/// accelerator and the trailing ellipsis taken off so it reads as it is heard.
+fn words_the_windows_show() -> Vec<String> {
+    let mut found = Vec::new();
+    for path in sources() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in without_test_modules(&text).lines() {
+            for quoted in quoted_runs(line) {
+                found.push(as_it_is_read_out(quoted));
+            }
+        }
+    }
+    found
+}
+
+/// The application sources, where most of what a person is told is written.
+///
+/// The presentation layer builds the windows; the layer under it decides the
+/// words. "Undo Send takes it back" was written in `application::sending_later`
+/// beside the rule for whether a message could still be caught, which is why a
+/// check that read only the window sources would have stayed green.
+fn application_sources() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect(Path::new("src/application"), &mut found);
+    found
+}
+
+/// The source with its test modules taken out.
+///
+/// Test fixtures are full of capitalised names, and every one of them would
+/// read as a command nobody wired. Cut by lines rather than by counting braces:
+/// a test module sits at the top level of its file, so it ends at the next `}`
+/// in the first column, and a brace inside a string cannot be mistaken for one.
+/// A file with production code between two test modules loses that code from
+/// this check, which makes it blind rather than wrong.
+fn without_test_modules(text: &str) -> String {
+    let mut kept = String::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        if skipping {
+            skipping = line != "}";
+            continue;
+        }
+        if line.trim_start() == "#[cfg(test)]" {
+            skipping = true;
+            continue;
+        }
+        kept.push_str(line);
+        kept.push('\n');
+    }
+    kept
+}
+
+/// Two or more capitalised words running together inside a quoted string.
+///
+/// Ordinary prose here is written in sentence case, so a run of capitalised
+/// words in the middle of one is somebody naming a thing: a command, a window,
+/// a product or a person. Which of those it is, is what the check then asks.
+///
+/// Only one-line literals are read, so a sentence assembled from pieces or
+/// wrapped across lines is not seen.
+fn capitalised_phrases(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for line in text.lines() {
+        // A comment is written for whoever reads the code, not for whoever uses
+        // the program, and this file's own comments name commands constantly.
+        // Block comments are not skipped; this codebase does not use them.
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for quoted in quoted_runs(line) {
+            let mut run: Vec<&str> = Vec::new();
+            for word in quoted.split_whitespace() {
+                let bare = word.trim_matches(|c: char| !c.is_alphanumeric());
+                if is_a_capitalised_word(bare) {
+                    run.push(bare);
+                    // A full stop ends the run whatever comes next. "Close
+                    // Wixen Mail. It keeps running." is two sentences, and
+                    // reading through the stop invents a command called
+                    // "Close Wixen Mail It".
+                    if !word.ends_with(ENDS_A_SENTENCE) {
+                        continue;
+                    }
+                }
+                if run.len() > 1 {
+                    found.push(run.join(" "));
+                }
+                run.clear();
+            }
+            if run.len() > 1 {
+                found.push(run.join(" "));
+            }
+        }
+    }
+    found
+}
+
+/// Every quoted run on one line, taken one at a time.
+///
+/// First quote to last would read two literals sitting side by side in one call
+/// as a single sentence, and `"&Account", "Open Account Manager"` is not a
+/// command called "Account Open Account Manager". The first version of this did
+/// exactly that and invented a dozen commands nobody had ever written.
+fn quoted_runs(line: &str) -> Vec<&str> {
+    let mut runs = Vec::new();
+    let mut rest = line;
+    while let Some(opened) = rest.find('"') {
+        let after = &rest[opened + 1..];
+        let Some(closed) = after.find('"') else {
+            break;
+        };
+        runs.push(&after[..closed]);
+        rest = &after[closed + 1..];
+    }
+    runs
+}
+
+/// A word written with a capital and then nothing but lower case.
+///
+/// `SCREAMING_SNAKE` names, format placeholders and single letters are not
+/// words in a sentence, and none of them is a command anybody was promised.
+fn is_a_capitalised_word(word: &str) -> bool {
+    let mut letters = word.chars();
+    letters
+        .next()
+        .is_some_and(|first| first.is_ascii_uppercase())
+        && word.len() > 1
+        && letters.all(|rest| rest.is_ascii_lowercase())
+}
+
+/// A menu label with the parts Windows reads and a person does not taken off.
+///
+/// The accelerator, the mnemonic ampersand, and the ellipsis that says a dialog
+/// follows. A sentence naming the command calls it "Save As", not "Save As...".
+///
+/// The accelerator is cut on the two characters a backslash and a `t`, because
+/// this reads source text: the label is written `"&Save\tCtrl+S"` there and
+/// only becomes a tab when the compiler gets to it.
+fn as_it_is_read_out(label: &str) -> String {
+    let spoken = label.split(r"\t").next().unwrap_or(label);
+    spoken
+        .replace('&', "")
+        .trim()
+        .trim_end_matches("...")
+        .trim()
+        .to_string()
+}
+
+/// Capitalised phrases that name something other than a command.
+///
+/// Every entry is a decision that this is a name and not a promise. A phrase
+/// arriving here that is really a command is the failure this check exists to
+/// catch, so add to it deliberately and never to quiet a run.
+const NOT_A_COMMAND: &[&str] = &[];
+
+/// Undo Send writes the draft before it takes the row out of the queue.
+///
+/// The ordering is the whole safety of the command, and reversing it loses
+/// mail. Take the row out first and the window opens on a message that exists
+/// nowhere else; cancelling a compose window saves nothing, so pressing Escape
+/// throws away what somebody wrote. The first version of this command did
+/// exactly that, under a comment promising it would not.
+///
+/// The safe order has three endings and all of them keep the message: the draft
+/// will not save and nothing has been touched, the draft saves and the row comes
+/// out, or the draft saves and the row has already gone, in which case the spare
+/// draft is taken away again rather than left as a second copy of a message that
+/// is already on its way.
+///
+/// What this cannot see: whether Undo Send is reachable, whether either call
+/// does what its name says, or whether the message that comes back is the one
+/// that was queued. It reads the order of two calls in the source.
+#[test]
+fn test_undo_send_saves_the_draft_before_it_empties_the_queue() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let body = body_of(&app, "fn undo_send(");
+
+    let saved = body
+        .find("save_as_draft(")
+        .expect("Undo Send no longer writes a draft, so a cancelled window loses the message");
+    let emptied = body
+        .find("delete_outbox_message(")
+        .expect("Undo Send no longer takes the message out of the queue, so it would be sent");
+
+    assert!(
+        saved < emptied,
+        "Undo Send takes the message out of the queue before it saves the draft, so \
+         closing the window without saving loses it"
+    );
+
+    // And the spare draft is taken away when the row had already gone. Without
+    // it, a message that was sent anyway leaves a draft behind that whoever
+    // finds it sends a second time.
+    assert!(
+        body.contains("delete_draft("),
+        "Undo Send leaves its draft behind when the message had already gone, so the \
+         same message can be sent twice"
+    );
+}
+
+/// Nothing takes the interface lock twice in one statement.
+///
+/// The lock behind `lock_state` is an ordinary mutex and is not reentrant, so
+/// asking for it while already holding it stops the thread that asked. On the
+/// interface thread that is the whole window: it stops repainting, stops
+/// answering the keyboard, and stops speaking.
+///
+/// It is easy to write by accident, because the two halves read as one thought:
+/// `lock_state(state).selected_folder.as_ref().and_then(|name|
+/// lock_state(state).folder_ids.get(name))`. The guard from the first call is a
+/// temporary and lives to the end of the statement, so the second call waits
+/// for a lock the same thread is holding. That shape sat in the handler for
+/// Delete, which meant deleting a message froze the window.
+///
+/// The fix is always the same: name the guard once in a block and read both
+/// fields from it, which is what `folder_on_screen` does and says why.
+///
+/// What this cannot see: a second lock reached through a function call rather
+/// than written out, a `match` whose scrutinee holds a guard across its arms
+/// with a semicolon inside one of them, or anything on another thread. It reads
+/// the source between semicolons.
+#[test]
+fn test_nothing_asks_for_the_interface_lock_while_it_already_holds_it() {
+    let mut doubled = Vec::new();
+    for path in sources() {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for statement in without_test_modules(&text).split(';') {
+            if statement.matches("lock_state(").count() < 2 {
+                continue;
+            }
+            // A block boundary ends the statement for this purpose: the guard a
+            // condition holds is dropped before the block it guards is entered.
+            let opens_a_block = statement
+                .split("lock_state(")
+                .nth(1)
+                .is_some_and(|between| between.contains('{'));
+            if opens_a_block {
+                continue;
+            }
+            doubled.push(format!(
+                "{}: {}",
+                path.display(),
+                statement.split_whitespace().collect::<Vec<_>>().join(" ")
+            ));
+        }
+    }
+
+    assert!(
+        doubled.is_empty(),
+        "these ask for the interface lock a second time while the first is still held, which \
+         stops the thread that asked and, on the interface thread, the whole window:\n{}",
+        doubled.join("\n")
+    );
+}
+
+/// Saved searches reach the folder tree, and Enter on one runs it.
+///
+/// The failure this whole file exists for, and this feature arrived in exactly
+/// that shape: `application::saved_searches` and
+/// `data::message_cache::saved_searches` were both written, both tested, and
+/// nothing in the running program called either of them. Every test involved
+/// was green, because they all called the functions themselves.
+///
+/// Four calls, because leaving out any one of them switches the feature off
+/// without breaking anything else. Without the read the tree has no searches
+/// to draw; without the rows nothing appears; without the activation handler
+/// Enter does nothing; without the resolver Enter lands on a row nothing can
+/// name.
+///
+/// What this cannot see: whether the rows read out correctly, whether the
+/// search finds the right mail, or whether anybody hears the count. It reads
+/// the source for the calls. What a search comes to is measured in
+/// `application::saved_searches`, against real messages in a real database.
+#[test]
+fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    assert!(
+        body_of(ship, "fn folder_tree_updates(").contains("get_saved_searches_for_account("),
+        "the folder tree is built without asking what saved searches there are, so none of \
+         them can ever appear in it"
+    );
+    let rebuild = body_of(ship, "        UIUpdate::FoldersLoaded(folders) => {");
+    assert!(
+        rebuild.contains("saved_search_rows("),
+        "the tree rebuild draws no saved-search rows, so the searches are read and thrown away"
+    );
+    assert!(
+        ship.contains("folder_tree.on_item_activated("),
+        "nothing answers Enter on a folder-tree row, so a saved search can be landed on and \
+         never opened"
+    );
+    assert!(
+        body_of(ship, "fn run_a_saved_search(").contains("spawn_blocking"),
+        "a saved search is run on the interface thread, so a mailbox of any size stops the \
+         window repainting, answering the keyboard and speaking"
+    );
+}
+
+/// A saved search is never treated as a mailbox.
+///
+/// It has no folder on any server: nothing to select, nothing to fetch more
+/// of, nothing to write out. What is chosen is held as the search's path,
+/// which opens with a character no mailbox name can carry, so every command
+/// that would otherwise send it to a server has one question to ask first.
+///
+/// What this cannot see: whether the answer is right, or whether anybody hears
+/// the refusal. It reads the source for the question being asked.
+#[test]
+fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    for (what, body) in [
+        (
+            "writing a mailbox out to a file",
+            body_of(ship, "fn export_a_mailbox("),
+        ),
+        (
+            "fetching older messages from the server",
+            body_of(ship, "                        _ if id == ID_GET_OLDER => {"),
+        ),
+    ] {
+        assert!(
+            body.contains("is_a_saved_search("),
+            "{what} does not ask whether what is chosen is a saved search, so it sends the \
+             search's own path to the server as a folder name"
+        );
+    }
+}
+
+/// Delete on a saved-search row removes the search and never mail.
+///
+/// With the cursor in the folder tree, Delete used to reach the arm that
+/// deletes the chosen message: somebody who thought they were removing a saved
+/// question would have deleted a message instead. The arm that answers for a
+/// saved search has to come first, since a match is read top down and the one
+/// below it takes Delete for the message list unconditionally.
+///
+/// What this cannot see: whether the delete happens, or whether the right
+/// search goes. It reads the order of two arms in the source.
+#[test]
+fn test_delete_on_a_saved_search_row_removes_the_search_rather_than_a_message() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let squashed = without_whitespace(ship);
+
+    let for_the_search = squashed
+        .find("id==ID_DELETE&&folder_tree.has_focus()&&the_chosen_saved_search")
+        .expect(
+            "Delete no longer has an arm for a saved search, so pressing it on one of those \
+             rows deletes the chosen message instead",
+        );
+    let for_the_message = squashed
+        .find("id==ID_DELETE||id==ID_DELETE_OUTRIGHT")
+        .expect("Delete no longer reaches the message list at all");
+
+    assert!(
+        for_the_search < for_the_message,
+        "the arm that deletes the chosen message is read before the one for a saved search, \
+         so Delete on a saved-search row deletes mail"
+    );
+}
+
+/// Every command that changes the saved searches reads the tree back.
+///
+/// Saying a search was made, renamed or removed without re-reading the tree
+/// leaves the rows as a photograph of the database taken before the write, so
+/// somebody is told about a row that is not there, or not told about one that
+/// is. This has shipped twice in other features.
+///
+/// What this cannot see: whether the read returns the right rows, or whether
+/// the tree redraws. It reads the source for the call.
+#[test]
+fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    for changing in [
+        "fn save_this_search(",
+        "fn rename_the_chosen_search(",
+        "fn delete_the_chosen_search(",
+    ] {
+        assert!(
+            body_of(ship, changing).contains("read_the_tree_back("),
+            "{changing} changes the saved searches and does not read the tree back, so the \
+             rows on screen are what the database held before it ran"
+        );
+    }
+    assert!(
+        body_of(ship, "fn read_the_tree_back(").contains("folder_tree_updates("),
+        "reading the tree back no longer reads the tree"
+    );
+}
+
+/// A signature verdict is worked out where a message is opened, on both surfaces.
+///
+/// This is the failure this whole file exists for, and it had already happened
+/// to this feature once. `service::signed_mail` could read a signed message and
+/// say what its signature was worth, `reader_text::with_signature` could put
+/// that sentence in the bar, the changelog described it as working, and nothing
+/// in the running program ever called either of them. Every test involved was
+/// green, because they all called the functions themselves.
+///
+/// Two surfaces, because a message opens into one of two windows depending on a
+/// setting and the default is the page. Wiring only the text reader would leave
+/// the feature switched off for anybody who had not changed that setting.
+///
+/// What this cannot see: whether the verdict is right, whether the bar is
+/// reachable once it is there, or whether anybody hears it. It reads the source
+/// for the calls. What the verdict comes to is measured in
+/// `application::checking_signatures`, against a real signed message in a real
+/// database.
+#[test]
+fn test_opening_a_message_works_out_what_its_signature_is_worth() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    for opening in [
+        "fn open_in_the_text_reader(",
+        "fn show_conversation_as_page(",
+    ] {
+        assert!(
+            body_of(&app, opening).contains("with_signature("),
+            "{opening} composes a message without folding in what its signature is worth, \
+             so signed mail opens there saying nothing about its signature"
+        );
+    }
+
+    assert!(
+        body_of(&app, "fn signature_check_for(").contains("checking_signatures::for_message("),
+        "the reader no longer asks what a message's signature is worth"
+    );
+}
+
+/// The bytes a signed message arrived in are kept when one arrives.
+///
+/// The other half of the same wiring. A signature can only be checked against
+/// the exact bytes that were signed, so without this call the verdict above is
+/// worked out once as the message comes off the wire and never again, and every
+/// later opening of the message says the signature could not be checked.
+///
+/// What this cannot see: whether the bytes stored are the right ones, or
+/// whether anything reads them back. `data::message_cache::signed_original`
+/// measures the storing and `application::checking_signatures` measures the
+/// reading.
+#[test]
+fn test_a_signed_message_has_its_arrived_in_form_kept_when_it_arrives() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    assert!(
+        body_of(&app, "fn spawn_body_fetch(").contains("keep_signed_original("),
+        "a message downloaded over IMAP no longer has the form it arrived in kept, so its \
+         signature can never be checked again after the first time"
+    );
+
+    let pop = fs::read_to_string("src/application/pop_sync.rs").expect("the POP sync");
+    assert!(
+        pop.contains("keep_signed_original("),
+        "a message collected over POP no longer has the form it arrived in kept, and POP has \
+         no server to ask again, so its signature could never be checked at all"
     );
 }

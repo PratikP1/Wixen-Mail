@@ -389,6 +389,28 @@ pub enum UIUpdate {
     /// Sent before the folders, because the mail sidebar draws both in one
     /// pass and needs them in hand when it does.
     LabelsLoaded(Vec<(String, String)>),
+    /// The saved searches an account has, and the ones this build cannot read.
+    ///
+    /// Sent before the folders, for the same reason the labels are: the mail
+    /// sidebar draws folders, labels and saved searches in one pass and needs
+    /// all three in hand when it does.
+    ///
+    /// Boxed because it carries every search's questions and every other
+    /// variant would otherwise be sized to fit this one.
+    SavedSearchesLoaded(Box<crate::data::message_cache::saved_searches::SavedSearchesRead>),
+    /// What a saved search came to.
+    ///
+    /// The rows and the sentence together rather than as two updates. A list
+    /// arriving without its sentence is a search that says nothing, and a
+    /// sentence without its list is a count nobody can look at. The messages
+    /// are empty when the search could not run, which is a different fact from
+    /// finding none and is why this is not `MessagesLoaded` with a status
+    /// beside it: that would announce "0 messages" over the top of it.
+    SavedSearchRan {
+        messages: Vec<MessageItem>,
+        /// What is said out loud and written on the status bar.
+        said: String,
+    },
     /// Reminders loaded
     RemindersLoaded(Vec<ReminderItem>),
     /// Task lists loaded
@@ -505,6 +527,13 @@ pub struct CalendarEventItem {
     /// itself or the ending is a count that happens to read the same. The
     /// item form's Recurrence page is filled from this, not from `repeats`.
     pub recurrence_rule: Option<String>,
+    /// Who is coming, exactly as the event's own column holds it.
+    ///
+    /// Carried through the list rather than looked up again when the editor
+    /// opens, because the editor is handed one of these and nothing else: read
+    /// from a row without it, the guest list box opens empty and the next Save
+    /// writes that emptiness over everybody who was coming.
+    pub attendees_json: Option<String>,
 }
 
 /// Calendar container item for UI display (represents a whole calendar)
@@ -879,6 +908,7 @@ impl CalendarEventItem {
             categories: entry.categories.clone(),
             show_as: entry.show_as.clone(),
             recurrence_rule: entry.recurrence_rule.clone(),
+            attendees_json: entry.attendees_json.clone(),
         }
     }
 
@@ -1118,6 +1148,7 @@ mod tests {
 
     fn event(start: &str) -> CalendarEventItem {
         CalendarEventItem {
+            attendees_json: None,
             id: "e1".into(),
             summary: "Standup".into(),
             description: String::new(),

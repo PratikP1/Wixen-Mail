@@ -53,17 +53,18 @@
 //! both the guest list and this account's sign-in. So an outbox somewhere else
 //! is refused. See [`the_same_server`].
 //!
-//! # Two things this cannot do from here, and why
+//! # Which door this goes out of
 //!
-//! Both are limits of what this file may reach rather than decisions.
+//! A free/busy question changes nothing at a server, so it goes out through
+//! `outward::Outward::asking_when_people_are_free`, the door kept for this one
+//! question. Sent through `outward::Outward::changing` it would be refused for
+//! every account whose changes are switched off, which is most of them, and
+//! refused invisibly: everybody would come back unknown and nobody would ever
+//! see a suggestion. Widening the reading door instead was the other option and
+//! is the wrong one, because that type's promise is that a changing verb cannot
+//! pass through it and `POST` is a changing verb everywhere else here.
 //!
-//! A free/busy question changes nothing at a server, but the only way to send a
-//! `POST` in this program is `outward::Outward::changing`, which is the gate
-//! for changes: `outward::AskWith`, the read that is not a `GET`, offers
-//! `PROPFIND` and `REPORT` and nothing else. So an account with changes to
-//! personal information turned off has this question refused along with real
-//! changes, which is stricter than it should be. Turning it into a read wants
-//! one more variant on `AskWith`, in `service::outward`.
+//! # One thing this cannot do from here, and why
 //!
 //! The client is handed in rather than built here. `CalDavClient` and
 //! `MsGraphClient` each hold their own gated client privately, with no way to
@@ -826,34 +827,6 @@ async fn what_this_server_said(
     answer
 }
 
-/// The verb a free/busy question is posted with.
-///
-/// Parsed from the word, the same way `outward::AskWith::verb` builds the two
-/// verbs it allows, rather than named as a type out of the transport crate.
-/// Naming that crate here would put this file on the census in
-/// `service::outward` that asks which modules can reach a server, and this file
-/// is not one of the ones that list is for: it holds no client of its own and
-/// every request it makes goes through the gate, which is the case that census
-/// deliberately treats as quiet.
-fn posting<V: std::str::FromStr>() -> Result<V>
-where
-    V::Err: std::fmt::Display,
-{
-    "POST"
-        .parse()
-        .map_err(|e| Error::Protocol(format!("POST is not a request verb: {e}")))
-}
-
-/// What a refusal names as the act, so somebody hears what was refused.
-///
-/// One per server rather than one shared, because the sentence the gate builds
-/// reads "Refused to ...", and being told which server it was is the difference
-/// between an answer somebody can act on and one they cannot.
-const ASKING_A_CALENDAR_SERVER: &str = "ask a calendar server when people are free";
-
-/// The same, for Microsoft. See [`ASKING_A_CALENDAR_SERVER`].
-const ASKING_MICROSOFT: &str = "ask Microsoft when people are free";
-
 /// Ask a calendar server about everybody at once.
 ///
 /// Three requests: who this account is, where its scheduling goes, and then the
@@ -878,7 +851,7 @@ async fn ask_a_calendar_server(
     );
     let (user_name, password) = sign_in;
     let answer = outward
-        .changing(posting()?, &outbox.at, ASKING_A_CALENDAR_SERVER)?
+        .asking_when_people_are_free(&outbox.at)?
         .header("Content-Type", "text/calendar; charset=utf-8")
         .basic_auth(user_name, Some(password))
         .timeout(within)
@@ -980,7 +953,7 @@ async fn ask_microsoft(
         "availabilityViewInterval": 60,
     });
     let answer = outward
-        .changing(posting()?, &url, ASKING_MICROSOFT)?
+        .asking_when_people_are_free(&url)?
         .bearer_auth(token)
         .timeout(within)
         .json(&asking)
@@ -1555,10 +1528,11 @@ mod tests {
 
     #[test]
     fn test_a_question_this_account_may_not_send_leaves_time_unknown_rather_than_free() {
-        // The gate refuses a change on an account open for reading only, and
-        // this question goes out as one because nothing here can send a read
-        // that is a POST. Whatever anybody thinks of that, the answer must not
-        // be an empty diary.
+        // This question has a door of its own and is not refused by the gate
+        // on changes any more. The mapping is kept because a refusal from
+        // anywhere else out of this program must still not read as an empty
+        // diary, and a refusal is the one failure that arrives with no server
+        // involved at all.
         let refused = Error::Security(crate::service::outward::refusal(
             "ask a calendar server when people are free",
         ));
@@ -2005,19 +1979,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_an_account_open_for_reading_only_leaves_time_unknown_rather_than_free() {
-        // The question changes nothing, and it still goes out through the gate
-        // for changes, because nothing here can send a read that is a POST. So
-        // it can be refused, and a refusal must not read as an empty diary.
-        let (address, _listening) = answering_several(
+    async fn test_an_account_open_for_reading_only_can_still_ask_when_people_are_free() {
+        // The question changes nothing at the server, so it goes out through
+        // the door `outward` keeps for exactly it. Sent through the gate for
+        // changes instead, it would be refused for almost every account here,
+        // and refused silently: everybody would come back unknown and nobody
+        // would ever see a suggestion.
+        let (address, listening) = answering_several(
             "200 OK",
             "application/xml",
-            vec![the_principal_reply(), the_scheduling_reply()],
+            vec![
+                the_principal_reply(),
+                the_scheduling_reply(),
+                a_schedule_response(&[answered_about(
+                    "mailto:ada@example.com",
+                    &["FREEBUSY:20260302T090000Z/20260302T100000Z"],
+                )]),
+            ],
         )
         .await;
 
         let found = when_they_are_free(
-            &Outward::default(),
+            &Outward::read_only(reqwest::Client::new()),
             &[AskHere {
                 server: a_calendar_server(&format!("http://{address}/dav/")),
                 people: vec![somebody("Ada", "ada@example.com")],
@@ -2026,9 +2009,17 @@ mod tests {
         )
         .await;
 
-        assert!(
-            matches!(found[0].calendar, TheirCalendar::NotKnown(_)),
-            "a refused question was read as an empty diary"
+        let asked = heard(listening, "three requests").await.expect("three");
+        assert_eq!(asked.len(), 3, "the question was never sent: {asked:?}");
+        assert_eq!(
+            found[0].calendar,
+            TheirCalendar::Answered {
+                covering: the_week(),
+                stretches: vec![Stretch {
+                    span: span("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
+                    how_busy: HowBusy::Busy,
+                }],
+            }
         );
     }
 

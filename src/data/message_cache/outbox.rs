@@ -129,7 +129,11 @@ impl MessageCache {
     ///
     /// One query for both, so the row and its time cannot be read out of step
     /// with each other by two queries run a moment apart.
-    fn queued_with_their_times(
+    ///
+    /// Public because Undo Send needs the same pairing and needs the message
+    /// itself: it decides which row it is about from the times, then opens that
+    /// message again. Asking twice would let the two answers disagree.
+    pub fn queued_with_their_times(
         &self,
         account_id: &str,
     ) -> Result<Vec<(QueuedOutboxMessage, GoAfter)>> {
@@ -263,12 +267,20 @@ impl MessageCache {
         Ok(removed > 0)
     }
 
-    /// Delete queued outbox message
-    pub fn delete_outbox_message(&self, id: &str) -> Result<()> {
-        self.conn
+    /// Take a queued message out by the identifier it was queued under.
+    ///
+    /// `false` when there was no such row, which is how Undo Send finds out it
+    /// lost a race with the send loop. Deciding a message can be caught and
+    /// then taking it out are two steps, and the send loop can pick it up
+    /// between them. Whether the row was really there is the only thing that
+    /// can tell the difference, and saying "taken back" about a message that
+    /// has gone is the one answer this must never give.
+    pub fn delete_outbox_message(&self, id: &str) -> Result<bool> {
+        let removed = self
+            .conn
             .execute("DELETE FROM outbox_queue WHERE id = ?1", params![id])
             .map_err(|e| Error::Other(format!("Failed to delete outbox message: {}", e)))?;
-        Ok(())
+        Ok(removed > 0)
     }
 
     /// Update outbox attempt count/error after failed send

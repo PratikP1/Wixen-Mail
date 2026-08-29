@@ -59,6 +59,7 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 None,
@@ -106,6 +107,7 @@ fn test_an_existing_item_fills_every_kind_of_field_it_is_opened_on() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 Some(Prefill {

@@ -1223,6 +1223,12 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to drop deleted message body: {}", e)))?;
 
+        // And the form it arrived in, where one was kept, for the same reason
+        // and with the same exception. Those bytes are the whole message over
+        // again, body included, so dropping the body and leaving them would
+        // leave the words of a deleted message on the disk in full.
+        self.drop_signed_original_bytes(message_id)?;
+
         Ok(())
     }
 

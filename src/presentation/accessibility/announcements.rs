@@ -45,6 +45,26 @@ pub enum Kind {
     Content,
 }
 
+/// Whether the words of an announcement may be written to the log.
+///
+/// Most may, and the log is the better for it: a report that the application
+/// said nothing can only be checked against a record of what was released to
+/// be spoken. An announcement carrying something a person has typed may not.
+/// What somebody is part way through typing into a To line is a person's name,
+/// and the log is a file people are asked to attach to bug reports.
+///
+/// Kept apart from [`Kind`] on purpose. That decides what mute silences, which
+/// is about a room with other people in it; this is about a file. Welding them
+/// together would mean choosing between a name in a log and a name nobody
+/// hears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InTheLog {
+    /// Written down as it was spoken.
+    TheWords,
+    /// Written down as a length only, so silence can still be told from speech.
+    HowManyCharacters,
+}
+
 /// One announcement waiting to be spoken.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Announcement {
@@ -54,6 +74,8 @@ pub struct Announcement {
     /// Announcements sharing a topic supersede one another, so a counter that
     /// climbs from 1 to 500 is spoken once at its final value.
     pub topic: Option<String>,
+    /// Whether the words may be written down. See [`InTheLog`].
+    pub in_the_log: InTheLog,
 }
 
 impl Announcement {
@@ -64,22 +86,33 @@ impl Announcement {
             priority,
             kind: Kind::Interface,
             topic: None,
+            in_the_log: InTheLog::TheWords,
         }
     }
 
     /// Message text read aloud. Silenced by mute.
+    ///
+    /// Never written to the log in full: a body read aloud must not end up in
+    /// a file on disk.
     pub fn content(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             priority: Priority::Normal,
             kind: Kind::Content,
             topic: None,
+            in_the_log: InTheLog::HowManyCharacters,
         }
     }
 
     /// Group this with others that supersede one another.
     pub fn with_topic(mut self, topic: impl Into<String>) -> Self {
         self.topic = Some(topic.into());
+        self
+    }
+
+    /// Say this without writing the words down. See [`InTheLog`].
+    pub fn not_in_the_log(mut self) -> Self {
+        self.in_the_log = InTheLog::HowManyCharacters;
         self
     }
 }
@@ -108,6 +141,8 @@ pub struct Spoken {
     pub priority: Priority,
     pub kind: Kind,
     pub topic: Option<String>,
+    /// Whether the words may be written down. See [`InTheLog`].
+    pub in_the_log: InTheLog,
 }
 
 /// Queues and paces screen reader announcements.
@@ -235,6 +270,7 @@ impl AnnouncementQueue {
                     priority: entry.announcement.priority,
                     kind: entry.announcement.kind,
                     topic: entry.announcement.topic,
+                    in_the_log: entry.announcement.in_the_log,
                 });
             } else {
                 held.push(entry);
@@ -255,6 +291,7 @@ impl AnnouncementQueue {
                 priority: Priority::Normal,
                 kind: Kind::Interface,
                 topic: None,
+                in_the_log: InTheLog::TheWords,
             });
         }
 
@@ -279,6 +316,67 @@ impl Default for AnnouncementQueue {
             state: Mutex::new(QueueState::default()),
             muted: AtomicBool::new(false),
         }
+    }
+}
+
+#[cfg(test)]
+mod what_may_be_written_down {
+    use super::*;
+
+    #[test]
+    fn test_an_announcement_may_be_written_to_the_log_unless_it_says_otherwise() {
+        // The log is how a report of silence gets checked against whether
+        // anything was ever released to be spoken, so the words are in it by
+        // default and only the ones that must not be are kept out.
+        let ordinary = Announcement::interface("Draft saved", Priority::Normal);
+
+        assert_eq!(ordinary.in_the_log, InTheLog::TheWords);
+    }
+
+    #[test]
+    fn test_an_announcement_carrying_what_somebody_typed_is_kept_out_of_the_log() {
+        // Part of a name typed into a To line is a person's name, and the log
+        // is a file people are asked to attach to bug reports.
+        let private =
+            Announcement::interface("Nobody found for \"smith\"", Priority::Low).not_in_the_log();
+
+        assert_eq!(private.in_the_log, InTheLog::HowManyCharacters);
+    }
+
+    #[test]
+    fn test_what_is_kept_out_of_the_log_still_reaches_the_screen_reader() {
+        // The whole point. Keeping words out of a file must not keep them out
+        // of somebody's ears.
+        let queue = AnnouncementQueue::new().expect("a queue");
+        queue
+            .push(
+                Announcement::interface("Nobody found for \"smith\"", Priority::Normal)
+                    .not_in_the_log(),
+            )
+            .expect("the announcement to queue");
+
+        let spoken = queue.drain(Instant::now()).expect("something to say");
+
+        assert_eq!(spoken.len(), 1);
+        assert_eq!(spoken[0].text, "Nobody found for \"smith\"");
+        assert_eq!(spoken[0].in_the_log, InTheLog::HowManyCharacters);
+    }
+
+    #[test]
+    fn test_being_kept_out_of_the_log_is_not_being_muted() {
+        // Mute is for message text being read aloud in a room. This is about a
+        // file, and the two must not be welded together: somebody who has not
+        // muted anything still hears this.
+        let queue = AnnouncementQueue::new().expect("a queue");
+        queue.set_muted(true);
+        queue
+            .push(Announcement::interface("Nobody found", Priority::Normal).not_in_the_log())
+            .expect("the announcement to queue");
+
+        assert_eq!(
+            queue.drain(Instant::now()).expect("something to say").len(),
+            1
+        );
     }
 }
 

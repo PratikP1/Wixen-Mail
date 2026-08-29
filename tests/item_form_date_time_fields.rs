@@ -82,6 +82,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 twenty_four_hour_settings(),
                 None,
@@ -108,6 +109,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 day_first_settings(),
                 None,
@@ -232,6 +234,7 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 twelve_hour_settings(),
                 None,

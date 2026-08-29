@@ -101,6 +101,7 @@ menu_ids!(
     ID_ABOUT,
     ID_THREAD_VIEW,
     ID_OFFLINE_MODE,
+    ID_UNDO_SEND,
     ID_FLUSH_OUTBOX,
     ID_SORT_DATE_NEWEST,
     ID_SORT_DATE_OLDEST,
@@ -193,6 +194,9 @@ menu_ids!(
     ID_ANSWER_TENTATIVE,
     ID_ANSWER_DECLINE,
     ID_CHOOSE_FOLDERS,
+    ID_SAVE_SEARCH,
+    ID_RENAME_SEARCH,
+    ID_DELETE_SEARCH,
 );
 
 // Sort menu IDs
@@ -289,6 +293,20 @@ pub struct WxUIState {
     /// calendars are: the mail sidebar holds text and the handler has to work
     /// back from a row to the label it names.
     pub labels: Vec<(String, String)>,
+    /// The saved searches, kept for the reason the labels are: the mail
+    /// sidebar holds text and nothing else, so the handler that runs, renames
+    /// or removes one has to work back from a row to the search it names.
+    ///
+    /// Both lists, because a search this build cannot read is still a row in
+    /// somebody's tree and still has to answer when it is opened.
+    pub saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead,
+    /// What was last typed into the search box while Mail was showing.
+    ///
+    /// What Save This Search saves. Kept because the box is a modal dialog
+    /// that is gone by the time anybody decides the answer was worth keeping,
+    /// and asking somebody to type the question twice is the work this whole
+    /// feature exists to remove.
+    pub last_mail_search: Option<String>,
     /// The calendars, kept so the sidebar can say which one was landed on.
     ///
     /// The tree holds text and nothing else, so the handler that hides or
@@ -340,6 +358,9 @@ impl Default for WxUIState {
             tasks: Vec::new(),
             events: Vec::new(),
             labels: Vec::new(),
+            saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead::default(
+            ),
+            last_mail_search: None,
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
@@ -1517,13 +1538,13 @@ impl WxMailApp {
                         s.active_module = module;
                         // Build title: "Inbox - Mail - Wixen Mail" or "Calendar - Wixen Mail"
                         match module {
-                            PimModule::Mail => {
-                                if let Some(ref folder) = s.selected_folder {
-                                    format!("{} - Mail - Wixen Mail", folder)
-                                } else {
-                                    "Mail - Wixen Mail".to_string()
-                                }
-                            }
+                            // A saved search's name rather than what is held,
+                            // which for one of those is a path opening with a
+                            // character read out as nothing.
+                            PimModule::Mail => match what_is_open_is_called(&s) {
+                                Some(open) => format!("{open} - Mail - Wixen Mail"),
+                                None => "Mail - Wixen Mail".to_string(),
+                            },
                             _ => format!("{} - Wixen Mail", label),
                         }
                     };
@@ -2242,12 +2263,41 @@ impl WxMailApp {
             });
 
             // ── Folder selection ─────────────────────────────────────────
+            // Enter on a saved-search row runs it. Selection alone does not:
+            // running one reads every message the account has cached, and a
+            // tree is arrowed through.
+            folder_tree.on_item_activated({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |event| {
+                    let Some(name) = event
+                        .get_item()
+                        .and_then(|item| folder_tree.get_item_text(&item))
+                    else {
+                        return;
+                    };
+                    let chosen = the_search_a_row_names(&lock_state(&state), &name);
+                    if let Some(chosen) = chosen {
+                        run_a_saved_search(
+                            AppHandles {
+                                state: &state,
+                                tx: &ui_tx,
+                                rt: &runtime,
+                            },
+                            chosen,
+                        );
+                    }
+                }
+            });
+
             folder_tree.on_selection_changed({
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let folder_cache = message_cache.clone();
                 let column_layout = column_layout.clone();
+                let a11y = a11y.clone();
                 move |event| {
                     if let Some(item) = event.get_item()
                         && let Some(name) = folder_tree.get_item_text(&item)
@@ -2288,6 +2338,53 @@ impl WxMailApp {
                             }
                             frame.set_title(&format!("{label_name} - Mail - Wixen Mail"));
                             load_messages_with_label(&folder_cache, &state, &tag_id, &ui_tx);
+                            return;
+                        }
+                        // The Saved Searches heading itself, which is not a
+                        // search. Landing on it does nothing, the same way
+                        // landing on the Labels header does.
+                        if name == crate::application::saved_searches::THE_HEADING {
+                            return;
+                        }
+                        // A saved search, matched by the one spelling of a
+                        // saved-search row. Before the folder lookup, because
+                        // a search row is not in the folder map and would
+                        // otherwise fall through to a folder that does not
+                        // exist.
+                        //
+                        // Landing on it does not run it. Running one reads
+                        // every message the account has cached, and arrowing
+                        // down a tree past five saved searches would start
+                        // five of those. Enter runs it, which is what Enter
+                        // does everywhere else in a tree.
+                        let chosen = the_search_a_row_names(&lock_state(&state), &name);
+                        if let Some(chosen) = chosen {
+                            // The path, not the row's words. Everything that
+                            // would otherwise treat what is chosen as a
+                            // mailbox asks `is_a_saved_search` about this, and
+                            // only the path can answer.
+                            let path = chosen.path();
+                            let arrived = {
+                                let mut s = lock_state(&state);
+                                let arrived = s.selected_folder.as_deref() != Some(path.as_str());
+                                s.selected_folder = Some(path);
+                                arrived
+                            };
+                            frame.set_title(&format!("{} - Mail - Wixen Mail", chosen.name()));
+                            // Only on arriving. A sync finishing rebuilds this
+                            // tree on a timer and puts the cursor back where it
+                            // was, which lands here again; saying it every time
+                            // would read a hint over whatever somebody was
+                            // doing, every few minutes, about a row they had
+                            // not moved to.
+                            if arrived {
+                                let _ = a11y.announce_topic(
+                                    PRESS_ENTER_TO_RUN,
+                                    crate::presentation::accessibility::announcements::Priority::Low,
+                                    "saved search",
+                                );
+                                send_status(&ui_tx, &runtime, PRESS_ENTER_TO_RUN);
+                            }
                             return;
                         }
                         let (folder_id, account_id) = {
@@ -2939,6 +3036,19 @@ impl WxMailApp {
                                         "no message selected",
                                     );
                                 }
+                            }
+                        }
+                        // Refresh on a saved search runs it again. That is what
+                        // refreshing means here: results are worked out when
+                        // somebody asks rather than kept up to date behind
+                        // them, so this is the way to ask whether the answer
+                        // has changed since mail arrived.
+                        _ if id == ID_REFRESH_FOLDER
+                            && the_chosen_saved_search(&lock_state(&state)).is_some() =>
+                        {
+                            let chosen = the_chosen_saved_search(&lock_state(&state));
+                            if let Some(chosen) = chosen {
+                                run_a_saved_search(app, chosen);
                             }
                         }
                         _ if id == ID_REFRESH_FOLDER => {
@@ -3618,6 +3728,18 @@ impl WxMailApp {
                                 )
                             };
                             match folder {
+                                // A saved search is not a mailbox. There is
+                                // nothing on a server to select and nothing
+                                // older to fetch, and asking anyway would send
+                                // the row's path to the server as a folder
+                                // name.
+                                Some(folder)
+                                    if crate::application::saved_searches::is_a_saved_search(
+                                        &folder,
+                                    ) =>
+                                {
+                                    refuse_a_command(&ui_tx, NOT_A_FOLDER);
+                                }
                                 Some(folder) => {
                                     if folder_id.is_some() {
                                         load_folder_messages(
@@ -3774,6 +3896,18 @@ impl WxMailApp {
                                 );
                             }
                         }
+                        // Delete, with the cursor on a saved search in the
+                        // folder tree, removes the search. Before the arm
+                        // below, which reads the chosen message and would
+                        // otherwise delete somebody's mail while they thought
+                        // they were removing a question. Focus decides it, so
+                        // Delete in the message list still means the message.
+                        _ if id == ID_DELETE
+                            && folder_tree.has_focus()
+                            && the_chosen_saved_search(&lock_state(&state)).is_some() =>
+                        {
+                            delete_the_chosen_search(app, &message_cache, &frame, &a11y)
+                        }
                         _ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT => {
                             // Neither asks first. Delete is a key somebody
                             // presses twenty times going through a morning's
@@ -3897,7 +4031,17 @@ impl WxMailApp {
                                 // the same state again, so holding it here
                                 // would deadlock rather than merely being
                                 // untidy.
-                                let showing = lock_state(&state).active_module;
+                                let showing = {
+                                    let mut s = lock_state(&state);
+                                    // Kept so Save This Search has something
+                                    // to save. Mail only: the other modules
+                                    // search their own items, and a saved
+                                    // search is a question about messages.
+                                    if s.active_module == PimModule::Mail {
+                                        s.last_mail_search = Some(q.clone());
+                                    }
+                                    s.active_module
+                                };
                                 managers::search_whatever_is_showing(
                                     showing,
                                     &state,
@@ -3911,6 +4055,15 @@ impl WxMailApp {
                                     msg_list.set_focus();
                                 }
                             }
+                        }
+                        _ if id == ID_SAVE_SEARCH => {
+                            save_this_search(app, &message_cache, &frame, &a11y)
+                        }
+                        _ if id == ID_RENAME_SEARCH => {
+                            rename_the_chosen_search(app, &message_cache, &frame, &a11y)
+                        }
+                        _ if id == ID_DELETE_SEARCH => {
+                            delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
                         _ if id == ID_ACCOUNT_MGR => {
                             handle_account_mgr(&frame, &state, &message_cache, &a11y)
@@ -4091,6 +4244,9 @@ impl WxMailApp {
                             // this update, so without it the window kept
                             // saying whatever it said before.
                             let _ = ui_tx.try_send(UIUpdate::OfflineModeChanged(new_mode));
+                        }
+                        _ if id == ID_UNDO_SEND => {
+                            undo_send(app, &frame, &message_cache, &a11y);
                         }
                         _ if id == ID_FLUSH_OUTBOX => {
                             send_status(&ui_tx, &runtime, "Flushing outbox queue...");
@@ -4706,6 +4862,15 @@ impl WxMailApp {
                 "&Search\tCtrl+F",
                 "Search whichever module you are looking at",
             )
+            // Beside Search, because it is what to do with the answer Search
+            // just gave. It acts on the search that was run rather than on
+            // anything chosen, which is why it is here and not on Action with
+            // the two that do act on a row.
+            .append_item(
+                ID_SAVE_SEARCH,
+                "Sa&ve This Search...",
+                "Keep the mail search you just ran, under a name, in the folder tree",
+            )
             .build();
 
         // Sort submenu
@@ -5014,6 +5179,22 @@ impl WxMailApp {
             )
             .build();
 
+        // A saved search is not a folder, so it does not go on This Folder.
+        // Delete here can never reach mail: it removes the question, and the
+        // messages a search listed stay where they really live.
+        let saved_search_menu = Menu::builder()
+            .append_item(
+                ID_RENAME_SEARCH,
+                "&Rename...",
+                "Give the chosen saved search a different name",
+            )
+            .append_item(
+                ID_DELETE_SEARCH,
+                "&Delete",
+                "Remove the chosen saved search. The mail it listed is not touched",
+            )
+            .build();
+
         let folder_menu = Menu::builder()
             .append_item(
                 ID_REFRESH_FOLDER,
@@ -5158,6 +5339,14 @@ impl WxMailApp {
             "&This Folder",
             "Act on the mail folder you are reading",
         );
+        // h, because every other letter in "Saved Searches" is claimed on this
+        // menu already and two items sharing one turns a single keystroke into
+        // a cycle between them.
+        message.append_submenu(
+            saved_search_menu,
+            "Saved Searc&hes",
+            "Act on the saved search chosen in the folder tree",
+        );
 
         let tools = Menu::builder()
             .append_item(
@@ -5214,6 +5403,20 @@ impl WxMailApp {
                 "Add a calendar held on a calendar server, or one published as a feed",
             )
             .append_separator()
+            // The command the countdown names. Every held message says "Undo
+            // Send takes it back", and for as long as the hold existed there
+            // was no Undo Send: no menu item, no key, no button. Somebody who
+            // can see the menu bar loses a second to that. Somebody working by
+            // ear opens every menu looking for words that were never there.
+            //
+            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
+            // would mean a key that puts characters back in one window and
+            // stops a message in another.
+            .append_item(
+                ID_UNDO_SEND,
+                "&Undo Send\tCtrl+Shift+Z",
+                "Take back the message you just sent, while it is still being held",
+            )
             .append_item(
                 ID_FLUSH_OUTBOX,
                 "Flush &Outbox",
@@ -5293,6 +5496,14 @@ pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGu
 /// clients rather than from English. Somebody hearing this row read out should
 /// know what it holds without having met the term.
 const ALL_INBOXES: &str = "All Inboxes";
+
+/// What is said when the cursor lands on a saved search.
+///
+/// Landing on a folder loads it and landing on a saved search does not, so
+/// something has to say what the extra keystroke is. Said at the lowest
+/// priority and under a topic of its own, so arrowing through several rows
+/// replaces the hint rather than reading one out per row.
+const PRESS_ENTER_TO_RUN: &str = "Press Enter to run this saved search.";
 
 /// How many messages the combined list holds.
 ///
@@ -5383,6 +5594,479 @@ fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
             )));
         }
     }
+}
+
+/// Run a saved search and fill the message list with what it found.
+///
+/// On a worker, because this reads every message the account has cached and
+/// answers a question about each one. Done on the interface thread, a mailbox
+/// of any size would stop the window repainting, stop it answering the
+/// keyboard, and stop it speaking, which is the one of those three that
+/// matters most here.
+///
+/// Every ending says something. A search that runs and finds nothing, one that
+/// cannot run because this build does not understand it, and one whose folder
+/// has gone are three different facts, and the empty list looks the same in
+/// all three.
+fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
+    use crate::application::saved_searches::{
+        Found, MOST_RESULTS_SHOWN, NO_MAIL_HERE_YET, Ran, SAVED_BY_ANOTHER_VERSION,
+        THAT_FOLDER_IS_NOT_HERE, only_the_newest_are_shown, what_a_search_found,
+    };
+    use crate::data::message_cache::saved_searches::TheMessageText;
+
+    let AppHandles { state, tx, rt } = app;
+    let name = chosen.name().to_string();
+    let refused = |tx: &Sender<UIUpdate>, why: &str| {
+        let _ = tx.try_send(UIUpdate::SavedSearchRan {
+            messages: Vec::new(),
+            said: what_a_search_found(&name, &Found::CouldNotRun(why.to_string())),
+        });
+    };
+
+    let search = match chosen {
+        ChosenSearch::Readable(search) => *search,
+        // Answered here rather than on a worker. Nothing has to be read to
+        // know that this build cannot read the question.
+        ChosenSearch::SavedByAnotherVersion { .. } => {
+            return refused(tx, SAVED_BY_ANOTHER_VERSION);
+        }
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return refused(tx, NO_MAIL_HERE_YET);
+    };
+    // No name in the progress line. The result names the search, because that
+    // is the answer somebody asked for; a line that only says work is under
+    // way does not need to repeat it into the log.
+    let _ = tx.try_send(UIUpdate::StatusUpdated(
+        "Running this saved search...".to_string(),
+    ));
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let could_not_run = |why: &str| {
+            say(UIUpdate::SavedSearchRan {
+                messages: Vec::new(),
+                said: what_a_search_found(&name, &Found::CouldNotRun(why.to_string())),
+            });
+        };
+        // Its own connection: a `MessageCache` wraps a rusqlite connection,
+        // which cannot be shared across threads.
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            return could_not_run(NO_MAIL_HERE_YET);
+        };
+        let Ok(cache) = MessageCache::new(dir, None) else {
+            return could_not_run(NO_MAIL_HERE_YET);
+        };
+
+        // The folder the search names, as the number the query narrows by. A
+        // folder that has gone is neither "search everywhere", which would
+        // widen the question, nor "found nothing", which would narrow it.
+        let folder_id = match search.folder.as_deref() {
+            None => None,
+            Some(path) => match cache.get_folder(&account_id, path) {
+                Ok(Some(folder)) => Some(folder.id),
+                Ok(None) => return could_not_run(THAT_FOLDER_IS_NOT_HERE),
+                Err(e) => {
+                    tracing::error!("The folder a saved search names could not be read: {e}");
+                    return could_not_run(THAT_FOLDER_IS_NOT_HERE);
+                }
+            },
+        };
+        let text = if search.reads_the_message_text() {
+            TheMessageText::Read
+        } else {
+            TheMessageText::LeftAlone
+        };
+        let messages = match cache.messages_a_saved_search_reads(&account_id, folder_id, text) {
+            Ok(messages) => messages,
+            Err(e) => {
+                // Said rather than left as an empty list, for the reason every
+                // other listing here says so: no mail and mail that could not
+                // be read are different facts, and the empty one is the more
+                // reassuring to be told wrongly.
+                tracing::error!("The mail a saved search reads could not be gathered: {e}");
+                return say(UIUpdate::ErrorOccurred(format!(
+                    "This saved search could not be run: {e}"
+                )));
+            }
+        };
+
+        let found = search.run_over(&messages);
+        let took: &[&crate::data::message_cache::CachedMessage] = match &found {
+            Ran::Took(took) => took,
+            Ran::NothingToLookAt | Ran::CouldNotRun(_) => &[],
+        };
+        // The count is the true one and the list is bounded, so a search that
+        // found nine hundred says nine hundred and shows the newest five
+        // hundred, rather than reporting the cut number as the answer.
+        let ids: Vec<i64> = took
+            .iter()
+            .take(MOST_RESULTS_SHOWN)
+            .map(|message| message.id)
+            .collect();
+        let rows = match cache.message_rows_for(&ids) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::error!("What a saved search found could not be listed: {e}");
+                return say(UIUpdate::ErrorOccurred(format!(
+                    "What this saved search found could not be listed: {e}"
+                )));
+            }
+        };
+        let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+        apply_threading(&rows, &mut items);
+        attach_labels(&cache, &mut items);
+
+        let mut said = what_a_search_found(&name, &found.found());
+        if took.len() > MOST_RESULTS_SHOWN {
+            said.push(' ');
+            said.push_str(&only_the_newest_are_shown(MOST_RESULTS_SHOWN));
+        }
+        say(UIUpdate::SavedSearchRan {
+            messages: items,
+            said,
+        });
+    });
+}
+
+/// What the window title calls whatever is open in Mail.
+///
+/// The row's own words for a folder or a label. A saved search's name for a
+/// saved search, because what is held for one of those is a path opening with
+/// a character that is read out as nothing and shown as a box.
+fn what_is_open_is_called(state: &WxUIState) -> Option<String> {
+    match the_chosen_saved_search(state) {
+        Some(chosen) => Some(chosen.name().to_string()),
+        None => state.selected_folder.clone(),
+    }
+}
+
+/// Read the folder tree back from the database and send it to the window.
+///
+/// Called by every command that changes what is in the tree. Saying a search
+/// was made, renamed or removed without this leaves the tree as a photograph
+/// of the database taken before the write, and somebody is told about a row
+/// that is not there or not told about one that is.
+fn read_the_tree_back(
+    cache: &Option<Arc<MessageCache>>,
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+) {
+    let (Some(cache), Some(account_id)) =
+        (cache.as_ref(), lock_state(state).active_account_id.clone())
+    else {
+        return;
+    };
+    match folder_tree_updates(cache, &account_id) {
+        Ok(updates) => {
+            for update in updates {
+                let _ = tx.try_send(update);
+            }
+        }
+        Err(e) => {
+            tracing::error!("The folder tree could not be read back: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "The folder tree could not be read again, so it may be out of date: {e}"
+            )));
+        }
+    }
+}
+
+/// The names of this account's saved searches, whether this build can read
+/// them or not.
+///
+/// What a new name is checked against. The table refuses two searches with the
+/// same name whichever wrote them, so a check that only looked at the readable
+/// ones would accept a name and then fail on the write.
+fn names_already_used(state: &WxUIState) -> Vec<String> {
+    state
+        .saved_searches
+        .searches
+        .iter()
+        .map(|search| search.name.clone())
+        .chain(
+            state
+                .saved_searches
+                .saved_by_another_version
+                .iter()
+                .map(|search| search.name.clone()),
+        )
+        .collect()
+}
+
+/// Ask for a saved search's name until it is one that can be kept.
+///
+/// A refusal says what was wrong and leaves what was typed in the box, because
+/// a dialog that closes on a refusal makes somebody type the whole name again
+/// to change one word of it (3.3.7). `None` when it was cancelled.
+fn ask_for_a_search_name(
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    asking: Asking<'_>,
+    already_used: &[String],
+) -> Option<String> {
+    use crate::application::saved_searches::{Naming, name_for};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let mut typed = asking.filled_in.to_string();
+    loop {
+        typed = ask_for_a_name(
+            frame,
+            Asking {
+                filled_in: &typed,
+                ..asking
+            },
+        )?;
+        match name_for(&typed, already_used) {
+            Naming::Accepted(name) => return Some(name),
+            refused => {
+                if let Some(why) = refused.why_not() {
+                    let _ = a11y.announce(&why, Priority::High);
+                    MessageDialog::builder(frame, &why, asking.window)
+                        .build()
+                        .show_modal();
+                }
+            }
+        }
+    }
+}
+
+/// Keep the mail search that was just run, under a name.
+///
+/// The questions are built from what was typed rather than kept as the typed
+/// text, so what is stored is the same vocabulary a filter rule is written in
+/// and one reader serves both. The dialog says what the saved search will ask,
+/// because it asks a narrower question than the search box did.
+fn save_this_search(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::saved_searches::{
+        SavedSearch, WHAT_A_TYPED_SEARCH_JOINS_WITH, a_typed_search_in_words, created,
+        what_a_typed_search_asks,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let (typed, already_used) = {
+        let held = lock_state(state);
+        (held.last_mail_search.clone(), names_already_used(&held))
+    };
+    let Some(typed) = typed.filter(|typed| !typed.trim().is_empty()) else {
+        // Refused out loud rather than on the status bar alone. From the
+        // keyboard, a command that writes into a bar at the bottom of the
+        // window is indistinguishable from one that was never wired up.
+        return refuse_a_command(
+            tx,
+            "Search your mail first, and then this will keep that search.",
+        );
+    };
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "There is no mail on this computer to search.");
+    };
+    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+        return refuse_a_command(tx, "Choose an account first.");
+    };
+
+    let note = a_typed_search_in_words(&typed);
+    let Some(name) = ask_for_a_search_name(
+        frame,
+        a11y,
+        Asking {
+            window: "Save This Search",
+            label: "&Name for this search:",
+            note: Some(&note),
+            filled_in: &typed,
+            button: "&Save",
+        },
+        &already_used,
+    ) else {
+        return;
+    };
+
+    let search = SavedSearch {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: name.clone(),
+        join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
+        questions: what_a_typed_search_asks(&typed),
+        // Everywhere in this account. The search box has a scope control that
+        // nothing reads, so there is no narrower answer here that would be
+        // true. See `docs/changelog.md`.
+        folder: None,
+    };
+    if let Err(e) = cache.create_saved_search(&account_id, &search) {
+        tracing::error!("A saved search could not be kept: {e}");
+        let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+            "That search could not be saved: {e}"
+        )));
+        return;
+    }
+
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    let said = created(&name);
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
+}
+
+/// Give the chosen saved search a different name.
+fn rename_the_chosen_search(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let (chosen, already_used) = {
+        let held = lock_state(state);
+        (the_chosen_saved_search(&held), names_already_used(&held))
+    };
+    let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
+        return refuse_a_command(tx, WHICH_SAVED_SEARCH);
+    };
+    // Its own name is not a name it may not have: somebody may be fixing the
+    // case of it, or its spacing.
+    let others: Vec<String> = already_used
+        .into_iter()
+        .filter(|held| held != chosen.name())
+        .collect();
+
+    let Some(name) = ask_for_a_search_name(
+        frame,
+        a11y,
+        Asking {
+            window: "Rename Saved Search",
+            label: "&New name:",
+            note: None,
+            filled_in: chosen.name(),
+            button: "&Rename",
+        },
+        &others,
+    ) else {
+        return;
+    };
+
+    // The count, not silence. Renaming a row that is not there is not an error
+    // in SQL, so a caller that took silence for success would say a search had
+    // been renamed when nothing had happened.
+    match cache.rename_saved_search(chosen.id(), &name) {
+        // One place words a row that has gone, so somebody hears the same
+        // sentence whichever panel they were in, and it says the half a shorter
+        // version leaves off: that nothing has been changed.
+        Ok(0) => refuse_a_command(
+            tx,
+            &crate::application::pim_command::something_no_longer_there(
+                "saved search",
+                chosen.name(),
+            ),
+        ),
+        Ok(_) => {
+            read_the_tree_back(&Some(cache.clone()), state, tx);
+            let said = format!("Renamed to {name}.");
+            send_status(tx, rt, &said);
+            let _ = a11y.announce(&said, Priority::High);
+        }
+        Err(e) => {
+            tracing::error!("A saved search could not be renamed: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "That search could not be renamed: {e}"
+            )));
+        }
+    }
+}
+
+/// Take the chosen saved search away.
+///
+/// The question goes and the mail stays. A message a search listed lives in a
+/// real folder somewhere else, and this never touches that folder, which is
+/// why removing a saved search needs no warning about losing mail and must
+/// never be able to cause it.
+fn delete_the_chosen_search(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let chosen = the_chosen_saved_search(&lock_state(state));
+    let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
+        return refuse_a_command(tx, WHICH_SAVED_SEARCH);
+    };
+
+    // Confirmed, because a Delete key is one row away from every other key
+    // somebody might have meant. Enter answers No, so pressing it partway
+    // through hearing the question does not remove anything.
+    let asked = MessageDialog::builder(
+        frame,
+        &format!(
+            "Delete the saved search {}? The mail it listed stays where it is.",
+            chosen.name()
+        ),
+        "Delete Saved Search",
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build()
+    .show_modal();
+    if asked != ID_YES {
+        return;
+    }
+
+    match cache.delete_saved_search(chosen.id()) {
+        Ok(true) => {
+            // Nothing is open any more, so what was chosen must stop naming
+            // a row that has gone.
+            lock_state(state).selected_folder = None;
+            read_the_tree_back(&Some(cache.clone()), state, tx);
+            let said = format!(
+                "{} is gone. The mail it listed is untouched.",
+                chosen.name()
+            );
+            send_status(tx, rt, &said);
+            let _ = a11y.announce(&said, Priority::High);
+        }
+        Ok(false) => refuse_a_command(
+            tx,
+            &crate::application::pim_command::something_no_longer_there(
+                "saved search",
+                chosen.name(),
+            ),
+        ),
+        Err(e) => {
+            tracing::error!("A saved search could not be removed: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "That search could not be removed: {e}"
+            )));
+        }
+    }
+}
+
+/// What is said when a saved-search command is asked for with no search chosen.
+const WHICH_SAVED_SEARCH: &str =
+    "Choose a saved search in the folder tree first, under Saved Searches.";
+
+/// What is said when a command meant for a mailbox is asked of a saved search.
+///
+/// Said rather than quietly ignored, and said in terms of what a saved search
+/// is: a question about mail rather than a place mail is kept. A command that
+/// appears to do nothing is one somebody presses again and then reports.
+const NOT_A_FOLDER: &str =
+    "That is a saved search rather than a folder, so there is nothing on the server to ask for.";
+
+/// Say that a command did not run, out loud as well as on the status bar.
+fn refuse_a_command(tx: &Sender<UIUpdate>, why: &str) {
+    let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
 }
 
 /// Open one page of help in the browser.
@@ -6084,7 +6768,13 @@ fn read_the_whole_message(
     else {
         return with_conversation_count(in_conversation, &message.read_full(out));
     };
-    whole_message_reading(message, &body_as_written(Some(body)), in_conversation, out)
+    whole_message_reading(
+        message,
+        &body_as_written(Some(body)),
+        signature_check_for(cache, message),
+        in_conversation,
+        out,
+    )
 }
 
 /// The message itself, with the part of the row the message does not carry.
@@ -6100,10 +6790,16 @@ fn read_the_whole_message(
 fn whole_message_reading(
     message: &MessageItem,
     body: &MessageBody,
+    signature: crate::application::checking_signatures::SignatureCheck,
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
-    let document = reader_text::single_message(message, body, out);
+    // The same verdict the reader window would show, said the same way round.
+    // Reading a message aloud without opening it is the one path where nothing
+    // is on screen afterwards to go back to, so leaving the signature out of it
+    // would mean the quickest way to read a message was the one that never said
+    // what its signature was worth.
+    let document = reader_text::single_message(message, body, out).with_signature(&signature);
     let state = read_aloud::state_worth_saying(message);
     let reading = reader_text::read_whole(&document);
     let reading = if state.is_empty() {
@@ -6158,6 +6854,17 @@ fn folder_tree_updates(
         tracing::warn!("The labels could not be read: {e}");
         Vec::new()
     });
+    // The saved searches, on the same terms as the labels and for the same
+    // reason: a tree with no Saved Searches branch is what an account with no
+    // saved searches shows anyway, and refusing the whole folder list because
+    // one query failed would take somebody's mail off the screen. The failure
+    // is logged rather than swallowed silently.
+    let saved = cache
+        .get_saved_searches_for_account(account_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("The saved searches could not be read: {e}");
+            crate::data::message_cache::saved_searches::SavedSearchesRead::default()
+        });
     Ok(vec![
         UIUpdate::LabelsLoaded(
             labels
@@ -6165,6 +6872,7 @@ fn folder_tree_updates(
                 .map(|tag| (tag.id.clone(), tag.name.clone()))
                 .collect(),
         ),
+        UIUpdate::SavedSearchesLoaded(Box::new(saved)),
         UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (folder_label(f), f.id)).collect()),
         UIUpdate::FoldersLoaded(folders.iter().map(folder_label).collect()),
     ])
@@ -6223,6 +6931,125 @@ fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
 /// would mean a row nothing could resolve.
 fn label_row(name: &str) -> String {
     format!("{name}, label")
+}
+
+/// Which saved search a row in the folder tree names.
+///
+/// Two shapes, because a search written by a newer version of this program is
+/// still a row somebody can land on, rename and remove. What it cannot do is
+/// run, and the shape says so rather than a flag on one struct that half the
+/// callers would forget to read.
+#[derive(Debug, Clone)]
+enum ChosenSearch {
+    /// One this build can read, and so can run.
+    Readable(Box<crate::application::saved_searches::SavedSearch>),
+    /// One a newer version wrote. It keeps its name and its row, and says it
+    /// could not run when it is opened.
+    SavedByAnotherVersion { id: String, name: String },
+}
+
+impl ChosenSearch {
+    fn id(&self) -> &str {
+        match self {
+            ChosenSearch::Readable(search) => &search.id,
+            ChosenSearch::SavedByAnotherVersion { id, .. } => id,
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            ChosenSearch::Readable(search) => &search.name,
+            ChosenSearch::SavedByAnotherVersion { name, .. } => name,
+        }
+    }
+
+    /// The path its row is found by, which is what `selected_folder` holds
+    /// while the row is chosen.
+    fn path(&self) -> String {
+        crate::application::saved_searches::the_path_of(self.id())
+    }
+}
+
+/// Every saved search's row, in the order they sit in the tree.
+///
+/// The readable ones first and the rest after, which is the order they were
+/// read in, so a row does not move because a newer version wrote one of them.
+/// Every row reads the same way, because somebody arrowing past is not being
+/// asked to tell a readable search from an unreadable one by ear.
+fn saved_search_rows(
+    read: &crate::data::message_cache::saved_searches::SavedSearchesRead,
+) -> Vec<String> {
+    use crate::application::saved_searches::a_row_for;
+
+    read.searches
+        .iter()
+        .map(|search| a_row_for(&search.name))
+        .chain(
+            read.saved_by_another_version
+                .iter()
+                .map(|search| a_row_for(&search.name)),
+        )
+        .collect()
+}
+
+/// The saved search a row in the folder tree names, if it names one.
+///
+/// Matched on the one spelling of a saved-search row, the way a label row is,
+/// because this tree holds text and nothing else and the row's own words are
+/// all the handler has to work back from.
+fn the_search_a_row_names(state: &WxUIState, row: &str) -> Option<ChosenSearch> {
+    use crate::application::saved_searches::a_row_for;
+
+    state
+        .saved_searches
+        .searches
+        .iter()
+        .find(|search| a_row_for(&search.name) == row)
+        .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
+        .or_else(|| {
+            state
+                .saved_searches
+                .saved_by_another_version
+                .iter()
+                .find(|search| a_row_for(&search.name) == row)
+                .map(|search| ChosenSearch::SavedByAnotherVersion {
+                    id: search.id.clone(),
+                    name: search.name.clone(),
+                })
+        })
+}
+
+/// The saved search whose row is chosen right now, if one is.
+///
+/// Asked by every command that acts on a saved search, and by everything that
+/// would otherwise treat what is chosen as a mailbox. `selected_folder` holds
+/// the row's path while a saved search is chosen, and that path opens with a
+/// character no mailbox name can carry, which is what
+/// [`crate::application::saved_searches::is_a_saved_search`] reads.
+fn the_chosen_saved_search(state: &WxUIState) -> Option<ChosenSearch> {
+    use crate::application::saved_searches::{is_a_saved_search, the_path_of};
+
+    let chosen = state.selected_folder.as_deref()?;
+    if !is_a_saved_search(chosen) {
+        return None;
+    }
+    state
+        .saved_searches
+        .searches
+        .iter()
+        .find(|search| search.path() == chosen)
+        .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
+        .or_else(|| {
+            state
+                .saved_searches
+                .saved_by_another_version
+                .iter()
+                .find(|search| the_path_of(&search.id) == chosen)
+                .map(|search| ChosenSearch::SavedByAnotherVersion {
+                    id: search.id.clone(),
+                    name: search.name.clone(),
+                })
+        })
 }
 
 // ── What the status line says a module holds ────────────────────────────────
@@ -6819,6 +7646,7 @@ fn open_single_message(
         let body = body_as_written(body);
         let mut message = message.clone();
         message.attachments = attachments_of(cache, message.message_id);
+        let signature = signature_check_for(cache, &message);
         show_conversation_as_page(
             frame,
             reader,
@@ -6829,6 +7657,7 @@ fn open_single_message(
                 body,
                 depth: 0,
             }],
+            &signature,
             closed,
         );
         return;
@@ -6855,7 +7684,61 @@ fn open_in_the_text_reader(
     // reader is the one place that needs them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
-    reader.open(reader_text::single_message(&message, &body, out));
+    reader.open(
+        reader_text::single_message(&message, &body, out)
+            .with_signature(&signature_check_for(cache, &message)),
+    );
+}
+
+/// What can be said about one message's signature, for the surfaces that open
+/// mail.
+///
+/// # Why this runs here rather than on a worker thread
+///
+/// Because it is fast, and because being late would be worse than being slow.
+///
+/// Fast, and measured rather than assumed. On this machine, in a release build,
+/// the whole of it, reading the bytes out of the database, taking the message
+/// apart, hashing it, checking the signature against the certificate's key and
+/// asking this computer about that certificate, takes **406 microseconds** for a
+/// signed message of ordinary size. At the ceiling on what is kept, a message of
+/// 25 MB, it takes **60 milliseconds**, nearly all of it reading and hashing the
+/// bytes. The first is invisible. The second is a hitch somebody would notice
+/// and is not a freeze, and it happens only on a signed message at the largest
+/// size kept, which is rare twice over.
+///
+/// Nothing here waits on anything: the two questions put to this computer's
+/// certificate store are asked with `Reach::WhatIsAlreadyHere`, which contacts
+/// nobody. Ordinary mail, which is nearly all of it, costs one row that is not
+/// there.
+///
+/// Late would be worse than slow. The reader speaks the top of the bar as the
+/// message opens. A verdict that arrived afterwards would either miss that
+/// announcement, which is the whole point of it, or arrive as a second one over
+/// somebody already reading, and the bar on screen would be the one composed
+/// before the answer came. Announcing a change without the thing it changed
+/// being in place is a shape this program has got wrong before.
+///
+/// [`Reach::WhatIsAlreadyHere`]: crate::service::signed_mail::Reach::WhatIsAlreadyHere
+fn signature_check_for(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+) -> crate::application::checking_signatures::SignatureCheck {
+    use crate::application::checking_signatures::{self, SignatureCheck};
+
+    let Some(cache) = cache.as_ref() else {
+        return SignatureCheck::NotSigned;
+    };
+    checking_signatures::for_message(
+        cache,
+        message.message_id,
+        // The bare address out of the header, which is what the certificate is
+        // compared against. `receipts` already answers this and is the one
+        // place it is answered, because a second reading of a display name is
+        // a second chance to disagree about which address a message came from.
+        &crate::application::receipts::address_of(&message.from),
+        chrono::Utc::now(),
+    )
 }
 
 /// The attachments recorded for one message, as the reader wants them.
@@ -7432,6 +8315,13 @@ fn export_a_mailbox(
         refuse("Choose the folder to write out first.");
         return;
     };
+    // A saved search holds no mail of its own. Every message it lists lives in
+    // a real folder, so writing one out would either produce an empty archive
+    // or claim to have exported mail from somewhere that does not exist.
+    if crate::application::saved_searches::is_a_saved_search(&folder) {
+        refuse("That is a saved search rather than a folder. Choose the folder the mail is in.");
+        return;
+    }
 
     let picker = FileDialog::builder(frame)
         .with_message("Write this mailbox out to a file")
@@ -8147,10 +9037,16 @@ fn open_compose(
         | ComposeMode::WriteTo { .. }
         | ComposeMode::MailTo { .. } => false,
     };
-    let (names, active) = state
+    // The names shown in the From list and the ids behind them, read in one
+    // go. Looking somebody up asks the directory of whichever account the
+    // message is being sent from, and the window knows only the position in
+    // the list, so a second read to turn that position into an id would be a
+    // second answer to the same question.
+    let (names, account_ids, active) = state
         .lock()
         .map(|s| {
             let names: Vec<String> = s.accounts.iter().map(|a| a.email.clone()).collect();
+            let ids: Vec<String> = s.accounts.iter().map(|a| a.id.clone()).collect();
             let sender = crate::application::new_item::sends_from(
                 replying,
                 s.active_account_id.as_deref(),
@@ -8159,7 +9055,7 @@ fn open_compose(
             let active = sender
                 .and_then(|id| s.accounts.iter().position(|a| a.id == id))
                 .unwrap_or(0) as u32;
-            (names, active)
+            (names, ids, active)
         })
         .unwrap_or_default();
 
@@ -8249,6 +9145,10 @@ fn open_compose(
         signature,
         autosave,
         a11y.clone(),
+        Some(crate::presentation::finding_people::through(
+            account_ids,
+            rt,
+        )),
         saver,
     ) {
         ComposeResult::Send(data) => {
@@ -9509,10 +10409,42 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     }
                     folder_tree.expand(&branch);
                 }
+                // Saved searches last, under one heading, for the reason the
+                // labels are on a branch of their own: arrowing through the
+                // folders somebody opens every day should not pass through a
+                // list of saved questions first. No heading at all when there
+                // are none, rather than an empty one to arrow into.
+                let searches = saved_search_rows(&lock_state(state).saved_searches);
+                if !searches.is_empty()
+                    && let Some(branch) = folder_tree.append_item(
+                        &root,
+                        crate::application::saved_searches::THE_HEADING,
+                        None,
+                        None,
+                    )
+                {
+                    for row in &searches {
+                        folder_tree.append_item(&branch, row, None, None);
+                    }
+                    folder_tree.expand(&branch);
+                }
                 folder_tree.expand(&root);
                 // Back where it was. A sync finishing on a timer used to take
                 // the cursor away mid-list with only a count spoken.
                 land_the_cursor(folder_tree, &root, was_on.as_deref());
+                // A saved search keeps its row through a rebuild even when its
+                // name has just changed. What is open is held as the row's
+                // path, which a rename does not touch, while `land_the_cursor`
+                // matches on the row's words, which a rename does. Without
+                // this, renaming a search takes the cursor to the top of the
+                // tree and reads out a different row.
+                let renamed = the_chosen_saved_search(&lock_state(state));
+                if let Some(chosen) = renamed {
+                    select_row_named(
+                        folder_tree,
+                        &crate::application::saved_searches::a_row_for(chosen.name()),
+                    );
+                }
             }
             let msg = how_many_loaded(folders.len(), "folder");
             frame.set_status_text(&msg, 0);
@@ -9524,6 +10456,25 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::LabelsLoaded(labels) => {
             lock_state(state).labels = labels.clone();
+        }
+        UIUpdate::SavedSearchesLoaded(searches) => {
+            lock_state(state).saved_searches = (**searches).clone();
+        }
+        UIUpdate::SavedSearchRan { messages, said } => {
+            {
+                let mut s = lock_state(state);
+                s.messages = messages.clone();
+                // Back to the top of a fresh list. Left where it was, the
+                // cursor would be on a row from the folder that was open
+                // before and the list under it would be somebody else's.
+                s.selected_message_index = None;
+            }
+            msg_list.set_item_count(messages.len() as i64);
+            frame.set_status_text(said, 0);
+            // High, and never coalesced with the message counts. This is the
+            // answer to a key somebody just pressed, and it is the one
+            // sentence that can say a search could not run at all.
+            let _ = a11y.announce(said, Priority::High);
         }
         UIUpdate::MessagesLoaded(messages) => {
             {
@@ -10088,6 +11039,220 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
 }
 
 /// Flush all queued outbox messages (attempt to send via SMTP).
+/// Take back the message that was just sent, and open it again to be edited.
+///
+/// The command the countdown has always named. "Sending in 10 seconds. Undo
+/// Send takes it back." was said on every held message while there was no Undo
+/// Send anywhere: not on a menu, not on a key, not on a button.
+///
+/// The message is opened again rather than discarded. Somebody presses this to
+/// fix a name or add the file they forgot, not to throw away what they wrote,
+/// and a command that silently ate a message would be worse than the one that
+/// did not exist.
+///
+/// Done here rather than on a worker: it is two small local queries and a
+/// window, and a window has to open on this thread anyway. Nothing here talks
+/// to a server.
+fn undo_send(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::sending_later::{WhatToTakeBack, what_undo_send_takes_back};
+
+    let AppHandles { state, tx, .. } = app;
+    let refuse = |why: &str| {
+        let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
+    };
+
+    let (Some(cache), Some(account_id)) =
+        (cache.as_ref(), lock_state(state).active_account_id.clone())
+    else {
+        refuse(WhatToTakeBack::NothingWaiting.why_not().unwrap_or_default());
+        return;
+    };
+
+    // One read for the rows and their times together, so the message this is
+    // about and the decision about whether it can be caught cannot be made
+    // from two different pictures of the queue.
+    let queue = match cache.queued_with_their_times(&account_id) {
+        Ok(queue) => queue,
+        Err(e) => {
+            refuse(&format!("The outbox could not be read: {e}"));
+            return;
+        }
+    };
+    let times: Vec<(String, crate::application::sending_later::GoAfter)> = queue
+        .iter()
+        .map(|(message, when)| (message.id.clone(), when.clone()))
+        .collect();
+
+    let taking = what_undo_send_takes_back(&times, chrono::Local::now());
+    let WhatToTakeBack::ThisOne(id) = &taking else {
+        refuse(taking.why_not().unwrap_or_default());
+        return;
+    };
+    let Some((message, _)) = queue.iter().find(|(message, _)| &message.id == id) else {
+        refuse(WhatToTakeBack::NothingWaiting.why_not().unwrap_or_default());
+        return;
+    };
+
+    // Saved as a draft first, and taken out of the queue second. The order is
+    // the whole safety of this command.
+    //
+    // The other way round loses mail. The row comes out, the window opens, and
+    // somebody presses Escape: cancelling a compose window saves nothing, so
+    // the message is gone from the queue, absent from Drafts, and nowhere. A
+    // command that ate what somebody wrote would be worse than the one that
+    // did not exist, which is what this replaced.
+    //
+    // This way every ending is safe. The draft fails to save and nothing has
+    // been touched. The draft saves and the row comes out, which is the
+    // ordinary case. Or the draft saves and the row has already gone, because
+    // the send loop reached it between deciding and acting, and the spare
+    // draft is taken away again below rather than left as a copy of a message
+    // that has been sent.
+    let taken_back = a_message_taken_back(message);
+    let draft = match save_as_draft(app, &Some(cache.clone()), &taken_back, None) {
+        Ok((draft_id, _)) => draft_id,
+        Err(why) => {
+            refuse(&format!("It could not be taken back: {why}"));
+            return;
+        }
+    };
+
+    match cache.delete_outbox_message(id) {
+        Ok(true) => {}
+        Ok(false) | Err(_) => {
+            // Nothing came out of the queue, so the draft is a copy of a
+            // message that may already be on its way. Left in Drafts it would
+            // be sent a second time by whoever found it.
+            if let Err(why) = cache.delete_draft(&draft) {
+                tracing::error!("a draft made by Undo Send could not be removed: {why}");
+            }
+            refuse(
+                WhatToTakeBack::TooLateForEverything
+                    .why_not()
+                    .unwrap_or_default(),
+            );
+            return;
+        }
+    }
+
+    // Said before the window opens, because the window takes focus and a
+    // sentence said after it would be spoken over the composer announcing
+    // itself. Its own topic and not the steady run of status: this is an
+    // answer to something somebody pressed.
+    let _ = a11y.announce_topic(
+        "Taken back. Opening it again.",
+        crate::presentation::accessibility::announcements::Priority::Normal,
+        "undo-send",
+    );
+
+    // Opened as the draft it now is, carrying that draft's identifier, so
+    // saving it updates the one in Drafts rather than leaving a second copy
+    // beside it.
+    open_compose(
+        app,
+        frame,
+        &Some(cache.clone()),
+        a11y,
+        ComposeMode::Draft(the_draft_it_became(&taken_back, draft, message)),
+    );
+
+    // The Outbox row is gone, so a list showing it is showing a message that is
+    // no longer queued. Reading the tree back is what makes the counts and the
+    // rows agree; saying so without it is the shape that has shipped twice.
+    if let Ok(updates) = folder_tree_updates(cache, &account_id) {
+        for update in updates {
+            let _ = tx.try_send(update);
+        }
+    }
+}
+
+/// A queued message as the message it was before it was sent.
+///
+/// Both halves are carried. The queue holds the HTML the editor wrote and the
+/// plain text made from it, and keeping only one would lose whatever the other
+/// says: the plain half alone strips every heading and link the editor made,
+/// and the HTML half alone leaves a text-only reader with raw markup on the
+/// next attempt.
+fn a_message_taken_back(
+    message: &crate::data::message_cache::QueuedOutboxMessage,
+) -> wx_compose::ComposeData {
+    let written_as_html = message.body_html.is_some();
+    wx_compose::ComposeData {
+        to: message.to_addr.clone(),
+        cc: message.cc_addr.clone(),
+        bcc: message.bcc_addr.clone(),
+        subject: message.subject.clone(),
+        body: message
+            .body_html
+            .clone()
+            .unwrap_or_else(|| message.body.clone()),
+        body_plain: message.body.clone(),
+        html_mode: written_as_html,
+        account_index: None,
+        attachments: the_files_it_was_queued_with(message),
+        answering: the_conversation_it_was_answering(message),
+    }
+}
+
+/// A taken-back message as the draft the composer reopens.
+///
+/// It carries the identifier of the draft that was just written, so saving it
+/// updates that one instead of leaving a second copy beside it, which is what
+/// [`CompositionData::id`] exists for.
+fn the_draft_it_became(
+    written: &wx_compose::ComposeData,
+    draft_id: String,
+    message: &crate::data::message_cache::QueuedOutboxMessage,
+) -> CompositionData {
+    CompositionData {
+        id: Some(draft_id),
+        to: written.to.clone(),
+        cc: written.cc.clone(),
+        bcc: written.bcc.clone(),
+        subject: written.subject.clone(),
+        body: written.body.clone(),
+        attachments: the_files_it_was_queued_with(message),
+        answering: the_conversation_it_was_answering(message),
+    }
+}
+
+/// The files a queued message was going to carry, as paths on this computer.
+///
+/// The queue keeps paths rather than contents, one per line, so a message taken
+/// back and sent again picks the files up as they are then.
+fn the_files_it_was_queued_with(
+    message: &crate::data::message_cache::QueuedOutboxMessage,
+) -> Vec<std::path::PathBuf> {
+    message
+        .attachments
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .collect()
+}
+
+/// The conversation a queued message was answering, when it was answering one.
+///
+/// Carried through, or a reply taken back and sent again would start a
+/// conversation of its own beside the one it belongs in, which is invisible
+/// here and obvious to everybody who receives it.
+fn the_conversation_it_was_answering(
+    message: &crate::data::message_cache::QueuedOutboxMessage,
+) -> Option<crate::application::threading::Continuing> {
+    match (&message.in_reply_to, &message.references) {
+        (Some(in_reply_to), Some(references)) => Some(crate::application::threading::Continuing {
+            in_reply_to: in_reply_to.clone(),
+            references: references.clone(),
+        }),
+        _ => None,
+    }
+}
+
 fn flush_outbox(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
     // The account travels with the task: sending needs its SMTP settings and
@@ -10699,11 +11864,13 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
     let Some(cache) = cache.as_ref() else {
         return false;
     };
-    let open_folder = lock_state(state)
-        .selected_folder
-        .as_ref()
-        .and_then(|name| lock_state(state).folder_ids.get(name).copied());
-    let Some(folder_id) = open_folder else {
+    // One lock, through the one place that resolves this. Written out here it
+    // took the lock twice in a single statement: the guard from the first call
+    // lives to the end of the statement, so the second call waited for a lock
+    // the same thread was holding. That is the interface thread, so Delete on a
+    // message stopped the window repainting, answering the keyboard and
+    // speaking.
+    let Some(folder_id) = folder_on_screen(&lock_state(state)) else {
         return false;
     };
     if cache.folder_kind(folder_id).ok().flatten() != Some(crate::common::types::FolderType::Outbox)
@@ -11789,6 +12956,12 @@ fn open_conversation_again(
                 a11y,
                 &subject,
                 &conversation_parts(cache, &nodes),
+                // No signature verdict on a whole thread. Each message carries
+                // its own signature and its own signer, and one verdict folded
+                // onto the thread would be said as though it covered all of
+                // them. Opening a single message is where the verdict belongs,
+                // which is what `ReaderDocument::with_signature` says as well.
+                &crate::application::checking_signatures::SignatureCheck::NotSigned,
                 Some(again),
             );
         }
@@ -11847,6 +13020,7 @@ fn show_conversation_as_page(
     a11y: &Arc<Accessibility>,
     subject: &str,
     parts: &[reader_text::ConversationPart],
+    signature: &crate::application::checking_signatures::SignatureCheck,
     closed: Option<Rc<dyn Fn()>>,
 ) {
     let frame = Frame::builder()
@@ -11864,6 +13038,43 @@ fn show_conversation_as_page(
         theme::paint(&frame, palette.main_surface());
     }
 
+    // What to say above the message, worked out by composing the document the
+    // text reader would have shown and keeping only its bar. The whole document
+    // is built and its text thrown away on purpose: the bar is one question,
+    // "what should be said above these messages", and this surface answering it
+    // for itself is how the two would come to say different things about one
+    // message. The page render below is the expensive part of this window and
+    // walks the same bodies anyway.
+    //
+    // Until this existed, reading formatted showed no bar at all. Formatted is
+    // the default, so the ordinary way of opening a message was the one that
+    // never said a provider had called it a phishing attempt.
+    let above = reader_text::conversation(subject, parts).with_signature(signature);
+
+    // A sizer, because the window is no longer only the page: anything hanging
+    // off these messages gets a list below it, and a warning goes above it.
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Built before the page, not merely added to the sizer before it. Tab order
+    // follows the order controls are created, so a bar created afterwards would
+    // sit visually above the message and be reached after it, which is the one
+    // arrangement worse than not having it.
+    let warning = above.warning.as_ref().map(|text| {
+        let bar = TextCtrl::builder(&frame)
+            .with_style(TextCtrlStyle::ReadOnly | TextCtrlStyle::MultiLine)
+            .build();
+        bar.set_value(text);
+        // The same name the reader's bar carries, because it is the same thing
+        // and somebody who has learned one should not have to learn the other.
+        set_accessible_name(&bar, "Security warning");
+        bar.set_insertion_point(0);
+        sizer.add(&bar, 0, SizerFlag::Expand | SizerFlag::All, 4);
+        if let Some(palette) = palette {
+            theme::paint(&bar, palette.main_surface());
+        }
+        bar
+    });
+
     let page = WebView::builder(&frame)
         .with_backend(WebViewBackend::Edge)
         .build();
@@ -11871,9 +13082,6 @@ fn show_conversation_as_page(
     // Not painted. The page's own document sets its colour in HTML and CSS,
     // independent of this setting, the same as the mail preview and the
     // compose body editor.
-    // A sizer, because the window is no longer only the page: anything hanging
-    // off these messages gets a list below it.
-    let sizer = BoxSizer::builder(Orientation::Vertical).build();
     sizer.add(&page, 1, SizerFlag::Expand | SizerFlag::All, 0);
     page.enable_context_menu(false);
     page.enable_access_to_dev_tools(false);
@@ -11962,7 +13170,7 @@ fn show_conversation_as_page(
     // renders bodies and nothing else, so the only sign there had been a file
     // would be its absence.
     let hanging_off = reader_text::attachments_in(parts);
-    if !hanging_off.is_empty() {
+    let attachments = (!hanging_off.is_empty()).then(|| {
         let list = ListBox::builder(&frame).build();
         if let Some(palette) = palette {
             theme::paint(&list, palette.main_surface());
@@ -12007,13 +13215,57 @@ fn show_conversation_as_page(
                 }
             }
         });
+        list
+    });
 
-        // F8 from the message reaches the list. Without it the list is only
-        // reachable by tabbing past a page that may be very long.
-        page.bind_internal(EventType::KEY_DOWN, move |event| {
+    // One key handler on the message rather than one per destination. Two
+    // handlers bound to the same event on the same control is a shape where
+    // which of them runs is the framework's business and not this file's, and
+    // the second one added is the one that reads as working until it does not.
+    //
+    // F7 to the warning and F8 to the attachments, the same two keys and the
+    // same two directions as the reader window, so somebody who has learned one
+    // surface has learned both.
+    page.bind_internal(EventType::KEY_DOWN, {
+        let a11y = a11y.clone();
+        move |event| {
             event.skip(true);
-            if event.get_key_code() == Some(347) {
-                list.set_focus();
+            match event.get_key_code() {
+                // WXK_F7
+                Some(346) => {
+                    if let Some(bar) = warning {
+                        bar.set_focus();
+                        // Said as well as moved to, the same as the reader
+                        // does, because a jump somebody cannot see needs to say
+                        // where it landed.
+                        let _ = a11y.announce(
+                            "Security warning",
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                    }
+                }
+                // WXK_F8
+                Some(347) => {
+                    if let Some(list) = attachments {
+                        list.set_focus();
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+    // And back from the warning, because somewhere to jump to is only useful
+    // with a way back.
+    if let Some(bar) = warning {
+        let a11y = a11y.clone();
+        bar.bind_internal(EventType::KEY_DOWN, move |event| {
+            event.skip(true);
+            if event.get_key_code() == Some(346) {
+                page.set_focus();
+                let _ = a11y.announce(
+                    "Message",
+                    crate::presentation::accessibility::announcements::Priority::Normal,
+                );
             }
         });
     }
@@ -12027,8 +13279,13 @@ fn show_conversation_as_page(
     frame.raise();
     let _ = a11y.announce(
         &format!(
-            "{subject}, as headings. Press H to move between messages.{} Close \
+            "{subject}, as headings. Press H to move between messages.{}{} Close \
              the window to go back to the conversation.",
+            if above.warning.is_some() {
+                " A warning above the message, F7 for it."
+            } else {
+                ""
+            },
             match hanging_off.len() {
                 0 => String::new(),
                 1 => " 1 attachment, F8 for it.".to_string(),
@@ -12037,6 +13294,22 @@ fn show_conversation_as_page(
         ),
         crate::presentation::accessibility::announcements::Priority::Normal,
     );
+    // The top of the bar, spoken after the window has said what it is, and
+    // through the same two channels the reader uses for the same reasons: the
+    // cue for a message something is wrong with, an ordinary announcement for
+    // one that merely carries a signature. Sounding the unsafe-message cue on
+    // an ordinary signed message teaches somebody the cue means nothing.
+    if let Some(warning) = above.warning.as_deref() {
+        let said = crate::presentation::reader_text::said_before_the_message(warning);
+        if above.looks_unsafe {
+            let _ = a11y.signal(FeedbackEvent::UnsafeMessage, said);
+        } else {
+            let _ = a11y.announce(
+                said,
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+        }
+    }
 }
 
 /// What Google's threat lists say about the links in one message body.
@@ -12370,6 +13643,21 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         ) {
             tracing::warn!("Could not store the message body: {}", e);
             return;
+        }
+        // And the bytes as they arrived, where this message says it is signed.
+        // A signature is arithmetic over exactly those bytes, and nothing the
+        // parse above produces can be turned back into them: header order,
+        // folding, whitespace and transfer encoding all change on the way
+        // through, and any one of those makes a good signature read as bad.
+        // Without this the answer could be worked out here, once, and never
+        // again, so a message reopened from the cache said nothing.
+        //
+        // Ordinary mail writes nothing. The call reads the content type and
+        // stops. Failure is logged and not fatal: it costs a verdict, not a
+        // message, and the reader says so rather than saying a signature
+        // failed.
+        if let Err(e) = cache.keep_signed_original(message_row_id, &raw) {
+            tracing::warn!("Could not keep the form a signed message arrived in: {}", e);
         }
         // Our own checks need the body, so they run here rather than during
         // the header sync, and merge with what the provider already said
@@ -14230,6 +15518,7 @@ mod tests {
         let downloaded = super::whole_message_reading(
             &m,
             &crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
+            crate::application::checking_signatures::SignatureCheck::NotSigned,
             None,
             aloud(),
         );
@@ -14705,6 +15994,129 @@ mod tests {
             })
             .expect("messages loaded");
         assert_eq!(messages[0].thread_id, None);
+    }
+
+    /// A state holding two saved searches: one this build can read and one a
+    /// newer version wrote.
+    fn state_with_saved_searches() -> super::WxUIState {
+        use crate::application::saved_searches::{Join, Question, SavedSearch};
+        use crate::data::message_cache::saved_searches::{
+            SavedSearchesRead, SearchSavedByAnotherVersion,
+        };
+
+        super::WxUIState {
+            saved_searches: SavedSearchesRead {
+                searches: vec![SavedSearch {
+                    id: "s1".to_string(),
+                    name: "Unread from Ann".to_string(),
+                    join: Join::All,
+                    questions: vec![Question {
+                        field: "from".to_string(),
+                        match_type: "contains".to_string(),
+                        pattern: "ann@".to_string(),
+                        case_sensitive: false,
+                    }],
+                    folder: None,
+                }],
+                saved_by_another_version: vec![SearchSavedByAnotherVersion {
+                    id: "s2".to_string(),
+                    name: "Invoices".to_string(),
+                }],
+            },
+            ..super::WxUIState::default()
+        }
+    }
+
+    #[test]
+    fn test_every_saved_search_gets_a_row_including_the_ones_this_build_cannot_read() {
+        // A search written by a newer version is still a row in somebody's
+        // tree. Leaving it out would take it off the tree with nothing said,
+        // and somebody would go looking for a search that is still there.
+        assert_eq!(
+            super::saved_search_rows(&state_with_saved_searches().saved_searches),
+            ["Unread from Ann, saved search", "Invoices, saved search"]
+        );
+    }
+
+    #[test]
+    fn test_a_saved_search_row_is_resolved_by_the_words_the_tree_shows() {
+        // This tree holds text and nothing else, so the row's own words are
+        // all the handler has to work back from. A row nothing resolves is a
+        // row that does nothing when Enter is pressed on it.
+        let state = state_with_saved_searches();
+
+        assert_eq!(
+            super::the_search_a_row_names(&state, "Unread from Ann, saved search")
+                .map(|chosen| chosen.id().to_string()),
+            Some("s1".to_string())
+        );
+        assert_eq!(
+            super::the_search_a_row_names(&state, "Invoices, saved search")
+                .map(|chosen| chosen.id().to_string()),
+            Some("s2".to_string()),
+            "a search a newer version wrote could not be opened at all"
+        );
+        // A folder row, and the heading the searches sit under, are neither.
+        assert!(super::the_search_a_row_names(&state, "Inbox, 3 unread").is_none());
+        assert!(
+            super::the_search_a_row_names(&state, crate::application::saved_searches::THE_HEADING)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_what_is_chosen_is_a_saved_search_only_when_its_path_says_so() {
+        // The guard the whole design rests on. What is chosen is held as a
+        // path, and a saved search's path opens with a character no mailbox
+        // name can carry, so everything that would otherwise treat it as a
+        // mailbox has one question to ask.
+        let mut state = state_with_saved_searches();
+
+        state.selected_folder = Some("Inbox, 3 unread".to_string());
+        assert!(super::the_chosen_saved_search(&state).is_none());
+
+        state.selected_folder = Some(crate::application::saved_searches::the_path_of("s1"));
+        assert_eq!(
+            super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
+            Some("Unread from Ann".to_string())
+        );
+        // And the title says the name rather than the path, which opens with
+        // a character that is read out as nothing.
+        assert_eq!(
+            super::what_is_open_is_called(&state).as_deref(),
+            Some("Unread from Ann")
+        );
+
+        // Renaming does not lose the row. This is why what is chosen is held
+        // as the path and not as the row's words: the words change when
+        // somebody tidies a name, and the path does not.
+        state.saved_searches.searches[0].name = "Mail from Ann".to_string();
+        assert_eq!(
+            super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
+            Some("Mail from Ann".to_string()),
+            "renaming a saved search left what was open pointing at nothing"
+        );
+
+        // A path under the prefix that names nothing is not a folder either.
+        // Answering "no saved search" here would send it on to be opened as a
+        // mailbox with a control character in its name.
+        state.selected_folder = Some(crate::application::saved_searches::the_path_of("gone"));
+        assert!(super::the_chosen_saved_search(&state).is_none());
+        assert!(crate::application::saved_searches::is_a_saved_search(
+            state.selected_folder.as_deref().expect("a chosen row")
+        ));
+    }
+
+    #[test]
+    fn test_a_name_is_checked_against_every_saved_search_including_unreadable_ones() {
+        // The table refuses two searches with the same name whichever version
+        // wrote them, so a check that only looked at the readable ones would
+        // accept a name and then fail on the write, after somebody had typed
+        // it and been told it was fine.
+        assert_eq!(
+            super::names_already_used(&state_with_saved_searches()),
+            ["Unread from Ann", "Invoices"]
+        );
     }
 
     fn threaded(id: i64, uid: u32, date: &str, depth: usize, thread: &str) -> MessageItem {

@@ -69,6 +69,7 @@ fn test_a_live_dialogs_own_fields_are_read_back_the_way_save_reads_them() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 None,
@@ -121,6 +122,7 @@ fn test_a_live_dialogs_own_fields_are_read_back_the_way_save_reads_them() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 None,

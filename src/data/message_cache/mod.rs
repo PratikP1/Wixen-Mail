@@ -22,6 +22,7 @@ pub mod reminders;
 pub mod saved_searches;
 mod searching;
 mod signatures;
+pub mod signed_original;
 mod tags;
 pub mod tasks;
 
@@ -103,6 +104,9 @@ pub struct MessageCache {
     /// How much attachment content to keep. See
     /// [`attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES`].
     attachment_budget: i64,
+    /// How much of the form signed mail arrived in to keep. See
+    /// [`signed_original::SIGNED_ORIGINAL_BUDGET_BYTES`].
+    signed_original_budget: i64,
 }
 
 /// Cached folder information
@@ -1163,6 +1167,7 @@ impl MessageCache {
             security,
             body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
             attachment_budget: attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES,
+            signed_original_budget: signed_original::SIGNED_ORIGINAL_BUDGET_BYTES,
         };
         cache.initialize_schema()?;
 
@@ -1245,6 +1250,15 @@ impl MessageCache {
     #[must_use]
     pub fn keeping_attachments_under(mut self, budget_bytes: i64) -> Self {
         self.attachment_budget = budget_bytes;
+        self
+    }
+
+    /// The same cache, keeping less of the form signed mail arrived in.
+    ///
+    /// The third of the same shape, for the same two reasons as the two above.
+    #[must_use]
+    pub fn keeping_signed_originals_under(mut self, budget_bytes: i64) -> Self {
+        self.signed_original_budget = budget_bytes;
         self
     }
 
@@ -1372,6 +1386,29 @@ impl MessageCache {
                  END;",
             )
             .map_err(|e| Error::Other(format!("Failed to keep the stored files tidy: {}", e)))?;
+
+        // The bytes a signed message arrived in, which is the only thing its
+        // signature can be checked against. A row exists exactly when the
+        // message claimed a signature; `original` is NULL when the message
+        // claimed one and the bytes were not kept, which the reader says in its
+        // own words rather than letting it read as a failed check. See
+        // `signed_original`.
+        //
+        // Keyed by the message rather than by a digest of the content, unlike
+        // `attachment_content`: two messages never share a whole message, so
+        // there is nothing to hold once.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS signed_original (
+                message_id INTEGER PRIMARY KEY,
+                original BLOB,
+                bytes INTEGER NOT NULL,
+                last_read_at TEXT NOT NULL,
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create signed_original table: {}", e)))?;
 
         self.conn
             .execute(
@@ -2450,6 +2487,12 @@ impl MessageCache {
             // row to learn its size would read the file with it.
             "CREATE INDEX IF NOT EXISTS idx_attachment_content_lru
                  ON attachment_content(last_read_at, bytes)",
+            // The same shape, and here for the same reason: totalling what is
+            // kept and choosing what to drop must not read whole messages to
+            // learn how big they are. Only the rows that still hold bytes,
+            // because a row whose bytes have gone is never a candidate again.
+            "CREATE INDEX IF NOT EXISTS idx_signed_original_lru
+                 ON signed_original(last_read_at, bytes) WHERE original IS NOT NULL",
             "CREATE INDEX IF NOT EXISTS idx_tasks_task_list ON tasks(task_list_id)",
             "CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id)",
             // Only the events that repeat, which is what makes this worth

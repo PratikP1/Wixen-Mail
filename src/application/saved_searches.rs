@@ -52,16 +52,40 @@
 //! # What is not here
 //!
 //! Values in and values out. No database, no query, no window, and nothing
-//! platform-specific, so it behaves the same wherever it is built. Nothing
-//! calls it yet: there is no table, no row in the tree, and no search runs.
+//! platform-specific, so it behaves the same wherever it is built. The table
+//! is in [`crate::data::message_cache::saved_searches`], the rows in the
+//! folder tree and the commands that make, rename and remove one are in
+//! `presentation::wx_app`, and the messages a search is run over are gathered
+//! by a query there rather than here.
 //!
-//! One gap worth knowing about. A question naming a field this build does not
-//! know is answered "no" by the filter engine, one message at a time, so a
-//! search carrying one reads as a search that found nothing rather than as one
-//! that could not run. [`Found::CouldNotRun`] is the honest answer and nothing
-//! can reach it for that cause, because the engine does not say which fields
-//! it knows. Telling the two apart means asking it, which is a change to the
-//! engine rather than to this.
+//! # What a search cannot see
+//!
+//! Mail this computer has not downloaded, and mail that has been marked
+//! deleted. A search reads what is cached, the same rows every folder listing
+//! reads, so it answers about the mail somebody can see in the tree and not
+//! about the whole of what a server holds.
+//!
+//! A question about the text of a message is answered from the copy this
+//! computer kept. Bodies are evicted to stay within a budget, so a search on
+//! the text can only find what is still here; the headers are always here.
+//! That is said in the changelog as a limitation rather than papered over.
+//!
+//! # A question this build cannot read
+//!
+//! Either half of a question is a word, and a word this build has never met
+//! can arrive in either: a search written by a newer version, or one whose
+//! field was misspelled by whatever wrote it. The filter engine answers "no"
+//! about a question it cannot read, which is the only safe thing to say about
+//! one message and the wrong thing to report about a whole search, because
+//! "no" is also what it says about a message that simply does not match.
+//!
+//! So the asking happens before any message is looked at, through
+//! [`crate::application::filters::a_rule_may_name`] and
+//! [`crate::application::filters::a_rule_may_match`], and the answer is
+//! [`Found::CouldNotRun`] naming the word it could not read.
+//! [`SavedSearch::run_over`] is the only way to run a search, so the asking
+//! cannot be left out; [`SavedSearch::selects`] stays as the per-message test
+//! it always was and is not for filtering with directly.
 
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule};
 use crate::data::message_cache::CachedMessage;
@@ -158,6 +182,19 @@ pub fn is_a_saved_search(path: &str) -> bool {
     path.starts_with(SEARCH_PREFIX)
 }
 
+/// The path a saved search's row in the folder tree is found by.
+///
+/// Built from the identifier rather than the name, because a name can be
+/// edited and anything holding the old path would then point at nothing.
+///
+/// A free function as well as [`SavedSearch::path`], for the reason
+/// [`a_row_for`] is one: a search this build cannot read has an identifier and
+/// a name and nothing else, and it still has a row that has to be found by the
+/// same path as any other. Two spellings would be a row nothing could resolve.
+pub fn the_path_of(id: &str) -> String {
+    format!("{SEARCH_PREFIX}/{id}")
+}
+
 /// The tree row every saved search sits under.
 ///
 /// Named here so the sentence that says where a new one went and the row that
@@ -186,6 +223,72 @@ pub const NO_MAIL_HERE_YET: &str = "there is no mail on this computer to search 
 pub const SAVED_BY_ANOTHER_VERSION: &str =
     "it was saved by a version of this program that this one does not understand.";
 
+/// A part of a question this build cannot make sense of.
+///
+/// The two halves of a question are stored as words, and a word this build has
+/// never met can arrive in either: a search written by a newer version, or one
+/// whose field was misspelled by whatever wrote it. Neither can be answered,
+/// and both are answered "no" by the filter engine, which is the only safe
+/// thing it can say about one message and the wrong thing to report about a
+/// whole search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotUnderstood {
+    /// The part of the message it asks about.
+    Field(String),
+    /// The way it asks the message and the pattern to be compared.
+    WayOfMatching(String),
+}
+
+impl NotUnderstood {
+    /// Why the search could not run, ending as a sentence.
+    ///
+    /// It names the word it could not read. "This search could not run" on its
+    /// own leaves somebody with nothing to fix and no way to tell a search
+    /// written by a newer version from one with a typo in it.
+    pub fn why(&self) -> String {
+        match self {
+            NotUnderstood::Field(field) => format!(
+                "it asks about the {field} of a message, which this version does not understand."
+            ),
+            NotUnderstood::WayOfMatching(way) => {
+                format!("it asks to match by {way}, which this version does not understand.")
+            }
+        }
+    }
+}
+
+/// What came of running a saved search over some messages.
+///
+/// One shape rather than "ask whether it can run, then run it", because the
+/// asking is the half that gets skipped. [`SavedSearch::selects`] answers "no"
+/// about a question this build cannot read, which is the same word it uses
+/// about a message that does not match, so the two arrive as one empty list.
+#[derive(Debug)]
+pub enum Ran<'a> {
+    /// It ran, and these are the messages it took, in the order they came.
+    Took(Vec<&'a CachedMessage>),
+    /// There was no mail on this computer for it to look at.
+    ///
+    /// The first morning of a new account, before anything has come down.
+    /// Kept apart from finding nothing for the same reason a question this
+    /// build cannot read is: "no messages" says the mail is not there, when
+    /// what is true is that this computer has not got it yet.
+    NothingToLookAt,
+    /// It did not run, and this is what was wrong with it.
+    CouldNotRun(NotUnderstood),
+}
+
+impl Ran<'_> {
+    /// What is said about it.
+    pub fn found(&self) -> Found {
+        match self {
+            Ran::Took(taken) => Found::of(taken.len()),
+            Ran::NothingToLookAt => Found::CouldNotRun(NO_MAIL_HERE_YET.to_string()),
+            Ran::CouldNotRun(why) => Found::CouldNotRun(why.why()),
+        }
+    }
+}
+
 /// What a saved search turned up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Found {
@@ -208,6 +311,115 @@ impl Found {
             0 => Found::Nothing,
             found => Found::Messages(found),
         }
+    }
+}
+
+/// How a saved search reads in the folder tree.
+///
+/// One spelling, used by the tree that draws the row and by the handler that
+/// works back from a row to the search it names, for the reason a label row
+/// has one: two spellings would mean a row nothing could resolve. It says what
+/// it is every time, because a row that sounds like a folder and is not is the
+/// whole risk of putting these in the tree.
+///
+/// A name rather than a whole search, so a search this build cannot read is
+/// still a row and still reads out like the rest of them.
+pub fn a_row_for(name: &str) -> String {
+    match name.trim() {
+        "" => NO_NAME.to_string(),
+        named => format!("{named}, saved search"),
+    }
+}
+
+/// The parts of a message a search somebody typed into the box asks about.
+///
+/// The subject, the sender and the recipients: where a word somebody remembers
+/// about a message would be written. Named here rather than built at the call
+/// site, so the sentence that says what is being saved and the questions that
+/// are saved cannot come to say different things.
+pub const WHAT_A_TYPED_SEARCH_LOOKS_AT: [&str; 3] = ["subject", "from", "to"];
+
+/// Whether a typed search wants every part to hold the word or any one of them.
+///
+/// Any one. Somebody typing into a search box is asking where a word appears,
+/// not for a message whose subject and sender and recipients all carry it,
+/// which is almost nothing.
+pub const WHAT_A_TYPED_SEARCH_JOINS_WITH: Join = Join::Any;
+
+/// The search somebody typed, written as a saved search's questions.
+pub fn what_a_typed_search_asks(text: &str) -> Vec<Question> {
+    WHAT_A_TYPED_SEARCH_LOOKS_AT
+        .iter()
+        .map(|part| Question {
+            field: (*part).to_string(),
+            match_type: "contains".to_string(),
+            pattern: text.to_string(),
+            case_sensitive: false,
+        })
+        .collect()
+}
+
+/// What a search saved from the search box will ask, in words.
+///
+/// Said while somebody is naming it rather than after. A saved search asks a
+/// narrower question than the box it came from: the box reads the first line
+/// of a message as well, and this does not, so a search saved from it can come
+/// back with fewer messages than the search that was just run. Being told that
+/// while naming it is the difference between a known limit and a bug report.
+pub fn a_typed_search_in_words(text: &str) -> String {
+    format!(
+        "This saved search looks for {text} in the subject, the sender and the \
+         recipients of every message in this account."
+    )
+}
+
+/// How many of a search's results the message list is filled with.
+///
+/// The same bound every other listing here carries, and for the same reason: a
+/// list of forty thousand rows is one nobody can move through. The count that
+/// is announced is the true one, so nobody is told they have five hundred when
+/// they have nine hundred.
+pub const MOST_RESULTS_SHOWN: usize = 500;
+
+/// What is said when a search found more than the list was filled with.
+///
+/// Said as well as the count rather than instead of it. A list quietly cut to
+/// its first page, with a count that matches the cut, is a search that has
+/// answered a narrower question than the one somebody asked.
+pub fn only_the_newest_are_shown(shown: usize) -> String {
+    format!("The newest {shown} are shown.")
+}
+
+/// What is said about a search that looks in a folder this computer has not
+/// got.
+///
+/// A folder can be renamed on the server, unsubscribed, or belong to an
+/// account that has gone. Searching everywhere instead would quietly widen the
+/// question; finding nothing would quietly narrow it. Neither is what was
+/// asked, so it says it could not run.
+pub const THAT_FOLDER_IS_NOT_HERE: &str =
+    "the folder it looks in is not on this computer any more.";
+
+/// What a row says once its search has run.
+///
+/// A name rather than a whole search, so a search this build cannot read says
+/// what happened to it in the same words as one it can. Two spellings would be
+/// two ways of wording a count, and the row nobody can run is the one that
+/// would end up worded worse.
+///
+/// A label rather than a sentence, the same shape the Outbox uses for a
+/// waiting message. The count is the whole reason to look at it, and having
+/// none is said in words rather than left as silence.
+pub fn what_a_search_found(name: &str, found: &Found) -> String {
+    let name = match name.trim() {
+        "" => NO_NAME,
+        named => named,
+    };
+    match found {
+        Found::Messages(1) => format!("{name}, 1 message"),
+        Found::Messages(how_many) => format!("{name}, {how_many} messages"),
+        Found::Nothing => format!("{name}, no messages"),
+        Found::CouldNotRun(why) => format!("{name} could not run: {why}"),
     }
 }
 
@@ -339,7 +551,7 @@ impl SavedSearch {
     /// the folder somebody had open, a column layout, whatever is restored at
     /// startup. The identifier is what the row is.
     pub fn path(&self) -> String {
-        format!("{SEARCH_PREFIX}/{}", self.id)
+        the_path_of(&self.id)
     }
 
     /// What the tree row is called when it is read out.
@@ -352,10 +564,18 @@ impl SavedSearch {
     /// search alike, and there is nothing else a screen reader would read. If
     /// the tree ever carries descriptions, this belongs in one.
     pub fn announced(&self) -> String {
-        match self.name.trim() {
-            "" => NO_NAME.to_string(),
-            named => format!("{named}, saved search"),
-        }
+        a_row_for(&self.name)
+    }
+
+    /// Whether answering this search means having the text of each message.
+    ///
+    /// Asked before the messages are gathered, so a search about senders and
+    /// subjects costs a listing-sized read and only one about the text of a
+    /// message pays for unpacking every body this computer holds.
+    pub fn reads_the_message_text(&self) -> bool {
+        self.questions.iter().any(|question| {
+            crate::application::filters::a_rule_reads_the_message_text(&question.field)
+        })
     }
 
     /// What the row says once the search has run.
@@ -365,21 +585,50 @@ impl SavedSearch {
     /// the whole reason to look at it, and having none is said in words rather
     /// than left as silence.
     pub fn what_it_found(&self, found: &Found) -> String {
-        let name = self.name_to_say();
-        match found {
-            Found::Messages(1) => format!("{name}, 1 message"),
-            Found::Messages(how_many) => format!("{name}, {how_many} messages"),
-            Found::Nothing => format!("{name}, no messages"),
-            Found::CouldNotRun(why) => format!("{name} could not run: {why}"),
-        }
+        what_a_search_found(&self.name, found)
     }
 
-    /// The name to read out, whatever the record holds.
-    fn name_to_say(&self) -> String {
-        match self.name.trim() {
-            "" => NO_NAME.to_string(),
-            named => named.to_string(),
+    /// The part of a question this build cannot read, if there is one.
+    ///
+    /// Asked once, before any message is looked at, because the answer is the
+    /// same for every message and because it is a different answer from "this
+    /// message does not match". The first one found is reported: a search with
+    /// two unreadable questions is still one search that cannot run, and
+    /// naming one word to fix is more use than naming a list.
+    pub fn what_it_cannot_read(&self) -> Option<NotUnderstood> {
+        use crate::application::filters::{a_rule_may_match, a_rule_may_name};
+
+        self.questions.iter().find_map(|question| {
+            if !a_rule_may_name(&question.field) {
+                Some(NotUnderstood::Field(question.field.clone()))
+            } else if !a_rule_may_match(&question.match_type) {
+                Some(NotUnderstood::WayOfMatching(question.match_type.clone()))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Run this search over some messages.
+    ///
+    /// The one way to run one. It asks [`Self::what_it_cannot_read`] first,
+    /// which is the step that has to happen before any message is looked at
+    /// and the step a caller doing the filtering itself would leave out.
+    pub fn run_over<'a>(&self, messages: &'a [CachedMessage]) -> Ran<'a> {
+        // The question first. A search this build cannot read is the thing to
+        // fix whether there is mail here to look at or not.
+        if let Some(why) = self.what_it_cannot_read() {
+            return Ran::CouldNotRun(why);
         }
+        if messages.is_empty() {
+            return Ran::NothingToLookAt;
+        }
+        Ran::Took(
+            messages
+                .iter()
+                .filter(|message| self.selects(message))
+                .collect(),
+        )
     }
 
     /// Whether one message belongs in this search's results.
@@ -388,6 +637,11 @@ impl SavedSearch {
     /// that all have to match is true of every message when the list is empty,
     /// which would turn a row somebody opened expecting a handful of messages
     /// into the whole mailbox. Nothing was asked, so nothing is the answer.
+    ///
+    /// One message at a time, so it cannot tell a question this build cannot
+    /// read from a message that does not match: both are "no". That is what
+    /// [`Self::run_over`] is for, and why nothing outside this module should
+    /// be filtering with this directly.
     pub fn selects(&self, message: &CachedMessage) -> bool {
         if self.questions.is_empty() {
             return false;
@@ -826,6 +1080,206 @@ mod tests {
             search.what_it_found(&Found::CouldNotRun(SAVED_BY_ANOTHER_VERSION.to_string())),
             "Unread from Ann could not run: it was saved by a version of this program that \
              this one does not understand."
+        );
+    }
+
+    #[test]
+    fn test_a_search_naming_a_field_this_build_does_not_know_says_it_could_not_run() {
+        // The distinction the whole module exists for, on the one cause that
+        // could not reach it. The engine answers "no" about a field it cannot
+        // read, which is the same word it uses about a message that simply
+        // does not match, so a search carrying a misspelled or newer field
+        // came back as a search that found nothing. Somebody hears "no
+        // messages", stops waiting, and the mail is in their inbox.
+        let search = a_search(
+            "From my manager",
+            vec![asking("sender_display_name", "contains", "ann")],
+        );
+
+        assert_eq!(
+            search.run_over(&[a_message()]).found(),
+            Found::CouldNotRun(
+                "it asks about the sender_display_name of a message, which this version \
+                 does not understand."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_search_matching_a_way_this_build_does_not_know_says_it_could_not_run() {
+        // The other half of a question, and the same failure. Naming the
+        // fields and not the ways would have left a search written by a newer
+        // version reading as an empty folder for half the reasons it can be
+        // unreadable.
+        let search = a_search(
+            "Sounds like",
+            vec![asking("subject", "sounds_like", "invoice")],
+        );
+
+        assert_eq!(
+            search.run_over(&[a_message()]).found(),
+            Found::CouldNotRun(
+                "it asks to match by sounds_like, which this version does not understand."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_search_with_no_mail_to_look_at_says_that_rather_than_no_messages() {
+        // The first morning of a new account, before anything has been
+        // downloaded. "No messages" there is the same wrong answer a search
+        // this build cannot read used to give: it says the mail is not there,
+        // when what is true is that this computer has not got it yet.
+        let search = a_search("From Ann", vec![asking("from", "contains", "ann@")]);
+
+        assert_eq!(
+            search.run_over(&[]).found(),
+            Found::CouldNotRun(NO_MAIL_HERE_YET.to_string())
+        );
+        // And a search whose question cannot be read says that instead, which
+        // is the thing to fix whether there is mail here or not.
+        let unreadable = a_search("Broken", vec![asking("sender_name", "contains", "ann")]);
+        assert!(matches!(
+            unreadable.run_over(&[]).found(),
+            Found::CouldNotRun(why) if why.contains("sender_name")
+        ));
+    }
+
+    #[test]
+    fn test_a_search_that_can_run_hands_back_the_messages_it_took() {
+        // The other direction, so the refusal above cannot be satisfied by a
+        // build that refuses everything.
+        let search = a_search("From Ann", vec![asking("from", "contains", "ann@")]);
+        let mut from_bob = a_message();
+        from_bob.from_addr = "bob@example.com".to_string();
+        let messages = [a_message(), from_bob];
+
+        let Ran::Took(taken) = search.run_over(&messages) else {
+            panic!("a search asking an ordinary question refused to run");
+        };
+
+        assert_eq!(taken.len(), 1);
+        assert_eq!(taken[0].from_addr, "ann@example.com");
+        assert_eq!(search.run_over(&messages).found(), Found::Messages(1));
+    }
+
+    #[test]
+    fn test_a_search_saved_by_another_version_is_still_a_row_that_reads_the_same() {
+        // A search this build cannot make sense of still has a name and still
+        // has a row in the tree. It has to read out the same way as the rest,
+        // because somebody arrowing past it is not being asked to tell a
+        // readable search from an unreadable one by ear.
+        let readable = a_search("Invoices", vec![asking("from", "contains", "ann@")]);
+
+        assert_eq!(a_row_for("Invoices"), readable.announced());
+        assert_eq!(a_row_for("   "), NO_NAME);
+        assert_eq!(the_path_of(&readable.id), readable.path());
+    }
+
+    #[test]
+    fn test_a_search_asking_about_the_message_text_says_so_before_it_is_run() {
+        // What decides whether the read that gathers the messages has to bring
+        // every body on this computer with it. Asked from the questions rather
+        // than paid for on every search.
+        let headers_only = a_search("From Ann", vec![asking("from", "contains", "ann@")]);
+        let the_text = a_search(
+            "Mentions the invoice",
+            vec![
+                asking("from", "contains", "ann@"),
+                asking("body_plain", "contains", "invoice"),
+            ],
+        );
+
+        assert!(!headers_only.reads_the_message_text());
+        assert!(the_text.reads_the_message_text());
+    }
+
+    #[test]
+    fn test_a_search_this_build_cannot_read_still_says_its_name_and_what_happened() {
+        // A search saved by a newer version has a name and nothing else this
+        // build understands, so the sentence about it cannot be built from a
+        // search. One spelling for both, so the row somebody can run and the
+        // row nobody can are worded the same way and neither can drift.
+        let readable = a_search("Invoices", vec![asking("from", "contains", "ann@")]);
+
+        assert_eq!(
+            what_a_search_found("Invoices", &Found::of(3)),
+            readable.what_it_found(&Found::of(3))
+        );
+        assert_eq!(
+            what_a_search_found(
+                "Invoices",
+                &Found::CouldNotRun(SAVED_BY_ANOTHER_VERSION.to_string())
+            ),
+            "Invoices could not run: it was saved by a version of this program that this one \
+             does not understand."
+        );
+    }
+
+    #[test]
+    fn test_a_typed_search_becomes_questions_that_say_what_they_ask() {
+        // What "save the search you just ran" turns into. The subject, the
+        // sender and the recipients, any one of which will do, because that is
+        // how somebody reads a search box: find this word anywhere it would be
+        // written on a message.
+        //
+        // Every question has to be one the engine can answer, or the search
+        // would be saved and then refuse to run the moment it was opened.
+        let questions = what_a_typed_search_asks("invoice");
+        let saved = SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
+            questions,
+            folder: None,
+        };
+
+        assert_eq!(saved.what_it_cannot_read(), None);
+        assert_eq!(
+            saved.join,
+            Join::Any,
+            "a typed search was narrowed to mail answering all of it"
+        );
+
+        let mut from_ann = a_message();
+        from_ann.subject = "Nothing to see".to_string();
+        from_ann.from_addr = "invoice@example.com".to_string();
+        let mut about_it = a_message();
+        about_it.subject = "Your invoice".to_string();
+        let mut neither = a_message();
+        neither.subject = "Lunch".to_string();
+        neither.from_addr = "bob@example.com".to_string();
+        neither.to_addr = "me@example.com".to_string();
+
+        assert!(saved.selects(&from_ann));
+        assert!(saved.selects(&about_it));
+        assert!(!saved.selects(&neither));
+    }
+
+    #[test]
+    fn test_saving_a_typed_search_says_what_it_will_ask_before_it_is_kept() {
+        // A saved search asks a narrower question than the box it came from:
+        // the box reads the first line of a message too, and this does not.
+        // Somebody is told what they are keeping while they are naming it,
+        // rather than finding out when the counts do not match.
+        assert_eq!(
+            a_typed_search_in_words("invoice"),
+            "This saved search looks for invoice in the subject, the sender and the \
+             recipients of every message in this account."
+        );
+    }
+
+    #[test]
+    fn test_a_search_that_found_more_than_the_list_holds_says_the_count_and_says_it_is_cut() {
+        // The count is the true one, because that is the answer somebody came
+        // for. The list is bounded, because a list of forty thousand rows is
+        // one nobody can use. Saying only the bounded number would be
+        // reporting five hundred to somebody who has nine hundred.
+        assert_eq!(
+            only_the_newest_are_shown(MOST_RESULTS_SHOWN),
+            "The newest 500 are shown."
         );
     }
 

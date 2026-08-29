@@ -10,11 +10,31 @@
 //! `crate::application::saved_searches` holds what a saved search is and what
 //! is said about one. Nothing is decided here.
 
-use super::MessageCache;
+use super::bodies::body_text;
+use super::messages::listing_row;
+use super::{CachedMessage, MessageCache, MessageListRow};
 use crate::application::saved_searches::{Join, Question, SavedSearch};
 use crate::common::{Error, Result};
 use rusqlite::params;
 use std::collections::HashMap;
+
+/// Whether the read that gathers a search's messages brings their text.
+///
+/// A search about senders and subjects is answered from the columns a folder
+/// listing already reads. One about the text of a message has to reach into
+/// the body table and unpack every row it finds, which is the read that table
+/// was split off to avoid, so it is asked for rather than always paid.
+///
+/// A value rather than a flag, because "true" at a call site says nothing
+/// about which way round it is, and getting it the wrong way round means
+/// either a slow search or one that answers no about every message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheMessageText {
+    /// No question asks about it, so nothing reads it.
+    LeftAlone,
+    /// A question asks about it, so it is read and unpacked.
+    Read,
+}
 
 /// What one account's saved searches came back as.
 ///
@@ -190,6 +210,85 @@ impl MessageCache {
         Ok(put_back_together(stored, questions))
     }
 
+    /// The messages a saved search has to look at.
+    ///
+    /// Everything cached for the account, or everything in one folder when the
+    /// search names one. Narrowing happens here rather than in the test each
+    /// message is put to: a message on its own carries the number of the
+    /// folder it is in and not its path, so a search that named a folder and
+    /// was handed the whole mailbox would quietly answer about everywhere.
+    ///
+    /// Mail marked deleted is left out, the same as in every folder listing
+    /// and in the full-text search. Turning it up here would make a saved
+    /// search the one place in the program that shows somebody the mail they
+    /// have thrown away.
+    ///
+    /// Not bounded. A search that read the newest page only would answer a
+    /// narrower question than the one asked and say nothing about it, which is
+    /// the failure that never gets reported. What is bounded is the list of
+    /// results, by the caller, which says so out loud.
+    pub fn messages_a_saved_search_reads(
+        &self,
+        account_id: &str,
+        folder_id: Option<i64>,
+        text: TheMessageText,
+    ) -> Result<Vec<CachedMessage>> {
+        let query = scan_query(folder_id.is_some(), text);
+        let mut stmt = self
+            .conn
+            .prepare_cached(&query)
+            .map_err(|e| Error::Other(format!("Failed to prepare the search read: {}", e)))?;
+
+        // Two shapes of parameter list for one query builder. `query_map`
+        // takes the parameters as one value, so the two calls cannot be folded
+        // without boxing them, and boxing to save four lines would hide which
+        // placeholder each one fills.
+        let read = |row: &rusqlite::Row| scanned_message(row, text);
+        let messages = match folder_id {
+            Some(folder_id) => stmt
+                .query_map(params![account_id, folder_id], read)
+                .map_err(|e| Error::Other(format!("Failed to read the folder to search: {}", e)))?
+                .collect::<std::result::Result<Vec<_>, _>>(),
+            None => stmt
+                .query_map(params![account_id], read)
+                .map_err(|e| Error::Other(format!("Failed to read the mail to search: {}", e)))?
+                .collect::<std::result::Result<Vec<_>, _>>(),
+        };
+        messages.map_err(|e| Error::Other(format!("Failed to collect the mail to search: {}", e)))
+    }
+
+    /// The listing rows for the messages a search took, newest first.
+    ///
+    /// The same shape a folder listing has, read by the same unpacking, so a
+    /// result row carries the snippet, the size and the attachment mark every
+    /// other view of that message shows. A second shape here would be a list
+    /// that quietly said less about the same mail.
+    ///
+    /// The identifiers are interpolated rather than bound. They are numbers
+    /// this database handed out and were read back from it a moment ago, so
+    /// there is nothing a person typed anywhere near this, and SQLite binds a
+    /// fixed number of placeholders while this list is as long as the search
+    /// found.
+    pub fn message_rows_for(&self, ids: &[i64]) -> Result<Vec<MessageListRow>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let numbered = ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut stmt = self
+            .conn
+            .prepare(&results_query(&numbered))
+            .map_err(|e| Error::Other(format!("Failed to prepare the results query: {}", e)))?;
+
+        stmt.query_map([], listing_row)
+            .map_err(|e| Error::Other(format!("Failed to read what the search found: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect what the search found: {}", e)))
+    }
+
     /// What each of this account's searches asks, in the order it asks it.
     ///
     /// One query for the whole account rather than one per search, so opening
@@ -228,6 +327,93 @@ impl MessageCache {
         }
         Ok(asked)
     }
+}
+
+/// The query that gathers the messages a saved search is run over.
+///
+/// Built here rather than written inline for the reason the folder listing's
+/// is: the column order is the contract between this and [`scanned_message`],
+/// and a copy of the query held anywhere else is the copy that goes stale.
+///
+/// The body table is joined only when a question asks about the text of a
+/// message. Joined always, every search would pay for reading and unpacking
+/// every body this computer holds.
+fn scan_query(one_folder: bool, text: TheMessageText) -> String {
+    let (columns, joined) = match text {
+        TheMessageText::LeftAlone => ("NULL, NULL, NULL, NULL", ""),
+        TheMessageText::Read => (
+            "b.body_plain, b.body_html, b.body_plain_packed, b.body_html_packed",
+            "LEFT JOIN message_bodies b ON b.message_id = m.id",
+        ),
+    };
+    // A left join, so a message whose body was never downloaded or has since
+    // been evicted is still looked at. The filter engine reads an absent field
+    // as an empty one, which is how "the body is empty" can be true at all.
+    let narrowed = if one_folder {
+        "AND m.folder_id = ?2"
+    } else {
+        ""
+    };
+    format!(
+        "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr,
+                m.cc, m.date, {columns}, m.read, m.starred, m.deleted
+         FROM messages m
+         INNER JOIN folders f ON m.folder_id = f.id
+         {joined}
+         WHERE f.account_id = ?1 AND m.deleted = 0 {narrowed}
+         ORDER BY m.date DESC, m.uid DESC"
+    )
+}
+
+/// One message as a saved search's questions are answered about it.
+///
+/// The packed and unpacked halves of the body are read through the one place
+/// that decides between them, so a search reads the same text the reader shows.
+fn scanned_message(row: &rusqlite::Row, text: TheMessageText) -> rusqlite::Result<CachedMessage> {
+    let (body_plain, body_html) = match text {
+        TheMessageText::LeftAlone => (None, None),
+        TheMessageText::Read => (
+            body_text(row.get(9)?, row.get(11)?),
+            body_text(row.get(10)?, row.get(12)?),
+        ),
+    };
+    Ok(CachedMessage {
+        id: row.get(0)?,
+        uid: row.get(1)?,
+        folder_id: row.get(2)?,
+        message_id: row.get(3)?,
+        subject: row.get(4)?,
+        from_addr: row.get(5)?,
+        to_addr: row.get(6)?,
+        cc: row.get(7)?,
+        date: row.get(8)?,
+        body_plain,
+        body_html,
+        read: row.get(13)?,
+        starred: row.get(14)?,
+        deleted: row.get(15)?,
+    })
+}
+
+/// The query that reads the rows a saved search found, newest first.
+///
+/// The same columns in the same order as a folder listing, because
+/// [`listing_row`] reads them and the order is the contract between the two.
+/// The messages come from every folder the account has, so this one cannot
+/// name a folder the way a listing does.
+fn results_query(numbered: &str) -> String {
+    format!(
+        "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
+                m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                m.read, m.starred, m.answered, m.draft,
+                (m.has_attachments = 1
+                 OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                m.safety, m.safety_reasons, m.receipt_to
+         FROM messages m
+         INNER JOIN folders f ON m.folder_id = f.id
+         WHERE m.id IN ({numbered})
+         ORDER BY m.date DESC, m.uid DESC"
+    )
 }
 
 /// A search's own row, before its questions are put back beside it.
@@ -579,6 +765,185 @@ mod tests {
             names_in(&cache, "acc-1"),
             ["Aardvark", "Alpha", "Middle"],
             "renaming a search moved its row in the tree"
+        );
+    }
+
+    /// A folder with one message in it, and the message's row number.
+    fn a_folder_holding(
+        cache: &MessageCache,
+        account_id: &str,
+        path: &str,
+        subject: &str,
+    ) -> (i64, i64) {
+        let folder_id = cache
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: account_id.to_string(),
+                name: path.to_string(),
+                path: path.to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the folder to be stored");
+        let message_id = cache
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: 1,
+                folder_id,
+                message_id: format!("<{subject}@example.com>"),
+                subject: subject.to_string(),
+                from_addr: "ann@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-08-24T09:00:00Z".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+            })
+            .expect("the message to be stored");
+        (folder_id, message_id)
+    }
+
+    /// The subjects a scan came back with, in the order it gave them.
+    fn subjects_scanned(
+        cache: &MessageCache,
+        account_id: &str,
+        folder: Option<i64>,
+        text: TheMessageText,
+    ) -> Vec<String> {
+        cache
+            .messages_a_saved_search_reads(account_id, folder, text)
+            .expect("the messages to be read")
+            .into_iter()
+            .map(|message| message.subject)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_search_reads_its_own_accounts_mail_and_nothing_marked_deleted() {
+        // The scope of a search with no folder named. Another account's mail
+        // is another tree, and mail somebody has deleted is hidden from every
+        // other listing here, so a search that turned it up would be the one
+        // place in the program that shows deleted mail back to them.
+        let cache = a_cache("saved_search_scope");
+        a_folder_holding(&cache, "acc-1", "INBOX", "Kept");
+        let (_, thrown_out) = a_folder_holding(&cache, "acc-1", "Archive", "Thrown out");
+        a_folder_holding(&cache, "acc-2", "INBOX", "Another account");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET deleted = 1 WHERE id = ?1",
+                params![thrown_out],
+            )
+            .expect("the message to be marked deleted");
+
+        assert_eq!(
+            subjects_scanned(&cache, "acc-1", None, TheMessageText::LeftAlone),
+            ["Kept"]
+        );
+    }
+
+    #[test]
+    fn test_a_search_narrowed_to_a_folder_reads_only_that_folder() {
+        // The folder a search carries narrows the read rather than the test
+        // each message is put to: a message on its own says which folder
+        // number it is in, not which path, so honouring it anywhere else would
+        // quietly widen the search to everywhere.
+        let cache = a_cache("saved_search_one_folder");
+        let (inbox, _) = a_folder_holding(&cache, "acc-1", "INBOX", "In the inbox");
+        a_folder_holding(&cache, "acc-1", "Archive", "In the archive");
+
+        assert_eq!(
+            subjects_scanned(&cache, "acc-1", Some(inbox), TheMessageText::LeftAlone),
+            ["In the inbox"]
+        );
+    }
+
+    #[test]
+    fn test_the_mail_a_search_reads_comes_newest_first() {
+        // What makes "the newest five hundred are shown" true. The results are
+        // bounded, so the order they are gathered in decides which ones are
+        // kept, and an unordered read would keep whichever the database
+        // happened to hand over first and call them the newest.
+        let cache = a_cache("saved_search_order");
+        let (_, older) = a_folder_holding(&cache, "acc-1", "INBOX", "Older");
+        a_folder_holding(&cache, "acc-1", "Archive", "Newer");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET date = '2026-01-01T09:00:00Z' WHERE id = ?1",
+                params![older],
+            )
+            .expect("the earlier date to be stored");
+
+        assert_eq!(
+            subjects_scanned(&cache, "acc-1", None, TheMessageText::LeftAlone),
+            ["Newer", "Older"]
+        );
+    }
+
+    #[test]
+    fn test_the_message_text_comes_back_only_when_a_search_asks_about_it() {
+        // A search about senders and subjects costs a listing-sized read. One
+        // about the text of a message has to unpack every body this computer
+        // holds, which is the read the body table was split off to avoid, so
+        // it is paid for only when a question asks for it.
+        let cache = a_cache("saved_search_text");
+        let (_, message_id) = a_folder_holding(&cache, "acc-1", "INBOX", "Quarterly report");
+        cache
+            .save_message_body(message_id, Some("The invoice is attached."), None)
+            .expect("the body to be stored");
+
+        let left_alone = cache
+            .messages_a_saved_search_reads("acc-1", None, TheMessageText::LeftAlone)
+            .expect("the messages to be read");
+        let read = cache
+            .messages_a_saved_search_reads("acc-1", None, TheMessageText::Read)
+            .expect("the messages to be read");
+
+        assert_eq!(left_alone[0].body_plain, None);
+        assert_eq!(
+            read[0].body_plain.as_deref(),
+            Some("The invoice is attached."),
+            "a search asking about the text of a message was handed no text"
+        );
+    }
+
+    #[test]
+    fn test_the_rows_a_search_found_come_back_as_a_listing_newest_first() {
+        // What fills the message list. The same shape a folder listing has, so
+        // a search result carries the snippet, the size and the attachments
+        // every other view of those messages shows.
+        let cache = a_cache("saved_search_rows");
+        let (_, older) = a_folder_holding(&cache, "acc-1", "INBOX", "Older");
+        let (_, newer) = a_folder_holding(&cache, "acc-1", "Archive", "Newer");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET date = '2026-08-25T09:00:00Z' WHERE id = ?1",
+                params![newer],
+            )
+            .expect("the later date to be stored");
+
+        let rows = cache
+            .message_rows_for(&[older, newer])
+            .expect("the rows to be read");
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.subject.clone())
+                .collect::<Vec<_>>(),
+            ["Newer", "Older"]
+        );
+        assert!(
+            cache
+                .message_rows_for(&[])
+                .expect("nothing to read")
+                .is_empty(),
+            "asking for no rows at all came back with some"
         );
     }
 

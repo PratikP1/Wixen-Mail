@@ -20,6 +20,7 @@ use crate::presentation::accessibility::names::{
 };
 use crate::presentation::manager_words;
 use crate::presentation::theme;
+use crate::service::directory::Directory;
 
 /// What to put in the password box when the provider wants an app password.
 ///
@@ -898,6 +899,12 @@ struct Page2Shell {
     interval: TextCtrl,
     enabled_label: StaticText,
     enabled: CheckBox,
+    directory_section_heading: StaticText,
+    directory_section_spacer: StaticText,
+    directory_url_label: StaticText,
+    directory_url: TextCtrl,
+    directory_base_label: StaticText,
+    directory_base: TextCtrl,
 }
 
 impl Page2Shell {
@@ -926,6 +933,12 @@ impl Page2Shell {
         self.interval.show(visible);
         self.enabled_label.show(visible);
         self.enabled.show(visible);
+        self.directory_section_heading.show(visible);
+        self.directory_section_spacer.show(visible);
+        self.directory_url_label.show(visible);
+        self.directory_url.show(visible);
+        self.directory_base_label.show(visible);
+        self.directory_base.show(visible);
     }
 }
 
@@ -977,6 +990,10 @@ pub struct AccountEditWidgets {
     pub pass_f: TextCtrl,
     pub interval_f: TextCtrl,
     pub enabled: CheckBox,
+    /// Where this account's organisation keeps its list of people, or empty.
+    pub directory_url_f: TextCtrl,
+    /// Which part of that list to search, as the organisation names it.
+    pub directory_base_f: TextCtrl,
     pub next: Button,
     pub back: Button,
     pub ok: Button,
@@ -1035,6 +1052,57 @@ pub fn return_to_identity_page(w: &AccountEditWidgets) {
     w.name_f.set_focus();
 }
 
+/// The directory this account looks people up in, if it names one.
+///
+/// Kept in the settings file rather than on the account, keyed by account id.
+/// See `data::config`'s `directories` for why.
+fn the_directory_this_account_names(account_id: &str) -> Option<Directory> {
+    crate::data::config::ConfigManager::load_stored()
+        .ok()?
+        .app_config()
+        .directory_for(account_id)
+        .cloned()
+}
+
+/// Write down where this account looks people up, or that it does not.
+///
+/// Both boxes empty takes the entry out rather than storing an empty one, so
+/// clearing them really does stop anything being sent: an entry left behind
+/// would be a directory with no address, asked on every keystroke and
+/// refusing every time.
+fn remember_where_to_look_people_up(account_id: &str, url: &str, search_under: &str) {
+    let mut settings = match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings,
+        Err(why) => {
+            tracing::warn!("Where to look people up could not be saved: {why}");
+            return;
+        }
+    };
+    let url = url.trim();
+    let search_under = search_under.trim();
+    let directories = &mut settings.app_config_mut().directories;
+    if url.is_empty() && search_under.is_empty() {
+        directories.remove(account_id);
+    } else {
+        directories.insert(
+            account_id.to_string(),
+            Directory {
+                url: url.to_string(),
+                search_under: search_under.to_string(),
+                // Not offered on this screen. Nothing here stores a password
+                // for a directory yet, and a sign-in name with no password is
+                // one many directory servers accept and quietly treat as
+                // anonymous, so offering the name alone would be a box that
+                // looks like it does something and does not.
+                sign_in_as: None,
+            },
+        );
+    }
+    if let Err(why) = settings.save() {
+        tracing::warn!("Where to look people up could not be saved: {why}");
+    }
+}
+
 fn show_edit(
     parent: &Dialog,
     existing: Option<&Account>,
@@ -1064,10 +1132,17 @@ fn show_edit(
                     _ => None,
                 });
 
+        let id = existing
+            .map(|a| a.id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        remember_where_to_look_people_up(
+            &id,
+            &w.directory_url_f.get_value(),
+            &w.directory_base_f.get_value(),
+        );
+
         Some(Account {
-            id: existing
-                .map(|a| a.id.clone())
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            id,
             name: w.name_f.get_value(),
             sender_name: w.sender_name_f.get_value().trim().to_string(),
             email: email_val,
@@ -1170,6 +1245,22 @@ pub fn build_account_edit_dialog(
         }
         (l, f)
     };
+    // For a box whose label cannot say enough on its own. One call and not
+    // two, the same rule `cb_with_description` below follows: attaching an
+    // accessible object replaces the last one, so the name and the description
+    // are set together or the name is lost.
+    let tf_with_description =
+        |label: &str, default: &str, description: &str| -> (StaticText, TextCtrl) {
+            let l = StaticText::builder(&dlg).with_label(label).build();
+            let f = TextCtrl::builder(&dlg).with_value(default).build();
+            set_accessible_name_and_description(&f, &name_from_label(label), description);
+            fields.add(&l, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
+            fields.add(&f, 1, SizerFlag::Expand | SizerFlag::All, 4);
+            if let Some(palette) = palette {
+                theme::paint(&f, palette.main_surface());
+            }
+            (l, f)
+        };
     let section = |label: &str| -> (StaticText, StaticText) {
         let h = StaticText::builder(&dlg).with_label(label).build();
         let s = StaticText::builder(&dlg).with_label("").build();
@@ -1375,6 +1466,29 @@ pub fn build_account_edit_dialog(
     let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
     let (enabled_label, enabled) = cb("Ena&ble this account", true);
 
+    // Where somebody's employer keeps its list of people, so typing part of a
+    // colleague's name into a message finds them.
+    //
+    // Both boxes empty is the answer for everybody who has no such list, and
+    // it is the answer every account starts with: while they are empty nothing
+    // that gets typed into a message goes anywhere. Filling them in is how
+    // somebody says a name being typed may be sent to that server.
+    let (directory_section_heading, directory_section_spacer) =
+        section("── Looking people up at work ──");
+    let (directory_url_label, directory_url_f) = tf_with_description(
+        "Directory &address:",
+        "",
+        "Where your organisation keeps its list of people. Whoever looks after it will \
+         know: it starts with ldaps:// for an encrypted connection, or ldap:// where \
+         there is none. Leave it empty and nothing you type is sent anywhere.",
+    );
+    let (directory_base_label, directory_base_f) = tf_with_description(
+        "W&here in it to look:",
+        "",
+        "The part of that list to search, written the way the directory names it, such \
+         as ou=people,dc=example,dc=com. Whoever looks after the directory will know it.",
+    );
+
     let page_two_shell = Page2Shell {
         auth_hint_label,
         auth_hint,
@@ -1400,6 +1514,12 @@ pub fn build_account_edit_dialog(
         interval: interval_f,
         enabled_label,
         enabled,
+        directory_section_heading,
+        directory_section_spacer,
+        directory_url_label,
+        directory_url: directory_url_f,
+        directory_base_label,
+        directory_base: directory_base_f,
     };
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 4);
@@ -1457,6 +1577,8 @@ pub fn build_account_edit_dialog(
         pass_f,
         interval_f,
         enabled,
+        directory_url_f,
+        directory_base_f,
         next,
         back,
         ok,
@@ -1495,6 +1617,13 @@ pub fn build_account_edit_dialog(
         interval_f.set_value(&a.check_interval_minutes.to_string());
         enabled.set_value(a.enabled);
         use_oauth_cb.set_value(a.use_oauth);
+        // The directory this account already names, if it names one. Kept in
+        // the settings file rather than on the account, so it is read from
+        // there; see `data::config`'s `directories`.
+        if let Some(directory) = the_directory_this_account_names(&a.id) {
+            directory_url_f.set_value(&directory.url);
+            directory_base_f.set_value(&directory.search_under);
+        }
         if a.use_oauth {
             auth_hint.set_label("Signs in through the browser when you save.");
         } else if offers_app_passwords(&a.email) {

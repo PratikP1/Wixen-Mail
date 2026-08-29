@@ -30,6 +30,25 @@ drive out unless the disk itself is encrypted. Turn on BitLocker if that matters
 is the same position as Outlook's offline folders and Thunderbird's local store, and it is
 stated here rather than left to be discovered.
 
+### Signed mail is kept twice
+
+A message signed with a certificate is stored twice: once the ordinary way, as text and
+attachments, and once more exactly as it arrived, byte for byte. Both copies are in the same
+`cache` folder and neither is encrypted.
+
+The second copy is there because a signature can only be checked against the exact bytes that
+were signed. Reading a message and writing it out again changes small things, such as the
+order of its headers and where its lines wrap, and any one of those changes makes a good
+signature look like a bad one. Without the original bytes the signature could be checked once,
+as the message arrived, and never again, so opening the same message a second time would say
+nothing about it.
+
+This applies only to mail that says it is signed, which is a small share of most mailboxes.
+Ordinary mail is stored once, as it always was. The second copy is dropped when you delete the
+message, when a signed message is larger than 25 MB, and when the space these copies use
+passes 128 MB, oldest first. When it has been dropped, the message says its signature could
+not be checked here, and says plainly that this is not the same as a signature that failed.
+
 ### Contact groups stay here
 
 A contact group is a name you give to some of the people in your address book, so you can write
@@ -52,6 +71,7 @@ group changes nothing about their contact.
 | Your mail provider | Checking, reading, sending | The mail itself, over TLS |
 | The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
 | A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
+| Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
 | Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window | The request for the picture, which says the message was opened |
@@ -59,6 +79,59 @@ group changes nothing about their contact.
 Nothing else is asked for by this program on its own account. There is no server belonging
 to this project, so there is nowhere for anything to go even by accident. The last row is
 the sender choosing, not this program, and the section below says what it means.
+
+## Looking somebody up while you type
+
+Typing part of a name into To, Cc or Bcc looks for people to write to. Your own contacts
+on this computer are always searched, and nothing leaves the machine to do it.
+
+Your organisation's directory is a different matter, and it is off until you turn it on.
+It is a server somebody else runs, and asking it means sending it part of a name you are
+typing, before you have decided to send anything at all. So nothing is asked of any
+directory unless the account names one: the two boxes for it, on the second page of the
+Add or Edit Account window, are empty on a new installation and on every account that
+existed before this was written. Clearing them stops it again.
+
+With a directory named, what goes to it is the part of the name you have typed, and only
+that. It is sent after you stop typing rather than on every keystroke, and only once you
+have typed at least three letters, so a name typed straight through is one question and
+not six. Nothing about the message goes with it: not the subject, not the body, not the
+other recipients.
+
+What you type is never written to the log. The log records that a search failed and why,
+and never what was searched for.
+
+The connection is encrypted where the directory offers it. An address beginning `ldaps://`
+is encrypted from the start, and one beginning `ldap://` is not; both are accepted, because
+some internal directories offer only the second, and which one you get is the address your
+organisation gives you.
+
+## Asking when the people invited to a meeting are free
+
+Nothing is asked until you choose Find when everyone is free in the event window. Filling
+in the guest list sends nothing anywhere.
+
+When you do ask, the question goes to your own calendar server, and it names the whole
+guest list in one request. So that server learns that you are thinking about a meeting
+with these named people, in this window. Where it passes the question on to another
+organisation's server, that organisation learns the same about its own person. Both are
+how the standard works and cannot be avoided while still asking.
+
+What is avoidable is left out. The question carries no title, no description, no location
+and no note: only who is asking, who is being asked about, and the window of dates. Nobody
+is asked about unless you put them on the guest list. The reply carries stretches of time
+and never what anybody is doing in them, and nothing here asks for more, which is why this
+does not read colleagues' calendars directly even where an account could.
+
+Your own calendar is read from this computer and goes nowhere.
+
+The address the question is posted to is one your calendar server names, and it is checked
+before anything is sent: an address on a different host is refused rather than followed,
+because following it would hand both the guest list and your sign-in to a server you never
+agreed to. You are told the server does not offer this instead.
+
+Nothing about the answer reaches the log. The log records that a server did not answer and
+why, and never who was asked about or what came back.
 
 ## Pictures a message points at
 

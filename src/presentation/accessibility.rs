@@ -318,6 +318,31 @@ impl Accessibility {
         self.flush_announcements()
     }
 
+    /// Queue an announcement that carries something a person typed.
+    ///
+    /// Spoken like any other and never muted, because it is the application
+    /// answering a keystroke rather than mail being read out. Its words are
+    /// not written to the log: what somebody is part way through typing into a
+    /// recipient line is a person's name, and the log is a file people are
+    /// asked to attach to bug reports.
+    ///
+    /// Carries a topic for the same reason [`Self::announce_topic`] does: this
+    /// is answering something typed, so a fast typist produces several and
+    /// only the newest is worth hearing.
+    pub fn announce_what_was_typed(
+        &self,
+        text: &str,
+        priority: announcements::Priority,
+        topic: &str,
+    ) -> Result<()> {
+        self.announcements.push(
+            announcements::Announcement::interface(text, priority)
+                .with_topic(topic)
+                .not_in_the_log(),
+        )?;
+        self.flush_announcements()
+    }
+
     /// Read message content aloud. Silenced when content is muted.
     pub fn announce_content(&self, text: &str) -> Result<()> {
         self.announcements
@@ -365,13 +390,19 @@ impl Accessibility {
             // Logged so a report of silence can be checked against whether
             // anything was ever released to be spoken. Message content is
             // logged by length only: a body read aloud must not be written to
-            // a file on disk.
-            match spoken.kind {
-                announcements::Kind::Interface => {
+            // a file on disk. So is anything else carrying what a person
+            // typed, such as the part of a name being looked up in a
+            // recipient line.
+            match spoken.in_the_log {
+                announcements::InTheLog::TheWords => {
                     tracing::info!(topic = ?spoken.topic, "Speaking: {}", spoken.text)
                 }
-                announcements::Kind::Content => {
-                    tracing::info!("Speaking message content, {} characters", spoken.text.len())
+                announcements::InTheLog::HowManyCharacters => {
+                    tracing::info!(
+                        topic = ?spoken.topic,
+                        "Speaking {} characters that are not written down here",
+                        spoken.text.len()
+                    )
                 }
             }
             self.screen_reader.announce_with(

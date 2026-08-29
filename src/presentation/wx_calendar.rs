@@ -91,6 +91,11 @@ pub struct CalendarEventData {
     pub location: String,
     pub description: String,
     pub reminder_minutes: i32,
+    /// Who is coming, as it was typed into the box: one person to a line, a
+    /// name and an address or an address on its own. Turned into the shape the
+    /// event is stored in by `application::who_is_coming`, which is the one
+    /// place that reads a guest list.
+    pub attendees: String,
     /// Which calendar this is filed in, by id. `None` when there was nothing
     /// to choose from, or when nothing was chosen.
     pub calendar_id: Option<String>,
@@ -158,6 +163,12 @@ impl CalendarEventData {
             // edit.
             description: item.description.clone(),
             reminder_minutes: item.reminder_minutes.unwrap_or(0),
+            // The same words the box itself is filled with, worked out by the
+            // same function, or an event nobody touched would report itself
+            // changed every time it was opened.
+            attendees: crate::application::who_is_coming::in_the_box(
+                item.attendees_json.as_deref(),
+            ),
             calendar_id: item.calendar_id.clone(),
             repeat: Repeat::from_rule(rule).label().to_string(),
             repeat_until: until.label().to_string(),
@@ -199,6 +210,7 @@ impl CalendarEventData {
             location: filled.text(FieldName::Location).to_string(),
             description: filled.text(FieldName::Notes).to_string(),
             reminder_minutes: filled.whole(FieldName::AlertMinutes, 0),
+            attendees: filled.text(FieldName::Attendees).to_string(),
             calendar_id: container_id,
             repeat: filled.text(FieldName::Repeat).to_string(),
             repeat_until: filled.text(FieldName::RepeatUntil).to_string(),

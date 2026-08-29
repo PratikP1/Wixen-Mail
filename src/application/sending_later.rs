@@ -49,11 +49,16 @@
 //! Values in and values out. No database, no connection, no window, and
 //! nothing platform-specific, so it behaves the same wherever it is built.
 //!
-//! Nothing calls it yet. The queue has no columns for a time, the send loop
-//! does not ask this question, and there is no Undo Send on any menu. The
-//! countdown sentence names that command, so whoever wires this up owes it a
-//! menu entry and a key; until then the sentence describes something a person
-//! cannot reach.
+//! All of it runs. The queue carries the time, the send loop asks
+//! [`readiness`] on every pass rather than taking the whole queue, and Undo
+//! Send is on the Tools menu with `Ctrl+Shift+Z`.
+//!
+//! That last one was owed for a while. The countdown has always said "Undo Send
+//! takes it back", and for as long as it said so there was no Undo Send: no
+//! menu item, no key, no button. It was harmless while nothing showed the
+//! countdown, and became a promise the moment the send loop started honouring
+//! the hold. `tests/wired.rs` now asks whether a command named in a sentence
+//! exists at all, which is the check that should have been there first.
 
 use chrono::{DateTime, Duration, Local};
 
@@ -297,6 +302,70 @@ pub fn take_back(when: &GoAfter, now: DateTime<Local>) -> TakingBack {
         Readiness::MayGoNow => TakingBack::TooLate,
         Readiness::HeldFor(_) | Readiness::WaitingUntil(_) | Readiness::TimeCannotBeRead => {
             TakingBack::Stopped
+        }
+    }
+}
+
+/// Which queued message Undo Send is about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatToTakeBack {
+    /// This one, by the identifier the queue knows it as.
+    ThisOne(String),
+    /// Nothing is in the queue at all.
+    NothingWaiting,
+    /// Messages are waiting and none of them can be promised back.
+    TooLateForEverything,
+}
+
+/// The message Undo Send means, out of everything in the queue.
+///
+/// The last one that can still be caught. Undo is about what just happened, so
+/// a message set for Friday is not what somebody means while the message they
+/// sent eight seconds ago is sitting behind it in the queue. `queued` is in the
+/// order the queue holds it, oldest first.
+///
+/// An empty queue and a queue nothing can be caught in are kept apart, because
+/// they are not the same answer and somebody does something different about
+/// each. One means Send was never pressed. The other means it was, and only
+/// that one is worth explaining.
+pub fn what_undo_send_takes_back(
+    queued: &[(String, GoAfter)],
+    now: DateTime<Local>,
+) -> WhatToTakeBack {
+    if queued.is_empty() {
+        return WhatToTakeBack::NothingWaiting;
+    }
+    match queued
+        .iter()
+        .rev()
+        .find(|(_, when)| take_back(when, now) == TakingBack::Stopped)
+    {
+        Some((id, _)) => WhatToTakeBack::ThisOne(id.clone()),
+        None => WhatToTakeBack::TooLateForEverything,
+    }
+}
+
+impl WhatToTakeBack {
+    /// Why nothing was taken back, and what to do instead.
+    ///
+    /// `None` when there is a message to take back. Every refusal names the
+    /// next move, because one that only says no leaves somebody pressing the
+    /// same key again.
+    ///
+    /// Neither refusal claims the message has gone. Once the send loop may pick
+    /// a message up, nothing here can see whether the connection has opened, so
+    /// saying "it has gone" would be a guess and saying "it has not" would be a
+    /// worse one. It says what it knows, which is that it cannot be promised
+    /// back, and points at the Outbox, where a row that is still there can
+    /// still be deleted.
+    pub fn why_not(&self) -> Option<&'static str> {
+        match self {
+            WhatToTakeBack::ThisOne(_) => None,
+            WhatToTakeBack::NothingWaiting => Some("There is nothing waiting to send."),
+            WhatToTakeBack::TooLateForEverything => Some(
+                "Too late to take that back. Look in the Outbox: if the message \
+                 is still there, Delete takes it out of the queue.",
+            ),
         }
     }
 }
@@ -880,5 +949,111 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod what_undo_send_is_about {
+    use super::*;
+
+    fn at(text: &str) -> DateTime<Local> {
+        crate::common::moment::read(text)
+            .and_then(crate::common::moment::Moment::on_this_computer)
+            .expect("a real moment")
+    }
+
+    /// A queue row, named and with a time on it.
+    fn waiting(name: &str, when: GoAfter) -> (String, GoAfter) {
+        (name.to_string(), when)
+    }
+
+    #[test]
+    fn test_undo_send_takes_back_the_message_most_recently_sent() {
+        // Somebody presses Send, hears the countdown, and presses Undo Send.
+        // They mean the message they just sent, not the one they set for
+        // Friday. Both can still be caught and only the later one is meant.
+        let now = at("2026-08-24T09:00:00");
+        let queue = [
+            waiting("friday", GoAfter::Chosen(stored(at("2026-08-28T09:00:00")))),
+            waiting(
+                "just-now",
+                GoAfter::Held(stored(now + Duration::seconds(8))),
+            ),
+        ];
+
+        assert_eq!(
+            what_undo_send_takes_back(&queue, now),
+            WhatToTakeBack::ThisOne("just-now".to_string())
+        );
+    }
+
+    #[test]
+    fn test_an_empty_queue_and_a_queue_nothing_can_be_caught_in_are_different_answers() {
+        // "There is nothing waiting" about a message that has just gone would
+        // have somebody looking for it in Drafts. "Too late" about a queue
+        // nobody has put anything in reads as a message lost. They are told
+        // apart because a person does something different about each.
+        let now = at("2026-08-24T09:00:00");
+
+        assert_eq!(
+            what_undo_send_takes_back(&[], now),
+            WhatToTakeBack::NothingWaiting
+        );
+
+        let gone = [waiting("already-going", GoAfter::AsSoonAsPossible)];
+        assert_eq!(
+            what_undo_send_takes_back(&gone, now),
+            WhatToTakeBack::TooLateForEverything
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_time_cannot_be_read_can_still_be_taken_back() {
+        // The way out of a row that would otherwise sit in the Outbox forever.
+        // It has certainly not gone, because nothing will send it, so refusing
+        // to take it back would strand it with no way to reach the message.
+        let now = at("2026-08-24T09:00:00");
+        let stuck = [waiting("stuck", GoAfter::Chosen("not a time".to_string()))];
+
+        assert_eq!(
+            what_undo_send_takes_back(&stuck, now),
+            WhatToTakeBack::ThisOne("stuck".to_string())
+        );
+    }
+
+    #[test]
+    fn test_neither_refusal_claims_the_message_has_gone() {
+        // The one answer that must never be given, because it is the one that
+        // leaves somebody believing a stranger never read what they wrote.
+        // Nothing here can see whether the connection has opened.
+        for refusal in [
+            WhatToTakeBack::NothingWaiting,
+            WhatToTakeBack::TooLateForEverything,
+        ] {
+            let said = refusal.why_not().expect("a refusal says why");
+            let claimed = said.to_lowercase();
+            assert!(
+                !claimed.contains("has gone")
+                    && !claimed.contains("was sent")
+                    && !claimed.contains("has been sent")
+                    && !claimed.contains("delivered"),
+                "{refusal:?} says the message has gone, which it cannot know: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_message_that_can_be_taken_back_gives_no_refusal() {
+        let now = at("2026-08-24T09:00:00");
+        let held = [waiting(
+            "held",
+            GoAfter::Held(stored(now + Duration::seconds(8))),
+        )];
+
+        assert_eq!(
+            what_undo_send_takes_back(&held, now).why_not(),
+            None,
+            "a message that can be caught should not be explaining itself"
+        );
     }
 }

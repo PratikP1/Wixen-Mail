@@ -3246,8 +3246,8 @@ const HOW_OFTEN_TO_LOOK_FOR_THE_ANSWER: i32 = 50;
 /// Returns the stop button alongside the dialog, the same way
 /// `wait_for_an_answer` still needs it after a real `.show_modal()`: to wire
 /// its click and give it focus.
-pub fn build_wait_for_an_answer_dialog(
-    parent: &Frame,
+pub fn build_wait_for_an_answer_dialog<W: WxWidget>(
+    parent: &W,
     title: &str,
     what_is_happening: &str,
     stop: &str,
@@ -3306,8 +3306,11 @@ pub fn build_wait_for_an_answer_dialog(
 /// **Not confirmed with a screen reader.** The window is named and its one
 /// control is focused, which is what reaches NVDA, and whether it is usable is
 /// a thing only a screen reader run answers.
-pub fn wait_for_an_answer<T: 'static>(
-    parent: &Frame,
+/// `parent` is generic rather than fixed to the application's own frame, the
+/// same way `wx_item_form::ask_for` is, so a question asked from inside another
+/// dialog can wait under that dialog rather than under a window behind it.
+pub fn wait_for_an_answer<T: 'static, W: WxWidget>(
+    parent: &W,
     title: &str,
     what_is_happening: &str,
     stop: &str,

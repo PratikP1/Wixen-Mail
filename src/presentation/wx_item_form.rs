@@ -89,7 +89,7 @@
 //! showing it again with nothing pumped in between drops whatever tried to
 //! announce itself in the gap. Refusing a Save never hides anything at all.
 
-use crate::application::item_fields::{Entry, Field, Filled, Problem, fields_for};
+use crate::application::item_fields::{Entry, Field, FieldName, Filled, Problem, fields_for};
 use crate::application::new_item::ItemKind;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
@@ -100,6 +100,8 @@ use crate::presentation::date_display::{self, Clock, DateOrder, DateSettings};
 use crate::presentation::status_line::said_and_shown;
 use crate::presentation::theme;
 use crate::presentation::wx_app::date_settings_from;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -151,6 +153,9 @@ pub struct TimeFields {
 enum Control {
     Line(TextCtrl),
     Paragraph(TextCtrl),
+    /// A list of people, one to a line. A box like a paragraph's, kept apart
+    /// so what is said about it is about writing a person down.
+    People(TextCtrl),
     Date(DateFields),
     Time(TimeFields),
     Pick(Choice),
@@ -181,6 +186,67 @@ pub struct Prefill<'a> {
 pub struct Chrome<'a> {
     pub palette: Option<theme::Palette>,
     pub a11y: &'a Arc<Accessibility>,
+    /// What to do when somebody asks when the people invited are free.
+    ///
+    /// `None` for a form that cannot ask: a task, a note, or an event form
+    /// opened with no account behind it. The controls are then not built at
+    /// all, rather than built and refusing, because a button that never works
+    /// is three tab stops in the way of finishing the form.
+    pub asking: Option<AskWhenPeopleAreFree>,
+}
+
+/// What came back when somebody asked when the people invited are free.
+#[derive(Debug, Clone, Default)]
+pub struct WhatCameBack {
+    /// The whole answer, in sentences somebody can listen to. Said as it
+    /// arrives and never shortened: the half that names who could not be
+    /// checked is the half a summary would drop.
+    pub said: String,
+    /// The times offered, the most useful first, each already worded.
+    pub times: Vec<OfferedTime>,
+}
+
+/// One time the meeting could be, ready to be put into the form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferedTime {
+    /// The time, said the way this person reads dates and times.
+    pub said: String,
+    pub starts: chrono::DateTime<chrono::Local>,
+    pub ends: chrono::DateTime<chrono::Local>,
+}
+
+/// What the form does when somebody asks when the people invited are free.
+///
+/// Handed in rather than done here. Working out where to ask needs the account
+/// list, its calendars, the machine's credential store and a runtime to wait on
+/// without stopping the window, and none of those belong in a dialog builder.
+///
+/// `Rc` rather than `Arc`: this is pressed by a button, so it is only ever
+/// called on the one thread that draws the window. The asking it does happens
+/// somewhere else, and what crosses the thread is the answer, not this.
+pub type AskWhenPeopleAreFree = Rc<dyn Fn(&Filled) -> WhatCameBack>;
+
+/// The controls that ask when the people invited are free, and show what came
+/// back.
+///
+/// A panel inside the event rather than a window of its own. Somebody is part
+/// way through filling an event in, and the answer is about the guest list they
+/// have just typed and the times already in the boxes above: a separate window
+/// takes them away from all three, and coming back from it means finding their
+/// place again. Everything here is an ordinary control in the tab order.
+#[derive(Clone, Copy)]
+pub struct FreeBusyControls {
+    /// The button that asks.
+    pub ask: Button,
+    /// Where the answer is read. Read-only and several lines, so a screen
+    /// reader moves through it a line at a time, which is how somebody checks a
+    /// time they half heard.
+    pub answer: TextCtrl,
+    /// The times that came back, to choose one from. Empty until an answer
+    /// arrives.
+    pub times: Choice,
+    /// The button that puts the chosen time into the event's own boxes.
+    pub put_it_in: Button,
 }
 
 /// Ask for everything needed to make one of these, or to change one that
@@ -209,6 +275,7 @@ pub fn ask_for<W: WxWidget>(
     known_categories: &[String],
     prefill: Option<Prefill>,
     a11y: &Arc<Accessibility>,
+    asking: Option<AskWhenPeopleAreFree>,
 ) -> Option<(Filled, Option<String>)> {
     let widgets = build_item_form_dialog(
         parent,
@@ -218,6 +285,7 @@ pub fn ask_for<W: WxWidget>(
         Chrome {
             palette: theme::current_from_stored_config(),
             a11y,
+            asking,
         },
         current_date_settings(),
         prefill,
@@ -306,6 +374,10 @@ pub struct ItemFormWidgets {
     /// `Some` for a kind that asks anything about recurrence, `None` for one
     /// that does not. See [`RecurrencePages`].
     pub recurrence: Option<RecurrencePages>,
+    /// The controls that ask when the people invited are free, for a form that
+    /// was given somewhere to ask. `None` for every other form. See
+    /// [`FreeBusyControls`].
+    pub free_busy: Option<FreeBusyControls>,
     built: Vec<(&'static Field, Control)>,
 }
 
@@ -400,8 +472,16 @@ pub fn build_item_form_dialog<W: WxWidget>(
         .iter()
         .partition(|field| !field.name.is_about_recurrence());
 
+    // Built onto whichever page the fields themselves went on, right under
+    // them, so it is reached by carrying on through the form rather than by
+    // knowing it is there. Filled in after this so it can read every field back.
+    let mut free_busy = None;
+
     let recurrence = if recurrence_fields.is_empty() {
         build_fields_onto(&dialog, &sizer, &main_fields, &ctx, &mut built);
+        if chrome.asking.is_some() {
+            free_busy = Some(build_asking_when_free_onto(&dialog, &sizer));
+        }
         None
     } else {
         let notebook = Notebook::builder(&dialog).build();
@@ -415,6 +495,9 @@ pub fn build_item_form_dialog<W: WxWidget>(
             &ctx,
             &mut built,
         );
+        if chrome.asking.is_some() {
+            free_busy = Some(build_asking_when_free_onto(&one_time_page, &one_time_sizer));
+        }
         one_time_page.set_sizer(one_time_sizer, true);
         notebook.add_page(&one_time_page, "One-Time", true, None);
 
@@ -452,6 +535,24 @@ pub fn build_item_form_dialog<W: WxWidget>(
         SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top,
         8,
     );
+
+    // Wired here rather than where the controls were built, because the button
+    // that puts a time into the form clears the line above, and that line could
+    // not exist yet: a control takes its place in the tab order when it is
+    // built, so building it earlier would put it in front of the whole form.
+    if let (Some(controls), Some(asking)) = (free_busy.as_ref(), chrome.asking.as_ref()) {
+        wire_asking_when_free(
+            controls,
+            WhatAskingNeeds {
+                asking,
+                a11y: chrome.a11y,
+                built: &built,
+                containers,
+                settings: date_settings,
+            },
+            problem_line,
+        );
+    }
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let save = Button::builder(&dialog)
@@ -533,7 +634,7 @@ pub fn build_item_form_dialog<W: WxWidget>(
     let text_fields: Vec<(&'static Field, TextCtrl)> = built
         .iter()
         .filter_map(|(field, control)| match control {
-            Control::Line(c) | Control::Paragraph(c) => Some((*field, *c)),
+            Control::Line(c) | Control::Paragraph(c) | Control::People(c) => Some((*field, *c)),
             _ => None,
         })
         .collect();
@@ -616,6 +717,7 @@ pub fn build_item_form_dialog<W: WxWidget>(
         container_field,
         category_field,
         recurrence,
+        free_busy: free_busy.map(|controls| controls.shown),
         built,
     })
 }
@@ -790,17 +892,7 @@ fn build_time_fields(
     });
     let (anchor_hour, anchor_minute) = parsed.unwrap_or((now.hour(), now.minute()));
 
-    let (displayed_hour, is_pm) = match clock {
-        Clock::TwentyFourHour => (anchor_hour, false),
-        Clock::TwelveHour => {
-            let is_pm = anchor_hour >= 12;
-            let displayed = match anchor_hour % 12 {
-                0 => 12,
-                other => other,
-            };
-            (displayed, is_pm)
-        }
-    };
+    let (displayed_hour, is_pm) = on_the_face_of(anchor_hour, clock);
 
     let hour = SpinCtrl::builder(parent).build();
     match clock {
@@ -831,6 +923,26 @@ fn build_time_fields(
     }
 }
 
+/// An hour of the day as the clock in front of somebody shows it, and whether
+/// that clock says afternoon.
+///
+/// One function rather than the conversion written out wherever an hour is put
+/// into these controls. [`hour_24`] reads it back, and the two are a pair: a
+/// second copy of either drifts from the other, and what that looks like is a
+/// meeting agreed for ten in the morning and stored for ten at night.
+fn on_the_face_of(hour: u32, clock: Clock) -> (u32, bool) {
+    match clock {
+        Clock::TwentyFourHour => (hour, false),
+        Clock::TwelveHour => (
+            match hour % 12 {
+                0 => 12,
+                other => other,
+            },
+            hour >= 12,
+        ),
+    }
+}
+
 /// Build the control one field asks for, filled from `ctx.existing` when
 /// there is one, otherwise left at the same defaults as before there was
 /// anything to prefill from.
@@ -858,6 +970,19 @@ fn build_control(parent: &dyn WxWidget, field: &Field, ctx: &FormContext) -> Con
                 c.set_value(text);
             }
             Control::Paragraph(c)
+        }
+        // Several lines, like a paragraph, and a control of its own so that
+        // what is read out about it is how to write a person down rather than
+        // what formatting a description understands.
+        Entry::People => {
+            let c = TextCtrl::builder(parent)
+                .with_style(TextCtrlStyle::MultiLine)
+                .with_size(Size::new(480, 90))
+                .build();
+            if let Some(text) = existing_text {
+                c.set_value(text);
+            }
+            Control::People(c)
         }
         Entry::Date => Control::Date(build_date_fields(
             parent,
@@ -984,12 +1109,342 @@ fn name_part(widget: impl WxWidget, field_name: &str, part: &str, help: &str) {
     }
 }
 
+/// What the button that asks is called, and what it says while it waits.
+const FIND_WHEN_EVERYONE_IS_FREE: &str = "Find whe&n everyone is free";
+/// What the button that applies a time is called.
+const PUT_THIS_TIME_IN: &str = "&Put this time in the event";
+/// What the answer box says before anybody has asked.
+const NOBODY_HAS_ASKED_YET: &str =
+    "Nothing asked yet. Fill in who is coming, then choose Find when everyone is free.";
+/// What is said when there is no chosen time to put in.
+///
+/// Covers both ways there can be none, because from where somebody is sitting
+/// they are the same silence: nobody has asked yet, and nothing was offered.
+const NO_TIME_TO_PUT_IN: &str =
+    "No time is chosen. Choose one from Times offered, or find some first.";
+
+/// Build the controls that ask when the people invited are free.
+///
+/// Every one of them is an ordinary control with a visible label beside it and
+/// a name of its own, so the group is reached by tabbing and read like the rest
+/// of the form rather than being a region somebody has to know about.
+/// Nothing is wired here. What the buttons do is wired by
+/// [`wire_asking_when_free`], once the line that says why a Save was refused
+/// exists: a control takes its place in the tab order when it is built, so that
+/// line cannot be built before the page these sit on, and the button that puts a
+/// time into the form has to be able to clear it.
+fn build_asking_when_free_onto<W: WxWidget>(parent: &W, sizer: &BoxSizer) -> TheAskingControls {
+    let across = SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Top;
+
+    let ask = Button::builder(parent)
+        .with_label(FIND_WHEN_EVERYONE_IS_FREE)
+        .build();
+    set_accessible_name_and_description(
+        &ask,
+        &name_from_label(FIND_WHEN_EVERYONE_IS_FREE),
+        "Asks your calendar server about everybody on the guest list at once. \
+         This can take a few seconds.",
+    );
+    sizer.add(&ask, 0, SizerFlag::Left | SizerFlag::Top, 8);
+
+    let answer_label = StaticText::builder(parent)
+        .with_label("What came back")
+        .build();
+    sizer.add(&answer_label, 0, SizerFlag::Left | SizerFlag::Top, 8);
+    let answer = TextCtrl::builder(parent)
+        .with_style(TextCtrlStyle::ReadOnly | TextCtrlStyle::MultiLine | TextCtrlStyle::WordWrap)
+        .with_size(Size::new(480, 110))
+        .build();
+    answer.set_value(NOBODY_HAS_ASKED_YET);
+    set_accessible_name_and_description(
+        &answer,
+        "What came back",
+        "The answer in full, including anybody whose calendar could not be \
+         checked. Somebody nobody could check is never counted as free.",
+    );
+    sizer.add(&answer, 0, across, 8);
+
+    let times_label = StaticText::builder(parent)
+        .with_label("Times offered")
+        .build();
+    sizer.add(&times_label, 0, SizerFlag::Left | SizerFlag::Top, 8);
+    let times = Choice::builder(parent).build();
+    set_accessible_name_and_description(
+        &times,
+        "Times offered",
+        "The times that work, the most useful first. Nothing is changed until \
+         Put this time in the event is chosen.",
+    );
+    sizer.add(&times, 0, across, 8);
+
+    let put_it_in = Button::builder(parent).with_label(PUT_THIS_TIME_IN).build();
+    set_accessible_name_and_description(
+        &put_it_in,
+        &name_from_label(PUT_THIS_TIME_IN),
+        "Writes the chosen time over the start and end already in this form.",
+    );
+    sizer.add(
+        &put_it_in,
+        0,
+        SizerFlag::Left | SizerFlag::Top | SizerFlag::Bottom,
+        8,
+    );
+
+    TheAskingControls {
+        shown: FreeBusyControls {
+            ask,
+            answer,
+            times,
+            put_it_in,
+        },
+        // What came back, held so the button that applies a time can read it.
+        // Not read back out of the choice control: a label is words, and the
+        // instant behind it is what the form needs.
+        offered: Rc::new(RefCell::new(Vec::new())),
+    }
+}
+
+/// The free/busy controls and the answer they are showing.
+///
+/// Kept together between building them and wiring them, because the button that
+/// applies a time needs both, and the two happen at different points in
+/// [`build_item_form_dialog`].
+struct TheAskingControls {
+    shown: FreeBusyControls,
+    offered: Rc<RefCell<Vec<OfferedTime>>>,
+}
+
+/// Everything the free/busy buttons do when they are pressed.
+///
+/// Split from building them so it can run after the line that says why a Save
+/// was refused exists. See [`build_asking_when_free_onto`].
+fn wire_asking_when_free(
+    controls: &TheAskingControls,
+    what_it_needs: WhatAskingNeeds<'_>,
+    problem_line: StaticText,
+) {
+    wire_asking(
+        AskingWiring {
+            ask: controls.shown.ask,
+            answer: controls.shown.answer,
+            times: controls.shown.times,
+            offered: &controls.offered,
+        },
+        what_it_needs.asking,
+        what_it_needs.a11y,
+        what_it_needs.built,
+        what_it_needs.containers,
+    );
+    wire_putting_it_in(
+        PuttingItIn {
+            put_it_in: controls.shown.put_it_in,
+            times: controls.shown.times,
+            offered: &controls.offered,
+            problem_line,
+        },
+        what_it_needs.a11y,
+        what_it_needs.built,
+        what_it_needs.settings,
+    );
+}
+
+/// What the wiring needs from the form around it.
+struct WhatAskingNeeds<'a> {
+    asking: &'a AskWhenPeopleAreFree,
+    a11y: &'a Arc<Accessibility>,
+    built: &'a [(&'static Field, Control)],
+    containers: &'a [Container],
+    settings: DateSettings,
+}
+
+/// What the button that applies a time works on.
+struct PuttingItIn<'a> {
+    put_it_in: Button,
+    times: Choice,
+    offered: &'a Rc<RefCell<Vec<OfferedTime>>>,
+    /// Where Save says why it refused this form. Cleared when a time is put in,
+    /// because whatever it was refused for was about the start and the end.
+    problem_line: StaticText,
+}
+
+/// The controls one wiring function needs, bundled so it does not carry six
+/// parameters of its own.
+struct AskingWiring<'a> {
+    ask: Button,
+    answer: TextCtrl,
+    times: Choice,
+    offered: &'a Rc<RefCell<Vec<OfferedTime>>>,
+}
+
+/// What pressing the button that asks does.
+fn wire_asking(
+    controls: AskingWiring<'_>,
+    asking: &AskWhenPeopleAreFree,
+    a11y: &Arc<Accessibility>,
+    built: &[(&'static Field, Control)],
+    containers: &[Container],
+) {
+    let AskingWiring {
+        ask,
+        answer,
+        times,
+        offered,
+    } = controls;
+    let asking = Rc::clone(asking);
+    let a11y = Arc::clone(a11y);
+    let built: Vec<(&'static Field, Control)> = built.to_vec();
+    let containers: Vec<Container> = containers.to_vec();
+    let offered = Rc::clone(offered);
+
+    ask.on_click(move |event| {
+        // This button does not carry `ID_OK`, so nothing here would close the
+        // dialog. Consumed anyway, for the reason the module doc gives about
+        // Save: a click left unconsumed carries on to the dialog's own default
+        // handling, and asking a question is not an answer to the form.
+        event.event.skip(false);
+
+        let (filled, _) = read_back(&built, &containers);
+        let came_back = asking(&filled);
+
+        answer.set_value(&came_back.said);
+        times.clear();
+        for time in &came_back.times {
+            times.append(&time.said);
+        }
+        if !came_back.times.is_empty() {
+            times.set_selection(0);
+        }
+        *offered.borrow_mut() = came_back.times;
+
+        // The whole answer, never a summary of it. The sentence that names
+        // who could not be checked is the one a summary would drop, and it is
+        // the one somebody has to hear before they book anything.
+        //
+        // High rather than Normal: this is the answer to something the person
+        // asked for and waited on, and the queue holds Normal back behind
+        // whatever else is going on. It supersedes an earlier answer on the
+        // same topic instead of queueing behind it, so asking twice reads out
+        // twice rather than four times.
+        let _ = a11y.announce_topic(&came_back.said, Priority::High, WHEN_EVERYONE_IS_FREE);
+    });
+}
+
+/// The one topic every announcement from this part of the form is on, so a
+/// second answer replaces the first rather than being read out after it.
+const WHEN_EVERYONE_IS_FREE: &str = "when-everyone-is-free";
+
+/// What pressing the button that applies a time does.
+///
+/// Nothing happens until it is pressed. Writing the chosen time in as soon as
+/// the choice changes would overwrite what somebody typed while they were still
+/// reading the list, which is the one thing a control like this must not do.
+fn wire_putting_it_in(
+    controls: PuttingItIn<'_>,
+    a11y: &Arc<Accessibility>,
+    built: &[(&'static Field, Control)],
+    settings: DateSettings,
+) {
+    let PuttingItIn {
+        put_it_in,
+        times,
+        offered,
+        problem_line,
+    } = controls;
+    let a11y = Arc::clone(a11y);
+    let built: Vec<(&'static Field, Control)> = built.to_vec();
+    let offered = Rc::clone(offered);
+
+    put_it_in.on_click(move |event| {
+        event.event.skip(false);
+
+        let chosen = times
+            .get_selection()
+            .and_then(|which| offered.borrow().get(which as usize).cloned());
+        let Some(chosen) = chosen else {
+            let _ = a11y.announce_topic(NO_TIME_TO_PUT_IN, Priority::High, WHEN_EVERYONE_IS_FREE);
+            return;
+        };
+
+        put_the_time_into_the_form(&built, &chosen, settings);
+        // Whatever Save last refused this form for was about the start and the
+        // end, and those have just been replaced. Left on screen it is a
+        // sentence about values that are no longer there, which is the same
+        // stale answer as saying something changed and not re-reading it.
+        problem_line.set_label("");
+
+        // Said, because the boxes that changed are elsewhere in the form and
+        // somebody working by ear has no other way to learn that four of them
+        // just did. The old values are gone, so this says what they are now
+        // rather than that something happened.
+        let _ = a11y.announce_topic(
+            &format!(
+                "The event now starts {} and ends {}.",
+                date_display::absolute(chosen.starts, settings),
+                date_display::absolute(chosen.ends, settings),
+            ),
+            Priority::High,
+            WHEN_EVERYONE_IS_FREE,
+        );
+    });
+}
+
+/// Write a chosen time over the start and end already in the form.
+fn put_the_time_into_the_form(
+    built: &[(&'static Field, Control)],
+    chosen: &OfferedTime,
+    settings: DateSettings,
+) {
+    for (field, control) in built {
+        match (field.name, control) {
+            (FieldName::StartDate, Control::Date(fields)) => {
+                put_the_date_in(*fields, chosen.starts.date_naive());
+            }
+            (FieldName::EndDate, Control::Date(fields)) => {
+                put_the_date_in(*fields, chosen.ends.date_naive());
+            }
+            (FieldName::StartTime, Control::Time(fields)) => {
+                put_the_clock_in(*fields, chosen.starts.time(), settings.clock);
+            }
+            (FieldName::EndTime, Control::Time(fields)) => {
+                put_the_clock_in(*fields, chosen.ends.time(), settings.clock);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Put a day into the three controls a date is entered with.
+fn put_the_date_in(fields: DateFields, day: chrono::NaiveDate) {
+    use chrono::Datelike;
+
+    fields.year.set_value(day.year());
+    fields.month.set_selection(day.month() - 1);
+    // The day's range follows the month it is in, and setting month and year
+    // from code does not fire the handlers that keep it following. Without
+    // this, moving to a short month from a long one leaves a range that allows
+    // the thirty-first of February.
+    clamp_day_to_month(fields);
+    fields.day.set_value(day.day() as i32);
+}
+
+/// Put a time of day into the controls a time is entered with.
+fn put_the_clock_in(fields: TimeFields, at: chrono::NaiveTime, clock: Clock) {
+    use chrono::Timelike;
+
+    let (displayed, is_pm) = on_the_face_of(at.hour(), clock);
+    if let Some(am_pm) = fields.am_pm {
+        am_pm.set_selection(u32::from(is_pm));
+    }
+    fields.hour.set_value(displayed as i32);
+    fields.minute.set_value(at.minute() as i32);
+}
+
 /// The one widget that stands for a control, for the cases where there is
 /// only one. A date or a time, which are several, are matched before this is
 /// reached.
 fn as_widget(control: &Control) -> &dyn WxWidget {
     match control {
-        Control::Line(c) | Control::Paragraph(c) => c,
+        Control::Line(c) | Control::Paragraph(c) | Control::People(c) => c,
         Control::Date(_) | Control::Time(_) => {
             unreachable!("date and time fields are named and focused as themselves")
         }
@@ -1009,7 +1464,7 @@ fn as_widget(control: &Control) -> &dyn WxWidget {
 fn add_to_sizer(sizer: &BoxSizer, control: &Control) {
     let flags = SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom;
     match control {
-        Control::Line(c) | Control::Paragraph(c) => sizer.add(c, 0, flags, 8),
+        Control::Line(c) | Control::Paragraph(c) | Control::People(c) => sizer.add(c, 0, flags, 8),
         Control::Date(fields) => {
             let row = BoxSizer::builder(Orientation::Horizontal).build();
             match fields.day_first {
@@ -1101,7 +1556,9 @@ fn read_back(
 
     for (field, control) in built {
         match control {
-            Control::Line(c) | Control::Paragraph(c) => filled.put(field.name, c.get_value()),
+            Control::Line(c) | Control::Paragraph(c) | Control::People(c) => {
+                filled.put(field.name, c.get_value());
+            }
             Control::Date(fields) => {
                 let month = fields.month.get_selection().map_or(1, |i| i + 1);
                 filled.put(
@@ -1165,6 +1622,44 @@ mod tests {
     #[test]
     fn test_a_date_is_stored_from_its_three_controls() {
         assert_eq!(as_stored_date(2026, 7, 31), "2026-07-31");
+    }
+
+    #[test]
+    fn test_putting_an_hour_into_the_boxes_and_reading_it_back_gives_the_same_hour() {
+        // Two functions that have to be exact opposites: one fills the hour
+        // box and the morning-or-afternoon choice, the other reads them. Every
+        // hour of the day, both clocks, because the ones that go wrong are the
+        // two nobody thinks about: midnight, which shows as 12 in the morning,
+        // and noon, which shows as 12 in the afternoon.
+        //
+        // The writing half used to be spelled out inside the builder, so
+        // putting a suggested time into the form would have been a third copy.
+        // A third copy drifting from these two looks like a meeting agreed for
+        // ten in the morning and stored for ten at night.
+        for clock in [Clock::TwelveHour, Clock::TwentyFourHour] {
+            for hour in 0..24 {
+                let (displayed, is_pm) = on_the_face_of(hour, clock);
+                // The two branches `hour_from` reads the controls back
+                // through. `hour_24` is only ever reached when there is a
+                // morning-or-afternoon choice to read: on a twenty-four hour
+                // clock the spinner already holds the hour, and putting it
+                // through `hour_24` would turn noon into midnight.
+                let read_back = match clock {
+                    Clock::TwelveHour => hour_24(displayed, is_pm),
+                    Clock::TwentyFourHour => displayed,
+                };
+                assert_eq!(
+                    read_back, hour,
+                    "{hour} shown as {displayed} came back wrong on {clock:?}"
+                );
+            }
+        }
+        // And the two the clock face names oddly really are named that way,
+        // so the round trip above is not two matching mistakes.
+        assert_eq!(on_the_face_of(0, Clock::TwelveHour), (12, false));
+        assert_eq!(on_the_face_of(12, Clock::TwelveHour), (12, true));
+        assert_eq!(on_the_face_of(13, Clock::TwelveHour), (1, true));
+        assert_eq!(on_the_face_of(13, Clock::TwentyFourHour), (13, false));
     }
 
     #[test]

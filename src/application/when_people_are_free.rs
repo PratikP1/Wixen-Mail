@@ -154,25 +154,16 @@ const CALLED_OFF: &str = "cancelled";
 /// rather than free.
 pub fn what_their_calendar_said(reply: &str, asked_about: Span) -> TheirCalendar {
     let lines = crate::service::caldav::unfolded(reply);
-    if !lines.iter().any(|line| opens_the_free_busy_block(line)) {
+    let Some(answer) = the_free_busy_block_in(&lines) else {
         return TheirCalendar::NotKnown(WhyNot::TheReplyCouldNotBeRead);
-    }
+    };
 
-    let Some(covering) = the_window_the_reply_covers(&lines, asked_about) else {
+    let Some(covering) = the_window_the_reply_covers(&answer, asked_about) else {
         return TheirCalendar::NotKnown(WhyNot::TheReplyCouldNotBeRead);
     };
 
     let mut stretches = Vec::new();
-    let mut inside = false;
-    for line in &lines {
-        if opens_the_free_busy_block(line) {
-            inside = true;
-        } else if closes_the_free_busy_block(line) {
-            inside = false;
-        }
-        if !inside {
-            continue;
-        }
+    for line in &answer {
         let Some(value) = crate::service::caldav::value_named_on(line, THE_FREE_BUSY_PROPERTY)
         else {
             continue;
@@ -1044,11 +1035,44 @@ fn how_busy_this_event_makes_somebody(event: &CalendarEventEntry) -> HowBusy {
 }
 
 /// The instants a stored start and end name, read in a zone.
+///
+/// A whole day stored with the day it ends on rather than the day after is
+/// still that whole day. Two writers in this tree disagree about that column: a
+/// calendar server's events arrive with the following day, which is what the
+/// standard asks for and what `caldav_sync` writes, while the editor here
+/// stores the date somebody typed into the End Date box, which for a single day
+/// off is the day it started on. Read as the standard's exclusive end, that
+/// second shape is a stretch of no length, so a day off blocks nothing and a
+/// meeting is offered in the middle of somebody's holiday.
+///
+/// Only a stored end that is not after the start is moved. One already naming a
+/// later day is left exactly as it was, so an event written the way the standard
+/// asks keeps the length it was written with, and a longer run of days written
+/// the other way is still a day short rather than being guessed at.
 fn the_span_of(start: &str, end: &str, zone: Tz) -> Option<Span> {
-    Some(Span {
+    let span = Span {
         from: the_stored_instant(start, zone)?,
         until: the_stored_instant(end, zone)?,
+    };
+    if span.until > span.from {
+        return Some(span);
+    }
+    Some(Span {
+        until: midnight_after(end, zone).unwrap_or(span.until),
+        ..span
     })
+}
+
+/// Midnight at the end of a stored whole day, where somebody is standing.
+///
+/// Nothing for a stored moment that is not a whole day. A timed event ending at
+/// the instant it starts is an event of no length, which is a real thing to have
+/// on a calendar and really does block nothing.
+fn midnight_after(stored: &str, zone: Tz) -> Option<DateTime<Utc>> {
+    let crate::common::moment::Moment::WholeDay(day) = crate::common::moment::read(stored)? else {
+        return None;
+    };
+    the_instant_of(day.succ_opt()?.and_hms_opt(0, 0, 0)?, zone)
 }
 
 /// Where one stored moment falls, read in a zone.
@@ -1059,13 +1083,23 @@ fn the_span_of(start: &str, end: &str, zone: Tz) -> Option<Span> {
 /// day somebody is actually having rather than a day in Greenwich.
 fn the_stored_instant(stored: &str, zone: Tz) -> Option<DateTime<Utc>> {
     use crate::common::moment::Moment;
-    use chrono::TimeZone;
 
     let clock = match crate::common::moment::read(stored)? {
         Moment::Fixed(at) => return Some(at.with_timezone(&Utc)),
         Moment::ClockFace(clock) => clock,
         Moment::WholeDay(day) => day.and_hms_opt(0, 0, 0)?,
     };
+    the_instant_of(clock, zone)
+}
+
+/// Where one clock face falls, read in a zone.
+///
+/// Split from [`the_stored_instant`] so the end of a whole day can be worked out
+/// from a date rather than by writing one back out as a string and reading it
+/// again.
+fn the_instant_of(clock: chrono::NaiveDateTime, zone: Tz) -> Option<DateTime<Utc>> {
+    use chrono::TimeZone;
+
     // The hour the clocks go forward does not happen, and an event stored at
     // one is taken at the instant the clock jumped to rather than dropped: a
     // meeting nobody can place is still a meeting somebody is at.
@@ -1104,7 +1138,7 @@ fn the_part_inside(stretch: Span, window: Span) -> Option<Span> {
 /// Narrowed to the question as well, because a server answering a wider window
 /// has still only been asked about this one, and offering a time outside it is
 /// offering a time nobody asked for.
-fn the_window_the_reply_covers(lines: &[String], asked_about: Span) -> Option<Span> {
+fn the_window_the_reply_covers(lines: &[&str], asked_about: Span) -> Option<Span> {
     let named = |property| {
         lines
             .iter()
@@ -1121,6 +1155,36 @@ fn the_window_the_reply_covers(lines: &[String], asked_about: Span) -> Option<Sp
         from: covering.from.max(asked_about.from),
         until: covering.until.min(asked_about.until),
     })
+}
+
+/// The lines inside the block a free/busy answer lives in.
+///
+/// Nothing at all when the document holds no such block, which is a document
+/// that is not an answer to this question. An empty list is a different thing
+/// and a real answer: a block naming no periods is somebody free the whole way
+/// through.
+///
+/// Everything about the answer is read from these lines and never from the
+/// whole document, because a reply may also carry a time zone definition, and
+/// each rule in one holds a `DTSTART` of its own written as a bare clock face.
+/// Searched across the document, the window the reply covers is whichever of
+/// the two came first, and a perfectly readable answer is thrown away.
+fn the_free_busy_block_in(lines: &[String]) -> Option<Vec<&str>> {
+    if !lines.iter().any(|line| opens_the_free_busy_block(line)) {
+        return None;
+    }
+    let mut inside = false;
+    let mut held = Vec::new();
+    for line in lines {
+        if opens_the_free_busy_block(line) {
+            inside = true;
+        } else if closes_the_free_busy_block(line) {
+            inside = false;
+        } else if inside {
+            held.push(line.as_str());
+        }
+    }
+    Some(held)
 }
 
 /// Whether a line opens the block a free/busy answer lives in.
@@ -2134,6 +2198,39 @@ mod tests {
     }
 
     #[test]
+    fn test_a_whole_day_event_stored_with_the_day_it_ends_on_still_blocks_that_day() {
+        // Two writers disagree about this column and both are in the tree. A
+        // calendar server's events arrive with the following day as the end,
+        // which is how the standard writes a whole day. The editor in this
+        // program stores whatever was typed in the End Date box, and for a day
+        // off that is the same day it starts on: `item_fields::event_problems`
+        // refuses an end before the start and accepts one equal to it.
+        //
+        // Read as the standard's exclusive end, that second shape is a stretch
+        // of no length, and a day off blocks nothing at all. Somebody is then
+        // offered a meeting in the middle of their own holiday, which is the
+        // exact failure this module exists to refuse.
+        let mut event = an_event("2026-06-05", "2026-06-05");
+        event.is_all_day = true;
+        event.start_date = Some("2026-06-05".to_string());
+        event.end_date = Some("2026-06-05".to_string());
+
+        let blocked = when_this_event_blocks(
+            &event,
+            chrono_tz::America::New_York,
+            the_first_ten_days_of_june(),
+        );
+
+        assert_eq!(
+            blocked,
+            vec![Stretch {
+                span: span("2026-06-05T04:00:00Z", "2026-06-06T04:00:00Z"),
+                how_busy: HowBusy::Busy,
+            }]
+        );
+    }
+
+    #[test]
     fn test_what_an_event_is_marked_as_decides_what_it_does_to_somebody() {
         // The same four kinds a server marks a free/busy period with. An event
         // somebody has marked free must not block a time, and one marked out
@@ -2207,6 +2304,49 @@ mod tests {
             what_their_calendar_said(&reply, the_week()),
             TheirCalendar::Answered {
                 covering: span("2026-03-02T00:00:00Z", "2026-03-04T00:00:00Z"),
+                stretches: vec![Stretch {
+                    span: span("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
+                    how_busy: HowBusy::Busy,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_reply_carrying_a_time_zone_definition_is_still_read() {
+        // How much of the question a reply answers is what its own free/busy
+        // block says, not the first line anywhere in the document that happens
+        // to be called DTSTART. A time zone definition carries one per rule, as
+        // a clock face with no zone on it, and it sits above the answer.
+        //
+        // Read as the reply's own window it names no instant, so a reply that
+        // is perfectly readable is thrown away and somebody is told the server
+        // could not be understood. Servers send these even though a free/busy
+        // period is always in universal time and needs no zone.
+        let reply = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VTIMEZONE",
+            "TZID:Europe/London",
+            "BEGIN:STANDARD",
+            "DTSTART:19701025T020000",
+            "TZOFFSETFROM:+0100",
+            "TZOFFSETTO:+0000",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            "BEGIN:VFREEBUSY",
+            "DTSTART:20260302T000000Z",
+            "DTEND:20260307T000000Z",
+            "FREEBUSY:20260302T090000Z/20260302T100000Z",
+            "END:VFREEBUSY",
+            "END:VCALENDAR",
+        ]
+        .join("\r\n");
+
+        assert_eq!(
+            what_their_calendar_said(&reply, the_week()),
+            TheirCalendar::Answered {
+                covering: the_week(),
                 stretches: vec![Stretch {
                     span: span("2026-03-02T09:00:00Z", "2026-03-02T10:00:00Z"),
                     how_busy: HowBusy::Busy,

@@ -86,6 +86,22 @@ fn unpacked(stored: &[u8]) -> Option<String> {
     }
 }
 
+/// One half of a stored body, whichever of the two shapes the row holds.
+///
+/// The packed column wins where a row somehow holds both. Bodies written
+/// before packing existed are text in the old columns and are still there,
+/// because a column that shipped is never dropped.
+///
+/// Here rather than written out beside each reader. Two readers deciding this
+/// for themselves is two chances for one of them to prefer the other column,
+/// and the message that is then shown is a stale copy with nothing saying so.
+pub(super) fn body_text(text: Option<String>, packed: Option<Vec<u8>>) -> Option<String> {
+    match packed {
+        Some(packed) => unpacked(&packed),
+        None => text,
+    }
+}
+
 /// One piece of message text, in whichever form is smaller.
 ///
 /// Deflate writes a header and a checksum, so packing something very short
@@ -333,14 +349,8 @@ impl MessageCache {
         // Each half is decided on its own. A row whose formatted copy is
         // damaged but whose plain copy reads is still worth showing.
         let body = MessageBody {
-            body_plain: match plain_packed {
-                Some(packed) => unpacked(&packed),
-                None => plain_text,
-            },
-            body_html: match html_packed {
-                Some(packed) => unpacked(&packed),
-                None => html_text,
-            },
+            body_plain: body_text(plain_text, plain_packed),
+            body_html: body_text(html_text, html_packed),
         };
 
         // Both halves gone is a body that is not there, and saying so is what

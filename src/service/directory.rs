@@ -69,6 +69,17 @@ const BEFORE_GIVING_UP_ON_CONNECTING: Duration = Duration::from_secs(10);
 /// nothing about either.
 const BEFORE_GIVING_UP_ON_AN_ANSWER: Duration = Duration::from_secs(20);
 
+/// The longest one lookup can take before it gives up by itself.
+///
+/// Both limits together, because a search can spend the first waiting to be
+/// connected and then the second waiting to be answered. Public because
+/// anything waiting on a lookup has to be prepared to wait at least this long:
+/// a window that gave up sooner would report a directory as silent while it
+/// was still answering, and say so to somebody who has no other way to tell.
+pub const AT_MOST_BEFORE_GIVING_UP: Duration = Duration::from_secs(
+    BEFORE_GIVING_UP_ON_CONNECTING.as_secs() + BEFORE_GIVING_UP_ON_AN_ANSWER.as_secs(),
+);
+
 /// What to ask a directory to send back about each person.
 ///
 /// Named rather than asking for everything. An entry in a workplace directory
@@ -76,7 +87,11 @@ const BEFORE_GIVING_UP_ON_AN_ANSWER: Duration = Duration::from_secs(20);
 /// which is wanted here, and asking for all of it makes every search slower
 /// and drags more of somebody's personal information across the network than
 /// the question needs.
-const WHAT_TO_ASK_ABOUT_EACH_PERSON: [&str; 11] = [
+/// Both spellings of the employer are here on purpose. `o` is the one the
+/// original standard names and `company` is the one a Windows directory holds
+/// it in, and asking for only the first left the company empty on every entry
+/// from every Active Directory.
+const WHAT_TO_ASK_ABOUT_EACH_PERSON: [&str; 12] = [
     "displayName",
     "cn",
     "givenName",
@@ -87,6 +102,7 @@ const WHAT_TO_ASK_ABOUT_EACH_PERSON: [&str; 11] = [
     "title",
     "department",
     "o",
+    "company",
     "physicalDeliveryOfficeName",
 ];
 
@@ -452,6 +468,21 @@ fn nobody_matches(typed: &str) -> Error {
     ))
 }
 
+/// Whether a refused search is only the directory saying it holds nobody by
+/// that name.
+///
+/// Every other refusal is something to act on: a setting to correct, a sign-in
+/// to fix, a network to get on to, or a search to narrow. This one is not, and
+/// it is the one that happens on the way to typing a name in full, so somebody
+/// completing a recipient would hear it after every third letter.
+///
+/// Asked against the sentence rather than against a marker on the error,
+/// because [`nobody_matches`] is the one place that sentence is written and
+/// comparing with it cannot come apart from it.
+pub fn means_only_that_nobody_matched(refusal: &Error, typed: &str) -> bool {
+    refusal.to_string() == nobody_matches(typed).to_string()
+}
+
 /// Turn whatever went wrong into something worth reading.
 ///
 /// The library's own errors split cleanly in two. One of them is the
@@ -559,6 +590,14 @@ impl AsksADirectory for TheDirectoryItself {
 
         // The connection has to be driven by something or nothing sent on it
         // ever completes. It ends when the session is dropped.
+        //
+        // That puts a requirement on whoever calls this: the runtime it is
+        // awaited on must have somewhere else to run this. On a runtime with
+        // one thread and this call blocking it, the driver never runs, and
+        // every search waits out the answer timeout and reports a directory
+        // that went quiet. `presentation::finding_people` awaits it from a
+        // blocking thread of a multi-threaded runtime, which is the shape that
+        // works.
         tokio::spawn(async move {
             if let Err(ended) = connection.drive().await {
                 tracing::warn!("The connection to the directory ended: {}", ended);
@@ -1412,6 +1451,124 @@ mod tests {
         // the other bounds a search that connected and then went quiet.
         assert!(BEFORE_GIVING_UP_ON_CONNECTING <= std::time::Duration::from_secs(30));
         assert!(BEFORE_GIVING_UP_ON_AN_ANSWER <= std::time::Duration::from_secs(60));
+    }
+}
+
+#[cfg(test)]
+mod what_is_asked_for_and_what_is_read {
+    use super::*;
+
+    /// Every attribute name this file reads off an answer.
+    ///
+    /// Read out of the source rather than listed here, because a list written
+    /// out by hand beside the one it is checking is the second copy that
+    /// drifts. Every read in this file goes through one of three functions and
+    /// each of them takes `entry` first, so the names are whatever is quoted
+    /// between that and the closing bracket.
+    fn every_attribute_this_reads(source: &str) -> Vec<String> {
+        let before_the_tests = source.split("#[cfg(test)]").next().unwrap_or_default();
+        let mut found = Vec::new();
+        for after_entry in before_the_tests.split("entry, ").skip(1) {
+            let Some(call) = after_entry.split(')').next() else {
+                continue;
+            };
+            for quoted in call.split('"').skip(1).step_by(2) {
+                found.push(quoted.to_string());
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn test_every_attribute_this_reads_is_one_it_asked_the_directory_for() {
+        // A directory sends back the attributes it was asked for and no
+        // others, so reading one that was never asked for is a field that is
+        // empty on every entry from every server, for ever, with nothing
+        // saying why. `company` was read and never asked for, which is the
+        // attribute Active Directory holds an employer in: every contact
+        // looked up on a Windows directory had no company on it.
+        let source = std::fs::read_to_string("src/service/directory.rs")
+            .expect("this file, to read its own reads back");
+        let read = every_attribute_this_reads(&source);
+
+        assert!(
+            !read.is_empty(),
+            "no reads were found at all, so this check proves nothing"
+        );
+        for attribute in &read {
+            assert!(
+                WHAT_TO_ASK_ABOUT_EACH_PERSON.contains(&attribute.as_str()),
+                "{attribute} is read off an answer and never asked for, so it is \
+                 empty on every entry: {read:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_reading_of_this_file_can_see_a_read_that_was_never_asked_for() {
+        // The check above says nothing unless it can fail. Two attributes,
+        // one asked for and one not, told apart.
+        let made_up = "\
+            fn a_contact_from() {\n\
+                one_value_of(entry, \"mail\");\n\
+                one_value_of_any(entry, &[\"telephoneNumber\", \"neverAskedFor\"]);\n\
+            }\n";
+
+        let read = every_attribute_this_reads(made_up);
+
+        assert!(read.contains(&"mail".to_string()), "{read:?}");
+        assert!(read.contains(&"neverAskedFor".to_string()), "{read:?}");
+        assert!(
+            !WHAT_TO_ASK_ABOUT_EACH_PERSON.contains(&"neverAskedFor"),
+            "the example has to be an attribute nothing asks for"
+        );
+    }
+}
+
+#[cfg(test)]
+mod what_is_worth_saying_about_a_refusal {
+    use super::*;
+
+    #[test]
+    fn test_a_directory_that_simply_holds_nobody_by_that_name_says_only_that() {
+        // Told apart from every other refusal, because the two are acted on
+        // differently. A directory with nobody by that name has nothing to add
+        // when the contacts on this computer already matched somebody, and
+        // saying so on every third keystroke is a flood.
+        let nobody = nobody_matches("Lovelace");
+
+        assert!(means_only_that_nobody_matched(&nobody, "Lovelace"));
+    }
+
+    #[test]
+    fn test_everything_else_is_worth_hearing_about() {
+        // Each of these is a thing somebody can do something about: a setting
+        // to correct, a sign-in to fix, a network to get on to, or a search to
+        // narrow. Staying quiet about any of them leaves a directory that is
+        // answering nothing looking like an organisation with nobody in it.
+        let worth_hearing = [
+            too_many_people_match("Lovelace"),
+            Error::Config("no directory is set up".to_string()),
+            Error::Authentication("the sign-in was refused".to_string()),
+            Error::Network("it did not answer".to_string()),
+            Error::Protocol("it answered with something unreadable".to_string()),
+        ];
+
+        for refusal in worth_hearing {
+            assert!(
+                !means_only_that_nobody_matched(&refusal, "Lovelace"),
+                "{refusal} was treated as nothing worth saying"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_same_refusal_about_a_different_name_is_not_this_one() {
+        // The sentence names what was searched for, so an answer left over
+        // from an earlier search must not be read as the answer to this one.
+        let nobody = nobody_matches("Lovelace");
+
+        assert!(!means_only_that_nobody_matched(&nobody, "Babbage"));
     }
 }
 

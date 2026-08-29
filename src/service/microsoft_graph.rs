@@ -364,7 +364,12 @@ struct MsEventsResponse {
 
 // ── Client ──────────────────────────────────────────────────────────────────
 
-const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
+/// Where Microsoft's service is.
+///
+/// Public because a free/busy question goes to an endpoint of its own and
+/// `service::free_busy` is handed the address rather than holding a client:
+/// named there as well, the two could come to point at different services.
+pub const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 
 /// Where to ask for the first page of somebody's contacts.
 ///

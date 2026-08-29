@@ -17,6 +17,7 @@
 use super::html_renderer::HtmlRenderer;
 use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
+use crate::application::checking_signatures::SignatureCheck;
 use crate::common::types::MessageBody;
 use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
@@ -431,6 +432,58 @@ fn signature_bar(filter_said: Option<&str>, report: &SignatureReport) -> String 
     lines.join("\n")
 }
 
+/// The bar for a signed message whose arrived-in form was not kept here.
+///
+/// # Why this is its own sentence and not a kind of failure
+///
+/// A signature is arithmetic over the exact bytes a message arrived in, so
+/// without those bytes there is no check to run. That is a fact about this
+/// computer, and it says nothing whatever about the message.
+///
+/// The wording therefore has one job above all others: it must not be mistaken
+/// for [`SignatureOutcome::DoesNotMatch`], which says somebody may have altered
+/// the message after it was signed. Those are opposite pieces of news. Somebody
+/// told the second when the first is true throws away real mail; somebody told
+/// the first when the second is true reads a forgery as ordinary
+/// correspondence. So this says plainly what did not happen and why, and adds
+/// the sentence that rules the other reading out.
+///
+/// What a signature is worth is said underneath all the same, because the top
+/// line still tells somebody this message is signed, and "signed" is read as
+/// "genuine" whether or not anything was checked.
+fn nothing_kept_to_check_bar(filter_said: Option<&str>) -> String {
+    let mut lines: Vec<String> = filter_said.map(str::to_string).into_iter().collect();
+    lines.push(
+        "This message is signed, and the form it arrived in was not kept on this computer, so \
+         the signature cannot be checked here."
+            .to_string(),
+    );
+    lines.push(
+        "That is not the same as a signature that does not match. Nothing has been found wrong \
+         with this message."
+            .to_string(),
+    );
+
+    lines.push(String::new());
+    lines.push(HOW_IT_WAS_CHECKED.to_string());
+    lines.push(
+        "Nothing was checked. A signature can only be checked against the exact bytes the \
+         message arrived in, and this computer no longer has them. It keeps them for signed \
+         mail up to a size limit, and drops the oldest when it runs out of room."
+            .to_string(),
+    );
+
+    lines.push(String::new());
+    lines.push(WHAT_A_SIGNATURE_IS_WORTH.to_string());
+    lines.extend(
+        crate::service::signed_mail::what_a_signature_is_worth()
+            .into_iter()
+            .map(String::from),
+    );
+
+    lines.join("\n")
+}
+
 /// The open questions that have to be heard beside the headline.
 ///
 /// A check that has not come back is a real state and it is not good news, but
@@ -665,21 +718,32 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         text.push('\n');
     }
 
+    // The worst verdict in the conversation. One reply being a phishing
+    // attempt makes the whole thread worth a warning, and burying that under
+    // "the first message is fine" is how somebody misses it. The worst
+    // message's own reasons come with it, so the bar says why rather than only
+    // how bad.
+    let warning = parts
+        .iter()
+        .max_by_key(|part| part.message.safety)
+        .and_then(|worst| warning_for(worst.message.safety, &worst.message.safety_reasons));
+
     ReaderDocument {
         title,
         text,
-        // A conversation, whose parts carry their own verdicts if any.
-        looks_unsafe: false,
+        // Derived from the bar rather than fixed, and it used to be fixed at
+        // false. The reader picks the unsafe-message cue from this, so a thread
+        // holding a phishing attempt showed the warning, said the sentence, and
+        // never sounded the cue that the same message opened on its own would
+        // have sounded. One surface was quietly worth less than the other.
+        //
+        // `false` here would only be right if a bar on a conversation could
+        // exist for some reason other than something being wrong, and today it
+        // cannot: a signature verdict is folded in afterwards by
+        // `with_signature`, which never sets this.
+        looks_unsafe: warning.is_some(),
         landmarks,
-        // The worst verdict in the conversation. One reply being a phishing
-        // attempt makes the whole thread worth a warning, and burying that
-        // under "the first message is fine" is how somebody misses it.
-        // The worst message in the conversation, and its reasons, so the bar
-        // says why rather than only how bad.
-        warning: parts
-            .iter()
-            .max_by_key(|part| part.message.safety)
-            .and_then(|worst| warning_for(worst.message.safety, &worst.message.safety_reasons)),
+        warning,
         // Every message's attachments, in the order the messages are read, so
         // one list covers the whole conversation. Each row remembers which
         // message it came from, which is what makes that possible.
@@ -955,10 +1019,16 @@ impl ReaderDocument {
     /// For one message. A conversation carries a signature per message, and
     /// one verdict folded onto the whole thread would be said as though it
     /// covered all of them.
-    pub fn with_signature(mut self, report: Option<&SignatureReport>) -> Self {
-        if let Some(report) = report {
-            self.warning = Some(signature_bar(self.warning.as_deref(), report));
-        }
+    pub fn with_signature(mut self, check: &SignatureCheck) -> Self {
+        self.warning = match check {
+            SignatureCheck::NotSigned => return self,
+            SignatureCheck::Checked(report) => Some(signature_bar(self.warning.as_deref(), report)),
+            // The bar changes and `looks_unsafe` does not. Nothing is wrong
+            // with a message whose original form was not kept, and sounding the
+            // unsafe-message cue on one would teach somebody that the cue means
+            // nothing.
+            SignatureCheck::NotKept => Some(nothing_kept_to_check_bar(self.warning.as_deref())),
+        };
         self
     }
 }
@@ -2202,6 +2272,11 @@ mod signature_tests {
         }
     }
 
+    /// A report as the reader is handed it.
+    fn checked(report: &SignatureReport) -> SignatureCheck {
+        SignatureCheck::Checked(Box::new(report.clone()))
+    }
+
     /// The everyday good case: it adds up, for the address it came from, and
     /// every question that could have been asked was asked and came back well.
     fn a_signature_that_holds() -> SignatureReport {
@@ -2234,7 +2309,8 @@ mod signature_tests {
         // The whole gap this closes. `service::signed_mail` has been able to
         // work out what a signature is worth and say it in a sentence for a
         // while, and nothing put that sentence anywhere somebody would meet it.
-        let document = a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds()));
+        let document =
+            a_message(Safety::Ordinary).with_signature(&checked(&a_signature_that_holds()));
 
         let bar = document
             .warning
@@ -2247,7 +2323,8 @@ mod signature_tests {
         // A message can be both suspicious and signed, and each answers a
         // different question. Letting either overwrite the other loses one of
         // them with nothing said.
-        let document = a_message(Safety::Phishing).with_signature(Some(&a_signature_that_holds()));
+        let document =
+            a_message(Safety::Phishing).with_signature(&checked(&a_signature_that_holds()));
 
         let bar = document
             .warning
@@ -2262,7 +2339,8 @@ mod signature_tests {
         // a phishing message really can carry a signature that adds up. Open
         // with the signature and the first thing heard on that message is its
         // most reassuring sentence, which is what the forger paid for.
-        let document = a_message(Safety::Phishing).with_signature(Some(&a_signature_that_holds()));
+        let document =
+            a_message(Safety::Phishing).with_signature(&checked(&a_signature_that_holds()));
 
         let bar = document.warning.expect("should warn");
         let filter = bar.find("phishing attempt").expect("the filter's verdict");
@@ -2277,7 +2355,8 @@ mod signature_tests {
         // minute somebody sits through before the mail starts, and the way
         // people learn to sit through it is by stopping listening to the bar,
         // including the sentence at the top that mattered.
-        let document = a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds()));
+        let document =
+            a_message(Safety::Ordinary).with_signature(&checked(&a_signature_that_holds()));
         let bar = document.warning.clone().expect("should say something");
 
         assert!(bar.contains("Nothing has been changed since"), "got {bar}");
@@ -2325,7 +2404,8 @@ mod signature_tests {
                 ],
             );
 
-            let spoken = read_whole(&a_message(Safety::Ordinary).with_signature(Some(&unsettled)));
+            let spoken =
+                read_whole(&a_message(Safety::Ordinary).with_signature(&checked(&unsettled)));
 
             assert!(
                 spoken.contains(&open.spoken()),
@@ -2340,7 +2420,7 @@ mod signature_tests {
         // too, the top would grow on every message and the open question would
         // stop standing out from the rest of it.
         let spoken = read_whole(
-            &a_message(Safety::Ordinary).with_signature(Some(&a_signature_that_holds())),
+            &a_message(Safety::Ordinary).with_signature(&checked(&a_signature_that_holds())),
         );
 
         assert!(!spoken.contains("has not been withdrawn"), "{spoken}");
@@ -2360,7 +2440,7 @@ mod signature_tests {
             ],
         );
 
-        let spoken = read_whole(&a_message(Safety::Ordinary).with_signature(Some(&failed)));
+        let spoken = read_whole(&a_message(Safety::Ordinary).with_signature(&checked(&failed)));
 
         assert!(spoken.contains("does not match its signature"), "{spoken}");
         assert!(!spoken.contains("still being looked into"), "{spoken}");
@@ -2373,7 +2453,7 @@ mod signature_tests {
         // one that matters is talked past too. Nothing in the bar, nothing in
         // the text, nothing extra said.
         let plain = a_message(Safety::Ordinary);
-        let asked = a_message(Safety::Ordinary).with_signature(None);
+        let asked = a_message(Safety::Ordinary).with_signature(&SignatureCheck::NotSigned);
 
         assert_eq!(asked, plain);
         assert_eq!(asked.warning, None);
@@ -2381,11 +2461,14 @@ mod signature_tests {
     }
 
     #[test]
-    fn test_not_checked_did_not_match_and_not_signed_are_three_different_answers() {
+    fn test_not_checked_did_not_match_not_kept_and_not_signed_are_four_different_answers() {
         // A signature this computer could not check has shown nothing. A
         // signature that did not match has shown that something is wrong. A
-        // message with no signature was never making the claim. Collapsing any
-        // two of those tells somebody something that did not happen.
+        // signature whose message this computer no longer holds in the form it
+        // arrived in was never checked at all, and that is a fact about this
+        // computer rather than about the message. A message with no signature
+        // was never making the claim. Collapsing any two of those tells
+        // somebody something that did not happen.
         let could_not_check = report(
             SignatureOutcome::NotChecked,
             vec![Finding::SignatureKindNotUnderstood {
@@ -2396,23 +2479,142 @@ mod signature_tests {
             SignatureOutcome::DoesNotMatch,
             vec![Finding::ContentIsNotWhatWasSigned],
         );
-        let heard = |report: Option<&SignatureReport>| {
-            read_whole(&a_message(Safety::Ordinary).with_signature(report))
-        };
+        let heard =
+            |check: &SignatureCheck| read_whole(&a_message(Safety::Ordinary).with_signature(check));
 
-        let unchecked = heard(Some(&could_not_check));
-        let failed = heard(Some(&did_not_match));
-        let unsigned = heard(None);
+        let unchecked = heard(&checked(&could_not_check));
+        let failed = heard(&checked(&did_not_match));
+        let not_kept = heard(&SignatureCheck::NotKept);
+        let unsigned = heard(&SignatureCheck::NotSigned);
 
         assert!(
             unchecked.contains("could not check the signature"),
             "{unchecked}"
         );
         assert!(failed.contains("does not match its signature"), "{failed}");
+        assert!(
+            not_kept.contains("the form it arrived in was not kept on this computer"),
+            "{not_kept}"
+        );
         assert!(!unsigned.to_lowercase().contains("signature"), "{unsigned}");
-        assert_ne!(unchecked, failed);
-        assert_ne!(unchecked, unsigned);
-        assert_ne!(failed, unsigned);
+        for (one, other) in [
+            (&unchecked, &failed),
+            (&unchecked, &not_kept),
+            (&unchecked, &unsigned),
+            (&failed, &not_kept),
+            (&failed, &unsigned),
+            (&not_kept, &unsigned),
+        ] {
+            assert_ne!(one, other);
+        }
+    }
+
+    #[test]
+    fn test_a_signature_that_was_not_kept_never_reads_as_one_that_failed() {
+        // The worst answer available in this whole feature, and the one thing
+        // this bar exists to keep apart. "This computer did not keep the bytes"
+        // and "somebody altered this message after it was signed" are opposite
+        // pieces of news. The wrong one either throws away real mail or reads a
+        // forgery as ordinary correspondence.
+        let not_kept = a_message(Safety::Ordinary).with_signature(&SignatureCheck::NotKept);
+
+        let bar = not_kept.warning.clone().expect("should say something");
+        let spoken = read_whole(&not_kept);
+
+        assert!(!bar.contains("does not match its signature"), "{bar}");
+        assert!(
+            !bar.contains("as though it were not signed at all"),
+            "{bar}"
+        );
+        assert!(
+            spoken.contains("not the same as a signature that does not match"),
+            "{spoken}"
+        );
+    }
+
+    #[test]
+    fn test_a_signature_that_was_not_kept_is_not_an_unsafe_message() {
+        // The reader picks its cue from `looks_unsafe`. Nothing is wrong with
+        // this message, so sounding the unsafe-message cue on it would teach
+        // somebody that the cue means nothing, and then it means nothing on the
+        // message where it mattered.
+        let not_kept = a_message(Safety::Ordinary).with_signature(&SignatureCheck::NotKept);
+
+        assert!(!not_kept.looks_unsafe);
+    }
+
+    #[test]
+    fn test_a_signature_nobody_checked_still_says_what_a_signature_is_worth() {
+        // The top line tells somebody this message is signed, and "signed" is
+        // read as "genuine" whether or not anything was checked. Leaving the
+        // caveats off the one case where nothing was checked would put the word
+        // in front of somebody with nothing qualifying it at all.
+        let bar = a_message(Safety::Ordinary)
+            .with_signature(&SignatureCheck::NotKept)
+            .warning
+            .expect("should say something");
+
+        for limit in crate::service::signed_mail::what_a_signature_is_worth() {
+            assert!(bar.contains(limit), "the bar left out {limit:?}\n{bar}");
+        }
+    }
+
+    #[test]
+    fn test_a_thread_holding_a_phishing_attempt_sounds_the_cue_a_single_message_does() {
+        // The reader picks its cue from `looks_unsafe`, and a conversation set
+        // it to false whatever its messages were. So opening a thread with a
+        // phishing attempt in it put the warning in the bar, said the sentence,
+        // and never once sounded the cue that says a message is unsafe. The
+        // same message opened on its own did. One of the two surfaces was
+        // quietly worth less than the other.
+        let mut worst = super::tests::message();
+        worst.safety = Safety::Phishing;
+        worst.safety_reasons =
+            vec!["A link says it goes one place and goes somewhere else.".into()];
+        let thread = conversation(
+            "Your account",
+            &[ConversationPart {
+                message: worst,
+                body: MessageBody::Plain("Sign in here.".into()),
+                depth: 0,
+            }],
+        );
+
+        assert!(thread.warning.is_some(), "the bar itself went missing");
+        assert!(thread.looks_unsafe);
+    }
+
+    #[test]
+    fn test_a_thread_with_nothing_wrong_in_it_is_not_called_unsafe() {
+        // The other half. A cue on every thread is a cue that means nothing.
+        let thread = conversation(
+            "Lunch",
+            &[ConversationPart {
+                message: super::tests::message(),
+                body: MessageBody::Plain("One o'clock?".into()),
+                depth: 0,
+            }],
+        );
+
+        assert_eq!(thread.warning, None);
+        assert!(!thread.looks_unsafe);
+    }
+
+    #[test]
+    fn test_a_signature_that_was_not_kept_does_not_silence_the_filters_warning() {
+        // Two questions, two answers, and neither replaces the other. A message
+        // can be a phishing attempt and also carry a signature nobody could
+        // check.
+        let bar = a_message(Safety::Phishing)
+            .with_signature(&SignatureCheck::NotKept)
+            .warning
+            .expect("should say something");
+
+        let filter = bar.find("phishing attempt").expect("the filter's verdict");
+        let signature = bar
+            .find("the form it arrived in was not kept")
+            .expect("the signature's verdict");
+        assert!(filter < signature, "got {bar}");
     }
 
     #[test]
@@ -2423,7 +2625,7 @@ mod signature_tests {
         // gets left off.
         let holds = a_signature_that_holds();
         let bar = a_message(Safety::Ordinary)
-            .with_signature(Some(&holds))
+            .with_signature(&checked(&holds))
             .warning
             .expect("should say something");
 

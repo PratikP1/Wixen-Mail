@@ -83,6 +83,8 @@ fn expect_no_connection_field_shown(name: &'static str, w: &AccountEditWidgets, 
         ("password", &w.pass_f),
         ("check interval", &w.interval_f),
         ("enabled", &w.enabled),
+        ("directory address", &w.directory_url_f),
+        ("where in the directory to look", &w.directory_base_f),
     ] {
         if widget.is_shown() {
             into.push((name, format!("{field} is shown on the identity page")));
@@ -164,6 +166,23 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             expect_shown(
                 "connection page, password sign-in: password shown",
                 &w.pass_f,
+                true,
+                &mut wrong,
+            );
+            // Where this account looks people up. On the connection page
+            // whatever the account, because it is about a server this account
+            // reaches, like every other box on that page. Built and never
+            // shown would be two boxes nobody could fill in, and a directory
+            // nobody can name is a lookup that never happens.
+            expect_shown(
+                "connection page: directory address shown",
+                &w.directory_url_f,
+                true,
+                &mut wrong,
+            );
+            expect_shown(
+                "connection page: where in the directory to look shown",
+                &w.directory_base_f,
                 true,
                 &mut wrong,
             );

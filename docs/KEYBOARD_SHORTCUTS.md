@@ -106,10 +106,36 @@ one row per label. Choosing a label lists the mail carrying it. A label row
 reads as "Work, label" so you can tell it apart from a folder of the same
 name.
 
+After the labels comes a **Saved Searches** heading, with one row per saved
+search. A row reads as "Invoices, saved search", for the same reason a label
+says it is a label. Arrowing onto one does not run it, because running a search
+reads every message on this computer. `Enter` runs it and says how much it
+found. `F5` runs the one you are on again. `Delete` removes the saved search
+itself and never any mail.
+
 In the calendar sidebar, each calendar shows a tick box: `[x]` when it is
 showing and `[ ]` when it is hidden. `Enter` on a calendar hides or shows it,
 and says which it did. Its events leave and rejoin the day list to match.
 Events that belong to no calendar are always shown.
+
+### The Event Window
+
+Everything in the event window is reached with `Tab`, or by holding `Alt` and
+pressing the underlined letter of a label. Recurrence is a second page, reached
+with `Ctrl+Tab` or by tabbing to the page tabs and using the arrow keys.
+
+Four controls work together on the first page, in tab order:
+
+| Control | What it does |
+|---------|--------------|
+| Who is coming | One person to a line: a name and an address, or an address on its own. A name holding a comma needs quotation marks around it |
+| Find when everyone is free | Asks your calendar server about everybody on the guest list at once. A small window says what is happening and offers **Stop** while it waits |
+| What came back | The answer in full, read-only and several lines, so you can move through it a line at a time. It always names anybody whose calendar could not be checked, and says they are not counted as free |
+| Times offered | The times that work, the most useful first. Choosing one changes nothing yet |
+| Put this time in the event | Writes the chosen time over the start and end already in the boxes, and says what they now are |
+
+The answer is spoken as well as shown, in full rather than shortened. Asking
+again replaces what was said rather than reading both answers out.
 
 ### The Reader Window
 
@@ -309,6 +335,7 @@ can navigate. Making them real headings is being worked on.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
+| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds by default. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Close Dialog | `Esc` | Close the current dialog or window |
@@ -384,6 +411,7 @@ event, task, note or contact you are on is on the Action menu instead.
 | Paste | `Ctrl+V` | Put what is on the clipboard where the cursor is |
 | Select All | `Ctrl+A` | Select everything in the box or list you are in |
 | Search | `Ctrl+F` | Searches whichever module you are looking at |
+| Save This Search | none | Keeps the mail search you just ran, under a name, in the folder tree |
 
 **`Ctrl+A` used to open the Account Manager.** It is Select All now, which is
 what it means in every other Windows program, and the Account Manager moved to
@@ -433,6 +461,7 @@ Five submenus hold the rest:
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
 | This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), Folders to Keep Up to Date |
+| Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
 
 ### Account Management
 
@@ -726,9 +755,23 @@ cell" while the caret is inside one.
 | CC | `Alt+C` |
 | BCC | `Alt+B` |
 | Subject | `Alt+S` |
+| People found | `Alt+E` |
 | Save Draft | `Alt+D` |
 | Discard | `Alt+A` |
 | Cancel | `Alt+L` |
+
+**Finding somebody to write to**
+
+Type three letters or more into To, Cc or Bcc and pause. A list of people who
+match appears under the recipient lines, and how many were found is read out
+along with `Alt+E`, the key that goes to the list. `Tab` reaches it as well,
+and it is not in the tab order while it is empty.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Go to the people found | `Alt+E` | Only while there are people in the list |
+| Move through them | `↑` `↓` | Each row says the name, the address, and whether it came from your contacts or from your organisation's directory |
+| Use this person | `Enter` | Puts them in the line you were typing in and takes you back to it |
 
 ### Folder Actions
 

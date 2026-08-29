@@ -159,7 +159,13 @@ pub fn build_destination_dialog(
         .build();
     set_accessible_name(&choose, if copying { "Copy" } else { "Move" });
     let cancel = Button::builder(&dialog)
-        .with_label("&Cancel")
+        // No mnemonic, which is what the other twenty-two Cancel buttons in
+        // this program do and what Windows does. It had one, and it was the
+        // same letter as Copy: pressing Alt+C on this dialog moved between the
+        // two rather than choosing either, so the key that was meant to file a
+        // message might have been the key that abandoned the job. Escape
+        // closes this, as it closes every dialog here.
+        .with_label("Cancel")
         .with_id(ID_CANCEL)
         .build();
     set_accessible_name(&cancel, "Cancel");

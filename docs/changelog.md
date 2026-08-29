@@ -8,6 +8,116 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A search you run every morning can be kept under a name.** Search your mail,
+  then choose Edit, Save This Search. Give it a name, and it appears in the
+  folder tree under a heading called Saved Searches, beside your real folders.
+  Every row reads out as "Invoices, saved search", so you always know what
+  pressing Enter will open.
+
+  Press Enter on the row to run it. The results fill the message list and the
+  count is read out: "Invoices, 12 messages", or "Invoices, no messages" when
+  there are none. Landing on the row does not run it, because running one reads
+  every message on this computer, so arrowing past five saved searches would
+  start five searches. F5 runs the chosen one again.
+
+  Rename and Delete are on the Action menu under Saved Searches, and Delete also
+  works on the row itself. **Deleting a saved search never deletes mail.** It
+  removes the question. Every message a search listed lives in a real folder,
+  and that folder is not touched.
+
+  Known limits, said here rather than found later:
+
+  - A saved search looks at the mail on this computer. Mail that has not been
+    downloaded is not searched, and neither is mail you have deleted.
+  - A search saved from the search box asks about the subject, the sender and
+    the recipients. The search box also reads the first line of a message, so a
+    saved search can come back with fewer messages than the search it was made
+    from. The naming window says so while you are naming it.
+  - A search can ask about the text of a message, but only text this computer
+    still holds. Message text is cleared to stay within a size budget, so an old
+    message may have headers here and no text. Nothing built into the program
+    saves a search of that kind yet.
+  - The message list shows the newest 500 results. The count that is read out is
+    the true one, and it says "The newest 500 are shown" when there are more.
+  - The In box on the Search window (All Folders, Current Folder, Subject Only,
+    From Only) is still not read by anything, so a saved search always covers
+    the whole account. That is a defect in Search, not in saving one.
+
+- **A saved search says when it cannot run, instead of saying it found nothing.**
+  A search written by a newer version of Wixen Mail, or one naming a part of a
+  message this version does not know, used to come back looking like a search
+  that had run and found no mail. Those are opposite instructions: one means
+  stop looking, the other means the mail is there and the question was the
+  problem. It now says "Invoices could not run" and names what it could not
+  read. The same is true when the folder a search looks in is no longer on this
+  computer, and on the first morning of a new account, when there is no mail
+  here yet to search.
+
+- **An event asks who is coming, and can work out when everyone is free.** The
+  event window has a new box, Who is coming, holding one person to a line as a
+  name and an address or an address on its own. A name with a comma in it stays
+  one person as long as you write it in quotation marks, the way a mail
+  program does: `"Smith, John" <john@example.com>`.
+
+  Under it, Find when everyone is free asks your own calendar server about
+  everybody at once, in one request, and answers in sentences: "Everyone is free
+  Tuesday 3 March at 10:00 AM, Tuesday 3 March at 2:00 PM, or Wednesday 4 March
+  at 9:00 AM." At most three times are said, and the rest are in the list. The
+  answer is read out as well as shown, and it is read out in full. Times prefer
+  the hour and the half hour, are ordered so that a time inside everybody's
+  working day comes first, and are said the way you have asked for dates and
+  times to be said. Your own calendar is counted too, so you are never offered a
+  time you are already booked for, and the meeting you are moving never counts
+  as standing in its own way.
+
+  **A calendar nobody could check is never counted as free.** Servers refuse,
+  are not set up, and fall over. Every one of those leaves that person's time
+  unknown, and the answer says so by name: "Bob could not be checked, because
+  the server would not say. Bob is not counted as free." Suggestions worked out
+  from the people who did answer are still offered, because three answers out of
+  five is worth having, and the two nobody could reach are named every time so
+  the suggestion is never mistaken for a full answer.
+
+  Choosing a time changes nothing on its own. Times offered lists what came
+  back, and Put this time in the event writes the one you chose over the start
+  and end already in the boxes, saying what they now are.
+
+  The window stays alive while the servers are asked. A small window says what
+  is happening and offers Stop, and stopping leaves everything as it was.
+
+  **What this does not do.** It sends no invitations. Nobody is told they have
+  been added to a meeting, and the guest list is not sent to Google or Outlook
+  when the event syncs. Free/busy needs a calendar server that offers
+  scheduling, which many do not, and it has not been tried against a real one:
+  what it does when a server answers is proven against replies captured from the
+  standard, not against a live account.
+
+- **Typing part of a name in To, Cc or Bcc finds people to write to.** Type
+  three letters or more, pause, and a list appears under the recipient lines
+  with everybody who matches. The number found is read out along with the key
+  that reaches the list, `Alt+E`. Move through it with the arrow keys and press
+  Enter to put that person in the line you were typing in. Nothing found is
+  said too, rather than left as silence.
+
+  Matches come from two places and every row says which: your own contacts on
+  this computer, and your organisation's directory when the account names one.
+  Your own contacts come first. One person in both places is one row, not two.
+
+  Looking somebody up happens away from the window, so typing never stops. If
+  you type "sm" and then "smith", the answer to "sm" is thrown away rather than
+  shown under the wrong name.
+
+- **An account can name your organisation's directory.** Two boxes on the
+  second page of the Add or Edit Account window: the directory's address, and
+  which part of it to search. Whoever looks after the directory will know both.
+
+  Both boxes are empty until somebody fills them in, and that is on purpose:
+  while they are empty, nothing you type into a message is sent anywhere. A
+  directory that requires a sign-in is not supported yet. Wixen Mail has
+  nowhere to keep a password for one, and it says so rather than signing in
+  with a blank password, which many directories accept and quietly treat as
+  anonymous.
+
 - **You can block a sender.** Action, Block, This Sender, or Everyone at This
   Domain. Blocked mail is filed in Junk rather than deleted, because a block
   is a filing decision and not a request to destroy anything: a block on a
@@ -29,6 +139,66 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refused rather than sent immediately, and one more than a year ahead is
   refused as a likely mistake.
 
+- **Undo Send is on the Tools menu, and on `Ctrl+Shift+Z`.** It takes back the
+  message you sent most recently and opens it again so you can fix it, rather
+  than discarding it. If the hold has already run out it says so and points you
+  at the Outbox, and it never claims a message came back when it cannot tell
+  whether it has gone.
+
+  This was the command the countdown had always named. Every held message said
+  "Undo Send takes it back" and there was no Undo Send anywhere, which costs a
+  sighted reader a glance at the menu bar and costs somebody working by ear a
+  walk through every menu.
+
+### Fixed
+
+- **A person looked up in a directory never had a company.** The lookup read
+  the attribute a Windows directory keeps an employer in, and never asked the
+  directory for it, so it came back empty every time on every server that
+  spells it that way.
+
+- **Sign-in problems named a window that does not exist.** Three messages told
+  you to open "Accounts". The window is the Account Manager, and they now say
+  so and give its key, `Ctrl+Shift+A`.
+
+- **A signature could be made to vouch for words its signer never wrote.**
+  When a message carried its words beside the signature, the check was run
+  against a copy of the words that travels inside the signature, where one is
+  there, rather than against the words the message shows. Anybody could take a
+  real signature off somebody's message, wrap it beside text of their own, and
+  send it on: the arithmetic held, and the message read "signed for" that
+  person's address "and not changed since" over words they had never written.
+  The check now uses the words that will be read.
+
+- **A malformed message could stop the reader.** A signed message with an
+  empty part in it, which is legal and is also something a sender can craft on
+  purpose, made the code that takes a message apart run off the front of it.
+  It now reports that there is nothing to check, which is what the rest of
+  that code already promised it would always do.
+
+- **A sender could decide what kind of message theirs was taken for.** A
+  header written across two lines, which is ordinary and which senders do
+  every day, had its second line read as a header of its own. Since a sender
+  writes their own subject line, that let them tell this program their message
+  was signed, or encrypted, when it was neither.
+
+- **Encrypted mail was treated as a claim to be signed.** The cheap first
+  question that decides whether to look at a signature at all answered yes for
+  encrypted messages, which would have led to a signed-mail sentence on a
+  message that never said it was signed.
+
+- **The window that shows a message as headings showed no warning.** That
+  window is how messages open unless you have chosen plain text, so the
+  ordinary way of reading a message was the one that never told you your
+  provider had marked it as spam or as a phishing attempt. It now carries the
+  same warning the plain reader does, in the same place, with `F7` to reach it
+  and `F7` to come back, and the same cue when something is wrong.
+
+- **A conversation with a phishing attempt in it made no sound.** The warning
+  appeared and the sentence was spoken, but the cue that marks an unsafe
+  message never played, so a thread was quietly worth less than the same
+  message opened on its own.
+
 - **Mail signed with a certificate says what the signature is worth.** Only
   when a message carries one, because a line on every message saying "not
   signed" is a line people learn to talk past.
@@ -43,6 +213,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   so a message pretending to be from your bank really can carry a signature
   that adds up, and leading with the signature would put the most reassuring
   sentence first on exactly the message that least deserves it.
+
+  **It says the same thing every time you open the message, not only the
+  first time.** A signature can only be checked against the exact bytes the
+  message arrived in, and until now only the read-out text was kept, so the
+  answer could be worked out once as the message came in and never again.
+  Signed mail is now kept in the form it arrived in as well, and the check
+  runs again each time you open it. That also means a certificate withdrawn
+  since you last read the message is picked up the next time you read it.
+
+  Where those bytes are not here, the message says so in its own words: the
+  signature could not be checked here, and that is not the same as a
+  signature that does not match. Nothing about it reads as an accusation.
+  That happens when a signed message is larger than 25 MB, when the space
+  these copies use passes 128 MB and the oldest are dropped, and after you
+  delete the message.
+
+  Known limitations: mail that arrived before this version reads as unsigned
+  rather than as signed and unchecked, because nothing kept its original
+  form and there is now no way to tell it apart from ordinary mail. Messages
+  brought in from a file or an archive are in the same position, because
+  that path does not keep the original form yet. Mail collected over IMAP or
+  POP from this version onward is covered. `docs/privacy.md` says what the
+  second copy means for what is on your disk.
 
 - **You can answer a meeting invitation.** Action, Answer Invitation, then
   Accept, Tentative or Decline. The answer goes back to whoever called the

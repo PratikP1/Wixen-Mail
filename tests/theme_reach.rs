@@ -455,6 +455,7 @@ fn check_event_editor(
         wx_item_form::Chrome {
             palette: Some(palette),
             a11y,
+            asking: None,
         },
         wixen_mail::presentation::date_display::DateSettings::default(),
         None,
@@ -764,6 +765,7 @@ fn check_item_form(
         wx_item_form::Chrome {
             palette: Some(palette),
             a11y,
+            asking: None,
         },
         wixen_mail::presentation::date_display::DateSettings::default(),
         None,

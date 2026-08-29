@@ -7684,6 +7684,22 @@ mod tests {
                 at_outlook: Saying("location.displayName", "Room 42"),
             },
             WhereItGoes {
+                field: FieldName::Attendees,
+                asked_of: OnADate,
+                at_google: Nothing(
+                    "attendees",
+                    "the guest list is used here to work out when everybody is free, and \
+                     nothing invites anybody: a create body naming attendees is an \
+                     invitation Google sends",
+                ),
+                at_outlook: Nothing(
+                    "attendees",
+                    "the guest list is used here to work out when everybody is free, and \
+                     nothing invites anybody: a create body naming attendees is an \
+                     invitation Graph sends",
+                ),
+            },
+            WhereItGoes {
                 field: FieldName::Repeat,
                 asked_of: OnADate,
                 at_google: Saying("recurrence", "FREQ=WEEKLY"),

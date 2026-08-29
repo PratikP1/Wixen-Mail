@@ -65,6 +65,7 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 None,
@@ -147,6 +148,7 @@ fn test_recurrence_is_a_second_page_only_for_a_kind_that_has_any() {
                 Chrome {
                     palette: None,
                     a11y: &a11y,
+                    asking: None,
                 },
                 DateSettings::default(),
                 None,

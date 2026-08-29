@@ -23,9 +23,16 @@ pub enum FilterAction {
 pub struct FilterRule {
     pub id: String,
     pub name: String,
-    /// Message field to evaluate ("subject", "from", or "to")
+    /// Which part of the message to look at.
+    ///
+    /// One of [`A_FIELD_A_RULE_MAY_NAME`], which is where they are listed. This
+    /// said "subject", "from", or "to" while the reading handled eleven, so a
+    /// rule on the body or on a flag read as unsupported to anybody who
+    /// believed the comment.
     pub field: String,
-    /// Match type ("contains", "equals", "starts_with", "regex", "is_true", etc.)
+    /// How to compare that part with the pattern.
+    ///
+    /// One of [`A_WAY_A_RULE_MAY_MATCH`], which is where they are listed.
     pub match_type: String,
     /// Case-insensitive "contains" match text
     pub pattern: String,
@@ -68,6 +75,50 @@ pub const A_FIELD_A_RULE_MAY_NAME: [&str; 11] = [
 /// Whether a rule naming this field is one this build can evaluate.
 pub fn a_rule_may_name(field: &str) -> bool {
     A_FIELD_A_RULE_MAY_NAME.contains(&field)
+}
+
+/// Every way a rule may ask for the field and the pattern to be compared.
+///
+/// The other half of a question, and it fails in exactly the same way. A word
+/// this build does not know is answered no about every message, which is
+/// indistinguishable from a rule that matched nothing, so a saved search asking
+/// to match by a word a newer version wrote reads as an empty folder.
+///
+/// Written down for the same reason the fields are, and kept honest by the same
+/// pair of tests: everything on the list is really handled, and nothing handled
+/// is missing from it.
+pub const A_WAY_A_RULE_MAY_MATCH: [&str; 11] = [
+    "contains",
+    "not_contains",
+    "equals",
+    "not_equals",
+    "starts_with",
+    "ends_with",
+    "is_empty",
+    "is_not_empty",
+    "is_true",
+    "is_false",
+    "regex",
+];
+
+/// Whether a rule matching this way is one this build can evaluate.
+pub fn a_rule_may_match(match_type: &str) -> bool {
+    A_WAY_A_RULE_MAY_MATCH.contains(&match_type)
+}
+
+/// The fields holding the message's own text rather than its headers.
+///
+/// Here beside the list of fields a rule may name, because it is the same
+/// vocabulary and a second copy of these words somewhere else is how the two
+/// come to disagree. It answers a question only a caller that has to fetch
+/// something asks: a listing already holds every header, and none of it holds
+/// the text of a message, so a rule naming one of these costs a read the rest
+/// do not.
+pub const A_FIELD_HOLDING_THE_MESSAGE_TEXT: [&str; 2] = ["body_plain", "body_html"];
+
+/// Whether answering a rule on this field means having the message's text.
+pub fn a_rule_reads_the_message_text(field: &str) -> bool {
+    A_FIELD_HOLDING_THE_MESSAGE_TEXT.contains(&field)
 }
 
 /// Filter engine for automatic message processing
@@ -938,5 +989,80 @@ mod the_fields_a_rule_may_name {
         // a search that really found nothing are one answer.
         assert!(a_rule_may_name("from"));
         assert!(!a_rule_may_name("frmo"));
+    }
+
+    #[test]
+    fn test_every_way_of_matching_the_list_names_is_one_the_reading_really_handles() {
+        // The same guard on the other half of a question. A question is a
+        // field and a way of comparing it, both stored as words, and the
+        // reading answers no to a word it does not know whichever half it is
+        // in. Naming the fields and not the ways left half the gap open: a
+        // search asking to match by a word this build has never met still came
+        // back as a search that found nothing.
+        //
+        // Four fields, chosen so that every way of matching has one of them it
+        // is true of: a field holding the pattern exactly, an empty one, and a
+        // flag each way round. A way the reading has never heard of is no
+        // about all four.
+        let mut message = super::tests::message_with_subject("Quarterly report");
+        message.cc = None;
+        message.read = false;
+        message.starred = true;
+
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            let answered = [
+                ("subject", "Quarterly report"),
+                ("cc", "Quarterly report"),
+                ("read", "false"),
+                ("starred", "true"),
+            ]
+            .into_iter()
+            .any(|(field, pattern)| {
+                let mut looking = asking_about(field, way);
+                looking.pattern = pattern.to_string();
+                FilterEngine::matches(&looking, &message)
+            });
+
+            assert!(
+                answered,
+                "{way} is on the list of ways a rule may match and the reading answers no about \
+                 a field holding the pattern, an empty field and a flag both ways round, which \
+                 is what it answers for a way it has never heard of"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_way_of_matching_the_reading_does_not_handle_is_not_on_the_list() {
+        // The other direction, so the list cannot quietly grow past what the
+        // reading does. Spelled the ways somebody really gets it wrong.
+        for made_up in ["matches", "Contains", "is_true_or_false", "like", ""] {
+            assert!(
+                !a_rule_may_match(made_up),
+                "{made_up:?} is named as a way a rule may match and the reading does not handle it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_fields_holding_message_text_are_fields_a_rule_may_name() {
+        // Two lists over one vocabulary, so they have to agree. A field named
+        // here and not there would be one a caller fetches the message text
+        // for and is then told it may not ask about.
+        for field in A_FIELD_HOLDING_THE_MESSAGE_TEXT {
+            assert!(
+                a_rule_may_name(field),
+                "{field} is named as message text and is not a field a rule may name"
+            );
+            assert!(a_rule_reads_the_message_text(field));
+        }
+        // And the headers, which a listing already holds, are not.
+        for header in ["subject", "from", "to", "cc", "date", "message_id"] {
+            assert!(
+                !a_rule_reads_the_message_text(header),
+                "{header} was called message text, so answering a rule about it would fetch \
+                 every body this computer holds"
+            );
+        }
     }
 }

@@ -76,6 +76,7 @@ fn select_only_row(list: &ListCtrl) {
 /// a "which days do you mean" dialog when this is the row selected.
 fn a_non_repeating_event(id: &str, summary: &str) -> CalendarEventItem {
     CalendarEventItem {
+        attendees_json: None,
         id: id.to_string(),
         summary: summary.to_string(),
         description: String::new(),

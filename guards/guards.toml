@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 297 records have arrived since and have not been through it.
+# 299 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8868,6 +8868,33 @@ before = """                msg_list.set_font(&list_font);"""
 after = """                let _ = &list_font;"""
 red = [
     "test_every_item_list_is_drawn_in_the_font_that_was_chosen",
+]
+
+[[guard]]
+name = "words beside a signature are checked against those words"
+file = "src/service/signed_mail.rs"
+before = """    let content = parts
+        .content
+        .clone()
+        .or_else(|| signature.wrapped_content.clone());"""
+after = """    let content = signature
+        .wrapped_content
+        .clone()
+        .or_else(|| parts.content.clone());"""
+red = [
+    "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
+]
+
+[[guard]]
+name = "the form a signed message arrived in is really kept"
+file = "src/data/message_cache/signed_original.rs"
+before = """            .is_ok_and(|size| size <= LARGEST_SIGNED_MESSAGE_KEPT_BYTES)"""
+after = """            .is_ok_and(|size| size > LARGEST_SIGNED_MESSAGE_KEPT_BYTES)"""
+red = [
+    "application::checking_signatures::end_to_end::test_a_signed_message_reopened_from_the_cache_says_what_it_said_the_first_time",
+    "data::message_cache::signed_original::tests::test_a_signed_message_too_large_to_keep_still_says_it_was_signed",
+    "data::message_cache::signed_original::tests::test_dropping_one_to_stay_under_the_budget_leaves_it_saying_it_was_signed",
+    "data::message_cache::signed_original::tests::test_the_form_a_signed_message_arrived_in_comes_back_byte_for_byte",
 ]
 
 # Two guards from the same stretch of work are deliberately not recorded here,

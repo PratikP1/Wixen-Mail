@@ -56,6 +56,8 @@ const ID_DISCARD: Id = ID_HIGHEST + 112;
 const ID_ATTACH: Id = ID_HIGHEST + 113;
 /// `WXK_DELETE`, the key that takes a row out of a list on Windows.
 const KEY_DELETE: i32 = 127;
+/// `WXK_RETURN`, the key that acts on the row a list is sitting on.
+const KEY_ENTER: i32 = 13;
 const ID_UNDO: Id = ID_HIGHEST + 114;
 const ID_REDO: Id = ID_HIGHEST + 115;
 
@@ -338,7 +340,67 @@ enum Deferred {
     Leaving { back: bool },
     /// Go to the toolbar, which sits ahead of the fields.
     Toolbar,
+    /// Typing has stopped for long enough: look this name up.
+    LookSomebodyUp,
+    /// See whether an answer to a search has come back yet.
+    AnAnswerToASearch,
 }
+
+/// How the compose window finds people to write to.
+///
+/// The window itself never reads the address book and never touches the
+/// network. It hands a name over and goes straight back to drawing and
+/// answering the keyboard, and the answer arrives later on `answers`. One
+/// thread does all three of those things here, so a lookup done on it would be
+/// indistinguishable from a window that had stopped, which for somebody
+/// working by ear is indistinguishable from a crash.
+pub struct FindingPeople {
+    /// Start looking somebody up. It returns at once; nothing is looked up in
+    /// the caller.
+    pub start: Box<dyn Fn(crate::application::looking_people_up::LookFor)>,
+    /// Where the answers arrive.
+    pub answers: async_channel::Receiver<crate::application::looking_people_up::WhoWasFound>,
+}
+
+/// Which of the three recipient lines is being completed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhichLine {
+    To,
+    Cc,
+    Bcc,
+}
+
+/// How long typing has to stop before a name is looked up.
+///
+/// A lookup per keystroke would ask an organisation's directory a question for
+/// every letter, and would hand a screen reader a fresh count to read out
+/// between one letter and the next. Long enough that a name typed straight
+/// through is asked about once, short enough that a pause to think is answered
+/// before anybody wonders whether the key worked.
+const AFTER_TYPING_STOPS_MS: i32 = 400;
+
+/// How often the window looks for an answer that has come back.
+///
+/// The search happens elsewhere, so the window has to come and ask. Often
+/// enough that an answer is not left sitting, rarely enough to cost nothing
+/// while nothing is happening.
+const LOOKING_FOR_AN_ANSWER_MS: i32 = 120;
+
+/// The answer has to be looked for more often than typing is waited out.
+///
+/// Otherwise the answer sits there longer than the wait that produced it, and
+/// the silence before anything is said is the two added together. Settled by
+/// the compiler rather than by a test, because the compiler can settle it and
+/// a build that will not finish is louder than a test somebody has to run.
+const _: () = assert!(LOOKING_FOR_AN_ANSWER_MS < AFTER_TYPING_STOPS_MS);
+
+/// How long to keep looking for an answer that has not come.
+///
+/// A directory is given ten seconds to accept a connection and twenty more to
+/// answer, so this is longer than both together with room to spare. Past it
+/// there is nothing left to wait for, and a window that asks for ever is doing
+/// work nobody wanted until it closes.
+const GIVE_UP_LOOKING_FOR_AN_ANSWER: std::time::Duration = std::time::Duration::from_secs(40);
 
 /// Whether a half-written message is worth keeping as a draft.
 ///
@@ -458,6 +520,11 @@ pub struct ComposeDialogWidgets {
     pub cc_field: TextCtrl,
     pub bcc_label: StaticText,
     pub bcc_field: TextCtrl,
+    /// The label on the list of people found, whose ampersand binds the key
+    /// that reaches it.
+    pub found_label: StaticText,
+    /// The people matching what is being typed into a recipient line.
+    pub found_list: ListBox,
     pub subject_field: TextCtrl,
     pub send_toolbar_btn: Button,
     pub undo_btn: Button,
@@ -673,6 +740,39 @@ pub fn build_compose_dialog(
     );
     fields_sizer.add(&bcc_field, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
+    // The people matching what is being typed into one of the three lines
+    // above.
+    //
+    // Between the recipients and the subject, so it is where the answer to
+    // what is being typed belongs and Tab reaches it on the way past. Put away
+    // until there is somebody in it, the same as the attachment list below:
+    // an empty list in the tab order is a stop that announces nothing.
+    //
+    // The label's ampersand is what binds the key. It is a static label beside
+    // a control, which on Windows moves focus to the next control in the tab
+    // order, so the key needs no handler of its own and cannot come apart from
+    // the announcement that names it.
+    let found_label = StaticText::builder(&dialog)
+        .with_label(crate::application::looking_people_up::THE_LIST_LABEL)
+        .build();
+    let found_list = ListBox::builder(&dialog)
+        .with_size(Size::new(-1, 96))
+        .build();
+    set_accessible_name_and_description(
+        &found_list,
+        &name_from_label(crate::application::looking_people_up::THE_LIST_LABEL),
+        "Enter puts the person you choose in the line you were typing",
+    );
+    found_label.hide();
+    found_list.hide();
+    fields_sizer.add(
+        &found_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields_sizer.add(&found_list, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
     // Subject field
     let subject_label = StaticText::builder(&dialog)
         .with_label(Reached::Subject.label())
@@ -796,6 +896,7 @@ pub fn build_compose_dialog(
             theme::paint(field, palette.main_surface());
         }
         theme::paint(&attachment_list, palette.main_surface());
+        theme::paint(&found_list, palette.main_surface());
     }
 
     ComposeDialogWidgets {
@@ -806,6 +907,8 @@ pub fn build_compose_dialog(
         cc_field,
         bcc_label,
         bcc_field,
+        found_label,
+        found_list,
         subject_field,
         send_toolbar_btn,
         undo_btn,
@@ -832,10 +935,14 @@ pub fn build_compose_dialog(
 /// dialog is modal: it does not come back until somebody is finished, and a
 /// draft that is only kept at the end is not a draft that survives a crash.
 ///
-/// Nine parameters and nine different things: unlike `wx_app.rs`'s free
+/// Ten parameters and ten different things: unlike `wx_app.rs`'s free
 /// functions, none of these repeat across this file's other callers, so
 /// there is no recurring cluster here to give a name and bundle. Each is
 /// exactly the one piece of the dialog it fills in.
+///
+/// `finding_people` is how a name typed into a recipient line is turned into
+/// people to write to. `None` means nothing is looked up at all, which is what
+/// a caller with no address book and no directory to reach should pass.
 #[allow(clippy::too_many_arguments)]
 pub fn show_compose_dialog_full(
     parent: &Frame,
@@ -849,6 +956,7 @@ pub fn show_compose_dialog_full(
     signature: &str,
     autosave: crate::application::autosave::AutosaveInterval,
     a11y: std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+    finding_people: Option<FindingPeople>,
     on_autosave: impl Fn(&ComposeData) + 'static,
 ) -> ComposeResult {
     let title = compose_title(&mode);
@@ -860,6 +968,8 @@ pub fn show_compose_dialog_full(
         cc_field,
         bcc_label,
         bcc_field,
+        found_label,
+        found_list,
         subject_field,
         send_toolbar_btn,
         undo_btn,
@@ -1484,6 +1594,265 @@ pub fn show_compose_dialog_full(
     let waiting: Rc<std::cell::Cell<Option<Deferred>>> = Rc::new(std::cell::Cell::new(None));
     let later = Rc::new(Timer::new(&dialog));
 
+    // ── Finding somebody to write to ──────────────────────────────────────
+    //
+    // Everything the window keeps while a name is being looked up. The
+    // decisions themselves are in `application::looking_people_up`, which can
+    // be tested; what is here is the window, the timer and the announcement.
+    use crate::application::looking_people_up as looking;
+
+    let finding_people = finding_people.map(Rc::new);
+    // Which line is being completed, so the person chosen goes back into the
+    // box they were typing in rather than always into To.
+    let completing = Rc::new(std::cell::Cell::new(WhichLine::To));
+    // The people now in the list, in the order they are shown.
+    let people_found: Rc<RefCell<Vec<looking::Somebody>>> = Rc::new(RefCell::new(Vec::new()));
+    // Which search is the one being waited for. An answer to any other is out
+    // of date: somebody who types "sm" and then "smith" can be answered in
+    // either order, and the answer to "sm" shown under "smith" is a list of
+    // the wrong people with nothing saying so.
+    let latest_search = Rc::new(std::cell::Cell::new(looking::Search::default()));
+    // When the search now being waited for was started, so looking for an
+    // answer stops rather than going on for the life of the window.
+    let waiting_since: Rc<std::cell::Cell<Option<std::time::Instant>>> =
+        Rc::new(std::cell::Cell::new(None));
+    // What this window last wrote into a recipient line itself.
+    //
+    // Choosing somebody writes the line, and writing raises the same "the text
+    // changed" event typing does, so without this, choosing starts a search for
+    // the address just put in and answers "nobody found" over it. Remembered as
+    // the text rather than as a flag held over the write, because a flag is
+    // only right if the event arrives while the write is still happening, and
+    // nothing here can promise that.
+    let written_by_choosing = Rc::new(RefCell::new(String::new()));
+    // Whether this window has already said how to choose from the list. Said
+    // with the first list and not again: a description set on a list does not
+    // reach the accessibility tree for a native list here, so it has to be
+    // spoken, and speaking it after every third letter would be a flood.
+    let explained = Rc::new(std::cell::Cell::new(looking::HowToChoose::SayIt));
+
+    let field_of = move |line: WhichLine| match line {
+        WhichLine::To => to_field,
+        WhichLine::Cc => cc_field,
+        WhichLine::Bcc => bcc_field,
+    };
+
+    // Put the list, what it holds, and what is said about it back in
+    // agreement. One place, called after every change, because a list updated
+    // in one place and announced in another is how a window comes to say
+    // "three people found" over a list that still holds the last three.
+    let show_the_people_found = {
+        let people_found = people_found.clone();
+        let completing = completing.clone();
+        move |found: Vec<looking::Somebody>,
+              say: Option<String>,
+              a11y: &crate::presentation::accessibility::Accessibility| {
+            let anybody = !found.is_empty();
+            // Where the keyboard goes when the list is taken away under it.
+            // Hiding the window that has focus leaves focus wherever Windows
+            // decides, which for somebody working by ear is being put down
+            // somewhere with nothing saying where. Back to the line they were
+            // typing in, which is where they were before they came here.
+            if !anybody && found_list.has_focus() {
+                field_of(completing.get()).set_focus();
+            }
+            found_list.clear();
+            for person in &found {
+                found_list.append(&person.row());
+            }
+            found_label.show(anybody);
+            found_list.show(anybody);
+            if anybody {
+                found_list.set_selection(0, true);
+            }
+            *people_found.borrow_mut() = found;
+            // The list appears and disappears, so the window has to lay out
+            // again or it is drawn over whatever was there.
+            dialog.layout();
+            if let Some(said) = say {
+                // Low, and on one topic. Low because a count of people found
+                // must never push an error out of the way, and one topic
+                // because somebody typing quickly finishes several searches
+                // and only the newest is worth hearing: the queue keeps the
+                // last one on a topic and drops the rest.
+                //
+                // Said rather than written down. The sentence names what was
+                // being looked for, which is part of a person's name, and the
+                // log is a file people are asked to attach to bug reports.
+                let _ = a11y.announce_what_was_typed(
+                    &said,
+                    crate::presentation::accessibility::announcements::Priority::Low,
+                    looking::WHILE_LOOKING_SOMEBODY_UP,
+                );
+            }
+        }
+    };
+
+    // Ask for the people matching what is in the line now.
+    //
+    // Answers with whether anything was asked, so the caller knows whether
+    // there is an answer to wait for.
+    let look_somebody_up = {
+        let finding_people = finding_people.clone();
+        let completing = completing.clone();
+        let latest_search = latest_search.clone();
+        let waiting_since = waiting_since.clone();
+        let written_by_choosing = written_by_choosing.clone();
+        let show = show_the_people_found.clone();
+        move |a11y: &crate::presentation::accessibility::Accessibility| {
+            let Some(finding) = finding_people.as_ref() else {
+                return false;
+            };
+            let line = field_of(completing.get()).get_value();
+            // This window put that there a moment ago, so there is nothing in
+            // it anybody is part way through typing.
+            if *written_by_choosing.borrow() == line {
+                return false;
+            }
+            let name = looking::the_name_being_typed(&line).to_string();
+            if !looking::worth_looking_up(&name) {
+                // Too little to look anybody up for, so the list goes away.
+                // Leaving the last answer on screen under a name nobody is
+                // typing any more is worse than showing nothing.
+                show(Vec::new(), None, a11y);
+                waiting_since.set(None);
+                return false;
+            }
+            let search = latest_search.get().and_then_another();
+            latest_search.set(search);
+            waiting_since.set(Some(std::time::Instant::now()));
+            (finding.start)(looking::LookFor {
+                search,
+                name,
+                from_account: account_choice.get_selection(),
+            });
+            true
+        }
+    };
+
+    // Take whatever has come back, and say whether there is still something to
+    // wait for.
+    let take_any_answers = {
+        let finding_people = finding_people.clone();
+        let latest_search = latest_search.clone();
+        let waiting_since = waiting_since.clone();
+        let explained = explained.clone();
+        let show = show_the_people_found.clone();
+        move |a11y: &crate::presentation::accessibility::Accessibility| {
+            let Some(finding) = finding_people.as_ref() else {
+                return false;
+            };
+            while let Ok(answer) = finding.answers.try_recv() {
+                // An answer to a search nobody is waiting for any more. It is
+                // dropped rather than shown, and nothing is said about it: the
+                // question it answers is not the one in the box.
+                if !answer.search.is_still_wanted(latest_search.get()) {
+                    continue;
+                }
+                waiting_since.set(None);
+                let said = looking::what_was_found(
+                    &answer.name,
+                    &answer.everybody,
+                    answer.trouble.as_deref(),
+                    explained.get(),
+                );
+                // Marked as said only when there was a list to explain. An
+                // answer with nobody in it never carries the explanation, so
+                // counting it would spend the one chance to give it.
+                if !answer.everybody.is_empty() {
+                    explained.set(looking::HowToChoose::AlreadySaid);
+                }
+                show(answer.everybody, Some(said), a11y);
+            }
+            match waiting_since.get() {
+                None => false,
+                // Given up on. Said rather than left as a window that answers
+                // nothing, because silence is what a broken key sounds like.
+                Some(since) if since.elapsed() >= GIVE_UP_LOOKING_FOR_AN_ANSWER => {
+                    waiting_since.set(None);
+                    let _ = a11y.announce_topic(
+                        "Looking people up took too long, so it was given up. Try again.",
+                        crate::presentation::accessibility::announcements::Priority::Low,
+                        looking::WHILE_LOOKING_SOMEBODY_UP,
+                    );
+                    false
+                }
+                Some(_) => true,
+            }
+        }
+    };
+
+    // Every keystroke in a recipient line, held back until typing stops.
+    for line in [WhichLine::To, WhichLine::Cc, WhichLine::Bcc] {
+        let completing = completing.clone();
+        let waiting = waiting.clone();
+        let later = later.clone();
+        field_of(line).on_text_changed(move |_| {
+            completing.set(line);
+            waiting.set(Some(Deferred::LookSomebodyUp));
+            later.start(AFTER_TYPING_STOPS_MS, true);
+        });
+    }
+
+    // Put the person chosen into the line that was being typed, and go back to
+    // it. Focus matters as much as the text: choosing from the list leaves the
+    // keyboard in the list, and the next thing anybody types belongs in the
+    // box.
+    let choose_from_the_list = {
+        let people_found = people_found.clone();
+        let completing = completing.clone();
+        let written_by_choosing = written_by_choosing.clone();
+        let show = show_the_people_found.clone();
+        move |a11y: &crate::presentation::accessibility::Accessibility| {
+            let Some(row) = found_list.get_selection() else {
+                return;
+            };
+            let Some(chosen) = people_found.borrow().get(row as usize).cloned() else {
+                return;
+            };
+            let field = field_of(completing.get());
+            let line = looking::with_the_chosen(&field.get_value(), &chosen);
+            // Written down before the write, so the event the write raises
+            // finds it there however soon it arrives.
+            written_by_choosing.replace(line.clone());
+            field.set_value(&line);
+            field.set_insertion_point_end();
+            show(Vec::new(), None, a11y);
+            field.set_focus();
+            // Not written down either. This one names a person outright.
+            let _ = a11y.announce_what_was_typed(
+                &format!("{} added", chosen.as_a_recipient()),
+                crate::presentation::accessibility::announcements::Priority::Normal,
+                looking::WHILE_LOOKING_SOMEBODY_UP,
+            );
+        }
+    };
+
+    found_list.on_item_double_clicked({
+        let choose = choose_from_the_list.clone();
+        let a11y = a11y.clone();
+        move |_| choose(&a11y)
+    });
+
+    // Enter chooses. Not the selection changing, which happens on every arrow
+    // press: a list that acted on being arrowed through would put four people
+    // in the line on the way to the fifth.
+    found_list.on_key_down({
+        let choose = choose_from_the_list.clone();
+        let a11y = a11y.clone();
+        move |event| {
+            let WindowEventData::Keyboard(ref key) = event else {
+                event.skip(true);
+                return;
+            };
+            if key.event.get_key_code() != Some(KEY_ENTER) {
+                event.skip(true);
+                return;
+            }
+            choose(&a11y);
+        }
+    });
+
     // One handler for every timer this window owns, because that is what a
     // timer event is here.
     //
@@ -1497,7 +1866,37 @@ pub fn show_compose_dialog_full(
     later.on_tick({
         let waiting = waiting.clone();
         let a11y = a11y.clone();
+        // Weak, deliberately. The handler this timer holds has to be able to
+        // put the timer back on for the next look at the answers, and an owning
+        // clone in here would be a timer holding a closure holding the timer:
+        // neither is ever freed and every compose window would leave one
+        // behind.
+        let put_back_on = Rc::downgrade(&later);
+        // When the message was last kept, and how often it should be. The
+        // autosave timer carries no mark of its own, so a tick that arrives
+        // while something else is waiting is taken for that something else and
+        // that save is lost. Looking somebody up makes that likely rather than
+        // theoretical: it can hold the mark for as long as a directory takes to
+        // answer. Asked by the clock as well, so a save that is overdue happens
+        // whatever the tick turned out to be for.
+        let saved_at = std::cell::Cell::new(std::time::Instant::now());
+        let save_every = autosave.interval();
         move |_| {
+            let again = |wanted: Deferred, when: i32| {
+                if let Some(timer) = put_back_on.upgrade() {
+                    waiting.set(Some(wanted));
+                    timer.start(when, true);
+                }
+            };
+            let keep_the_message = || {
+                saved_at.set(std::time::Instant::now());
+                save_draft_now();
+            };
+            if let Some(every) = save_every
+                && saved_at.get().elapsed() >= every
+            {
+                keep_the_message();
+            }
             match waiting.take() {
                 Some(Deferred::Spelling) => check_spelling(&dialog, body_editor, &a11y),
                 // Where the toolbar was left, so leaving and coming back lands
@@ -1541,8 +1940,24 @@ pub fn show_compose_dialog_full(
                         first.set_focus();
                     }
                 }
+                // Typing stopped for long enough. The search happens somewhere
+                // else, so the timer is then put back on to come and ask for
+                // the answer rather than waiting here for it.
+                Some(Deferred::LookSomebodyUp) => {
+                    if look_somebody_up(&a11y) {
+                        again(Deferred::AnAnswerToASearch, LOOKING_FOR_AN_ANSWER_MS);
+                    }
+                }
+                // Come and ask again while there is still something to wait
+                // for. Put back on here rather than left running, so nothing
+                // keeps ticking once the answer is in.
+                Some(Deferred::AnAnswerToASearch) => {
+                    if take_any_answers(&a11y) {
+                        again(Deferred::AnAnswerToASearch, LOOKING_FOR_AN_ANSWER_MS);
+                    }
+                }
                 // Nothing was asked for, so this is the autosave timer.
-                None => save_draft_now(),
+                None => keep_the_message(),
             }
         }
     });
@@ -2294,9 +2709,16 @@ pub fn build_check_spelling_dialog(
     add_button(ID_SPELL_IGNORE, "&Ignore", "Ignore");
     add_button(ID_SPELL_IGNORE_ALL, "I&gnore All", "Ignore all");
     if !repeated {
-        add_button(ID_SPELL_ADD, "A&dd to Dictionary", "Add to dictionary");
+        // The y, not the d. The d was the same letter as Delete, which is what
+        // this same row of buttons says when the word is a repeat. The two are
+        // never on screen together today, and that is a flag away from being
+        // untrue, so they are told apart here rather than by the flag.
+        add_button(ID_SPELL_ADD, "Add to Dictionar&y", "Add to dictionary");
     }
-    add_button(ID_CANCEL, "&Close", "Close");
+    // The e, not the C, which Change already has. Both are always here, so
+    // Alt+C moved between them rather than pressing either: the key meant to
+    // correct the word might have been the key that ended the check.
+    add_button(ID_CANCEL, "Clos&e", "Close");
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
 
     asker.set_sizer_and_fit(sizer, true);
@@ -2775,6 +3197,60 @@ fn show_send_preview(
         PreviewDecision::ConfirmSend
     } else {
         PreviewDecision::GoBack
+    }
+}
+
+#[cfg(test)]
+mod looking_somebody_up_from_here {
+    use super::*;
+
+    #[test]
+    fn test_the_window_waits_longer_than_a_lookup_is_allowed_to_take() {
+        // A lookup gives itself ten seconds to get connected and twenty more
+        // to be answered. A window that stopped looking for the answer sooner
+        // than that would say the directory took too long while it was still
+        // answering, to somebody who has no other way of telling.
+        assert!(
+            GIVE_UP_LOOKING_FOR_AN_ANSWER > crate::service::directory::AT_MOST_BEFORE_GIVING_UP,
+            "the window gives up after {GIVE_UP_LOOKING_FOR_AN_ANSWER:?} and a lookup may \
+             take {:?}",
+            crate::service::directory::AT_MOST_BEFORE_GIVING_UP
+        );
+    }
+
+    #[test]
+    fn test_typing_is_held_back_long_enough_to_be_one_search_rather_than_six() {
+        // Long enough that a name typed straight through is asked about once,
+        // short enough that a pause to think is answered before anybody
+        // wonders whether the key worked. Somewhere between a fast typist's
+        // gap between letters and the point where a window feels stuck.
+        assert!(
+            (150..=1000).contains(&AFTER_TYPING_STOPS_MS),
+            "{AFTER_TYPING_STOPS_MS}"
+        );
+    }
+
+    #[test]
+    fn test_the_key_that_reaches_the_list_is_not_one_this_window_already_uses() {
+        // Alt and a letter is a mnemonic, and two controls claiming one letter
+        // is a key that lands on whichever was last: not learnable, and not
+        // discoverable either. Every other letter in this window belongs to
+        // something on `Reached`.
+        let reaches_the_list = crate::application::looking_people_up::THE_LIST_LABEL
+            .split('&')
+            .nth(1)
+            .and_then(|rest| rest.chars().next())
+            .map(|letter| letter.to_ascii_lowercase())
+            .expect("the label marks a letter");
+
+        for reached in editor_document::Reached::ALL {
+            assert_ne!(
+                reached.letter(),
+                reaches_the_list,
+                "{reaches_the_list} already belongs to {}",
+                reached.label()
+            );
+        }
     }
 }
 

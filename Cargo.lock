@@ -5769,7 +5769,7 @@ dependencies = [
 
 [[package]]
 name = "wixen-mail"
-version = "0.44.0"
+version = "0.45.0"
 dependencies = [
  "aes-gcm",
  "ammonia",
@@ -5785,6 +5785,7 @@ dependencies = [
  "flate2",
  "futures",
  "html-escape",
+ "iana-time-zone",
  "icalendar",
  "image",
  "keyring",

@@ -41,11 +41,9 @@ implying they exist.
 
 | Missing | Why it matters | Tracked |
 |---|---|---|
-| Saved searches | A search worth running twice is worth keeping | Not yet |
 | Templates | Repetitive replies without retyping | Not yet |
 | Several identities per account | One mailbox, more than one address to send as | Not yet |
-| Import and export of mail | Nothing leaves this application in a standard format yet. That makes it hard to leave, which is not a property to be proud of | Not yet |
-| Encryption, OpenPGP or S/MIME | Thunderbird has OpenPGP built in | Not yet |
+| Signing or encrypting what you send | Thunderbird has OpenPGP built in | Not yet. Signed mail that arrives is read and checked; nothing goes out signed or encrypted, and there is no OpenPGP at all |
 | Vacation or automatic replies | Usually a server feature, and usually set from the client | Not yet |
 
 Two more are worth stating plainly because their absence is a decision rather
@@ -98,13 +96,20 @@ keys. Three of them turned out not to be missing features at all. Each had its
 storage, its editor and its tests already written, and nothing ever called the
 last step, which is its own lesson about where to look next.
 
+Import and export has since been built, and it mattered more than a feature
+list suggests, for a reason that is not about features: a client somebody
+cannot leave is a client they should be wary of joining. Mail comes in from
+mbox files, single messages, folders inside zip archives and Outlook data
+files, keeping whatever folder structure it arrived with, and goes out the
+same way.
+
+Saved searches have since been built too. A search you run in the morning can be
+kept under a name, and it sits in the folder tree under Saved Searches. Press
+Enter on the row and it runs again and says how much it found.
+
 What is left, in the order somebody would miss it:
 
-1. **Saved searches.** A search worth running twice is worth keeping.
-2. **Templates.** Repetitive replies without retyping.
-3. **Several identities per account.** One mailbox, more than one address.
-4. **Import and export.**
-
-Import and export matters more than its position here suggests, for a reason
-that is not about features: a client somebody cannot leave is a client they
-should be wary of joining.
+1. **Templates.** Repetitive replies without retyping.
+2. **Several identities per account.** One mailbox, more than one address.
+3. **Signing and encrypting outgoing mail.** Reading it works; sending it
+   does not.

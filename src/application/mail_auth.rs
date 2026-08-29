@@ -68,7 +68,7 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
         // it was saved on a different computer and this one cannot read it.
         if account.password.is_empty() {
             return Err(Error::Authentication(format!(
-                "No password is saved for {} on this computer. Open Accounts, edit it, and enter the password again.",
+                "No password is saved for {} on this computer. Open the Account Manager with Ctrl+Shift+A, edit it, and enter the password again.",
                 account.name
             )));
         }
@@ -77,7 +77,7 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
 
     let Some(provider) = provider_of(account) else {
         return Err(Error::Authentication(format!(
-            "{} is set to sign in with OAuth, but no provider is recorded for it. Open Accounts and set it up again.",
+            "{} is set to sign in with OAuth, but no provider is recorded for it. Open the Account Manager with Ctrl+Shift+A and set it up again.",
             account.name
         )));
     };
@@ -95,9 +95,15 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
     // something the user does, and until this said where, the only route back
     // was to guess. Google expires browser sign-in weekly until the
     // application is verified, so this is a message people will meet often.
+    //
+    // It named the wrong control for as long as it had named one. There is no
+    // Accounts anywhere: the window is the Account Manager and the key is
+    // Ctrl+Shift+A. Somebody who can see the menu bar loses a second to that.
+    // Somebody working by ear opens every menu looking for a word that was
+    // never there, and the natural conclusion is that they walked past it.
     let token = manager.get_valid_token().await.map_err(|e| {
         Error::Authentication(format!(
-            "{} needs to sign in again. Open Accounts and choose Sign In Again. ({e})",
+            "{} needs to sign in again. Open the Account Manager with Ctrl+Shift+A and choose Sign In Again. ({e})",
             account.name
         ))
     })?;
@@ -162,7 +168,13 @@ mod tests {
 
         assert!(error.contains("No password is saved"), "got {error}");
         assert!(error.contains("Work"), "the account is not named: {error}");
-        assert!(error.contains("Accounts"), "no remedy offered: {error}");
+        // By the name the window really has. This asked for "Accounts" for as
+        // long as it existed, which is a word that appears on nothing, and the
+        // message said it for just as long.
+        assert!(
+            error.contains("Account Manager"),
+            "no remedy offered: {error}"
+        );
     }
 
     #[tokio::test]

@@ -620,6 +620,7 @@ mod tests {
 
     fn event() -> CalendarEventItem {
         CalendarEventItem {
+            attendees_json: None,
             id: "e1".to_string(),
             summary: "Standup".to_string(),
             description: String::new(),
@@ -1300,6 +1301,7 @@ mod tests {
     fn test_an_events_description_is_read_at_all() {
         // Where the dial-in number and the agenda live. Nothing read it.
         let event = CalendarEventItem {
+            attendees_json: None,
             id: "e3".to_string(),
             summary: "Review".to_string(),
             description: "Dial in on 555 0123.".to_string(),
@@ -1329,6 +1331,7 @@ mod tests {
     #[test]
     fn test_an_all_day_event_says_so_rather_than_reading_two_identical_times() {
         let event = CalendarEventItem {
+            attendees_json: None,
             id: "e2".to_string(),
             summary: "Public holiday".to_string(),
             description: String::new(),

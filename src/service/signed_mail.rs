@@ -92,9 +92,15 @@ pub enum SmimeLayout {
 /// once, and the header reading stays private.
 pub fn claims_a_signature(raw: &[u8]) -> bool {
     let (headers, _) = split_headers_from_body(raw);
-    header_value(headers, "content-type")
-        .and_then(|content_type| layout_of(&content_type))
-        .is_some()
+    // A signature and not merely S/MIME. `layout_of` also recognises encrypted
+    // mail, and answering yes for that sends an encrypted message down the
+    // signature path, where `take_apart` refuses it and every surface downstream
+    // ends up saying "it says it is signed, but it carries no signature to
+    // check" about a message that never said anything of the kind.
+    matches!(
+        header_value(headers, "content-type").and_then(|content_type| layout_of(&content_type)),
+        Some(SmimeLayout::SignatureBeside { .. } | SmimeLayout::SignatureAround)
+    )
 }
 
 pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {
@@ -112,7 +118,16 @@ pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {
             let boundary = header.parameter("boundary")?;
             Some(SmimeLayout::SignatureBeside { boundary })
         }
-        media if is_pkcs7(media, "mime") => match header.parameter("smime-type").as_deref() {
+        // Folded to lower case before it is compared, the same as the media
+        // type above it, the protocol inside `is_pkcs7` and the file suffix
+        // below. This was the one value that was not, so a sender writing
+        // `smime-type=Signed-Data` had their signed message read as not S/MIME
+        // at all: the silent way to be wrong.
+        media if is_pkcs7(media, "mime") => match header
+            .parameter("smime-type")
+            .map(|kind| kind.trim().to_ascii_lowercase())
+            .as_deref()
+        {
             Some("signed-data") => Some(SmimeLayout::SignatureAround),
             Some("enveloped-data") => Some(SmimeLayout::Encrypted),
             // Senders do leave smime-type off. The file name is the only other
@@ -296,7 +311,13 @@ fn parts_between<'a>(body: &'a [u8], boundary: &str) -> Vec<&'a [u8]> {
             if let Some(from) = start {
                 // `at` is one past the CRLF that ends the part's last line, so
                 // the part itself stops two bytes earlier.
-                parts.push(&body[from..at.saturating_sub(2)]);
+                //
+                // Unless the part is empty, which is what two delimiters in a
+                // row means, and is legal. Then `at` is where the part began
+                // and stepping back two bytes runs off the front of it. Without
+                // the `max` that is a panic on a stranger's message, inside a
+                // function whose caller promises never to fail.
+                parts.push(&body[from..at.saturating_sub(2).max(from)]);
             }
             // A closing delimiter is the opening one with two more dashes.
             if line[opening.len()..].starts_with(b"--") {
@@ -347,12 +368,19 @@ fn header_value(headers: &[u8], wanted: &str) -> Option<String> {
     for line in text.split('\n') {
         let line = line.trim_end_matches('\r');
         // A line starting with white space continues the one before it.
+        //
+        // Skipped whether or not it continues the header being looked for. A
+        // continuation of some earlier header, trimmed, looks exactly like a
+        // header of its own: `Subject: hello` folded onto a second line reading
+        // ` Content-Type: ...` would otherwise be read as this message's
+        // Content-Type. The sender writes their own Subject, so that hands them
+        // the answer to whether their message is signed, encrypted or neither.
         if line.starts_with([' ', '\t']) {
             if let Some(value) = collected.as_mut() {
                 value.push(' ');
                 value.push_str(line.trim());
-                continue;
             }
+            continue;
         }
         if collected.is_some() {
             break;
@@ -831,17 +859,27 @@ fn timestamp_among(attributes: &[u8]) -> Option<Vec<u8>> {
         let Ok(inside) = der::children(attribute.value) else {
             continue;
         };
-        if read_oid(inside.first(), "An unsigned attribute's name").ok()?
-            != oid::ATTRIBUTE_TIMESTAMP_TOKEN
-        {
+        // Passed over, not given up on. Both of these used to end the whole
+        // walk rather than this one attribute, which is the opposite of what
+        // the paragraph above promises: one piece of nonsense appended in front
+        // of a real timestamp hid the timestamp, and a message whose
+        // certificate had expired since it was signed then read as signed with
+        // an expired certificate.
+        let Ok(name) = read_oid(inside.first(), "An unsigned attribute's name") else {
+            continue;
+        };
+        if name != oid::ATTRIBUTE_TIMESTAMP_TOKEN {
             continue;
         }
         let Some(values) = inside.get(1).filter(|e| e.tag == der::SET) else {
             continue;
         };
+        let Ok(held) = der::children(values.value) else {
+            continue;
+        };
         // The whole element, not its contents: the token is a document of its
         // own and every byte of it is covered by the authority's signature.
-        if let Some(token) = der::children(values.value).ok()?.first() {
+        if let Some(token) = held.first() {
             return Some(token.encoded.to_vec());
         }
     }
@@ -1533,18 +1571,7 @@ impl SignatureReport {
     /// gap between "the arithmetic held" and "this is who it says it is" is
     /// there on every message including the good ones.
     pub fn limits(&self) -> Vec<&'static str> {
-        vec![
-            "A signature shows two things: the message was not changed after it was signed, and \
-             whoever signed it held the private key for the certificate attached.",
-            "It does not show that the name shown as the sender is the person you have in mind.",
-            "It does not show that anybody checked who the certificate was issued to.",
-            "It does not show that the certificate has not been withdrawn since.",
-            "It does not show when it was signed. The sender writes the date that travels with a \
-             message, so only a timestamp from an authority settles that, and most messages carry \
-             none.",
-            "The subject line and the sender line travel outside the signature, so nothing here \
-             covers them.",
-        ]
+        what_a_signature_is_worth()
     }
 
     /// The whole thing as one piece of speech.
@@ -1671,6 +1698,28 @@ impl SignatureReport {
     }
 }
 
+/// What a signature does not show, whatever any particular check found.
+///
+/// A free function as well as [`SignatureReport::limits`], because it is also
+/// wanted where there is no report to ask: a message that says it is signed and
+/// whose original form was not kept still tells somebody it is signed, and
+/// "signed" is read as "genuine" whether or not anything was checked. Written
+/// once here so the two surfaces cannot come to word it differently.
+pub fn what_a_signature_is_worth() -> Vec<&'static str> {
+    vec![
+        "A signature shows two things: the message was not changed after it was signed, and \
+         whoever signed it held the private key for the certificate attached.",
+        "It does not show that the name shown as the sender is the person you have in mind.",
+        "It does not show that anybody checked who the certificate was issued to.",
+        "It does not show that the certificate has not been withdrawn since.",
+        "It does not show when it was signed. The sender writes the date that travels with a \
+         message, so only a timestamp from an authority settles that, and most messages carry \
+         none.",
+        "The subject line and the sender line travel outside the signature, so nothing here \
+         covers them.",
+    ]
+}
+
 /// What a signature is worth once a later answer has come back.
 ///
 /// Only ever downgrades, and only from a signature that really does add up: a
@@ -1767,10 +1816,23 @@ pub fn examine_signature(
         };
     }
 
-    let content = signature
-        .wrapped_content
+    // The words the message shows, where it shows any, and only otherwise the
+    // ones carried inside the signature.
+    //
+    // This order round, and it is the difference between a check and a
+    // decoration. RFC 5652 carries the content outside the signature or inside
+    // it and never both, so a message holding both is crafted, and the two ways
+    // of resolving that are not equally wrong. Reading the inside one means
+    // taking a real signature off somebody's message, wrapping it beside words
+    // of your own, and having the arithmetic checked against the words that
+    // came with the signature: the report then says "signed for
+    // alice@example.com, and not changed since" over text Alice never wrote.
+    // Reading the outside one checks the words that will be read, so a crafted
+    // message fails the way a changed message fails, which is what it is.
+    let content = parts
+        .content
         .clone()
-        .or_else(|| parts.content.clone());
+        .or_else(|| signature.wrapped_content.clone());
 
     // Every signer, not only the first. A message may be signed by more than
     // one party, and reading only the first means a second signature that does
@@ -1982,8 +2044,8 @@ fn check_the_arithmetic(
         None => content.to_vec(),
     };
 
-    let algorithm = match verification_algorithm(certificate, signer) {
-        Ok(algorithm) => algorithm,
+    let how = match verification_algorithm(certificate, signer) {
+        Ok(how) => how,
         Err(named) => {
             findings.push(Finding::SignatureKindNotUnderstood { named });
             return SignatureOutcome::NotChecked;
@@ -2000,7 +2062,7 @@ fn check_the_arithmetic(
         }
     };
 
-    let held = ring::signature::UnparsedPublicKey::new(algorithm, &key_bytes)
+    let held = ring::signature::UnparsedPublicKey::new(how.algorithm, &key_bytes)
         .verify(&signed_bytes, &signer.signature)
         .is_ok();
     if !held {
@@ -2014,7 +2076,12 @@ fn check_the_arithmetic(
         findings.push(Finding::ContentIsWhatWasSigned);
     }
 
-    if signer.digest_algorithm == oid::SHA1 {
+    // The fingerprint the arithmetic was actually done with, not the one the
+    // signer declared it took of the content. Those are two fields and they
+    // need not name the same hash: a signer declaring SHA-256 and signing with
+    // sha1WithRSAEncryption used to verify through the SHA-1 verifier and come
+    // back here as a signature worth trusting.
+    if how.hash == oid::SHA1 {
         findings.push(Finding::FingerprintTooWeakToTrust {
             named: "SHA-1".to_string(),
         });
@@ -2044,12 +2111,30 @@ fn public_key_bytes(certificate: &SignerCertificate) -> Option<Vec<u8>> {
     Some(parsed.public_key().subject_public_key.data.to_vec())
 }
 
+/// A verifier, and the fingerprint it is over.
+///
+/// The two travel together because two separate answers to one question is how
+/// they came to disagree. Which verifier to use was read out of the signature
+/// algorithm; whether the fingerprint can be forged was read out of the digest
+/// the signer *says* it took of the content, which is a different field and
+/// need not name the same hash. A signer declaring SHA-256 and signing with
+/// sha1WithRSAEncryption was checked through the SHA-1 verifier and reported as
+/// a signature that adds up, with nothing said about SHA-1 at all.
+///
+/// Returned as one value so the verdict cannot be about a fingerprint other
+/// than the one the arithmetic was done with.
+struct HowToVerify {
+    algorithm: &'static dyn ring::signature::VerificationAlgorithm,
+    /// The identifier of the hash `algorithm` is over.
+    hash: String,
+}
+
 /// Which verifier suits this certificate and this signature, or the name of the
 /// kind that is not handled.
 fn verification_algorithm(
     certificate: &SignerCertificate,
     signer: &Signer,
-) -> std::result::Result<&'static dyn ring::signature::VerificationAlgorithm, String> {
+) -> std::result::Result<HowToVerify, String> {
     use ring::signature;
 
     let hash = match signer.signature_algorithm.as_str() {
@@ -2067,9 +2152,18 @@ fn verification_algorithm(
             let hash = pss_hash(signer.signature_parameters.as_deref())
                 .unwrap_or_else(|| oid::SHA1.to_string());
             return match hash.as_str() {
-                oid::SHA256 => Ok(&signature::RSA_PSS_2048_8192_SHA256),
-                oid::SHA384 => Ok(&signature::RSA_PSS_2048_8192_SHA384),
-                oid::SHA512 => Ok(&signature::RSA_PSS_2048_8192_SHA512),
+                oid::SHA256 => Ok(HowToVerify {
+                    algorithm: &signature::RSA_PSS_2048_8192_SHA256,
+                    hash,
+                }),
+                oid::SHA384 => Ok(HowToVerify {
+                    algorithm: &signature::RSA_PSS_2048_8192_SHA384,
+                    hash,
+                }),
+                oid::SHA512 => Ok(HowToVerify {
+                    algorithm: &signature::RSA_PSS_2048_8192_SHA512,
+                    hash,
+                }),
                 other => Err(format!("RSA-PSS over {}", readable_digest(other))),
             };
         }
@@ -2079,13 +2173,14 @@ fn verification_algorithm(
         other => return Err(format!("signature algorithm {other}")),
     };
 
-    match hash.as_str() {
-        oid::SHA1 => Ok(&signature::RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY),
-        oid::SHA256 => Ok(&signature::RSA_PKCS1_2048_8192_SHA256),
-        oid::SHA384 => Ok(&signature::RSA_PKCS1_2048_8192_SHA384),
-        oid::SHA512 => Ok(&signature::RSA_PKCS1_2048_8192_SHA512),
-        other => Err(format!("RSA over {}", readable_digest(other))),
-    }
+    let algorithm: &'static dyn ring::signature::VerificationAlgorithm = match hash.as_str() {
+        oid::SHA1 => &signature::RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY,
+        oid::SHA256 => &signature::RSA_PKCS1_2048_8192_SHA256,
+        oid::SHA384 => &signature::RSA_PKCS1_2048_8192_SHA384,
+        oid::SHA512 => &signature::RSA_PKCS1_2048_8192_SHA512,
+        other => return Err(format!("RSA over {}", readable_digest(other))),
+    };
+    Ok(HowToVerify { algorithm, hash })
 }
 
 /// Which curve verifier suits an elliptic curve certificate.
@@ -2096,7 +2191,7 @@ fn verification_algorithm(
 fn ecdsa_algorithm(
     certificate: &SignerCertificate,
     signature_algorithm: &str,
-) -> std::result::Result<&'static dyn ring::signature::VerificationAlgorithm, String> {
+) -> std::result::Result<HowToVerify, String> {
     use ring::signature;
 
     let Ok((_, parsed)) = X509Certificate::from_der(&certificate.der) else {
@@ -2114,8 +2209,14 @@ fn ecdsa_algorithm(
         .map(|curve| curve.to_id_string())
         .unwrap_or_default();
     match (curve.as_str(), signature_algorithm) {
-        (oid::CURVE_P256, oid::ECDSA_WITH_SHA256) => Ok(&signature::ECDSA_P256_SHA256_ASN1),
-        (oid::CURVE_P384, oid::ECDSA_WITH_SHA384) => Ok(&signature::ECDSA_P384_SHA384_ASN1),
+        (oid::CURVE_P256, oid::ECDSA_WITH_SHA256) => Ok(HowToVerify {
+            algorithm: &signature::ECDSA_P256_SHA256_ASN1,
+            hash: oid::SHA256.to_string(),
+        }),
+        (oid::CURVE_P384, oid::ECDSA_WITH_SHA384) => Ok(HowToVerify {
+            algorithm: &signature::ECDSA_P384_SHA384_ASN1,
+            hash: oid::SHA384.to_string(),
+        }),
         _ => Err(format!("an elliptic curve signature on curve {curve}")),
     }
 }
@@ -3663,6 +3764,24 @@ impl Recipient {
     }
 }
 
+/// Whole signed messages for the tests of other modules.
+///
+/// The same bytes this file's own tests use, which are real OpenSSL output
+/// rather than anything hand-built. A cache that keeps signed mail and a reader
+/// that reports on it both have to be tested against a message that really is
+/// signed: one written here to look signed would agree with whatever this
+/// module happened to do and with nothing else.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    /// A message signed the usual way, with the words beside the signature.
+    ///
+    /// RSA with SHA-256, from a certificate issued to alice@example.com and
+    /// good from 2020 to 2040.
+    pub(crate) fn signed_beside() -> Vec<u8> {
+        super::tests::message(super::tests::SIGNED_BESIDE)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3738,7 +3857,7 @@ mod tests {
 
     /// The same words, signed the other way, with the message wrapped inside
     /// the signature so nothing can be read until it is taken apart.
-    const SIGNED_AROUND: &str = "
+    pub(super) const SIGNED_AROUND: &str = "
         TUlNRS1WZXJzaW9uOiAxLjANCkNvbnRlbnQtRGlzcG9zaXRpb246IGF0dGFjaG1lbnQ7IGZpbGVu
         YW1lPSJzbWltZS5wN20iDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL3gtcGtjczctbWltZTsg
         c21pbWUtdHlwZT1zaWduZWQtZGF0YTsgbmFtZT0ic21pbWUucDdtIg0KQ29udGVudC1UcmFuc2Zl
@@ -4353,6 +4472,23 @@ mod tests {
             Some(SmimeLayout::Encrypted)
         );
         assert_eq!(layout_of("text/plain; charset=utf-8"), None);
+    }
+
+    #[test]
+    fn test_the_kind_of_smime_is_read_however_it_is_capitalised() {
+        // Every neighbouring value here is folded to lower case before it is
+        // compared: the media type, the protocol, the file suffix. This one was
+        // not, and the comment beside the file suffix says exactly what that
+        // costs, because a comparison that misses one spelling calls signed
+        // mail unsigned, which is the silent way to be wrong.
+        assert_eq!(
+            layout_of("application/pkcs7-mime; smime-type=Signed-Data"),
+            Some(SmimeLayout::SignatureAround)
+        );
+        assert_eq!(
+            layout_of("application/pkcs7-mime; smime-type=ENVELOPED-DATA"),
+            Some(SmimeLayout::Encrypted)
+        );
     }
 
     #[test]
@@ -5849,6 +5985,62 @@ mod tests {
     }
 
     #[test]
+    fn test_rubbish_in_front_of_a_timestamp_does_not_hide_the_timestamp() {
+        // The other half of the rule above, and the half that was missing. Two
+        // of the ways an attribute can be unreadable gave up on the whole list
+        // rather than passing over the one attribute, so anybody could append
+        // one piece of nonsense in front of a real timestamp and make a
+        // properly timestamped message report as having none. That is not a
+        // small loss: without a timestamp, a certificate that had expired by
+        // the time somebody reads the message is reported as expired rather
+        // than as having been in date when it was used.
+        //
+        // The attributes are built here rather than taken from a fixture
+        // because what is under test is the walk over the list, and a real
+        // token would only make it harder to see what the list holds.
+        let name_is_a_number = [0x30, 0x03, 0x02, 0x01, 0x01];
+        let token = [0x30, 0x03, 0x02, 0x01, 0x01];
+        let real_timestamp = [
+            0x30, 0x14, // SEQUENCE, 20 bytes
+            0x06, 0x0B, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x10, 0x02,
+            0x0E, // the timestamp token attribute's name
+            0x31, 0x05, 0x30, 0x03, 0x02, 0x01, 0x01, // SET holding the token
+        ];
+        let mut attributes = name_is_a_number.to_vec();
+        attributes.extend_from_slice(&real_timestamp);
+
+        // On its own it is found, so the fixture is right and the test below is
+        // about the rubbish rather than about the token.
+        assert_eq!(timestamp_among(&real_timestamp), Some(token.to_vec()));
+        assert_eq!(timestamp_among(&attributes), Some(token.to_vec()));
+    }
+
+    #[test]
+    fn test_the_fingerprint_judged_is_the_one_the_signature_was_verified_with() {
+        // A signer names two things that need not agree: the digest it says it
+        // took of the content, and the algorithm the signature itself is under.
+        // The verifier goes by the second. The verdict on whether the
+        // fingerprint can be forged went by the first, and nothing made them
+        // agree, so a signer declaring SHA-256 and signing with
+        // sha1WithRSAEncryption was checked through the SHA-1 verifier and came
+        // back as a signature that adds up with nothing said about it.
+        //
+        // The two are one answer now, so this asks the one question: which
+        // fingerprint is this signature really made with.
+        let parts = take_apart(&message(SIGNED_BESIDE)).expect("a signed message");
+        let signature = Signature::read(&parts.signature).expect("a signature that reads");
+        let mut signer = signature.signers[0].clone();
+        let certificate =
+            certificate_for(&signature, &signer).expect("the certificate came with it");
+        signer.digest_algorithm = oid::SHA256.to_string();
+        signer.signature_algorithm = oid::SHA1_WITH_RSA.to_string();
+
+        let how = verification_algorithm(&certificate, &signer).expect("a verifier");
+
+        assert_eq!(how.hash, oid::SHA1);
+    }
+
+    #[test]
     fn test_a_timestamp_made_with_a_forgeable_fingerprint_is_refused() {
         // A timestamp moves a certificate's dates, so a forgeable one is worse
         // than a forgeable signature: somebody could build a second statement
@@ -6429,5 +6621,118 @@ mod the_cheap_first_question {
         let shouted = b"FROM: a@example.com\r\nCONTENT-TYPE: application/pkcs7-mime; smime-type=signed-data\r\n\r\nx\r\n";
 
         assert!(claims_a_signature(shouted));
+    }
+
+    #[test]
+    fn test_an_encrypted_message_does_not_claim_a_signature() {
+        // Encrypted is not signed, and this question decides which sentence a
+        // reader says. Answering yes sends an encrypted message down the
+        // signature path, where `take_apart` refuses it and the reader ends up
+        // saying "it says it is signed, but it carries no signature to check"
+        // about a message that never said any such thing.
+        let encrypted = b"From: a@example.com\r\nContent-Type: application/pkcs7-mime; \
+                          smime-type=enveloped-data; name=\"smime.p7m\"\r\n\r\nx\r\n";
+
+        assert!(!claims_a_signature(encrypted));
+    }
+
+    #[test]
+    fn test_a_folded_line_before_the_wanted_header_is_not_read_as_a_header() {
+        // A folded continuation belongs to the header above it. Read as a
+        // header of its own, it lets a sender put whatever they like in their
+        // own Subject line and have it answered as this message's Content-Type,
+        // which decides whether the message is treated as signed at all.
+        let headers = b"Subject: hello\r\n Content-Type: application/pkcs7-mime; \
+                        smime-type=enveloped-data\r\n\
+                        Content-Type: multipart/signed; \
+                        protocol=\"application/pkcs7-signature\"; boundary=\"b\"";
+
+        assert_eq!(
+            layout_of(&header_value(headers, "content-type").expect("a content type")),
+            Some(SmimeLayout::SignatureBeside {
+                boundary: "b".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_multipart_with_an_empty_part_does_not_bring_the_reader_down() {
+        // Two delimiters in a row is a legal multipart with an empty part, and
+        // it is also what somebody sends on purpose to see what happens.
+        // `examine_signed_message` promises never to fail, so this has to come
+        // back as a report saying there is nothing to check.
+        let raw = b"Content-Type: multipart/signed; \
+                    protocol=\"application/pkcs7-signature\"; boundary=\"b\"\r\n\
+                    \r\n--b\r\n--b--\r\n";
+
+        let report = examine_signed_message(raw, "a@example.com", a_moment_in_2026());
+
+        assert_eq!(report.outcome, SignatureOutcome::NothingToCheck);
+    }
+
+    /// A moment the fixtures' certificates are good at.
+    fn a_moment_in_2026() -> DateTime<Utc> {
+        "2026-08-28T00:00:00Z".parse().expect("a fixed moment")
+    }
+}
+
+#[cfg(test)]
+mod the_words_that_were_signed {
+    use super::tests::{SIGNED_AROUND, message};
+    use super::*;
+
+    /// A moment the fixtures' certificates are good at.
+    fn a_moment_in_2026() -> DateTime<Utc> {
+        "2026-08-28T00:00:00Z".parse().expect("a fixed moment")
+    }
+
+    #[test]
+    fn test_words_beside_a_signature_are_checked_against_those_words() {
+        // The forgery this closes. Take a real signature off a message whose
+        // words are wrapped inside it, put it beside words of your own in a
+        // `multipart/signed` wrapper, and send it on. If the check reads the
+        // words out of the signature rather than the ones the message shows,
+        // it reports the sender's own certificate over text they never wrote.
+        //
+        // RFC 5652 says the content is carried outside the signature or inside
+        // it and never both, so a message carrying both is not something to
+        // choose between: the words shown are the ones the reader will read,
+        // so they are the ones the arithmetic has to be about.
+        let real = take_apart(&message(SIGNED_AROUND)).expect("a signed message");
+        let rewrapped = SignedParts {
+            content: Some(
+                b"Content-Type: text/plain\r\n\r\nSend the money to me instead.".to_vec(),
+            ),
+            signature: real.signature.clone(),
+        };
+
+        let report = examine_signature(&rewrapped, "alice@example.com", a_moment_in_2026());
+
+        assert_ne!(
+            report.outcome,
+            SignatureOutcome::Matches,
+            "words the sender never signed were reported as signed: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn test_words_wrapped_inside_a_signature_are_still_read_from_inside_it() {
+        // The other half, so the fix above cannot be a check that simply
+        // stopped reading the wrapped content. Nothing carries the words of a
+        // signed-around message except the signature itself.
+        let report = examine_signed_message(
+            &message(SIGNED_AROUND),
+            "alice@example.com",
+            a_moment_in_2026(),
+        );
+
+        assert_eq!(
+            report.outcome,
+            SignatureOutcome::Matches,
+            "{:?}",
+            report.findings
+        );
+        assert!(report.unwrapped_content.is_some());
     }
 }

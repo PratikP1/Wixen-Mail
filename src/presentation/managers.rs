@@ -745,6 +745,227 @@ fn a_day_taken_off(
         .map(|()| crate::application::calendar::one_day_taken_off(name))
 }
 
+/// What the waiting window is called while the servers are being asked.
+const WAITING_TO_HEAR_WHEN_PEOPLE_ARE_FREE: &str = "Finding when everyone is free";
+/// What it says while it waits.
+const ASKING_THE_CALENDARS: &str =
+    "Asking your calendar server about everybody on the guest list. This can take a few seconds.";
+/// The way out of the waiting window.
+const STOP_ASKING: &str = "&Stop";
+/// What is said when somebody stopped the asking.
+const THE_ASKING_WAS_STOPPED: &str = "Finding when everyone is free was stopped. \
+                                      Nothing has been changed.";
+/// What is said when the guest list names nobody who could be asked about.
+const NOBODY_TO_ASK_ABOUT: &str = "Nobody is on the guest list yet, so there is nothing to work out. Write who is \
+     coming in the box above, one person to a line.";
+/// What is said when the start and end boxes cannot be read.
+const THE_DATES_CANNOT_BE_READ: &str = "The start and end of this event could not be read, so there is nothing to \
+     search around. Check the dates above.";
+
+/// What the event form does when somebody asks when the people invited are free.
+///
+/// Everything the question needs that a dialog builder must not reach for: this
+/// account's calendars, the sign-ins in the machine's credential store, and a
+/// runtime to do the asking on. The asking itself happens off this thread and
+/// the window stays alive while it does, through the same waiting window every
+/// other question to a server in this program uses.
+///
+/// `editing` is the event being changed, when there is one. It is left out of
+/// the organiser's own busy time: a meeting does not stand in the way of
+/// itself, and counted in, the one answer this search must always be able to
+/// give, that where it is now still works, is the one it cannot give.
+fn asking_when_people_are_free(
+    frame: &Frame,
+    cache: &Arc<MessageCache>,
+    account: &str,
+    rt: &Arc<Runtime>,
+    editing: Option<String>,
+) -> crate::presentation::wx_item_form::AskWhenPeopleAreFree {
+    use crate::application::{asking_when_free, when_people_are_free, who_is_coming};
+    use crate::presentation::wx_item_form::{OfferedTime, WhatCameBack};
+
+    let frame = *frame;
+    let cache = Arc::clone(cache);
+    let account = account.to_string();
+    let rt = Arc::clone(rt);
+
+    std::rc::Rc::new(move |filled| {
+        use crate::application::item_fields::FieldName;
+
+        let only_saying = |said: &str| WhatCameBack {
+            said: said.to_string(),
+            times: Vec::new(),
+        };
+
+        let invited = who_is_coming::typed_in(filled.text(FieldName::Attendees));
+        if invited.is_empty() {
+            return only_saying(NOBODY_TO_ASK_ABOUT);
+        }
+
+        let here = asking_when_free::this_machines_zone();
+        let Some(so_far) = asking_when_free::the_event_so_far(
+            filled.text(FieldName::StartDate),
+            filled.text(FieldName::StartTime),
+            filled.text(FieldName::EndDate),
+            filled.text(FieldName::EndTime),
+            filled.ticked(FieldName::AllDay),
+            here,
+        ) else {
+            return only_saying(THE_DATES_CANNOT_BE_READ);
+        };
+        let (settings, working_day) = how_this_person_reads_times_and_works();
+        let asking = asking_when_free::what_to_ask_for(
+            &so_far,
+            chrono::Utc::now(),
+            here,
+            working_day.into(),
+        );
+
+        // Read here rather than in the worker: a cache handle belongs to the
+        // thread that opened it, and both of these are local reads that take no
+        // time worth moving off this thread for.
+        let calendars = cache
+            .get_calendars_for_account(&account)
+            .unwrap_or_default();
+        let mine = the_events_that_could_block(&cache, &account, asking.inside);
+
+        let people = asking_when_free::people_to_ask_about(&invited);
+        let (answered, coming) = async_channel::bounded(1);
+        let window = asking.inside;
+        let asking_for = account.clone();
+        rt.spawn(async move {
+            // The sign-ins and, for an account on Microsoft's service, a token
+            // that may have to be refreshed. Both belong out here rather than
+            // on the thread drawing the window.
+            let token = a_microsoft_token(&asking_for).await;
+            let where_to = asking_when_free::where_to_ask(
+                &calendars,
+                crate::service::caldav::sign_in::load,
+                token
+                    .as_deref()
+                    .map(|token| (crate::service::microsoft_graph::GRAPH_BASE, token)),
+            );
+            let questions = asking_when_free::one_question(where_to, people);
+            // Read-only is enough: asking when somebody is free changes
+            // nothing, and `Outward` keeps a door of its own for exactly this
+            // question that the gate on changes does not stand in front of.
+            let outward = crate::service::outward::Outward::default();
+            let found =
+                crate::service::free_busy::when_they_are_free(&outward, &questions, window).await;
+            // A closed channel is somebody who stopped waiting, which is not a
+            // failure and has nothing to report.
+            let _ = answered.send(found).await;
+        });
+
+        let waited = wx_managers::wait_for_an_answer(
+            &frame,
+            WAITING_TO_HEAR_WHEN_PEOPLE_ARE_FREE,
+            ASKING_THE_CALENDARS,
+            STOP_ASKING,
+            coming,
+            crate::presentation::theme::current_from_stored_config(),
+        );
+        let Some(found) = waited else {
+            return only_saying(THE_ASKING_WAS_STOPPED);
+        };
+
+        // The person arranging the meeting is one of the people in it, and
+        // their diary is here rather than at a server anybody would ask.
+        let mut everybody = vec![asking_when_free::your_own_diary(
+            "You",
+            &mine,
+            editing.as_deref(),
+            here,
+            asking.inside,
+        )];
+        everybody.extend(found);
+
+        let answer = when_people_are_free::when_we_could_meet(&everybody, asking);
+        WhatCameBack {
+            times: answer
+                .times
+                .iter()
+                .map(|time| OfferedTime {
+                    said: asking_when_free::in_words_here(time.span.from, settings),
+                    starts: time.span.from.with_timezone(&chrono::Local),
+                    ends: time.span.until.with_timezone(&chrono::Local),
+                })
+                .collect(),
+            said: asking_when_free::in_sentences(&answer, settings),
+        }
+    })
+}
+
+/// This account's token for Microsoft's calendar service, when it has one.
+///
+/// Asked for rather than worked out from what the account calls its provider.
+/// The token is where the answer really is: an account with no Microsoft
+/// sign-in stored fails here without a request leaving the machine, and one
+/// whose token has run out has it refreshed, which is what a stored provider
+/// name could never tell anybody.
+async fn a_microsoft_token(account: &str) -> Option<String> {
+    let held = crate::service::oauth_credentials::credentials_for("outlook")?;
+    crate::service::oauth::AuthManager::new(
+        account,
+        "outlook",
+        &held.client_id,
+        held.client_secret.as_deref(),
+    )
+    .get_valid_graph_token()
+    .await
+    .ok()
+}
+
+/// How this person reads a date and a time, and what hours they work.
+///
+/// Read fresh from what is stored, the same way the item form reads the date
+/// order it lays its own boxes out in, so a time offered and the same time
+/// shown in the boxes cannot come from two different answers.
+fn how_this_person_reads_times_and_works() -> (
+    crate::presentation::date_display::DateSettings,
+    crate::application::reading_habits::WorkingDay,
+) {
+    let Ok(held) = crate::data::config::ConfigManager::load_stored() else {
+        return (
+            crate::presentation::date_display::DateSettings::default(),
+            crate::application::reading_habits::WorkingDay::default(),
+        );
+    };
+    let config = held.app_config();
+    (
+        crate::presentation::wx_app::date_settings_from(config),
+        crate::application::reading_habits::WorkingDay::from_setting(
+            config.working_day_starts,
+            config.working_day_ends,
+        ),
+    )
+}
+
+/// Every event of this account's that could block a time inside the window.
+///
+/// Read from the beginning rather than from the window's own start, because a
+/// repeating event is stored once under the day the series began: a standing
+/// meeting set up last year falls on days inside this window and is stored
+/// outside it, and asked for by date alone it never comes back. Left out, the
+/// one hour of the week everybody is reliably busy is the first thing offered.
+fn the_events_that_could_block(
+    cache: &Arc<MessageCache>,
+    account: &str,
+    window: crate::application::when_people_are_free::Span,
+) -> Vec<crate::data::message_cache::CalendarEventEntry> {
+    /// Earlier than any date a calendar carries, so the range is bounded at one
+    /// end only.
+    const BEFORE_ANY_CALENDAR: &str = "0001-01-01";
+
+    cache
+        .get_events_in_range(
+            account,
+            BEFORE_ANY_CALENDAR,
+            &window.until.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        )
+        .unwrap_or_default()
+}
+
 /// The calendar dialog, which returns a list of actions rather than a set.
 pub fn manage_calendar(
     state: &Arc<StdMutex<WxUIState>>,
@@ -770,6 +991,11 @@ pub fn manage_calendar(
     let open_event_editor_cache = Arc::clone(&cache);
     let open_event_editor_account = account.clone();
     let open_event_editor_a11y = Arc::clone(a11y);
+    // Built once an event is open rather than once for the window, because
+    // which event is being changed is part of the question: its own hour must
+    // not come back as a time the organiser is busy.
+    let open_event_editor_frame = *frame;
+    let open_event_editor_runtime = Arc::clone(rt);
     let open_event_editor = move |dialog: &Dialog, existing: Option<&CalendarEventItem>| {
         let (containers, known_categories) = item_form_ingredients(
             &open_event_editor_cache,
@@ -792,6 +1018,13 @@ pub fn manage_calendar(
             &known_categories,
             prefill,
             &open_event_editor_a11y,
+            Some(asking_when_people_are_free(
+                &open_event_editor_frame,
+                &open_event_editor_cache,
+                &open_event_editor_account,
+                &open_event_editor_runtime,
+                existing.map(|item| item.id.clone()),
+            )),
         )
         .map(|(filled, container_id)| {
             wx_calendar::CalendarEventData::from_filled(&filled, container_id)
@@ -1091,7 +1324,15 @@ fn event_with_edits(
         show_as,
         last_modified_remote: stored.last_modified_remote,
         last_synced_at: stored.last_synced_at,
-        attendees_json: stored.attendees_json,
+        // Written from the box rather than kept, now that the form asks for a
+        // guest list: kept, a name taken off it would come straight back. What
+        // is kept is each person's own reply, which the form never asks for and
+        // a provider records, and `who_is_coming::as_stored` carries those
+        // across for everybody still on the list.
+        attendees_json: crate::application::who_is_coming::as_stored(
+            &crate::application::who_is_coming::typed_in(&data.attendees),
+            stored.attendees_json.as_deref(),
+        ),
         created_at: stored.created_at,
         ..edited
     }
@@ -1368,6 +1609,10 @@ fn filled_from_calendar_item(item: &CalendarEventItem) -> crate::application::it
     filled.put(FieldName::EndDate, item.end.get(..10).unwrap_or_default());
     filled.put(FieldName::EndTime, item.end.get(11..16).unwrap_or_default());
     filled.put(FieldName::Location, item.location.clone());
+    filled.put(
+        FieldName::Attendees,
+        crate::application::who_is_coming::in_the_box(item.attendees_json.as_deref()),
+    );
     filled.put(FieldName::Notes, item.description.clone());
     filled.put(
         FieldName::AlertMinutes,
@@ -1511,7 +1756,10 @@ fn event_entry(
         show_as: data.show_as.clone(),
         last_modified_remote: None,
         last_synced_at: None,
-        attendees_json: None,
+        attendees_json: crate::application::who_is_coming::as_stored(
+            &crate::application::who_is_coming::typed_in(&data.attendees),
+            None,
+        ),
         // Stored as the JSON the cache expects rather than a bare number, so a
         // reminder the user set actually survives a round trip. How somebody is
         // alerted is named as well as when: Google drops an alert that does not
@@ -2103,6 +2351,13 @@ pub fn new_pim_item(
                 container: None,
             }),
         a11y,
+        // Only an event has a guest list to ask about, so only an event gets
+        // the controls. A button that never works on a task's form is three
+        // tab stops in the way of finishing it.
+        matches!(kind, new_item::ItemKind::Event)
+            // Nothing is being changed, so nothing is left out of the
+            // organiser's own busy time.
+            .then(|| asking_when_people_are_free(frame, &cache, &account_id, rt, None)),
     ) else {
         return;
     };
@@ -2628,7 +2883,10 @@ fn store_new_item(
                 show_as: filled.chosen(kind, FieldName::ShowAs),
                 last_modified_remote: None,
                 last_synced_at: None,
-                attendees_json: None,
+                attendees_json: crate::application::who_is_coming::as_stored(
+                    &crate::application::who_is_coming::typed_in(filled.text(FieldName::Attendees)),
+                    None,
+                ),
                 reminders_json: (alert > 0).then(|| an_alert(i64::from(alert))),
                 created_at: stamp.clone(),
                 updated_at: stamp,
@@ -4059,6 +4317,7 @@ mod tests {
 
     fn data(all_day: bool) -> wx_calendar::CalendarEventData {
         wx_calendar::CalendarEventData {
+            attendees: String::new(),
             summary: "Standup".to_string(),
             start_date: "2026-07-27".to_string(),
             start_time: "09:00".to_string(),

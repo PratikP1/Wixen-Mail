@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.44.0"
+version = "0.45.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -25,6 +25,12 @@ chrono = { version = "0.4", features = ["serde"] }
 # rules cannot be hand-written and nothing else in the tree carries them:
 # chrono has no zone database and iana-time-zone only names this machine's own.
 chrono-tz = "0.10"
+# What this machine calls its own zone, as an IANA name. Needed to judge a
+# working day and to space suggested meeting times on the hour where the person
+# arranging the meeting is standing, and there is no other way to learn it:
+# chrono reports an offset, and an offset is not a zone. Already in the tree
+# underneath chrono, so naming it here adds nothing to what is being trusted.
+iana-time-zone = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
