@@ -70,78 +70,38 @@ pub fn forget(account_id: &str) -> Result<()> {
 
 // ── The credential store itself ─────────────────────────────────────────────
 //
-// Behind a seam, because a test that ran the real thing would write into the
-// credential store of whoever ran it. One did, and left an account called
-// "acc-1" in a real Windows Credential Manager. Under test these go to a map
-// that lives and dies with the thread.
+// Through [`crate::service::secret_store`], which is the one way in and out of
+// it and carries the seam a test needs. This half used to own that seam and
+// the token half had none, so only one of the two could be asked what it does
+// when the store refuses.
 
-#[cfg(not(test))]
-mod backing {
-    use super::KEYRING_SERVICE;
-    use crate::common::{Error, Result};
+use crate::service::secret_store;
 
-    fn entry(account_id: &str) -> Result<keyring::Entry> {
-        keyring::Entry::new(KEYRING_SERVICE, account_id)
-            .map_err(|e| Error::Security(format!("Could not reach the credential store: {e}")))
-    }
-
-    pub fn write(account_id: &str, password: &str) -> Result<()> {
-        entry(account_id)?
-            .set_password(password)
-            // The error carries the reason and never the value.
-            .map_err(|e| Error::Security(format!("Could not save the password: {e}")))
-    }
-
-    pub fn read(account_id: &str) -> Result<Option<String>> {
-        match entry(account_id)?.get_password() {
-            Ok(password) => Ok(Some(password)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(Error::Security(format!(
-                "Could not read the saved password: {e}"
-            ))),
-        }
-    }
-
-    pub fn remove(account_id: &str) -> Result<()> {
-        match entry(account_id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(Error::Security(format!(
-                "Could not remove the saved password: {e}"
-            ))),
-        }
-    }
+fn write_secret(account_id: &str, password: &str) -> Result<()> {
+    secret_store::write(KEYRING_SERVICE, account_id, password)
+        .map_err(|e| saving_failed("save", account_id, &e))
 }
 
-#[cfg(test)]
-mod backing {
-    use super::Result;
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
-    thread_local! {
-        static ENTRIES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
-    }
-
-    pub fn write(account_id: &str, password: &str) -> Result<()> {
-        ENTRIES.with(|entries| {
-            entries
-                .borrow_mut()
-                .insert(account_id.to_string(), password.to_string())
-        });
-        Ok(())
-    }
-
-    pub fn read(account_id: &str) -> Result<Option<String>> {
-        Ok(ENTRIES.with(|entries| entries.borrow().get(account_id).cloned()))
-    }
-
-    pub fn remove(account_id: &str) -> Result<()> {
-        ENTRIES.with(|entries| entries.borrow_mut().remove(account_id));
-        Ok(())
-    }
+fn read_secret(account_id: &str) -> Result<Option<String>> {
+    secret_store::read(KEYRING_SERVICE, account_id)
+        .map_err(|e| saving_failed("read back", account_id, &e))
 }
 
-use backing::{read as read_secret, remove as remove_secret, write as write_secret};
+fn remove_secret(account_id: &str) -> Result<()> {
+    secret_store::remove(KEYRING_SERVICE, account_id)
+        .map_err(|e| saving_failed("remove", account_id, &e))
+}
+
+/// What went wrong, saying which password and never what it was.
+fn saving_failed(
+    what: &str,
+    account_id: &str,
+    cause: &crate::common::Error,
+) -> crate::common::Error {
+    crate::common::Error::Security(format!(
+        "Could not {what} the password for {account_id} in the Windows credential store: {cause}"
+    ))
+}
 
 #[cfg(test)]
 mod tests {

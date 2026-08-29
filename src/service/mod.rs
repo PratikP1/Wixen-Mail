@@ -25,6 +25,7 @@ pub mod pdf;
 pub mod protocols;
 pub mod safebrowsing;
 pub mod safety;
+pub mod secret_store;
 pub mod security;
 pub mod signed_mail;
 pub mod spellcheck;

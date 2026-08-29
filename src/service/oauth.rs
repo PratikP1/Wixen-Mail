@@ -12,6 +12,7 @@
 //! - **`OAuthService`**: static helpers and provider registry (backward compat).
 
 use crate::common::{Error, Result};
+use crate::service::secret_store;
 use oauth2::{
     AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenUrl,
     basic::BasicClient,
@@ -685,12 +686,8 @@ pub fn entries_for_account(account_id: &str) -> Vec<(String, String)> {
 pub fn forget_every_token_for(account_id: &str) -> Vec<String> {
     let mut left_behind = Vec::new();
     for (service, user) in entries_for_account(account_id) {
-        match keyring::Entry::new(&service, &user) {
-            Ok(entry) => match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => {}
-                Err(e) => left_behind.push(format!("{service}: {e}")),
-            },
-            Err(e) => left_behind.push(format!("{service}: {e}")),
+        if let Err(e) = secret_store::remove(&service, &user) {
+            left_behind.push(format!("{service}: {e}"));
         }
     }
     left_behind
@@ -769,8 +766,10 @@ impl AuthManager {
         )
         .await?;
 
-        // Step 5: Store in keychain
-        self.store_tokens(&tokens);
+        // Step 5: Keep them, and refuse the sign-in if they cannot be kept.
+        // Nothing reads the token set this returns to decide whether an
+        // account works; every use goes back to the store for it.
+        self.store_tokens(&tokens)?;
 
         Ok(tokens)
     }
@@ -805,7 +804,12 @@ impl AuthManager {
             )
             .await?;
 
-            self.store_tokens(&new_tokens);
+            // The same refusal as a first sign-in, and for the same reason:
+            // the next call reads the store, not this answer. Letting the
+            // caller have a token this one time and losing the refresh token
+            // that came with it is how an account works until the moment
+            // somebody is away from the machine.
+            self.store_tokens(&new_tokens)?;
             return Ok(new_tokens.access_token);
         }
 
@@ -856,42 +860,60 @@ impl AuthManager {
         Ok(new_tokens.access_token)
     }
 
-    /// Store tokens in the OS keychain.
-    fn store_tokens(&self, tokens: &OAuthTokenSet) {
-        let service = keyring_service(&self.provider);
-        match keyring::Entry::new(&service, &self.account_id) {
-            Ok(entry) => {
-                if let Ok(json) = serde_json::to_string(tokens)
-                    && let Err(e) = entry.set_password(&json)
-                {
-                    tracing::warn!("Failed to store token in keyring: {}", e);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to create keyring entry: {}", e);
-            }
-        }
+    /// Keep the tokens in the credential store.
+    ///
+    /// Returns what went wrong rather than writing it to a log nobody reads.
+    /// It used to do the latter, and the caller went on to report that signing
+    /// in had worked. Every use of a token reads it back out of this store, so
+    /// a write that failed leaves an account that cannot collect anything now
+    /// and has nothing to find at the next start either. Both halves of that
+    /// were invisible: the sign-in said it worked, and the failure was a line
+    /// in a log file.
+    fn store_tokens(&self, tokens: &OAuthTokenSet) -> Result<()> {
+        let json = serde_json::to_string(tokens)
+            .map_err(|e| not_kept(&format!("the sign-in could not be written down: {e}")))?;
+        secret_store::write(&keyring_service(&self.provider), &self.account_id, &json)
+            .map_err(|e| not_kept(&format!("{e}")))
     }
 
     /// Load tokens from the OS keychain.
     fn load_tokens(&self) -> Result<OAuthTokenSet> {
         let service = keyring_service(&self.provider);
-        let entry = keyring::Entry::new(&service, &self.account_id)
-            .map_err(|e| Error::Authentication(format!("Keyring entry error: {}", e)))?;
-        let json = entry
-            .get_password()
-            .map_err(|e| Error::Authentication(format!("No stored token found: {}", e)))?;
+        let json = secret_store::read(&service, &self.account_id)
+            .map_err(|e| Error::Authentication(format!("Stored token could not be read: {e}")))?
+            .ok_or_else(|| Error::Authentication("No stored token found".to_string()))?;
         serde_json::from_str(&json)
             .map_err(|e| Error::Authentication(format!("Invalid stored token: {}", e)))
     }
+}
 
-    /// Delete stored tokens from the OS keychain.
-    pub fn revoke_stored_tokens(&self) {
-        let service = keyring_service(&self.provider);
-        if let Ok(entry) = keyring::Entry::new(&service, &self.account_id) {
-            let _ = entry.delete_credential();
-        }
-    }
+/// What to say when signing in worked and could not be kept.
+///
+/// One sentence for one condition, next to the write that raises it, because
+/// two paths reach it: signing in through the browser, and a refresh replacing
+/// a token that has run out.
+///
+/// It says the sign-in is not kept rather than that signing in failed, because
+/// those have different answers, and it says signing in again will not help.
+/// That is the advice every other sign-in problem here ends with, and it is
+/// the one thing that cannot work while the store is what is refusing.
+pub fn sign_in_not_saved(cause: &str) -> String {
+    format!(
+        "The sign-in worked, but Windows would not keep it, so this account is not signed in. \
+         Nothing has been saved. Signing in again will not help until the Windows credential \
+         store can be written to; see When something goes wrong in Help. ({cause})"
+    )
+}
+
+/// The one way this file raises a security problem.
+///
+/// Every `Error::Security` out of here means the same thing, and a test reads
+/// this file to keep that true. It matters because the window reporting a
+/// sign-in decides which of two sentences to say by asking which kind of
+/// problem it was, and a second meaning arriving under the same kind would be
+/// reported as this one with nothing to notice it.
+fn not_kept(cause: &str) -> Error {
+    Error::Security(sign_in_not_saved(cause))
 }
 
 // ── Shared Helpers ──────────────────────────────────────────────────────────
@@ -1744,6 +1766,77 @@ mod tests {
         let parsed: OAuthTokenSet = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.access_token, "abc");
         assert_eq!(parsed.refresh_token, Some("def".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod when_the_credential_store_refuses {
+    use super::{AuthManager, OAuthTokenSet};
+    use crate::service::secret_store;
+
+    fn a_token_set() -> OAuthTokenSet {
+        OAuthTokenSet {
+            access_token: "ya29.an-access-token".to_string(),
+            refresh_token: Some("a-refresh-token".to_string()),
+            token_type: "Bearer".to_string(),
+            scope: None,
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn test_a_security_problem_out_of_this_file_only_ever_means_one_thing() {
+        // The account manager decides which of two sentences somebody hears by
+        // asking which kind of problem it was: a sign-in the provider refused,
+        // or one it allowed that Windows would not keep. That works only while
+        // `not_kept` is the one place here raising a security problem. A second
+        // meaning arriving under the same kind would be announced as this one
+        // with nothing to notice it, which is the shape of the defect this
+        // whole change is about: a rule written in a comment and nothing
+        // asking whether it still holds.
+        let shipped = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string("src/service/oauth.rs").expect("this file to be readable"),
+        );
+        assert!(
+            shipped.len() > 10_000,
+            "only {} characters were read, so the reading is broken",
+            shipped.len()
+        );
+
+        let raised: Vec<&str> = shipped
+            .lines()
+            .filter(|line| line.contains("Error::Security("))
+            .collect();
+        assert_eq!(
+            raised.len(),
+            1,
+            "a security problem is raised somewhere other than `not_kept`, so the \
+             account manager will announce it as a sign-in that could not be \
+             kept: {raised:?}"
+        );
+        assert!(
+            raised[0].contains("sign_in_not_saved"),
+            "the one place raising a security problem no longer says which one: {:?}",
+            raised[0]
+        );
+    }
+
+    #[test]
+    fn test_a_token_that_could_not_be_saved_is_reported_as_a_failure() {
+        // The defect this exists to stop: the write failed, nothing was
+        // stored, and signing in said it had worked. Every use of the token
+        // reads it back out of the store, so a sign-in that could not be
+        // saved is not a sign-in that half worked. It did not work at all.
+        secret_store::refuse("the credential store is not available");
+        let manager = AuthManager::new("acc-1", "gmail", "client-id", None);
+
+        let outcome = manager.store_tokens(&a_token_set());
+
+        secret_store::allow();
+        assert!(
+            outcome.is_err(),
+            "a token the store refused was reported as saved"
+        );
     }
 }
 

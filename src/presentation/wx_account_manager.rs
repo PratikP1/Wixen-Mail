@@ -412,6 +412,14 @@ fn run_account_manager_loop(
                                     Priority::High,
                                 );
                             }
+                            OAuthFlowResult::NotSaved(msg) => {
+                                said_and_shown(
+                                    status,
+                                    a11y,
+                                    &format!("Account added. {msg}"),
+                                    Priority::High,
+                                );
+                            }
                             OAuthFlowResult::Failed(msg) => {
                                 said_and_shown(
                                     status,
@@ -459,6 +467,14 @@ fn run_account_manager_loop(
                                             "Account updated. {}",
                                             no_sign_in_credentials(&provider)
                                         ),
+                                        Priority::High,
+                                    );
+                                }
+                                OAuthFlowResult::NotSaved(msg) => {
+                                    said_and_shown(
+                                        status,
+                                        a11y,
+                                        &format!("Account updated. {msg}"),
                                         Priority::High,
                                     );
                                 }
@@ -551,6 +567,14 @@ pub fn reauthorize_selected(
                     // braille-only setups learn this too.
                     let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
                 }
+                OAuthFlowResult::NotSaved(msg) => {
+                    said_and_shown(status, a11y, &msg, Priority::High);
+                    // The account is no more signed in than it was, so it is
+                    // signalled the same way as the other two refusals. Left
+                    // out, the earcons-only and braille-only setups would hear
+                    // nothing for the one outcome that looks most like success.
+                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
+                }
                 OAuthFlowResult::Failed(msg) => {
                     said_and_shown(
                         status,
@@ -594,19 +618,12 @@ pub fn delete_selected(
     if let Some(idx) = get_selected(list) {
         let rid = state.working[idx].id.clone();
         let name = state.working[idx].name.clone();
-        // Revoke keychain tokens
-        if state.working[idx].use_oauth
-            && let Some(prov) = OAuthService::detect_provider(&state.working[idx].email)
-            && let Some(creds) = oauth_credentials::credentials_for(&prov)
-        {
-            let mgr = AuthManager::new(
-                &rid,
-                &prov,
-                &creds.client_id,
-                creds.client_secret.as_deref(),
-            );
-            mgr.revoke_stored_tokens();
-        }
+        // The password and the tokens are removed by
+        // `MessageCache::delete_account`, when this list is written out. This
+        // used to do it here as well, for one provider rather than every one,
+        // and threw away whatever it could not remove. Two owners for one rule
+        // is how the two drifted apart in the first place, and the weaker of
+        // the two also hid the refusal the stronger one now raises.
         state.working.remove(idx);
         state.changed = true;
         if state.active_id.as_deref() == Some(&rid) {
@@ -1763,7 +1780,31 @@ enum OAuthFlowResult {
     /// every place that reports it can ask [`no_sign_in_credentials`] for the
     /// one sentence rather than wording its own.
     NoCreds(String),
+    /// The browser sign-in worked and Windows would not keep it.
+    ///
+    /// Apart from the rest, because it is the one outcome where the words
+    /// "authorization failed" are wrong: the provider said yes. Every use of
+    /// a token reads it back out of the credential store, so nothing was
+    /// gained, and the usual answer of signing in again cannot help while the
+    /// store is what is refusing. Carries the sentence
+    /// [`crate::service::oauth::sign_in_not_saved`] wrote, so the words have
+    /// one owner and both the account manager and the mail path say the same
+    /// thing.
+    NotSaved(String),
     Failed(String),
+}
+
+/// Which outcome a failed sign-in is.
+///
+/// `Error::Security` out of `service::oauth` means one thing, a sign-in that
+/// could not be kept, and that file's `not_kept` is the only place raising it.
+/// A test reads that file to keep it the only place, because this match is
+/// what decides which of two sentences somebody hears.
+fn how_the_sign_in_failed(error: &crate::common::Error) -> OAuthFlowResult {
+    match error {
+        crate::common::Error::Security(said) => OAuthFlowResult::NotSaved(said.clone()),
+        other => OAuthFlowResult::Failed(format!("{other}")),
+    }
 }
 
 /// Run the OAuth2 flow automatically: detect provider, load built-in
@@ -1817,7 +1858,7 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
             tracing::info!("OAuth authorized for {} ({})", account.email, provider);
             OAuthFlowResult::Authorized
         }
-        Err(e) => OAuthFlowResult::Failed(format!("{}", e)),
+        Err(e) => how_the_sign_in_failed(&e),
     }
 }
 
@@ -2470,10 +2511,23 @@ mod tests {
         let calls = function
             .matches("a11y.signal(FeedbackEvent::AccountNeedsAttention")
             .count();
+        // Counted rather than written down. This asked for exactly two, and a
+        // third outcome arrived: a sign-in the provider allowed and Windows
+        // would not keep. That one looks most like success and needed the
+        // earcon most, and a number typed in here would have gone red and been
+        // read as the number being stale. Every arm but Authorized leaves the
+        // account no more signed in than it was, so the count comes from the
+        // arms themselves and a fourth one has to signal too.
+        let arms = function.matches("OAuthFlowResult::").count();
+        let still_unauthorised = arms - function.matches("OAuthFlowResult::Authorized").count();
+        assert!(
+            still_unauthorised >= 2,
+            "only {still_unauthorised} outcomes were read, so the reading is broken"
+        );
         assert_eq!(
-            calls, 2,
-            "expected both OAuthFlowResult::NoCreds and OAuthFlowResult::Failed to \
-             signal AccountNeedsAttention, found {calls}"
+            calls, still_unauthorised,
+            "every outcome that leaves the account unauthorised must signal \
+             AccountNeedsAttention: {still_unauthorised} of them, {calls} signals"
         );
     }
 

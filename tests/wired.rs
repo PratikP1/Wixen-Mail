@@ -1629,10 +1629,11 @@ fn test_a_mail_watch_that_ends_is_reported_rather_than_only_logged() {
 /// that still exist, which no longer included that one. The token outlived the
 /// program.
 ///
-/// What this cannot see: whether either really deletes anything. The credential
-/// store is behind a seam for the accounts' own passwords and not for the
-/// tokens, so what is checked here is that one list is asked for in both
-/// places rather than written out twice.
+/// What this cannot see: whether either really deletes anything. What is
+/// checked here is that one list is asked for in both places rather than
+/// written out twice. Both halves now go through `service::secret_store`, so a
+/// refused removal is something a unit test can watch; this file still cannot,
+/// because an integration test links the library without its test seam.
 #[test]
 fn test_one_list_says_which_secrets_belong_to_an_account() {
     let sweep = fs::read_to_string("src/application/forget.rs").expect("the erase-all sweep");

@@ -158,87 +158,14 @@ pub mod sign_in {
         backing::remove(&service, KEYRING_PASSWORD)
     }
 
-    // ── The credential store itself ─────────────────────────────────────
+    // ── The credential store itself ────────────────────────
     //
-    // Behind a seam, for the reason `service::credentials` already gives: a
-    // test that ran the real thing once left an account in a real Windows
-    // Credential Manager. Under test these go to a map that lives and dies
-    // with the thread.
+    // Through `service::secret_store`, which is the one way in and out of it.
+    // This module had a copy of that plumbing, `service::credentials` had
+    // another, and the tokens had none at all, which is why nothing could ask
+    // the token half what it does when a write is refused.
 
-    #[cfg(not(test))]
-    mod backing {
-        use crate::common::{Error, Result};
-
-        fn entry(service: &str, user: &str) -> Result<keyring::Entry> {
-            keyring::Entry::new(service, user)
-                .map_err(|e| Error::Security(format!("Could not reach the credential store: {e}")))
-        }
-
-        pub fn write(service: &str, user: &str, secret: &str) -> Result<()> {
-            entry(service, user)?
-                .set_password(secret)
-                // The error carries the reason and never the value.
-                .map_err(|e| Error::Security(format!("Could not save the calendar sign-in: {e}")))
-        }
-
-        pub fn read(service: &str, user: &str) -> Result<Option<String>> {
-            match entry(service, user)?.get_password() {
-                Ok(secret) => Ok(Some(secret)),
-                Err(keyring::Error::NoEntry) => Ok(None),
-                Err(e) => Err(Error::Security(format!(
-                    "Could not read the saved calendar sign-in: {e}"
-                ))),
-            }
-        }
-
-        pub fn remove(service: &str, user: &str) -> Result<()> {
-            match entry(service, user)?.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-                Err(e) => Err(Error::Security(format!(
-                    "Could not remove the saved calendar sign-in: {e}"
-                ))),
-            }
-        }
-    }
-
-    #[cfg(test)]
-    mod backing {
-        use crate::common::Result;
-        use std::cell::RefCell;
-        use std::collections::HashMap;
-
-        thread_local! {
-            static ENTRIES: RefCell<HashMap<(String, String), String>> =
-                RefCell::new(HashMap::new());
-        }
-
-        pub fn write(service: &str, user: &str, secret: &str) -> Result<()> {
-            ENTRIES.with(|entries| {
-                entries
-                    .borrow_mut()
-                    .insert((service.to_string(), user.to_string()), secret.to_string())
-            });
-            Ok(())
-        }
-
-        pub fn read(service: &str, user: &str) -> Result<Option<String>> {
-            Ok(ENTRIES.with(|entries| {
-                entries
-                    .borrow()
-                    .get(&(service.to_string(), user.to_string()))
-                    .cloned()
-            }))
-        }
-
-        pub fn remove(service: &str, user: &str) -> Result<()> {
-            ENTRIES.with(|entries| {
-                entries
-                    .borrow_mut()
-                    .remove(&(service.to_string(), user.to_string()))
-            });
-            Ok(())
-        }
-    }
+    use crate::service::secret_store as backing;
 }
 
 /// What an error names as the other end, where Google and Microsoft name

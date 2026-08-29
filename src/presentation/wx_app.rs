@@ -10188,13 +10188,19 @@ fn handle_account_mgr(
         // Said rather than swallowed. An account that looks saved and is not
         // is the case where somebody most needs to know, because they will
         // close the program believing it is set up.
+        //
+        // The reason is said, not filed. It used to end "The reason is in the
+        // log", which is a place somebody working by ear has no way to open
+        // and no reason to think of. Every error that reaches here is already
+        // written as a sentence for a person: a refused removal says which
+        // account and why, and a credential store that will not answer says
+        // that.
         if let Some(cache) = cache
             && let Err(why) = cache.replace_accounts(&new)
         {
             tracing::error!("The accounts could not be saved: {why}");
             let _ = a11y.announce(
-                "The accounts could not be saved, so they will not be here next time. \
-                 The reason is in the log.",
+                &format!("The accounts could not all be saved. {why}"),
                 crate::presentation::accessibility::announcements::Priority::High,
             );
         }

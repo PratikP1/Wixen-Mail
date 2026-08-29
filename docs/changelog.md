@@ -191,6 +191,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A browser sign-in that Windows would not save no longer says it worked.**
+  Signing in to Gmail or a Microsoft account opens a browser, and what comes
+  back is kept in the Windows credential store. If that store refused the
+  write, the refusal went into a log file and the account said "authorized".
+  Every use of a sign-in reads it back out of that store, so nothing was kept
+  and nothing worked: no mail arrived, and there was no sign-in to find at the
+  next start either. The only clue was an account that never collected
+  anything.
+
+  It now says so, and says the one thing that would otherwise be tried first
+  and cannot help: "The sign-in worked, but Windows would not keep it, so this
+  account is not signed in. Nothing has been saved. Signing in again will not
+  help until the Windows credential store can be written to." The same is true
+  when a sign-in that has run out is renewed, which happens by itself in the
+  background and used to lose the renewed sign-in in silence.
+
+- **An account is no longer removed when its password or sign-in cannot be.**
+  Removing an account removes its password and its sign-in tokens from the
+  Windows credential store. What would not come out was written to a log and
+  the account row was deleted anyway, and that row is the only thing that names
+  those entries: uninstalling works out what to erase by walking the accounts
+  that exist. So a sign-in with your whole mailbox, calendar, contacts and
+  tasks behind it stayed on the computer for good, with nothing left able to
+  name it or remove it.
+
+  Nothing is removed now unless all of it can be. The account stays where it
+  is, and you are told which part would not go and why, so the account is still
+  there to try again with. Other changes made in the same sitting are saved
+  either way; a refusal used to throw them away with it.
+
+- **The Account Manager says why the accounts could not be saved.** It used to
+  say the reason was in the log, which is a place somebody working by ear has
+  no way to open. The reason is read out and shown.
+
 - **Blocking a sender did nothing at all on a POP account.** The rule was
   written down, it appeared in the Rules Manager, it was switched on, and no
   mail was ever moved by it. The check worked out which folder each message

@@ -165,9 +165,13 @@ impl SecurityService {
     /// `Self::trusted_domains` above already explains is unsafe: every test
     /// in this suite shares one process.
     fn find_existing_key() -> Option<[u8; 32]> {
+        // Through `service::secret_store`, the one way in and out of the
+        // credential store, rather than opening an entry here. It is also the
+        // only reason a test can reach this branch at all: opening a real
+        // entry made this function untestable, which the paragraph above says.
         #[cfg(target_os = "windows")]
-        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_MASTER_KEY)
-            && let Ok(encoded) = entry.get_password()
+        if let Ok(Some(encoded)) =
+            crate::service::secret_store::read(KEYRING_SERVICE, KEYRING_MASTER_KEY)
             && let Some(key) = Self::decode_key(&encoded)
         {
             return Some(key);

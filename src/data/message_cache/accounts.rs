@@ -85,6 +85,11 @@ impl MessageCache {
     /// An account removed here has its mail and its password removed with it,
     /// through [`MessageCache::delete_account`], so nothing of it is left for
     /// the uninstall to miss.
+    ///
+    /// The saving happens first. A removal can be refused, for the reason
+    /// [`MessageCache::delete_account`] gives, and doing the removals first
+    /// meant one account whose secrets would not go threw away every other
+    /// change made in the same sitting.
     pub fn replace_accounts(&self, accounts: &[crate::data::account::Account]) -> Result<()> {
         let gone: Vec<String> = self
             .load_accounts()?
@@ -93,11 +98,11 @@ impl MessageCache {
             .filter(|id| !accounts.iter().any(|account| &account.id == id))
             .collect();
 
-        for id in &gone {
-            self.delete_account(id)?;
-        }
         for account in accounts {
             self.save_account(account)?;
+        }
+        for id in &gone {
+            self.delete_account(id)?;
         }
         Ok(())
     }
@@ -235,24 +240,37 @@ impl MessageCache {
 
     /// Delete an account from the database
     pub fn delete_account(&self, account_id: &str) -> Result<()> {
-        // The password goes with it. Removing the account and leaving its
-        // password in the credential store would leave a secret behind with
-        // nothing left that names it.
-        if let Err(e) = credentials::forget(account_id) {
-            tracing::warn!("Removed {account_id} but its saved password is still stored: {e}");
-        }
-        // And the tokens, which used to be left. Erasing everything works out
-        // what to remove by walking the accounts that exist, so a token
-        // belonging to an account already removed was never named again and
-        // outlived the program itself.
+        // The password and the tokens go first, and nothing else happens if
+        // any of them will not go. This row is the only thing naming those
+        // entries: erasing everything at uninstall works out what to remove by
+        // walking the accounts that exist, so a secret belonging to a row
+        // already deleted is never named again and outlives the program
+        // itself. A refresh token is the whole mailbox, the calendar, the
+        // contacts and the tasks behind it.
         //
-        // Both lists come from `oauth::entries_for_account` now, so the set
-        // erased here and the set erased at uninstall cannot drift apart.
-        for left_behind in crate::service::oauth::forget_every_token_for(account_id) {
-            tracing::warn!(
-                "Removed {account_id} but one of its saved sign-in tokens is still \
-                 stored: {left_behind}"
-            );
+        // That rule was written here and nothing enforced it. What would not
+        // go was put in a log, the row was deleted anyway, and the delete
+        // reported success.
+        //
+        // Both lists come from `oauth::entries_for_account`, so the set erased
+        // here and the set erased at uninstall cannot drift apart.
+        let mut still_stored: Vec<String> = Vec::new();
+        if let Err(e) = credentials::forget(account_id) {
+            still_stored.push(format!("its saved password ({e})"));
+        }
+        still_stored.extend(
+            crate::service::oauth::forget_every_token_for(account_id)
+                .into_iter()
+                .map(|left_behind| format!("a saved sign-in token ({left_behind})")),
+        );
+        if !still_stored.is_empty() {
+            return Err(Error::Security(format!(
+                "This account has not been removed, because Windows would not let go of {}. \
+                 Removing it now would leave that on this computer with nothing left able to \
+                 name it. Nothing has been changed. Try again, and see When something goes \
+                 wrong in Help if it keeps happening.",
+                still_stored.join(", and ")
+            )));
         }
 
         // And so does the mail. This used to remove the account row alone,
@@ -499,6 +517,68 @@ mod tests {
 
         let old = stored.iter().find(|a| a.id == "old").expect("the old row");
         assert!(old.allow_deleting_here);
+    }
+
+    #[test]
+    fn test_an_account_whose_secrets_will_not_go_is_not_deleted() {
+        // The rule was written down where the removal happens and nothing
+        // enforced it: what could not be removed was put in a log, the row was
+        // deleted anyway, and the delete reported success. The row is the only
+        // thing naming those entries, so removing it leaves a refresh token
+        // with the whole mailbox behind it on the machine for good, and
+        // nothing left that could ever name it again.
+        let cache = a_cache("secrets_that_will_not_go");
+        let account = an_account("acc-stuck", "ada@example.com", "hunter2");
+        cache.save_account(&account).expect("the account to save");
+
+        crate::service::secret_store::refuse("the credential store is not available");
+        let outcome = cache.delete_account("acc-stuck");
+        crate::service::secret_store::allow();
+
+        assert!(
+            outcome.is_err(),
+            "an account whose secrets could not be removed reported a clean delete"
+        );
+        assert!(
+            cache
+                .load_accounts()
+                .expect("the accounts to load")
+                .iter()
+                .any(|stored| stored.id == "acc-stuck"),
+            "the row naming the secrets was removed, so nothing can name them again"
+        );
+    }
+
+    #[test]
+    fn test_one_account_that_will_not_go_does_not_throw_away_the_other_edits() {
+        // A refused removal is one account's problem. Doing the removals first
+        // meant the first refusal returned before anything was written, so a
+        // credential store that would not let go of one account silently threw
+        // away every other change made in the same sitting.
+        let cache = a_cache("one_stuck_account");
+        cache
+            .save_account(&an_account("acc-stuck", "ada@example.com", "hunter2"))
+            .expect("the account to save");
+        cache
+            .save_account(&an_account("acc-kept", "grace@example.com", "hunter2"))
+            .expect("the account to save");
+
+        let mut renamed = an_account("acc-kept", "grace@example.com", "hunter2");
+        renamed.name = "Renamed".to_string();
+        crate::service::secret_store::refuse_removals("that entry cannot be read");
+        let outcome = cache.replace_accounts(&[renamed]);
+        crate::service::secret_store::allow();
+
+        assert!(outcome.is_err(), "the refused removal was reported as done");
+        let stored = cache.load_accounts().expect("the accounts to load");
+        assert_eq!(
+            stored
+                .iter()
+                .find(|account| account.id == "acc-kept")
+                .map(|account| account.name.as_str()),
+            Some("Renamed"),
+            "an edit to a different account was thrown away by the refusal"
+        );
     }
 
     /// What the password column holds, straight out of the table.

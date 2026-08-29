@@ -459,9 +459,13 @@ pub fn add_the_chosen(
     can_be_filed_under(account_id)?;
     let row = row_for(account_id, Source::Server, &chosen.name, &chosen.address);
     // The sign-in first, so a calendar never exists with no way to reach it.
-    // If the row cannot be written the sign-in is taken back out again. The
-    // credential store under test cannot be made to fail, so that second half
-    // is reasoned rather than covered by a test.
+    // If the row cannot be written the sign-in is taken back out again.
+    //
+    // A refused store used to be reasoned about here rather than tested,
+    // because the seam under the credential store could not be made to fail.
+    // It can now, and a test watches this refusal: nothing about a store that
+    // will not answer should ever end in a calendar row somebody can see and
+    // nothing can sign in to.
     sign_in::store(&row.id, user_name, password)
         .map_err(|_| "The sign-in could not be saved on this computer. Try again.".to_string())?;
     if let Err(failure) = cache.save_calendar(&row) {
@@ -1404,6 +1408,37 @@ mod tests {
             Some("https://example.com/holidays.ics")
         );
         assert_eq!(sign_in::load(&added.id), None);
+    }
+
+    #[test]
+    fn test_a_calendar_whose_sign_in_will_not_be_kept_is_not_added_at_all() {
+        // The other order would leave a calendar in the sidebar that nothing
+        // can sign in to: it would be listed, every sync would fail on it, and
+        // the only way back would be to work out that the sign-in was never
+        // stored. This was reasoned about in a comment for as long as the
+        // credential store could not be made to refuse under test.
+        let cache = temp_cache("sign-in-refused");
+        let offer = Offer {
+            name: "Work".to_string(),
+            address: "https://example.com/cal/work/".to_string(),
+        };
+
+        crate::service::secret_store::refuse("the credential store is not available");
+        let outcome = add_the_chosen(&cache, "acc-1", &offer, "sam", "hunter2");
+        crate::service::secret_store::allow();
+
+        assert!(
+            outcome.is_err(),
+            "a calendar whose sign-in was refused was added anyway"
+        );
+        assert_eq!(
+            cache
+                .get_calendars_for_account("acc-1")
+                .expect("the rows")
+                .len(),
+            0,
+            "the calendar row was written for a sign-in that was never kept"
+        );
     }
 
     #[test]
