@@ -221,6 +221,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   there to try again with. Other changes made in the same sitting are saved
   either way; a refusal used to throw them away with it.
 
+- **When a key does nothing, the reason is no longer said as a progress note.**
+  Twenty-eight of these went to the status line: "Choose a message first", "Add
+  an account first", "No saved drafts", why a move was refused, why a copy
+  failed. Progress notes are read out below everything else and, more to the
+  point, a newer one replaces an older one that has not been spoken yet, so
+  during a sync the sentence explaining why nothing happened could be dropped
+  before you heard it. They now go out the way every other refusal does: on
+  their own, ahead of progress, and never replaced.
+
 - **Marking a message read or flagged says so when it could not be kept.**
   Both are applied to the row straight away and read out at once, so a
   keystroke never waits on the network. A refusal from your mail server was

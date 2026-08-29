@@ -2336,14 +2336,14 @@ pub fn new_pim_item(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
     };
     let (accounts, default_id) = {
         let s = lock_state(state);
         (s.accounts.clone(), s.default_account_id.clone())
     };
     let Some(destination) = new_item::destination(kind, &accounts, default_id.as_deref()) else {
-        return send_status(tx, rt, "Add an account before composing a message");
+        return send_refusal(tx, rt, "Add an account before composing a message");
     };
 
     let account_id = destination.account_id().to_string();
@@ -2444,13 +2444,13 @@ pub fn pim_command(
     let crate::application::pim_command::PimAction { command, kind, row } = action;
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "No storage is open");
     };
     let Some(row) = row else {
         // Said rather than done silently. A command that does nothing is
         // indistinguishable from a key that is broken, and the answer here is
         // useful: choose something first.
-        return send_status(tx, rt, &format!("Choose a {} first", kind.label()));
+        return send_refusal(tx, rt, &format!("Choose a {} first", kind.label()));
     };
     let Some((id, name, was_set)) = selected_item(state, kind, row) else {
         return send_status(tx, rt, &no_longer_there(kind, ""));
@@ -2554,7 +2554,19 @@ pub fn pim_command(
             // leave that window without choosing, which is not a failure and must
             // not be announced as one.
             PimCommand::Move => match move_item(&cache, state, frame, kind, &id, &name) {
-                Some(outcome) => outcome,
+                Some(Moved::Into(said)) => Ok(said),
+                Some(Moved::Failed(why)) => Err(why),
+                // Down the refusal channel rather than the status line. A
+                // status announcement carries the topic "status", and a newer
+                // one on a topic replaces the older in the queue, so a refusal
+                // sent that way is dropped by whatever the next sync writes
+                // there. It is also spoken at Low. The refusal is the answer
+                // to a key somebody just pressed and the one thing they cannot
+                // be left to miss, which is what `CommandRefused` is for.
+                Some(Moved::Refused(why)) => {
+                    let _ = tx.try_send(UIUpdate::CommandRefused(why));
+                    return;
+                }
                 None => return,
             },
         },
@@ -2648,7 +2660,7 @@ pub fn new_container(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
     };
     let (accounts, default_id) = {
         let s = lock_state(state);
@@ -3016,7 +3028,7 @@ pub fn copy_message_into(
     use crate::application::item_fields::{FieldName, Filled};
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No storage is open, so nothing can be saved");
+        return send_refusal(tx, rt, "No storage is open, so nothing can be saved");
     };
     // The account being read, or this computer. Copying a message into a task
     // is somebody keeping a note of it, and that does not need a provider.
@@ -3050,7 +3062,7 @@ pub fn copy_message_into(
                 tx,
             );
         }
-        Err(e) => send_status(tx, rt, &format!("Could not copy it: {e}")),
+        Err(e) => send_refusal(tx, rt, &format!("Could not copy it: {e}")),
     }
 }
 
@@ -3088,7 +3100,7 @@ pub fn open_draft(
     if drafts.is_empty() {
         // Said, rather than opening an empty list. An empty dialog is a thing
         // to get out of; a sentence is an answer.
-        send_status(tx, rt, "No saved drafts");
+        send_refusal(tx, rt, "No saved drafts");
         return None;
     }
 
@@ -4087,6 +4099,53 @@ mod tests {
             .flat_map(|branch| branch.places.iter())
             .map(|place| place.id.clone())
             .collect()
+    }
+
+    #[test]
+    fn test_a_refused_move_is_said_where_a_refusal_is_said() {
+        // What this cannot see: whether the sentence is heard, or whether the
+        // arm runs at all. It reads this file and the window's own text.
+        //
+        // A refused move used to go out as a status line. Status carries the
+        // topic "status", and pushing a newer announcement on a topic replaces
+        // the older one where it stands, so the sentence saying why nothing
+        // happened was dropped by whatever the next sync wrote there. It is
+        // also spoken at Low. `CommandRefused` is the channel written for
+        // exactly this: its own topic, at High, because it answers a key
+        // somebody just pressed.
+        let source =
+            std::fs::read_to_string("src/presentation/managers.rs").expect("this file to read");
+        let arm = source
+            .split_once("PimCommand::Move => match move_item(")
+            .expect("the Move arm")
+            .1;
+        let arm = &arm[..arm.find("\n            },").unwrap_or(arm.len())];
+        assert!(
+            arm.contains("Moved::Refused(why)"),
+            "the Move arm no longer tells a refusal apart from a move that happened"
+        );
+        assert!(
+            arm.contains("UIUpdate::CommandRefused(why)"),
+            "a refused move is announced by some route other than the refusal \
+             channel, where a later status line replaces it before it is spoken"
+        );
+        assert!(
+            !arm.contains("send_status"),
+            "a refused move is written to the status line again"
+        );
+
+        let window = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the window to be readable");
+        let handler = window
+            .split_once("UIUpdate::CommandRefused(why) => {")
+            .expect("the refusal channel to still be handled")
+            .1;
+        let handler = &handler[..handler.find("\n        }").unwrap_or(handler.len())];
+        assert!(
+            handler.contains("Priority::High") && handler.contains("\"refusal\""),
+            "the refusal channel is no longer its own topic at High, so sending \
+             a refusal down it no longer keeps it: {handler}"
+        );
     }
 
     #[test]
@@ -5419,7 +5478,7 @@ pub fn delete_container(
     use crate::application::new_item;
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "No storage is open");
     };
     let account_id = {
         let s = lock_state(state);
@@ -5508,7 +5567,7 @@ fn move_item(
     kind: crate::application::new_item::ItemKind,
     id: &str,
     name: &str,
-) -> Option<crate::common::Result<String>> {
+) -> Option<Moved> {
     use crate::application::destinations::Moving;
 
     let Offered {
@@ -5520,7 +5579,7 @@ fn move_item(
         // Nothing was asked and nothing was written. The sentence is the whole
         // answer, and it is a plain one rather than a failure: no window opened
         // and no row changed.
-        Offer::Said(sentence) => return Some(Ok(sentence)),
+        Offer::Said(sentence) => return Some(Moved::Refused(sentence)),
         Offer::Ask(branches) => branches,
     };
 
@@ -5538,10 +5597,30 @@ fn move_item(
         .map(|place| place.name.clone())
         .unwrap_or_else(|| into.clone());
 
-    Some(
-        file_under(cache, kind, id, &into, &account_id)
-            .map(|()| crate::application::pim_command::moved(name, &landed)),
-    )
+    Some(match file_under(cache, kind, id, &into, &account_id) {
+        Ok(()) => Moved::Into(crate::application::pim_command::moved(name, &landed)),
+        // The other route to the same refusals, taken when the chooser was
+        // bypassed. It arrives as a failed write rather than as a refusal
+        // because that is what it is here: something was asked for that
+        // `where_it_could_go` would not have offered.
+        Err(why) => Moved::Failed(why),
+    })
+}
+
+/// How a Move ended.
+///
+/// Three endings and not two, because a refusal and a move are said down
+/// different channels. A refusal is the answer to a key somebody just pressed;
+/// it went out as a status line, at Low and under a topic a newer status line
+/// replaces, so the sentence explaining why nothing happened could be dropped
+/// by the next thing a sync wrote there.
+enum Moved {
+    /// It happened. The sentence names where it went.
+    Into(String),
+    /// It did not happen and nothing was written. The sentence says why.
+    Refused(String),
+    /// The write itself failed.
+    Failed(crate::common::Error),
 }
 
 /// What the move command found before any window opened.

@@ -1902,7 +1902,7 @@ impl WxMailApp {
                                 &ui_tx,
                             );
                         } else {
-                            send_status(&ui_tx, &runtime, "No cache available for import");
+                            send_refusal(&ui_tx, &runtime, "No cache available for import");
                         }
                     }
                 }
@@ -1951,7 +1951,7 @@ impl WxMailApp {
                             }
                         }
                     } else {
-                        send_status(&ui_tx, &runtime, "No cache available for export");
+                        send_refusal(&ui_tx, &runtime, "No cache available for export");
                     }
                 }
             });
@@ -3325,7 +3325,7 @@ impl WxMailApp {
                                     .cloned()
                             };
                             let Some(message) = chosen else {
-                                send_status(&ui_tx, &runtime, "Choose a message first");
+                                send_refusal(&ui_tx, &runtime, "Choose a message first");
                                 return;
                             };
 
@@ -3773,7 +3773,7 @@ impl WxMailApp {
                                     send_status(&ui_tx, &runtime, "Getting older messages...");
                                     spawn_mail_sync(app, Some(folder));
                                 }
-                                None => send_status(&ui_tx, &runtime, "Choose a folder first"),
+                                None => send_refusal(&ui_tx, &runtime, "Choose a folder first"),
                             }
                         }
                         _ if id == ID_OPEN_DRAFT => {
@@ -3975,7 +3975,7 @@ impl WxMailApp {
                                     ServerChange::Deleted(asked),
                                 );
                             } else {
-                                send_status(&ui_tx, &runtime, "No message selected to delete");
+                                send_refusal(&ui_tx, &runtime, "No message selected to delete");
                             }
                         }
                         _ if id == ID_MARK_READ => {
@@ -4032,7 +4032,7 @@ impl WxMailApp {
                                     ServerChange::Flag(FlagChange::Read(new_read)),
                                 );
                             } else {
-                                send_status(&ui_tx, &runtime, "No message selected");
+                                send_refusal(&ui_tx, &runtime, "No message selected");
                             }
                         }
                         _ if id == ID_SEARCH => {
@@ -4117,7 +4117,7 @@ impl WxMailApp {
                             handle_account_mgr(&frame, &state, &message_cache, &a11y)
                         }
                         _ if id == ID_SAVE => {
-                            send_status(&ui_tx, &runtime, "No active draft to save")
+                            send_refusal(&ui_tx, &runtime, "No active draft to save")
                         }
                         _ if id == ID_SAVE_AS => {
                             send_status(&ui_tx, &runtime, "Save As: no message selected")
@@ -6467,14 +6467,14 @@ fn label_the_message(
     use crate::presentation::accessibility::announcements::Priority;
 
     let Some(cache) = cache.as_ref() else {
-        return send_status(tx, rt, "No storage is open");
+        return send_refusal(tx, rt, "No storage is open");
     };
     let (message_id, uid, subject, account_id) = {
         let s = lock_state(state);
         let Some(index) = s.selected_message_index else {
             // Said rather than done silently. A key that appears to do nothing
             // is indistinguishable from one that is broken.
-            return send_status(tx, rt, "Choose a message first");
+            return send_refusal(tx, rt, "Choose a message first");
         };
         let Some(message) = s.messages.get(index) else {
             return send_status(
@@ -6494,7 +6494,7 @@ fn label_the_message(
         )
     };
     let Some(account_id) = account_id else {
-        return send_status(tx, rt, "No account is open");
+        return send_refusal(tx, rt, "No account is open");
     };
 
     let labels = match labels_for(cache, &account_id) {
@@ -11662,7 +11662,7 @@ fn move_or_copy_message(
     use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No message store is available");
+        return send_refusal(tx, rt, "No message store is available");
     };
     let chosen = {
         let s = lock_state(state);
@@ -11671,10 +11671,10 @@ fn move_or_copy_message(
             .map(|message| (message.message_id, message.uid, message.subject.clone()))
     };
     let Some((row_id, uid, subject)) = chosen else {
-        return send_status(tx, rt, "Choose a message first");
+        return send_refusal(tx, rt, "Choose a message first");
     };
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_status(tx, rt, "Add an account first");
+        return send_refusal(tx, rt, "Add an account first");
     };
 
     // Where it is now, so that folder is not offered. Offering it is offering a
@@ -11878,10 +11878,10 @@ fn choose_folders(
     use crate::presentation::wx_folder_choice::{FolderRow, ask};
 
     let Some(cache) = cache.clone() else {
-        return send_status(tx, rt, "No message store is available");
+        return send_refusal(tx, rt, "No message store is available");
     };
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_status(tx, rt, "Add an account first");
+        return send_refusal(tx, rt, "Add an account first");
     };
 
     let stored = cache
@@ -11925,12 +11925,12 @@ fn choose_folders(
         return;
     };
     if changed.is_empty() {
-        return send_status(tx, rt, "Nothing changed");
+        return send_refusal(tx, rt, "Nothing changed");
     }
 
     for (path, sync) in &changed {
         if let Err(e) = cache.set_folder_choice(&account_id, path, *sync) {
-            return send_status(tx, rt, &format!("Could not record the choice: {e}"));
+            return send_refusal(tx, rt, &format!("Could not record the choice: {e}"));
         }
     }
     send_status(
@@ -12046,8 +12046,8 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 tx,
             );
         }
-        Ok(false) => send_status(tx, rt, "That message is no longer in the outbox"),
-        Err(e) => send_status(tx, rt, &format!("Could not cancel it: {e}")),
+        Ok(false) => send_refusal(tx, rt, "That message is no longer in the outbox"),
+        Err(e) => send_refusal(tx, rt, &format!("Could not cancel it: {e}")),
     }
     true
 }
@@ -17622,6 +17622,96 @@ mod what_the_status_line_says {
             );
         }
         wrong
+    }
+
+    #[test]
+    fn test_a_refusal_is_not_written_to_the_status_line() {
+        // `send_refusal` was written for this and its own doc comment says
+        // why: progress can be missed, and the reason a key you just pressed
+        // did nothing cannot. Twenty-eight calls went on using `send_status`
+        // anyway, which is what a rule written in a comment and nothing else
+        // gets you.
+        //
+        // It matters twice over. A status announcement is spoken at Low, so it
+        // queues behind everything a syncing mailbox is saying. And it carries
+        // the topic "status", where a newer announcement replaces the older
+        // one where it stands, so the sentence saying why nothing happened is
+        // dropped outright by whatever the next sync writes there.
+        //
+        // What this cannot see: whether either sentence is true, whether the
+        // call is reached, or a refusal worded so it does not open any of
+        // these ways. It reads the opening of a sentence, which is as much as
+        // reading source gives.
+        const REFUSALS: [&str; 6] = [
+            "\"No ",
+            "\"Nothing ",
+            "\"Choose ",
+            "\"Add ",
+            "\"That ",
+            "\"Could not ",
+        ];
+        // Progress that happens to open the same way. Each is the application
+        // saying something about itself, not the answer to a keystroke.
+        const PROGRESS: [&str; 2] = ["\"No new mail", "\"Nothing to send"];
+
+        let mut found = Vec::new();
+        let mut read = 0;
+        for path in every_rust_file_under("src") {
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            for (at, line) in crate::common::what_ships::what_ships(&text)
+                .lines()
+                .enumerate()
+            {
+                if !line.contains("send_status(") {
+                    continue;
+                }
+                read += 1;
+                if PROGRESS.iter().any(|allowed| line.contains(allowed)) {
+                    continue;
+                }
+                if REFUSALS.iter().any(|refusal| line.contains(refusal)) {
+                    found.push(format!("{path}:{}", at + 1));
+                }
+            }
+        }
+
+        assert!(
+            read > 40,
+            "only {read} status lines were read, so the reading is broken"
+        );
+        assert!(
+            found.is_empty(),
+            "these say why a command did nothing on the status channel, which is \
+             spoken at Low and where a newer status line replaces it before it is \
+             heard. send_refusal is the one for this:\n  {}",
+            found.join("\n  ")
+        );
+    }
+
+    /// Every `.rs` file under `root`, so the check above cannot miss a new one.
+    fn every_rust_file_under(root: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut to_read = vec![root.to_string()];
+        while let Some(folder) = to_read.pop() {
+            let listing = match std::fs::read_dir(&folder) {
+                Ok(listing) => listing,
+                Err(e) => panic!("{folder}: {e}"),
+            };
+            for entry in listing.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    to_read.push(path.to_string_lossy().into_owned());
+                } else if path.extension().is_some_and(|kind| kind == "rs") {
+                    found.push(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+        assert!(
+            found.len() > 50,
+            "only {} files were read, so the reading is broken",
+            found.len()
+        );
+        found
     }
 
     #[test]
