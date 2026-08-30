@@ -81,6 +81,8 @@ menu_ids!(
     ID_RENAME_FOLDER,
     ID_MOVE_FOLDER,
     ID_DELETE_FOLDER,
+    ID_MOVE_ACCOUNT_UP,
+    ID_MOVE_ACCOUNT_DOWN,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3264,6 +3266,20 @@ impl WxMailApp {
                                 &frame,
                             );
                         }
+                        _ if id == ID_MOVE_ACCOUNT_UP || id == ID_MOVE_ACCOUNT_DOWN => {
+                            move_the_chosen_account(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                match id == ID_MOVE_ACCOUNT_UP {
+                                    true => crate::application::account_order::Move::Up,
+                                    false => crate::application::account_order::Move::Down,
+                                },
+                            );
+                        }
                         _ if id == ID_MOVE_FOLDER => {
                             move_the_chosen_folder(
                                 AppHandles {
@@ -5437,6 +5453,32 @@ impl WxMailApp {
                 "Delete Fol&der...",
                 "Take the chosen folder off the server, with everything in it",
             )
+            .append_separator()
+            // D-14, and both need a menu item rather than only a chord: on
+            // Windows a shortcut with no menu item behind it is not a shortcut
+            // at all, which is what the comment above the accelerator table
+            // records happening once already.
+            //
+            // On Action rather than under File, because they act on the row
+            // the cursor is on. Alt+Shift+Up and Alt+Shift+Down are the keys
+            // asked for by name; `Alt+Shift+R` is the only other Alt+Shift
+            // binding here, so nothing inside this program collides, and
+            // `tests/wired.rs` checks that in all three directions.
+            //
+            // Bare Alt+Shift is the Windows keyboard-layout hotkey. Nothing in
+            // this program can suppress that, so it is written down in
+            // docs/KEYBOARD_SHORTCUTS.md where somebody will look when their
+            // layout changes, rather than papered over here.
+            .append_item(
+                ID_MOVE_ACCOUNT_UP,
+                "Move Account &Up\tAlt+Shift+Up",
+                "Move the chosen account one place up the list",
+            )
+            .append_item(
+                ID_MOVE_ACCOUNT_DOWN,
+                "Move Account Do&wn\tAlt+Shift+Down",
+                "Move the chosen account one place down the list",
+            )
             .build();
 
         let message = Menu::builder()
@@ -7521,6 +7563,60 @@ const NOT_A_FOLDER: &str =
     "That is a saved search rather than a folder, so there is nothing on the server to ask for.";
 
 /// Say that a command did not run, out loud as well as on the status bar.
+/// Move the account the cursor is on one place up or down the list.
+///
+/// D-14. Where somebody's accounts sit is their own preference about their own
+/// list, so this writes to this computer and to nothing else. There is no
+/// network call here and there is no protocol that would take one: `Moved`
+/// gives back an order and a sentence, and everything below writes the order
+/// down and says the sentence.
+///
+/// Every account's place is written, not only the two that swapped. Leaving the
+/// rest unwritten would give a list half ordered by choice and half by arrival,
+/// which reorders itself the next time an account is added.
+fn move_the_chosen_account(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    direction: crate::application::account_order::Move,
+) {
+    use crate::application::account_order::moved;
+
+    let AppHandles { state, tx, .. } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let on_row = lock_state(state).selected_folder.clone();
+    let Some(folder_tree::WhichRow::Account(which)) = on_row else {
+        return refuse_a_command(
+            tx,
+            "Choose an account first. Move Account Up and Move Account Down \
+             act on the account branch the cursor is on.",
+        );
+    };
+    let Ok(accounts) = cache.load_accounts() else {
+        return refuse_a_command(tx, "The accounts could not be read from this computer.");
+    };
+    let in_order: Vec<(String, String)> = accounts
+        .iter()
+        .map(|account| (account.id.clone(), account.display_name()))
+        .collect();
+
+    let after = moved(&in_order, &which, direction);
+    if !after.moved {
+        // Nothing moved, and that is said rather than left silent: a key that
+        // does nothing and says nothing reads as a key that was not received.
+        let _ = tx.try_send(UIUpdate::CommandAnswered(after.say));
+        return;
+    }
+    for (at, id) in after.order.iter().enumerate() {
+        if let Err(why) = cache.set_account_order(id, at as i64) {
+            tracing::warn!("Where the accounts sit could not be saved: {why}");
+            return refuse_a_command(tx, "Where the accounts sit could not be saved.");
+        }
+    }
+    let _ = tx.try_send(UIUpdate::CommandAnswered(after.say));
+}
+
 fn refuse_a_command(tx: &Sender<UIUpdate>, why: &str) {
     let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
 }

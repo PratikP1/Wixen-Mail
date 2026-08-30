@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can put your accounts in the order you want them.** Move the cursor onto
+  an account, then Action, Move Account Up or Move Account Down, or press
+  Alt+Shift+Up or Alt+Shift+Down. It says the account's name and where it now
+  sits, as in "Work, 2 of 3". Moving the first account up says "Work is already
+  first of 3" rather than doing nothing quietly, because a key that does nothing
+  and says nothing reads as a key that was not received.
+
+  The order stays after you close the program. Accounts you have never moved
+  keep the order they were added in, so upgrading does not shuffle your list,
+  and an account added later goes to the end rather than the top.
+
+  **Nothing about this reaches a mail server.** The order of your accounts is a
+  fact about your own list, no mail protocol has any notion of it, and a check
+  in the test suite fails if any code on that path so much as names the layer
+  that opens a connection.
+
+  **A warning about Alt+Shift, which is not ours to fix.** Alt and Shift pressed
+  together, with nothing else, is the Windows shortcut for switching keyboard
+  layout. If you have more than one layout installed, letting go of the two
+  modifier keys after the arrow can switch your layout as well as moving the
+  account. Nothing in Wixen Mail can prevent that. Two ways round it, and how to
+  change the Windows key, are in `docs/KEYBOARD_SHORTCUTS.md`.
+
+  Known limit, said here rather than found later: the folder tree draws one
+  account's branch at a time, so today the new order shows in the account list
+  rather than in the sidebar. Drawing every account at once is waiting on the
+  shared local folders work, for the reason the previous entry about the folder
+  tree gives.
+
 - **A folder or account that holds others tells you what is unread inside it,
   and says which number is which.** A folder called `Archive` with three unread
   messages of its own and thirty-eight in the folders under it now reads

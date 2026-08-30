@@ -780,6 +780,29 @@ and it is not in the tab order while it is empty.
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
 | Refresh Folder | `F5` | Reload current folder |
+| Move Account Up | `Alt+Shift+Up` | Move the account the cursor is on one place up the list. Nothing is sent to any server. See the warning below |
+| Move Account Down | `Alt+Shift+Down` | Move the account the cursor is on one place down the list. Nothing is sent to any server. See the warning below |
+
+#### A warning about Alt+Shift
+
+Alt and Shift pressed together, with nothing else, is the Windows shortcut for
+switching to your next keyboard layout. If you have more than one layout
+installed, letting go of Alt and Shift after the arrow key can switch your
+layout as well as moving the account.
+
+Nothing in Wixen Mail can stop that. Windows sees the two modifier keys go down
+and come back up and acts on it, whatever any program does in between. So this
+is written here rather than described as fixed.
+
+Two ways round it if it happens to you:
+
+- Let go of the arrow key last. Release Alt and Shift while the arrow is still
+  held down, and Windows does not read it as a bare Alt+Shift.
+- Change the layout key in Windows. Settings, then Time & language, then
+  Typing, then Advanced keyboard settings, then Input language hot keys. You can
+  set it to Ctrl+Shift, to the grave accent key, or to nothing at all.
+
+If you have only one keyboard layout installed, none of this affects you.
 
 ### Contact Manager Dialog Accelerators
 

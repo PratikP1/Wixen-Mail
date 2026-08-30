@@ -2,6 +2,7 @@
 //!
 //! This layer contains the core business logic and management components.
 
+pub mod account_order;
 pub mod accounts;
 pub mod allowed;
 pub mod answering;

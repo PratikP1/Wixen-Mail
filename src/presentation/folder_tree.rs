@@ -1465,6 +1465,56 @@ mod tests {
     }
 
     #[test]
+    fn test_account_branches_come_out_in_the_order_the_accounts_were_given_in() {
+        // D-14's other half. The order is decided where the accounts are read,
+        // by `load_accounts`, which sorts on the stored ordinal and falls back
+        // to arrival order. This does not sort again: sorting here would be a
+        // second answer to one question, and there is no ordinal on a row to
+        // sort by. What it must do is keep the order it was handed.
+        let branches = |accounts: &[AccountInTheTree]| -> Vec<WhichRow> {
+            tree(
+                accounts,
+                &[
+                    folder("a", 1, "INBOX", None),
+                    folder("b", 2, "INBOX", None),
+                    folder("c", 3, "INBOX", None),
+                ],
+                &[],
+                &[],
+            )
+            .into_iter()
+            .filter(|row| matches!(row.identity, WhichRow::Account(_)))
+            .map(|row| row.identity)
+            .collect()
+        };
+        let named = |ids: [&str; 3]| -> Vec<WhichRow> {
+            ids.iter()
+                .map(|id| WhichRow::Account(id.to_string()))
+                .collect()
+        };
+
+        assert_eq!(
+            branches(&[
+                account("a", "Work"),
+                account("b", "Home"),
+                account("c", "Old")
+            ]),
+            named(["a", "b", "c"])
+        );
+        // The same three, handed over in a different order. Without this case
+        // the test above is satisfied by any body that happens to emit them
+        // alphabetically, which is what the first order is.
+        assert_eq!(
+            branches(&[
+                account("c", "Old"),
+                account("a", "Work"),
+                account("b", "Home")
+            ]),
+            named(["c", "a", "b"])
+        );
+    }
+
+    #[test]
     fn test_where_a_row_sits_names_every_row_above_it_and_itself_last() {
         let rows = tree(
             &[account("a", "Work")],

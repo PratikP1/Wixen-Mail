@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 321 records have arrived since and have not been through it.
+# 322 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9414,4 +9414,37 @@ before = """        ("directories", "src/presentation/wx_account_manager.rs"),""
 after = """        ("directories", "src/presentation/wx_settings.rs"),"""
 red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
+]
+
+[[guard]]
+# Moving an account never reaches a server.
+#
+# D-14 says where somebody's accounts sit is a fact about their own list, and
+# FOLDER-03 says the same of pinning a folder. No mail protocol has a notion of
+# either, so there is nothing to send and nowhere to send it, and a command that
+# quietly opened a connection to record a preference would be doing something
+# nobody asked for on a metered or a watched network.
+#
+# A source read rather than a behaviour test, and the reason is that the thing
+# being defended is an absence. A connection nobody opened leaves no trace for a
+# test to find, so there is no behaviour to assert; the only question that can be
+# asked is whether the code says so. It reads the shipping half of both files
+# with `what_ships`, and matches call syntax rather than bare words, because the
+# paragraphs explaining this rule name every one of the things it forbids.
+#
+# The break is the obvious way somebody would get this wrong: reach for the mail
+# layer from inside the command, as every other command on that menu does.
+#
+# Measured by hand on 2026-08-30 against the whole library: one test.
+#
+# One, and that is what it should be. `test_the_reading_can_see_such_a_call_when_there_is_one`
+# beside it is what says whether a run that reddens nothing means the file
+# stopped calling out or the check stopped reading.
+name = "moving an account never reaches a server"
+file = "src/presentation/wx_app.rs"
+before = """    let after = moved(&in_order, &which, direction);"""
+after = """    let _ = crate::service::protocols::imap::mailbox_name::encode(&which);
+    let after = moved(&in_order, &which, direction);"""
+red = [
+    "application::account_order::nothing_here_reaches_a_server::test_moving_an_account_makes_no_call_that_leaves_this_machine",
 ]

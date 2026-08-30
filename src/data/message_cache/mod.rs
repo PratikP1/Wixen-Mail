@@ -2184,6 +2184,12 @@ impl MessageCache {
         // somebody unable to sign in at all: an account this way round has no
         // password and cannot be given one.
         self.ensure_column_exists("accounts", "use_oauth", "INTEGER NOT NULL DEFAULT 0")?;
+        // Where an account sits in the list, D-14. Nullable and with no
+        // default, so a database written before this keeps every account in
+        // the order it was added until somebody moves one. A default of nought
+        // would give every existing account the same ordinal and lose the
+        // arrival order this has always had.
+        self.ensure_column_exists("accounts", "tree_order", "INTEGER")?;
         self.ensure_column_exists("accounts", "protocol", "TEXT NOT NULL DEFAULT 'imap'")?;
         self.ensure_column_exists("accounts", "pop_server", "TEXT NOT NULL DEFAULT ''")?;
         self.ensure_column_exists("accounts", "pop_port", "TEXT NOT NULL DEFAULT '995'")?;

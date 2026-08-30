@@ -119,7 +119,7 @@ impl MessageCache {
                     pop_leave_on_server, pop_remove_after_days, sender_name,
                     allow_deleting_here, use_oauth
              FROM accounts
-             ORDER BY created_at",
+             ORDER BY tree_order IS NULL, tree_order, created_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
@@ -326,6 +326,29 @@ impl MessageCache {
     }
 }
 
+impl MessageCache {
+    /// Write down where one account sits in the list.
+    ///
+    /// D-14, and it never reaches a server. Where an account sits is one
+    /// person's preference about their own list, the same as which folders
+    /// they have pinned, and a mail server has no idea of either. Sending it
+    /// anywhere would be inventing a conversation nobody asked for.
+    ///
+    /// One account per call. The command that moves an account writes every
+    /// account's ordinal rather than only the two it swapped, because leaving
+    /// the rest unwritten would mean a list half ordered by choice and half by
+    /// arrival, which reorders itself the next time somebody adds an account.
+    pub fn set_account_order(&self, account_id: &str, order: i64) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE accounts SET tree_order = ?1 WHERE id = ?2",
+                params![order, account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to write where an account sits: {}", e)))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,6 +371,93 @@ mod tests {
         account.imap_server = "imap.example.com".to_string();
         account.smtp_server = "smtp.example.com".to_string();
         account
+    }
+
+    /// Three accounts saved one after another, so `created_at` really does
+    /// separate them.
+    ///
+    /// `save_account` stamps `created_at` from the clock, and three writes in
+    /// the same millisecond would tie. A tie would make the arrival-order test
+    /// below pass or fail on how fast the machine is, which is a test that
+    /// reports the machine rather than the code.
+    fn three_saved_in_order(cache: &MessageCache) {
+        for (at, (id, email)) in [
+            ("a", "one@example.com"),
+            ("b", "two@example.com"),
+            ("c", "three@example.com"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut account = an_account(id, email, "pw");
+            account.name = format!("Account {at}");
+            cache.save_account(&account).expect("an account to save");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    fn in_order(cache: &MessageCache) -> Vec<String> {
+        cache
+            .load_accounts()
+            .expect("the accounts to load")
+            .iter()
+            .map(|account| account.id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_accounts_nobody_has_moved_come_back_in_the_order_they_were_added() {
+        // A database written before an order could be stored has nothing in
+        // that column, and every account in it has to keep the place it has
+        // always had. Otherwise upgrading shuffles somebody's account list for
+        // no reason they can see.
+        let cache = a_cache("accounts-in-arrival-order");
+        three_saved_in_order(&cache);
+
+        assert_eq!(in_order(&cache), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_an_account_moved_down_stays_moved_after_the_cache_is_reopened() {
+        let home = TempHome::named("an-account-order-that-lasts", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        });
+        three_saved_in_order(&home);
+        // What the move command writes: every account's place, not only the
+        // two that swapped.
+        for (at, id) in ["b", "a", "c"].iter().enumerate() {
+            home.set_account_order(id, at as i64)
+                .expect("an order to save");
+        }
+        assert_eq!(in_order(&home), vec!["b", "a", "c"]);
+
+        let reopened = MessageCache::new(home.path().to_path_buf(), None).expect("to reopen");
+        assert_eq!(
+            in_order(&reopened),
+            vec!["b", "a", "c"],
+            "where somebody put their accounts has to survive closing the program"
+        );
+    }
+
+    #[test]
+    fn test_an_account_added_after_a_move_goes_to_the_end_rather_than_the_front() {
+        // The one mixed case that can really happen: some accounts placed by
+        // hand and a new one with no place at all. Sorting the unplaced one
+        // first would put a brand new account above the list somebody arranged.
+        let cache = a_cache("a-new-account-after-a-move");
+        three_saved_in_order(&cache);
+        for (at, id) in ["c", "b", "a"].iter().enumerate() {
+            cache
+                .set_account_order(id, at as i64)
+                .expect("an order to save");
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut newcomer = an_account("d", "four@example.com", "pw");
+        newcomer.name = "Newcomer".to_string();
+        cache.save_account(&newcomer).expect("an account to save");
+
+        assert_eq!(in_order(&cache), vec!["c", "b", "a", "d"]);
     }
 
     #[test]
