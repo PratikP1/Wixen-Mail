@@ -8806,7 +8806,6 @@ fn labels_for(
 /// rows are taken only inside the arm that somebody said yes to, so a question
 /// left unanswered, a window closed, or an answer of No all leave every message
 /// where it was.
-#[allow(clippy::too_many_arguments)]
 fn ask_about_the_folders_that_have_gone(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
