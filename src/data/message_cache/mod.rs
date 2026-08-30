@@ -2111,6 +2111,13 @@ impl MessageCache {
         // read as: nothing in it was ever recorded as unsubscribed, and a
         // default of 0 would read as "nobody wants any of these folders".
         self.ensure_column_exists("folders", "subscribed", "INTEGER NOT NULL DEFAULT 1")?;
+        // Which folder this one sits under, worked out once at sync from the
+        // separator the server sent for that mailbox. Nullable on purpose: a
+        // folder at the top level has no parent, and that is an answer rather
+        // than a missing one, so it takes no NOT NULL and no DEFAULT. Every
+        // folder in a database written before this reads as top level, which
+        // is where the tree showed all of them anyway.
+        self.ensure_column_exists("folders", "parent_id", "INTEGER")?;
         // Gmail's own identifier for a message, the same number under every
         // label it carries. Without it two rows for one message look like two
         // messages, which is what makes a Gmail account list everything twice.
@@ -3062,8 +3069,11 @@ impl MessageCache {
     /// into the statement as text and are checked first. `column_def` is not
     /// checked and cannot usefully be: it is a fragment of SQL by definition,
     /// so anything that let a real definition through would let anything
-    /// through. Every one of the three passed today is a literal in this file,
-    /// and a caller that changes that has to answer for the definition itself.
+    /// through. Every one passed today is a literal written in this file, and a
+    /// caller that changes that has to answer for the definition itself. The
+    /// sentence carries no count on purpose: it said "the three" for a long
+    /// while after there were eighty-odd, because nothing re-asks a number
+    /// written into a comment.
     fn ensure_column_exists(&self, table: &str, column: &str, column_def: &str) -> Result<()> {
         fn is_safe_identifier(value: &str) -> bool {
             !value.is_empty() && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')

@@ -20,6 +20,12 @@ impl MessageCache {
     /// elsewhere should not keep announcing its old name. The counts do not:
     /// they are written by the sync from what the server says, and blanking
     /// them here would empty the tree for as long as the sync takes.
+    ///
+    /// `parent_id` is left out of that list for the same reason and a sharper
+    /// one. It is worked out in a second pass, after every folder in the
+    /// account has an id, because a child can be listed before its parent. An
+    /// upsert that ran first would therefore always blank it, and every sync
+    /// would flatten the tree until the second pass caught up.
     pub fn save_folder(&self, folder: &CachedFolder) -> Result<i64> {
         self.conn
             .query_row(
@@ -139,6 +145,49 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to read the folder facts: {}", e)))?
             .collect::<std::result::Result<std::collections::HashMap<_, _>, _>>()
             .map_err(|e| Error::Other(format!("Failed to read the folder facts: {}", e)))?;
+
+        Ok(rows)
+    }
+
+    /// Record which folder this one sits under, or that it sits under none.
+    ///
+    /// Written once per sync, in a second pass after every folder in the
+    /// account has an id. `None` is a real answer and not a missing one: a
+    /// folder the server has moved to the top level has to stop claiming the
+    /// parent it used to have, and the only way back otherwise is deleting the
+    /// row.
+    pub fn set_folder_parent(&self, folder_id: i64, parent_id: Option<i64>) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE folders SET parent_id = ?1 WHERE id = ?2",
+                params![parent_id, folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record the folder's parent: {}", e)))?;
+        Ok(())
+    }
+
+    /// Which folder each of an account's folders sits under, by path.
+    ///
+    /// One query for the whole account, because the tree is built from all of
+    /// it at once and asking per folder would be one round trip per row on
+    /// every rebuild. A path present with `None` is a folder at the top level;
+    /// a path absent altogether is a folder this account does not have.
+    pub fn folder_parents(
+        &self,
+        account_id: &str,
+    ) -> Result<std::collections::HashMap<String, Option<i64>>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT path, parent_id FROM folders WHERE account_id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params![account_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the folder parents: {}", e)))?
+            .collect::<std::result::Result<std::collections::HashMap<_, _>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read the folder parents: {}", e)))?;
 
         Ok(rows)
     }
@@ -677,5 +726,164 @@ mod tests {
         let order = tree_of(&cache, &[("Aaa", "Custom"), ("Sent", " Sent ")]);
 
         assert_eq!(order, vec!["Sent", "Aaa"]);
+    }
+
+    // ── A folder that knows its parent ──────────────────────────────────────
+
+    #[test]
+    fn test_a_folder_saved_with_no_parent_reads_back_without_one() {
+        // A folder at the top level has no parent, and that is a real answer
+        // rather than a missing one. It is why the column is nullable.
+        let cache = fresh("folder_parent_none");
+
+        cache.save_folder(&inbox()).unwrap();
+
+        let parents = cache.folder_parents("acc").unwrap();
+        assert_eq!(
+            parents.get("INBOX"),
+            Some(&None),
+            "a folder with no parent has to be in the map, saying so"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_can_be_told_which_folder_it_sits_under() {
+        // The whole point of storing the nesting rather than working it out:
+        // the tree reads a parent and never splits a path.
+        let cache = fresh("folder_parent_set");
+        let mut archive = inbox();
+        archive.path = "Archive".to_string();
+        archive.name = "Archive".to_string();
+        archive.folder_type = "Custom".to_string();
+        let archive_id = cache.save_folder(&archive).unwrap();
+
+        let mut year = archive.clone();
+        year.path = "Archive/2026".to_string();
+        year.name = "2026".to_string();
+        let year_id = cache.save_folder(&year).unwrap();
+
+        cache.set_folder_parent(year_id, Some(archive_id)).unwrap();
+
+        let parents = cache.folder_parents("acc").unwrap();
+        assert_eq!(parents.get("Archive/2026"), Some(&Some(archive_id)));
+        assert_eq!(
+            parents.get("Archive"),
+            Some(&None),
+            "the parent itself is still at the top level"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_moved_to_the_top_level_stops_claiming_its_old_parent() {
+        // A server can move a folder out from under another one. Left as it
+        // was, the tree would go on showing it in a branch it is no longer in,
+        // and the only way back would be deleting the row.
+        let cache = fresh("folder_parent_cleared");
+        let mut archive = inbox();
+        archive.path = "Archive".to_string();
+        let archive_id = cache.save_folder(&archive).unwrap();
+
+        let mut year = inbox();
+        year.path = "Archive/2026".to_string();
+        let year_id = cache.save_folder(&year).unwrap();
+
+        cache.set_folder_parent(year_id, Some(archive_id)).unwrap();
+        cache.set_folder_parent(year_id, None).unwrap();
+
+        assert_eq!(
+            cache.folder_parents("acc").unwrap().get("Archive/2026"),
+            Some(&None),
+            "clearing a parent has to clear it, not leave the old one"
+        );
+    }
+
+    #[test]
+    fn test_the_parents_of_a_whole_account_are_read_in_one_go() {
+        // The tree builder asks once for the account rather than once per
+        // folder. Every folder of the account is in the answer, and no other
+        // account's is.
+        let cache = fresh("folder_parents_map");
+        let mut archive = inbox();
+        archive.path = "Archive".to_string();
+        let archive_id = cache.save_folder(&archive).unwrap();
+        for path in ["Archive/2026", "Archive/2025", "Sent"] {
+            let mut folder = inbox();
+            folder.path = path.to_string();
+            let id = cache.save_folder(&folder).unwrap();
+            if path.starts_with("Archive/") {
+                cache.set_folder_parent(id, Some(archive_id)).unwrap();
+            }
+        }
+
+        let mut theirs = inbox();
+        theirs.account_id = "other".to_string();
+        theirs.path = "Archive/2026".to_string();
+        cache.save_folder(&theirs).unwrap();
+
+        let parents = cache.folder_parents("acc").unwrap();
+
+        assert_eq!(parents.len(), 4, "every folder of the account, and no more");
+        assert_eq!(parents.get("Archive/2026"), Some(&Some(archive_id)));
+        assert_eq!(parents.get("Archive/2025"), Some(&Some(archive_id)));
+        assert_eq!(parents.get("Sent"), Some(&None));
+        assert_eq!(
+            cache.folder_parents("other").unwrap().get("Archive/2026"),
+            Some(&None),
+            "the other account's folder answers for itself"
+        );
+    }
+
+    #[test]
+    fn test_saving_a_folder_again_does_not_lose_the_parent_it_was_given() {
+        // The folder list is saved on every sync, and the parent is worked out
+        // in a second pass after every folder has an id. An upsert that blanked
+        // it would flatten the tree for as long as a sync takes, which is the
+        // same reason the counts are left out of that list.
+        let cache = fresh("folder_parent_survives_upsert");
+        let mut archive = inbox();
+        archive.path = "Archive".to_string();
+        let archive_id = cache.save_folder(&archive).unwrap();
+
+        let mut year = inbox();
+        year.path = "Archive/2026".to_string();
+        let year_id = cache.save_folder(&year).unwrap();
+        cache.set_folder_parent(year_id, Some(archive_id)).unwrap();
+
+        // The same path again, which is what the next sync does.
+        year.name = "2026".to_string();
+        let again = cache.save_folder(&year).unwrap();
+
+        assert_eq!(again, year_id, "the same row, not a new one");
+        assert_eq!(
+            cache.folder_parents("acc").unwrap().get("Archive/2026"),
+            Some(&Some(archive_id)),
+            "saving the folder again threw its parent away"
+        );
+    }
+
+    #[test]
+    fn test_a_database_written_before_folders_had_parents_still_opens() {
+        // Every installation from before this change has one of these. The
+        // column arrives on open and every folder already in it starts at the
+        // top level, which is what the tree showed before there was nesting.
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            cache.save_folder(&inbox()).expect("the folder to save");
+            cache
+                .conn
+                .execute("ALTER TABLE folders DROP COLUMN parent_id", [])
+                .expect("the column to come off, making this an older database");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+
+        assert_eq!(
+            reopened.folder_parents("acc").unwrap().get("INBOX"),
+            Some(&None),
+            "a folder written before there were parents has to read as having none"
+        );
     }
 }
