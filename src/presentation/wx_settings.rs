@@ -81,6 +81,8 @@ pub struct SettingsWidgets {
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
+    empty_reaches_subfolders: CheckBox,
+    mark_read_reaches_subfolders: CheckBox,
     hold_back_remote_pictures: CheckBox,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
@@ -226,6 +228,8 @@ pub fn build_settings_dialog(
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        empty_reaches_subfolders,
+        mark_read_reaches_subfolders,
         hold_back_remote_pictures,
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
@@ -362,6 +366,8 @@ pub fn build_settings_dialog(
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        empty_reaches_subfolders,
+        mark_read_reaches_subfolders,
         hold_back_remote_pictures,
         smooth_scrolling,
         keep_selected_message_in_view,
@@ -896,6 +902,8 @@ const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your sign
 /// The controls `build_reading_tab` lays out, one field per choice, named
 /// for what it actually controls rather than by position.
 struct ReadingTabControls {
+    empty_reaches_subfolders: CheckBox,
+    mark_read_reaches_subfolders: CheckBox,
     sort_order: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
@@ -1004,6 +1012,54 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
             .position(|option| *option == UnreadOnAParent::from_stored(&config.unread_on_a_parent))
             .unwrap_or(0) as u32,
     );
+
+    // D-34 and D-35, and they are two boxes rather than one on purpose: one of
+    // them destroys mail and the other loses somebody their place, and neither
+    // has an undo. A single box covering both would make anybody who wanted
+    // the careful reach on one of them take it on the other too.
+    //
+    // Both carry their label through `with_label` and their name through
+    // `set_accessible_name_and_description`. A box labelled only through
+    // `set_accessible_name` has a name under NVDA and none under Narrator,
+    // which `tests/checkbox_labels.rs` is the guard for.
+    //
+    // The descriptions say what the answer costs rather than repeating the
+    // label: the name already says what the box does, and what a screen reader
+    // user needs next is which way is the wider one.
+    let empty_reaches_subfolders = CheckBox::builder(panel)
+        .with_label("&Empty Folder also empties the folders inside it")
+        .build();
+    empty_reaches_subfolders.set_value(config.empty_reaches_subfolders);
+    set_accessible_name_and_description(
+        &empty_reaches_subfolders,
+        "Empty Folder also empties the folders inside it",
+        "On, so emptying a folder empties everything filed under it too. The confirmation always \
+         says how many folders and how many messages, and whether they move or go for good",
+    );
+    folders_sec.add(
+        &empty_reaches_subfolders,
+        0,
+        SizerFlag::Left | SizerFlag::All,
+        4,
+    );
+
+    let mark_read_reaches_subfolders = CheckBox::builder(panel)
+        .with_label("Mark Folder &Read also marks the folders inside it")
+        .build();
+    mark_read_reaches_subfolders.set_value(config.mark_read_reaches_subfolders);
+    set_accessible_name_and_description(
+        &mark_read_reaches_subfolders,
+        "Mark Folder Read also marks the folders inside it",
+        "On, so marking a folder read marks everything filed under it too. There is no undo, so \
+         turn this off to keep your place in folders you have not finished",
+    );
+    folders_sec.add(
+        &mark_read_reaches_subfolders,
+        0,
+        SizerFlag::Left | SizerFlag::All,
+        4,
+    );
+
     sizer.add_sizer(&folders_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Reading Behaviour
@@ -1245,6 +1301,8 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        empty_reaches_subfolders,
+        mark_read_reaches_subfolders,
         hold_back_remote_pictures,
     }
 }
@@ -2031,6 +2089,9 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .unwrap_or_else(|| UnreadOnAParent::from_stored(&cfg.unread_on_a_parent))
         .as_str()
         .to_string();
+    // D-34 and D-35, written back separately because they are two answers.
+    cfg.empty_reaches_subfolders = w.empty_reaches_subfolders.get_value();
+    cfg.mark_read_reaches_subfolders = w.mark_read_reaches_subfolders.get_value();
     cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
     cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {

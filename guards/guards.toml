@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 328 records have arrived since and have not been through it.
+# 330 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9645,4 +9645,71 @@ after = """    let _ = std::mem::size_of::<crate::service::protocols::imap::Imap
     };"""
 red = [
     "application::favourites::nothing_here_reaches_a_server::test_pinning_a_folder_makes_no_call_that_leaves_this_machine",
+]
+
+[[guard]]
+# D-33 and threat T-01-36. Emptying a folder is a great many deletes, so the
+# question "does this remove the message or move it to the Trash" is one the
+# emptying module could easily answer for itself. It must not: `deleting`
+# already carries the per-account "Let me delete mail on this computer"
+# permission, so routing through it means emptying is gated without a second
+# gate existing for somebody to forget, and it already knows a message in the
+# Trash has nowhere further to go.
+#
+# The break writes that rule again here, in the shape somebody reaching for it
+# would write: ours if the path is local, the server's otherwise. It compiles,
+# it keeps the same four-arm match underneath, and it drops both the permission
+# and the move-versus-remove rule, which is exactly what a second answer to this
+# question loses.
+#
+# Measured by hand on 2026-08-30 against the whole library: three tests.
+name = "emptying asks the one function that decides what deleting means"
+file = "src/application/emptying.rs"
+before = """    match local_folders::deleting(folder, protocol, Deleting::ToTrash, allowed) {
+        Some(LocalDelete::Refuse(why)) => WhatEmptyingDoes::Refuse(why),"""
+after = """    match match local_folders::is_local(folder) {
+        true => Some(LocalDelete::RemoveFromThisComputer),
+        false => None,
+    } {
+        Some(LocalDelete::Refuse(why)) => WhatEmptyingDoes::Refuse(why),"""
+red = [
+    "application::emptying::tests::test_a_refusal_carries_the_words_the_delete_gate_supplies",
+    "application::emptying::tests::test_emptying_the_trash_removes_and_emptying_the_inbox_moves",
+    "application::emptying::tests::test_the_permission_gates_emptying_here_and_says_nothing_about_a_folder_on_a_server",
+]
+
+[[guard]]
+# D-37 and threats T-01-39 and T-01-40. The number in front of the Empty
+# confirmation is what this computer is holding, counted at the moment the
+# question is asked. `folders.total_count` is the obvious thing to reach for
+# instead: it is one column, already read, and it is a different question with
+# a stale answer, written by the last sync. A confirmation quoting it would be
+# describing a folder as it was, and the direction that matters is understating
+# what is about to be destroyed.
+#
+# The break reads that column. It compiles and it returns a number, which is
+# what makes it worth guarding: nothing about the shape of the code says which
+# of the two questions was asked.
+#
+# Nine tests, and two of them are the reason this record is worth keeping.
+# `local_delete`'s report counts what was left behind through this same
+# function, so breaking the count breaks the sentence a stopped empty says, in
+# a module whose name has nothing to do with counting. Neither would have been
+# guessed from reading the call site.
+#
+# Measured by hand on 2026-08-30 against the whole library: nine tests.
+name = "the count in front of the confirmation comes from this computer and makes no round trip"
+file = "src/data/message_cache/messages.rs"
+before = """                    "SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND deleted = 0","""
+after = """                    "SELECT total_count FROM folders WHERE id = ?1","""
+red = [
+    "application::local_delete::tests::test_emptying_a_folder_here_moves_every_message_to_the_trash",
+    "application::local_delete::tests::test_emptying_with_the_permission_off_moves_nothing_and_says_which_setting",
+    "data::message_cache::messages::tests::test_a_folder_holding_nothing_counts_nothing_and_so_does_no_folder_at_all",
+    "data::message_cache::messages::tests::test_a_message_already_deleted_is_neither_counted_nor_walked_again",
+    "data::message_cache::messages::tests::test_emptying_the_same_folder_twice_finds_nothing_the_second_time",
+    "data::message_cache::messages::tests::test_the_count_in_front_of_the_confirmation_adds_up_every_folder_it_is_given",
+    "data::message_cache::messages::tests::test_the_count_is_the_messages_really_here_and_not_the_number_the_last_sync_wrote",
+    "data::message_cache::messages::tests::test_the_count_leaves_out_folders_it_was_not_given",
+    "data::message_cache::messages::tests::test_the_rows_an_empty_walks_are_the_rows_the_count_counted",
 ]

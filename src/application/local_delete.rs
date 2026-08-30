@@ -23,7 +23,7 @@
 //! only found out from another device.
 
 use crate::application::destinations::Deleting;
-use crate::application::how_far_it_got::HowFarItGot;
+use crate::application::how_far_it_got::{HowFarItGot, StoppedAt};
 use crate::application::local_folders::{self, LocalDelete};
 use crate::common::Result;
 use crate::common::types::FolderType;
@@ -114,8 +114,64 @@ pub fn empty_these_folders(
     account: &Account,
     folders: &[(i64, String)],
 ) -> HowFarItGot {
-    let _ = (cache, account, folders);
-    HowFarItGot::default()
+    let mut got = HowFarItGot::default();
+    for (index, (folder_id, name)) in folders.iter().enumerate() {
+        // Every row in the folder, not the listing somebody reads. The listing
+        // joins on the account, and the shared folders are stored under a
+        // reserved id, so a walk built on it finds none of the Trash and
+        // reports the folder emptied.
+        let rows = match cache.message_rows_in(*folder_id) {
+            Ok(rows) => rows,
+            Err(why) => {
+                got.stopped_at = Some(StoppedAt {
+                    name: name.clone(),
+                    because: format!("what is in it could not be read: {why}"),
+                });
+                got.left_behind = messages_left_in(cache, &folders[index..]);
+                return got;
+            }
+        };
+        for row in &rows {
+            // The single delete, per message, deciding nothing here. A refusal
+            // is not an error: `perform` hands back the words the gate gave it
+            // and nothing was written, so the walk stops on the sentence rather
+            // than on an error type.
+            let stop = match perform(cache, account, *row, Deleting::ToTrash) {
+                Err(why) => Some(why.to_string()),
+                Ok(None) => Some(
+                    "it is not a folder on this computer, so nothing here could empty it"
+                        .to_string(),
+                ),
+                Ok(Some(outcome)) if !outcome.message_left_the_folder => Some(outcome.said),
+                Ok(Some(_)) => None,
+            };
+            if let Some(because) = stop {
+                got.stopped_at = Some(StoppedAt {
+                    name: name.clone(),
+                    because,
+                });
+                got.left_behind = messages_left_in(cache, &folders[index..]);
+                return got;
+            }
+        }
+        // Named whether it held anything or not. A subfolder quietly left out
+        // of the sentence reads as a subfolder that was never reached, which
+        // is the one thing D-36's report exists to be exact about.
+        got.done.push(name.clone());
+    }
+    got
+}
+
+/// How many messages are still sitting in the folders not finished.
+///
+/// Counted rather than worked out from what was walked, because a refusal can
+/// come partway through a folder and the honest number is what is really still
+/// there. Zero on a failure to count, which understates rather than inventing
+/// a figure: the sentence then says where it stopped and leaves the number out
+/// altogether, which is better than a number nobody can account for.
+fn messages_left_in(cache: &MessageCache, folders: &[(i64, String)]) -> usize {
+    let ids: Vec<i64> = folders.iter().map(|(id, _)| *id).collect();
+    cache.messages_stored_in(&ids).unwrap_or(0)
 }
 
 /// The identifier of one of this account's local folders, making it if it is

@@ -1069,7 +1069,7 @@ impl MessageCache {
             let here: i64 = self
                 .conn
                 .query_row(
-                    "SELECT COUNT(*) FROM messages WHERE folder_id = ?1",
+                    "SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND deleted = 0",
                     params![folder_id],
                     |row| row.get(0),
                 )
@@ -1079,6 +1079,42 @@ impl MessageCache {
             counted = counted.saturating_add(here.max(0) as usize);
         }
         Ok(counted)
+    }
+
+    /// Every message row stored in this folder, with nothing filtered out.
+    ///
+    /// What emptying walks. Deliberately not `get_message_list`, which is the
+    /// listing somebody reads and carries two filters this must not have.
+    ///
+    /// It joins on the folder's account, and since D-18 the five shared
+    /// folders are stored under a reserved account id rather than under the
+    /// account looking at them, so a walk built on it finds none of the Trash
+    /// and reports the folder emptied.
+    ///
+    /// A message already flagged deleted is left out, which is the one filter
+    /// the listing has that this keeps. [`MessageCache::delete_message`] is a
+    /// soft delete matching IMAP's own flag, so a row that has been deleted is
+    /// still a row. Walking it again would re-delete something already gone and
+    /// count it in the report, and an emptied Trash would go on reading as full
+    /// for as long as the account existed.
+    ///
+    /// The same rule [`MessageCache::messages_stored_in`] counts by, so the
+    /// number in the confirmation and the rows the empty walks are one set. A
+    /// question saying three and a walk finding two is a report that disagrees
+    /// with the question somebody answered.
+    pub fn message_rows_in(&self, folder_id: i64) -> Result<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id FROM messages WHERE folder_id = ?1 AND deleted = 0 ORDER BY id",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare a folder's rows: {}", e)))?;
+        let rows = stmt
+            .query_map(params![folder_id], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Failed to read a folder's rows: {}", e)))?
+            .collect::<std::result::Result<Vec<i64>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect a folder's rows: {}", e)))?;
+        Ok(rows)
     }
 
     /// Mark every unread message in these folders read, and say how many
@@ -2211,6 +2247,89 @@ mod tests {
 
         assert_eq!(cache.mark_folder_read(&[]).unwrap(), 0);
         assert_eq!(still_unread_in(&cache, archive), 2);
+    }
+
+    #[test]
+    fn test_the_rows_an_empty_walks_are_the_rows_the_count_counted() {
+        // The question and the walk have to be about the same set. This is the
+        // ordinary case; the two below are the filters that made them differ.
+        let cache = fresh("rows_in_folder");
+        let archive = folder(&cache, "Archive");
+        cache.upsert_message(&incoming(archive, 1, "One")).unwrap();
+        cache.upsert_message(&incoming(archive, 2, "Two")).unwrap();
+
+        assert_eq!(cache.message_rows_in(archive).unwrap().len(), 2);
+        assert_eq!(
+            cache.message_rows_in(archive).unwrap().len(),
+            cache.messages_stored_in(&[archive]).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_a_folder_stored_under_the_reserved_account_id_still_gives_up_its_rows() {
+        // The five shared folders live under a reserved account id since D-18.
+        // The listing somebody reads joins on the account, so a walk built on
+        // it finds none of the Trash and reports the folder emptied.
+        let cache = fresh("rows_in_shared_folder");
+        let shared = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: crate::application::local_folders::THIS_COMPUTER.to_string(),
+                name: "Trash".to_string(),
+                path: format!("{}/Trash", crate::application::local_folders::LOCAL_PREFIX),
+                folder_type: "Trash".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+        cache.upsert_message(&incoming(shared, 1, "One")).unwrap();
+
+        assert_eq!(cache.message_rows_in(shared).unwrap().len(), 1);
+        assert!(
+            cache.get_message_list(shared, "acc").unwrap().is_empty(),
+            "the listing found it after all, so this test proves nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_message_already_deleted_is_neither_counted_nor_walked_again() {
+        // `delete_message` is a soft delete matching IMAP's own flag, so a
+        // deleted message is still a row. Counting it would leave an emptied
+        // Trash reading as full for ever and would offer to empty it again;
+        // walking it would re-delete something already gone and count it in
+        // the report. Paired with an ordinary message, because a body that
+        // returned nothing at all would satisfy the first half on its own.
+        let cache = fresh("rows_in_with_deleted");
+        let archive = folder(&cache, "Archive");
+        let ordinary = cache.upsert_message(&incoming(archive, 1, "One")).unwrap();
+        let going = cache.upsert_message(&incoming(archive, 2, "Two")).unwrap();
+
+        cache.delete_message(going).unwrap();
+
+        assert_eq!(cache.message_rows_in(archive).unwrap(), [ordinary]);
+        assert_eq!(cache.messages_stored_in(&[archive]).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_emptying_the_same_folder_twice_finds_nothing_the_second_time() {
+        // The whole point of the rule above, at the level somebody meets it:
+        // D-38 has to be able to say a folder is already empty, and a second
+        // Empty must not offer to remove messages that are already gone.
+        let cache = fresh("rows_in_after_emptying");
+        let archive = folder(&cache, "Archive");
+        for uid in 1..=3 {
+            cache
+                .upsert_message(&incoming(archive, uid, "Something"))
+                .unwrap();
+        }
+
+        assert_eq!(cache.messages_stored_in(&[archive]).unwrap(), 3);
+        for row in cache.message_rows_in(archive).unwrap() {
+            cache.delete_message(row).unwrap();
+        }
+
+        assert_eq!(cache.messages_stored_in(&[archive]).unwrap(), 0);
+        assert!(cache.message_rows_in(archive).unwrap().is_empty());
     }
 
     #[test]

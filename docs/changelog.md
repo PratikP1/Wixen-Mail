@@ -49,6 +49,46 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can empty a folder, and mark a whole folder read.** Move the cursor onto
+  a folder in the tree, then Action, Empty Folder, or Action, Mark Folder Read.
+
+  **Empty Folder does to every message exactly what deleting one of them does.**
+  So emptying your Inbox moves the mail to the Trash, where you can still get it
+  back, and emptying the Trash removes it. The confirmation says which of the
+  two is about to happen, so you never have to work it out from which folder you
+  are standing in. The switch that turns deleting off for an account turns this
+  off too.
+
+  **It asks first, and the question carries the whole cost:** the folder, how
+  many folders are inside it, how many messages are stored on this computer, and
+  whether they move or go for good. Enter answers No, so hearing the question
+  and pressing Enter out of habit does not empty anything.
+
+  The count is what this computer has stored, counted at the moment you are
+  asked. For a folder on a mail server there may be more on the server than has
+  been downloaded, and the question says so rather than presenting the number as
+  the whole of it. Nothing is fetched from the server to answer the question, so
+  it never waits on a slow connection.
+
+  **If it stops partway it tells you exactly where it got to**, which folders it
+  emptied, which one it stopped at and what was said about it, and how many
+  messages were not removed. Running it again finishes the job. Nothing is put
+  back, because a message put back on a mail server comes back as a new message
+  and everything that pointed at the old one stops working.
+
+  **On a folder that is already empty it says so and does not open a dialog.**
+  The menu item stays there and stays available, because an item that goes grey
+  gives you a reason only somebody looking at the screen can see.
+
+- **Two new settings decide how far those two commands reach**, on the Reading
+  page under "Folders and Message Lists". Both start switched on, so both
+  commands reach the folders filed inside the one you chose.
+
+  They are two settings rather than one because they cost different things.
+  Emptying destroys mail. Marking read loses your place in a folder you had not
+  finished. Neither can be undone, and you may well want one of them to stop at
+  the folder you picked and the other to go all the way down.
+
 - **You can keep your most-used folders at the top of the tree.** Move the cursor
   onto a folder, then Action, Pin Folder. A **Favourites** group appears above
   All Inboxes, holding what you pinned. Action, Unpin Folder takes one out

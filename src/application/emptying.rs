@@ -4,20 +4,27 @@
 //!
 //! Emptying a folder is a great many deletes, so the question "does this
 //! remove the message or move it to the Trash" is one this module could easily
-//! answer for itself. It must not. D-33 routes it through
-//! [`crate::application::local_folders::deleting`], the same function a single
-//! `Delete` asks, and takes whatever comes back.
+//! answer for itself. It must not. D-33 routes it through the two functions a
+//! single `Delete` already asks, and takes whatever comes back.
 //!
-//! That is not tidiness. `deleting` already carries the per-account "Let me
+//! [`crate::application::local_folders::deleting`] answers for a folder on this
+//! computer. That is not tidiness: it already carries the per-account "Let me
 //! delete mail on this computer" permission, so routing through it means
 //! emptying is gated by that permission without a second gate being written
 //! here for somebody to forget. It already knows that a message in the Trash
 //! has nowhere further to go, so emptying Trash removes and emptying the Inbox
 //! moves, and the confirmation can say which because it asked before it spoke.
-//! And it already answers `None` for a folder that is not on this computer,
-//! which is how the server route stays exactly the route it was.
 //!
-//! A second answer to that question written here would be a second thing to
+//! [`crate::application::destinations::where_a_deleted_message_goes`] answers
+//! for a folder on a server, and it has to be asked rather than assumed. A
+//! server folder has the same four outcomes: its Inbox moves to that server's
+//! trash, its trash removes, an account whose trash this program does not
+//! recognise is refused, and an account that has never been asked what folders
+//! it has is refused differently. Treating "it is on a server" as one answer
+//! meaning "remove for good" would empty an Inbox and say so in a confirmation
+//! that was describing a different command.
+//!
+//! A second answer to either question written here would be a second thing to
 //! keep in step with the first, on the one path in this program that destroys
 //! mail.
 //!

@@ -189,7 +189,7 @@ pub struct AppConfig {
     /// The `#[serde(default = "...")]` is not optional. Without it every
     /// settings file already on disk fails to parse, and a settings file that
     /// fails to parse takes every other setting with it.
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub empty_reaches_subfolders: bool,
     /// Whether Mark Folder Read reaches the folders filed under the one chosen.
     ///
@@ -197,7 +197,7 @@ pub struct AppConfig {
     /// above, for the reason written there: this one loses somebody their place
     /// in a folder they had not finished reading, which is a real cost and a
     /// different one from destroying mail.
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub mark_read_reaches_subfolders: bool,
     /// The language messages are spell-checked in.
     ///
@@ -514,8 +514,8 @@ impl Default for AppConfig {
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
             unread_on_a_parent: default_unread_on_a_parent(),
-            empty_reaches_subfolders: false,
-            mark_read_reaches_subfolders: false,
+            empty_reaches_subfolders: default_true(),
+            mark_read_reaches_subfolders: default_true(),
             hold_back_remote_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,

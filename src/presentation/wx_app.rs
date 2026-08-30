@@ -81,6 +81,8 @@ menu_ids!(
     ID_RENAME_FOLDER,
     ID_MOVE_FOLDER,
     ID_DELETE_FOLDER,
+    ID_EMPTY_FOLDER,
+    ID_MARK_FOLDER_READ,
     ID_MOVE_UP,
     ID_MOVE_DOWN,
     ID_PIN_FOLDER,
@@ -3315,6 +3317,29 @@ impl WxMailApp {
                                 id == ID_PIN_FOLDER,
                             );
                         }
+                        _ if id == ID_EMPTY_FOLDER => {
+                            empty_the_chosen_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                                &a11y,
+                            );
+                        }
+                        _ if id == ID_MARK_FOLDER_READ => {
+                            mark_the_chosen_folder_read(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &a11y,
+                            );
+                        }
                         _ if id == ID_MOVE_FOLDER => {
                             move_the_chosen_folder(
                                 AppHandles {
@@ -5488,6 +5513,28 @@ impl WxMailApp {
                 "Delete Fol&der...",
                 "Take the chosen folder off the server, with everything in it",
             )
+            // Empty and Mark Folder Read, D-33 to D-38. On Action because they
+            // act on whatever the folder tree cursor is on, and by name rather
+            // than by chord for the reason Delete Folder gives above: a key
+            // that empties a folder is a key somebody presses meaning
+            // something else.
+            //
+            // Both stay enabled on a folder that has nothing in them. D-38:
+            // the answer to "there is nothing to do" is a sentence saying so,
+            // not an item that has gone quiet. A menu item greyed out for a
+            // reason nobody can see is what twenty-eight status-line messages
+            // were removed for, and this is the third place in this phase that
+            // rule applies.
+            .append_item(
+                ID_EMPTY_FOLDER,
+                "Empt&y Folder...",
+                "Delete every message in the chosen folder, the same way deleting one does",
+            )
+            .append_item(
+                ID_MARK_FOLDER_READ,
+                "Mar&k Folder Read",
+                "Mark every message in the chosen folder as read",
+            )
             .append_separator()
             // D-14, and both need a menu item rather than only a chord: on
             // Windows a shortcut with no menu item behind it is not a shortcut
@@ -6783,6 +6830,14 @@ struct TheChosenFolder {
     inside: Option<String>,
     /// Every folder the account has, placed, so a walk can be made over them.
     placed: Vec<crate::application::folders_underneath::Placed>,
+    /// Each folder's path and what kind it is.
+    ///
+    /// What [`crate::application::destinations::where_a_deleted_message_goes`]
+    /// needs to find this account's trash, kept here because the folder rows
+    /// are read once and `Placed` carries no kind. Reading them a second time
+    /// where they are wanted would be two answers to what folders the account
+    /// has, taken a moment apart.
+    kinds: Vec<(String, crate::common::types::FolderType)>,
 }
 
 impl TheChosenFolder {
@@ -6835,6 +6890,15 @@ fn the_chosen_folder(
     let parents = cache
         .folder_parents(&account.id)
         .map_err(|_| "This account's folders could not be read from this computer.")?;
+    let kinds: Vec<(String, crate::common::types::FolderType)> = folders
+        .iter()
+        .map(|folder| {
+            (
+                folder.path.clone(),
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+            )
+        })
+        .collect();
     let placed: Vec<Placed> = folders
         .into_iter()
         .map(|folder| Placed {
@@ -6851,6 +6915,7 @@ fn the_chosen_folder(
         folder,
         inside,
         placed,
+        kinds,
     })
 }
 
@@ -7304,6 +7369,380 @@ fn spawn_the_folder_delete(
             UIUpdate::CommandRefused(said)
         });
     });
+}
+
+/// Delete every message in the chosen folder, the way one delete does.
+///
+/// D-33 to D-38. Nothing here decides what emptying means: `what_will_happen`
+/// asks the two functions that already decide what deleting means, and this
+/// reads the answer, says it in the confirmation, and carries it out through
+/// the same routes a single delete takes.
+///
+/// The order matters and is the same order the folder delete uses. The reach
+/// setting picks the folders, the count is taken across exactly those folders
+/// from what is stored here, the decision is made, a refusal is said without a
+/// dialog, an already-empty folder is said without a dialog, and only then is
+/// anything asked. No round trip happens anywhere above the dialog, which is
+/// D-37.
+fn empty_the_chosen_folder(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::emptying::{
+        Reach, WhatEmptyingDoes, already_empty_sentence, folders_to_act_on, how_many_subfolders,
+        the_question, what_emptying_did, what_will_happen,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let chosen = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+
+    // D-34. Read here at the point of use, which is what every other setting
+    // this file reads does.
+    let reach = Reach::of(
+        crate::data::config::ConfigManager::load_stored()
+            .map(|settings| settings.app_config().empty_reaches_subfolders)
+            .unwrap_or(true),
+    );
+    let acting_on = folders_to_act_on(&chosen.placed, chosen.folder.id, reach);
+    if acting_on.is_empty() {
+        return refuse_a_command(tx, WHICH_FOLDER);
+    }
+    let subfolders = how_many_subfolders(&acting_on);
+
+    // D-37, counted from what is stored, exactly, at the moment the question
+    // is asked. A failure to count is said rather than treated as nothing:
+    // nothing is the answer that takes the "already empty" path, and telling
+    // somebody a folder is empty because the count failed is the worst of the
+    // three things this could do.
+    let ids: Vec<i64> = acting_on.iter().map(|folder| folder.id).collect();
+    let Ok(stored_here) = cache.messages_stored_in(&ids) else {
+        return refuse_a_command(
+            tx,
+            "What is stored in this folder could not be counted, so nothing was emptied.",
+        );
+    };
+
+    let what = what_will_happen(
+        &chosen.folder.path,
+        chosen.account.protocol(),
+        chosen.account.allow_deleting_here,
+        chosen
+            .kinds
+            .iter()
+            .map(|(path, kind)| (path.as_str(), *kind)),
+    );
+    if let WhatEmptyingDoes::Refuse(why) = what {
+        // The gate's own words, said without a dialog. There is nothing to
+        // confirm: nothing is going to happen either way.
+        return refuse_a_command(tx, why);
+    }
+
+    let name = chosen.readable_name().to_string();
+
+    // D-38. Still on the menu, still enabled, and it says so rather than
+    // opening a dialog about nothing. Only where the count is the whole of it:
+    // an empty cache for a folder on a server says what has been downloaded,
+    // not what is there, and "already empty" would be a claim about a server
+    // nobody asked.
+    if stored_here == 0 && what.stored_here_is_all_of_it() {
+        let said = already_empty_sentence(&name, subfolders);
+        send_status(tx, rt, &said);
+        let _ = a11y.announce(&said, Priority::High);
+        return;
+    }
+
+    // Enter answers No, the same as it does on every other question in this
+    // program that destroys something. `delete_the_chosen_search`'s comment
+    // gives the reason and it applies at least as strongly here: hearing the
+    // question and reflexively pressing Enter must not empty a folder.
+    let asked = MessageDialog::builder(
+        frame,
+        &the_question(&name, &what, stored_here, subfolders),
+        "Empty Folder",
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build()
+    .show_modal();
+    if asked != ID_YES {
+        return;
+    }
+
+    // `is_local` is the one place that decides which of the two routes a
+    // folder takes, which is what the phase review settled: server folders
+    // keep the gate, folders on this computer do not.
+    if !crate::application::local_folders::is_local(&chosen.folder.path) {
+        send_status(tx, rt, &format!("Emptying {name}..."));
+        return spawn_the_folder_empty(
+            tx,
+            rt,
+            chosen.account,
+            EmptyingAFolder {
+                going: acting_on
+                    .into_iter()
+                    .map(|folder| (folder.path, folder.name))
+                    .collect(),
+                into: match &what {
+                    WhatEmptyingDoes::MoveToOnTheServer(trash) => Some(trash.clone()),
+                    _ => None,
+                },
+            },
+        );
+    }
+
+    let folders: Vec<(i64, String)> = acting_on
+        .into_iter()
+        .map(|folder| (folder.id, folder.name))
+        .collect();
+    let open_folder = folders.iter().map(|(id, _)| *id).collect::<Vec<i64>>();
+    let got =
+        crate::application::local_delete::empty_these_folders(cache, &chosen.account, &folders);
+    let said = what_emptying_did(&got);
+
+    // The folder is still there, so what is chosen is not cleared: emptying a
+    // folder is not deleting it, and taking somebody out of the folder they
+    // were standing in would lose them their place for nothing. What did
+    // change is the list inside it and the counts on the rows, so both are
+    // read back.
+    let open_now = folder_on_screen(&lock_state(state));
+    if open_now.is_some_and(|open| open_folder.contains(&open)) {
+        load_folder_messages(
+            &Some(cache.clone()),
+            open_now,
+            lock_state(state).active_account_id.clone(),
+            FOLDER_LIST_PAGE_SIZE,
+            tx,
+        );
+    }
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
+}
+
+/// One empty at a server, and the folders it walks.
+struct EmptyingAFolder {
+    /// Each folder to empty: its path as the server spells it, and its name.
+    going: Vec<(String, String)>,
+    /// The folder to move the messages into, or `None` to take them off the
+    /// server.
+    ///
+    /// Decided before anything was dialled, by the same function one delete
+    /// asks, and carried here rather than worked out again once a connection
+    /// is open. An answer worked out twice is an answer that can differ, and
+    /// the two readings here are "moved" and "gone for ever".
+    into: Option<String>,
+}
+
+/// Empty the folders one at a time, and say how far it got.
+///
+/// Stops at the first refusal. There is nothing to roll back to and putting
+/// messages back is not a rollback, which is
+/// [`crate::application::how_far_it_got`]'s reasoning and D-36's. Running it
+/// again finishes the job, because what went is gone and is not in the list the
+/// next run walks.
+fn spawn_the_folder_empty(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    emptying: EmptyingAFolder,
+) {
+    use crate::application::how_far_it_got::{HowFarItGot, StoppedAt};
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return say(UIUpdate::CommandRefused(
+                "This account has no usable IMAP port set, so nothing was emptied.".to_string(),
+            ));
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return say(UIUpdate::CommandRefused(
+                "This account could not be signed in to, so nothing was emptied.".to_string(),
+            ));
+        };
+
+        let controller = MailController::new();
+        if let Err(why) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return say(UIUpdate::CommandRefused(format!(
+                "The mail server could not be reached, so nothing was emptied. {why}"
+            )));
+        }
+
+        let mut got = HowFarItGot::default();
+        for (path, name) in &emptying.going {
+            let uids = match handle.block_on(controller.list_uids(path)) {
+                Ok(uids) => uids,
+                Err(why) => {
+                    got.stopped_at = Some(StoppedAt {
+                        name: name.clone(),
+                        because: format!("what is in it could not be read: {why}"),
+                    });
+                    break;
+                }
+            };
+            if uids.is_empty() {
+                // Named anyway. A folder with nothing in it was still walked,
+                // and leaving it out of the sentence reads as a folder that
+                // was never reached.
+                got.done.push(name.clone());
+                continue;
+            }
+            let outcome = match &emptying.into {
+                // One at a time, because a move is per message on the wire and
+                // a failure partway has to name how many are left.
+                Some(trash) => {
+                    let mut moved = 0usize;
+                    let mut failed = None;
+                    for uid in &uids {
+                        match handle.block_on(controller.move_message(path, *uid, trash)) {
+                            Ok(_) => moved += 1,
+                            Err(why) => {
+                                failed = Some((why.to_string(), uids.len() - moved));
+                                break;
+                            }
+                        }
+                    }
+                    failed
+                }
+                None => match handle.block_on(controller.remove_these(path, &uids)) {
+                    Ok(_) => None,
+                    Err(why) => Some((why.to_string(), uids.len())),
+                },
+            };
+            match outcome {
+                None => got.done.push(name.clone()),
+                Some((because, left)) => {
+                    got.stopped_at = Some(StoppedAt {
+                        name: name.clone(),
+                        because,
+                    });
+                    got.left_behind = left;
+                    break;
+                }
+            }
+        }
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        let said = crate::application::emptying::what_emptying_did(&got);
+        // The tree's counts have changed for every folder that was emptied, and
+        // the mail this computer has stored for them has not caught up: the
+        // next sync is what reconciles it. Reading the tree back here is what
+        // stops the rows announcing counts from before the empty.
+        if !got.done.is_empty()
+            && let Ok(cache) = AppPaths::resolve().and_then(|paths| {
+                crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)
+            })
+            && let Ok(updates) = folder_tree_updates(&cache, &account.id)
+        {
+            for update in updates {
+                say(update);
+            }
+        }
+        // A refusal is a refusal even where some of it worked, because the
+        // thing somebody asked for did not happen and the sentence says which
+        // part did.
+        say(match got.finished() {
+            true => UIUpdate::CommandAnswered(said),
+            false => UIUpdate::CommandRefused(said),
+        });
+    });
+}
+
+/// Mark every message in the chosen folder as read.
+///
+/// D-35's command. Its reach is its own setting, read here, so somebody who
+/// wants Empty to stop at the folder and Mark Folder Read to go all the way
+/// down can have both.
+///
+/// No confirmation. Nothing is destroyed and the count says what changed, which
+/// is the difference between this and the command above; a dialog in front of
+/// every one of these would be a dialog people learn to dismiss, and that habit
+/// is what makes the one in front of Empty worth having.
+fn mark_the_chosen_folder_read(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::emptying::{Reach, folders_to_act_on};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let chosen = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+
+    // D-35's own setting, not D-34's. The two are read in two places on
+    // purpose: one command quietly reading the other's answer is exactly the
+    // shape two boolean settings and two commands fall into, and nothing else
+    // would notice.
+    let reach = Reach::of(
+        crate::data::config::ConfigManager::load_stored()
+            .map(|settings| settings.app_config().mark_read_reaches_subfolders)
+            .unwrap_or(true),
+    );
+    let acting_on = folders_to_act_on(&chosen.placed, chosen.folder.id, reach);
+    if acting_on.is_empty() {
+        return refuse_a_command(tx, WHICH_FOLDER);
+    }
+
+    let ids: Vec<i64> = acting_on.iter().map(|folder| folder.id).collect();
+    let name = chosen.readable_name().to_string();
+    let changed = match cache.mark_folder_read(&ids) {
+        Ok(changed) => changed,
+        Err(why) => {
+            tracing::error!("A folder could not be marked read: {why}");
+            return refuse_a_command(
+                tx,
+                &format!("{name} could not be marked read, so nothing was changed."),
+            );
+        }
+    };
+
+    let said = match changed {
+        0 => format!("Nothing in {name} was unread."),
+        1 => format!("1 message in {name} is now read."),
+        many => format!("{many} messages in {name} are now read."),
+    };
+
+    let open_now = folder_on_screen(&lock_state(state));
+    if open_now.is_some_and(|open| ids.contains(&open)) {
+        load_folder_messages(
+            &Some(cache.clone()),
+            open_now,
+            lock_state(state).active_account_id.clone(),
+            FOLDER_LIST_PAGE_SIZE,
+            tx,
+        );
+    }
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
 }
 
 /// One move, and everything needed to work out the path it lands on.
