@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-02-PLAN.md, the conversation id
-last_updated: "2026-08-30T08:15:17.416Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-08-30T09:17:40.751Z"
 last_activity: 2026-08-30
-last_activity_desc: 01-02 done: messages.thread_id has a writer, a backfill and two indexes
-state_head: a7b0c092dbbdfcbdf7e5fddac950d0806c7ebb66
+last_activity_desc: "01-03 done: a folder knows its parent, split once from the separator the server sent"
+state_head: 7cbdea2004f4462d7ae4dd87c03585240d1e5396
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -69,9 +69,9 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-02 done: every message carries a conversation id, old rows included
+Last activity: 2026-08-30 — 01-03 done: nesting is stored rather than computed, and a local folder name may hold the separator
 
-Progress: [█▌░░░░░░░░] 2 of 13 plans in phase 01
+Progress: [██▎░░░░░░░] 3 of 13 plans in phase 01
 
 ## Performance Metrics
 
@@ -101,6 +101,7 @@ Progress: [█▌░░░░░░░░] 2 of 13 plans in phase 01
 |------|----------|-------|-------|
 | Phase 01 P01 | 3h 5m | 3 tasks | 8 files |
 | Phase 01 P02 | 1h 10m | 3 tasks | 9 files |
+| Phase 01 P03 | 1h 0m | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,8 @@ ahead:
 - [Phase 01]: D-39 confirmed at the gate by Pratik, conditional on no existing threading being lost. The condition was checked and holds: threading.rs is untouched, so the conversation view behind Enter is unchanged. thread_id is derived from the first identifier of the References chain, computed once when a message is stored.
 - [Phase 01]: The conversation id is written at one call site, inside upsert_message, not at both named entry paths. file_message_here is upsert_message plus one UPDATE, so a second call there would build the duplication as_stored's doc comment forbids. Any later plan told to write a derived value "in both places" should read the second place's body first.
 - [Phase 01]: A guard for an invariant of the form "exactly one place does this" breaks by ADDING a competing copy, not by deleting the one. Deleting proves only that the value is computed at all. guards.toml now holds one record of each shape for this column.
+- [Phase 01]: 01-03: CachedFolder gained no parent_id field; the phase's consumers (01-04, 01-05) both take the folder_parents map, and the field would have been 79 struct-literal edits with no reader
+- [Phase 01]: 01-03: is_a_name_that_can_be_used is asked of each part between separators, because safe_file_name reads a separator as a path, so asking it about the whole name would refuse the one character D-23 allows
 
 ### Pending Todos
 
@@ -203,8 +206,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T08:15:17.416Z
-Stopped at: Completed 01-02-PLAN.md, the conversation id
+Last session: 2026-08-30T09:17:40.736Z
+Stopped at: Completed 01-03-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
@@ -222,4 +225,4 @@ so a folder is made where it is named and nesting waits for 01-03 and 01-05.
 A fourth is a warning for every later plan here: `MAIL_TRANSPORTS`' imap floor
 must rise with every gated write added, because left at 8 with nine present it
 had already taken one reddening test off the `copy_message` gate guard.
-Resume file: .planning/phases/01-folders-and-conversations/01-02-PLAN.md
+Resume file: None
