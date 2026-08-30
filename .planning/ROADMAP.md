@@ -96,7 +96,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 01-10-PLAN.md — A folder the server stopped listing (D-27)
+- [x] 01-10-PLAN.md — A folder the server stopped listing (D-27)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
@@ -232,7 +232,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Folders and conversations | 9/13 | In Progress|  |
+| 1. Folders and conversations | 10/13 | In Progress|  |
 | 2. Search that says what it covers | 0/TBD | Not started | - |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |

@@ -160,3 +160,61 @@ check, which is the whole reason it went stale unnoticed.
 
 **Size:** small, once somebody decides whether that file dates its claims or
 refreshes them.
+
+---
+
+## A reminder alert still opens over somebody who is typing (found in 01-10)
+
+`raise_what_is_due` in `src/presentation/wx_app.rs` shares its one-at-a-time
+gate with the question about folders a server has stopped listing, so neither
+can open over the other. It does **not** share the second gate 01-10 added: it
+never asks `one_question_at_a_time::somebody_is_typing()`.
+
+So a reminder coming due while somebody is writing a message still opens a modal
+window over them. That is the failure the changelog's "An automatic draft save no
+longer opens the spelling check" entry is about, arriving from a different timer.
+
+**Why it is not fixed here.** D-27 is about the question this plan builds, and
+nothing has decided that a reminder should wait. It arguably should not: a
+reminder that waits until somebody stops typing is a reminder that can be an
+hour late, and being told at the time is the whole point of asking to be told.
+That is a decision about what a reminder is for, not a line of code, and it is
+Pratik's rather than an executor's.
+
+**How it stays visible.** This entry. The gate is one function call away
+(`one_question_at_a_time::somebody_is_typing()`), so if the decision goes the
+other way the change is small.
+
+**Size:** small to make it wait, medium to do something better, such as raising
+it without focus or holding it for a short while and then raising it anyway.
+
+---
+
+## Nothing exercises the window that asks about folders that have gone (found in 01-10)
+
+`ask_about_the_folders_that_have_gone` in `src/presentation/wx_app.rs` is the
+only part of 01-10 no test reaches. Everything it decides is in
+`presentation::one_question_at_a_time` and is tested there without a window:
+whether to raise, what the question says, what each answer means, what to record
+and what to say afterwards. What the function itself does is hold the turn, ask
+the two questions, build the dialog and carry out the answer.
+
+**Why it is not fixed here.** Reaching it needs a running application, an
+account, a folder tree and a modal window that somebody answers. wxWidgets
+supports one application per process, and `01-RESEARCH.md`'s Pitfall 7 records
+that one dialog-building test per file under `tests/` is the ceiling. A test
+that built the window could not answer it.
+
+**What it costs.** The two constraints are proved as decisions and not as
+behaviour of the running program. If the call site stopped passing
+`turn.is_none()`, or stopped asking the boxes for focus, every test here would
+stay green.
+
+**How it stays visible.** This entry, and the same listening pass the rest of
+this phase is waiting on. The narrower part, that the arguments really are
+computed from the gate and the controls, could be closed by giving the function
+its two answers as a small struct built by a tested function.
+
+**Size:** small for the argument-building half, large for anything that answers
+a real window.
+

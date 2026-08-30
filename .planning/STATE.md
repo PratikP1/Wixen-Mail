@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-09-PLAN.md
-last_updated: "2026-08-30T21:01:34.011Z"
+stopped_at: Completed 01-10-PLAN.md
+last_updated: "2026-08-30T23:55:00.000Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-09 done: a folder can be emptied and marked read from the keyboard, emptying routes through both functions that decide what deleting means so the Trash removes and the Inbox moves on this computer and at a server, and two settings say how far each reaches. FOLDER-01 complete"
+last_activity_desc: "01-10 done: a folder the server has stopped listing is marked, shown as such and never removed without asking. One modal question about every folder waiting, sharing its gate with the reminder alerts so neither opens over the other, and waiting while somebody is typing. An empty answer from a server is a failed check rather than a mass deletion. FOLDER-02 advanced"
 state_head: 463fc41231e94e136cee03cd4eb40d7934488ade
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -77,7 +77,7 @@ Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 1h 57m
 - Total execution time: 13h 38m
 
@@ -90,7 +90,8 @@ Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 **Recent Trend:**
 
 - Last 8 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
-  01-05 (1h 38m), 01-06 (1h 4m), 01-07 (1h 31m), 01-08 (2h 5m)
+  01-05 (1h 38m), 01-06 (1h 4m), 01-07 (1h 31m), 01-08 (2h 5m),
+  01-10 (2h 40m)
 
 - Trend: no trend, and the spread is the finding. The three fast plans used
   targeted test runs, 1 second against about 175, for every red and green step,
@@ -131,6 +132,15 @@ ahead:
 
 - The cached mail database is not encrypted, and the docs say so. Phase 7 decides whether that
   changes.
+
+- Two windows that must not open over each other share one gate rather than holding one each.
+  `application::due::OneAtATime` now gates the reminder alerts and the question about folders a
+  server has stopped listing, because a gate each is exactly what lets either open over the
+  other.
+
+- What a server last said about a folder is three answers, not two: it listed it, it stopped
+  listing it, and it stopped listing it and somebody said keep it. Without the third, answering
+  No and closing the window are the same thing.
 
 - A pin and a server subscription are two questions, so neither overrules the other. Pinning
   never writes a subscription and a subscription changing never adds or removes a pin. Recorded
@@ -250,8 +260,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T21:01:25.119Z
-Stopped at: Completed 01-09-PLAN.md
+Last session: 2026-08-30T23:55:00.000Z
+Stopped at: Completed 01-10-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
