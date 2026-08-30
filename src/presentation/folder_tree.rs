@@ -34,7 +34,7 @@
 
 use crate::application::folder_settings::UnreadOnAParent;
 use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
-use crate::application::local_folders::is_local;
+use crate::application::local_folders::is_this_computer;
 
 /// The group folders kept on this computer live in.
 ///
@@ -402,9 +402,16 @@ pub fn rows(
     )];
 
     for account in accounts {
+        // Whose it is, not where it is kept. Since D-18 a folder on this
+        // computer can belong to an account rather than to everybody: a POP
+        // account's Inbox is the one folder that stays per account, and a
+        // folder somebody makes under a POP account is theirs too (D-20).
+        // Filtering on the path here would take both away from the branch they
+        // belong to and file them under a heading shared with every other
+        // account.
         let mine: Vec<&FolderInTheTree> = folders
             .iter()
-            .filter(|folder| folder.account == account.id && !is_local(&folder.path))
+            .filter(|folder| folder.account == account.id)
             .collect();
         // An account holds no mail itself: every message it has is in one of
         // its folders. So its own count is nought and its total is the sum,
@@ -423,9 +430,13 @@ pub fn rows(
         out.extend(nested(&mine, 1, setting, collapsed));
     }
 
+    // The shared five, which belong to the reserved id rather than to any
+    // account. Read from the owner rather than from the path so that the group
+    // holds each of them once however many accounts there are, which is what
+    // D-18 is for.
     let local: Vec<&FolderInTheTree> = folders
         .iter()
-        .filter(|folder| is_local(&folder.path))
+        .filter(|folder| is_this_computer(&folder.account))
         .collect();
     if !local.is_empty() {
         out.push(word(TreeRow {
@@ -732,6 +743,8 @@ mod nothing_hangs_off_the_control {
 mod tests {
     use super::*;
 
+    use crate::application::local_folders::THIS_COMPUTER;
+
     fn account(id: &str, name: &str) -> AccountInTheTree {
         AccountInTheTree {
             id: id.to_string(),
@@ -785,7 +798,7 @@ mod tests {
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
-                folder("a", 2, "\u{1}Local/Drafts", None),
+                folder(THIS_COMPUTER, 2, "\u{1}Local/Drafts", None),
             ],
             &[LabelInTheTree {
                 id: "t1".to_string(),
@@ -1085,12 +1098,107 @@ mod tests {
     }
 
     #[test]
+    fn test_the_shared_folders_are_listed_once_however_many_accounts_there_are() {
+        // The ordinary case, and the whole point of D-18. Before it, each
+        // account contributed its own Drafts and the group listed the same
+        // folder once per account, which is the repetition the decision
+        // removes. The shared rows belong to the reserved id rather than to
+        // either account.
+        let rows = tree(
+            &[account("a", "Work"), account("b", "Home")],
+            &[
+                folder("a", 1, "INBOX", None),
+                folder("b", 2, "INBOX", None),
+                folder(THIS_COMPUTER, 3, "\u{1}Local/Drafts", None),
+                folder(THIS_COMPUTER, 4, "\u{1}Local/Trash", None),
+            ],
+            &[],
+            &[],
+        );
+
+        let drafts = rows.iter().filter(|row| row.name == "Drafts").count();
+
+        assert_eq!(drafts, 1, "the shared Drafts was listed more than once");
+        assert!(
+            rows.iter()
+                .any(|row| row.identity == WhichRow::OnThisComputer)
+        );
+    }
+
+    #[test]
+    fn test_a_folder_somebody_made_under_a_pop_account_stays_under_that_account() {
+        // D-20. A folder a person creates under a POP account is local, so it
+        // is not the path that decides where it shows: it is who owns it. It
+        // belongs to them rather than to everybody, and it goes beside their
+        // Inbox rather than into the shared group.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[
+                folder("a", 1, "\u{1}Local/Inbox", None),
+                folder("a", 2, "\u{1}Local/Receipts", None),
+            ],
+            &[],
+            &[],
+        );
+        let at = |identity: &WhichRow| rows.iter().position(|row| &row.identity == identity);
+
+        let branch = at(&WhichRow::Account("a".to_string())).expect("the account is there");
+        let receipts = at(&WhichRow::Folder {
+            account: "a".to_string(),
+            path: "\u{1}Local/Receipts".to_string(),
+        })
+        .expect("the folder they made is there");
+
+        assert!(
+            receipts > branch,
+            "a folder somebody made went into the shared group instead of under their account"
+        );
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row.identity == WhichRow::OnThisComputer),
+            "nothing here is shared, so there is no group to arrow into"
+        );
+    }
+
+    #[test]
+    fn test_a_pop_accounts_inbox_stays_under_its_account_although_it_is_local() {
+        // D-18's other half. The Inbox is the one folder that stays per
+        // account, and a POP account's is kept on this computer, so grouping
+        // by the path rather than by the owner would file somebody's incoming
+        // mail under a heading shared with every other account.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "\u{1}Local/Inbox", None)],
+            &[],
+            &[],
+        );
+        let branch = rows
+            .iter()
+            .position(|row| row.identity == WhichRow::Account("a".to_string()))
+            .expect("the account is there");
+        let inbox = rows
+            .iter()
+            .position(|row| {
+                row.identity
+                    == WhichRow::Folder {
+                        account: "a".to_string(),
+                        path: "\u{1}Local/Inbox".to_string(),
+                    }
+            })
+            .expect("its inbox is there");
+
+        assert!(inbox > branch, "a POP account's inbox left its own branch");
+        assert_eq!(rows[branch].folders, 1, "the branch counts its inbox");
+    }
+
+    #[test]
     fn test_a_folder_kept_on_this_computer_is_under_the_group_and_not_under_its_account() {
         let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
-                folder("a", 2, "\u{1}Local/Drafts", None),
+                folder(THIS_COMPUTER, 2, "\u{1}Local/Drafts", None),
             ],
             &[],
             &[],
@@ -1098,7 +1206,7 @@ mod tests {
         let at = |identity: &WhichRow| rows.iter().position(|row| &row.identity == identity);
         let group = at(&WhichRow::OnThisComputer).expect("the group is there");
         let drafts = at(&WhichRow::Folder {
-            account: "a".to_string(),
+            account: THIS_COMPUTER.to_string(),
             path: "\u{1}Local/Drafts".to_string(),
         })
         .expect("Drafts is there");
@@ -1156,7 +1264,7 @@ mod tests {
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
-                folder("a", 2, "\u{1}Local/Drafts", None),
+                folder(THIS_COMPUTER, 2, "\u{1}Local/Drafts", None),
             ],
             &[],
             &[],
@@ -1331,7 +1439,7 @@ mod tests {
 
     #[test]
     fn test_the_group_for_this_computer_counts_what_is_under_it_the_same_way() {
-        let mut drafts = folder("a", 9, "\u{1}Local/Drafts", None);
+        let mut drafts = folder(THIS_COMPUTER, 9, "\u{1}Local/Drafts", None);
         drafts.unread = 7;
         let rows = tree(&[account("a", "Work")], &[drafts], &[], &[]);
         assert_eq!(

@@ -6,6 +6,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **There is now one Sent, one Outbox, one Drafts, one Junk and one Trash,
+  shared by all your accounts.** They sit under "On this computer" in the
+  sidebar. Before, every account kept its own set, so the sidebar listed
+  "Drafts" once per account and a draft you saved could be in any of them.
+
+  Your Inbox is still per account, under that account's own name, and so is any
+  folder you make yourself under a POP account. An account that collects mail
+  over IMAP keeps its Sent, Drafts, Junk and Trash on its server, as it did
+  before, and shares only the Outbox: mail waiting to go out is queued on this
+  computer whichever account is sending it.
+
+  Nothing about what Delete means has changed. In a folder on this computer it
+  still moves the message to the Trash on this computer, and the switch that
+  turns deleting off still turns it off.
+
 ### Added
 
 - **You can put your accounts in the order you want them.** Move the cursor onto

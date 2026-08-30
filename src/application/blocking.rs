@@ -1573,8 +1573,8 @@ mod tests {
         // and a hand-written copy of it would be an ordinary path that this
         // test would then pass against for the wrong reason.
         let junk_here =
-            crate::application::local_folders::for_account(crate::common::types::Protocol::Pop3)
-                .iter()
+            crate::application::local_folders::used_by(crate::common::types::Protocol::Pop3)
+                .into_iter()
                 .find(|folder| folder.kind == FolderType::Spam)
                 .expect("a POP account keeps a junk folder on this computer")
                 .path();

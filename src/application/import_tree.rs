@@ -1112,7 +1112,7 @@ mod tests {
             let folder = lands_in(named, a_folder_of_mail().as_bytes());
 
             for protocol in [Protocol::Imap, Protocol::Pop3] {
-                for already_kept in crate::application::local_folders::for_account(protocol) {
+                for already_kept in crate::application::local_folders::used_by(protocol) {
                     assert_ne!(
                         folder,
                         already_kept.path(),

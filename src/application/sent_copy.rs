@@ -339,8 +339,13 @@ fn file_here(
     raw: &[u8],
 ) -> std::result::Result<(), String> {
     let parsed = crate::service::mime::parse(raw).map_err(|e| e.to_string())?;
+    // Asked which account the folder's row is under rather than assuming this
+    // one. Since D-18 the Sent folder on this computer is shared and its row is
+    // under the reserved id, so looking it up under the account finds nothing
+    // and the copy of a sent message is not filed at all.
+    let owner = crate::application::local_folders::stored_under(folder, &account.id);
     let row = cache
-        .get_folder(&account.id, folder)
+        .get_folder(owner, folder)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("there is no {folder} folder for this account"))?;
 
@@ -999,10 +1004,14 @@ mod tests {
         account.protocol = crate::common::types::Protocol::Pop3.as_str().to_string();
         let path = crate::application::local_folders::local_sent(account.protocol())
             .expect("a POP account files sent mail here");
+        // Under whoever owns it. Since D-18 the Sent folder on this computer is
+        // shared, so its row is under the reserved id and a fixture writing it
+        // under the account builds a row the application never writes.
+        let owner = crate::application::local_folders::stored_under(&path, "acct").to_string();
         cache
             .save_folder(&CachedFolder {
                 id: 0,
-                account_id: "acct".into(),
+                account_id: owner.clone(),
                 name: "Sent".into(),
                 path: path.clone(),
                 folder_type: "Sent".into(),
@@ -1019,8 +1028,8 @@ mod tests {
             server.given.borrow().is_empty(),
             "a POP account offered its sent mail to an IMAP server"
         );
-        let folder = cache.get_folder("acct", &path).unwrap().unwrap();
-        let listed = cache.get_message_list(folder.id, "acct").unwrap();
+        let folder = cache.get_folder(&owner, &path).unwrap().unwrap();
+        let listed = cache.get_message_list(folder.id, &owner).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].uid, 1, "a folder no server numbers counts up");
     }

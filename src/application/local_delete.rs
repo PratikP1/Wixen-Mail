@@ -95,21 +95,29 @@ pub fn perform(
 /// somebody deleting their first message should not be told to go and fix
 /// something they cannot see. Saving is an upsert keyed on the account and the
 /// path, so calling this when the row already exists returns the same one.
+///
+/// Which account it is keyed on is asked of `stored_under` rather than taken as
+/// this one. Since D-18 the Trash is shared, so its row is under the reserved
+/// id, and looking it up under the account instead finds nothing and makes a
+/// second Trash beside the shared one holding this account's deleted mail
+/// alone.
 fn folder_here(cache: &MessageCache, account: &Account, path: &str) -> Result<i64> {
+    let owner = local_folders::stored_under(path, &account.id).to_string();
+
     if let Some(existing) = cache
-        .get_folders_for_account(&account.id)?
+        .get_folders_for_account(&owner)?
         .into_iter()
         .find(|folder| folder.path == path)
     {
         return Ok(existing.id);
     }
 
-    let name = local_folders::for_account(account.protocol())
-        .iter()
+    let name = local_folders::used_by(account.protocol())
+        .into_iter()
         .find(|folder| folder.path() == path);
     let id = cache.save_folder(&CachedFolder {
         id: 0,
-        account_id: account.id.clone(),
+        account_id: owner,
         name: name.map_or("Trash", |folder| folder.name).to_string(),
         path: path.to_string(),
         folder_type: name
@@ -150,14 +158,19 @@ mod tests {
 
     /// The folders a POP account really gets, built the way the application
     /// builds them, so these tests exercise the rows it actually writes.
+    ///
+    /// Each under the account that owns it rather than all under this one:
+    /// since D-18 the five it shares live under the reserved id, and a fixture
+    /// that puts them under the account is a fixture no code path produces.
     fn its_folders(cache: &MessageCache, account: &Account) {
-        for folder in local_folders::for_account(account.protocol()) {
+        for folder in local_folders::used_by(account.protocol()) {
+            let path = folder.path();
             let id = cache
                 .save_folder(&CachedFolder {
                     id: 0,
-                    account_id: account.id.clone(),
+                    account_id: local_folders::stored_under(&path, &account.id).to_string(),
                     name: folder.name.to_string(),
-                    path: folder.path(),
+                    path: path.clone(),
                     folder_type: folder.kind.as_str().to_string(),
                     unread_count: 0,
                     total_count: 0,
@@ -317,8 +330,12 @@ mod tests {
             .expect("a message on this computer is this path's business");
 
         let path = format!("{LOCAL_PREFIX}/Trash");
+        // Looked for under whoever owns it. Since D-18 the Trash is shared, so
+        // its row is under the reserved id, and looking under the account is
+        // how the delete path itself used to fail to find it.
+        let owner = local_folders::stored_under(&path, &account.id).to_string();
         let made = cache
-            .get_folders_for_account(&account.id)
+            .get_folders_for_account(&owner)
             .expect("the folder list")
             .into_iter()
             .find(|folder| folder.path == path)
@@ -333,7 +350,7 @@ mod tests {
         );
         assert_eq!(
             cache
-                .folder_server_facts(&account.id)
+                .folder_server_facts(&owner)
                 .expect("the facts")
                 .get(&path),
             Some(&(false, true)),

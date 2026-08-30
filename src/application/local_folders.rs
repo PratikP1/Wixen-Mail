@@ -79,7 +79,7 @@ pub const ON_THIS_COMPUTER: &str = "On this computer";
 ///
 /// Nothing compares against this by writing the literal out. Ask
 /// [`is_this_computer`], which is the one place that decides.
-pub const THIS_COMPUTER: &str = "this-computer";
+pub const THIS_COMPUTER: &str = "\u{1}This computer";
 
 /// Whether an account id is the reserved one the shared folders are stored
 /// under.
@@ -87,8 +87,8 @@ pub const THIS_COMPUTER: &str = "this-computer";
 /// One function rather than a comparison at each site, so that the reserved id
 /// can never be half-recognised: a second spelling of this test is a place that
 /// treats the shared Trash as somebody's own.
-pub fn is_this_computer(_account_id: &str) -> bool {
-    false
+pub fn is_this_computer(account_id: &str) -> bool {
+    account_id == THIS_COMPUTER
 }
 
 /// One folder that lives here.
@@ -123,24 +123,24 @@ pub fn is_local(path: &str) -> bool {
 /// Drafts, Trash and Junk are on its server.
 pub const SHARED_BY_EVERY_ACCOUNT: [LocalFolder; 5] = [
     LocalFolder {
-        kind: FolderType::Inbox,
-        name: "Inbox",
+        kind: FolderType::Sent,
+        name: "Sent",
     },
     LocalFolder {
-        kind: FolderType::Inbox,
-        name: "Inbox",
+        kind: FolderType::Outbox,
+        name: "Outbox",
     },
     LocalFolder {
-        kind: FolderType::Inbox,
-        name: "Inbox",
+        kind: FolderType::Drafts,
+        name: "Drafts",
     },
     LocalFolder {
-        kind: FolderType::Inbox,
-        name: "Inbox",
+        kind: FolderType::Spam,
+        name: "Junk",
     },
     LocalFolder {
-        kind: FolderType::Inbox,
-        name: "Inbox",
+        kind: FolderType::Trash,
+        name: "Trash",
     },
 ];
 
@@ -187,7 +187,24 @@ pub fn for_account(protocol: Protocol) -> &'static [LocalFolder] {
 /// finds nothing and reads as "this account has no Trash", which is a different
 /// answer with a destructive branch behind it.
 pub fn used_by(protocol: Protocol) -> Vec<LocalFolder> {
-    for_account(protocol).to_vec()
+    let shared: Vec<LocalFolder> = match protocol {
+        // All five. POP3 has no server-side state beyond "still here", so
+        // there is nowhere else for any of them to be.
+        Protocol::Pop3 => SHARED_BY_EVERY_ACCOUNT.to_vec(),
+        // The queue and nothing else. Its Sent, Drafts, Junk and Trash are on
+        // its server, and a second copy here would be a second place for the
+        // same mail to be with nothing to say which is right.
+        Protocol::Imap => SHARED_BY_EVERY_ACCOUNT
+            .into_iter()
+            .filter(|folder| folder.kind == FolderType::Outbox)
+            .collect(),
+    };
+
+    for_account(protocol)
+        .iter()
+        .copied()
+        .chain(shared)
+        .collect()
 }
 
 /// The account id a folder on this computer is stored under.
@@ -198,8 +215,15 @@ pub fn used_by(protocol: Protocol) -> Vec<LocalFolder> {
 /// three places that write into a local folder all resolve a path the same way,
 /// and a site that gets this wrong does not fail, it quietly fails to find the
 /// folder and reports that there is no Drafts folder.
-pub fn stored_under<'a>(_path: &str, account_id: &'a str) -> &'a str {
-    account_id
+pub fn stored_under<'a>(path: &str, account_id: &'a str) -> &'a str {
+    if SHARED_BY_EVERY_ACCOUNT
+        .iter()
+        .any(|folder| folder.path() == path)
+    {
+        THIS_COMPUTER
+    } else {
+        account_id
+    }
 }
 
 /// Where an account's sent mail is filed, when it is filed here.
