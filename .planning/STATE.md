@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-08-30T14:55:26.564Z"
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-08-30T17:38:14.488Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-06 done: a setting stored and offered by no screen now fails a test, a parent says which of its two unread numbers is which, and accounts sit where they are put"
-state_head: 33d0c8bafe4b45163d965e689240da52e766703b
+last_activity_desc: "01-07 done: one Sent, Outbox, Drafts, Junk and Trash for every account, existing mail moved into them with a count said aloud, and colliding message numbers both kept"
+state_head: c68feebf8ba092baab62caa8a4967e555e017bed
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -69,17 +69,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-06 done: the D-43 mirror guard is in and found a real defect on its first run, a parent counts its children and says which number is which, and accounts move with Alt+Shift+Up and Down
+Last activity: 2026-08-30 — 01-07 done: the human gate was returned rather than answered and came back with three corrections, the five local folders are now one each, and the merge reuses the mover that already existed rather than the second one the plan asked for
 
-Progress: [█████░░░░░] 46% (6 of 13 plans)
+Progress: [█████░░░░░] 54% (7 of 13 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
-- Average duration: 2h 1m
-- Total execution time: 12h 7m
+- Total plans completed: 7
+- Average duration: 1h 57m
+- Total execution time: 13h 38m
 
 **By Phase:**
 
@@ -89,8 +89,8 @@ Progress: [█████░░░░░] 46% (6 of 13 plans)
 
 **Recent Trend:**
 
-- Last 6 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
-  01-05 (1h 38m), 01-06 (1h 4m)
+- Last 7 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
+  01-05 (1h 38m), 01-06 (1h 4m), 01-07 (1h 31m)
 
 - Trend: no trend, and the spread is the finding. The three fast plans used
   targeted test runs, 1 second against about 175, for every red and green step,
@@ -111,6 +111,7 @@ Progress: [█████░░░░░] 46% (6 of 13 plans)
 | Phase 01 P04 | 4h 10m | 3 tasks | 16 files |
 | Phase 01 P05 | 1h 38m | 3 tasks | 13 files |
 | Phase 01 P06 | 1h 4m | 3 tasks | 15 files |
+| Phase 01 P07 | 1h 31m | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ ahead:
 - [Phase 01]: 01-06: an exception list is the part of a check most likely to rot, so each exception carries a claim the check tests. One test reads the screen an exception names and fails if the control has gone; another fails when the recorded defect stops being one, so whoever fixes it is told to delete the entry.
 - [Phase 01]: 01-06: the plan's unread_text would have had no caller and both settings guards would still have passed, because a module reading its own setting counts as a reader and a control counts as an offer. Reachability is a third question no test of the parts asks. rows() now takes the setting and what is closed, and the expand handler words that one row again.
 - [Phase 01]: 01-06: accounts order by tree_order IS NULL, tree_order, created_at, so an untouched database keeps arrival order and an account added after a move goes to the end. The move writes every ordinal, not the two that swapped, because a list half ordered by choice and half by arrival reorders itself the next time an account is added.
+- [Phase 01]: D-18 was self-contradictory about the Outbox and Pratik corrected it: shared for everyone, FOR_IMAP empty, one send queue on this computer
+- [Phase 01]: The merge of the local folders reuses move_message rather than a second mover, because a separate one would have missed filed_here and written rows the next sync deletes
+- [Phase 01]: The merge records both the original uid and the original account for every moved message, so it is reversible from the data even though no command undoes it
 
 ### Pending Todos
 
@@ -232,8 +236,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T14:55:19.790Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-08-30T17:37:23.723Z
+Stopped at: Completed 01-07-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
