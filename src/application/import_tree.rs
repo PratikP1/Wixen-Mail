@@ -259,7 +259,12 @@ fn is_a_step_out_of_a_folder(part: &str) -> bool {
 ///
 /// The names this refuses are pinned by tests here as well, because this
 /// module's promise has to hold whatever that function is later asked to allow.
-fn is_a_name_that_can_be_used(part: &str) -> bool {
+///
+/// Reachable from the rest of the crate because a folder somebody makes on this
+/// computer asks the same question, and a second answer to it is how the two
+/// drift apart. It is asked there of one part of a name at a time, because that
+/// module lets a name hold the character it nests with and this one does not.
+pub(crate) fn is_a_name_that_can_be_used(part: &str) -> bool {
     !part.is_empty() && crate::service::attachment_name::safe_file_name(part) == part
 }
 

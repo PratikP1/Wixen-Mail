@@ -201,9 +201,264 @@ pub fn deleting(
     }
 }
 
+// ── A name that holds the character these paths nest with ───────────────────
+
+/// What separates a folder on this computer from the one it sits under.
+///
+/// The same character the paths above already join with, named here so it is
+/// written once rather than spelled at every place that has to know it.
+pub const NESTS_WITH: char = '/';
+
+/// The character that marks the next one as part of a name rather than a join.
+///
+/// Chosen the way `LOCAL_PREFIX` chose its own, and for the same reason: it is
+/// a character no keyboard offers and no mailbox name carries, so a name
+/// holding it cannot be one somebody typed. It is not the same character as
+/// `LOCAL_PREFIX` uses, because the two mean different things and a reader
+/// meeting one should not have to work out which.
+const ESCAPES_THE_NEXT: char = '\u{2}';
+
+/// A name stored so the character these paths nest with is part of it.
+///
+/// A folder may legitimately be called `Sales/Marketing`, and stored as it was
+/// typed that is one folder pretending to be two. The escaped form is the
+/// stored identity and the typed form is what a person reads, which is the
+/// split `ImapFolder` makes between `path` and `display_path` and it is copied
+/// here for the reason its own comment gives: a stored form re-derived from the
+/// readable one makes unreachable exactly the name that could not be turned
+/// back.
+///
+/// The escape character escapes itself as well. Without that the round trip is
+/// not one, and the folder ends up reachable only under a name nobody typed.
+pub fn escape_leaf(name: &str) -> String {
+    let mut stored = String::with_capacity(name.len());
+    for letter in name.chars() {
+        if letter == ESCAPES_THE_NEXT || letter == NESTS_WITH {
+            stored.push(ESCAPES_THE_NEXT);
+        }
+        stored.push(letter);
+    }
+    stored
+}
+
+/// The name somebody typed, back out of the form it was stored in.
+///
+/// The inverse of [`escape_leaf`] for every name that function can produce,
+/// which is what the round-trip test asserts and what the guard record defends.
+///
+/// A stored name ending in a lone escape character is not one `escape_leaf`
+/// can produce, so it is a name from somewhere else. The dangling character is
+/// dropped rather than kept: keeping it would hand back a name that escapes
+/// nothing, and there is no right answer to invent for a form nothing here
+/// wrote.
+pub fn unescape_leaf(stored: &str) -> String {
+    let mut typed = String::with_capacity(stored.len());
+    let mut letters = stored.chars();
+    while let Some(letter) = letters.next() {
+        if letter == ESCAPES_THE_NEXT {
+            if let Some(escaped) = letters.next() {
+                typed.push(escaped);
+            }
+            continue;
+        }
+        typed.push(letter);
+    }
+    typed
+}
+
+/// Why a folder cannot be called what somebody asked for.
+///
+/// Carried rather than logged, because whoever asked is waiting to be told, and
+/// a refusal nobody hears reads as nothing happening.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameRefused {
+    /// A folder has to be called something.
+    NothingWasTyped,
+    /// A part of the name is not one this computer can write.
+    NotANameThatCanBeUsed {
+        /// The part that could not be used, as it was typed.
+        part: String,
+    },
+}
+
+impl NameRefused {
+    /// The refusal as a sentence somebody hears, saying what and why.
+    pub fn said(&self) -> String {
+        match self {
+            Self::NothingWasTyped => "A folder cannot be called nothing.".to_string(),
+            Self::NotANameThatCanBeUsed { part } => format!(
+                "A folder cannot be called \"{part}\": that is not a name this computer can \
+                 write. Try another one."
+            ),
+        }
+    }
+}
+
+/// The stored identity for a folder somebody asked to call `typed`.
+///
+/// Two questions, and they are not the same one. Whether the name can hold the
+/// character these paths nest with: it can, and it is escaped, because refusing
+/// it invites a second spelling of the same folder. And whether the name is one
+/// this computer can write at all: that is asked of
+/// [`crate::application::import_tree::is_a_name_that_can_be_used`], the one
+/// function here that already knows, rather than answered a second time. A
+/// second answer to that question is how the two drift, and this is a name a
+/// stranger's archive can supply.
+///
+/// It is asked of each part between the separators rather than of the whole
+/// name, because that function reads a separator as a path and keeps only the
+/// last segment, so the whole name would be refused for holding the one
+/// character this one deliberately allows. An empty part is refused: a name
+/// opening, closing or doubling the separator has nothing between them to
+/// judge, and the filesystem would not keep it either.
+///
+/// A refused name is refused, never repaired. `import_tree` states the rule and
+/// gives the reason: the repaired form is a different folder from the one
+/// somebody asked for, and handing it back in silence is the failure.
+pub fn naming_a_folder(typed: &str) -> Result<String, NameRefused> {
+    if typed.is_empty() {
+        return Err(NameRefused::NothingWasTyped);
+    }
+    for part in typed.split(NESTS_WITH) {
+        if !crate::application::import_tree::is_a_name_that_can_be_used(part) {
+            return Err(NameRefused::NotANameThatCanBeUsed {
+                part: part.to_string(),
+            });
+        }
+    }
+    Ok(escape_leaf(typed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Names worth trying the round trip on, awkward on purpose.
+    ///
+    /// Two of them are the ones that make it a property rather than a
+    /// coincidence: the escape character standing alone, and the two mixed. A
+    /// scheme that escapes the separator and forgets to escape its own escape
+    /// character passes every other row here and fails those two.
+    const AWKWARD: [&str; 12] = [
+        "Receipts",
+        "Sales/Marketing",
+        "/leading",
+        "trailing/",
+        "double//middle",
+        "///",
+        "",
+        "\u{2}",
+        "\u{2}\u{2}",
+        "\u{2}/mixed",
+        "a/\u{2}/b",
+        "\u{1}Local",
+    ];
+
+    #[test]
+    fn test_a_name_with_nothing_to_escape_is_stored_as_it_was_typed() {
+        // The ordinary case, and the one that says the scheme costs nothing
+        // for the names almost everybody uses.
+        assert_eq!(escape_leaf("Receipts"), "Receipts");
+        assert_eq!(unescape_leaf("Receipts"), "Receipts");
+    }
+
+    #[test]
+    fn test_a_name_holding_the_separator_is_stored_escaped_and_read_back_whole() {
+        // The folder is stored under one identity and read as what somebody
+        // typed. Storing it unescaped would make one folder look like two
+        // nested ones; refusing it would invite a second spelling of the same
+        // folder, which is the risk this decision was taken against.
+        let stored = escape_leaf("Sales/Marketing");
+
+        assert_ne!(
+            stored, "Sales/Marketing",
+            "the separator was left as it was"
+        );
+        assert_eq!(unescape_leaf(&stored), "Sales/Marketing");
+    }
+
+    #[test]
+    fn test_the_escape_character_is_itself_escaped() {
+        // Without this the round trip is not one. A name already holding the
+        // escape character comes back with the following character eaten, and
+        // the folder is then reachable under a name nobody typed.
+        let stored = escape_leaf("\u{2}");
+
+        assert_ne!(stored, "\u{2}", "the escape character was left as it was");
+        assert_eq!(unescape_leaf(&stored), "\u{2}");
+    }
+
+    #[test]
+    fn test_every_awkward_name_survives_being_stored_and_read_back() {
+        // The property, over a table rather than one case: whatever somebody
+        // types is what they get back. Only this direction is asserted.
+        // escape_leaf(escape_leaf(x)) is deliberately not compared with
+        // escape_leaf(x), because it is not equal and never should be: the
+        // second pass has a real escape character to escape.
+        for name in AWKWARD {
+            assert_eq!(
+                unescape_leaf(&escape_leaf(name)),
+                name,
+                "the name {name:?} did not survive the round trip"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_name_a_user_can_type_is_kept_and_one_windows_refuses_is_turned_down() {
+        // Two different questions with two different answers, and both are
+        // kept. The separator is escaped because a folder may legitimately be
+        // called that. A device name, a step out of a folder, a trailing dot
+        // or a name written backwards is refused outright, because the
+        // repaired form is a different folder from the one that was asked for.
+        assert_eq!(
+            naming_a_folder("Sales/Marketing").as_deref().ok(),
+            Some(escape_leaf("Sales/Marketing").as_str())
+        );
+        assert_eq!(
+            naming_a_folder("Receipts").as_deref().ok(),
+            Some("Receipts")
+        );
+
+        for hostile in [
+            "NUL",
+            "..",
+            "Sales/NUL",
+            "../etc",
+            "Reports.",
+            "a\u{202E}b",
+            "",
+        ] {
+            let refused = naming_a_folder(hostile);
+            assert!(
+                refused.is_err(),
+                "the name {hostile:?} was accepted rather than refused"
+            );
+            let why = refused.unwrap_err();
+            assert!(
+                !why.said().is_empty(),
+                "the name {hostile:?} was refused without a reason to tell anybody"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_refused_name_is_never_quietly_turned_into_a_different_one() {
+        // import_tree's rule, and this file follows it: the repaired form is a
+        // folder nobody asked for. A caller that got a String back would have
+        // no way of knowing it was handed something else.
+        let refused = naming_a_folder("NUL").expect_err("a device name has to be refused");
+
+        assert!(
+            why_it_reads_as_a_refusal(&refused),
+            "the refusal did not say what was wrong: {refused:?}"
+        );
+    }
+
+    fn why_it_reads_as_a_refusal(refused: &NameRefused) -> bool {
+        let said = refused.said();
+        said.contains("cannot be used") || said.contains("cannot be called")
+    }
 
     #[test]
     fn test_a_pop_account_keeps_all_six_here() {

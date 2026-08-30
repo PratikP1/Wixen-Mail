@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 314 records have arrived since and have not been through it.
+# 316 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9183,4 +9183,63 @@ after = """                 WHERE 1 = 1","""
 red = [
     "data::message_cache::messages::tests::test_the_backfill_never_writes_over_an_id_that_is_there_already",
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
+]
+
+[[guard]]
+name = "a local folder name containing the nesting separator survives being stored and read back"
+file = "src/application/local_folders.rs"
+# The escaped form is the stored identity of a folder on this computer, and the
+# typed form is what a person reads. The scheme only works if the escape
+# character escapes itself: without that, a name already holding it comes back
+# with the following character eaten, and the folder is reachable only under a
+# name nobody typed. That is the same failure ImapFolder's own comment warns
+# about for a path re-derived from its readable form.
+#
+# The break removes the escaping of the escape character and leaves the
+# escaping of the separator alone, which is the half a scheme written in a
+# hurry would have.
+#
+# Measured by hand on 2026-08-30 against the whole library: two tests, out of
+# six that the pair has. The four that stay green are worth naming, because
+# guessing would have listed more. The ordinary name, the separator on its own
+# and both refusal tests all pass under the break: a name with no escape
+# character in it round-trips whether or not the escape character is escaped,
+# and refusing a name Windows will not take is a different question that this
+# break does not touch.
+before = """        if letter == ESCAPES_THE_NEXT || letter == NESTS_WITH {"""
+after = """        if letter == NESTS_WITH {"""
+red = [
+    "application::local_folders::tests::test_every_awkward_name_survives_being_stored_and_read_back",
+    "application::local_folders::tests::test_the_escape_character_is_itself_escaped",
+]
+
+[[guard]]
+name = "the hierarchy separator is read per mailbox rather than assumed for the server"
+file = "src/service/protocols/imap.rs"
+# IMAP puts a separator on every LIST line, not one on the connection, and a
+# server may answer differently for different parts of its namespace. A reader
+# that assumed one would split "Work.2026" on a slash, find nothing, and leave
+# it at the top level under its whole name; on the other side it would split a
+# mailbox the server gave no separator for at all, and file it under a parent
+# that does not exist.
+#
+# The break assumes a slash for every mailbox, which is what a reader who had
+# only ever seen one kind of server would write, and is the exact defect the
+# comment this replaced was written to defer.
+#
+# Measured by hand on 2026-08-30 against the whole library: two tests, 5330
+# passing beside them. Nothing in mail_sync reddens, and that is the point
+# worth recording rather than assuming: store_folders takes the separator it is
+# given and splits on it correctly either way, so the whole of the damage
+# happens where the separator is read. Its own tests build folders by hand and
+# never go near a LIST response, so measuring by expectation would probably
+# have named them.
+before = """                let carried = delimiter
+                    .as_deref()
+                    .filter(|d| !d.is_empty())
+                    .map(str::to_string);"""
+after = """                let carried = Some("/".to_string());"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_mailbox_the_server_gives_no_separator_for_carries_none",
+    "service::protocols::imap::against_a_server_that_answers::test_each_mailbox_carries_the_separator_the_server_gave_for_it",
 ]
