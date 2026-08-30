@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 324 records have arrived since and have not been through it.
+# 326 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9522,4 +9522,54 @@ red = [
     "data::message_cache::messages::tests::test_two_messages_moved_into_one_folder_do_not_collide",
     "data::message_cache::shared_folders::tests::test_afterwards_no_account_keeps_a_copy_of_a_folder_that_is_shared",
     "data::message_cache::shared_folders::tests::test_two_messages_numbered_the_same_both_survive_and_one_records_its_old_number",
+]
+
+[[guard]]
+# D-32 says a rename keeps a pin and a real deletion takes it. A rename
+# rewrites a folder's path, `set_folder_path` says so in as many words, so a
+# pin stored against `(account_id, path)` is orphaned by the rename D-32
+# promises it survives unless the database moves it. `ON UPDATE CASCADE` is
+# what moves it, and it is one clause of one statement that nothing else in
+# the tree would notice missing.
+#
+# This is the clause the shape of the table turned on. The plan for this work
+# specified the key and never mentioned the cascade, and without it the
+# rename half of D-32 is quietly false while every other test stays green.
+#
+# The break is the shape the plan described: the key without the clause that
+# makes it survive a rename.
+#
+# Measured by hand on 2026-08-30 against the whole library: one test.
+name = "a renamed folder keeps its pin because the database moves it"
+file = "src/data/message_cache/mod.rs"
+before = """                FOREIGN KEY (account_id, path) REFERENCES folders(account_id, path)
+                    ON DELETE CASCADE ON UPDATE CASCADE"""
+after = """                FOREIGN KEY (account_id, path) REFERENCES folders(account_id, path)
+                    ON DELETE CASCADE"""
+red = [
+    "data::message_cache::folders::tests::test_a_renamed_folder_keeps_its_pin_under_its_new_name",
+]
+
+[[guard]]
+# The other half of D-32, and T-01-33. A pin that outlived its folder would
+# pre-pin whatever turned up at that path next, which for a mailbox name a
+# server reuses is somebody else's folder sitting in somebody's favourites.
+#
+# It is done in the same statement that removes the folder rather than by a
+# sweep afterwards, so there is no window in which a pin names a folder
+# nothing has. That is why the break is the clause and not a missing call:
+# there is no call to leave out.
+#
+# Measured by hand on 2026-08-30 against the whole library: two tests, the
+# second of which is the one that matters, since a pin merely hidden from the
+# read would still pass the first.
+name = "a folder that is really gone takes its pin with it"
+file = "src/data/message_cache/mod.rs"
+before = """                FOREIGN KEY (account_id, path) REFERENCES folders(account_id, path)
+                    ON DELETE CASCADE ON UPDATE CASCADE"""
+after = """                FOREIGN KEY (account_id, path) REFERENCES folders(account_id, path)
+                    ON UPDATE CASCADE"""
+red = [
+    "data::message_cache::folders::tests::test_a_folder_made_again_at_the_same_path_is_not_pinned_already",
+    "data::message_cache::folders::tests::test_a_folder_that_is_really_gone_takes_its_pin_with_it",
 ]

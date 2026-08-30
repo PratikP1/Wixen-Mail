@@ -185,7 +185,26 @@ impl MessageCache {
     /// a real folder through a foreign key, so a pin can never outlive one.
     /// Nothing here reaches a server. See `application::favourites`.
     pub fn pin_row(&self, account_id: &str, path: &str) -> Result<()> {
-        let _ = (account_id, path);
+        // The position is worked out inside the statement rather than read
+        // first and written second. Read and then written, two pins arriving
+        // together from the interface and a sync would compute the same number
+        // and the second would take the first one's place. `COALESCE` over an
+        // empty group gives nought, which is where the first pin belongs.
+        //
+        // Doing nothing on conflict is what makes pinning twice leave one pin
+        // without moving it to the bottom again: somebody who pins what is
+        // already pinned has said nothing new, and the caller answers them.
+        self.conn
+            .execute(
+                "INSERT INTO favourites (account_id, path, position)
+                 VALUES (
+                     ?1, ?2,
+                     (SELECT COALESCE(MAX(position) + 1, 0) FROM favourites WHERE account_id = ?1)
+                 )
+                 ON CONFLICT(account_id, path) DO NOTHING",
+                params![account_id, path],
+            )
+            .map_err(|e| Error::Other(format!("Failed to pin the folder: {}", e)))?;
         Ok(())
     }
 
@@ -195,7 +214,12 @@ impl MessageCache {
     /// account's own branch was never the pin. Unpinning something that is not
     /// pinned is not a failure, for the reason `forget_folder` gives.
     pub fn unpin_row(&self, account_id: &str, path: &str) -> Result<()> {
-        let _ = (account_id, path);
+        self.conn
+            .execute(
+                "DELETE FROM favourites WHERE account_id = ?1 AND path = ?2",
+                params![account_id, path],
+            )
+            .map_err(|e| Error::Other(format!("Failed to unpin the folder: {}", e)))?;
         Ok(())
     }
 
@@ -206,7 +230,27 @@ impl MessageCache {
     /// per row per sync, on a timer, which is what `collapsed_rows` says just
     /// above and for the same reason.
     pub fn pinned_rows(&self) -> Result<Vec<crate::application::favourites::Pin>> {
-        Ok(Vec::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT account_id, path, position FROM favourites
+                 ORDER BY account_id, position",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(crate::application::favourites::Pin {
+                    account: row.get::<_, String>(0)?,
+                    path: row.get::<_, String>(1)?,
+                    position: row.get::<_, i64>(2)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to read what is pinned: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read what is pinned: {}", e)))?;
+
+        Ok(rows)
     }
 
     /// Put a pin at a given place in its own account's part of the group.
@@ -216,7 +260,12 @@ impl MessageCache {
     /// pair that swapped: a group half ordered by choice and half by arrival
     /// rearranges itself the next time anything is added.
     pub fn set_pin_position(&self, account_id: &str, path: &str, position: i64) -> Result<()> {
-        let _ = (account_id, path, position);
+        self.conn
+            .execute(
+                "UPDATE favourites SET position = ?3 WHERE account_id = ?1 AND path = ?2",
+                params![account_id, path, position],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record where the pin sits: {}", e)))?;
         Ok(())
     }
 

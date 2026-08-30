@@ -3268,13 +3268,23 @@ mod storage_shape {
             .expect("table names")
     }
 
-    /// The leftmost column of each index on a table.
+    /// The columns of each index on a table, each in the order the index has
+    /// them.
     ///
-    /// Leftmost is the whole question. SQLite can only use an index to find
-    /// rows by a column when that column comes first: `tasks(account_id,
-    /// task_list_id)` is no help at all for finding a task by its list, which
-    /// is exactly the trap this catches.
-    fn columns_an_index_starts_with(cache: &MessageCache, table: &str) -> Vec<String> {
+    /// The order is the whole question. SQLite can only use an index to find
+    /// rows by a set of columns when those columns are a *prefix* of the
+    /// index: `tasks(account_id, task_list_id)` is no help at all for finding
+    /// a task by its list alone, which is the trap this catches, and it is
+    /// exactly the right index for finding one by the pair.
+    ///
+    /// This used to return only the first column of each index, which is the
+    /// same answer wherever every foreign key names one column and the wrong
+    /// answer as soon as one names two. `favourites(account_id, path)` is the
+    /// first composite key in this schema: its primary key is the index that
+    /// makes the parent-side lookup a search, and reading the two columns
+    /// separately reported `path` as unindexed and asked for an index on
+    /// `favourites(path)` that no query would ever use.
+    fn how_each_index_is_ordered(cache: &MessageCache, table: &str) -> Vec<Vec<String>> {
         let mut list = cache
             .conn
             .prepare(&format!("PRAGMA index_list('{table}')"))
@@ -3285,7 +3295,7 @@ mod storage_shape {
             .collect::<std::result::Result<Vec<_>, _>>()
             .expect("index names");
 
-        let mut leftmost = Vec::new();
+        let mut ordered = Vec::new();
         for name in names {
             let mut info = cache
                 .conn
@@ -3299,11 +3309,49 @@ mod storage_shape {
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .expect("index columns");
             columns.sort_by_key(|(seqno, _)| *seqno);
-            if let Some((_, Some(first))) = columns.first() {
-                leftmost.push(first.clone());
+            // An expression index has no column name. It stops the list there
+            // rather than being skipped over, because the columns after a gap
+            // are no longer a prefix of anything this can reason about.
+            ordered.push(
+                columns
+                    .into_iter()
+                    .map_while(|(_, name)| name)
+                    .collect::<Vec<String>>(),
+            );
+        }
+        ordered
+    }
+
+    /// Every foreign key on a table, as the child columns each one names, in
+    /// the order the key names them.
+    ///
+    /// `PRAGMA foreign_key_list` gives one row per column, so a key over two
+    /// columns arrives as two rows that only `id` says belong together and
+    /// only `seq` puts in order. Reading the child column and discarding both
+    /// turns one composite key into two single-column keys that were never
+    /// declared.
+    fn foreign_keys_of(cache: &MessageCache, table: &str) -> Vec<Vec<String>> {
+        let mut stmt = cache
+            .conn
+            .prepare(&format!("PRAGMA foreign_key_list('{table}')"))
+            .expect("the foreign key list");
+        let mut parts: Vec<(i64, i64, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get(3)?))
+            })
+            .expect("child columns")
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("child columns");
+        parts.sort_by_key(|(id, seq, _)| (*id, *seq));
+
+        let mut keys: Vec<(i64, Vec<String>)> = Vec::new();
+        for (id, _, column) in parts {
+            match keys.last_mut() {
+                Some((last, columns)) if *last == id => columns.push(column),
+                _ => keys.push((id, vec![column])),
             }
         }
-        leftmost
+        keys.into_iter().map(|(_, columns)| columns).collect()
     }
 
     /// Whether a column is the table's `INTEGER PRIMARY KEY`, which is the
@@ -3369,38 +3417,105 @@ mod storage_shape {
         let mut unindexed = Vec::new();
 
         for table in tables(&cache) {
-            let mut keys = cache
-                .conn
-                .prepare(&format!("PRAGMA foreign_key_list('{table}')"))
-                .expect("the foreign key list");
-            let children: Vec<String> = keys
-                .query_map([], |row| row.get::<_, String>(3))
-                .expect("child columns")
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .expect("child columns");
-            drop(keys);
-
-            if children.is_empty() {
+            let keys = foreign_keys_of(&cache, &table);
+            if keys.is_empty() {
                 continue;
             }
-            let starts = columns_an_index_starts_with(&cache, &table);
-            for child in children {
-                let covered = starts.contains(&child) || is_the_rowid(&cache, &table, &child);
-                if !covered {
-                    unindexed.push(format!("{table}.{child}"));
+            let indexes = how_each_index_is_ordered(&cache, &table);
+            for child in keys {
+                if !followable_without_a_scan(&cache, &table, &child, &indexes) {
+                    unindexed.push(format!("{table}({})", child.join(", ")));
                 }
             }
         }
 
         assert!(
             unindexed.is_empty(),
-            "these foreign keys have no index starting with the child column, so \
-             deleting a parent row scans the whole child table:\n  {}\n\
-             Add an index whose FIRST column is the one named. An index that \
-             merely contains it, such as tasks(account_id, task_list_id) for \
-             task_list_id, does not count and is why this check reads the \
-             leftmost column rather than the whole list.",
+            "these foreign keys have no index they are a prefix of, so deleting \
+             or renaming a parent row scans the whole child table:\n  {}\n\
+             Add an index whose FIRST columns are the ones named, in that \
+             order. An index that merely contains them, such as \
+             tasks(account_id, task_list_id) for task_list_id alone, does not \
+             count, which is why this reads a prefix rather than a membership.",
             unindexed.join("\n  ")
+        );
+    }
+
+    /// Whether SQLite can find a foreign key's child rows by searching an
+    /// index rather than reading the table.
+    ///
+    /// It can when the key's child columns, in the order the key names them,
+    /// are a prefix of some index. A single-column key whose column is the
+    /// rowid needs no index at all, the rowid being the fastest lookup there
+    /// is.
+    fn followable_without_a_scan(
+        cache: &MessageCache,
+        table: &str,
+        child: &[String],
+        indexes: &[Vec<String>],
+    ) -> bool {
+        if let [only] = child
+            && is_the_rowid(cache, table, only)
+        {
+            return true;
+        }
+        indexes
+            .iter()
+            .any(|index| index.len() >= child.len() && index[..child.len()] == *child)
+    }
+
+    #[test]
+    fn test_the_reading_above_still_catches_a_key_that_really_would_scan() {
+        // Without this, widening the check from one column to a prefix passes
+        // just as well once it has stopped noticing anything, and a check that
+        // fails two ways without saying which is worse than no check. Three
+        // cases, because the widening has to keep saying yes and no in the
+        // right places rather than only one of them.
+        let cache = fresh("a_key_that_would_scan");
+        cache
+            .conn
+            .execute_batch(
+                "CREATE TABLE parent_one (id INTEGER PRIMARY KEY);
+                 CREATE TABLE parent_two (a TEXT NOT NULL, b TEXT NOT NULL, UNIQUE(a, b));
+
+                 -- One column, no index on it at all.
+                 CREATE TABLE scans_one (owner INTEGER REFERENCES parent_one(id));
+
+                 -- Two columns, indexed the other way round, which finds
+                 -- nothing by the pair the key names first.
+                 CREATE TABLE scans_two (
+                     a TEXT NOT NULL, b TEXT NOT NULL,
+                     FOREIGN KEY (a, b) REFERENCES parent_two(a, b));
+                 CREATE INDEX scans_two_backwards ON scans_two(b, a);
+
+                 -- Two columns, in the order the key names them, which is what
+                 -- favourites has and what this must not report.
+                 CREATE TABLE searches_two (
+                     a TEXT NOT NULL, b TEXT NOT NULL,
+                     FOREIGN KEY (a, b) REFERENCES parent_two(a, b));
+                 CREATE INDEX searches_two_in_order ON searches_two(a, b);",
+            )
+            .expect("the probe tables");
+
+        let verdict = |table: &str| {
+            let indexes = how_each_index_is_ordered(&cache, table);
+            foreign_keys_of(&cache, table)
+                .iter()
+                .all(|child| followable_without_a_scan(&cache, table, child, &indexes))
+        };
+
+        assert!(!verdict("scans_one"), "one column with no index is a scan");
+        assert!(
+            !verdict("scans_two"),
+            "two columns indexed in the other order is a scan, and this is the \
+             case the old reading called covered because both columns appeared \
+             somewhere"
+        );
+        assert!(
+            verdict("searches_two"),
+            "two columns that are a prefix of an index is a search, and this is \
+             the case the old reading called a scan because only one of them \
+             was leftmost"
         );
     }
 
