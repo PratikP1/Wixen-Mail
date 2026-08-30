@@ -1059,8 +1059,26 @@ impl MessageCache {
     /// to find out why. So the sentence says the number is what is stored here
     /// and the report afterwards gives what was really removed.
     pub fn messages_stored_in(&self, folder_ids: &[i64]) -> Result<usize> {
-        let _ = folder_ids;
-        Ok(0)
+        // Asked once per folder rather than as one `IN (...)` built by hand.
+        // The list comes from a walk of the tree and has no bound written
+        // anywhere, and SQLite's limit on how many values a statement may
+        // carry is a wall a folder tree could in principle reach. One
+        // statement per folder cannot.
+        let mut counted: usize = 0;
+        for folder_id in folder_ids {
+            let here: i64 = self
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM messages WHERE folder_id = ?1",
+                    params![folder_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Failed to count what is stored in a folder: {}", e))
+                })?;
+            counted = counted.saturating_add(here.max(0) as usize);
+        }
+        Ok(counted)
     }
 
     /// Save a message to cache

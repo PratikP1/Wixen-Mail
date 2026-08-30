@@ -43,8 +43,10 @@
 //! build all-or-nothing on, and appending messages back gives them new UIDs, so
 //! a rollback loses more than the failure did.
 
-use crate::application::folders_underneath::Placed;
+use crate::application::destinations::Deleting;
+use crate::application::folders_underneath::{Placed, deepest_first};
 use crate::application::how_far_it_got::HowFarItGot;
+use crate::application::local_folders::{self, LocalDelete};
 use crate::common::types::Protocol;
 
 /// How far a command that acts on a folder reaches.
@@ -65,13 +67,16 @@ impl Reach {
     /// What a stored yes-or-no setting means.
     ///
     /// Yes reaches the subfolders, which is what both settings default to.
-    pub const fn of(_reaches_subfolders: bool) -> Self {
-        Reach::ThisFolderOnly
+    pub const fn of(reaches_subfolders: bool) -> Self {
+        match reaches_subfolders {
+            true => Reach::AndEverythingUnderIt,
+            false => Reach::ThisFolderOnly,
+        }
     }
 
     /// Whether the subfolders are included.
     pub const fn includes_what_is_under_it(self) -> bool {
-        false
+        matches!(self, Reach::AndEverythingUnderIt)
     }
 }
 
@@ -102,8 +107,17 @@ pub enum WhatEmptyingDoes {
 /// because [`local_folders::deleting`] already knows there is nowhere further
 /// for a message in the Trash to go, and that is exactly the knowledge this
 /// must not repeat.
-pub fn what_will_happen(_folder: &str, _protocol: Protocol, _allowed: bool) -> WhatEmptyingDoes {
-    WhatEmptyingDoes::AtTheServer
+pub fn what_will_happen(folder: &str, protocol: Protocol, allowed: bool) -> WhatEmptyingDoes {
+    // The one call site for this decision in the whole module. Every arm below
+    // carries an answer across rather than working one out: the day this grows
+    // an `if` of its own is the day emptying and deleting can disagree about
+    // what deleting means.
+    match local_folders::deleting(folder, protocol, Deleting::ToTrash, allowed) {
+        None => WhatEmptyingDoes::AtTheServer,
+        Some(LocalDelete::Refuse(why)) => WhatEmptyingDoes::Refuse(why),
+        Some(LocalDelete::MoveTo(trash)) => WhatEmptyingDoes::MoveTo(trash),
+        Some(LocalDelete::RemoveFromThisComputer) => WhatEmptyingDoes::RemoveFromThisComputer,
+    }
 }
 
 /// Which folders an Empty or a Mark Folder Read acts on, deepest first.
@@ -115,8 +129,16 @@ pub fn what_will_happen(_folder: &str, _protocol: Protocol, _allowed: bool) -> W
 ///
 /// Empty when the folder is not in the list, which is a folder that has gone
 /// since the tree was read rather than a folder holding nothing.
-pub fn folders_to_act_on(_folders: &[Placed], _target: i64, _reach: Reach) -> Vec<Placed> {
-    Vec::new()
+pub fn folders_to_act_on(folders: &[Placed], target: i64, reach: Reach) -> Vec<Placed> {
+    match reach {
+        Reach::AndEverythingUnderIt => deepest_first(folders, target),
+        Reach::ThisFolderOnly => folders
+            .iter()
+            .find(|folder| folder.id == target)
+            .cloned()
+            .into_iter()
+            .collect(),
+    }
 }
 
 /// How many folders under the one chosen are being acted on.
@@ -125,8 +147,8 @@ pub fn folders_to_act_on(_folders: &[Placed], _target: i64, _reach: Reach) -> Ve
 /// subfolders, so this is one fewer than the list. Zero when the folder has
 /// gone, which is the same answer as a folder with nothing under it and is
 /// right for a sentence: neither has subfolders to name.
-pub fn how_many_subfolders(_acting_on: &[Placed]) -> usize {
-    0
+pub fn how_many_subfolders(acting_on: &[Placed]) -> usize {
+    acting_on.len().saturating_sub(1)
 }
 
 /// The confirmation, carrying the whole cost of what is about to happen.
@@ -143,12 +165,30 @@ pub fn how_many_subfolders(_acting_on: &[Placed]) -> usize {
 /// this computer has ever been told about, and the report afterwards is what
 /// gives the real number.
 pub fn the_question(
-    _folder: &str,
-    _what: &WhatEmptyingDoes,
-    _stored_here: usize,
-    _subfolders: usize,
+    folder: &str,
+    what: &WhatEmptyingDoes,
+    stored_here: usize,
+    subfolders: usize,
 ) -> String {
-    String::new()
+    let what_gets_emptied = names_the_folder_and_its_subfolders(folder, subfolders);
+    let messages = a_count_of(stored_here, "message");
+    let and_then = match what {
+        WhatEmptyingDoes::MoveTo(trash) => format!("They will be moved to {trash}."),
+        WhatEmptyingDoes::RemoveFromThisComputer => {
+            "They will be taken off this computer for good, and there is no other copy.".to_string()
+        }
+        WhatEmptyingDoes::AtTheServer => {
+            "They will be taken off the server for good. The server may hold more than is stored \
+             here."
+                .to_string()
+        }
+        // A refusal never reaches a question: the caller says the words the
+        // gate supplied and stops. Answered rather than left to a catch-all so
+        // that a fifth answer on the enum is a compiler error here rather than
+        // a question that silently says nothing about what it will do.
+        WhatEmptyingDoes::Refuse(why) => (*why).to_string(),
+    };
+    format!("Empty {what_gets_emptied}? {messages} stored on this computer. {and_then}")
 }
 
 /// What D-38 says when there is nothing to empty.
@@ -156,8 +196,15 @@ pub fn the_question(
 /// Said instead of a confirmation rather than as well as one, and said with the
 /// command still on the menu and still enabled. A menu item that greys out
 /// gives a reason only somebody who can see the grey knows to look for.
-pub fn already_empty_sentence(_folder: &str, _subfolders: usize) -> String {
-    String::new()
+pub fn already_empty_sentence(folder: &str, subfolders: usize) -> String {
+    // The sentence is a claim about what was looked in, so it follows the
+    // reach rather than the folder. Saying "Archive and its subfolders are
+    // already empty" having looked only in Archive is a claim nobody checked.
+    let (what, is_or_are) = match subfolders {
+        0 => (folder.to_string(), "is"),
+        _ => (format!("{folder} and its subfolders"), "are"),
+    };
+    format!("{what} {is_or_are} already empty.")
 }
 
 /// What an empty that ran did, including one that stopped partway.
@@ -165,8 +212,28 @@ pub fn already_empty_sentence(_folder: &str, _subfolders: usize) -> String {
 /// The words live beside the type that holds the record, the same rule the
 /// folder delete follows, so a sentence about emptying written at a window
 /// cannot drift from this one.
-pub fn what_emptying_did(_how_far: &HowFarItGot) -> String {
-    String::new()
+pub fn what_emptying_did(how_far: &HowFarItGot) -> String {
+    how_far.said("Emptied", "messages")
+}
+
+/// "Archive", or "Archive and the 3 folders in it".
+fn names_the_folder_and_its_subfolders(folder: &str, subfolders: usize) -> String {
+    match subfolders {
+        0 => folder.to_string(),
+        1 => format!("{folder} and the folder in it"),
+        more => format!("{folder} and the {more} folders in it"),
+    }
+}
+
+/// "1 message is" or "12 messages are", so no sentence reads "1 messages are".
+///
+/// A synthesiser reads exactly what is written, so the singular is worth these
+/// three lines here rather than in each sentence that needs it.
+fn a_count_of(how_many: usize, thing: &str) -> String {
+    match how_many {
+        1 => format!("1 {thing} is"),
+        _ => format!("{how_many} {thing}s are"),
+    }
 }
 
 #[cfg(test)]

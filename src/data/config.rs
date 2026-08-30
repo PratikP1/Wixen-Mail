@@ -172,33 +172,6 @@ pub struct AppConfig {
     /// exists because of.
     #[serde(default = "default_unread_on_a_parent")]
     pub unread_on_a_parent: String,
-    /// Whether Empty Folder reaches the folders filed under the one chosen.
-    ///
-    /// Yes by default, D-34, which is the destructive reading of the two. That
-    /// is why the confirmation carries the whole cost where this is on: the
-    /// folder, the total, how many subfolders, and whether the messages move or
-    /// go. Somebody who has never opened this screen is agreeing to the wider
-    /// thing, so the wider thing is what the question has to describe.
-    ///
-    /// Kept apart from [`AppConfig::mark_read_reaches_subfolders`] deliberately,
-    /// D-35: one destroys mail and the other loses your place, and neither has
-    /// an undo. One setting covering both would make somebody who wants the
-    /// safer reach on the reading side pay for it on the destructive one, or
-    /// the other way round.
-    ///
-    /// The `#[serde(default = "...")]` is not optional. Without it every
-    /// settings file already on disk fails to parse, and a settings file that
-    /// fails to parse takes every other setting with it.
-    #[serde(default)]
-    pub empty_reaches_subfolders: bool,
-    /// Whether Mark Folder Read reaches the folders filed under the one chosen.
-    ///
-    /// Yes by default, D-35. Its own setting rather than a share of the one
-    /// above, for the reason written there: this one loses somebody their place
-    /// in a folder they had not finished reading, which is a real cost and a
-    /// different one from destroying mail.
-    #[serde(default)]
-    pub mark_read_reaches_subfolders: bool,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -514,8 +487,6 @@ impl Default for AppConfig {
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
             unread_on_a_parent: default_unread_on_a_parent(),
-            empty_reaches_subfolders: false,
-            mark_read_reaches_subfolders: false,
             hold_back_remote_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
@@ -1116,56 +1087,6 @@ mod permission_tests {
         assert!(
             parsed.working_day_starts < parsed.working_day_ends,
             "the working day ends before it starts"
-        );
-    }
-
-    #[test]
-    fn test_a_settings_file_written_before_the_two_reach_settings_existed_reaches_the_subfolders() {
-        // D-34 and D-35 both default to including what is filed underneath, so
-        // an upgrade has to arrive at the same answer a fresh installation
-        // does. The one that matters is Empty: falling back to `false` would
-        // quietly narrow a destructive command, which sounds like the safe
-        // mistake and is not. Somebody who empties a tree, hears it done, and
-        // finds the subfolders still full has been told something untrue about
-        // their own mail.
-        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
-        let fields = older.as_object_mut().expect("an object");
-        for gone in ["empty_reaches_subfolders", "mark_read_reaches_subfolders"] {
-            assert!(
-                fields.remove(gone).is_some(),
-                "{gone} is not written to the settings file any more, so this test covers nothing"
-            );
-        }
-
-        let parsed: AppConfig =
-            serde_json::from_value(older).expect("an older settings file still opens");
-
-        assert!(parsed.empty_reaches_subfolders, "D-34 defaults to yes");
-        assert!(parsed.mark_read_reaches_subfolders, "D-35 defaults to yes");
-    }
-
-    #[test]
-    fn test_a_fresh_installation_reaches_the_subfolders_with_both_commands() {
-        // The other half of the pair above. A default written twice is a
-        // default that drifts, which is what the language setting did.
-        assert!(AppConfig::default().empty_reaches_subfolders);
-        assert!(AppConfig::default().mark_read_reaches_subfolders);
-    }
-
-    #[test]
-    fn test_the_two_reach_settings_are_stored_apart_rather_than_as_one_answer() {
-        // D-35 keeps them separate because one destroys mail and the other
-        // loses your place. Two fields is what makes that possible, and a test
-        // that only ever set them together would not notice them being merged.
-        let settings = AppConfig {
-            empty_reaches_subfolders: false,
-            ..AppConfig::default()
-        };
-
-        assert!(!settings.empty_reaches_subfolders);
-        assert!(
-            settings.mark_read_reaches_subfolders,
-            "narrowing Empty narrowed Mark Folder Read too"
         );
     }
 
