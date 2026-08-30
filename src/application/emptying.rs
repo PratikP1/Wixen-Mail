@@ -43,7 +43,10 @@
 //! build all-or-nothing on, and appending messages back gives them new UIDs, so
 //! a rollback loses more than the failure did.
 
-use crate::application::destinations::Deleting;
+use crate::application::destinations::{
+    DeletedGoesTo, Deleting, NO_FOLDERS_KNOWN_YET, NO_TRASH_FOLDER_FOUND,
+    where_a_deleted_message_goes,
+};
 use crate::application::folders_underneath::{Placed, deepest_first};
 use crate::application::how_far_it_got::HowFarItGot;
 use crate::application::local_folders::{self, LocalDelete};
@@ -150,7 +153,7 @@ pub fn what_will_happen<'a>(
     folder: &str,
     protocol: Protocol,
     allowed: bool,
-    _folders_on_the_account: impl IntoIterator<Item = (&'a str, FolderType)>,
+    folders_on_the_account: impl IntoIterator<Item = (&'a str, FolderType)>,
 ) -> WhatEmptyingDoes {
     // The one call site for each of the two decisions in the whole module.
     // Every arm carries an answer across rather than working one out: the day
@@ -165,7 +168,21 @@ pub fn what_will_happen<'a>(
         // said "taken off the server for good" about a folder whose messages
         // are really about to be moved to the trash would be describing a
         // different command.
-        None => WhatEmptyingDoes::RemoveFromTheServer,
+        None => {
+            match where_a_deleted_message_goes(folders_on_the_account, folder, Deleting::ToTrash) {
+                DeletedGoesTo::TheTrash(trash) => {
+                    WhatEmptyingDoes::MoveToOnTheServer(trash.to_string())
+                }
+                DeletedGoesTo::OffTheServer => WhatEmptyingDoes::RemoveFromTheServer,
+                // The two refusals stay two refusals. What to do next differs for
+                // each, and joining them is what took a message off a server for
+                // good once already.
+                DeletedGoesTo::NoTrashFolderFound => {
+                    WhatEmptyingDoes::Refuse(NO_TRASH_FOLDER_FOUND)
+                }
+                DeletedGoesTo::NoFoldersKnownYet => WhatEmptyingDoes::Refuse(NO_FOLDERS_KNOWN_YET),
+            }
+        }
     }
 }
 
