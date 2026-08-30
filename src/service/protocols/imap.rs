@@ -1915,6 +1915,33 @@ fn one_command_only(command: &str, doing: &'static str) -> Result<()> {
 }
 
 /// Map an IMAP library error into ours, saying what we were doing.
+/// What this server puts between the named mailbox and one inside it.
+///
+/// Read from a fresh listing rather than from what is stored, because nothing
+/// stores it: the separator is carried on [`ImapFolder`] while a sync is
+/// reading, and no column keeps it afterwards. A `LIST` line carries one for
+/// every mailbox whether or not anything is nested under it, so this is
+/// answerable for a folder nothing has ever been put inside, which is exactly
+/// the case a move has to spell and the stored tree cannot.
+///
+/// Per mailbox and never per server: RFC 9051 has `LIST` answer per line, and a
+/// server may answer differently for different parts of its namespace, so one
+/// taken from the first line and used for the rest nests under the wrong name.
+///
+/// `None` where the server named no separator for it, which is a flat namespace
+/// with nothing to nest into, or where it did not list the mailbox at all. Both
+/// mean the same thing to a caller: there is no way to spell a folder inside
+/// this one, and guessing a slash makes a folder with a slash in its name.
+pub fn what_separates_a_folder_from_one_inside<'a>(
+    listed: &'a [ImapFolder],
+    inside: &str,
+) -> Option<&'a str> {
+    listed
+        .iter()
+        .find(|folder| folder.path == inside)
+        .and_then(|folder| folder.delimiter.as_deref())
+}
+
 fn protocol_error(doing: &'static str) -> impl Fn(async_imap::error::Error) -> Error {
     move |error| {
         Error::Protocol(format!(
@@ -3940,6 +3967,63 @@ pub(crate) mod against_a_server_that_answers {
         assert!(
             !server.was_told(" CREATE ").await,
             "a folder was made with the gate closed: {transcript:?}"
+        );
+    }
+
+    // ── What separates a folder from one inside it ──────────────────────────
+
+    fn listed(path: &str, delimiter: Option<&str>) -> ImapFolder {
+        ImapFolder {
+            name: path.to_string(),
+            display_path: path.to_string(),
+            path: path.to_string(),
+            folder_type: FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+            delimiter: delimiter.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_the_separator_for_a_folder_is_the_one_the_server_gave_for_that_folder() {
+        // Per mailbox, never per server. A `LIST` line carries a separator
+        // whether or not the mailbox has anything inside it, which is what
+        // makes this answerable for a folder nothing is nested under yet, and
+        // a server may answer differently for different parts of its
+        // namespace.
+        let listing = [listed("Archive", Some("/")), listed("INBOX", Some("."))];
+
+        assert_eq!(
+            what_separates_a_folder_from_one_inside(&listing, "Archive"),
+            Some("/")
+        );
+        assert_eq!(
+            what_separates_a_folder_from_one_inside(&listing, "INBOX"),
+            Some(".")
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_names_no_separator_offers_no_way_to_nest() {
+        // A flat namespace. Nothing can go inside anything, so the honest
+        // answer is that there is no way to spell it rather than a guessed
+        // slash that makes a folder with a slash in its name.
+        let listing = [listed("Archive", None)];
+
+        assert_eq!(
+            what_separates_a_folder_from_one_inside(&listing, "Archive"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_folder_the_server_did_not_list_has_no_separator_to_read() {
+        let listing = [listed("Archive", Some("/"))];
+
+        assert_eq!(
+            what_separates_a_folder_from_one_inside(&listing, "Work"),
+            None
         );
     }
 

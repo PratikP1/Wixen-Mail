@@ -116,6 +116,16 @@ pub enum Moving {
     Message,
     /// Something that lives in one of our own containers.
     Item(ContainerKind),
+    /// A mail folder, which goes inside another mail folder or comes out to
+    /// the top level.
+    ///
+    /// A kind of its own rather than a flag beside `Message`, because this
+    /// enum's job is to name what is being moved and that is what decides where
+    /// it can go. A folder can contain a folder, which is the one rule a
+    /// message move never needed: [`where_a_folder_can_go`] leaves out the
+    /// folder itself and everything inside it, and nothing about a message
+    /// needs that.
+    Folder,
 }
 
 /// One place in the tree.
@@ -205,7 +215,92 @@ pub fn nothing_to_offer(moving: Moving) -> &'static str {
         Moving::Item(ContainerKind::TaskList) => "There is no other list to put this in",
         Moving::Item(ContainerKind::NoteFolder) => "There is no other folder to put this in",
         Moving::Item(ContainerKind::ContactGroup) => "There is no other group to put this in",
+        Moving::Folder => "There is nowhere else to put this folder",
     }
+}
+
+/// The places one folder can be moved to, within its own account.
+///
+/// Three things are left out, and each is a command that would otherwise be
+/// offered and then do something nobody wants.
+///
+/// The folder itself, and everything inside it. A folder can contain a folder,
+/// which is why this rule exists here and nowhere in a message move: a server
+/// asked to put a folder inside its own subtree either refuses or does something
+/// with no way back. The subtree comes from
+/// [`crate::application::folders_underneath::deepest_first`], which is bounded,
+/// so a cycle in stored parents cannot leave this walking while it holds the
+/// window.
+///
+/// The folder it is already in, which is [`offer`]'s own rule: offering somebody
+/// the place a thing already is offers them a command that silently does
+/// nothing, and they cannot tell which of the two happened.
+///
+/// The top level is offered as a place in its own right, named by the empty
+/// path, so a folder that went into another one can come back out. Without it
+/// this is a one-way door. It is left out for a folder already at the top level,
+/// by the same rule as above.
+pub fn where_a_folder_can_go(
+    folders: &[crate::application::folders_underneath::Placed],
+    moving: i64,
+    account_id: &str,
+) -> Vec<Destination> {
+    use crate::application::folders_underneath::deepest_first;
+
+    let Some(folder) = folders.iter().find(|folder| folder.id == moving) else {
+        return Vec::new();
+    };
+    let inside_it: Vec<i64> = deepest_first(folders, moving)
+        .into_iter()
+        .map(|under| under.id)
+        .collect();
+
+    // The top level first, so somebody arrowing down meets the way out before
+    // the folders, and reads as a place rather than as an account.
+    let mut places: Vec<Destination> = Vec::with_capacity(folders.len());
+    if folder.parent.is_some() {
+        places.push(Destination {
+            name: "Not inside any folder".to_string(),
+            id: String::new(),
+            account_id: account_id.to_string(),
+            depth: 0,
+        });
+    }
+
+    places.extend(
+        folders
+            .iter()
+            .filter(|other| !inside_it.contains(&other.id))
+            .filter(|other| Some(other.id) != folder.parent)
+            .map(|other| Destination {
+                name: other.name.clone(),
+                id: other.path.clone(),
+                account_id: account_id.to_string(),
+                depth: how_far_in(folders, other.id),
+            }),
+    );
+    places
+}
+
+/// How many folders this one sits inside, for the row's indent.
+///
+/// Bounded for the reason every walk over stored parents is: the column comes
+/// from a database an earlier version wrote, and a walk that does not return
+/// does not return while holding the window open.
+fn how_far_in(folders: &[crate::application::folders_underneath::Placed], of: i64) -> usize {
+    use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
+
+    let mut deep = 0;
+    let mut at = folders.iter().find(|folder| folder.id == of);
+    while let Some(folder) = at {
+        let Some(parent) = folder.parent else { break };
+        deep += 1;
+        if deep >= AS_DEEP_AS_A_TREE_GOES {
+            break;
+        }
+        at = folders.iter().find(|above| above.id == parent);
+    }
+    deep
 }
 
 #[cfg(test)]
@@ -438,5 +533,147 @@ mod tests {
         );
 
         assert_eq!(tree[0].places.len(), 2);
+    }
+
+    // ── Where a folder can go ───────────────────────────────────────────────
+
+    mod moving_a_folder {
+        use super::*;
+        use crate::application::folders_underneath::Placed;
+
+        fn placed(id: i64, path: &str, parent: Option<i64>) -> Placed {
+            Placed {
+                id,
+                name: path.rsplit('/').next().unwrap_or(path).to_string(),
+                path: path.to_string(),
+                parent,
+            }
+        }
+
+        /// `Archive`, with `Archive/2026` in it and `Archive/2026/June` in that,
+        /// beside `Work` and `Old`.
+        fn an_account() -> Vec<Placed> {
+            vec![
+                placed(1, "Archive", None),
+                placed(2, "Archive/2026", Some(1)),
+                placed(3, "Archive/2026/June", Some(2)),
+                placed(4, "Work", None),
+                placed(5, "Old", None),
+            ]
+        }
+
+        fn offered(folders: &[Placed], moving: i64) -> Vec<String> {
+            where_a_folder_can_go(folders, moving, "acc")
+                .into_iter()
+                .map(|place| place.id)
+                .collect()
+        }
+
+        #[test]
+        fn test_a_folder_is_not_offered_a_place_inside_itself() {
+            // The rule a message move never needed, because a message cannot
+            // contain a folder. A folder can, and a server asked to move one
+            // into itself either refuses or does something nobody can undo.
+            let places = offered(&an_account(), 1);
+            assert!(!places.contains(&"Archive".to_string()), "{places:?}");
+        }
+
+        #[test]
+        fn test_a_folder_is_not_offered_a_place_inside_its_own_subtree() {
+            // `Archive` under `Archive/2026` is the same fault one level down,
+            // and it is the one somebody actually reaches by arrowing.
+            let places = offered(&an_account(), 1);
+            assert!(!places.contains(&"Archive/2026".to_string()), "{places:?}");
+            assert!(
+                !places.contains(&"Archive/2026/June".to_string()),
+                "{places:?}"
+            );
+        }
+
+        #[test]
+        fn test_the_folder_it_is_already_in_is_not_offered() {
+            // `offer`'s own rule: offering somebody the place a thing already
+            // is offers them a command that silently does nothing.
+            let places = offered(&an_account(), 2);
+            assert!(!places.contains(&"Archive".to_string()), "{places:?}");
+        }
+
+        #[test]
+        fn test_everything_else_in_the_account_is_offered() {
+            let places = offered(&an_account(), 1);
+            assert!(places.contains(&"Work".to_string()), "{places:?}");
+            assert!(places.contains(&"Old".to_string()), "{places:?}");
+        }
+
+        #[test]
+        fn test_a_folder_inside_one_is_offered_the_top_level_to_come_out_to() {
+            // Without this a folder goes in and never comes out, which is the
+            // kind of one-way door that makes a feature worse than not having
+            // it. The top level is named by the empty path, which is what a
+            // folder's path is when nothing is in front of it.
+            let places = offered(&an_account(), 2);
+            assert!(places.contains(&String::new()), "{places:?}");
+        }
+
+        #[test]
+        fn test_a_folder_already_at_the_top_level_is_not_offered_it_again() {
+            let places = offered(&an_account(), 1);
+            assert!(!places.contains(&String::new()), "{places:?}");
+        }
+
+        #[test]
+        fn test_how_deep_each_row_is_says_where_it_sits() {
+            // `Destination.depth` is what builds the tree in the window
+            // without a second pass, and nought is a child of the account.
+            let places = where_a_folder_can_go(&an_account(), 4, "acc");
+            let archive = places
+                .iter()
+                .find(|place| place.id == "Archive")
+                .expect("Archive is offered");
+            let inside = places
+                .iter()
+                .find(|place| place.id == "Archive/2026")
+                .expect("the folder inside it is offered");
+            assert_eq!(archive.depth, 0);
+            assert_eq!(inside.depth, 1);
+        }
+
+        #[test]
+        fn test_a_row_reads_out_as_a_name_and_not_as_a_path() {
+            let places = where_a_folder_can_go(&an_account(), 4, "acc");
+            let inside = places
+                .iter()
+                .find(|place| place.id == "Archive/2026")
+                .expect("the folder inside it is offered");
+            assert_eq!(inside.name, "2026");
+        }
+
+        #[test]
+        fn test_a_stored_cycle_offers_something_rather_than_hanging() {
+            // Parents come from a database an earlier version wrote, so a
+            // cycle is not hypothetical, and a walk that does not return does
+            // not return while holding the window.
+            let tree = vec![
+                placed(1, "A", Some(2)),
+                placed(2, "B", Some(1)),
+                placed(3, "C", None),
+            ];
+
+            let places = where_a_folder_can_go(&tree, 1, "acc");
+
+            assert!(places.iter().any(|place| place.id == "C"), "{places:?}");
+        }
+
+        #[test]
+        fn test_a_folder_that_is_not_there_is_offered_nothing() {
+            assert!(where_a_folder_can_go(&an_account(), 99, "acc").is_empty());
+        }
+
+        #[test]
+        fn test_there_is_a_sentence_for_a_folder_with_nowhere_to_go() {
+            let said = nothing_to_offer(Moving::Folder);
+            assert!(said.contains("folder"), "{said}");
+            assert_ne!(said, nothing_to_offer(Moving::Message));
+        }
     }
 }

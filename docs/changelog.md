@@ -8,6 +8,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can move a folder into a different one, or bring it back out.** Choose
+  the folder, then Action, This Folder, Move Folder. A list of the places it can
+  go opens, you pick one with the arrow keys and Enter, and it asks before it
+  runs. Everything inside the folder comes with it, and the mail in it is not
+  touched.
+
+  The list leaves out three things on purpose: the folder itself, every folder
+  already inside it, and the folder it is in now. So there is no way to put a
+  folder inside itself, and no way to choose a move that would do nothing.
+  "Not inside any folder" is offered for a folder that is currently inside one,
+  so it can come back out.
+
+  This is a separate command from Rename for a reason worth knowing: on a mail
+  server, renaming and moving are the same command, and the only difference is
+  which part of the name you changed. Splitting them means a mistyped name can
+  never move a folder.
+
+  Known limits, said here rather than found later:
+
+  - A folder can only move within its own account.
+  - Some servers do not nest folders at all. On one of those, the move says so
+    and sends nothing, rather than making a folder with a slash in its name.
+  - Deleting a folder is not built yet.
+  - Moving a folder kept on this computer is not built yet.
+  - This has been tested against a mail server written for the tests, not
+    against a real account.
+
 - **You can rename a folder on the server.** Choose the folder in the folder
   tree, then Action, This Folder, Rename Folder. The box opens with the name it
   has now, so you change a word rather than typing the whole thing again. The
@@ -20,8 +47,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the same command, and one mistyped name could otherwise move a folder with no
   way back.
 
-  **The inbox is refused, and the reason is worth reading.** On a mail server,
-  renaming the inbox does not rename it. It makes a folder under the new name,
+  **The inbox is refused a rename and a move, and the reason is worth reading.**
+  On a mail server, renaming the inbox does not rename it. It makes a folder under the new name,
   moves every message out of the inbox into it, and leaves the inbox empty, and
   it reports that as success. So asking to rename the inbox says this instead of
   doing it. If moving the mail is what you wanted, make a folder and move the
@@ -29,8 +56,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Known limits, said here rather than found later:
 
-  - Moving a folder under a different one is not built yet, and neither is
-    deleting one.
+  - Deleting a folder is not built yet. Moving one is, and is described above.
   - Renaming a folder kept on this computer is not built yet. Those folders are
     a fixed set the program owns, so there is nothing there to rename. Asking
     says so.
@@ -61,8 +87,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     server as typed and lands wherever the server decides.
   - Making a folder on this computer, under the folders that hold mail no server
     has, is not built yet. Asking for one says so.
-  - Moving and deleting a folder are not built yet. Renaming one is, and is
-    described above.
+  - Deleting a folder is not built yet. Renaming one and moving one are, and
+    are described above.
   - Changing mail on the server is switched off for a new install. With it off,
     asking for a folder says so and names the setting, and nothing at all is
     sent to the server.

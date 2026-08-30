@@ -30,6 +30,8 @@ pub struct Placed {
     pub id: i64,
     /// The path as the server spells it, which is what a command sends back.
     pub path: String,
+    /// What it is called, decoded, which is what a row reads out as.
+    pub name: String,
     /// Which folder it sits under, or `None` at the top level.
     pub parent: Option<i64>,
 }
@@ -171,6 +173,7 @@ mod tests {
     fn placed(id: i64, path: &str, parent: Option<i64>) -> Placed {
         Placed {
             id,
+            name: path.rsplit(['/', '.']).next().unwrap_or(path).to_string(),
             path: path.to_string(),
             parent,
         }

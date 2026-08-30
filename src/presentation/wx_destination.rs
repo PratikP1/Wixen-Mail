@@ -36,6 +36,11 @@ pub fn heading(moving: Moving, copying: bool) -> String {
         // to" is a different sentence from "Move the event to", and only one
         // of them is what is happening.
         Moving::Item(kind) => format!("{act} the {} to", kind.holds().label().to_lowercase()),
+        // "Move the folder to", and never "Copy": a folder is not copied, and
+        // the caller never asks for one. Said the same way regardless, because
+        // a heading that changed with a flag nobody sets is a branch nothing
+        // reads that still looks like a decision.
+        Moving::Folder => format!("{act} the folder to"),
     }
 }
 

@@ -78,6 +78,7 @@ menu_ids!(
     ID_MUTE_CONTENT,
     ID_NEW_FOLDER,
     ID_RENAME_FOLDER,
+    ID_MOVE_FOLDER,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3177,6 +3178,17 @@ impl WxMailApp {
                                 &frame,
                             );
                         }
+                        _ if id == ID_MOVE_FOLDER => {
+                            move_the_chosen_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                            );
+                        }
                         _ if id == ID_RENAME_FOLDER => {
                             rename_the_chosen_folder(
                                 AppHandles {
@@ -5320,6 +5332,16 @@ impl WxMailApp {
                 "Re&name Folder...",
                 "Give the chosen folder a different name, leaving it where it is",
             )
+            // Separate from Rename on purpose, and this is the item the split
+            // exists for. On a mail server both are one command and the only
+            // difference is which half of the path changed, so joining them
+            // would let a mistyped name move a folder with no way back. This
+            // one names the new place from a list and asks before it runs.
+            .append_item(
+                ID_MOVE_FOLDER,
+                "&Move Folder...",
+                "Put the chosen folder inside a different one, or bring it back out",
+            )
             .build();
 
         let message = Menu::builder()
@@ -6253,6 +6275,7 @@ fn what_came_of(
 enum FolderAct {
     Made,
     Renamed,
+    Moved,
 }
 
 impl FolderAct {
@@ -6261,6 +6284,7 @@ impl FolderAct {
         match self {
             FolderAct::Made => "no folder was made",
             FolderAct::Renamed => "nothing was renamed",
+            FolderAct::Moved => "nothing was moved",
         }
     }
 
@@ -6269,6 +6293,7 @@ impl FolderAct {
         match self {
             FolderAct::Made => "make",
             FolderAct::Renamed => "rename",
+            FolderAct::Moved => "move",
         }
     }
 }
@@ -6301,16 +6326,22 @@ fn why_the_folder_cannot_be(
         return Some(match act {
             FolderAct::Made => FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET,
             FolderAct::Renamed => RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
+            FolderAct::Moved => MOVING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
         });
     }
     if kind == crate::common::types::FolderType::Inbox {
         return Some(match act {
             FolderAct::Made => return None,
-            FolderAct::Renamed => RENAMING_THE_INBOX_EMPTIES_IT,
+            FolderAct::Renamed | FolderAct::Moved => RENAMING_THE_INBOX_EMPTIES_IT,
         });
     }
     None
 }
+
+/// What is said when somebody asks to move a folder kept on this computer.
+const MOVING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Moving a folder kept on this computer is not built yet. \
+     These folders are a fixed set and each has its own place. \
+     Folders on the server can be moved.";
 
 /// What is said when somebody asks to rename a folder kept on this computer.
 const RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Renaming a folder kept on this computer is not built yet. \
@@ -6322,7 +6353,7 @@ const RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Renaming a fo
 /// The whole sentence is about what would happen rather than about a rule,
 /// because the rule sounds arbitrary and the outcome does not. Somebody who
 /// wanted the mail somewhere else is told how to get it there.
-const RENAMING_THE_INBOX_EMPTIES_IT: &str = "The inbox cannot be renamed. On a mail server that is not a rename: \
+const RENAMING_THE_INBOX_EMPTIES_IT: &str = "The inbox cannot be renamed or moved. On a mail server that is not a rename: \
      it makes a folder under the new name, moves every message in the inbox into it, \
      and leaves the inbox empty. Make a folder and move the mail into it if that is what you want.";
 
@@ -6609,6 +6640,7 @@ fn the_chosen_folder(
         .map(|folder| Placed {
             parent: parents.get(&folder.path).copied().flatten(),
             id: folder.id,
+            name: folder.name,
             path: folder.path,
         })
         .collect();
@@ -6732,6 +6764,282 @@ fn rename_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache
         },
         name.to_string(),
     );
+}
+
+/// Put the chosen folder inside a different one, or bring it back out.
+///
+/// The other half of D-26. On the wire this is the same `RENAME` the command
+/// above sends, and RFC 9051 section 6.3.6 requires the server to rename every
+/// folder inside it along with it, so this is **one** command and never a walk.
+/// A walk would be slower, would not be atomic, and could leave half a tree
+/// moved with nothing saying which half.
+///
+/// What differs from Rename is everything a person meets: the new place is
+/// chosen from a list rather than typed, the list cannot contain the folder
+/// itself or anything inside it, and it asks before it runs.
+fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, frame: &Frame) {
+    use crate::application::destinations::{
+        Branch, Moving, nothing_to_offer, where_a_folder_can_go,
+    };
+    use crate::application::folders_underneath::deepest_first;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let chosen = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+    if let Some(why) = why_the_folder_cannot_be(
+        FolderAct::Moved,
+        &chosen.folder.path,
+        crate::common::types::FolderType::from_stored(&chosen.folder.folder_type),
+    ) {
+        return refuse_a_command(tx, why);
+    }
+    if !has_folders_on_a_server(&chosen.account) {
+        return refuse_a_command(tx, THIS_ACCOUNT_KEEPS_ITS_MAIL_HERE);
+    }
+
+    let places = where_a_folder_can_go(&chosen.placed, chosen.folder.id, &chosen.account.id);
+    if places.is_empty() {
+        // Said in a sentence before any window opens, which is what `anywhere`
+        // and `nothing_to_offer` exist for: an empty window is one somebody
+        // opens, finds nothing in, and closes without learning why.
+        return refuse_a_command(tx, nothing_to_offer(Moving::Folder));
+    }
+    let branches = vec![Branch {
+        account_id: chosen.account.id.clone(),
+        account_name: chosen.account.email.clone(),
+        places,
+    }];
+
+    // No last-used here. Filing twenty messages into one folder is the repeat
+    // that opening on the last one exists for; moving a folder is not something
+    // anybody does twice in a row, and opening on wherever the last one went
+    // would put the cursor somewhere unrelated.
+    let Some(into) =
+        crate::presentation::wx_destination::ask(frame, Moving::Folder, false, &branches, None)
+    else {
+        return;
+    };
+
+    // Asked again after the choice, not only when the list was built. The list
+    // leaves these out, so reaching here means the tree changed underneath or
+    // something else called this: either way the answer is a sentence, never
+    // an attempt. A server asked to put a folder inside its own subtree does
+    // something with no way back.
+    let inside_it: Vec<String> = deepest_first(&chosen.placed, chosen.folder.id)
+        .into_iter()
+        .map(|under| under.path)
+        .collect();
+    if inside_it.contains(&into) {
+        return refuse_a_command(
+            tx,
+            &format!(
+                "{} cannot go inside itself or inside a folder that is already in it.",
+                chosen.readable_name()
+            ),
+        );
+    }
+
+    let name = chosen.readable_name().to_string();
+    let where_to = branches[0]
+        .places
+        .iter()
+        .find(|place| place.id == into)
+        .map_or_else(|| name.clone(), |place| place.name.clone());
+    let question = if into.is_empty() {
+        format!("Move {name} out of the folder it is in, so it sits on its own?")
+    } else {
+        format!("Move {name} into {where_to}?")
+    };
+    let asked = MessageDialog::builder(
+        frame,
+        &format!(
+            "{question} Everything in it comes too, and the mail stays where it is inside it."
+        ),
+        "Move Folder",
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build()
+    .show_modal();
+    if asked != ID_YES {
+        return;
+    }
+
+    let said = if into.is_empty() {
+        format!("{name} is no longer inside another folder.")
+    } else {
+        format!("{name} is now in {where_to}.")
+    };
+    send_status(tx, rt, &format!("Moving {name}..."));
+    spawn_the_folder_move(
+        tx,
+        rt,
+        chosen.account,
+        MovingAFolder {
+            path: chosen.folder.path.clone(),
+            inside: chosen.inside.clone(),
+            into,
+            asked_about: chosen.folder.id,
+            placed: chosen.placed,
+            said,
+        },
+    );
+}
+
+/// One move, and everything needed to work out the path it lands on.
+struct MovingAFolder {
+    /// The folder's path now, as the server spells it.
+    path: String,
+    /// The path of the folder it is in now, if it is in one.
+    inside: Option<String>,
+    /// The path of the folder it is going into, empty for the top level.
+    into: String,
+    asked_about: i64,
+    /// Every folder the account has, so the rows here can be moved to match.
+    placed: Vec<crate::application::folders_underneath::Placed>,
+    said: String,
+}
+
+/// Ask the server where it puts a folder inside another, then move it there.
+///
+/// The extra `LIST` is the price of the separator not being stored anywhere.
+/// It has to come from the server, per mailbox, because RFC 9051 has `LIST`
+/// answer per line and a server may answer differently for different parts of
+/// its namespace. Guessing a slash makes a folder with a slash in its name on
+/// any server that separates with a dot, which is the fault
+/// `make_a_new_folder` avoided by refusing to nest at all.
+///
+/// It happens here rather than before the question, so D-37's rule holds: no
+/// round trip in front of a dialog somebody may cancel. By this point they have
+/// answered.
+fn spawn_the_folder_move(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    moving: MovingAFolder,
+) {
+    use crate::application::folders_underneath::where_the_rows_move_to;
+    use crate::service::protocols::imap::{mailbox_name, what_separates_a_folder_from_one_inside};
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return say(UIUpdate::CommandRefused(
+                "This account has no usable IMAP port set, so nothing was moved.".to_string(),
+            ));
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return say(UIUpdate::CommandRefused(
+                "This account could not be signed in to, so nothing was moved.".to_string(),
+            ));
+        };
+
+        let controller = MailController::new();
+        if let Err(why) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return say(UIUpdate::CommandRefused(format!(
+                "The mail server could not be reached, so nothing was moved. {why}"
+            )));
+        }
+
+        // Coming out to the top level needs no separator: the folder's own name
+        // with nothing in front of it is the whole path.
+        let separator = if moving.into.is_empty() {
+            Some(String::new())
+        } else {
+            match handle.block_on(controller.fetch_folders()) {
+                Ok(listed) => what_separates_a_folder_from_one_inside(&listed, &moving.into)
+                    .map(str::to_string),
+                Err(why) => {
+                    let _ = handle.block_on(controller.disconnect_imap());
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account's folders could not be read, so nothing was moved. {why}"
+                    )));
+                }
+            }
+        };
+        let Some(separator) = separator else {
+            let _ = handle.block_on(controller.disconnect_imap());
+            // Said rather than guessed. A slash sent to a server that separates
+            // with a dot makes a folder whose name holds a slash, which is a
+            // different folder from the one somebody asked for and is not easy
+            // to see afterwards.
+            return say(UIUpdate::CommandRefused(
+                "This server does not say how it separates a folder from the one it is in, \
+                 so there is no way to spell where this would go. Nothing was moved."
+                    .to_string(),
+            ));
+        };
+
+        let to = mailbox_name::the_path_after_a_move(
+            &moving.path,
+            moving.inside.as_deref(),
+            &moving.into,
+            &separator,
+        );
+        let outcome = handle.block_on(controller.rename_mailbox(&moving.path, &to));
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        if let Err(said) = what_came_of(FolderAct::Moved, &moving.path, outcome) {
+            return say(UIUpdate::CommandRefused(said));
+        }
+
+        let moved_there_not_here = format!(
+            "{} It appears in its new place here after the next check for mail.",
+            moving.said
+        );
+        let Ok(paths) = AppPaths::resolve() else {
+            return say(UIUpdate::CommandAnswered(moved_there_not_here));
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)
+        else {
+            return say(UIUpdate::CommandAnswered(moved_there_not_here));
+        };
+        // The rows move exactly as they do for a rename, because on the wire
+        // this was a rename: one command, and the server carried the whole
+        // shape. Nothing here is named differently, so no name changes.
+        let named_now: std::collections::HashMap<i64, String> = cache
+            .get_folders_for_account(&account.id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|folder| (folder.id, folder.name))
+            .collect();
+        for (id, path) in where_the_rows_move_to(&moving.placed, moving.asked_about, &to) {
+            let Some(name) = named_now.get(&id) else {
+                continue;
+            };
+            if let Err(why) = cache.set_folder_path(id, &path, name) {
+                tracing::warn!("A moved folder could not be recorded here: {why}");
+                return say(UIUpdate::CommandAnswered(moved_there_not_here));
+            }
+        }
+        // What was open may now be under a different path, so what is chosen
+        // must stop naming a row that has gone, the way
+        // `delete_the_chosen_search` does and for the same reason.
+        if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
+            for update in updates {
+                say(update);
+            }
+        }
+        say(UIUpdate::CommandAnswered(moving.said));
+    });
 }
 
 /// The note above the box while a folder is being renamed.
