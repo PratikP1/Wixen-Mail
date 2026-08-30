@@ -21,6 +21,7 @@ pub mod collection_sync;
 pub mod contact_groups;
 pub mod contacts_sync;
 pub mod context_menu;
+pub mod conversations;
 pub mod deleting_at_the_server;
 pub mod deletions;
 pub mod destinations;

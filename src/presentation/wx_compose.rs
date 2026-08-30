@@ -3257,6 +3257,7 @@ mod looking_somebody_up_from_here {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::conversations;
 
     #[test]
     fn test_the_formatting_run_fits_the_range_kept_for_it() {
@@ -3325,6 +3326,142 @@ mod tests {
     #[test]
     fn test_forward_subject_no_double_fwd() {
         assert_eq!(format_forward_subject("Fwd: Hello"), "Fwd: Hello");
+    }
+
+    /// Subjects that carry no marker of either kind.
+    ///
+    /// Eight, and deliberately not eight variations on one shape: an ordinary
+    /// sentence, a bare word, a mailing list tag, a subject opening with a
+    /// number, one with a colon in the middle of it, one carrying brackets
+    /// somewhere other than the front, one in a script with no Latin letters,
+    /// and one ending in a parenthesised word.
+    const CARRYING_NO_MARKER: [&str; 8] = [
+        "Quarterly report",
+        "lunch",
+        "[mailing-list] hello world",
+        "2026 budget",
+        "Engine notes: the second pass",
+        "hello [world]",
+        "مرحبا بالعالم",
+        "Notes on the engine (draft)",
+    ];
+
+    #[test]
+    fn test_a_subject_carrying_no_marker_comes_back_from_a_reply_unchanged() {
+        // The pairing that goes wrong: the compose box writes a marker and the
+        // conversation list takes one off, and they are in different layers
+        // where nothing would notice them drifting apart. So the round trip is
+        // pinned here, in both directions, over subjects that carry nothing to
+        // begin with.
+        for subject in CARRYING_NO_MARKER {
+            assert_eq!(
+                conversations::name_of(&format_reply_subject(subject)),
+                subject,
+                "replying to {subject:?} and then naming the conversation"
+            );
+            assert_eq!(
+                conversations::name_of(&format_forward_subject(subject)),
+                subject,
+                "forwarding {subject:?} and then naming the conversation"
+            );
+        }
+    }
+
+    #[test]
+    fn test_replying_never_changes_what_the_conversation_is_called() {
+        // The half that holds for a subject already carrying a marker too: a
+        // reply belongs in the conversation it is a reply to, whatever the
+        // subject arrived looking like.
+        for subject in [
+            "Quarterly report",
+            "Re: Quarterly report",
+            "re: quarterly report",
+            "AW: Angebot",
+            "Fwd: Re: lunch",
+            "[mailing-list] hello world",
+        ] {
+            // Named first, and required to be a name. Comparing two calls to
+            // the same function is satisfied by a function that always answers
+            // the same nothing, so the fixture says what the answer has to
+            // look like before it says the two agree.
+            let named = conversations::name_of(subject);
+            assert!(!named.is_empty(), "{subject:?} named nothing at all");
+            assert_eq!(
+                conversations::name_of(&format_reply_subject(subject)),
+                named,
+                "replying to {subject:?} moved it to another conversation"
+            );
+            assert_eq!(
+                conversations::name_of(&format_forward_subject(subject)),
+                named,
+                "forwarding {subject:?} moved it to another conversation"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_reply_marker_in_another_case_does_not_get_a_second_one() {
+        // The exact ASCII `"Re: "` was the whole of the old test, so a
+        // lower-case one grew a chain every time somebody replied.
+        assert_eq!(format_reply_subject("re: Hello"), "re: Hello");
+        assert_eq!(format_reply_subject("RE: Hello"), "RE: Hello");
+        assert_eq!(format_reply_subject("Re[2]: Hello"), "Re[2]: Hello");
+        assert_eq!(format_forward_subject("fwd: Hello"), "fwd: Hello");
+        assert_eq!(format_forward_subject("FW: Hello"), "FW: Hello");
+    }
+
+    #[test]
+    fn test_a_reply_marker_in_another_language_does_not_get_a_second_one() {
+        // `Re: AW: Angebot` is what this used to produce, and the conversation
+        // list would then read that as one conversation while the compose box
+        // went on growing the chain.
+        assert_eq!(format_reply_subject("AW: Angebot"), "AW: Angebot");
+        assert_eq!(
+            format_reply_subject("SV: Kvartalsrapport"),
+            "SV: Kvartalsrapport"
+        );
+        assert_eq!(format_reply_subject("Odp: Spotkanie"), "Odp: Spotkanie");
+        assert_eq!(format_forward_subject("WG: Angebot"), "WG: Angebot");
+        assert_eq!(
+            format_forward_subject("VS: Kvartalsrapport"),
+            "VS: Kvartalsrapport"
+        );
+    }
+
+    #[test]
+    fn test_a_forward_marker_does_not_stand_in_for_a_reply_marker() {
+        // Replying to something forwarded to you is a reply, and the subject
+        // has to say so. Asking only whether taking markers off would change
+        // the subject cannot tell these apart, because it would answer yes for
+        // both and leave a reply looking like a forward.
+        assert_eq!(format_reply_subject("Fwd: Hello"), "Re: Fwd: Hello");
+        assert_eq!(format_forward_subject("Re: Hello"), "Fwd: Re: Hello");
+    }
+
+    #[test]
+    fn test_a_mailing_list_tag_is_not_a_marker_and_still_takes_one() {
+        // `mail_parser` takes a bracketed tag off as well as a marker, so
+        // "would taking markers off change this subject" answers yes here and
+        // would leave a reply to a list message with no `Re:` at all.
+        assert_eq!(
+            format_reply_subject("[mailing-list] hello world"),
+            "Re: [mailing-list] hello world"
+        );
+        assert_eq!(
+            format_forward_subject("[mailing-list] hello world"),
+            "Fwd: [mailing-list] hello world"
+        );
+    }
+
+    #[test]
+    fn test_a_subject_ending_the_way_a_forward_is_marked_still_takes_a_marker() {
+        // RFC 5256 has a trailing `(fwd)` as a forward marker too, so taking
+        // markers off changes this subject without anything at the front of it
+        // being a marker.
+        assert_eq!(
+            format_reply_subject("hello world (fwd)"),
+            "Re: hello world (fwd)"
+        );
     }
 
     #[test]
