@@ -30,6 +30,8 @@
 //! the name changes. So this takes the oldest subject as an argument every time
 //! rather than remembering an answer against a thread id.
 
+use mail_parser::parsers::fields::thread::{thread_name, trim_trailing_fwd};
+
 /// What a conversation with nothing to be called is called.
 ///
 /// The same words a message with no subject gets, from the one place that
@@ -38,19 +40,91 @@
 pub use crate::application::from_message::NO_SUBJECT;
 
 /// The conversation's own name, from the subject of the oldest message present.
-pub fn name_of(_oldest_subject: &str) -> String {
-    String::new()
+///
+/// Every reply and forward marker chain taken off, in any of the seventeen
+/// languages `mail_parser` knows, so a conversation is called what it is about
+/// rather than `Re: Fwd: Re:` followed by what it is about.
+pub fn name_of(oldest_subject: &str) -> String {
+    let base = thread_name(oldest_subject).trim();
+    if base.is_empty() {
+        NO_SUBJECT.to_string()
+    } else {
+        base.to_string()
+    }
 }
 
 /// Whether this subject already opens with a reply marker.
-pub fn opens_with_a_reply_marker(_subject: &str) -> bool {
-    false
+///
+/// Asked so the compose box can write `Re: ` exactly once. A subject that
+/// already says it is a reply, in any language and any case, does not get a
+/// second marker.
+pub fn opens_with_a_reply_marker(subject: &str) -> bool {
+    match opening_marker(subject) {
+        // Every marker `thread_name` removes is either a reply marker or a
+        // forward marker, and the two sets do not overlap, so a marker that is
+        // not a forward is a reply. Asked this way round because the forward
+        // set is the one that can be asked about directly.
+        Some(marker) => !is_a_forward_marker(marker),
+        None => false,
+    }
 }
 
 /// Whether this subject already opens with a forward marker.
-pub fn opens_with_a_forward_marker(_subject: &str) -> bool {
-    false
+pub fn opens_with_a_forward_marker(subject: &str) -> bool {
+    opening_marker(subject).is_some_and(is_a_forward_marker)
 }
+
+/// The token this subject opens with, when that token is a marker at all.
+///
+/// A marker is a word ending in a colon, optionally carrying the RFC's
+/// bracketed count: `Re:`, `AW:`, `Re[2]:`, `fwd[5]:`. Finding where it ends is
+/// reading the shape RFC 5256 defines; deciding whether the word inside it is a
+/// marker is the part that needs a list of forty-one words in seventeen
+/// languages, and that part is asked of `mail_parser` rather than answered
+/// here.
+///
+/// `None` for a subject that opens with anything else, which includes a
+/// bracketed list tag: `[mailing-list] hello` is not a reply, so replying to it
+/// still writes `Re: `. `thread_name` takes that tag off as well, which is why
+/// "would stripping change the subject" is the wrong question to ask here and
+/// this one is asked instead.
+fn opening_marker(subject: &str) -> Option<&str> {
+    let (token, _) = subject.trim_start().split_once(':')?;
+    let word = token.split('[').next().unwrap_or(token).trim();
+    (!word.is_empty() && is_a_marker(word)).then_some(word)
+}
+
+/// Whether `mail_parser` reads this word as a marker of either kind.
+///
+/// Asked by handing it a subject made of that word and one other, and seeing
+/// whether the other word comes back alone. That keeps the list of markers in
+/// the dependency that maintains it.
+fn is_a_marker(word: &str) -> bool {
+    thread_name(&format!("{word}: {A_WORD_THAT_IS_NOT_A_MARKER}")) == A_WORD_THAT_IS_NOT_A_MARKER
+}
+
+/// Whether `mail_parser` reads this word as a forward marker specifically.
+///
+/// The forward set is the only one of the two that can be asked about on its
+/// own: `trim_trailing_fwd` removes a trailing `(fwd)` for exactly the words in
+/// it and leaves every other word alone.
+///
+/// One marker is read wrongly by this, and it is worth saying rather than
+/// hiding: `trim_trailing_fwd` ignores a parenthesised word of a single
+/// character, so Hungarian's `I:` is taken for a reply marker. The cost is that
+/// forwarding a Hungarian forward writes `Fwd: I: ...` instead of leaving it
+/// alone. Forty of the forty-one markers are read correctly, against one that
+/// was read correctly before this change.
+fn is_a_forward_marker(word: &str) -> bool {
+    trim_trailing_fwd(&format!("{A_WORD_THAT_IS_NOT_A_MARKER} ({word})"))
+        == A_WORD_THAT_IS_NOT_A_MARKER
+}
+
+/// The other word in both probes above.
+///
+/// Anything that is not itself a marker in any of the seventeen languages. A
+/// probe built on a word that was one would answer yes about everything.
+const A_WORD_THAT_IS_NOT_A_MARKER: &str = "qzqz";
 
 #[cfg(test)]
 mod tests {

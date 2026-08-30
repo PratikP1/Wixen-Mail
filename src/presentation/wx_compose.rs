@@ -4,6 +4,7 @@
 //! The message body is a `WebView` holding a contenteditable page, built by
 //! [`crate::presentation::editor_document`].
 
+use crate::application::conversations;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
@@ -157,18 +158,34 @@ pub enum ComposeMode {
     },
 }
 
-/// Format a reply subject line: prepends "Re: " unless already present.
+/// The subject a reply goes out under.
+///
+/// A reply marker, unless the subject already opens with one. Whether it does
+/// is asked of [`crate::application::conversations`], which is the same place
+/// the conversation list asks when it takes markers off, so the two cannot give
+/// one subject two answers.
+///
+/// This used to recognise the exact ASCII `"Re: "` and nothing else, which was
+/// wrong twice over: a lower-case `re:` grew a second marker, and so did every
+/// one of the nineteen markers other languages write. Replying to `AW: Angebot`
+/// produced `Re: AW: Angebot`, and again on the next reply, while the
+/// conversation list read the whole chain as one conversation.
 fn format_reply_subject(subject: &str) -> String {
-    if subject.starts_with("Re: ") {
+    if conversations::opens_with_a_reply_marker(subject) {
         subject.to_string()
     } else {
         format!("Re: {}", subject)
     }
 }
 
-/// Format a forward subject line: prepends "Fwd: " unless already present.
+/// The subject a forward goes out under.
+///
+/// The other half of the rule above, and a separate question rather than a
+/// share of it: a forward of a reply says `Fwd: Re: ...` and a reply to a
+/// forward says `Re: Fwd: ...`, because each marker says something the other
+/// does not and dropping either loses what happened to the message.
 fn format_forward_subject(subject: &str) -> String {
-    if subject.starts_with("Fwd: ") {
+    if conversations::opens_with_a_forward_marker(subject) {
         subject.to_string()
     } else {
         format!("Fwd: {}", subject)
@@ -3257,7 +3274,6 @@ mod looking_somebody_up_from_here {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::conversations;
 
     #[test]
     fn test_the_formatting_run_fits_the_range_kept_for_it() {
@@ -3328,17 +3344,23 @@ mod tests {
         assert_eq!(format_forward_subject("Fwd: Hello"), "Fwd: Hello");
     }
 
-    /// Subjects that carry no marker of either kind.
+    /// Subjects that are already their own conversation's name.
     ///
     /// Eight, and deliberately not eight variations on one shape: an ordinary
-    /// sentence, a bare word, a mailing list tag, a subject opening with a
-    /// number, one with a colon in the middle of it, one carrying brackets
-    /// somewhere other than the front, one in a script with no Latin letters,
-    /// and one ending in a parenthesised word.
-    const CARRYING_NO_MARKER: [&str; 8] = [
+    /// sentence, a bare word, one opening with the letters a marker is spelled
+    /// with but no marker, one opening with a number, one with a colon in the
+    /// middle of it, one carrying brackets somewhere other than the front, one
+    /// in a script with no Latin letters, and one ending in a parenthesised
+    /// word.
+    ///
+    /// A mailing list tag is not here, and the reason is worth writing down: it
+    /// is not a marker, so it still takes a `Re:`, and it is still taken off
+    /// the conversation's name, so the round trip below returns the name rather
+    /// than the subject. Both halves of that are tested on their own.
+    const ALREADY_THEIR_OWN_NAME: [&str; 8] = [
         "Quarterly report",
         "lunch",
-        "[mailing-list] hello world",
+        "Re-opening the shop",
         "2026 budget",
         "Engine notes: the second pass",
         "hello [world]",
@@ -3353,7 +3375,7 @@ mod tests {
         // where nothing would notice them drifting apart. So the round trip is
         // pinned here, in both directions, over subjects that carry nothing to
         // begin with.
-        for subject in CARRYING_NO_MARKER {
+        for subject in ALREADY_THEIR_OWN_NAME {
             assert_eq!(
                 conversations::name_of(&format_reply_subject(subject)),
                 subject,

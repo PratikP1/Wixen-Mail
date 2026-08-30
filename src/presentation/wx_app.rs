@@ -2718,13 +2718,20 @@ impl WxMailApp {
                     // in the mailbox having lost their place, and for anybody
                     // navigating by ear their place is the only thing telling
                     // them where they are.
+                    // What the conversation is called, not what the row you
+                    // happened to be standing on was called. Opening a
+                    // conversation from a reply used to title it
+                    // "Re: Re: Quarterly report", which is three words of
+                    // marker before the two that say what it is about, read
+                    // out every time the dialog opens. D-04.
+                    let named = crate::application::conversations::name_of(&subject);
                     open_conversation_again(
                         &frame,
                         &reader,
                         &thread_cache,
                         &a11y,
                         &msg_list,
-                        subject.clone(),
+                        named,
                         nodes,
                         state.clone(),
                     );
