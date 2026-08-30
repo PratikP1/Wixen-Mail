@@ -89,12 +89,91 @@ pub fn cell_text(
 /// virtual list calls back for cell text while it is painting, so this cannot
 /// query the database, cannot block, and has nowhere to report an error to.
 pub fn conversation_cell_text(
-    _conversation: &ConversationItem,
-    _column: MessageColumn,
-    _dates: DateSettings,
-    _now: chrono::DateTime<chrono::Local>,
+    conversation: &ConversationItem,
+    column: MessageColumn,
+    dates: DateSettings,
+    now: chrono::DateTime<chrono::Local>,
 ) -> String {
-    String::new()
+    match column {
+        // Unread if any message in it is, which is what the count being more
+        // than none means.
+        MessageColumn::Unread => if conversation.unread > 0 {
+            "Unread"
+        } else {
+            ""
+        }
+        .to_string(),
+        MessageColumn::Attachment => if conversation.any_attachment {
+            "Has attachment"
+        } else {
+            ""
+        }
+        .to_string(),
+        // Already the conversation's name: the rule that strips the markers is
+        // the one the query ordered by, so it has run before this. The fallback
+        // is for a conversation whose oldest message had no subject stored at
+        // all, which is a row somebody would otherwise arrow onto and hear
+        // silence from.
+        MessageColumn::Subject => {
+            if conversation.subject.trim().is_empty() {
+                crate::application::conversations::NO_SUBJECT.to_string()
+            } else {
+                conversation.subject.clone()
+            }
+        }
+        MessageColumn::Correspondent => everyone_in(&conversation.senders),
+        MessageColumn::Received => format_for_list(&conversation.newest_received, now, dates),
+        MessageColumn::Sent => format_for_list(&conversation.newest_sent, now, dates),
+        MessageColumn::Snippet => conversation.snippet.clone(),
+        // D-03. A conversation identifier is a mail server's angle-bracketed
+        // nonsense and no use at all to anybody hearing it, and there is no
+        // per-item accessible name on this control, so the cell text is exactly
+        // what a screen reader reads for the row.
+        MessageColumn::Thread => crate::application::conversations::counts_read_as(
+            conversation.messages,
+            conversation.unread,
+        ),
+        MessageColumn::Size => conversation.size_bytes.map(size_cell).unwrap_or_default(),
+        MessageColumn::Flagged => if conversation.any_flagged {
+            "Flagged"
+        } else {
+            ""
+        }
+        .to_string(),
+        MessageColumn::Answered => if conversation.any_answered {
+            "Answered"
+        } else {
+            ""
+        }
+        .to_string(),
+        MessageColumn::Draft => if conversation.any_draft { "Draft" } else { "" }.to_string(),
+        // The worst in the conversation, already picked by the ranking in the
+        // column's own expression. Empty for an ordinary one, like the other
+        // flag cells.
+        MessageColumn::Safety => conversation.worst_safety.label().to_string(),
+        MessageColumn::To => everyone_in(&conversation.to),
+        MessageColumn::Cc => everyone_in(&conversation.cc),
+    }
+}
+
+/// A conversation's distinct people, as a sentence.
+///
+/// They arrive a line apiece, because SQLite joins with a comma and a display
+/// name is allowed to contain one: `"Smith, John" <john@example.com>` split on
+/// commas is two people who do not exist. Each is then read the way one
+/// message's Correspondent cell already reads a sender, so a conversation of
+/// one and the message in it say the same thing.
+///
+/// Empty for a conversation nobody was copied in on, which is most of them, and
+/// an empty cell costs no listening time.
+fn everyone_in(stored: &str) -> String {
+    stored
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(display_address)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A size in units rather than raw bytes.
@@ -735,7 +814,7 @@ mod tests {
             snippet: "The figures are attached".to_string(),
             senders: "\nAda Lovelace <ada@example.com>\nBob <bob@example.com>".to_string(),
             to: "\nme@example.com".to_string(),
-            cc: "\n".to_string(),
+            cc: "\nChris <chris@example.com>".to_string(),
             size_bytes: Some(4096),
             any_attachment: true,
             any_flagged: true,
@@ -929,8 +1008,14 @@ mod tests {
             conversation_cell(&conversation, MessageColumn::To),
             "me@example.com"
         );
-        // Nobody copied in is an empty cell, not a stray separator.
-        assert_eq!(conversation_cell(&conversation, MessageColumn::Cc), "");
+        assert_eq!(conversation_cell(&conversation, MessageColumn::Cc), "Chris");
+        // Nobody copied in is an empty cell, not a stray separator: the list
+        // arrives with a leading line break whether or not anybody is on it.
+        let nobody = ConversationItem {
+            cc: "\n".to_string(),
+            ..conversation
+        };
+        assert_eq!(conversation_cell(&nobody, MessageColumn::Cc), "");
     }
 
     #[test]
