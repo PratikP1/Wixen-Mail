@@ -102,3 +102,35 @@ closed.
 
 **Size:** medium. A per-account group on the settings screen, one control per
 account, plus the write-back and the wording for the sentence a sync says.
+
+---
+
+## `next_local_uid` hands out 0 after the number range wraps (found in 01-07)
+
+`MessageCache::next_local_uid` at `src/data/message_cache/messages.rs` reads
+`MAX(uid)` as an `i64`, adds one with `saturating_add`, and then casts the result
+to `u32`. The saturation is therefore on the `i64`, which cannot be reached from
+a `u32` column, while the cast that follows wraps. A folder whose highest number
+is `u32::MAX` gets `4294967296 as u32`, which is `0`, and the folder after that
+gets `1`: numbers already in use, against a `UNIQUE(folder_id, uid)` constraint.
+
+**How it was found.** Not by reading the code. A test in 01-07 needed a landing
+to fail on purpose and tried to arrange it by seeding a folder at the top of the
+range, on the assumption that the next number would saturate and collide. It did
+not collide, because it wrapped to zero, and the test passed for the wrong
+reason until the numbers were read.
+
+**Why it is not fixed here.** It is not reachable in any database this program
+can currently produce. Local folders count up from one and nothing has ever come
+near four billion messages in one folder, and the reserved end counts *down* from
+`u32::MAX` through `next_reserved_uid`, which is a different function with a
+different failure. Fixing it properly means deciding what a local folder does
+when its numbering is exhausted, which is a decision rather than a line, and it
+is nothing to do with sharing folders between accounts.
+
+**How it stays visible.** This entry, and nothing else: there is no test, because
+building a fixture with four billion rows is not a test anybody would run. That
+is a weaker answer than this file usually accepts and it is recorded as such.
+
+**Size:** small to fix the arithmetic, medium to decide and test what exhaustion
+should mean.

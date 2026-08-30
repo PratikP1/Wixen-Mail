@@ -505,6 +505,18 @@ impl WxMailApp {
                 }
             }
             state.accounts = accounts;
+
+            // Say what the merge of the local folders did, if it did anything
+            // (D-19). CommandAnswered writes it to the status bar and speaks it
+            // at Priority::High on a topic of its own, which is what this
+            // needs: the person did not ask for it, their mail moved, and it
+            // must not be coalesced away under the status a first sync
+            // produces. The migration writes the same counts to the log.
+            if let Some(report) = cache.merge_of_local_folders()
+                && report.anything_happened()
+            {
+                let _ = ui_tx.try_send(UIUpdate::CommandAnswered(report.said()));
+            }
         }
 
         // Reminders, before the window rather than when the Reminders panel is
@@ -14425,108 +14437,6 @@ fn ensure_local_folders(
         .ok_or_else(|| crate::common::Error::Other("This account has no folders".into()))
 }
 
-#[cfg(test)]
-mod local_folders_at_start_up {
-    use super::ensure_local_folders;
-    use crate::application::local_folders::{LOCAL_PREFIX, THIS_COMPUTER};
-    use crate::common::types::Protocol;
-    use crate::data::account::Account;
-    use crate::data::message_cache::MessageCache;
-
-    fn a_cache() -> (tempfile::TempDir, MessageCache) {
-        let dir = tempfile::tempdir().expect("a temporary folder");
-        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
-        (dir, cache)
-    }
-
-    fn an_account(id: &str, protocol: Protocol) -> Account {
-        let mut account = Account::new(id.to_string(), format!("{id}@example.com"));
-        account.id = id.to_string();
-        account.protocol = protocol.as_str().to_string();
-        account
-    }
-
-    #[test]
-    fn test_a_pop_account_gets_its_own_inbox_and_reaches_the_five_that_are_shared() {
-        // The ordinary case. Its Inbox is its own and the five it shares are
-        // stored under the reserved id, and the identifier handed back is the
-        // one POP mail goes into.
-        let (_dir, cache) = a_cache();
-        let account = an_account("acct", Protocol::Pop3);
-
-        let inbox = ensure_local_folders(&cache, &account).expect("its folders");
-
-        let own = cache.get_folders_for_account("acct").expect("its rows");
-        assert_eq!(
-            own.iter().map(|f| f.path.clone()).collect::<Vec<_>>(),
-            vec![format!("{LOCAL_PREFIX}/Inbox")],
-            "an account owns its inbox and nothing else here"
-        );
-        assert_eq!(
-            own[0].id, inbox,
-            "the identifier handed back is where POP mail goes"
-        );
-
-        let shared: Vec<String> = cache
-            .get_folders_for_account(THIS_COMPUTER)
-            .expect("the shared rows")
-            .into_iter()
-            .map(|folder| folder.name)
-            .collect();
-        for wanted in ["Sent", "Outbox", "Drafts", "Junk", "Trash"] {
-            assert!(
-                shared.contains(&wanted.to_string()),
-                "{wanted} was not made"
-            );
-        }
-    }
-
-    #[test]
-    fn test_an_imap_account_still_gets_somewhere_to_queue_mail() {
-        // FOR_IMAP became empty at D-18, and this loop used to build its rows
-        // from it. An IMAP account with no rows at all fails on the way in
-        // with "This account has no folders", which is every IMAP account.
-        let (_dir, cache) = a_cache();
-        let account = an_account("mail", Protocol::Imap);
-
-        let outbox = ensure_local_folders(&cache, &account).expect("its folders");
-
-        let row = cache
-            .get_folder(THIS_COMPUTER, &format!("{LOCAL_PREFIX}/Outbox"))
-            .expect("the lookup")
-            .expect("an IMAP account has somewhere to queue mail");
-        assert_eq!(row.id, outbox, "the outbox is what is handed back");
-        assert!(
-            cache
-                .get_folders_for_account("mail")
-                .expect("its rows")
-                .is_empty(),
-            "an IMAP account made a folder of its own on this computer"
-        );
-    }
-
-    #[test]
-    fn test_two_accounts_share_one_set_rather_than_making_one_each() {
-        // The repetition D-18 removes, asserted as a count. Before it, two
-        // accounts meant two Drafts folders and the tree listed both.
-        let (_dir, cache) = a_cache();
-
-        ensure_local_folders(&cache, &an_account("one", Protocol::Pop3)).expect("its folders");
-        ensure_local_folders(&cache, &an_account("two", Protocol::Pop3)).expect("its folders");
-
-        let shared = cache
-            .get_folders_for_account(THIS_COMPUTER)
-            .expect("the shared rows");
-
-        assert_eq!(
-            shared.len(),
-            5,
-            "the shared folders were made more than once: {:?}",
-            shared.iter().map(|f| f.path.clone()).collect::<Vec<_>>()
-        );
-    }
-}
-
 /// Watch the inbox for arrivals on a connection of its own.
 ///
 /// Started when a check for mail finishes, so the client learns about new mail
@@ -21900,6 +21810,108 @@ mod making_a_folder {
         assert!(
             the_path_of_a_new_folder(None, sneaky).is_err(),
             "the local prefix was accepted as a typed name"
+        );
+    }
+}
+
+#[cfg(test)]
+mod local_folders_at_start_up {
+    use super::ensure_local_folders;
+    use crate::application::local_folders::{LOCAL_PREFIX, THIS_COMPUTER};
+    use crate::common::types::Protocol;
+    use crate::data::account::Account;
+    use crate::data::message_cache::MessageCache;
+
+    fn a_cache() -> (tempfile::TempDir, MessageCache) {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        (dir, cache)
+    }
+
+    fn an_account(id: &str, protocol: Protocol) -> Account {
+        let mut account = Account::new(id.to_string(), format!("{id}@example.com"));
+        account.id = id.to_string();
+        account.protocol = protocol.as_str().to_string();
+        account
+    }
+
+    #[test]
+    fn test_a_pop_account_gets_its_own_inbox_and_reaches_the_five_that_are_shared() {
+        // The ordinary case. Its Inbox is its own and the five it shares are
+        // stored under the reserved id, and the identifier handed back is the
+        // one POP mail goes into.
+        let (_dir, cache) = a_cache();
+        let account = an_account("acct", Protocol::Pop3);
+
+        let inbox = ensure_local_folders(&cache, &account).expect("its folders");
+
+        let own = cache.get_folders_for_account("acct").expect("its rows");
+        assert_eq!(
+            own.iter().map(|f| f.path.clone()).collect::<Vec<_>>(),
+            vec![format!("{LOCAL_PREFIX}/Inbox")],
+            "an account owns its inbox and nothing else here"
+        );
+        assert_eq!(
+            own[0].id, inbox,
+            "the identifier handed back is where POP mail goes"
+        );
+
+        let shared: Vec<String> = cache
+            .get_folders_for_account(THIS_COMPUTER)
+            .expect("the shared rows")
+            .into_iter()
+            .map(|folder| folder.name)
+            .collect();
+        for wanted in ["Sent", "Outbox", "Drafts", "Junk", "Trash"] {
+            assert!(
+                shared.contains(&wanted.to_string()),
+                "{wanted} was not made"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_imap_account_still_gets_somewhere_to_queue_mail() {
+        // FOR_IMAP became empty at D-18, and this loop used to build its rows
+        // from it. An IMAP account with no rows at all fails on the way in
+        // with "This account has no folders", which is every IMAP account.
+        let (_dir, cache) = a_cache();
+        let account = an_account("mail", Protocol::Imap);
+
+        let outbox = ensure_local_folders(&cache, &account).expect("its folders");
+
+        let row = cache
+            .get_folder(THIS_COMPUTER, &format!("{LOCAL_PREFIX}/Outbox"))
+            .expect("the lookup")
+            .expect("an IMAP account has somewhere to queue mail");
+        assert_eq!(row.id, outbox, "the outbox is what is handed back");
+        assert!(
+            cache
+                .get_folders_for_account("mail")
+                .expect("its rows")
+                .is_empty(),
+            "an IMAP account made a folder of its own on this computer"
+        );
+    }
+
+    #[test]
+    fn test_two_accounts_share_one_set_rather_than_making_one_each() {
+        // The repetition D-18 removes, asserted as a count. Before it, two
+        // accounts meant two Drafts folders and the tree listed both.
+        let (_dir, cache) = a_cache();
+
+        ensure_local_folders(&cache, &an_account("one", Protocol::Pop3)).expect("its folders");
+        ensure_local_folders(&cache, &an_account("two", Protocol::Pop3)).expect("its folders");
+
+        let shared = cache
+            .get_folders_for_account(THIS_COMPUTER)
+            .expect("the shared rows");
+
+        assert_eq!(
+            shared.len(),
+            5,
+            "the shared folders were made more than once: {:?}",
+            shared.iter().map(|f| f.path.clone()).collect::<Vec<_>>()
         );
     }
 }

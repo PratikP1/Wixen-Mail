@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 322 records have arrived since and have not been through it.
+# 324 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9447,4 +9447,79 @@ after = """    let _ = crate::service::protocols::imap::mailbox_name::encode(&wh
     let after = moved(&in_order, &which, direction);"""
 red = [
     "application::account_order::nothing_here_reaches_a_server::test_moving_an_account_makes_no_call_that_leaves_this_machine",
+]
+
+[[guard]]
+# The merge never puts away a folder that still holds mail.
+#
+# `folders` cascades to `messages`, so deleting a folder row destroys every
+# message still in it. The merge deletes each per-account Sent, Outbox, Drafts,
+# Junk and Trash once its mail has landed in the shared one, and "once its mail
+# has landed" is the whole of what makes that safe.
+#
+# It is not a theoretical case. The loop carries on past a message it could not
+# move, deliberately: one unmovable message in one account's Trash would
+# otherwise leave every other account's mail unmerged on every open for ever.
+# So a folder with something left in it is a state the code really reaches, and
+# the emptiness test is what stands between that and losing the mail this
+# program holds the only copy of.
+#
+# The test is part of the DELETE rather than a check before it. Asking first
+# and deleting second is two statements with a gap, and the answer can change
+# in the gap.
+#
+# The break is the one somebody would write while tidying: the folder is empty
+# by now, so why ask.
+#
+# Measured by hand on 2026-08-30 against the whole library: two tests.
+name = "the merge never puts away a folder that still holds mail"
+file = "src/data/message_cache/shared_folders.rs"
+before = """                    "DELETE FROM folders
+                     WHERE id = ?1
+                       AND NOT EXISTS (SELECT 1 FROM messages WHERE folder_id = ?1)","""
+after = """                    "DELETE FROM folders
+                     WHERE id = ?1","""
+red = [
+    "data::message_cache::shared_folders::tests::test_a_folder_that_still_holds_mail_is_never_put_away",
+    "data::message_cache::shared_folders::tests::test_a_merge_that_stops_partway_has_landed_what_it_moved_and_lost_nothing",
+]
+
+[[guard]]
+# A moved message is given a number the folder it lands in is not already using.
+#
+# `messages` carries `UNIQUE(folder_id, uid)`. IMAP numbers are per mailbox and
+# POP ones per download, so two accounts' local Trash both holding uid 42 is
+# expected rather than hypothetical, and the merge of the local folders brings
+# exactly those two together. Carrying the old number across loses the second
+# message: D-40 is the decision that it must not.
+#
+# The number is not chosen in the merge. It comes from `move_message`, which is
+# where an ordinary move gets one too, and that is the point of the record: the
+# guard sits on the shared path, so the three tests below it that are about
+# ordinary moves redden alongside the two that are about the merge. A copy of
+# this logic written separately for the migration would have been a second
+# answer to one question, and it would have had to be guarded twice.
+#
+# The break is the one the plan for this work actually proposed, on the belief
+# that nothing here had ever rewritten a uid: keep the number the message
+# already had.
+#
+# Measured by hand on 2026-08-30 against the whole library: five tests, three of
+# them about ordinary moves rather than about the merge. That spread is the
+# evidence the two really do share one implementation.
+name = "a moved message is renumbered for the folder it lands in"
+file = "src/data/message_cache/messages.rs"
+before = """        let was = self.uid_of(message_id)?;
+        let numbering = self.numbering_in(into_folder)?;
+        let uid = match numbering {"""
+after = """        let was = self.uid_of(message_id)?;
+        let numbering = self.numbering_in(into_folder)?;
+        let uid = was.unwrap_or(1);
+        let _unused = match numbering {"""
+red = [
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
+    "data::message_cache::messages::tests::test_a_message_moved_into_a_folder_on_this_computer_still_counts_upward",
+    "data::message_cache::messages::tests::test_two_messages_moved_into_one_folder_do_not_collide",
+    "data::message_cache::shared_folders::tests::test_afterwards_no_account_keeps_a_copy_of_a_folder_that_is_shared",
+    "data::message_cache::shared_folders::tests::test_two_messages_numbered_the_same_both_survive_and_one_records_its_old_number",
 ]

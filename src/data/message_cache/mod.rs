@@ -22,6 +22,7 @@ mod outbox;
 pub mod reminders;
 pub mod saved_searches;
 mod searching;
+pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
 mod tags;
@@ -108,6 +109,12 @@ pub struct MessageCache {
     /// How much of the form signed mail arrived in to keep. See
     /// [`signed_original::SIGNED_ORIGINAL_BUDGET_BYTES`].
     signed_original_budget: i64,
+    /// What the merge of the local folders did when this cache was opened.
+    ///
+    /// `None` when it could not run at all. Kept because the merge happens once
+    /// and unasked for, so whoever opened the cache owes the person a sentence
+    /// about it, and the only moment that sentence is available is here.
+    merge_of_local_folders: Option<shared_folders::MergeReport>,
 }
 
 /// Cached folder information
@@ -1163,12 +1170,13 @@ impl MessageCache {
         )
         .map_err(|e| Error::Other(format!("Failed to set pragmas: {}", e)))?;
 
-        let cache = Self {
+        let mut cache = Self {
             conn,
             security,
             body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
             attachment_budget: attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES,
             signed_original_budget: signed_original::SIGNED_ORIGINAL_BUDGET_BYTES,
+            merge_of_local_folders: None,
         };
         cache.initialize_schema()?;
 
@@ -1180,6 +1188,23 @@ impl MessageCache {
         if let Err(e) = cache.migrate_inline_bodies() {
             tracing::warn!("Could not move inline message bodies: {}", e);
         }
+
+        // Databases written before the five local folders were shared have one
+        // set per account. Bring them together on open (D-18, D-19). Not fatal
+        // for the same reason as above: every message is still readable where
+        // it is, nothing is removed until it has landed somewhere else, and the
+        // next open carries on from wherever this one stopped.
+        //
+        // The report is kept so that whoever opened the cache can say what
+        // happened. Somebody did not ask for this and their mail moved, so it
+        // is spoken as well as logged.
+        cache.merge_of_local_folders = match cache.merge_local_folders() {
+            Ok(report) => Some(report),
+            Err(e) => {
+                tracing::warn!("Could not bring the shared folders together: {}", e);
+                None
+            }
+        };
 
         // Databases written before `thread_id` had a writer hold NULL in every
         // row of it, so nothing could count a conversation across an account
@@ -2169,6 +2194,20 @@ impl MessageCache {
         // Zero for every row written before this existed, which is the truthful
         // answer: nothing wrote such a row until now.
         self.ensure_column_exists("messages", "filed_here", "INTEGER NOT NULL DEFAULT 0")?;
+        // Where a message was before the five local folders were merged into
+        // one set each (D-18, D-19, D-40). The merge gives every message it
+        // moves a fresh number in the shared folder, because `UNIQUE(folder_id,
+        // uid)` and two accounts' Trash both holding uid 42 is expected rather
+        // than hypothetical, and these two say what it had and whose it was.
+        //
+        // Both nullable, and null is a real answer: a message that has never
+        // been moved has no earlier number and no earlier account. Both are
+        // written for every message the merge moves rather than only the ones
+        // whose number had to change, because between them they are the whole
+        // of what makes the merge reversible, and it rewrites the only copy of
+        // that mail.
+        self.ensure_column_exists("messages", "original_uid", "INTEGER")?;
+        self.ensure_column_exists("messages", "original_account_id", "TEXT")?;
         // The name recipients see on mail from this account, which is the
         // person's own name and not the label they gave the account. Empty by
         // default, which is exactly what every message sent before this column

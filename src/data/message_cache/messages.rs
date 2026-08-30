@@ -12,6 +12,28 @@ use std::collections::HashSet;
 /// The top of the range, counted down from. See [`MessageCache::next_reserved_uid`].
 const FIRST_RESERVED_UID: u32 = u32::MAX;
 
+/// What number a message held before a move, and what it holds after.
+///
+/// A move always hands out a fresh number, because the table keys messages on
+/// the folder and the number together. Whether that number is actually
+/// different is what a caller counting renumbered messages wants to know, and
+/// it is not something the mover can assume either way: the first message into
+/// an empty folder is numbered one, and it may well have been numbered one
+/// where it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Renumbering {
+    /// `None` when there was no such message to move.
+    pub was: Option<u32>,
+    pub now: u32,
+}
+
+impl Renumbering {
+    /// Whether the message came out of this holding a different number.
+    pub fn changed(&self) -> bool {
+        self.was != Some(self.now)
+    }
+}
+
 /// The rows whose body has nowhere else to be fetched from.
 ///
 /// Mail collected over POP was downloaded once and the server may well have
@@ -310,6 +332,48 @@ impl MessageCache {
     /// row is one the next sync deletes. Getting the number right and leaving
     /// the marker off swaps one silent loss for another.
     pub fn move_message(&self, message_id: i64, into_folder: i64) -> Result<()> {
+        self.move_message_from(message_id, into_folder, None)?;
+        Ok(())
+    }
+
+    /// Move a message and write down where it came from.
+    ///
+    /// [`Self::move_message`] with the one thing an ordinary move has no use
+    /// for: the number the message held and the account whose folder it was in
+    /// before. Only the merge of the local folders (D-19) needs that, and it
+    /// needs it because it is rewriting the only copy of somebody's mail and
+    /// those two columns are the whole of what makes the move reversible.
+    ///
+    /// One implementation under both, rather than a second move that assigns
+    /// its own number. The number this hands out has to come from the same
+    /// place an ordinary move's does, and so does the marker saying whether the
+    /// row is one this program filed: a copy of that logic which forgot the
+    /// marker would write rows the next sync deletes, which is precisely the
+    /// loss the merge exists to avoid.
+    ///
+    /// Returns what the message was numbered before and after, so a caller can
+    /// count how many really had to be renumbered.
+    pub fn move_message_recording_its_origin(
+        &self,
+        message_id: i64,
+        into_folder: i64,
+        came_from_account: &str,
+    ) -> Result<Renumbering> {
+        self.move_message_from(message_id, into_folder, Some(came_from_account))
+    }
+
+    /// The move both of the above are.
+    ///
+    /// `origin` is `None` for an ordinary move, which leaves both origin
+    /// columns exactly as they were: a message moved to the Trash after the
+    /// merge must not lose the record of where the merge found it.
+    fn move_message_from(
+        &self,
+        message_id: i64,
+        into_folder: i64,
+        origin: Option<&str>,
+    ) -> Result<Renumbering> {
+        let was = self.uid_of(message_id)?;
         let numbering = self.numbering_in(into_folder)?;
         let uid = match numbering {
             WrittenDownAs::FiledHereCountingUp => self.next_local_uid(into_folder)?,
@@ -322,16 +386,39 @@ impl MessageCache {
         // the marker there would offer it to the next sync as something to
         // reconcile against a server that has never heard of it.
         let mark = matches!(numbering, WrittenDownAs::FiledHereCountingDownFromTheTop);
+        // Written only when there is an origin to write, and never overwritten
+        // once written: the first move is the one that took the message out of
+        // the folder it had always been in, and a later ordinary move is not.
+        let recording = origin.is_some();
         self.conn
             .execute(
                 "UPDATE messages
                  SET folder_id = ?1, uid = ?2,
-                     filed_here = CASE WHEN ?4 THEN 1 ELSE filed_here END
+                     filed_here = CASE WHEN ?4 THEN 1 ELSE filed_here END,
+                     original_uid = CASE
+                         WHEN ?5 AND original_uid IS NULL THEN uid ELSE original_uid END,
+                     original_account_id = CASE
+                         WHEN ?5 AND original_account_id IS NULL THEN ?6
+                         ELSE original_account_id END
                  WHERE id = ?3",
-                params![into_folder, uid, message_id, mark],
+                params![into_folder, uid, message_id, mark, recording, origin],
             )
             .map_err(|e| Error::Other(format!("Failed to move the message: {}", e)))?;
-        Ok(())
+
+        Ok(Renumbering { was, now: uid })
+    }
+
+    /// What number a message holds, or `None` if there is no such message.
+    fn uid_of(&self, message_id: i64) -> Result<Option<u32>> {
+        self.conn
+            .query_row(
+                "SELECT uid FROM messages WHERE id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the message: {}", e)))
+            .map(|uid| uid.map(|uid| uid as u32))
     }
 
     /// The number to give a row this program is filing into a folder.

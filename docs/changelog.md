@@ -23,6 +23,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   still moves the message to the Trash on this computer, and the switch that
   turns deleting off still turns it off.
 
+  **Your existing mail is moved into the shared folders the first time you open
+  this version, and it tells you what it did.** You will hear, and see in the
+  status bar, how many messages moved and which accounts they came from. It is
+  also written to the log.
+
+  Nothing is removed until it has landed somewhere else, one message at a time,
+  so a message is never in neither folder. If one message cannot be moved, the
+  rest still are: it stays where it is, the count says fewer moved than were
+  found, and the next time you open the program tries again.
+
+  Two accounts often number their messages the same way, because those numbers
+  come from each mail server separately and mean nothing outside it. Where two
+  messages collide, both are kept: the second is given a new number in the
+  shared folder, and the number and the account it came from are both recorded
+  against it, for every message that moves rather than only the ones that
+  clashed.
+
+  **This is a one-way change.** Your local Sent, Outbox, Drafts, Junk and Trash
+  are combined, and combining them cannot be undone from inside the program.
+  What each message had before is written down, so the information needed to
+  separate them again is not lost, but there is no command that does it. If you
+  keep backups of `message_cache.db`, taking one before you first open this
+  version is worth doing.
+
 ### Added
 
 - **You can put your accounts in the order you want them.** Move the cursor onto
