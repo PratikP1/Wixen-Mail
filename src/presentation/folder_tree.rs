@@ -44,6 +44,14 @@ use crate::application::local_folders::is_this_computer;
 /// matching the sentence somebody heard a moment ago.
 pub use crate::application::local_folders::ON_THIS_COMPUTER;
 
+/// What the group of pinned folders is called.
+///
+/// One spelling, defined in `favourites` beside the rest of what a pin means
+/// and read here, for the same reason `ON_THIS_COMPUTER` is defined once: two
+/// spellings of one group is a heading that stops matching the sentence
+/// somebody heard a moment ago.
+pub use crate::application::favourites::FAVOURITES;
+
 /// What the one-list-for-every-account row is called in the folder tree.
 ///
 /// Plain words rather than "Unified Inbox", which is a phrase from other mail
@@ -82,6 +90,22 @@ pub enum WhichRow {
     /// share a name by design and only the path tells them apart. That is the
     /// whole of what plan 01-03 left for this one to close.
     Folder { account: String, path: String },
+    /// The group holding folders somebody has pinned to the top.
+    Favourites,
+    /// One account's part of that group, by the account's id.
+    ///
+    /// Distinct from [`WhichRow::Account`] although it names the same account,
+    /// because they are two rows: closing one must not close the other, and the
+    /// cursor being put back on one must not land on the other.
+    PinnedIn(String),
+    /// A pinned copy of a folder, by the same pair that names the folder.
+    ///
+    /// Distinct from [`WhichRow::Folder`] holding the same pair, and that is
+    /// the point of it. D-30 makes pinning a copy, so one folder really does
+    /// have two rows, and the two have to be told apart or expanding the pinned
+    /// copy collapses the real one and the cursor lands on whichever the
+    /// rebuild reached first.
+    Pinned { account: String, path: String },
     /// The group holding folders kept on this computer.
     OnThisComputer,
     /// The heading labels sit under.
@@ -117,11 +141,38 @@ impl WhichRow {
             WhichRow::Folder { account, path } => {
                 format!("folder{APART}{}{APART}{account}{path}", account.len())
             }
+            WhichRow::Favourites => "favourites".to_string(),
+            WhichRow::PinnedIn(id) => format!("pinned-in{APART}{id}"),
+            // The account's length in front of it for the same reason the
+            // folder above gives, and a different word in front of that, so a
+            // pinned copy and the folder's own row never spell one identity.
+            WhichRow::Pinned { account, path } => {
+                format!("pinned{APART}{}{APART}{account}{path}", account.len())
+            }
             WhichRow::OnThisComputer => "on-this-computer".to_string(),
             WhichRow::Labels => "labels".to_string(),
             WhichRow::Label(id) => format!("label{APART}{id}"),
             WhichRow::SavedSearches => "saved-searches".to_string(),
             WhichRow::SavedSearch(id) => format!("saved-search{APART}{id}"),
+        }
+    }
+
+    /// The folder this row opens, if it opens one.
+    ///
+    /// A pinned copy opens the folder it is a copy of (D-30), so this answers
+    /// with that folder's own identity and not its own. Everything keyed on a
+    /// folder — which folder id a row names, what mail to load, what the title
+    /// bar says — asks this rather than matching on the row twice, because the
+    /// two identities are deliberately different and a lookup by the pinned
+    /// one finds nothing.
+    pub fn opens(&self) -> Option<WhichRow> {
+        match self {
+            WhichRow::Folder { .. } => Some(self.clone()),
+            WhichRow::Pinned { account, path } => Some(WhichRow::Folder {
+                account: account.clone(),
+                path: path.clone(),
+            }),
+            _ => None,
         }
     }
 }
@@ -177,8 +228,23 @@ impl TreeRow {
                 closed,
                 setting,
             )),
+            // A pinned account's branch says the same things an account branch
+            // says, counting only what is pinned under it: its folder count is
+            // how many of that account's folders sit in the group, which is the
+            // one thing this row cannot otherwise say when it is closed.
+            WhichRow::PinnedIn(_) => Some(branch_text(
+                &self.name,
+                self.unread_here,
+                self.unread_in_all,
+                self.folders,
+                closed,
+                setting,
+            )),
+            WhichRow::Favourites => {
+                Some(group_text(FAVOURITES, self.unread_in_all, closed, setting))
+            }
             WhichRow::OnThisComputer => Some(local_group_text(self.unread_in_all, closed, setting)),
-            WhichRow::Folder { .. } => Some(folder_text(
+            WhichRow::Folder { .. } | WhichRow::Pinned { .. } => Some(folder_text(
                 &self.name,
                 self.unread_here,
                 self.unread_in_all,
@@ -290,16 +356,25 @@ pub fn folder_text(
     }
 }
 
-/// How the group of folders kept on this computer reads.
+/// How a group heading reads: its name, and what is unread beneath it.
 ///
-/// The same wording as any other row that holds rows. It is a group rather than
-/// a folder, so it has no unread mail of its own and reads "On this computer,
-/// 12 unread in all" while closed.
-pub fn local_group_text(in_all: i32, closed: bool, setting: UnreadOnAParent) -> String {
+/// The same wording as any other row that holds rows. A group is not a folder,
+/// so it holds no mail of its own and reads "On this computer, 12 unread in
+/// all" while closed.
+///
+/// One function for both groups this tree has. Two would be two spellings of
+/// one kind of row, and the day the counts were worded differently the two
+/// would start disagreeing about a number that is worked out the same way.
+pub fn group_text(name: &str, in_all: i32, closed: bool, setting: UnreadOnAParent) -> String {
     match unread_text(0, in_all, closed, setting) {
-        counts if counts.is_empty() => ON_THIS_COMPUTER.to_string(),
-        counts => format!("{ON_THIS_COMPUTER}, {counts}"),
+        counts if counts.is_empty() => name.to_string(),
+        counts => format!("{name}, {counts}"),
     }
+}
+
+/// How the group of folders kept on this computer reads.
+pub fn local_group_text(in_all: i32, closed: bool, setting: UnreadOnAParent) -> String {
+    group_text(ON_THIS_COMPUTER, in_all, closed, setting)
 }
 
 /// How a label row reads in the mail sidebar.
@@ -377,6 +452,7 @@ fn plain_row(identity: WhichRow, label: String, depth: usize, expandable: bool) 
 pub fn rows(
     accounts: &[AccountInTheTree],
     folders: &[FolderInTheTree],
+    pins: &[crate::application::favourites::Pin],
     labels: &[LabelInTheTree],
     searches: &[SearchInTheTree],
     setting: UnreadOnAParent,
@@ -394,12 +470,15 @@ pub fn rows(
         row
     };
 
-    let mut out = vec![plain_row(
+    // D-28: above All Inboxes, at the very top, and absent entirely when
+    // nothing is pinned rather than an empty heading to arrow into.
+    let mut out = favourite_rows(pins, accounts, folders, setting, collapsed);
+    out.push(plain_row(
         WhichRow::AllInboxes,
         ALL_INBOXES.to_string(),
         0,
         false,
-    )];
+    ));
 
     for account in accounts {
         // Whose it is, not where it is kept. Since D-18 a folder on this
@@ -516,6 +595,28 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
     }
     chain.reverse();
     chain
+}
+
+/// The Favourites group: the heading, a branch per account that has a pin, and
+/// the pinned folders under it.
+///
+/// Empty when nothing is pinned, which is what leaves the group out altogether.
+///
+/// The rows are **copies** (D-30). Each carries a [`WhichRow::Pinned`] identity
+/// rather than the [`WhichRow::Folder`] one the same folder has in its own
+/// branch, so the two are closed, opened and landed on separately. A pinned
+/// folder's own children are deliberately not brought along: the group is a
+/// shortcut to a folder, not a second copy of the tree under it, and a pinned
+/// parent dragging its subtree to the top would move most of the tree there.
+fn favourite_rows(
+    pins: &[crate::application::favourites::Pin],
+    accounts: &[AccountInTheTree],
+    folders: &[FolderInTheTree],
+    setting: UnreadOnAParent,
+    collapsed: &std::collections::HashSet<String>,
+) -> Vec<TreeRow> {
+    let _ = (pins, accounts, folders, setting, collapsed);
+    Vec::new()
 }
 
 /// One branch's folders, nested under their parents, deepest last.
@@ -775,8 +876,34 @@ mod tests {
         rows(
             accounts,
             folders,
+            &[],
             labels,
             searches,
+            UnreadOnAParent::default(),
+            &std::collections::HashSet::new(),
+        )
+    }
+
+    fn pin(account: &str, path: &str, position: i64) -> crate::application::favourites::Pin {
+        crate::application::favourites::Pin {
+            account: account.to_string(),
+            path: path.to_string(),
+            position,
+        }
+    }
+
+    /// The tree with some folders pinned, nothing closed, the setting default.
+    fn tree_with_pins(
+        accounts: &[AccountInTheTree],
+        folders: &[FolderInTheTree],
+        pins: &[crate::application::favourites::Pin],
+    ) -> Vec<TreeRow> {
+        rows(
+            accounts,
+            folders,
+            pins,
+            &[],
+            &[],
             UnreadOnAParent::default(),
             &std::collections::HashSet::new(),
         )
@@ -822,6 +949,327 @@ mod tests {
                 WhichRow::SavedSearches,
             ]
         );
+    }
+
+    #[test]
+    fn test_favourites_sits_above_all_inboxes_at_the_very_top() {
+        // D-28, and the whole top-level order with the group in it, so this
+        // says where Favourites goes rather than only that it exists.
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[
+                folder("a", 1, "INBOX", None),
+                folder(THIS_COMPUTER, 2, "\u{1}Local/Drafts", None),
+            ],
+            &[pin("a", "INBOX", 0)],
+        );
+        let top: Vec<WhichRow> = rows
+            .iter()
+            .filter(|row| row.depth == 0)
+            .map(|row| row.identity.clone())
+            .collect();
+        assert_eq!(
+            top,
+            vec![
+                WhichRow::Favourites,
+                WhichRow::AllInboxes,
+                WhichRow::Account("a".to_string()),
+                WhichRow::OnThisComputer,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_there_is_no_favourites_group_when_nothing_is_pinned() {
+        // Absent entirely rather than an empty heading to arrow into, the
+        // convention the labels branch set and D-28 repeats.
+        let folders = [folder("a", 1, "INBOX", None)];
+        let rows = tree_with_pins(&[account("a", "Work")], &folders, &[]);
+        assert!(!rows.iter().any(|row| row.identity == WhichRow::Favourites));
+        assert_eq!(
+            rows.first().map(|row| row.identity.clone()),
+            Some(WhichRow::AllInboxes),
+            "and All Inboxes is back at the top where it was"
+        );
+        // The control, so this says "absent because nothing is pinned" rather
+        // than "absent always".
+        let pinned = tree_with_pins(&[account("a", "Work")], &folders, &[pin("a", "INBOX", 0)]);
+        assert!(
+            pinned
+                .iter()
+                .any(|row| row.identity == WhichRow::Favourites)
+        );
+    }
+
+    #[test]
+    fn test_two_accounts_pinned_inboxes_sit_under_a_branch_each_rather_than_side_by_side() {
+        // D-29. Two rows called Inbox with nothing to tell them apart is the
+        // defect this phase exists to remove, and a flat Favourites list would
+        // put it back inside the group meant to help.
+        let rows = tree_with_pins(
+            &[account("a", "Work"), account("b", "Home")],
+            &[folder("a", 1, "INBOX", None), folder("b", 2, "INBOX", None)],
+            &[pin("a", "INBOX", 0), pin("b", "INBOX", 0)],
+        );
+        let branches: Vec<WhichRow> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::PinnedIn(_)))
+            .map(|row| row.identity.clone())
+            .collect();
+        assert_eq!(
+            branches,
+            vec![
+                WhichRow::PinnedIn("a".to_string()),
+                WhichRow::PinnedIn("b".to_string()),
+            ]
+        );
+        // And no two rows sharing a parent read the same, which is what
+        // `where_a_row_sits` needs to pair a row back to its identity.
+        let pinned: Vec<&TreeRow> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::Pinned { .. }))
+            .collect();
+        assert_eq!(pinned.len(), 2);
+        assert_ne!(pinned[0].identity, pinned[1].identity);
+        let parents: Vec<Vec<String>> = pinned
+            .iter()
+            .map(|row| {
+                let at = rows
+                    .iter()
+                    .position(|r| r.identity == row.identity)
+                    .unwrap();
+                where_a_row_sits(&rows, at)
+            })
+            .collect();
+        assert_ne!(
+            parents[0], parents[1],
+            "two pinned inboxes are told apart by the branch they sit under"
+        );
+    }
+
+    #[test]
+    fn test_a_pinned_folder_is_still_in_its_own_account_branch() {
+        // D-30. Pinning makes a copy, so the tree somebody learned does not
+        // change under them and unpinning cannot lose anything.
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[folder("a", 1, "Receipts", None)],
+            &[pin("a", "Receipts", 0)],
+        );
+        let in_the_branch = WhichRow::Folder {
+            account: "a".to_string(),
+            path: "Receipts".to_string(),
+        };
+        let in_the_group = WhichRow::Pinned {
+            account: "a".to_string(),
+            path: "Receipts".to_string(),
+        };
+        assert!(
+            rows.iter().any(|row| row.identity == in_the_branch),
+            "the folder is still where it was"
+        );
+        assert!(
+            rows.iter().any(|row| row.identity == in_the_group),
+            "and it is in the group as well"
+        );
+        assert_ne!(
+            in_the_branch.stored(),
+            in_the_group.stored(),
+            "two rows for one folder, told apart, or closing one closes the other"
+        );
+    }
+
+    #[test]
+    fn test_unpinning_leaves_the_account_branchs_row_untouched() {
+        // The same tree without the pin. The row in the account branch is
+        // identical, which is what makes unpinning safe.
+        let with = tree_with_pins(
+            &[account("a", "Work")],
+            &[folder("a", 1, "Receipts", None)],
+            &[pin("a", "Receipts", 0)],
+        );
+        let without = tree_with_pins(
+            &[account("a", "Work")],
+            &[folder("a", 1, "Receipts", None)],
+            &[],
+        );
+        let its_own_row = |rows: &[TreeRow]| {
+            rows.iter()
+                .find(|row| {
+                    row.identity
+                        == WhichRow::Folder {
+                            account: "a".to_string(),
+                            path: "Receipts".to_string(),
+                        }
+                })
+                .cloned()
+                .expect("the folder's own row")
+        };
+        // That the pin did something, before asserting what it left alone.
+        // Without this the test is satisfied by two identical trees neither of
+        // which has a group in it.
+        assert!(
+            with.iter().any(|row| row.identity == WhichRow::Favourites),
+            "the pinned tree has a group"
+        );
+        assert!(
+            !without
+                .iter()
+                .any(|row| row.identity == WhichRow::Favourites)
+        );
+        assert_eq!(its_own_row(&with), its_own_row(&without));
+    }
+
+    #[test]
+    fn test_an_accounts_pins_sit_in_the_order_somebody_put_them_in() {
+        // D-31. Given out of order so this tells sorting by position from
+        // keeping the order the pins arrived in.
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[
+                folder("a", 1, "First", None),
+                folder("a", 2, "Second", None),
+                folder("a", 3, "Third", None),
+            ],
+            &[
+                pin("a", "Third", 2),
+                pin("a", "First", 0),
+                pin("a", "Second", 1),
+            ],
+        );
+        let order: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::Pinned { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(order, vec!["First", "Second", "Third"]);
+    }
+
+    #[test]
+    fn test_no_row_of_the_group_spells_out_a_level_or_whether_it_is_open() {
+        // CLAUDE.md, and D-15 and D-16 for the rows this one copies. The
+        // control says all three; a label that says them too is a second
+        // answer that disagrees the moment a branch is closed.
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[folder("a", 1, "Receipts", None)],
+            &[pin("a", "Receipts", 0)],
+        );
+        let group: Vec<&TreeRow> = rows
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.identity,
+                    WhichRow::Favourites | WhichRow::PinnedIn(_) | WhichRow::Pinned { .. }
+                )
+            })
+            .collect();
+        assert_eq!(group.len(), 3, "the heading, the branch and the folder");
+        for row in group {
+            let said = row.label.to_lowercase();
+            for forbidden in [
+                "level",
+                "expanded",
+                "collapsed",
+                "open",
+                "closed",
+                "item ",
+                " of ",
+            ] {
+                assert!(
+                    !said.contains(forbidden),
+                    "{:?} says {forbidden:?}, which is the control's to say",
+                    row.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_group_and_the_account_branch_are_closed_apart() {
+        // The pinned copy and the folder's own row are two rows, so closing
+        // the group must leave the account branch as it was.
+        let closed = ["favourites".to_string()].into_iter().collect();
+        let rows = rows(
+            &[account("a", "Work")],
+            &[folder("a", 1, "Receipts", None)],
+            &[pin("a", "Receipts", 0)],
+            &[],
+            &[],
+            UnreadOnAParent::default(),
+            &closed,
+        );
+        // The group is there and closed, which is what makes the two
+        // assertions below say something. A tree with no group at all would
+        // satisfy them.
+        assert!(
+            rows.iter().any(|row| row.identity == WhichRow::Favourites),
+            "the group is there"
+        );
+        assert!(
+            rows.iter()
+                .any(|row| row.identity == WhichRow::Account("a".to_string())),
+            "the account branch is still built"
+        );
+        assert!(
+            rows.iter().any(|row| row.identity
+                == WhichRow::Folder {
+                    account: "a".to_string(),
+                    path: "Receipts".to_string(),
+                }),
+            "and so is the folder's own row"
+        );
+    }
+
+    #[test]
+    fn test_the_group_says_what_is_unread_beneath_it() {
+        let mut receipts = folder("a", 1, "Receipts", None);
+        receipts.unread = 3;
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[receipts],
+            &[pin("a", "Receipts", 0)],
+        );
+        let group = rows
+            .iter()
+            .find(|row| row.identity == WhichRow::Favourites)
+            .expect("the group");
+        assert_eq!(group.label, "Favourites, 3 unread in all");
+        let branch = rows
+            .iter()
+            .find(|row| row.identity == WhichRow::PinnedIn("a".to_string()))
+            .expect("the branch");
+        assert_eq!(
+            branch.label, "Work, 3 unread in all, 1 folder",
+            "and the branch counts only what is pinned under it"
+        );
+    }
+
+    #[test]
+    fn test_a_pin_naming_a_folder_the_account_no_longer_has_makes_no_row() {
+        // The storage cannot produce this, because a pin points at a real
+        // folder row. The tree is built from what a caller passed it, so it
+        // says what it does with a pin it cannot place rather than indexing
+        // into nothing.
+        let folders = [folder("a", 1, "Receipts", None)];
+        let missing = tree_with_pins(&[account("a", "Work")], &folders, &[pin("a", "Gone", 0)]);
+        assert!(
+            !missing
+                .iter()
+                .any(|row| row.identity == WhichRow::Favourites),
+            "no heading over nothing"
+        );
+        // The control. The same tree, pinned at a folder that is there, does
+        // build a group, so this test tells a pin that could not be placed from
+        // a tree that never places any.
+        let found = tree_with_pins(
+            &[account("a", "Work")],
+            &folders,
+            &[pin("a", "Receipts", 0)],
+        );
+        assert!(found.iter().any(|row| row.identity == WhichRow::Favourites));
     }
 
     #[test]
@@ -1456,6 +1904,7 @@ mod tests {
             &folders,
             &[],
             &[],
+            &[],
             UnreadOnAParent::BothWhenClosed,
             &shut(&[the_archive_row()]),
         );
@@ -1468,6 +1917,7 @@ mod tests {
         let open = rows(
             &[account("a", "Work")],
             &folders,
+            &[],
             &[],
             &[],
             UnreadOnAParent::BothWhenClosed,
@@ -1492,6 +1942,7 @@ mod tests {
             &folders,
             &[],
             &[],
+            &[],
             UnreadOnAParent::BothAlways,
             &shut(&[the_archive_row()]),
         );
@@ -1507,6 +1958,7 @@ mod tests {
             &folders,
             &[],
             &[],
+            &[],
             UnreadOnAParent::BothWhenClosed,
             &shut(&[the_archive_row()]),
         );
@@ -1515,6 +1967,7 @@ mod tests {
             labelled(&rows(
                 &[account("a", "Work")],
                 &folders,
+                &[],
                 &[],
                 &[],
                 UnreadOnAParent::BothWhenClosed,
@@ -1535,12 +1988,14 @@ mod tests {
             &folders,
             &[],
             &[],
+            &[],
             UnreadOnAParent::BothWhenClosed,
             &std::collections::HashSet::new(),
         );
         let closed = rows(
             &[account("a", "Work")],
             &folders,
+            &[],
             &[],
             &[],
             UnreadOnAParent::BothWhenClosed,

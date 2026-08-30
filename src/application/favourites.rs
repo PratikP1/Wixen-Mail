@@ -81,6 +81,130 @@ pub struct Pin {
     pub position: i64,
 }
 
+/// One account's part of the Favourites group.
+///
+/// D-29. The group holds a branch per account rather than one flat list,
+/// because a flat list of pinned inboxes is two rows called Inbox with nothing
+/// to tell them apart, which is the defect this whole phase exists to remove
+/// and would be reintroduced inside the group meant to help.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinnedBranch {
+    pub account: String,
+    /// What the account is called, which is what the branch reads out as.
+    pub name: String,
+    /// The pinned folders' paths, in the order somebody put them in.
+    pub folders: Vec<String>,
+}
+
+/// The pinned folders arranged into a branch per account.
+///
+/// `accounts` is every account as `(id, name)` in the order they sit in the
+/// tree, and the branches come back in that same order. Not in the order things
+/// were pinned: the group mirrors the account structure, so it has to mirror
+/// the account order too, or moving an account would leave its favourites
+/// somewhere else.
+///
+/// An account with nothing pinned gets no branch, following the convention the
+/// labels branch set and D-28 repeats for the group as a whole: no branch at
+/// all rather than an empty one to arrow into. A pin belonging to no account in
+/// the list is left out, which is what happens to a pin whose account is not
+/// being shown.
+pub fn in_account_order(pins: &[Pin], accounts: &[(String, String)]) -> Vec<PinnedBranch> {
+    let _ = (pins, accounts);
+    Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pin(account: &str, path: &str, position: i64) -> Pin {
+        Pin {
+            account: account.to_string(),
+            path: path.to_string(),
+            position,
+        }
+    }
+
+    fn two_accounts() -> Vec<(String, String)> {
+        [("a", "Work"), ("b", "Home")]
+            .iter()
+            .map(|(id, name)| (id.to_string(), name.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_each_account_that_has_a_pin_gets_its_own_branch() {
+        // D-29, and the ordinary case: two accounts that have both pinned the
+        // folder with the same name. A flat list would be two rows called
+        // Inbox.
+        let branches = in_account_order(
+            &[pin("a", "INBOX", 0), pin("b", "INBOX", 0)],
+            &two_accounts(),
+        );
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].name, "Work");
+        assert_eq!(branches[1].name, "Home");
+        assert_eq!(branches[0].folders, vec!["INBOX"]);
+        assert_eq!(branches[1].folders, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn test_an_account_with_nothing_pinned_has_no_branch_at_all() {
+        let branches = in_account_order(&[pin("a", "INBOX", 0)], &two_accounts());
+        assert_eq!(branches.len(), 1, "no empty branch to arrow into");
+        assert_eq!(branches[0].account, "a");
+    }
+
+    #[test]
+    fn test_nothing_pinned_anywhere_gives_no_branches() {
+        assert!(in_account_order(&[], &two_accounts()).is_empty());
+    }
+
+    #[test]
+    fn test_the_branches_follow_the_order_the_accounts_sit_in() {
+        // The second account's pin arrives first, so an implementation that
+        // grouped in the order it met pins would put Home above Work.
+        let branches = in_account_order(
+            &[pin("b", "INBOX", 0), pin("a", "INBOX", 0)],
+            &two_accounts(),
+        );
+        assert_eq!(
+            branches.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+            vec!["Work", "Home"]
+        );
+    }
+
+    #[test]
+    fn test_a_branchs_folders_are_in_the_order_somebody_put_them_in() {
+        // Given out of order, so this discriminates sorting by position from
+        // keeping whatever order the pins arrived in.
+        let branches = in_account_order(
+            &[
+                pin("a", "Third", 2),
+                pin("a", "First", 0),
+                pin("a", "Second", 1),
+            ],
+            &two_accounts(),
+        );
+        assert_eq!(branches[0].folders, vec!["First", "Second", "Third"]);
+    }
+
+    #[test]
+    fn test_a_pin_belonging_to_no_account_being_shown_is_left_out() {
+        // Rather than a branch for an account the tree has no row for, which
+        // would be a heading with a name nothing else in the tree mentions.
+        let branches = in_account_order(&[pin("gone", "INBOX", 0)], &two_accounts());
+        assert!(branches.is_empty());
+        // The control, so this says "left out because its account is not
+        // shown" rather than "left out whatever happens".
+        assert_eq!(
+            in_account_order(&[pin("a", "INBOX", 0)], &two_accounts()).len(),
+            1
+        );
+    }
+}
+
 #[cfg(test)]
 mod nothing_here_reaches_a_server {
     /// Every file on the path that pins a folder.

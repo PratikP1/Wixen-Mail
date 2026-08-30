@@ -64,6 +64,7 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                 ],
                 &[],
                 &[],
+                &[],
                 UnreadOnAParent::default(),
                 &HashSet::new(),
             );
@@ -110,6 +111,7 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                     folder(3, "Sent", None),
                     folder(4, "Sent/2026", Some(3)),
                 ],
+                &[],
                 &[],
                 &[],
                 UnreadOnAParent::default(),

@@ -2402,7 +2402,11 @@ impl WxMailApp {
                         let Some(which) = which_row(&state, &folder_tree, &item) else {
                             return;
                         };
-                        let identity = which.stored();
+                        // The folder this row opens, which for a pinned copy is
+                        // the folder it copies rather than the copy. The two
+                        // identities are deliberately different, so a lookup by
+                        // the row's own would find no folder id at all.
+                        let identity = which.opens().unwrap_or_else(|| which.clone()).stored();
                         match &which {
                             // A branch is not a folder and landing on one opens
                             // nothing, the same way landing on the tree's own
@@ -2410,6 +2414,8 @@ impl WxMailApp {
                             WhichRow::Labels
                             | WhichRow::SavedSearches
                             | WhichRow::Account(_)
+                            | WhichRow::Favourites
+                            | WhichRow::PinnedIn(_)
                             | WhichRow::OnThisComputer => {
                                 lock_state(&state).selected_folder = Some(which.clone());
                                 return;
@@ -2472,7 +2478,9 @@ impl WxMailApp {
                                 }
                                 return;
                             }
-                            WhichRow::Folder { .. } => {}
+                            // A pinned copy opens the folder it copies, which
+                            // is the whole of what a pin is for.
+                            WhichRow::Folder { .. } | WhichRow::Pinned { .. } => {}
                         }
                         let (folder_id, account_id) = {
                             let mut s = lock_state(&state);
@@ -8469,6 +8477,12 @@ fn folder_tree_updates(
             name: account_name,
         }],
         &in_the_tree,
+        // What somebody has pinned, read once for the whole tree rather than
+        // per folder, the way what is collapsed is read below.
+        &cache.pinned_rows().unwrap_or_else(|e| {
+            tracing::warn!("What the folder tree has pinned could not be read: {e}");
+            Vec::new()
+        }),
         &labels
             .iter()
             .map(|tag| folder_tree::LabelInTheTree {
