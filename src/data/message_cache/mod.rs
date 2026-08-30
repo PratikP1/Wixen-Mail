@@ -1181,6 +1181,16 @@ impl MessageCache {
             tracing::warn!("Could not move inline message bodies: {}", e);
         }
 
+        // Databases written before `thread_id` had a writer hold NULL in every
+        // row of it, so nothing could count a conversation across an account
+        // and sorting by Thread put the whole folder in one bucket. Fill them
+        // in on open. Not fatal for the same reason as above: the ids can be
+        // worked out again from data that is still there, and the next open
+        // tries again.
+        if let Err(e) = cache.backfill_thread_ids() {
+            tracing::warn!("Could not give stored messages a conversation id: {}", e);
+        }
+
         // A database held before there was a search index has to have one
         // built, once. Ordinarily this compares two counts and stops. A
         // failure is not fatal for the same reason the line above is not:
@@ -2420,6 +2430,13 @@ impl MessageCache {
         let indexes = [
             "CREATE INDEX IF NOT EXISTS idx_messages_folder_id ON messages(folder_id)",
             "CREATE INDEX IF NOT EXISTS idx_messages_uid ON messages(uid)",
+            // The two a conversation is looked up by, and neither can be
+            // served by an index already here. An index is searched from its
+            // leftmost column, as the comment on `unified_inbox` says, and
+            // every messages index above begins with `folder_id`, which is
+            // exactly the column an account-wide question does not name.
+            "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
+            "CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
             // Not unique any more: an address is no longer what tells two

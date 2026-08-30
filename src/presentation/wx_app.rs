@@ -5056,9 +5056,13 @@ impl WxMailApp {
                 "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()
-            // Threading is not implemented. The item stays visible and
-            // disabled rather than pretending to work: a screen reader
-            // announces a disabled item as unavailable, which is the truth.
+            // Threading is built: conversations are reached with Enter on
+            // a message, and every stored message now carries a conversation
+            // id. What this item offers is the other thing, collapsing the
+            // list to one row per conversation, and that is not built. So it
+            // stays visible and disabled rather than pretending to work: a
+            // screen reader announces a disabled item as unavailable, which is
+            // the truth.
             .append_check_item(
                 ID_THREAD_VIEW,
                 "&Thread View\tCtrl+T",

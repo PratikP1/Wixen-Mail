@@ -563,9 +563,10 @@ impl MessageCache {
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
                       internaldate, answered, draft, reply_to, safety, safety_reasons,
-                      gmail_msgid, labels, receipt_to, pop_uidl, downloaded_at)
+                      gmail_msgid, labels, receipt_to, pop_uidl, downloaded_at,
+                      thread_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
                      pop_uidl = excluded.pop_uidl,
                      gmail_msgid = excluded.gmail_msgid,
@@ -588,7 +589,15 @@ impl MessageCache {
                      draft = excluded.draft,
                      reply_to = excluded.reply_to,
                      safety = excluded.safety,
-                     safety_reasons = excluded.safety_reasons
+                     safety_reasons = excluded.safety_reasons,
+                     -- The list above leaves out the counts and the arrival
+                     -- time on purpose: those are facts about this computer
+                     -- rather than about the message, and an upsert is not
+                     -- authoritative for them. thread_id is the opposite. It
+                     -- is derived from message_id and refs_header, both of
+                     -- which are on this list, so leaving it alone would let a
+                     -- row carry a conversation its own chain contradicts.
+                     thread_id = excluded.thread_id
                  RETURNING id",
                 params![
                     incoming.uid,
@@ -626,6 +635,18 @@ impl MessageCache {
                         .pop_uidl
                         .as_ref()
                         .map(|_| chrono::Utc::now().to_rfc3339()),
+                    // Which conversation this belongs to, from this message
+                    // alone. Written here and nowhere else on purpose:
+                    // `file_message_here` is this method plus one UPDATE, so
+                    // this one call already serves both ways a message reaches
+                    // the cache. A second copy in the filing path is how the
+                    // same message ends up threaded one way when it arrives
+                    // and another when it is sent, which is the thing
+                    // `threading::as_stored` says in its own doc comment.
+                    crate::application::thread_identity::conversation_root(
+                        &incoming.message_id,
+                        incoming.refs_header.as_deref(),
+                    ),
                 ],
                 |row| row.get(0),
             )
@@ -637,6 +658,59 @@ impl MessageCache {
         // gap this replaced.
         self.index_message_for_search(id)?;
         Ok(id)
+    }
+
+    /// Give a conversation id to every message stored before there was one.
+    ///
+    /// `thread_id` shipped as a column nothing wrote, so a database held from
+    /// any earlier version has NULL in every row of it. Returns how many were
+    /// filled.
+    ///
+    /// Idempotent by its `WHERE` clause rather than by being called once: it
+    /// selects only rows still in the old shape, so a second run fills nothing
+    /// and, more to the point, it can never write over an id that is already
+    /// there. That matters because this runs on open, over the only copy of
+    /// somebody's mail.
+    ///
+    /// The candidates are read into a `Vec` before anything is written, for
+    /// the reason [`Self::migrate_inline_bodies`] does the same: a cached
+    /// statement held open over `messages` while the same table is being
+    /// written is a lock against itself.
+    pub fn backfill_thread_ids(&self) -> Result<usize> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, message_id, refs_header FROM messages
+                 WHERE thread_id IS NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to find unthreaded messages: {}", e)))?;
+
+        let pending: Vec<(i64, String, Option<String>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(|e| Error::Other(format!("Failed to read unthreaded messages: {}", e)))?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read an unthreaded message: {}", e)))?;
+
+        let filled = pending.len();
+        for (id, message_id, refs_header) in pending {
+            let conversation = crate::application::thread_identity::conversation_root(
+                &message_id,
+                refs_header.as_deref(),
+            );
+            self.conn
+                .execute(
+                    "UPDATE messages SET thread_id = ?1 WHERE id = ?2",
+                    params![conversation, id],
+                )
+                .map_err(|e| Error::Other(format!("Failed to store a conversation id: {}", e)))?;
+        }
+
+        // A count, never an identifier. A `Message-ID` carries a hostname and
+        // a local part, which is somebody's mail turning up in a log file.
+        if filled > 0 {
+            tracing::info!("Gave {} stored messages a conversation id", filled);
+        }
+        Ok(filled)
     }
 
     /// Write a batch of arriving mail as one transaction.
@@ -2786,6 +2860,280 @@ mod tests {
         assert_eq!(
             row.refs_header.as_deref(),
             Some("<first@example.com> <second@example.com>")
+        );
+    }
+
+    // -- The conversation id ---------------------------------------------
+    //
+    // `thread_id` shipped as a column nothing wrote, so every row held NULL
+    // and the Thread column sorted them all into one bucket without failing.
+    // These are about the writer it now has, on both ways a message reaches
+    // the cache, and about the rows that were stored before it existed.
+
+    fn stored_thread_id(cache: &super::super::MessageCache, row: i64) -> Option<String> {
+        cache
+            .conn
+            .query_row(
+                "SELECT thread_id FROM messages WHERE id = ?1",
+                rusqlite::params![row],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    fn how_many_rows(cache: &super::super::MessageCache) -> i64 {
+        cache
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// Put a row back the way a database written before this column had a
+    /// writer holds it.
+    fn forget_the_conversation_id(cache: &super::super::MessageCache, row: i64) {
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET thread_id = NULL WHERE id = ?1",
+                rusqlite::params![row],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_a_message_a_sync_stores_carries_its_conversation_id() {
+        let cache = fresh("thread_id_sync");
+        let inbox = folder(&cache, "INBOX");
+        let mut reply = incoming(inbox, 11, "Re: Plan");
+        reply.refs_header = Some("<first@example.com> <second@example.com>".to_string());
+
+        let row = cache.upsert_message(&reply).unwrap();
+
+        assert_eq!(
+            stored_thread_id(&cache, row).as_deref(),
+            Some("first@example.com"),
+            "a stored message with no conversation id is the defect this closes"
+        );
+    }
+
+    #[test]
+    fn test_the_same_message_downloaded_and_filed_carries_one_conversation_id() {
+        // The property `threading::as_stored` already demands for the chain
+        // itself: one rule for both ways a message reaches the cache, because
+        // two would mean the same message threading one way when it arrives
+        // and another when it is sent.
+        let cache = fresh("thread_id_both_ways");
+        let inbox = folder(&cache, "INBOX");
+        let sent = folder(&cache, "Sent");
+
+        let mut downloaded = incoming(inbox, 11, "Re: Plan");
+        downloaded.refs_header = Some("<first@example.com> <second@example.com>".to_string());
+        let mut filed = downloaded.clone();
+        filed.folder_id = sent;
+
+        let downloaded_row = cache.upsert_message(&downloaded).unwrap();
+        let filed_row = cache.file_message_here(&filed).unwrap();
+
+        assert_eq!(
+            stored_thread_id(&cache, downloaded_row),
+            stored_thread_id(&cache, filed_row),
+            "the same message threaded two ways depending on which door it came through"
+        );
+        assert_eq!(
+            stored_thread_id(&cache, filed_row).as_deref(),
+            Some("first@example.com")
+        );
+    }
+
+    #[test]
+    fn test_a_chain_that_arrives_later_moves_the_message_into_its_conversation() {
+        // A sync can store an envelope before the chain is known. Leaving the
+        // first answer in place would strand the message in a conversation of
+        // one for as long as the row lives.
+        let cache = fresh("thread_id_rethreads");
+        let inbox = folder(&cache, "INBOX");
+        let mut message = incoming(inbox, 11, "Re: Plan");
+
+        let row = cache.upsert_message(&message).unwrap();
+        assert_eq!(
+            stored_thread_id(&cache, row).as_deref(),
+            Some("11@example.com"),
+            "with no chain a message is its own conversation"
+        );
+
+        message.refs_header = Some("<first@example.com>".to_string());
+        let same_row = cache.upsert_message(&message).unwrap();
+
+        assert_eq!(same_row, row, "the upsert should have found the same row");
+        assert_eq!(
+            stored_thread_id(&cache, row).as_deref(),
+            Some("first@example.com")
+        );
+    }
+
+    #[test]
+    fn test_the_backfill_gives_every_older_message_a_conversation_id() {
+        let cache = fresh("thread_id_backfill");
+        let inbox = folder(&cache, "INBOX");
+        for uid in [1, 2, 3] {
+            let mut message = incoming(inbox, uid, "Re: Plan");
+            message.refs_header = Some("<first@example.com>".to_string());
+            let row = cache.upsert_message(&message).unwrap();
+            forget_the_conversation_id(&cache, row);
+        }
+
+        assert_eq!(cache.backfill_thread_ids().unwrap(), 3);
+
+        let still_empty: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE thread_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            still_empty, 0,
+            "a message the backfill skipped is a message no count can reach"
+        );
+    }
+
+    #[test]
+    fn test_the_backfill_run_again_fills_nothing() {
+        let cache = fresh("thread_id_backfill_twice");
+        let inbox = folder(&cache, "INBOX");
+        let row = cache.upsert_message(&incoming(inbox, 1, "Plan")).unwrap();
+        forget_the_conversation_id(&cache, row);
+
+        assert_eq!(cache.backfill_thread_ids().unwrap(), 1);
+        let after_the_first = stored_thread_id(&cache, row);
+
+        assert_eq!(
+            cache.backfill_thread_ids().unwrap(),
+            0,
+            "it is idempotent by its WHERE clause, not by being run once"
+        );
+        assert_eq!(stored_thread_id(&cache, row), after_the_first);
+    }
+
+    #[test]
+    fn test_the_backfill_never_writes_over_an_id_that_is_there_already() {
+        // It runs on every open, over the only copy of somebody's mail. The
+        // WHERE clause is what makes it able to fill and unable to overwrite.
+        let cache = fresh("thread_id_backfill_keeps");
+        let inbox = folder(&cache, "INBOX");
+        let kept = cache.upsert_message(&incoming(inbox, 1, "Plan")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET thread_id = ?1 WHERE id = ?2",
+                rusqlite::params!["an id from somewhere else", kept],
+            )
+            .unwrap();
+        let empty = cache.upsert_message(&incoming(inbox, 2, "Other")).unwrap();
+        forget_the_conversation_id(&cache, empty);
+        let before = how_many_rows(&cache);
+
+        assert_eq!(cache.backfill_thread_ids().unwrap(), 1);
+
+        assert_eq!(
+            stored_thread_id(&cache, kept).as_deref(),
+            Some("an id from somewhere else"),
+            "the backfill overwrote a value it did not put there"
+        );
+        assert_eq!(how_many_rows(&cache), before, "the backfill dropped a row");
+    }
+
+    #[test]
+    fn test_a_hostile_reference_chain_is_stored_and_read_back_unchanged() {
+        // T-01-05. The `References` header is written by whoever sent the
+        // message, so it is a stranger's text for anything that arrives from
+        // outside. The id is only ever a grouping key, never a permission, a
+        // path or a filename, and it reaches SQL as a bound parameter.
+        let cache = fresh("thread_id_hostile");
+        let inbox = folder(&cache, "INBOX");
+        let long_one = "x".repeat(4096);
+        let mut message = incoming(inbox, 1, "Re: Plan");
+        message.refs_header = Some(format!(
+            "<';DROP--TABLE--messages@x>\n<\"quoted\"@x> <{long_one}@x>"
+        ));
+
+        let row = cache.upsert_message(&message).unwrap();
+
+        assert_eq!(
+            stored_thread_id(&cache, row).as_deref(),
+            Some("';DROP--TABLE--messages@x"),
+            "stored verbatim, interpreted by nothing"
+        );
+        assert_eq!(
+            how_many_rows(&cache),
+            1,
+            "the messages table is still there"
+        );
+
+        // Whitespace separates, so a chain token holding a space is two
+        // identifiers and the first one wins. RFC 5322 has no identifier with
+        // a space in it, so there is nothing to lose by it, and it is worth a
+        // line here because the obvious reading of the case above is that the
+        // whole bracketed run is one identifier. It is not.
+        let mut spaced = incoming(inbox, 2, "Re: Plan");
+        spaced.refs_header = Some("<'; DROP TABLE messages;--@x>".to_string());
+        let spaced_row = cache.upsert_message(&spaced).unwrap();
+        assert_eq!(stored_thread_id(&cache, spaced_row).as_deref(), Some("';"));
+        assert_eq!(how_many_rows(&cache), 2);
+    }
+
+    #[test]
+    fn test_sorting_by_thread_groups_a_conversation() {
+        // The Thread column has always sorted on `m.thread_id`. With every row
+        // holding NULL that put the whole folder in one bucket and fell
+        // through to the uid tie-break, so the sort looked like it did
+        // nothing. Two conversations interleaved by uid is what tells the two
+        // apart.
+        let cache = fresh("thread_id_sorts");
+        let inbox = folder(&cache, "INBOX");
+        for (uid, chain) in [
+            (1, None),
+            (2, None),
+            (3, Some("<1@example.com>")),
+            (4, Some("<2@example.com>")),
+        ] {
+            let mut message = incoming(inbox, uid, "Re: Plan");
+            message.message_id = format!("<{uid}@example.com>");
+            message.refs_header = chain.map(str::to_string);
+            cache.upsert_message(&message).unwrap();
+        }
+
+        // The clause comes from the real one rather than a copy, because a
+        // copy is what goes stale while the test keeps passing.
+        let sort = crate::presentation::message_columns::Sort {
+            column: crate::presentation::message_columns::MessageColumn::Thread,
+            direction: crate::presentation::message_columns::SortDirection::Ascending,
+            then: None,
+        };
+        let rows = cache
+            .get_message_list_sorted(inbox, "acc", Some(&sort.order_by_clause()), None)
+            .unwrap();
+
+        let conversations: Vec<String> = rows
+            .iter()
+            .map(|row| {
+                crate::application::thread_identity::conversation_root(
+                    &row.message_id,
+                    row.refs_header.as_deref(),
+                )
+            })
+            .collect();
+        let runs = conversations
+            .windows(2)
+            .filter(|pair| pair[0] != pair[1])
+            .count()
+            + 1;
+
+        assert_eq!(rows.len(), 4);
+        assert_eq!(
+            runs, 2,
+            "the two conversations are interleaved, so the sort is still ordering by nothing: {conversations:?}"
         );
     }
 

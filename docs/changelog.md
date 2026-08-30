@@ -221,6 +221,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Sorting your mail by Thread does something now.** The message list has
+  offered a Thread column all along, and clicking it appeared to do nothing:
+  the program had somewhere to keep which conversation a message belongs to and
+  never wrote anything there, so every message looked identical to the sort and
+  the order barely changed.
+
+  Every message now carries the conversation it belongs to, worked out from the
+  chain of replies the sender's mail program wrote into the message. Sorting by
+  Thread groups a conversation together.
+
+  Mail you already have is filled in the first time you open the program after
+  this update. Nothing is deleted or moved, and it happens once.
+
+  The conversation a message belongs to is the same in every folder and stays
+  the same after a restart, which is what will let a later version count a
+  conversation across a whole account. That is what changed underneath; the
+  sort is the part you can see today.
+
+  Known limits, said here rather than found later:
+
+  - Thread View, in the View menu, is still switched off. That is the different
+    thing of collapsing the list to one row per conversation, and it is not
+    built yet. Opening a conversation with Enter on a message works as before
+    and is unchanged.
+  - A sender writes the reply chain themselves, so somebody sending you mail
+    can put their message into a conversation of yours. Every mail program
+    works this way, and the conversation is only ever used for grouping and
+    sorting, never to decide what you are allowed to see.
+
 - **A browser sign-in that Windows would not save no longer says it worked.**
   Signing in to Gmail or a Microsoft account opens a browser, and what comes
   back is kept in the Windows credential store. If that store refused the
