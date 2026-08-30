@@ -11,11 +11,19 @@
 # Turned on by `git config core.hooksPath .githooks`, which `scripts/check.sh`
 # offers the first time it is run.
 #
-# To commit without it, for a work in progress on a branch nobody builds:
+# What runs depends on where you are, and `scripts/which-checks.sh` decides it.
+# On main, all four. On a branch nobody builds, formatting and clippy only: the
+# suite and the release build are 295 of the 311 seconds and they wait for the
+# merge, where they run once instead of once per commit.
 #
-#   git commit --no-verify
+# This used to say "to commit without it, use git commit --no-verify, not for
+# main". That advice is withdrawn. It was right about the case and wrong about
+# the tool: --no-verify turns off formatting and clippy too, which cost 15
+# seconds and catch things worth catching, and it is a habit that does not stay
+# on the branch it was learned on. The rule it described now lives in
+# which-checks.sh, where it is applied rather than remembered, and tested.
 #
-# Not for main.
+# Whoever merges a branch into main runs `scripts/check.sh all` first.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"

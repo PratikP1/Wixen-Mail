@@ -73,3 +73,10 @@ docs/*.html
 # read are quoted in RESEARCH.md, which is tracked. Caching them again here
 # would put a few hundred kilobytes of somebody else's HTML in the history.
 .planning/research/.cache/
+
+# GSD runtime state, not decisions. `.gsd/` holds the dispatch-isolation
+# sentinel the guard hooks read, which is per-run and per-machine.
+# `milestone.lock` is held while a milestone command runs. Neither is a record
+# of anything; both are regenerated, and both would conflict on every merge.
+.gsd/
+.planning/milestone.lock

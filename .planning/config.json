@@ -1,6 +1,7 @@
 {
   "workflow": {
-    "tdd_mode": true
+    "tdd_mode": true,
+    "use_worktrees": false
   },
   "model_profile": "quality"
 }

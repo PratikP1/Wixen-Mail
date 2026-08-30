@@ -140,9 +140,26 @@ That has gone wrong twice now: the stale fingerprint above, and once when the
 script's output was piped elsewhere so the shell read the pipe's exit status
 rather than the script's, and the commit went through against an unformatted
 tree. Never pipe `check.sh` into anything you then test the result of. With the
-hook on, the commit itself runs them and a failure stops it. `--no-verify`
-skips it, which is for a work in progress on a branch nobody builds, not for
-`main`.
+hook on, the commit itself runs them and a failure stops it.
+
+**What runs depends on the branch, and `scripts/which-checks.sh` decides it.**
+On `main`, all four. On a branch nobody builds, formatting and clippy only.
+Measured warm on 2026-08-30: the whole gate is 311 seconds, of which the test
+suite is 239 and the release build 56, so the quick pair is 15 seconds and the
+slow two are everything else. On a branch they wait for the merge, where they
+run once rather than once per commit. Whoever merges runs `scripts/check.sh all`
+first, and that is the run they are paid for.
+
+`which-checks.sh` answers `all` for anything it cannot place, including an
+empty branch name and a detached `HEAD`. A check that cannot tell where it is
+must not answer "safe".
+
+**Do not reach for `--no-verify`.** The advice used to be that it was for a work
+in progress on a branch nobody builds. That was right about the case and wrong
+about the tool: it skips formatting and clippy as well, which cost fifteen
+seconds and catch real things, and it is a habit that does not stay on the
+branch it was learned on. The case it existed for is now handled by the branch
+itself.
 
 Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.

@@ -17,6 +17,19 @@ if [ "$(git config core.hooksPath || true)" != ".githooks" ]; then
   echo
 fi
 
+# Which checks this run does. Given as an argument, or worked out from the
+# branch by `which-checks.sh`, which is where that decision lives and where it
+# is tested. Pass `all` to force the whole gate wherever you are, which is what
+# merging a branch into main does before the merge.
+#
+# The slow two are 295 of the 311 seconds this takes warm, measured 2026-08-30.
+# On a branch nobody builds they wait for the merge rather than running once per
+# commit. On main they always run.
+mode="${1:-}"
+if [ -z "$mode" ]; then
+    mode="$("$(dirname "$0")/which-checks.sh" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)")"
+fi
+
 touch src/lib.rs
 
 echo "== rustfmt =="
@@ -24,6 +37,13 @@ cargo fmt --all -- --check
 
 echo "== clippy =="
 cargo clippy --all-targets --all-features -- -D warnings
+
+if [ "$mode" = "all_but_slow" ]; then
+    echo
+    echo "Formatting and clippy passed. The test suite and the release build did"
+    echo "not run: this is not main. Run 'scripts/check.sh all' before merging."
+    exit 0
+fi
 
 echo "== tests =="
 # --no-fail-fast because without it cargo stops at the first target that fails,
