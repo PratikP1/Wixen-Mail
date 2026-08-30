@@ -67,3 +67,38 @@ real one, or worse, learn to rerun until it passes.
 the language list as an argument the way `choices_from` already allows, so the
 COM call is not made twice and compared with itself. The second is the smaller
 change and matches the reasoning already written above `choices_from`.
+
+## A permission per account is stored, honoured, and offered by nothing
+
+**Found during:** 01-06, task 1, by the D-43 mirror guard the moment it was
+written. This is the first thing that guard found, and it was already in the
+tree.
+
+`AppConfig::allowed_per_account` is a map of account id to `Allowed`. It is read
+by `AppConfig::allowed_for`, which is honoured all the way out to the provider
+clients, so an entry in it really does narrow what one account may change.
+Nothing outside its own tests has ever written one. The field's own doc comment
+has said so for some time: the testing page and the first-run screen both used
+to offer it as a control somebody could reach, and neither does now.
+
+This is worse than a setting nothing reads. It is honoured, so the program can
+behave in a way the person using it cannot see, cannot change and has no screen
+to look at.
+
+**Why it is not fixed here.** Closing it means a control per account on the
+settings screen, which is a feature rather than a line: the screen has no
+per-account section, the answer it writes can only ever narrow the
+application-wide one, and the sentence a sync says would have to name the
+account. None of that is this plan's work and none of it is in its file list.
+
+**How it stays visible.** It is named in `STORED_AND_OFFERED_BY_NOTHING` in
+`src/data/config.rs`, beside
+`test_every_setting_somebody_can_change_is_offered_by_a_screen`, rather than the
+guard being narrowed until it cannot see it.
+`test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing`
+checks the other direction, so the moment a screen does offer it the suite asks
+for the entry to be taken out. Taking it out of that list is how this gets
+closed.
+
+**Size:** medium. A per-account group on the settings screen, one control per
+account, plus the write-back and the wording for the sentence a sync says.

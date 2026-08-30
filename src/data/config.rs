@@ -1340,4 +1340,170 @@ mod every_setting_is_acted_on {
             ignored.join("\n  ")
         );
     }
+
+    /// The settings screen, the one file the test above deliberately skips.
+    const THE_SETTINGS_SCREEN: &str = "src/presentation/wx_settings.rs";
+
+    /// Where a screen's controls live, for the question "does anything offer
+    /// this at all".
+    const EVERY_SCREEN: &str = "src/presentation";
+
+    /// Settings something offers, but not the settings screen, and where.
+    ///
+    /// Each entry names the file whose control offers it, and that claim is
+    /// checked rather than believed, so an entry cannot rot into a lie after
+    /// somebody takes the control it points at away.
+    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 3] = [
+        // The account manager names the directory an account looks people up
+        // in, and which account is the default one to send from. Both are per
+        // account, so they belong on the screen that lists accounts.
+        ("directories", "src/presentation/wx_account_manager.rs"),
+        (
+            "default_account_id",
+            "src/presentation/wx_account_manager.rs",
+        ),
+        // Muting what is read aloud is a menu item with a check on it,
+        // `ID_MUTE_CONTENT`, because it is reached in a hurry when somebody
+        // walks into the room. A settings page is the wrong place for it.
+        ("mute_message_reading", "src/presentation/wx_app.rs"),
+    ];
+
+    /// Values the program writes down for itself, which nobody chooses.
+    ///
+    /// Not settings, so no screen should offer them. They sit in the same file
+    /// because that is where what survives a restart is kept.
+    const NOT_ANYTHING_ANYBODY_CHOOSES: [&str; 2] = [
+        // Where the last move or copy went, so the next one opens on it.
+        "last_filed_into",
+        // Whether the first-run screen has said its piece yet.
+        "told_about_the_alpha",
+    ];
+
+    /// Stored, read, honoured, and offered by nothing. The defect itself.
+    ///
+    /// This is the shape the test below exists to catch, sitting in the tree
+    /// before the test was written, and `AppConfig::allowed_per_account`'s own
+    /// doc comment has said so for some time: the testing page and the
+    /// first-run screen both used to offer it and neither does now. Closing it
+    /// means a control per account on the settings screen, which is a feature
+    /// rather than a line, and it is written up in
+    /// `.planning/phases/01-folders-and-conversations/deferred-items.md`.
+    ///
+    /// Named here rather than hidden by narrowing the test until it cannot see
+    /// it. An entry is checked to be still true, so wiring the control turns
+    /// this list into a failure asking for the entry to go.
+    const STORED_AND_OFFERED_BY_NOTHING: [&str; 1] = ["allowed_per_account"];
+
+    /// The shipping half of one file, or an empty string if it cannot be read.
+    fn what_ships_in(path: &str) -> String {
+        std::fs::read_to_string(path)
+            .map(|text| crate::common::what_ships::what_ships(&text))
+            .unwrap_or_default()
+    }
+
+    /// Every screen's shipping half, joined.
+    fn what_every_screen_ships() -> String {
+        fn walk(dir: &std::path::Path, into: &mut Vec<String>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    into.push(what_ships_in(&path.display().to_string()));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(std::path::Path::new(EVERY_SCREEN), &mut found);
+        found.join("\n")
+    }
+
+    #[test]
+    fn test_every_setting_somebody_can_change_is_offered_by_a_screen() {
+        // The mirror of the test above, and the reason it is needed is that
+        // the test above cannot ask this. It skips `config.rs` and
+        // `wx_settings.rs` by name, with a stated reason, so it catches a
+        // setting that is offered and ignored and is structurally blind to one
+        // that is stored and never offered. A setting nothing offers is worse
+        // than one nothing reads: it is honoured all the way out, so the
+        // program behaves in a way the person using it cannot see, cannot
+        // change, and has no screen to look at.
+        //
+        // This lives beside that one, and in `config.rs` rather than in
+        // `tests/`, for the same reason it gives about itself: it has to read
+        // the half of each file that ships, and `what_ships` is that answer
+        // and is not compiled into a release.
+        let config = std::fs::read_to_string("src/data/config.rs").expect("the settings");
+        let settings_screen = what_ships_in(THE_SETTINGS_SCREEN);
+
+        let excepted: Vec<&str> = OFFERED_BY_ANOTHER_SCREEN
+            .iter()
+            .map(|(name, _)| *name)
+            .chain(NOT_ANYTHING_ANYBODY_CHOOSES)
+            .chain(STORED_AND_OFFERED_BY_NOTHING)
+            .collect();
+
+        // Every one of them, not the first: five settings arriving together
+        // and two of them forgotten should report two.
+        let unoffered: Vec<String> = stored_setting_names(&config)
+            .into_iter()
+            .filter(|name| !settings_screen.contains(name))
+            .filter(|name| !excepted.contains(&name.as_str()))
+            .collect();
+
+        assert!(
+            unoffered.is_empty(),
+            "{} setting(s) are stored and survive a restart and no screen \
+             offers any of them, so nobody using this can reach them:\n  {}\n\
+             Add a labelled control, or say in one of the three lists above \
+             this test why there is not one.",
+            unoffered.len(),
+            unoffered.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_a_setting_said_to_be_offered_elsewhere_really_is() {
+        // An exception list is the part of a check most likely to go quietly
+        // wrong, because nothing re-asks whether its reasons still hold. Each
+        // entry names a file, so each entry can be checked.
+        let missing: Vec<String> = OFFERED_BY_ANOTHER_SCREEN
+            .iter()
+            .filter(|(name, screen)| !what_ships_in(screen).contains(name))
+            .map(|(name, screen)| format!("{name}, said to be offered by {screen}"))
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "{} exception(s) name a screen that does not offer the setting any \
+             more, so the setting is now stored and offered by nothing:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing() {
+        // The other direction. Somebody wiring a control for one of these
+        // should be told to delete the entry, rather than leaving a list that
+        // reads as a live defect after it has been fixed.
+        let screens = what_every_screen_ships();
+
+        let now_offered: Vec<&str> = STORED_AND_OFFERED_BY_NOTHING
+            .into_iter()
+            .filter(|name| screens.contains(name))
+            .collect();
+
+        assert!(
+            now_offered.is_empty(),
+            "{} setting(s) are recorded as offered by nothing and a screen now \
+             offers them, which is good news: take them out of \
+             STORED_AND_OFFERED_BY_NOTHING:\n  {}",
+            now_offered.len(),
+            now_offered.join("\n  ")
+        );
+    }
 }

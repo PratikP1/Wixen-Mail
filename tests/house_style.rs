@@ -2346,6 +2346,24 @@ fn test_the_documents_call_it_by_its_name() {
 /// name is not written out here, which is the whole of how the two drifted.
 const WHERE_THE_SECTION_IS_LABELLED: &str = "src/presentation/wx_settings.rs";
 
+/// Every section of the settings screen whose name is held in a constant.
+///
+/// One entry each, rather than one test each. A second section added with its
+/// own constant and left out of this list would keep the rule in a document
+/// and lose the check, which is how the first one drifted.
+fn sections_named_by_a_constant() -> [(&'static str, &'static str); 2] {
+    [
+        (
+            wixen_mail::application::allowed::SETTINGS_SECTION,
+            "application::allowed::SETTINGS_SECTION",
+        ),
+        (
+            wixen_mail::application::folder_settings::SETTINGS_SECTION,
+            "application::folder_settings::SETTINGS_SECTION",
+        ),
+    ]
+}
+
 #[test]
 fn test_the_settings_screen_does_not_write_the_section_name_out_itself() {
     // A sync says "turn on Allow Changes in Settings". The section was
@@ -2358,30 +2376,34 @@ fn test_the_settings_screen_does_not_write_the_section_name_out_itself() {
     // label being typed back in.
     let screen = fs::read_to_string(WHERE_THE_SECTION_IS_LABELLED)
         .expect("the settings screen to be readable");
-    // The name as it stands, not the name it happens to have today. Written
-    // out as a literal here, this check would go on forbidding "Allow Changes"
-    // after somebody renamed the section to something else and typed the new
-    // name in, which is the same fault one step along.
-    let written_out = format!("\"{}\"", wixen_mail::application::allowed::SETTINGS_SECTION);
 
-    let typed: Vec<String> = screen
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| line.contains(&written_out))
-        .map(|(number, line)| {
-            format!(
-                "{WHERE_THE_SECTION_IS_LABELLED}:{}: {}",
-                number + 1,
-                line.trim()
-            )
-        })
-        .collect();
+    let mut typed: Vec<String> = Vec::new();
+    for (name, constant) in sections_named_by_a_constant() {
+        // The name as it stands, not the name it happens to have today.
+        // Written out as a literal here, this check would go on forbidding
+        // "Allow Changes" after somebody renamed the section to something else
+        // and typed the new name in, which is the same fault one step along.
+        let written_out = format!("\"{name}\"");
+        typed.extend(
+            screen
+                .lines()
+                .enumerate()
+                .filter(|(_, line)| line.contains(&written_out))
+                .map(|(number, line)| {
+                    format!(
+                        "{WHERE_THE_SECTION_IS_LABELLED}:{}: {} (read {constant} instead)",
+                        number + 1,
+                        line.trim()
+                    )
+                }),
+        );
+    }
 
     assert!(
         typed.is_empty(),
-        "the name of this section is said by a sync as the place to go, so it \
-         is held in one constant. Written out here it can drift from the \
-         sentence again:\n  {}",
+        "the name of a section is said elsewhere as the place to go, so it is \
+         held in one constant. Written out here it can drift from the sentence \
+         again:\n  {}",
         typed.join("\n  ")
     );
 }

@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 320 records have arrived since and have not been through it.
+# 321 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9386,4 +9386,32 @@ after = """        tree.set_custom_data(&item, row.identity.stored());
         if row.expandable && !collapsed.contains(&row.identity.stored()) {"""
 red = [
     "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
+]
+
+[[guard]]
+# An exception to the settings guard that has stopped being true is noticed.
+#
+# `test_every_setting_somebody_can_change_is_offered_by_a_screen` asks whether
+# every stored setting appears on the settings screen, and three settings
+# honestly do not: they are offered by the account manager or by a menu item
+# instead. Each is excepted by name, and each exception names the file that
+# offers it.
+#
+# An exception list is the part of a check most likely to go quietly wrong,
+# because nothing re-asks whether its reasons still hold. Take the control out
+# of the account manager and the setting becomes stored and offered by nothing,
+# which is exactly the defect the guard exists for, while the guard sits there
+# green because an exception says not to look.
+#
+# The break points one exception at a file that does not offer the setting,
+# which is what deleting the control amounts to as far as any reader of source
+# text can tell.
+#
+# Measured by hand on 2026-08-30 against the whole library: one test.
+name = "a stored setting that no screen offers is caught"
+file = "src/data/config.rs"
+before = """        ("directories", "src/presentation/wx_account_manager.rs"),"""
+after = """        ("directories", "src/presentation/wx_settings.rs"),"""
+red = [
+    "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
