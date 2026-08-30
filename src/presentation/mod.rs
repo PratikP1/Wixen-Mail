@@ -15,6 +15,7 @@ pub mod editor_document;
 pub mod editor_page_harness;
 pub mod finding_people;
 pub mod first_run;
+pub mod folder_tree;
 pub mod help_page;
 pub mod html_renderer;
 pub mod manager_words;

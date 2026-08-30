@@ -53,6 +53,20 @@ use crate::common::types::{FolderType, Protocol};
 /// calling a mailbox "Local".
 pub const LOCAL_PREFIX: &str = "\u{1}Local";
 
+/// What this computer is called, wherever somebody is told something is kept
+/// here rather than on a server.
+///
+/// Named as a place rather than as an absence: "On this computer" says where it
+/// is, and "no account" says where it is not.
+///
+/// One spelling, because there were two. The folder tree groups local folders
+/// under this heading and the New Item destination announces the same place in
+/// the same words, and two spellings of one place is how they come to disagree
+/// after somebody edits one of them. It lives here, beside `LOCAL_PREFIX`,
+/// because both layers that say it may read this one and neither may read the
+/// other.
+pub const ON_THIS_COMPUTER: &str = "On this computer";
+
 /// One folder that lives here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LocalFolder {

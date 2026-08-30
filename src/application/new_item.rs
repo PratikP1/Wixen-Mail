@@ -216,8 +216,10 @@ impl Destination {
                 .map(|account| account.display_name())
                 .unwrap_or_else(|| "the default account".to_string()),
             // Named as a place rather than as an absence. "On this computer"
-            // says where it is; "no account" says where it is not.
-            Destination::Local => "On this computer".to_string(),
+            // says where it is; "no account" says where it is not. The words
+            // come from `local_folders` so this and the folder tree's group
+            // cannot drift apart.
+            Destination::Local => crate::application::local_folders::ON_THIS_COMPUTER.to_string(),
         }
     }
 }
