@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 309 records have arrived since and have not been through it.
+# 311 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9075,4 +9075,33 @@ after = """fn write_secret(account_id: &str, password: &str) -> Result<()> {
     secret_store::write(KEYRING_SERVICE, account_id, password)"""
 red = [
     "service::secret_store::tests::test_only_the_seam_and_the_uninstall_open_a_credential_entry_of_their_own",
+]
+
+[[guard]]
+name = "a mailbox name that is not ASCII reaches the server encoded"
+file = "src/service/protocols/imap.rs"
+before = """        let encoded = mailbox_name::encode(path);"""
+after = """        let encoded = path.to_string();"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_making_a_folder_reaches_the_server_encoded_and_opens_nothing",
+    "service::protocols::imap::against_a_server_that_answers::test_creating_a_folder_sends_the_name_in_the_encoding_the_server_reads",
+]
+
+[[guard]]
+name = "creating a folder on a server asks the gate before it builds a command"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn create_mailbox(&mut self, path: &str) -> Result<()> {
+        self.may_i("create a folder on the server")?;"""
+after = """    pub async fn create_mailbox(&mut self, path: &str) -> Result<()> {"""
+# Measured by hand twice, and the second measurement is why the first is not
+# what is written here. With the imap floor in MAIL_TRANSPORTS still at 8 this
+# break reddened three tests. Raising the floor to 9, which is what an added
+# gated write requires, made the census notice this one too: nine gated writes
+# minus this one is eight, and eight no longer clears the floor. Written down
+# as it really is rather than as it first measured.
+red = [
+    "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::protocols::imap::against_a_server_that_answers::test_creating_a_folder_with_the_gate_closed_says_nothing_to_the_server",
+    "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
+    "service::protocols::imap::against_a_server_that_answers::test_the_two_ways_of_being_refused_a_folder_can_be_told_apart",
 ]

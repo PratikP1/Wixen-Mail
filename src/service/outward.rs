@@ -742,7 +742,12 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
 /// and the floor is what turns that into a failure rather than a quiet count.
 #[cfg(test)]
 const MAIL_TRANSPORTS: [(&str, usize); 3] = [
-    ("src/service/protocols/imap.rs", 8),
+    // 9 since `create_mailbox` arrived. The floor is not decoration: while it
+    // said 8 with nine writes present, one write could lose its gate and the
+    // count still cleared it, which took the guard recorded for exactly that
+    // break down from three reddening tests to two. `scripts/guards.sh` is
+    // what noticed. A gated write added here raises this in the same commit.
+    ("src/service/protocols/imap.rs", 9),
     ("src/service/protocols/smtp.rs", 2),
     ("src/service/protocols/pop3.rs", 1),
 ];
