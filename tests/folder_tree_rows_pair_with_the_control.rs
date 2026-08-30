@@ -22,7 +22,9 @@
 //! gives: wxWidgets supports one application per process and `cargo test` runs
 //! each file under `tests/` as its own process.
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::folder_settings::UnreadOnAParent;
 use wixen_mail::presentation::folder_tree::{
     AccountInTheTree, FolderInTheTree, WhichRow, rows as folder_rows,
 };
@@ -62,6 +64,8 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                 ],
                 &[],
                 &[],
+                UnreadOnAParent::default(),
+                &HashSet::new(),
             );
 
             let root = tree.add_root("Mail Folders", None, None).expect("a root");
@@ -108,6 +112,8 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                 ],
                 &[],
                 &[],
+                UnreadOnAParent::default(),
+                &HashSet::new(),
             );
             let was_on =
                 wixen_mail::presentation::wx_app::the_folder_row_the_cursor_was_on(&tree, &rows);

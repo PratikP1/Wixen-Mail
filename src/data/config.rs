@@ -148,6 +148,30 @@ pub struct AppConfig {
     /// somebody with one account has no use for a combined list of one.
     #[serde(default)]
     pub start_in_all_inboxes: bool,
+    /// How a row of the folder tree that holds other rows says what is unread.
+    ///
+    /// A folder with folders under it, an account branch, and the group of
+    /// things kept on this computer each have two numbers to give: what is
+    /// unread in the row itself, and what is unread in it and everything
+    /// beneath. Stored as the words
+    /// [`crate::application::folder_settings::UnreadOnAParent`] reads back, so
+    /// a value nobody recognises falls to the default rather than to whichever
+    /// branch happens to be written first.
+    ///
+    /// Both numbers always, by default. The alternative gives a row its own
+    /// number while it is open, which means the row changes what it says as
+    /// somebody opens and closes branches around it. For a person arrowing
+    /// down a tree by ear, a row whose wording depends on a state they have to
+    /// remember is a row they have to stop and check, and that cost is paid on
+    /// every row rather than on the one they were curious about.
+    ///
+    /// The `#[serde(default = "...")]` is not optional. Without it every
+    /// settings file already on disk fails to parse, and a settings file that
+    /// fails to parse takes every other setting with it, which is what
+    /// `test_a_settings_file_written_before_directories_existed_still_reads`
+    /// exists because of.
+    #[serde(default = "default_unread_on_a_parent")]
+    pub unread_on_a_parent: String,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -410,6 +434,12 @@ fn default_date_wording() -> String {
     "verbal".to_string()
 }
 
+fn default_unread_on_a_parent() -> String {
+    crate::application::folder_settings::UnreadOnAParent::default()
+        .as_str()
+        .to_string()
+}
+
 fn default_clock_hours() -> String {
     "auto".to_string()
 }
@@ -456,6 +486,7 @@ impl Default for AppConfig {
             keep_sent_mail_on_this_computer: false,
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
+            unread_on_a_parent: default_unread_on_a_parent(),
             hold_back_remote_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
@@ -1002,6 +1033,7 @@ mod permission_tests {
             "clock_hours",
             "draft_autosave_minutes",
             "default_reminder_minutes",
+            "unread_on_a_parent",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1012,6 +1044,13 @@ mod permission_tests {
         let parsed: AppConfig =
             serde_json::from_value(older).expect("an older settings file still opens");
 
+        assert_eq!(
+            crate::application::folder_settings::UnreadOnAParent::from_stored(
+                &parsed.unread_on_a_parent
+            ),
+            crate::application::folder_settings::UnreadOnAParent::BothAlways,
+            "a settings file with no such key gives both numbers, D-24"
+        );
         assert_eq!(parsed.date_style, "relative");
         assert_eq!(parsed.date_order, "auto");
         assert_eq!(parsed.date_wording, "verbal");

@@ -32,6 +32,7 @@
 //! could not place is put at the top of its branch rather than dropped: a
 //! folder nobody can reach is worse than a folder in the wrong place.
 
+use crate::application::folder_settings::UnreadOnAParent;
 use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
 use crate::application::local_folders::is_local;
 
@@ -138,6 +139,55 @@ pub struct TreeRow {
     /// Whether anything hangs under this row, which is what decides whether
     /// Enter on it means expand rather than open.
     pub expandable: bool,
+    /// What the row is called, before any count is put after it.
+    ///
+    /// Held beside the label rather than taken back off it. Taking it off would
+    /// mean cutting the label at its first comma, and an account somebody named
+    /// "Smith, John" would lose half its name every time the row was worded
+    /// again.
+    pub name: String,
+    /// What is unread in this row itself, and in this row and everything under
+    /// it. Equal for a row with nothing under it.
+    pub unread_here: i32,
+    pub unread_in_all: i32,
+    /// How many folders an account branch holds. Nought for every other row,
+    /// which is the only kind of row that says a folder count.
+    pub folders: usize,
+}
+
+impl TreeRow {
+    /// This row's words, with `closed` saying whether it is closed right now.
+    ///
+    /// One place words a row, so the rebuild and the handler that hears a
+    /// branch open cannot word the same row two ways. That matters here more
+    /// than it usually would: a row is paired back to its identity by the words
+    /// above it, so two spellings of one row is a row the cursor cannot be put
+    /// back on.
+    ///
+    /// `None` for a row whose words never depend on either count, which is
+    /// every row that holds no mail: a label, a saved search, the headings above
+    /// them, and All Inboxes.
+    pub fn worded(&self, closed: bool, setting: UnreadOnAParent) -> Option<String> {
+        match &self.identity {
+            WhichRow::Account(_) => Some(branch_text(
+                &self.name,
+                self.unread_here,
+                self.unread_in_all,
+                self.folders,
+                closed,
+                setting,
+            )),
+            WhichRow::OnThisComputer => Some(local_group_text(self.unread_in_all, closed, setting)),
+            WhichRow::Folder { .. } => Some(folder_text(
+                &self.name,
+                self.unread_here,
+                self.unread_in_all,
+                closed,
+                setting,
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// An account, as much of one as a tree needs.
@@ -178,16 +228,77 @@ pub struct SearchInTheTree {
     pub name: String,
 }
 
+/// What a row says about unread mail, given both numbers it could give.
+///
+/// `here` is the row's own unread count and `in_all` is that plus everything
+/// beneath it, so the two are equal for a row with nothing underneath and for
+/// one whose children hold nothing new.
+///
+/// Every number it gives is named, which is the half of this that matters. A
+/// row reading "41 unread" gives no way to tell mail sitting in the row itself
+/// from mail somewhere under it, and those are different things to somebody
+/// deciding whether to open it. So:
+///
+/// - Nothing at all when nothing under the row is unread. A folder with no new
+///   mail is one word rather than three when somebody is arrowing through
+///   twenty of them.
+/// - "3 unread" when the row holds all of it. Nothing is hidden, so there is
+///   nothing to distinguish, and saying "3 unread here, 3 in all" makes
+///   somebody work that out every time they pass it.
+/// - "41 unread in all" when the row holds none of it itself. An account
+///   branch and the group of things kept on this computer are always this
+///   shape: neither holds mail, so a count of its own would be nought every
+///   time and worth nobody's attention.
+/// - "3 unread here, 41 in all" when it holds some of it.
+///
+/// D-24. `setting` decides whether an open row still gives both numbers, and
+/// the default is that it does, so a row means the same thing wherever the tree
+/// happens to be open at the time.
+pub fn unread_text(here: i32, in_all: i32, closed: bool, setting: UnreadOnAParent) -> String {
+    let both = match setting {
+        UnreadOnAParent::BothAlways => true,
+        UnreadOnAParent::BothWhenClosed => closed,
+    };
+    match (here, in_all) {
+        (_, in_all) if in_all <= 0 => String::new(),
+        (here, _) if !both => match here > 0 {
+            true => format!("{here} unread"),
+            false => String::new(),
+        },
+        (here, in_all) if here == in_all => format!("{here} unread"),
+        (0, in_all) => format!("{in_all} unread in all"),
+        (here, in_all) => format!("{here} unread here, {in_all} in all"),
+    }
+}
+
 /// How a folder row reads: its name, and what is new in it.
 ///
-/// "Inbox, 12 unread" rather than "Inbox". A count of nought is left off, so a
-/// folder with nothing new in it is one word rather than three when somebody is
-/// arrowing through twenty of them.
-pub fn folder_text(name: &str, unread: i32) -> String {
-    if unread > 0 {
-        format!("{name}, {unread} unread")
-    } else {
-        name.to_string()
+/// "Inbox, 12 unread" rather than "Inbox", and "Archive, 3 unread here, 41 in
+/// all" for a folder holding folders. The wording of the counts is
+/// [`unread_text`]'s, so a folder, an account branch and the group of things
+/// kept on this computer all say it the same way.
+pub fn folder_text(
+    name: &str,
+    here: i32,
+    in_all: i32,
+    closed: bool,
+    setting: UnreadOnAParent,
+) -> String {
+    match unread_text(here, in_all, closed, setting) {
+        counts if counts.is_empty() => name.to_string(),
+        counts => format!("{name}, {counts}"),
+    }
+}
+
+/// How the group of folders kept on this computer reads.
+///
+/// The same wording as any other row that holds rows. It is a group rather than
+/// a folder, so it has no unread mail of its own and reads "On this computer,
+/// 12 unread in all" while closed.
+pub fn local_group_text(in_all: i32, closed: bool, setting: UnreadOnAParent) -> String {
+    match unread_text(0, in_all, closed, setting) {
+        counts if counts.is_empty() => ON_THIS_COMPUTER.to_string(),
+        counts => format!("{ON_THIS_COMPUTER}, {counts}"),
     }
 }
 
@@ -213,16 +324,22 @@ pub fn label_text(name: &str) -> String {
 /// would otherwise have to open each one to find out whether it had loaded. The
 /// expanded state and the level are deliberately absent: the control says both,
 /// and saying them twice is how the two come to disagree.
-pub fn branch_text(name: &str, unread: i32, folders: usize) -> String {
+pub fn branch_text(
+    name: &str,
+    here: i32,
+    in_all: i32,
+    folders: usize,
+    closed: bool,
+    setting: UnreadOnAParent,
+) -> String {
     let counted = if folders == 1 {
         "1 folder".to_string()
     } else {
         format!("{folders} folders")
     };
-    if unread > 0 {
-        format!("{name}, {unread} unread, {counted}")
-    } else {
-        format!("{name}, {counted}")
+    match unread_text(here, in_all, closed, setting) {
+        counts if counts.is_empty() => format!("{name}, {counted}"),
+        counts => format!("{name}, {counts}, {counted}"),
     }
 }
 
@@ -241,32 +358,69 @@ pub fn branch_text(name: &str, unread: i32, folders: usize) -> String {
 /// A branch with nothing on it is left out entirely rather than left as an
 /// empty row to arrow into, which is the convention the labels branch already
 /// set.
+/// A row that says nothing about unread mail: a heading, a label, a search.
+///
+/// Its words are the whole of it, so it is built and never worded again.
+fn plain_row(identity: WhichRow, label: String, depth: usize, expandable: bool) -> TreeRow {
+    TreeRow {
+        identity,
+        name: label.clone(),
+        label,
+        depth,
+        expandable,
+        unread_here: 0,
+        unread_in_all: 0,
+        folders: 0,
+    }
+}
+
 pub fn rows(
     accounts: &[AccountInTheTree],
     folders: &[FolderInTheTree],
     labels: &[LabelInTheTree],
     searches: &[SearchInTheTree],
+    setting: UnreadOnAParent,
+    collapsed: &std::collections::HashSet<String>,
 ) -> Vec<TreeRow> {
-    let mut out = vec![TreeRow {
-        identity: WhichRow::AllInboxes,
-        label: ALL_INBOXES.to_string(),
-        depth: 0,
-        expandable: false,
-    }];
+    // Every row that has counts to give is worded here, once, from what it is
+    // closed to right now. `worded` is the only place that turns a name and two
+    // numbers into words, so the rebuild and the handler that hears a branch
+    // open cannot disagree about what a row says.
+    let word = |mut row: TreeRow| -> TreeRow {
+        let closed = collapsed.contains(&row.identity.stored());
+        if let Some(said) = row.worded(closed, setting) {
+            row.label = said;
+        }
+        row
+    };
+
+    let mut out = vec![plain_row(
+        WhichRow::AllInboxes,
+        ALL_INBOXES.to_string(),
+        0,
+        false,
+    )];
 
     for account in accounts {
         let mine: Vec<&FolderInTheTree> = folders
             .iter()
             .filter(|folder| folder.account == account.id && !is_local(&folder.path))
             .collect();
+        // An account holds no mail itself: every message it has is in one of
+        // its folders. So its own count is nought and its total is the sum,
+        // which is what makes a branch read "12 unread in all".
         let unread = mine.iter().map(|folder| folder.unread).sum();
-        out.push(TreeRow {
+        out.push(word(TreeRow {
             identity: WhichRow::Account(account.id.clone()),
-            label: branch_text(&account.name, unread, mine.len()),
+            name: account.name.clone(),
+            label: String::new(),
             depth: 0,
             expandable: !mine.is_empty(),
-        });
-        out.extend(nested(&mine, 1));
+            unread_here: 0,
+            unread_in_all: unread,
+            folders: mine.len(),
+        }));
+        out.extend(nested(&mine, 1, setting, collapsed));
     }
 
     let local: Vec<&FolderInTheTree> = folders
@@ -274,42 +428,45 @@ pub fn rows(
         .filter(|folder| is_local(&folder.path))
         .collect();
     if !local.is_empty() {
-        out.push(TreeRow {
+        out.push(word(TreeRow {
             identity: WhichRow::OnThisComputer,
-            label: ON_THIS_COMPUTER.to_string(),
+            name: ON_THIS_COMPUTER.to_string(),
+            label: String::new(),
             depth: 0,
             expandable: true,
-        });
-        out.extend(nested(&local, 1));
+            unread_here: 0,
+            unread_in_all: local.iter().map(|folder| folder.unread).sum(),
+            folders: 0,
+        }));
+        out.extend(nested(&local, 1, setting, collapsed));
     }
 
     if !labels.is_empty() {
-        out.push(TreeRow {
-            identity: WhichRow::Labels,
-            label: "Labels".to_string(),
-            depth: 0,
-            expandable: true,
-        });
-        out.extend(labels.iter().map(|label| TreeRow {
-            identity: WhichRow::Label(label.id.clone()),
-            label: label_text(&label.name),
-            depth: 1,
-            expandable: false,
+        out.push(plain_row(WhichRow::Labels, "Labels".to_string(), 0, true));
+        out.extend(labels.iter().map(|label| {
+            plain_row(
+                WhichRow::Label(label.id.clone()),
+                label_text(&label.name),
+                1,
+                false,
+            )
         }));
     }
 
     if !searches.is_empty() {
-        out.push(TreeRow {
-            identity: WhichRow::SavedSearches,
-            label: crate::application::saved_searches::THE_HEADING.to_string(),
-            depth: 0,
-            expandable: true,
-        });
-        out.extend(searches.iter().map(|search| TreeRow {
-            identity: WhichRow::SavedSearch(search.id.clone()),
-            label: crate::application::saved_searches::a_row_for(&search.name),
-            depth: 1,
-            expandable: false,
+        out.push(plain_row(
+            WhichRow::SavedSearches,
+            crate::application::saved_searches::THE_HEADING.to_string(),
+            0,
+            true,
+        ));
+        out.extend(searches.iter().map(|search| {
+            plain_row(
+                WhichRow::SavedSearch(search.id.clone()),
+                crate::application::saved_searches::a_row_for(&search.name),
+                1,
+                false,
+            )
         }));
     }
 
@@ -362,9 +519,36 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
 /// the walk will follow, and a cycle. In all three the folder still opens and
 /// still holds its mail, and a row in the wrong place is recoverable in a way
 /// that a row nobody can reach is not.
-fn nested(folders: &[&FolderInTheTree], from: usize) -> Vec<TreeRow> {
+fn nested(
+    folders: &[&FolderInTheTree],
+    from: usize,
+    setting: UnreadOnAParent,
+    collapsed: &std::collections::HashSet<String>,
+) -> Vec<TreeRow> {
     let mut out: Vec<TreeRow> = Vec::with_capacity(folders.len());
     let mut placed: Vec<bool> = vec![false; folders.len()];
+
+    let a_folder_row = |at: usize, depth: usize, expandable: bool| -> TreeRow {
+        let folder = folders[at];
+        let mut row = TreeRow {
+            identity: WhichRow::Folder {
+                account: folder.account.clone(),
+                path: folder.path.clone(),
+            },
+            name: folder.name.clone(),
+            label: String::new(),
+            depth,
+            expandable,
+            unread_here: folder.unread,
+            unread_in_all: unread_underneath(folders, at),
+            folders: 0,
+        };
+        let closed = collapsed.contains(&row.identity.stored());
+        row.label = row
+            .worded(closed, setting)
+            .unwrap_or_else(|| folder.name.clone());
+        row
+    };
 
     let has_parent_here = |folder: &FolderInTheTree| {
         folder
@@ -394,15 +578,7 @@ fn nested(folders: &[&FolderInTheTree], from: usize) -> Vec<TreeRow> {
             .filter(|(under, other)| !placed[*under] && other.parent == Some(folder.id))
             .map(|(under, _)| under)
             .collect();
-        out.push(TreeRow {
-            identity: WhichRow::Folder {
-                account: folder.account.clone(),
-                path: folder.path.clone(),
-            },
-            label: folder_text(&folder.name, folder.unread),
-            depth,
-            expandable: !children.is_empty(),
-        });
+        out.push(a_folder_row(at, depth, !children.is_empty()));
         // Past the bound the walk stops going down. Whatever is under there is
         // swept up below at the top of the branch, so it is still reachable.
         if depth - from + 1 < AS_DEEP_AS_A_TREE_GOES {
@@ -413,22 +589,44 @@ fn nested(folders: &[&FolderInTheTree], from: usize) -> Vec<TreeRow> {
     // Whatever the walk never reached, in the order it arrived. A cycle puts
     // every folder in it here, because none of them is a top-level folder and
     // none is reachable from one.
-    for (at, folder) in folders.iter().enumerate() {
-        if placed[at] {
-            continue;
-        }
-        out.push(TreeRow {
-            identity: WhichRow::Folder {
-                account: folder.account.clone(),
-                path: folder.path.clone(),
-            },
-            label: folder_text(&folder.name, folder.unread),
-            depth: from,
-            expandable: false,
-        });
+    for (at, _) in placed.iter().enumerate().filter(|(_, done)| !**done) {
+        out.push(a_folder_row(at, from, false));
     }
 
     out
+}
+
+/// What is unread in one folder and in everything stored under it.
+///
+/// Each folder counted once, tracked by a visited set rather than by depth. A
+/// cycle in `parent_id` is not hypothetical here, because an earlier version
+/// wrote that column, and counting round one for ever is the same hang the walk
+/// above is bounded against.
+///
+/// Folders deeper than the walk shows are counted, which is deliberate: the
+/// mail is under this folder whether or not the row for it is drawn under this
+/// row, and a count that quietly stopped at the display bound would tell
+/// somebody there is nothing further down when there is.
+fn unread_underneath(folders: &[&FolderInTheTree], at: usize) -> i32 {
+    let mut counted: Vec<bool> = vec![false; folders.len()];
+    let mut stack = vec![at];
+    let mut total = 0;
+    while let Some(here) = stack.pop() {
+        if counted[here] {
+            continue;
+        }
+        counted[here] = true;
+        total += folders[here].unread;
+        let id = folders[here].id;
+        stack.extend(
+            folders
+                .iter()
+                .enumerate()
+                .filter(|(under, other)| !counted[*under] && other.parent == Some(id))
+                .map(|(under, _)| under),
+        );
+    }
+    total
 }
 
 #[cfg(test)]
@@ -552,6 +750,25 @@ mod tests {
         }
     }
 
+    /// The tree with nothing closed and the setting left at its default,
+    /// which is what most of these tests are about. The two tests that are
+    /// about the setting or about what is closed call `rows` directly.
+    fn tree(
+        accounts: &[AccountInTheTree],
+        folders: &[FolderInTheTree],
+        labels: &[LabelInTheTree],
+        searches: &[SearchInTheTree],
+    ) -> Vec<TreeRow> {
+        rows(
+            accounts,
+            folders,
+            labels,
+            searches,
+            UnreadOnAParent::default(),
+            &std::collections::HashSet::new(),
+        )
+    }
+
     fn labelled(rows: &[TreeRow]) -> Vec<String> {
         rows.iter().map(|row| row.label.clone()).collect()
     }
@@ -564,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_the_top_level_reads_in_the_order_somebody_meets_it() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
@@ -596,7 +813,7 @@ mod tests {
 
     #[test]
     fn test_two_accounts_each_hold_their_own_inbox_and_the_two_rows_are_not_the_same_row() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work"), account("b", "Home")],
             &[folder("a", 1, "INBOX", None), folder("b", 2, "INBOX", None)],
             &[],
@@ -612,7 +829,7 @@ mod tests {
 
     #[test]
     fn test_a_nested_folder_reads_as_its_leaf_one_level_under_its_parent() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "Archive", None),
@@ -637,7 +854,7 @@ mod tests {
 
     #[test]
     fn test_two_folders_sharing_a_leaf_under_different_parents_are_two_different_rows() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "Archive", None),
@@ -663,7 +880,7 @@ mod tests {
 
     #[test]
     fn test_no_label_carries_a_level_an_expanded_state_or_a_position() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work"), account("b", "Home")],
             &[
                 folder("a", 1, "Archive", None),
@@ -715,7 +932,7 @@ mod tests {
 
     #[test]
     fn test_folders_inside_a_branch_keep_the_order_they_arrived_in() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
@@ -748,7 +965,7 @@ mod tests {
 
     #[test]
     fn test_a_folder_whose_parent_is_missing_sits_at_the_top_of_its_branch_rather_than_vanishing() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 // A folder that does nest, beside the one that cannot, so that
@@ -774,7 +991,7 @@ mod tests {
 
     #[test]
     fn test_a_stored_parent_cycle_is_bounded_and_every_folder_in_it_is_still_reachable() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "One", Some(2)),
@@ -798,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_a_folder_recorded_as_its_own_parent_is_still_shown() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "Itself", Some(1)),
@@ -817,7 +1034,7 @@ mod tests {
         let deep: Vec<FolderInTheTree> = (1..=(AS_DEEP_AS_A_TREE_GOES as i64 + 20))
             .map(|id| folder("a", id, &format!("f{id}"), (id > 1).then_some(id - 1)))
             .collect();
-        let rows = rows(&[account("a", "Work")], &deep, &[], &[]);
+        let rows = tree(&[account("a", "Work")], &deep, &[], &[]);
         assert_eq!(
             rows.iter()
                 .filter(|row| matches!(row.identity, WhichRow::Folder { .. }))
@@ -837,7 +1054,7 @@ mod tests {
 
     #[test]
     fn test_the_group_for_this_computer_is_left_out_when_there_is_nothing_local() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[folder("a", 1, "INBOX", None)],
             &[],
@@ -853,7 +1070,7 @@ mod tests {
 
     #[test]
     fn test_the_labels_and_saved_search_branches_are_left_out_when_there_are_none() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[folder("a", 1, "INBOX", None)],
             &[],
@@ -869,7 +1086,7 @@ mod tests {
 
     #[test]
     fn test_a_folder_kept_on_this_computer_is_under_the_group_and_not_under_its_account() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
@@ -893,22 +1110,33 @@ mod tests {
 
     #[test]
     fn test_an_account_branch_says_its_name_its_unread_and_how_many_folders_it_holds() {
-        assert_eq!(branch_text("Work", 12, 9), "Work, 12 unread, 9 folders");
+        // An account holds no mail of its own, so its own count is nought and
+        // every message it has is somewhere under it. "In all" is what says so.
+        assert_eq!(
+            branch_text("Work", 0, 12, 9, true, UnreadOnAParent::default()),
+            "Work, 12 unread in all, 9 folders"
+        );
     }
 
     #[test]
     fn test_an_account_branch_with_nothing_new_does_not_say_nought_unread() {
-        assert_eq!(branch_text("Work", 0, 9), "Work, 9 folders");
+        assert_eq!(
+            branch_text("Work", 0, 0, 9, true, UnreadOnAParent::default()),
+            "Work, 9 folders"
+        );
     }
 
     #[test]
     fn test_one_folder_is_a_folder_and_not_one_folders() {
-        assert_eq!(branch_text("Work", 0, 1), "Work, 1 folder");
+        assert_eq!(
+            branch_text("Work", 0, 0, 1, true, UnreadOnAParent::default()),
+            "Work, 1 folder"
+        );
     }
 
     #[test]
     fn test_a_branch_counts_only_its_own_accounts_folders() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work"), account("b", "Home")],
             &[
                 folder("a", 1, "INBOX", None),
@@ -924,7 +1152,7 @@ mod tests {
 
     #[test]
     fn test_a_branch_does_not_count_what_is_kept_on_this_computer() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "INBOX", None),
@@ -942,13 +1170,303 @@ mod tests {
 
     #[test]
     fn test_a_folder_row_says_what_is_new_in_it_and_a_folder_with_nothing_new_does_not() {
-        assert_eq!(folder_text("Inbox", 12), "Inbox, 12 unread");
-        assert_eq!(folder_text("Inbox", 0), "Inbox");
+        let both = UnreadOnAParent::default();
+        // A folder with nothing under it: both numbers are the same, so it
+        // gives one and there is nothing to distinguish.
+        assert_eq!(
+            folder_text("Inbox", 12, 12, false, both),
+            "Inbox, 12 unread"
+        );
+        assert_eq!(folder_text("Inbox", 0, 0, false, both), "Inbox");
+    }
+
+    /// An account holding a folder with a folder under it, and a plain folder
+    /// beside them.
+    ///
+    /// Both cases in one fixture on purpose. `Archive` holds 3 of its own and
+    /// 38 more underneath, so it is the case the two numbers exist for.
+    /// `INBOX` holds 5 and nothing under it, so it is the control: a body that
+    /// gave every row two numbers and a body that gave every row one are told
+    /// apart only by having both rows to look at.
+    fn a_tree_with_something_underneath() -> Vec<FolderInTheTree> {
+        let mut archive = folder("a", 1, "Archive", None);
+        archive.unread = 3;
+        let mut year = folder("a", 2, "Archive/2026", Some(1));
+        year.unread = 38;
+        let mut inbox = folder("a", 3, "INBOX", None);
+        inbox.unread = 5;
+        vec![archive, year, inbox]
+    }
+
+    fn shut(identities: &[WhichRow]) -> std::collections::HashSet<String> {
+        identities.iter().map(|which| which.stored()).collect()
+    }
+
+    fn the_archive_row() -> WhichRow {
+        WhichRow::Folder {
+            account: "a".to_string(),
+            path: "Archive".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_row_holding_unread_mail_underneath_gives_both_numbers_and_names_each() {
+        let both = UnreadOnAParent::default();
+        assert_eq!(
+            unread_text(3, 41, true, both),
+            "3 unread here, 41 in all",
+            "a closed parent has to say which of the two numbers each one is"
+        );
+        // The control: a folder with nothing under it has one number, and
+        // saying "5 unread here, 5 in all" would make somebody work out every
+        // time that the two are equal.
+        assert_eq!(unread_text(5, 5, true, both), "5 unread");
+    }
+
+    #[test]
+    fn test_a_row_that_holds_no_mail_itself_says_which_number_it_is_giving() {
+        // An account branch and the group of local folders are always this
+        // shape, because neither holds mail. "0 unread here, 41 in all" would
+        // be a number nobody needs, and a bare "41 unread" would not say which
+        // of the two it is.
+        assert_eq!(
+            unread_text(0, 41, true, UnreadOnAParent::default()),
+            "41 unread in all"
+        );
+    }
+
+    #[test]
+    fn test_a_parent_whose_children_hold_nothing_new_does_not_say_the_same_number_twice() {
+        for closed in [true, false] {
+            for setting in UnreadOnAParent::ALL {
+                assert_eq!(
+                    unread_text(3, 3, closed, setting),
+                    "3 unread",
+                    "closed {closed}, {setting:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_nothing_unread_anywhere_under_a_row_is_said_by_saying_nothing() {
+        for closed in [true, false] {
+            for setting in UnreadOnAParent::ALL {
+                assert_eq!(unread_text(0, 0, closed, setting), "");
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_default_gives_both_numbers_whether_the_row_is_open_or_closed() {
+        // D-24's reason for this being the default: a row means the same thing
+        // wherever the tree happens to be open, so nobody has to check the
+        // state of a row before trusting the number on it.
+        assert_eq!(
+            unread_text(3, 41, true, UnreadOnAParent::BothAlways),
+            unread_text(3, 41, false, UnreadOnAParent::BothAlways)
+        );
+        assert_eq!(
+            unread_text(3, 41, false, UnreadOnAParent::BothAlways),
+            "3 unread here, 41 in all"
+        );
+    }
+
+    #[test]
+    fn test_the_other_option_gives_two_numbers_closed_and_its_own_open() {
+        assert_eq!(
+            unread_text(3, 41, true, UnreadOnAParent::BothWhenClosed),
+            "3 unread here, 41 in all"
+        );
+        assert_eq!(
+            unread_text(3, 41, false, UnreadOnAParent::BothWhenClosed),
+            "3 unread"
+        );
+    }
+
+    #[test]
+    fn test_an_open_row_holding_none_of_its_own_says_nothing_under_the_other_option() {
+        // An open account branch under the other option. Its own count is
+        // nought, and "Work, 0 unread, 9 folders" takes longer to say it has
+        // nothing than a row that says nothing.
+        assert_eq!(
+            unread_text(0, 41, false, UnreadOnAParent::BothWhenClosed),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_a_folder_row_gives_both_numbers_and_a_leaf_beside_it_gives_one() {
+        let rows = tree(
+            &[account("a", "Work")],
+            &a_tree_with_something_underneath(),
+            &[],
+            &[],
+        );
+        assert!(
+            labelled(&rows).contains(&"Archive, 3 unread here, 41 in all".to_string()),
+            "{:?}",
+            labelled(&rows)
+        );
+        assert!(
+            labelled(&rows).contains(&"INBOX, 5 unread".to_string()),
+            "{:?}",
+            labelled(&rows)
+        );
+    }
+
+    #[test]
+    fn test_an_account_branch_counts_every_folder_under_it_and_says_which_number_that_is() {
+        let rows = tree(
+            &[account("a", "Work")],
+            &a_tree_with_something_underneath(),
+            &[],
+            &[],
+        );
+        assert_eq!(
+            row_for(&rows, "Work, 46 unread in all, 3 folders").identity,
+            WhichRow::Account("a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_group_for_this_computer_counts_what_is_under_it_the_same_way() {
+        let mut drafts = folder("a", 9, "\u{1}Local/Drafts", None);
+        drafts.unread = 7;
+        let rows = tree(&[account("a", "Work")], &[drafts], &[], &[]);
+        assert_eq!(
+            row_for(&rows, "On this computer, 7 unread in all").identity,
+            WhichRow::OnThisComputer
+        );
+    }
+
+    #[test]
+    fn test_the_other_option_words_a_row_from_whether_that_row_is_closed() {
+        let folders = a_tree_with_something_underneath();
+        let closed = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothWhenClosed,
+            &shut(&[the_archive_row()]),
+        );
+        assert!(
+            labelled(&closed).contains(&"Archive, 3 unread here, 41 in all".to_string()),
+            "{:?}",
+            labelled(&closed)
+        );
+
+        let open = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothWhenClosed,
+            &std::collections::HashSet::new(),
+        );
+        assert!(
+            labelled(&open).contains(&"Archive, 3 unread".to_string()),
+            "{:?}",
+            labelled(&open)
+        );
+        // The control in the other direction. The leaf beside it is worded the
+        // same either way, so a body that reworded every row would be caught.
+        assert!(labelled(&open).contains(&"INBOX, 5 unread".to_string()));
+        assert!(labelled(&closed).contains(&"INBOX, 5 unread".to_string()));
+    }
+
+    #[test]
+    fn test_the_default_words_a_closed_row_and_an_open_one_alike() {
+        let folders = a_tree_with_something_underneath();
+        let closed = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothAlways,
+            &shut(&[the_archive_row()]),
+        );
+        let open = tree(&[account("a", "Work")], &folders, &[], &[]);
+        assert_eq!(labelled(&closed), labelled(&open));
+
+        // The case that must differ, beside the case that must match. Without
+        // it this test is satisfied by a body that ignores whether a row is
+        // closed at all, because such a body words both trees the same way and
+        // that is exactly what is being asserted.
+        let same_rows_other_setting = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothWhenClosed,
+            &shut(&[the_archive_row()]),
+        );
+        assert_ne!(
+            labelled(&same_rows_other_setting),
+            labelled(&rows(
+                &[account("a", "Work")],
+                &folders,
+                &[],
+                &[],
+                UnreadOnAParent::BothWhenClosed,
+                &std::collections::HashSet::new(),
+            ))
+        );
+    }
+
+    #[test]
+    fn test_a_row_worded_again_when_it_closes_says_what_the_rebuild_would_have_said() {
+        // The handler that hears a branch close words that one row again rather
+        // than rebuilding the whole tree, so the two have to agree. If they did
+        // not, a row would read one way after being closed and another way
+        // after the next sync, and the cursor is put back by matching words.
+        let folders = a_tree_with_something_underneath();
+        let open = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothWhenClosed,
+            &std::collections::HashSet::new(),
+        );
+        let closed = rows(
+            &[account("a", "Work")],
+            &folders,
+            &[],
+            &[],
+            UnreadOnAParent::BothWhenClosed,
+            &shut(&[the_archive_row()]),
+        );
+        let was_open = open
+            .iter()
+            .find(|row| row.identity == the_archive_row())
+            .expect("the Archive row");
+        let rebuilt = closed
+            .iter()
+            .find(|row| row.identity == the_archive_row())
+            .expect("the Archive row");
+        assert_eq!(
+            was_open.worded(true, UnreadOnAParent::BothWhenClosed),
+            Some(rebuilt.label.clone())
+        );
+        // And the wording really did change, so this test cannot be satisfied
+        // by a row that says the same thing whatever state it is in.
+        assert_ne!(
+            was_open.worded(true, UnreadOnAParent::BothWhenClosed),
+            Some(was_open.label.clone())
+        );
+        // And a row with no counts to give is never worded again at all.
+        let heading = open
+            .iter()
+            .find(|row| row.identity == WhichRow::AllInboxes)
+            .expect("All Inboxes");
+        assert_eq!(heading.worded(true, UnreadOnAParent::BothWhenClosed), None);
     }
 
     #[test]
     fn test_where_a_row_sits_names_every_row_above_it_and_itself_last() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "Archive", None),
@@ -969,7 +1487,7 @@ mod tests {
 
     #[test]
     fn test_two_folders_reading_the_same_are_told_apart_by_what_is_above_them() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[
                 folder("a", 1, "Archive", None),
@@ -997,7 +1515,7 @@ mod tests {
 
     #[test]
     fn test_a_top_level_row_sits_under_nothing_but_itself() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work")],
             &[folder("a", 1, "INBOX", None)],
             &[],
@@ -1008,7 +1526,7 @@ mod tests {
 
     #[test]
     fn test_every_row_of_a_tree_sits_somewhere_no_other_row_does() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work"), account("b", "Home")],
             &[
                 folder("a", 1, "Archive", None),
@@ -1040,7 +1558,7 @@ mod tests {
 
     #[test]
     fn test_no_two_rows_of_one_tree_share_an_identity() {
-        let rows = rows(
+        let rows = tree(
             &[account("a", "Work"), account("b", "Home")],
             &[
                 folder("a", 1, "Archive", None),
@@ -1077,7 +1595,10 @@ mod tests {
         // The same folder, renamed and with mail in it. The label has changed
         // twice over and the identity has not moved.
         assert_eq!(before.stored(), before.clone().stored());
-        assert_ne!(before.stored(), folder_text("2026", 4));
+        assert_ne!(
+            before.stored(),
+            folder_text("2026", 4, 4, false, UnreadOnAParent::default())
+        );
         assert!(!before.stored().contains("unread"));
     }
 

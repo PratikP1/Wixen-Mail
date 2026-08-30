@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
+use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
@@ -79,6 +80,7 @@ pub struct SettingsWidgets {
     sort_then: Choice,
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
+    unread_on_a_parent: Choice,
     hold_back_remote_pictures: CheckBox,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
@@ -223,6 +225,7 @@ pub fn build_settings_dialog(
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        unread_on_a_parent,
         hold_back_remote_pictures,
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
@@ -358,6 +361,7 @@ pub fn build_settings_dialog(
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        unread_on_a_parent,
         hold_back_remote_pictures,
         smooth_scrolling,
         keep_selected_message_in_view,
@@ -894,6 +898,7 @@ const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your sign
 struct ReadingTabControls {
     sort_order: Choice,
     start_in_all_inboxes: CheckBox,
+    unread_on_a_parent: Choice,
     hold_back_remote_pictures: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
@@ -977,6 +982,29 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         4,
     );
     sizer.add_sizer(&list_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // -- Folders and message lists, D-42: one group for the settings about how
+    // the folder tree and the message list behave, rather than five of them
+    // scattered down this page. The group's name comes from one constant, so
+    // the first sentence anywhere that sends somebody here reads the name they
+    // will hear rather than a second copy of it.
+    let folders_sec = section(panel, folder_settings::SETTINGS_SECTION);
+
+    // A choice rather than a check box, because neither option is the absence
+    // of the other: both say something, and a box labelled for one of them
+    // would have to word the other as "not that".
+    let unread_on_a_parent = labelled_choice(
+        panel,
+        &folders_sec,
+        "&Unread on a folder or account that holds others:",
+        "Unread on a folder or account that holds others",
+        &UnreadOnAParent::ALL.map(|option| option.words()),
+        UnreadOnAParent::ALL
+            .iter()
+            .position(|option| *option == UnreadOnAParent::from_stored(&config.unread_on_a_parent))
+            .unwrap_or(0) as u32,
+    );
+    sizer.add_sizer(&folders_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Reading Behaviour
     let read_sec = section(panel, "Reading Behaviour");
@@ -1216,6 +1244,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         sort_then,
         copy_lines,
         start_in_all_inboxes,
+        unread_on_a_parent,
         hold_back_remote_pictures,
     }
 }
@@ -1991,6 +2020,17 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .get_string_selection()
         .map(|chosen| crate::application::font_choice::what_the_words_store(&chosen))
         .unwrap_or_else(|| cfg.font_family.clone());
+    // By the words shown rather than the row number, for the same reason
+    // `font_family` above gives. Words nothing recognises fall to the default
+    // rather than to whichever branch is written first, which is what a
+    // hand-edited settings file gets.
+    cfg.unread_on_a_parent = w
+        .unread_on_a_parent
+        .get_string_selection()
+        .map(|chosen| UnreadOnAParent::from_words(&chosen))
+        .unwrap_or_else(|| UnreadOnAParent::from_stored(&cfg.unread_on_a_parent))
+        .as_str()
+        .to_string();
     cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
     cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {

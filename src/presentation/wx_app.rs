@@ -8369,6 +8369,23 @@ fn folder_tree_updates(
             })
             .collect::<Vec<_>>(),
         &every_saved_search(&saved),
+        // How a row that holds rows says what is unread, D-24. Read here at
+        // the point of use, which is what every other setting this file reads
+        // does, rather than threaded through seven callers that have no
+        // interest in it.
+        crate::data::config::ConfigManager::load_stored()
+            .map(|mgr| {
+                crate::application::folder_settings::UnreadOnAParent::from_stored(
+                    &mgr.app_config().unread_on_a_parent,
+                )
+            })
+            .unwrap_or_default(),
+        // What is closed decides the wording under the other option, so the
+        // rebuild needs it as well as the walk that draws the tree.
+        &cache.collapsed_rows().unwrap_or_else(|e| {
+            tracing::warn!("What the folder tree has closed could not be read: {e}");
+            std::collections::HashSet::new()
+        }),
     );
 
     Ok(vec![
@@ -11224,6 +11241,52 @@ fn remember_the_row(
     };
     if let Err(why) = cache.set_row_collapsed(&which.stored(), collapsed) {
         tracing::warn!("The folder tree could not remember that row: {why}");
+    }
+    say_the_row_again(state, tree, &item, collapsed);
+}
+
+/// Word one row again, now that it has been opened or closed.
+///
+/// Under D-24's other option a row that holds rows says both its numbers while
+/// it is closed and its own while it is open, so the words have to change at
+/// the moment somebody changes that rather than at the next sync. Under the
+/// default nothing changes and this writes the same words back.
+///
+/// The row held beside the control is written too, and that is not optional: a
+/// row on screen is paired back to its identity by the words above it, so a
+/// control saying one thing and the vector saying another is a row the cursor
+/// cannot be put back on. One row is worded and one row is written, which is
+/// why this is not a rebuild.
+fn say_the_row_again(
+    state: &Arc<StdMutex<WxUIState>>,
+    tree: &TreeCtrl,
+    item: &TreeItemId,
+    collapsed: bool,
+) {
+    let setting = crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| {
+            crate::application::folder_settings::UnreadOnAParent::from_stored(
+                &mgr.app_config().unread_on_a_parent,
+            )
+        })
+        .unwrap_or_default();
+    let rows = lock_state(state).tree_rows.clone();
+    let Some(at) = the_row_on_screen(tree, item, &rows) else {
+        return;
+    };
+    let Some(said) = rows.get(at).and_then(|row| row.worded(collapsed, setting)) else {
+        return;
+    };
+    if rows.get(at).is_some_and(|row| row.label == said) {
+        return;
+    }
+    tree.set_item_text(item, &said);
+    let mut held = lock_state(state);
+    if let Some(row) = held.tree_rows.get_mut(at) {
+        row.label = said.clone();
+    }
+    if let Some(shown) = held.folders.get_mut(at) {
+        *shown = said;
     }
 }
 

@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A folder or account that holds others tells you what is unread inside it,
+  and says which number is which.** A folder called `Archive` with three unread
+  messages of its own and thirty-eight in the folders under it now reads
+  "Archive, 3 unread here, 41 in all". Before, it read "Archive, 3 unread", so a
+  closed branch could report almost nothing while holding forty messages nobody
+  had seen.
+
+  Where a row holds no mail of its own, which is every account branch and the
+  "On this computer" group, it says so plainly: "Work, 46 unread in all, 3
+  folders". A folder with nothing under it still reads "Inbox, 5 unread",
+  because there are not two numbers to tell apart.
+
+  **You can change when both numbers are given.** Settings, Reading, under
+  Folders and Message Lists. Both numbers always, which is what it does unless
+  you change it, or both numbers only while the row is closed. Always is the
+  default so that a row means the same thing wherever the tree happens to be
+  open: a row that changes what it says depending on a state you have to
+  remember is a row you have to check before trusting.
+
+  How deep a row sits and whether it is open are still left to the tree itself
+  to announce, as they always have been. They are not written into the words.
+
 - **You can delete a folder from the server.** Choose it, then Action, This
   Folder, Delete Folder. It asks first, naming the folder, how many folders are
   inside it, and that the mail in all of them goes too. Enter answers no, so
