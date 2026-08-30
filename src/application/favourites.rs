@@ -110,8 +110,21 @@ pub struct PinnedBranch {
 /// the list is left out, which is what happens to a pin whose account is not
 /// being shown.
 pub fn in_account_order(pins: &[Pin], accounts: &[(String, String)]) -> Vec<PinnedBranch> {
-    let _ = (pins, accounts);
-    Vec::new()
+    accounts
+        .iter()
+        .filter_map(|(id, name)| {
+            let mut mine: Vec<&Pin> = pins.iter().filter(|pin| &pin.account == id).collect();
+            if mine.is_empty() {
+                return None;
+            }
+            mine.sort_by_key(|pin| pin.position);
+            Some(PinnedBranch {
+                account: id.clone(),
+                name: name.clone(),
+                folders: mine.into_iter().map(|pin| pin.path.clone()).collect(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -202,6 +215,99 @@ mod tests {
             in_account_order(&[pin("a", "INBOX", 0)], &two_accounts()).len(),
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod the_group_has_one_name {
+    /// The name as it is written in code, which is a quoted string and not a
+    /// word in a sentence.
+    ///
+    /// The literal rather than the bare word, and that distinction is the whole
+    /// of why this check is usable. The paragraphs in this file, the tree
+    /// module's own heading comment and every test name below all say the word,
+    /// so a check that read for the word would fire on the prose explaining the
+    /// rule and be switched off within a day.
+    const THE_LITERAL: &str = "\"Favourites\"";
+
+    fn files_spelling_it_out() -> Vec<String> {
+        let mut found = Vec::new();
+        let mut looking = vec![std::path::PathBuf::from("src")];
+        while let Some(here) = looking.pop() {
+            let Ok(entries) = std::fs::read_dir(&here) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    looking.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|kind| kind != "rs")
+                    || path.ends_with("favourites.rs")
+                {
+                    continue;
+                }
+                let Ok(source) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if crate::common::what_ships::what_ships(&source).contains(THE_LITERAL) {
+                    found.push(path.display().to_string());
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn test_nothing_but_this_module_spells_the_group_s_name_out() {
+        let found = files_spelling_it_out();
+        assert!(
+            found.is_empty(),
+            "the group's name is written out in {} other file(s): {}\n\
+             Read `favourites::FAVOURITES` instead. Two spellings of one group \
+             is a heading that stops matching the sentence somebody heard a \
+             moment ago, and a row the tree cannot resolve.",
+            found.len(),
+            found.join(", ")
+        );
+    }
+
+    #[test]
+    fn test_the_reading_would_notice_a_second_spelling() {
+        // Without this the test above passes just as well over a tree it has
+        // stopped reading, which is the more likely way for it to break: the
+        // walk is over a directory name written down in one place.
+        assert!(
+            crate::common::what_ships::what_ships("const SOMEWHERE_ELSE: &str = \"Favourites\";")
+                .contains(THE_LITERAL)
+        );
+        // And it does not fire on the word in a sentence, which is what makes
+        // it a check somebody can leave switched on.
+        assert!(
+            !crate::common::what_ships::what_ships(
+                "//! Favourites sits above All Inboxes, at the very top."
+            )
+            .contains(THE_LITERAL)
+        );
+        // And the walk really reaches files: without this, a walk that found
+        // nothing anywhere would report a clean result.
+        let mut any = 0;
+        let mut looking = vec![std::path::PathBuf::from("src")];
+        while let Some(here) = looking.pop() {
+            let Ok(entries) = std::fs::read_dir(&here) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    looking.push(path);
+                } else if path.extension().is_some_and(|kind| kind == "rs") {
+                    any += 1;
+                }
+            }
+        }
+        assert!(any > 50, "the walk found only {any} source files");
     }
 }
 

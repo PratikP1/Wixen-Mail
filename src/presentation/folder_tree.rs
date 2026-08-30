@@ -425,10 +425,10 @@ pub fn branch_text(
 /// on it, then the next branch. The same order and the same reasoning
 /// `collect_rows` states when it walks the built tree back.
 ///
-/// Top-level order is `All Inboxes`, then a branch for each account, then the
-/// group for what is kept on this computer, then labels, then saved searches.
-/// Favourites belongs above `All Inboxes` and is plan 01-08's; it is absent
-/// here on purpose rather than by oversight.
+/// Top-level order is the group of pinned folders, then `All Inboxes`, then a
+/// branch for each account, then the group for what is kept on this computer,
+/// then labels, then saved searches. The pinned group sits at the very top
+/// (D-28) and is left out altogether when nothing is pinned.
 ///
 /// A branch with nothing on it is left out entirely rather than left as an
 /// empty row to arrow into, which is the convention the labels branch already
@@ -615,8 +615,95 @@ fn favourite_rows(
     setting: UnreadOnAParent,
     collapsed: &std::collections::HashSet<String>,
 ) -> Vec<TreeRow> {
-    let _ = (pins, accounts, folders, setting, collapsed);
-    Vec::new()
+    let named: Vec<(String, String)> = accounts
+        .iter()
+        .map(|account| (account.id.clone(), account.name.clone()))
+        .collect();
+
+    // The pinned folders, arranged by account, then each path resolved to the
+    // folder it names. A path with no folder is dropped rather than made into a
+    // row that opens nothing: the storage cannot produce one, because a pin
+    // points at a real folder row through a foreign key, but this function is
+    // given whatever a caller has in hand.
+    let branches: Vec<(String, String, Vec<&FolderInTheTree>)> =
+        crate::application::favourites::in_account_order(pins, &named)
+            .into_iter()
+            .filter_map(|branch| {
+                let found: Vec<&FolderInTheTree> = branch
+                    .folders
+                    .iter()
+                    .filter_map(|path| {
+                        folders
+                            .iter()
+                            .find(|folder| folder.account == branch.account && &folder.path == path)
+                    })
+                    .collect();
+                (!found.is_empty()).then_some((branch.account, branch.name, found))
+            })
+            .collect();
+
+    if branches.is_empty() {
+        return Vec::new();
+    }
+
+    let word = |mut row: TreeRow| -> TreeRow {
+        let closed = collapsed.contains(&row.identity.stored());
+        if let Some(said) = row.worded(closed, setting) {
+            row.label = said;
+        }
+        row
+    };
+
+    // What is unread in the group is what is unread in the folders it names.
+    // Their children are not counted, because their children are not in here:
+    // the group holds a shortcut to each pinned folder and not a second copy of
+    // the tree beneath it, so a number covering rows nobody can see from here
+    // would be a count of somewhere else.
+    let unread_of = |found: &[&FolderInTheTree]| -> i32 { found.iter().map(|f| f.unread).sum() };
+
+    let mut out = vec![word(TreeRow {
+        identity: WhichRow::Favourites,
+        name: FAVOURITES.to_string(),
+        label: String::new(),
+        depth: 0,
+        expandable: true,
+        unread_here: 0,
+        unread_in_all: branches.iter().map(|(_, _, found)| unread_of(found)).sum(),
+        folders: 0,
+    })];
+
+    for (account, name, found) in branches {
+        out.push(word(TreeRow {
+            identity: WhichRow::PinnedIn(account.clone()),
+            name,
+            label: String::new(),
+            depth: 1,
+            expandable: true,
+            unread_here: 0,
+            unread_in_all: unread_of(&found),
+            folders: found.len(),
+        }));
+        out.extend(found.into_iter().map(|folder| {
+            word(TreeRow {
+                identity: WhichRow::Pinned {
+                    account: folder.account.clone(),
+                    path: folder.path.clone(),
+                },
+                name: folder.name.clone(),
+                label: String::new(),
+                depth: 2,
+                // Nothing hangs under a pinned copy even where the folder it
+                // copies has children, so Enter on it opens the folder rather
+                // than expanding a branch with nothing on it.
+                expandable: false,
+                unread_here: folder.unread,
+                unread_in_all: folder.unread,
+                folders: 0,
+            })
+        }));
+    }
+
+    out
 }
 
 /// One branch's folders, nested under their parents, deepest last.
