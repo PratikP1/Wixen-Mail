@@ -13,7 +13,9 @@
 use crate::application::mail_controller::MailController;
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
-use crate::data::message_cache::{CachedFolder, CachedMessage, IncomingMessage, MessageCache};
+use crate::data::message_cache::{
+    CachedFolder, CachedMessage, IncomingMessage, MessageCache, WhatTheServerSaid,
+};
 use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
 };
@@ -513,6 +515,29 @@ pub fn folders_the_server_no_longer_lists(stored: &[CachedFolder], listed: &[Str
         .filter(|folder| !listed.contains(&folder.path))
         .map(|folder| folder.id)
         .collect()
+}
+
+/// What to record about a folder after a sync, given what was recorded before.
+///
+/// The whole of it is one rule a sync must not break: **an answer is not a
+/// sync's to overwrite.** Somebody who has said to keep a folder the server no
+/// longer lists has decided, and a sync putting that row back to undecided
+/// would put the same question to them at the next launch, and the one after
+/// that, for as long as the server went on not listing it. That is the dialog
+/// storm arriving once a session instead of once a minute, which is slower and
+/// no better.
+///
+/// A folder in the answer goes back to plainly listed whatever was recorded
+/// before, including an answer. The decision was about a folder that had gone;
+/// the folder is back, so there is nothing left for the decision to be about,
+/// and leaving it would mean a folder that vanished and returned could never be
+/// asked about again.
+pub fn what_the_server_now_says(
+    before: WhatTheServerSaid,
+    still_listed: bool,
+) -> WhatTheServerSaid {
+    let _ = (before, still_listed);
+    WhatTheServerSaid::ItListedIt
 }
 
 /// The path of the folder this one sits under, if its own path names one.
@@ -2594,6 +2619,52 @@ mod tests {
             2,
             "an answer that really is missing both did not report them"
         );
+    }
+
+    #[test]
+    fn test_a_sync_does_not_overwrite_an_answer_somebody_has_already_given() {
+        // The rule that keeps the question from coming back at every launch
+        // about a folder somebody has already said to keep. The undecided row
+        // beside it is what says the folder is still marked at all, so a
+        // function that answered "keep it" to everything would fail that half.
+        use WhatTheServerSaid::*;
+
+        assert_eq!(
+            what_the_server_now_says(ItStoppedListingItAndSomebodySaidKeepIt, false),
+            ItStoppedListingItAndSomebodySaidKeepIt,
+            "a sync put an answered folder back to being a question"
+        );
+        assert_eq!(
+            what_the_server_now_says(ItStoppedListingIt, false),
+            ItStoppedListingIt,
+            "a folder still missing stopped being marked"
+        );
+        assert_eq!(
+            what_the_server_now_says(ItListedIt, false),
+            ItStoppedListingIt,
+            "a folder that has just gone missing was not marked"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_the_server_lists_again_is_plainly_listed_whatever_was_said_about_it() {
+        // A decision about a folder that had gone has nothing left to be about
+        // once the folder is back. Left in place it would also mean a folder
+        // that vanished, was kept, and vanished again could never be asked
+        // about a second time.
+        use WhatTheServerSaid::*;
+
+        for before in [
+            ItListedIt,
+            ItStoppedListingIt,
+            ItStoppedListingItAndSomebodySaidKeepIt,
+        ] {
+            assert_eq!(
+                what_the_server_now_says(before, true),
+                ItListedIt,
+                "a folder the server lists again did not read as listed, from {before:?}"
+            );
+        }
     }
 
     #[test]

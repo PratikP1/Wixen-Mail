@@ -23,6 +23,7 @@ pub mod managers;
 pub mod markdown_input;
 pub mod message_columns;
 pub mod message_rows;
+pub mod one_question_at_a_time;
 pub mod panes;
 pub mod pim_rows;
 pub mod read_aloud;
