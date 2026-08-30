@@ -30,6 +30,7 @@ pub mod editing;
 pub mod export_tree;
 pub mod filing;
 pub mod filters;
+pub mod folders_underneath;
 pub mod font_choice;
 pub mod forget;
 pub mod from_message;

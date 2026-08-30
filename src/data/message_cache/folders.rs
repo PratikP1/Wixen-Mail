@@ -166,6 +166,28 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Move a folder's row to where the server has just put it.
+    ///
+    /// The row is moved rather than a second one written, because everything
+    /// else points at the id: the messages in the folder, and the folders
+    /// underneath it. Writing a new row and leaving the old one shows the
+    /// folder twice in a tree that is read from here, with all of its mail
+    /// under the name it no longer has.
+    ///
+    /// A path another folder in the account already holds comes back as a
+    /// failure, from the unique index the folders table has always carried. The
+    /// caller says so: the server has done the rename either way, and what is
+    /// wrong is only the copy kept here, which the next check for mail settles.
+    pub fn set_folder_path(&self, folder_id: i64, path: &str, name: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE folders SET path = ?1, name = ?2 WHERE id = ?3",
+                params![path, name, folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record the folder's new name: {}", e)))?;
+        Ok(())
+    }
+
     /// Which folder each of an account's folders sits under, by path.
     ///
     /// One query for the whole account, because the tree is built from all of
@@ -424,6 +446,66 @@ mod tests {
             Some(crate::common::types::FolderType::Sent)
         );
         assert_eq!(cache.folder_kind(999_999).unwrap(), None);
+    }
+
+    #[test]
+    fn test_a_renamed_folder_keeps_its_id_its_messages_and_its_place() {
+        // The tree is read from what is stored, so a folder renamed on the
+        // server and not here is a sentence saying it was renamed beside a row
+        // that still says the old name. Updating the row rather than writing a
+        // second one is what keeps the messages, which point at the id, and the
+        // folders under it, which point at the id as well.
+        let cache = fresh("renamed_folder");
+        let mut folder = inbox();
+        folder.path = "Archive".to_string();
+        folder.name = "Archive".to_string();
+        folder.folder_type = "Custom".to_string();
+        let id = cache.save_folder(&folder).unwrap();
+
+        let mut under = inbox();
+        under.path = "Archive/2026".to_string();
+        under.name = "2026".to_string();
+        under.folder_type = "Custom".to_string();
+        let under_id = cache.save_folder(&under).unwrap();
+        cache.set_folder_parent(under_id, Some(id)).unwrap();
+
+        cache.set_folder_path(id, "Old", "Old").unwrap();
+
+        let moved = cache
+            .get_folder("acc", "Old")
+            .unwrap()
+            .expect("the folder at its new path");
+        assert_eq!(moved.id, id, "the row was replaced rather than moved");
+        assert_eq!(moved.name, "Old");
+        assert!(
+            cache.get_folder("acc", "Archive").unwrap().is_none(),
+            "the old path is still there, so the tree shows the folder twice"
+        );
+        assert_eq!(
+            cache.folder_parents("acc").unwrap().get("Archive/2026"),
+            Some(&Some(id)),
+            "the folder inside it lost the folder above it"
+        );
+    }
+
+    #[test]
+    fn test_moving_a_folder_onto_a_path_another_folder_already_has_is_refused() {
+        // Two rows with one path is the state the unique index exists to stop.
+        // What matters is that it comes back as a failure the caller can say
+        // something about, rather than as a silent no-op leaving the tree
+        // disagreeing with the server.
+        let cache = fresh("renamed_folder_collision");
+        let mut first = inbox();
+        first.path = "Archive".to_string();
+        let id = cache.save_folder(&first).unwrap();
+        let mut second = inbox();
+        second.path = "Old".to_string();
+        cache.save_folder(&second).unwrap();
+
+        assert!(
+            cache.set_folder_path(id, "Old", "Old").is_err(),
+            "two folders were allowed to share one path"
+        );
     }
 
     #[test]

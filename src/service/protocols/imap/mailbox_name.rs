@@ -155,6 +155,102 @@ fn encode_run(chunk: &str) -> String {
     format!("&{}-", MODIFIED_BASE64.encode(&bytes))
 }
 
+/// Where this mailbox's own name starts inside its path.
+///
+/// Nothing stores what a server separates folders with. It does not have to:
+/// the folder above is a prefix of this one, so whatever sits between the end
+/// of that prefix and the end of this path is the separator the server gave for
+/// this mailbox, read rather than guessed. A slash on one server and a dot on
+/// the next, and neither assumed for the other.
+///
+/// `inside` is the stored path of the folder this one sits under, or `None` for
+/// one at the top level, whose whole path is its name. A parent that is not a
+/// prefix is a stored tree disagreeing with itself, and the answer is the same
+/// as no parent at all: the whole path is the name, so a rename replaces the
+/// folder whole rather than slicing it at an offset taken from a string it has
+/// nothing to do with.
+fn where_the_leaf_starts(path: &str, inside: Option<&str>) -> usize {
+    match inside {
+        Some(parent) if !parent.is_empty() && path.len() > parent.len() => path
+            .strip_prefix(parent)
+            .map_or(0, |after| path.len() - after.len() + separator_width(after)),
+        _ => 0,
+    }
+}
+
+/// How much of what follows the parent's path is separator rather than name.
+///
+/// A separator is one or more characters of the server's choosing and never
+/// empty, since a mailbox `LIST` line carrying no separator is a flat namespace
+/// with nothing under it. What decides where it ends is the encoding: a
+/// separator is ASCII punctuation, and a name that is not ASCII opens with `&`,
+/// so the separator is everything up to the first character a name could start
+/// with. In practice servers use one character, and taking the first is what
+/// every reading of this has to agree on.
+fn separator_width(after_the_parent: &str) -> usize {
+    after_the_parent.chars().next().map_or(0, char::len_utf8)
+}
+
+/// The path this mailbox would have if its own name were changed to `typed`.
+///
+/// D-26's rename, and the whole of its safety argument: everything in front of
+/// the last segment is carried over exactly, so a name typed into a text box
+/// cannot move a folder.
+///
+/// `typed` is a name this program was handed by a person, so it goes out
+/// encoded. The path in front of it is the server's own spelling and goes back
+/// as it arrived. Encoding that again spells a mailbox the server has not got,
+/// which is the failure [`decode`]'s own note above is about from the other
+/// direction.
+pub fn the_path_after_a_rename(path: &str, inside: Option<&str>, typed: &str) -> String {
+    format!(
+        "{}{}",
+        &path[..where_the_leaf_starts(path, inside)],
+        encode(typed)
+    )
+}
+
+/// The path this mailbox would have under a different folder.
+///
+/// D-26's move, which is the opposite half: the name is untouched and only what
+/// is in front of it changes. So the leaf is carried over verbatim, including
+/// the one this client could not decode, and nothing here encodes anything.
+///
+/// `into` is the new parent's path as the server spells it, and `separator` is
+/// what that server puts between a folder and the one it is in, read from the
+/// server rather than assumed. RFC 9051 section 6.3.6 has the server rename
+/// every inferior name along with this one, so the children need no path of
+/// their own.
+pub fn the_path_after_a_move(
+    path: &str,
+    inside: Option<&str>,
+    into: &str,
+    separator: &str,
+) -> String {
+    format!(
+        "{into}{separator}{}",
+        &path[where_the_leaf_starts(path, inside)..]
+    )
+}
+
+/// What this server puts between a folder and the one it sits in.
+///
+/// Read from the pair rather than stored or guessed, the same way
+/// [`where_the_leaf_starts`] reads it and for the same reason: a `LIST` line
+/// carries a separator per mailbox, so one taken from the first line and used
+/// for the rest splits the wrong names.
+///
+/// Empty for a folder at the top level, and empty where the stored tree
+/// disagrees with itself and the folder above is not a prefix of this one. Both
+/// mean the same thing to a caller: there is no join here to copy.
+pub fn the_separator_between<'a>(path: &'a str, inside: Option<&str>) -> &'a str {
+    let leaf = where_the_leaf_starts(path, inside);
+    match inside {
+        Some(parent) if leaf > parent.len() => &path[parent.len()..leaf],
+        _ => "",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +413,132 @@ mod tests {
         let on_the_wire = "~peter/mail/&U,BTFw-/&ZeVnLIqe-";
         assert_eq!(encode(readable), on_the_wire);
         assert_eq!(decode(on_the_wire), readable);
+    }
+
+    // ── Taking a path apart without the separator being stored ──────────────
+
+    #[test]
+    fn test_a_folder_at_the_top_level_is_all_leaf() {
+        assert_eq!(where_the_leaf_starts("Archive", None), 0);
+    }
+
+    #[test]
+    fn test_the_separator_is_read_from_the_gap_between_the_two_paths() {
+        // Nothing anywhere stores what this server separates folders with. It
+        // does not have to: the folder above is a prefix of this one, so
+        // whatever sits between the two is the server's own answer for this
+        // mailbox. A slash here, a dot on the next server, and neither guessed.
+        assert_eq!(where_the_leaf_starts("Archive/2026", Some("Archive")), 8);
+        assert_eq!(where_the_leaf_starts("Archive.2026", Some("Archive")), 8);
+        assert_eq!(
+            where_the_leaf_starts("INBOX.Work.2026", Some("INBOX.Work")),
+            11
+        );
+    }
+
+    #[test]
+    fn test_a_parent_that_is_not_a_prefix_leaves_the_whole_path_as_the_leaf() {
+        // A stored tree that disagrees with itself. Answering "all of it is
+        // the name" renames the folder whole rather than slicing a path at an
+        // offset taken from a string it has nothing to do with.
+        assert_eq!(where_the_leaf_starts("Archive/2026", Some("Other")), 0);
+        // A parent recorded as the folder itself is the same disagreement.
+        assert_eq!(
+            where_the_leaf_starts("Archive/2026", Some("Archive/2026")),
+            0
+        );
+    }
+
+    #[test]
+    fn test_a_rename_changes_the_last_segment_and_nothing_before_it() {
+        // The whole of D-26's safety argument, in one assertion.
+        assert_eq!(
+            the_path_after_a_rename("Archive/2026", Some("Archive"), "2025"),
+            "Archive/2025"
+        );
+        assert_eq!(
+            the_path_after_a_rename("INBOX.Work.Old", Some("INBOX.Work"), "Older"),
+            "INBOX.Work.Older"
+        );
+    }
+
+    #[test]
+    fn test_a_rename_at_the_top_level_replaces_the_whole_path() {
+        assert_eq!(the_path_after_a_rename("Archive", None, "Old"), "Old");
+    }
+
+    #[test]
+    fn test_a_rename_encodes_the_new_name_and_leaves_the_rest_of_the_path_alone() {
+        // The half an implementation forgets. The name somebody typed is a
+        // name this program made up, so it is encoded on the way out. The
+        // path in front of it is the server's own spelling and goes back
+        // exactly as it arrived: encoding that again spells a mailbox the
+        // server has not got.
+        assert_eq!(
+            the_path_after_a_rename("Entw&APw-rfe/Alt", Some("Entw&APw-rfe"), "Entw\u{fc}rfe"),
+            "Entw&APw-rfe/Entw&APw-rfe"
+        );
+    }
+
+    #[test]
+    fn test_a_move_keeps_the_name_exactly_and_changes_only_what_is_in_front() {
+        // The other half of D-26. A move does not rename, so the leaf is the
+        // server's own spelling and is carried over untouched, including the
+        // one this client could never decode.
+        assert_eq!(
+            the_path_after_a_move("Archive/&ZeVnLIqe-", Some("Archive"), "Old", "/"),
+            "Old/&ZeVnLIqe-"
+        );
+        assert_eq!(
+            the_path_after_a_move("Archive.2026", Some("Archive"), "Old.Kept", "."),
+            "Old.Kept.2026"
+        );
+    }
+
+    #[test]
+    fn test_a_move_of_a_top_level_folder_puts_the_whole_path_under_the_new_parent() {
+        assert_eq!(
+            the_path_after_a_move("Work", None, "Archive", "/"),
+            "Archive/Work"
+        );
+    }
+
+    #[test]
+    fn test_the_separator_is_whatever_this_server_put_between_the_two() {
+        assert_eq!(the_separator_between("Archive/2026", Some("Archive")), "/");
+        assert_eq!(the_separator_between("Archive.2026", Some("Archive")), ".");
+        assert_eq!(
+            the_separator_between("INBOX.Work.Old", Some("INBOX.Work")),
+            "."
+        );
+    }
+
+    #[test]
+    fn test_a_folder_at_the_top_level_has_nothing_in_front_of_it_to_copy() {
+        assert_eq!(the_separator_between("Archive", None), "");
+    }
+
+    #[test]
+    fn test_a_folder_above_that_is_not_a_prefix_offers_no_separator() {
+        // A stored tree disagreeing with itself. Answering "there is no join
+        // here" is what stops a caller copying a character out of a string
+        // this folder has nothing to do with.
+        assert_eq!(the_separator_between("Archive/2026", Some("Work")), "");
+    }
+
+    #[test]
+    fn test_a_folder_inside_a_renamed_one_follows_it_by_the_two_halves_it_is_made_of() {
+        // RFC 9051 section 6.3.6 has the server rename every folder inside the
+        // one it was asked about, in the same command and without being told.
+        // Nothing else goes out, so the rows stored here have to be moved to
+        // match, and this is how one is worked out: the folder above it has
+        // already moved, and this keeps its own name and the join in front of
+        // it. No prefix is swapped and no separator is assumed, so `Archived`
+        // cannot be dragged along by a rename of `Archive`.
+        let separator = the_separator_between("Archive/2026", Some("Archive"));
+        assert_eq!(
+            the_path_after_a_move("Archive/2026", Some("Archive"), "Old", separator),
+            "Old/2026"
+        );
     }
 }

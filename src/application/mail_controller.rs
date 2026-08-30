@@ -540,6 +540,20 @@ impl MailController {
         session.create_mailbox(path).await
     }
 
+    /// Give a folder on the server a different path.
+    ///
+    /// No logic here on purpose, for the same reason [`Self::create_mailbox`]
+    /// gives, and one thing worth saying that it does not: these two spell a
+    /// name differently and both are right. Creating takes a name a person
+    /// typed and encodes it; renaming takes paths the server already spelled
+    /// and passes them through. Neither decision is taken here, so this cannot
+    /// answer either question differently from the session.
+    pub async fn rename_mailbox(&self, from: &str, to: &str) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.rename_mailbox(from, to).await
+    }
+
     /// How many messages a folder holds, and how many are unread.
     pub async fn folder_counts(&self, folder: &str) -> Result<FolderCounts> {
         let mut guard = self.require_imap().await?;
@@ -719,6 +733,7 @@ mod tests {
             controller.append_message("Sent", None, b"raw").await.err(),
             controller.set_subscribed("Work", true).await.err(),
             controller.create_mailbox("Work").await.err(),
+            controller.rename_mailbox("Work", "Works").await.err(),
             controller.fetch_flags("INBOX", &[1], None).await.err(),
             // A count here is worse than an error. The caller reads it as the
             // old copy of the draft having been cleaned up, appends the new
@@ -1205,6 +1220,33 @@ mod against_a_server_that_answers {
         assert!(
             transcript.iter().any(|line| line.contains("Entw&APw-rfe")),
             "the folder name did not reach the server encoded: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("SELECT").await,
+            "a mailbox was opened underneath the caller: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_renaming_a_folder_reaches_the_server_spelled_as_it_was_given() {
+        // The mirror of the test above, and the reason both are worth having
+        // side by side: one encodes and one must not. A name this program made
+        // up goes out encoded; a path the server spelled goes back exactly as
+        // it arrived, and the facade is where a stray encoder call would hide.
+        let server = a_server_answering(|_, _| None).await;
+        let controller = allowed_on(&server).await;
+
+        controller
+            .rename_mailbox("Entw&APw-rfe/Alt", "Entw&APw-rfe/Neu")
+            .await
+            .expect("the folder to be renamed");
+
+        let transcript = server.transcript().await;
+        assert!(
+            transcript
+                .iter()
+                .any(|line| line.contains(r#"RENAME "Entw&APw-rfe/Alt" "Entw&APw-rfe/Neu""#)),
+            "the rename did not reach the server as the server spells it: {transcript:?}"
         );
         assert!(
             !server.was_told("SELECT").await,

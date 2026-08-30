@@ -902,6 +902,42 @@ impl ImapSession {
         .map_err(protocol_error("Could not create the folder"))
     }
 
+    /// Give a mailbox on the server a different path.
+    ///
+    /// Both paths are the server's own spelling and go out exactly as they are
+    /// given, which is the opposite of [`Self::create_mailbox`] and the rule
+    /// that is easy to get backwards. A path handed here came off a `LIST`
+    /// response or was built from one by
+    /// [`mailbox_name::the_path_after_a_rename`], which encodes the one segment
+    /// a person typed and carries the rest over untouched. Encoding again here
+    /// would spell a mailbox the server has not got, and the failure would name
+    /// a folder nobody typed.
+    ///
+    /// This is one verb doing two jobs, and the caller decides which. RFC 9051
+    /// section 6.3.6 requires a rename to carry every folder inside it along,
+    /// so changing the last segment renames a folder and changing what is in
+    /// front of it moves a whole subtree in one command. The commands are split
+    /// above this so that a name typed into a text box cannot do the second.
+    ///
+    /// Renaming `INBOX` is refused before it reaches here. The RFC makes it
+    /// succeed by moving every message into a new mailbox and leaving `INBOX`
+    /// empty, so it cannot be caught by handling a failure.
+    ///
+    /// The library's own `rename` rather than a hand-written command line, for
+    /// the same reason [`Self::create_mailbox`] gives: it reads the tagged
+    /// response, so a server saying no is a failure here rather than a folder
+    /// somebody is told has moved.
+    pub async fn rename_mailbox(&mut self, from: &str, to: &str) -> Result<()> {
+        self.may_i("rename a folder on the server")?;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.rename(from, to),
+            "renaming a folder",
+        )
+        .await?
+        .map_err(protocol_error("Could not rename the folder"))
+    }
+
     /// How many messages a mailbox holds, and how many are unread.
     ///
     /// One STATUS command, without opening the mailbox. What this replaced was
@@ -3141,6 +3177,7 @@ pub(crate) mod against_a_server_that_answers {
             the_failure(session.delete_message(7, Some("Trash")).await),
             the_failure(session.set_subscribed("Work", true).await),
             the_failure(session.create_mailbox("Work").await),
+            the_failure(session.rename_mailbox("Work", "Works").await),
         ];
 
         for said in &refusals {
@@ -3155,6 +3192,7 @@ pub(crate) mod against_a_server_that_answers {
             "delete a message",
             "change which folders you are subscribed to",
             "create a folder on the server",
+            "rename a folder on the server",
         ] {
             assert!(
                 refusals.iter().any(|said| said.contains(act)),
@@ -3164,7 +3202,7 @@ pub(crate) mod against_a_server_that_answers {
         let transcript = server.transcript().await;
         // SUBSCRIBE covers UNSUBSCRIBE as well, which for a negative
         // assertion is exactly what is wanted.
-        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE", "CREATE"] {
+        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE", "CREATE", "RENAME"] {
             assert!(
                 !server.was_told(command).await,
                 "a change reached the server with the gate closed: {transcript:?}"
@@ -3902,6 +3940,85 @@ pub(crate) mod against_a_server_that_answers {
         assert!(
             !server.was_told(" CREATE ").await,
             "a folder was made with the gate closed: {transcript:?}"
+        );
+    }
+
+    // ── Renaming a folder ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_renaming_a_folder_sends_both_paths_as_the_server_spells_them() {
+        // The opposite rule to `create_mailbox`, and the one that is easy to
+        // get backwards. Both paths here came off a `LIST` response or were
+        // built from one, so both are already in the encoding the server uses.
+        // Encoding either again spells a mailbox the server has not got, and
+        // the rename then fails against a name nobody typed.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = signed_in_to(&server).await;
+
+        waiting_for(
+            session.rename_mailbox("Entw&APw-rfe/Alt", "Entw&APw-rfe/Neu"),
+            "the rename",
+        )
+        .await
+        .expect("the folder to be renamed");
+
+        // The whole command line, spelled once and read case-sensitively, for
+        // the reason the create test above gives: modified Base64 carries
+        // meaning in its case, so a check that cannot tell `APw` from `APW`
+        // is not checking the encoding at all. `MAIL_MEASURED_ON_THE_WIRE`
+        // names this line as the evidence this write was read off a socket.
+        let asked_for = r#" RENAME "Entw&APw-rfe/Alt" "Entw&APw-rfe/Neu""#;
+        let transcript = server.transcript().await;
+        assert!(
+            transcript.iter().any(|line| line.contains(asked_for)),
+            "the rename did not go out as the server spells it: {transcript:?}"
+        );
+        // The re-encoded form of the same name, which is what a second trip
+        // through the encoder would produce. Asserted absent rather than
+        // inferred from the line above, because a client that sent both would
+        // still satisfy that one.
+        let encoded_twice = mailbox_name::encode("Entw&APw-rfe/Alt");
+        assert!(
+            !transcript
+                .iter()
+                .any(|line| line.contains(encoded_twice.as_str())),
+            "a path the server had already spelled was encoded again: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_will_not_rename_a_folder_is_never_reported_as_renamed() {
+        let server = a_server_that_refuses("", "RENAME").await;
+        let mut session = signed_in_to(&server).await;
+
+        let said =
+            the_failure(waiting_for(session.rename_mailbox("Work", "Works"), "the refusal").await);
+
+        assert!(said.contains("Could not rename the folder"), "{said}");
+        // The server's own words, so what somebody hears is about what really
+        // happened rather than a house phrase covering every failure.
+        assert!(said.contains("the server would not do it"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_renaming_a_folder_with_the_gate_closed_says_nothing_to_the_server() {
+        // The gate is the first line of the verb, so the refusal happens
+        // before a command is built rather than after one is sent and turned
+        // down. Renaming is the verb this matters most for: RFC 9051 section
+        // 6.3.6 has a rename carry every folder inside it along, so one that
+        // slipped past the gate moves a subtree.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = reading_only_on(&server).await;
+
+        let said =
+            the_failure(waiting_for(session.rename_mailbox("Work", "Works"), "the refusal").await);
+
+        let transcript = server.transcript().await;
+        assert!(said.contains("rename a folder on the server"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            !server.was_told(" RENAME ").await,
+            "a folder was renamed with the gate closed: {transcript:?}"
         );
     }
 }

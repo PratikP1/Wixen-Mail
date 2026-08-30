@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can rename a folder on the server.** Choose the folder in the folder
+  tree, then Action, This Folder, Rename Folder. The box opens with the name it
+  has now, so you change a word rather than typing the whole thing again. The
+  tree shows the new name straight away and reads it out.
+
+  Renaming changes the name only. The folder stays where it is, keeps its mail,
+  and keeps any folders inside it, which come along with their own names
+  unchanged. Moving a folder somewhere else is a separate command and is not
+  built yet. That split is deliberate: on a mail server, renaming and moving are
+  the same command, and one mistyped name could otherwise move a folder with no
+  way back.
+
+  **The inbox is refused, and the reason is worth reading.** On a mail server,
+  renaming the inbox does not rename it. It makes a folder under the new name,
+  moves every message out of the inbox into it, and leaves the inbox empty, and
+  it reports that as success. So asking to rename the inbox says this instead of
+  doing it. If moving the mail is what you wanted, make a folder and move the
+  mail into it.
+
+  Known limits, said here rather than found later:
+
+  - Moving a folder under a different one is not built yet, and neither is
+    deleting one.
+  - Renaming a folder kept on this computer is not built yet. Those folders are
+    a fixed set the program owns, so there is nothing there to rename. Asking
+    says so.
+  - Changing mail on the server is switched off for a new install. With it off,
+    asking says so and names the setting, and nothing at all is sent.
+  - This has been tested against a mail server written for the tests, not
+    against a real account. Nothing in this program has ever run against one.
+
 - **You can make a folder on the server.** File, New, Folder asks for a name and
   makes it on the account you are looking at. The folder tree shows it straight
   away, so you do not have to check for mail first, and the name is read out
@@ -30,7 +61,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     server as typed and lands wherever the server decides.
   - Making a folder on this computer, under the folders that hold mail no server
     has, is not built yet. Asking for one says so.
-  - Renaming, moving and deleting a folder are not built yet.
+  - Moving and deleting a folder are not built yet. Renaming one is, and is
+    described above.
   - Changing mail on the server is switched off for a new install. With it off,
     asking for a folder says so and names the setting, and nothing at all is
     sent to the server.

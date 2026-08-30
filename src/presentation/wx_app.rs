@@ -77,6 +77,7 @@ macro_rules! menu_ids {
 menu_ids!(
     ID_MUTE_CONTENT,
     ID_NEW_FOLDER,
+    ID_RENAME_FOLDER,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3176,6 +3177,17 @@ impl WxMailApp {
                                 &frame,
                             );
                         }
+                        _ if id == ID_RENAME_FOLDER => {
+                            rename_the_chosen_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                            );
+                        }
                         _ if id == ID_CONTEXT_NEW_CONTAINER
                             || id == ID_CONTEXT_DELETE_CONTAINER =>
                         {
@@ -5292,6 +5304,22 @@ impl WxMailApp {
                 "&Folders to Keep Up to Date...",
                 "Choose which of this account's folders are downloaded",
             )
+            .append_separator()
+            // Renaming lives on Action rather than under File then New, which
+            // is where making one is, because this acts on whatever is chosen
+            // in the folder tree. A mnemonic and no chord: a new chord needs a
+            // line in docs/KEYBOARD_SHORTCUTS.md in the same commit, and F2 is
+            // the obvious one to want and is not free here.
+            //
+            // What it asks for is a name, not a path. Moving a folder somewhere
+            // else is its own command, because on a mail server both are the
+            // same command and a typo in a text box would otherwise move
+            // somebody's folder with no way back.
+            .append_item(
+                ID_RENAME_FOLDER,
+                "Re&name Folder...",
+                "Give the chosen folder a different name, leaving it where it is",
+            )
             .build();
 
         let message = Menu::builder()
@@ -6157,17 +6185,7 @@ fn the_path_of_a_new_folder(
     under: Option<&str>,
     typed: &str,
 ) -> std::result::Result<String, &'static str> {
-    let name = typed.trim();
-    if name.is_empty() {
-        return Err(A_FOLDER_NEEDS_A_NAME);
-    }
-    // A control character is the one that matters: a line break in a mailbox
-    // name is how a name ends one command and begins another. It also catches
-    // the character `LOCAL_PREFIX` opens with, so a typed name cannot reach
-    // into the group holding the only copy of somebody's mail.
-    if name.chars().any(char::is_control) {
-        return Err(THAT_FOLDER_NAME_CANNOT_BE_USED);
-    }
+    let name = a_folder_name_that_can_be_used(typed)?;
     match under {
         Some(parent) if crate::application::local_folders::is_local(parent) => {
             Ok(format!("{parent}/{name}"))
@@ -6191,14 +6209,6 @@ const THAT_FOLDER_NAME_CANNOT_BE_USED: &str = "That name holds a character a fol
 const FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET: &str = "Making a folder on this computer is not built yet. \
      Choose a folder on the server first, and the new one is made there.";
 
-/// What is said when the account's own setting is what refused the folder.
-///
-/// The same register as [`crate::application::local_folders::DELETING_IS_SWITCHED_OFF`]:
-/// name the setting somebody would go and change, because "permission denied"
-/// sends them looking for a broken account.
-const MAIL_CHANGES_ARE_SWITCHED_OFF: &str = "Changing mail on the server is switched off, so no folder was made. \
-     Turn mail changes on in Allowed Changes if you want it.";
-
 /// What came of asking the server for a folder: made, or a sentence saying why
 /// not.
 ///
@@ -6214,15 +6224,107 @@ const MAIL_CHANGES_ARE_SWITCHED_OFF: &str = "Changing mail on the server is swit
 /// also the one worth drawing: one is a setting they can turn on, the other is
 /// the server's answer, and telling somebody to change a setting that is
 /// already on sends them round the loop a second time.
-fn what_came_of_making(path: &str, outcome: Result<()>) -> std::result::Result<(), String> {
+fn what_came_of(
+    act: FolderAct,
+    path: &str,
+    outcome: Result<()>,
+) -> std::result::Result<(), String> {
     match outcome {
         Ok(()) => Ok(()),
-        Err(why) if crate::service::outward::was_refused_by_the_gate(&why) => {
-            Err(MAIL_CHANGES_ARE_SWITCHED_OFF.to_string())
-        }
-        Err(why) => Err(format!("The server would not make {path}. {why}")),
+        Err(why) if crate::service::outward::was_refused_by_the_gate(&why) => Err(format!(
+            "Changing mail on the server is switched off, so {}. \
+             Turn mail changes on in Allowed Changes if you want it.",
+            act.did_not_happen()
+        )),
+        Err(why) => Err(format!(
+            "The server would not {} {path}. {why}",
+            act.asked_of_the_server()
+        )),
     }
 }
+
+/// What a command is asking of a folder.
+///
+/// Carried rather than hard-coded at four call sites so that one place decides
+/// what came of a folder write. The four commands then cannot drift into saying
+/// different things about the same failure, which is the shape every
+/// data-losing fault in this codebase has had: two answers to one question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FolderAct {
+    Made,
+    Renamed,
+}
+
+impl FolderAct {
+    /// What did not happen, to finish a sentence saying why.
+    const fn did_not_happen(self) -> &'static str {
+        match self {
+            FolderAct::Made => "no folder was made",
+            FolderAct::Renamed => "nothing was renamed",
+        }
+    }
+
+    /// The verb, for a sentence about the server turning it down.
+    const fn asked_of_the_server(self) -> &'static str {
+        match self {
+            FolderAct::Made => "make",
+            FolderAct::Renamed => "rename",
+        }
+    }
+}
+
+/// Why this folder will not take this command, or `None` if it will.
+///
+/// Asked before a command is built, which for the inbox is the only place it
+/// can be asked. RFC 9051 section 6.3.6 makes renaming `INBOX` succeed: the
+/// server makes a new mailbox, moves every message into it, and leaves the
+/// inbox empty. There is no failure to handle, so a refusal that waited for one
+/// would never run, and what somebody would meet instead is an empty inbox and
+/// a sentence saying the rename worked. Section 6.3.5 refuses a delete of it
+/// outright, and that one is said here as well rather than sent and turned
+/// down, because the answer is known before asking.
+///
+/// A folder kept on this computer is refused for a different reason and must
+/// say so: those are a fixed set of names the code owns, rebuilt whenever the
+/// accounts are read, so there is nothing here somebody named and nothing to
+/// rename. A row renamed in the database comes back under its old name at the
+/// next start. Gated with a sentence rather than half-built, which is what
+/// `FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET` already does for the other half
+/// of the same gap. Asked first, so a POP account's inbox hears about this
+/// computer rather than about a mail server it does not have.
+fn why_the_folder_cannot_be(
+    act: FolderAct,
+    path: &str,
+    kind: crate::common::types::FolderType,
+) -> Option<&'static str> {
+    if crate::application::local_folders::is_local(path) {
+        return Some(match act {
+            FolderAct::Made => FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET,
+            FolderAct::Renamed => RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
+        });
+    }
+    if kind == crate::common::types::FolderType::Inbox {
+        return Some(match act {
+            FolderAct::Made => return None,
+            FolderAct::Renamed => RENAMING_THE_INBOX_EMPTIES_IT,
+        });
+    }
+    None
+}
+
+/// What is said when somebody asks to rename a folder kept on this computer.
+const RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Renaming a folder kept on this computer is not built yet. \
+     These folders are a fixed set, so there is nothing here to rename. \
+     Folders on the server can be renamed.";
+
+/// What is said when somebody asks to rename or move the inbox.
+///
+/// The whole sentence is about what would happen rather than about a rule,
+/// because the rule sounds arbitrary and the outcome does not. Somebody who
+/// wanted the mail somewhere else is told how to get it there.
+const RENAMING_THE_INBOX_EMPTIES_IT: &str = "The inbox cannot be renamed. On a mail server that is not a rename: \
+     it makes a folder under the new name, moves every message in the inbox into it, \
+     and leaves the inbox empty. Make a folder and move the mail into it if that is what you want.";
 
 /// The note above the box while a new folder is being named.
 const A_NEW_FOLDER_GOES_TO_THE_SERVER: &str =
@@ -6371,7 +6473,7 @@ fn spawn_the_folder_write(
                 .is_ok();
         let _ = handle.block_on(controller.disconnect_imap());
 
-        if let Err(said) = what_came_of_making(&path, made) {
+        if let Err(said) = what_came_of(FolderAct::Made, &path, made) {
             // Nothing is recorded and the tree is not read back, because
             // nothing changed. A refusal beside a new row is the shape this
             // whole verb was written to avoid.
@@ -6433,6 +6535,351 @@ fn spawn_the_folder_write(
         say(UIUpdate::CommandAnswered(format!(
             "{path} made on the server."
         )));
+    });
+}
+
+/// The folder the tree cursor is on, and everything a folder command needs.
+///
+/// Gathered once so the three commands ask the same question of the same
+/// places, rather than each reading the tree its own way and drifting.
+struct TheChosenFolder {
+    account: crate::data::account::Account,
+    folder: crate::data::message_cache::CachedFolder,
+    /// The stored path of the folder it sits under, if it is inside one.
+    inside: Option<String>,
+    /// Every folder the account has, placed, so a walk can be made over them.
+    placed: Vec<crate::application::folders_underneath::Placed>,
+}
+
+impl TheChosenFolder {
+    /// What it is called, as somebody reads and hears it.
+    ///
+    /// The stored name is the leaf and is already decoded, which is what makes
+    /// it a name rather than a path.
+    fn readable_name(&self) -> &str {
+        &self.folder.name
+    }
+}
+
+/// What is said when a folder command runs with nothing chosen in the tree.
+const WHICH_FOLDER: &str = "Choose a folder in the folder tree first.";
+
+/// Read the chosen folder out of the tree, or say why there is not one.
+///
+/// The path comes from the folder id rather than from `selected_folder`, which
+/// holds the tree's label with its unread count on the end, for the reason
+/// `make_a_new_folder` gives where it reads the same two things.
+fn the_chosen_folder(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+) -> std::result::Result<TheChosenFolder, &'static str> {
+    use crate::application::folders_underneath::Placed;
+
+    let (account, on_row) = {
+        let s = lock_state(state);
+        let account = s
+            .active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
+        let on_row = s
+            .selected_folder
+            .as_ref()
+            .and_then(|row| s.folder_ids.get(row).copied());
+        (account, on_row)
+    };
+    let Some(account) = account else {
+        return Err("Open an account first.");
+    };
+    let Some(on_row) = on_row else {
+        return Err(WHICH_FOLDER);
+    };
+
+    let folders = cache
+        .get_folders_for_account(&account.id)
+        .map_err(|_| "This account's folders could not be read from this computer.")?;
+    let Some(folder) = folders.iter().find(|folder| folder.id == on_row).cloned() else {
+        return Err(WHICH_FOLDER);
+    };
+
+    let parents = cache
+        .folder_parents(&account.id)
+        .map_err(|_| "This account's folders could not be read from this computer.")?;
+    let placed: Vec<Placed> = folders
+        .into_iter()
+        .map(|folder| Placed {
+            parent: parents.get(&folder.path).copied().flatten(),
+            id: folder.id,
+            path: folder.path,
+        })
+        .collect();
+    let inside = folder_path_of(&placed, &placed, folder.id);
+
+    Ok(TheChosenFolder {
+        account,
+        folder,
+        inside,
+        placed,
+    })
+}
+
+/// The stored path of the folder this one sits under, if it sits in one.
+fn folder_path_of(
+    placed: &[crate::application::folders_underneath::Placed],
+    all: &[crate::application::folders_underneath::Placed],
+    of: i64,
+) -> Option<String> {
+    let parent = placed.iter().find(|folder| folder.id == of)?.parent?;
+    all.iter()
+        .find(|above| above.id == parent)
+        .map(|above| above.path.clone())
+}
+
+/// Whether this account has folders on a server at all.
+///
+/// A POP account has one mailbox and no server-side folders, so a command
+/// meant for one is said rather than attempted: attempting it is a connection
+/// to a server that is not there and two minutes of nothing.
+fn has_folders_on_a_server(account: &crate::data::account::Account) -> bool {
+    account.protocol() == crate::common::types::Protocol::Imap
+}
+
+/// What is said when a folder command is asked of an account with no server
+/// folders.
+const THIS_ACCOUNT_KEEPS_ITS_MAIL_HERE: &str =
+    "This account keeps its mail on this computer, so it has no folders on a server to change.";
+
+/// Give the chosen folder a different name, leaving it where it is.
+///
+/// D-26 splits one server command into two here on purpose. On the wire a
+/// rename and a move are both `RENAME`, and the difference is only which half
+/// of the path changed. So this asks for a **name**, prefilled with the one the
+/// folder has, and builds the new path by putting it where the old name was.
+/// Everything in front is carried over exactly, which is what stops a typo in a
+/// text box moving somebody's folder with no way back. Moving one is its own
+/// command with its own list of places and its own confirmation.
+fn rename_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, frame: &Frame) {
+    use crate::application::folders_underneath::where_the_rows_move_to;
+    use crate::service::protocols::imap::mailbox_name;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let chosen = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+
+    // Asked before anything is built, which for the inbox is the only place it
+    // can be asked: the server would carry the rename out and empty it.
+    if let Some(why) = why_the_folder_cannot_be(
+        FolderAct::Renamed,
+        &chosen.folder.path,
+        crate::common::types::FolderType::from_stored(&chosen.folder.folder_type),
+    ) {
+        return refuse_a_command(tx, why);
+    }
+    if !has_folders_on_a_server(&chosen.account) {
+        return refuse_a_command(tx, THIS_ACCOUNT_KEEPS_ITS_MAIL_HERE);
+    }
+
+    let Some(typed) = ask_for_a_name(
+        frame,
+        Asking {
+            window: "Rename Folder",
+            label: "Folder &name:",
+            note: Some(A_RENAME_STAYS_WHERE_IT_IS),
+            // Prefilled with the name it has, so the common change is a few
+            // characters rather than typing the whole thing again, and so
+            // somebody hears what they are changing.
+            filled_in: chosen.readable_name(),
+            button: "&Rename",
+        },
+    ) else {
+        return;
+    };
+
+    let name = match a_folder_name_that_can_be_used(&typed) {
+        Ok(name) => name,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+    if name == chosen.readable_name() {
+        // Nothing to do, and saying so is better than a command that appears
+        // to work and changes nothing.
+        return refuse_a_command(
+            tx,
+            &format!("{name} is already what that folder is called, so nothing was changed."),
+        );
+    }
+
+    let to =
+        mailbox_name::the_path_after_a_rename(&chosen.folder.path, chosen.inside.as_deref(), name);
+    let rows = where_the_rows_move_to(&chosen.placed, chosen.folder.id, &to);
+    let was = chosen.readable_name().to_string();
+
+    send_status(tx, rt, &format!("Renaming {was} on the server..."));
+    spawn_the_folder_rename(
+        tx,
+        rt,
+        chosen.account,
+        RenamingAFolder {
+            from: chosen.folder.path.clone(),
+            to,
+            rows,
+            asked_about: chosen.folder.id,
+            said: format!("{was} is now called {name}."),
+            act: FolderAct::Renamed,
+        },
+        name.to_string(),
+    );
+}
+
+/// The note above the box while a folder is being renamed.
+const A_RENAME_STAYS_WHERE_IT_IS: &str =
+    "The folder keeps its place and everything in it. To put it somewhere else, use Move Folder.";
+
+/// A folder name somebody typed, or why it cannot be used.
+///
+/// One answer to that question, asked by every command that takes a name. A
+/// name that cannot be used is refused rather than repaired, which is the rule
+/// `crate::application::import_tree` states and the reason it gives: the
+/// repaired form is not the safe form of the same name, it is a different name
+/// nobody asked for, written in silence.
+fn a_folder_name_that_can_be_used(typed: &str) -> std::result::Result<&str, &'static str> {
+    let name = typed.trim();
+    if name.is_empty() {
+        return Err(A_FOLDER_NEEDS_A_NAME);
+    }
+    // A control character is the one that matters: a line break in a mailbox
+    // name is how a name ends one command and begins another. It also catches
+    // the character `LOCAL_PREFIX` opens with, so a typed name cannot reach
+    // into the group holding the only copy of somebody's mail.
+    if name.chars().any(char::is_control) {
+        return Err(THAT_FOLDER_NAME_CANNOT_BE_USED);
+    }
+    Ok(name)
+}
+
+/// One rename, and everything the rows here have to be moved to afterwards.
+struct RenamingAFolder {
+    /// The folder's path now, as the server spells it.
+    from: String,
+    /// Where it is going, as the server will spell it.
+    to: String,
+    /// Every stored row that moves with it, shallowest first.
+    rows: Vec<(i64, String)>,
+    /// Which of those rows is the folder somebody actually asked about, and so
+    /// the only one whose name changes.
+    asked_about: i64,
+    /// What is said and announced when it worked.
+    said: String,
+    /// Which command this was, so a refusal says which one did not happen.
+    act: FolderAct,
+}
+
+/// Ask the server for the rename, then move the rows here to match.
+///
+/// On a thread of its own for the reason `spawn_the_folder_write` gives: a mail
+/// server has two minutes to answer and the window cannot wait.
+///
+/// One command, not a walk. RFC 9051 section 6.3.6 requires a rename to carry
+/// every folder inside it along, so a subtree moves in one go. A hand-written
+/// walk would be slower, would not be atomic, and could leave half a tree
+/// moved with nothing saying which half.
+fn spawn_the_folder_rename(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    renaming: RenamingAFolder,
+    new_name: String,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return say(UIUpdate::CommandRefused(
+                "This account has no usable IMAP port set, so nothing was changed.".to_string(),
+            ));
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return say(UIUpdate::CommandRefused(
+                "This account could not be signed in to, so nothing was changed.".to_string(),
+            ));
+        };
+
+        let controller = MailController::new();
+        if let Err(why) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return say(UIUpdate::CommandRefused(format!(
+                "The mail server could not be reached, so nothing was changed. {why}"
+            )));
+        }
+
+        let outcome = handle.block_on(controller.rename_mailbox(&renaming.from, &renaming.to));
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        if let Err(said) = what_came_of(renaming.act, &renaming.from, outcome) {
+            // Nothing here is moved and the tree is not read back, because
+            // nothing at the server changed. A refusal beside a renamed row is
+            // the shape these commands were written to avoid.
+            return say(UIUpdate::CommandRefused(said));
+        }
+
+        // Moved here before the tree is read back, because the tree is read
+        // from what is stored: a sentence saying the folder was renamed beside
+        // a tree still showing the old name is the shape this program has
+        // shipped twice.
+        let changed_there_not_here = format!(
+            "{} It appears under its new name here after the next check for mail.",
+            renaming.said
+        );
+        let Ok(paths) = AppPaths::resolve() else {
+            return say(UIUpdate::CommandAnswered(changed_there_not_here));
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)
+        else {
+            return say(UIUpdate::CommandAnswered(changed_there_not_here));
+        };
+        // Only the folder that was asked about gets a new name. Every folder
+        // inside it kept its own and only moved, so their names are read back
+        // rather than worked out from a path: a leaf taken off a path needs
+        // the separator, and the whole point of the rows above is that nothing
+        // here has to know it.
+        let named_now: std::collections::HashMap<i64, String> = cache
+            .get_folders_for_account(&account.id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|folder| (folder.id, folder.name))
+            .collect();
+        for (id, path) in &renaming.rows {
+            let name = if *id == renaming.asked_about {
+                new_name.as_str()
+            } else {
+                named_now.get(id).map_or(new_name.as_str(), String::as_str)
+            };
+            if let Err(why) = cache.set_folder_path(*id, path, name) {
+                tracing::warn!("A renamed folder could not be recorded here: {why}");
+                return say(UIUpdate::CommandAnswered(changed_there_not_here));
+            }
+        }
+        if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
+            for update in updates {
+                say(update);
+            }
+        }
+        say(UIUpdate::CommandAnswered(renaming.said));
     });
 }
 
@@ -20015,6 +20462,7 @@ mod what_the_search_box_offers_to_look_in {
 #[cfg(test)]
 mod making_a_folder {
     use super::*;
+    use crate::common::types::FolderType;
 
     #[test]
     fn test_a_folder_on_the_server_is_named_by_what_was_typed() {
@@ -20085,7 +20533,7 @@ mod making_a_folder {
             "Allow Changes: this account is open for reading only".to_string(),
         );
 
-        let outcome = what_came_of_making("Work", Err(refused));
+        let outcome = what_came_of(FolderAct::Made, "Work", Err(refused));
 
         let said = outcome.expect_err("a refusal is not a folder");
         assert!(said.contains("switched off"), "{said}");
@@ -20098,7 +20546,7 @@ mod making_a_folder {
             "Could not create the folder: the server would not do it".to_string(),
         );
 
-        let outcome = what_came_of_making("Work", Err(refused));
+        let outcome = what_came_of(FolderAct::Made, "Work", Err(refused));
 
         let said = outcome.expect_err("a refusal is not a folder");
         assert!(said.contains("Work"), "{said}");
@@ -20114,12 +20562,18 @@ mod making_a_folder {
         // The whole point of asking `was_refused_by_the_gate` at all. If these
         // two came out alike, the branch would be dead code that still looked
         // like a decision.
-        let by_the_gate =
-            what_came_of_making("Work", Err(crate::common::Error::Security("x".into())))
-                .expect_err("a refusal");
-        let by_the_server =
-            what_came_of_making("Work", Err(crate::common::Error::Protocol("x".into())))
-                .expect_err("a refusal");
+        let by_the_gate = what_came_of(
+            FolderAct::Made,
+            "Work",
+            Err(crate::common::Error::Security("x".into())),
+        )
+        .expect_err("a refusal");
+        let by_the_server = what_came_of(
+            FolderAct::Made,
+            "Work",
+            Err(crate::common::Error::Protocol("x".into())),
+        )
+        .expect_err("a refusal");
         assert_ne!(by_the_gate, by_the_server);
     }
 
@@ -20127,7 +20581,81 @@ mod making_a_folder {
     fn test_a_folder_that_was_made_is_the_only_outcome_that_gets_recorded() {
         // `Ok` is what the caller stores and reads the tree back from, so this
         // is the assertion that neither refusal above can leave a row behind.
-        assert!(what_came_of_making("Work", Ok(())).is_ok());
+        assert!(what_came_of(FolderAct::Made, "Work", Ok(())).is_ok());
+    }
+
+    #[test]
+    fn test_the_inbox_is_refused_a_rename_and_the_reason_says_what_would_happen() {
+        // RFC 9051 section 6.3.6: renaming INBOX is permitted, does not come
+        // back as a failure, and moves every message into a new mailbox
+        // leaving INBOX empty. So it cannot be caught by handling an error,
+        // because there is no error: it succeeds and empties somebody's inbox.
+        // The refusal has to sit in front of the command being built at all.
+        let said = why_the_folder_cannot_be(FolderAct::Renamed, "INBOX", FolderType::Inbox)
+            .expect("the inbox is refused");
+        assert!(said.to_lowercase().contains("inbox"), "{said}");
+        assert!(said.contains("empty"), "{said}");
+    }
+
+    #[test]
+    fn test_an_ordinary_folder_on_the_server_is_refused_nothing() {
+        assert_eq!(
+            why_the_folder_cannot_be(FolderAct::Renamed, "Archive/2026", FolderType::Custom),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_folder_kept_on_this_computer_is_refused_and_told_why_it_is_not_built() {
+        // The folders on this computer are a fixed set today: a const array of
+        // names the code owns, rebuilt whenever the accounts are read. There is
+        // nothing here a person named and so nothing to rename, and a row
+        // renamed in the database would come back under its old name at the
+        // next start. Gated with a sentence rather than half-built.
+        let path = format!("{}/Drafts", crate::application::local_folders::LOCAL_PREFIX);
+        let said = why_the_folder_cannot_be(FolderAct::Renamed, &path, FolderType::Drafts)
+            .expect("a rename was allowed on a folder kept here");
+        assert!(
+            said.contains("this computer"),
+            "{said}, which does not say where the folder is"
+        );
+    }
+
+    #[test]
+    fn test_the_local_inbox_is_refused_as_a_local_folder_rather_than_as_an_inbox() {
+        // A POP account's inbox lives on this computer. The reason it cannot
+        // be renamed is that nothing renames a folder here, not the RFC, and
+        // saying the wrong one sends somebody looking at their server.
+        let path = format!("{}/Inbox", crate::application::local_folders::LOCAL_PREFIX);
+        let said = why_the_folder_cannot_be(FolderAct::Renamed, &path, FolderType::Inbox)
+            .expect("a folder kept here is refused");
+        assert!(said.contains("this computer"), "{said}");
+        assert!(!said.contains("empty"), "{said}");
+    }
+
+    #[test]
+    fn test_every_refusal_after_a_folder_command_says_which_command_it_was_about() {
+        // One place decides what came of a folder write, so the four commands
+        // cannot drift into saying different things about the same failure.
+        // What must differ is only the act, so somebody hears which of the
+        // things they asked for did not happen.
+        let gate = crate::common::Error::Security("Allow Changes: reading only".to_string());
+        let renamed = what_came_of(FolderAct::Renamed, "Work", Err(gate))
+            .expect_err("a refusal is not a rename");
+        assert!(renamed.contains("switched off"), "{renamed}");
+        assert!(renamed.contains("renamed"), "{renamed}");
+
+        let server = crate::common::Error::Protocol(
+            "Could not rename the folder: the server would not do it".to_string(),
+        );
+        let by_the_server = what_came_of(FolderAct::Renamed, "Work", Err(server))
+            .expect_err("a refusal is not a rename");
+        assert!(by_the_server.contains("rename Work"), "{by_the_server}");
+        assert!(
+            by_the_server.contains("the server would not do it"),
+            "{by_the_server}"
+        );
+        assert!(!by_the_server.contains("switched off"), "{by_the_server}");
     }
 
     #[test]
