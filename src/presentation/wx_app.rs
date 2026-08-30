@@ -6195,6 +6195,31 @@ const FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET: &str = "Making a folder on this
 const MAIL_CHANGES_ARE_SWITCHED_OFF: &str = "Changing mail on the server is switched off, so no folder was made. \
      Turn mail changes on in Allowed Changes if you want it.";
 
+/// What came of asking the server for a folder: made, or a sentence saying why
+/// not.
+///
+/// Pure, and separate from the thread that asks, so the choice between the two
+/// refusals has a test rather than a window and a mail server. `Ok` is the only
+/// outcome the caller records and reads the tree back from, which is what makes
+/// "neither refusal leaves a row behind" a thing a test can assert.
+///
+/// The two are told apart here because this is the last place they can be.
+/// `protocol_error` collapses a server's NO, a BAD and a dropped connection
+/// into one `Error::Protocol`, so the gate against everything else is the only
+/// distinction still available by the time a refusal reaches a person. It is
+/// also the one worth drawing: one is a setting they can turn on, the other is
+/// the server's answer, and telling somebody to change a setting that is
+/// already on sends them round the loop a second time.
+fn what_came_of_making(path: &str, outcome: Result<()>) -> std::result::Result<(), String> {
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(why) if crate::service::outward::was_refused_by_the_gate(&why) => {
+            Err(MAIL_CHANGES_ARE_SWITCHED_OFF.to_string())
+        }
+        Err(why) => Err(format!("The server would not make {path}. {why}")),
+    }
+}
+
 /// The note above the box while a new folder is being named.
 const A_NEW_FOLDER_GOES_TO_THE_SERVER: &str =
     "The folder is made on the server, so every mail app using this account sees it.";
@@ -6342,19 +6367,11 @@ fn spawn_the_folder_write(
                 .is_ok();
         let _ = handle.block_on(controller.disconnect_imap());
 
-        if let Err(why) = made {
-            // The two refusals are told apart here, while the error still knows
-            // which it was. `protocol_error` collapses a server's No, a BAD and
-            // a dropped connection into one shape, so the gate against
-            // everything else is the distinction still available, and it is the
-            // one that changes what somebody does next.
-            return say(UIUpdate::CommandRefused(
-                if crate::service::outward::was_refused_by_the_gate(&why) {
-                    MAIL_CHANGES_ARE_SWITCHED_OFF.to_string()
-                } else {
-                    format!("The server would not make {path}. {why}")
-                },
-            ));
+        if let Err(said) = what_came_of_making(&path, made) {
+            // Nothing is recorded and the tree is not read back, because
+            // nothing changed. A refusal beside a new row is the shape this
+            // whole verb was written to avoid.
+            return say(UIUpdate::CommandRefused(said));
         }
 
         // Recorded before the tree is read back, because the tree is read from
@@ -20046,6 +20063,60 @@ mod making_a_folder {
                 "{name:?} was accepted"
             );
         }
+    }
+
+    #[test]
+    fn test_a_folder_the_gate_refused_names_the_setting_and_is_not_recorded() {
+        // Not the server's words, because the server never heard about it. The
+        // sentence has to name the setting somebody would go and change:
+        // "permission denied" sends them looking for a broken account.
+        let refused = crate::common::Error::Security(
+            "Allow Changes: this account is open for reading only".to_string(),
+        );
+
+        let outcome = what_came_of_making("Work", Err(refused));
+
+        let said = outcome.expect_err("a refusal is not a folder");
+        assert!(said.contains("switched off"), "{said}");
+        assert!(said.contains("Allowed Changes"), "{said}");
+    }
+
+    #[test]
+    fn test_a_folder_the_server_refused_repeats_what_the_server_said_and_is_not_recorded() {
+        let refused = crate::common::Error::Protocol(
+            "Could not create the folder: the server would not do it".to_string(),
+        );
+
+        let outcome = what_came_of_making("Work", Err(refused));
+
+        let said = outcome.expect_err("a refusal is not a folder");
+        assert!(said.contains("Work"), "{said}");
+        assert!(said.contains("the server would not do it"), "{said}");
+        // Not the gate's sentence. Telling somebody to turn a setting on when
+        // it is already on, and the server is what said no, is worse than
+        // saying nothing: they change the setting and try again.
+        assert!(!said.contains("switched off"), "{said}");
+    }
+
+    #[test]
+    fn test_the_two_refusals_do_not_read_the_same() {
+        // The whole point of asking `was_refused_by_the_gate` at all. If these
+        // two came out alike, the branch would be dead code that still looked
+        // like a decision.
+        let by_the_gate =
+            what_came_of_making("Work", Err(crate::common::Error::Security("x".into())))
+                .expect_err("a refusal");
+        let by_the_server =
+            what_came_of_making("Work", Err(crate::common::Error::Protocol("x".into())))
+                .expect_err("a refusal");
+        assert_ne!(by_the_gate, by_the_server);
+    }
+
+    #[test]
+    fn test_a_folder_that_was_made_is_the_only_outcome_that_gets_recorded() {
+        // `Ok` is what the caller stores and reads the tree back from, so this
+        // is the assertion that neither refusal above can leave a row behind.
+        assert!(what_came_of_making("Work", Ok(())).is_ok());
     }
 
     #[test]

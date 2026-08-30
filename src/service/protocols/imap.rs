@@ -3747,6 +3747,53 @@ pub(crate) mod against_a_server_that_answers {
     }
 
     #[tokio::test]
+    async fn test_a_server_that_will_not_make_a_folder_is_never_reported_as_a_folder_made() {
+        // The failure `set_flag`'s own doc comment is about, in the direction
+        // that matters here: the library's `create` reads the tagged response,
+        // so a NO comes back as an error rather than as a folder somebody is
+        // told they have and finds missing from another device days later.
+        let server = a_server_that_refuses("", "CREATE").await;
+        let mut session = signed_in_to(&server).await;
+
+        let said = the_failure(waiting_for(session.create_mailbox("Work"), "the refusal").await);
+
+        assert!(said.contains("Could not create the folder"), "{said}");
+        // The server's own words, so the sentence somebody hears is about what
+        // actually happened rather than a house phrase covering every failure.
+        assert!(said.contains("the server would not do it"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_the_two_ways_of_being_refused_a_folder_can_be_told_apart() {
+        // `protocol_error` collapses a NO, a BAD and a dropped connection into
+        // one `Error::Protocol`, so by the time a refusal reaches the window
+        // the only distinction still available is the gate against everything
+        // else. It is also the one that changes what somebody does next: one
+        // is a setting they can turn on, the other is the server's answer.
+        let refusing = a_server_that_refuses("", "CREATE").await;
+        let mut refused_by_the_server = signed_in_to(&refusing).await;
+        let by_the_server =
+            waiting_for(refused_by_the_server.create_mailbox("Work"), "the refusal")
+                .await
+                .expect_err("the server refused it");
+
+        let answering = a_server_answering(|_, _| None).await;
+        let mut refused_by_the_gate = reading_only_on(&answering).await;
+        let by_the_gate = waiting_for(refused_by_the_gate.create_mailbox("Work"), "the refusal")
+            .await
+            .expect_err("the gate refused it");
+
+        assert!(
+            crate::service::outward::was_refused_by_the_gate(&by_the_gate),
+            "the gate's own refusal was not recognised as one: {by_the_gate}"
+        );
+        assert!(
+            !crate::service::outward::was_refused_by_the_gate(&by_the_server),
+            "a server saying no was read as the setting being off: {by_the_server}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_creating_a_folder_with_the_gate_closed_says_nothing_to_the_server() {
         // The gate is the first line of the verb, so the refusal happens before
         // a command is built rather than after one is sent and turned down.
