@@ -24,9 +24,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Known limits, said here rather than found later:
 
   - The new folder is made where you type it, at the top of the account. Putting
-    one inside another is not built yet, because the character a server uses to
-    separate folder names is not carried far enough into the program yet to use
-    it, and guessing it would put the folder somewhere else.
+    one inside another is not built yet. Checking for mail now reads and records
+    which folder each one sits under, but the box you type a name into does not
+    offer a parent to put it under, so a name with a separator in it goes to the
+    server as typed and lands wherever the server decides.
   - Making a folder on this computer, under the folders that hold mail no server
     has, is not built yet. Asking for one says so.
   - Renaming, moving and deleting a folder are not built yet.
@@ -218,6 +219,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   up for them. And Outlook records whether a guest is required or optional,
   while Wixen Mail has nowhere to keep that, so everybody it adds goes as
   required.
+
+### Changed
+
+- **A folder inside another folder now reads by its own name.** A folder your
+  server calls `Archive/2026` used to appear in the tree as the whole thing,
+  `Archive/2026`. It now reads as `2026`, which is what it is called.
+
+  Checking for mail also writes down which folder each one sits under. It works
+  that out from the character the server itself gives for that mailbox, and it
+  asks for every mailbox separately, because a server can answer differently for
+  different parts of your account. Where a server gives no separator, nothing is
+  split and nothing is guessed, so a folder you called `Work/2026` on a server
+  with a flat list keeps that whole name.
+
+  Known limits, said here rather than found later:
+
+  - The tree is still one flat level. It shows the shorter names but does not
+    yet nest them, so until it does, two folders called `2026` under different
+    parents read the same on screen. Before this they read as `Archive/2026` and
+    `Work/2026`. Nesting them is the next piece of this work, and nothing is
+    lost meanwhile: both folders still open and still hold their own mail.
+  - Nothing about your mail moved or was deleted. This changes what a folder is
+    labelled and adds a note of where it sits.
+  - This has been tested against a mail server written for the tests, not
+    against a real account. Nothing in this program has ever run against one.
 
 ### Fixed
 

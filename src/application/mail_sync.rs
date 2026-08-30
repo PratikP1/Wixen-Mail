@@ -396,10 +396,27 @@ fn join_addresses(addresses: &[crate::common::types::EmailAddress]) -> String {
 /// Store the folder list, and return the rows with the ids the cache gave them.
 ///
 /// The path is stored as the server spells it, because that is what goes back
-/// in a SELECT. The name is stored as the decoded path rather than the last
-/// segment: the tree is one flat level, so two folders called "2026" under
-/// different parents would be two rows reading the same and nothing to tell
-/// them apart. "Archive/2026" says which one it is.
+/// in a SELECT. The name is stored as the leaf, which is what somebody reads
+/// off one row of the tree.
+///
+/// It used to be the whole decoded path, and the reason was sound while it
+/// held: the tree was one flat level, so two folders called "2026" under
+/// different parents were two rows reading the same with nothing to tell them
+/// apart, and "Archive/2026" said which was which. What tells them apart now
+/// is where they sit. The second pass below records that, so the hierarchy is
+/// carried by the tree rather than spelled into a label, which is also the
+/// rule for a screen reader: level and position are the tree control's to
+/// announce and never the label's to repeat.
+///
+/// # The parent is worked out in a second pass, and has to be
+///
+/// A server may list a child before its parent, so the parent's id does not
+/// exist yet when the child is stored. The pass below runs once every folder
+/// in the account has one, over the rows this call just made and nothing else,
+/// so a parent is only ever found inside the same account. The alternative, a
+/// lookup by path across the table, would hang one account's mail under
+/// another account's branch wherever two accounts spell a folder the same,
+/// which is most of the time.
 ///
 /// A mailbox named the same as a folder that lives on this computer is left
 /// out. Both kinds share a table and are told apart by the path, so storing one
@@ -425,7 +442,7 @@ pub fn store_folders(
         let id = cache.save_folder(&CachedFolder {
             id: 0,
             account_id: account_id.to_string(),
-            name: folder.display_path.clone(),
+            name: folder.name.clone(),
             path: folder.path.clone(),
             folder_type: folder.folder_type.as_str().to_string(),
             unread_count: 0,
@@ -436,7 +453,41 @@ pub fn store_folders(
         cache.set_folder_server_facts(id, folder.holds_all_mail, folder.subscribed)?;
         stored.push((folder.clone(), id));
     }
+
+    // Every folder in the account has an id now, so the paths can become a
+    // hierarchy. This is the one place a path is split; everything downstream
+    // reads a parent. A folder with no parent is written as having none rather
+    // than left alone, because a server can move a folder to the top level and
+    // a row that kept its old parent would go on showing it in a branch it has
+    // left.
+    for (folder, id) in &stored {
+        let parent = the_folder_above(folder).and_then(|above| {
+            stored
+                .iter()
+                .find(|(other, _)| other.path == above)
+                .map(|(_, above_id)| *above_id)
+        });
+        cache.set_folder_parent(*id, parent)?;
+    }
     Ok(stored)
+}
+
+/// The path of the folder this one sits under, if its own path names one.
+///
+/// The wire path, not the readable one: the wire path is the identifier, it is
+/// what `UNIQUE(account_id, path)` keys on, and it is what the lookup above
+/// compares against. Deriving it from the readable form would fail for exactly
+/// the folder whose name could not be decoded, which is the reason `ImapFolder`
+/// keeps the two apart in the first place.
+///
+/// `None` for a folder at the top level, for one the server gave no separator
+/// for, and for one whose separator is empty. All three mean the same thing
+/// here: nothing to split, so nothing is split. A separator of several
+/// characters is matched whole, because nothing in the protocol promises one.
+fn the_folder_above(folder: &ImapFolder) -> Option<&str> {
+    let separator = folder.delimiter.as_deref().filter(|sep| !sep.is_empty())?;
+    let (above, _leaf) = folder.path.rsplit_once(separator)?;
+    (!above.is_empty()).then_some(above)
 }
 
 /// Sync one folder into the cache.
@@ -1684,6 +1735,7 @@ mod tests {
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         };
         (cache, folder_id, folder)
     }
@@ -1762,6 +1814,7 @@ mod tests {
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         };
 
         // Six messages an ordinary sync brought down, each with a body well
@@ -2007,6 +2060,7 @@ mod tests {
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         };
         (dir, cache, inbox, invoices, folder, engine)
     }
@@ -2206,6 +2260,7 @@ mod tests {
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         };
 
         let server = a_server_holding_one_invoice();
@@ -2263,6 +2318,228 @@ mod tests {
 
         let rows = cache.get_folders_for_account("acct").expect("the rows");
         assert_eq!(rows.len(), 2);
+    }
+
+    /// A mailbox the way a server separating with the given character lists
+    /// it: the leaf as the name, the whole path as the path.
+    fn nested(path: &str, separator: Option<&str>) -> ImapFolder {
+        let leaf = match separator.filter(|sep| !sep.is_empty()) {
+            Some(sep) => path.rsplit(sep).next().unwrap_or(path),
+            None => path,
+        };
+        ImapFolder {
+            name: leaf.to_string(),
+            display_path: path.to_string(),
+            path: path.to_string(),
+            folder_type: FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+            delimiter: separator.map(str::to_string),
+        }
+    }
+
+    fn a_fresh_cache() -> (tempfile::TempDir, MessageCache) {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        (dir, cache)
+    }
+
+    fn parent_of(cache: &MessageCache, account: &str, path: &str) -> Option<Option<i64>> {
+        cache
+            .folder_parents(account)
+            .expect("the parents")
+            .get(path)
+            .copied()
+    }
+
+    fn id_of(stored: &[(ImapFolder, i64)], path: &str) -> i64 {
+        stored
+            .iter()
+            .find(|(f, _)| f.path == path)
+            .map(|(_, id)| *id)
+            .unwrap_or_else(|| panic!("no row was stored for {path}"))
+    }
+
+    #[test]
+    fn test_a_folder_is_linked_to_the_folder_whose_name_its_path_carries() {
+        // The whole of what this pass is for. The path is split once here,
+        // where the separator the server gave for that mailbox is in hand, and
+        // the tree afterwards reads a parent instead of splitting anything.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![
+            nested("Archive", Some("/")),
+            nested("Archive/2026", Some("/")),
+        ];
+
+        let stored = store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        assert_eq!(
+            parent_of(&cache, "acct", "Archive/2026"),
+            Some(Some(id_of(&stored, "Archive")))
+        );
+        assert_eq!(parent_of(&cache, "acct", "Archive"), Some(None));
+    }
+
+    #[test]
+    fn test_the_stored_name_is_the_leaf_and_not_the_whole_path() {
+        // The tree nests, so a row says what the folder is called and its
+        // place says where it sits. Storing "Archive/2026" as the name would
+        // spell the hierarchy into the label, which the tree control announces
+        // and a label must never carry.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![
+            nested("Archive", Some("/")),
+            nested("Archive/2026", Some("/")),
+        ];
+
+        store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        let rows = cache.get_folders_for_account("acct").expect("the rows");
+        let name_of = |path: &str| {
+            rows.iter()
+                .find(|r| r.path == path)
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| panic!("the row for {path}"))
+        };
+        assert_eq!(name_of("Archive/2026"), "2026");
+        assert_eq!(name_of("Archive"), "Archive");
+    }
+
+    #[test]
+    fn test_a_folder_whose_parent_the_server_did_not_list_stays_where_it_is() {
+        // A server can list a child without its parent, and a subscription
+        // list is one ordinary way that happens. Inventing the missing row
+        // would put a folder in the tree that nothing can open; dropping the
+        // child would hide mail. It stays, at the top level.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![nested("Archive/2026", Some("/"))];
+
+        let stored = store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        assert_eq!(stored.len(), 1, "the child was dropped");
+        assert_eq!(parent_of(&cache, "acct", "Archive/2026"), Some(None));
+        assert_eq!(
+            cache.folder_parents("acct").expect("the parents").len(),
+            1,
+            "a row was invented for the parent the server did not list"
+        );
+    }
+
+    #[test]
+    fn test_a_mailbox_that_is_only_a_name_in_the_hierarchy_can_still_be_a_parent() {
+        // A non-selectable mailbox holds no mail and exists so the name does.
+        // Those rows are exactly the branches this tree hangs children from,
+        // so refusing them as parents would flatten every hierarchy that has
+        // one.
+        let (_dir, cache) = a_fresh_cache();
+        let mut container = nested("Archive", Some("/"));
+        container.selectable = false;
+        let listed = vec![container, nested("Archive/2026", Some("/"))];
+
+        let stored = store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        assert_eq!(
+            parent_of(&cache, "acct", "Archive/2026"),
+            Some(Some(id_of(&stored, "Archive")))
+        );
+    }
+
+    #[test]
+    fn test_two_accounts_holding_the_same_path_each_link_inside_their_own() {
+        // A parent looked up across the whole table would hang one account's
+        // mail under another account's branch, which shows somebody the wrong
+        // person's folder full of the wrong person's messages.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![
+            nested("Archive", Some("/")),
+            nested("Archive/2026", Some("/")),
+        ];
+
+        let mine = store_folders(&cache, "mine", &listed).expect("mine stored");
+        let theirs = store_folders(&cache, "theirs", &listed).expect("theirs stored");
+
+        assert_ne!(
+            id_of(&mine, "Archive"),
+            id_of(&theirs, "Archive"),
+            "one row served both accounts"
+        );
+        assert_eq!(
+            parent_of(&cache, "mine", "Archive/2026"),
+            Some(Some(id_of(&mine, "Archive")))
+        );
+        assert_eq!(
+            parent_of(&cache, "theirs", "Archive/2026"),
+            Some(Some(id_of(&theirs, "Archive")))
+        );
+    }
+
+    #[test]
+    fn test_storing_the_same_folder_list_again_changes_nothing() {
+        // The folder list is saved on every check for mail, so this pass runs
+        // over and over on an account nothing has happened to. It has to
+        // settle rather than drift.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![
+            nested("Archive", Some("/")),
+            nested("Archive/2026", Some("/")),
+        ];
+
+        store_folders(&cache, "acct", &listed).expect("the first time");
+        let first = cache.folder_parents("acct").expect("the parents");
+        store_folders(&cache, "acct", &listed).expect("the second time");
+        let again = cache.folder_parents("acct").expect("the parents");
+
+        assert_eq!(first, again);
+        assert_eq!(
+            cache
+                .get_folders_for_account("acct")
+                .expect("the rows")
+                .len(),
+            2,
+            "storing the same list twice made new rows"
+        );
+    }
+
+    #[test]
+    fn test_a_separator_that_separates_nothing_splits_nothing() {
+        // Both answers come off the wire, so both are a stranger's. A mailbox
+        // the server gave no separator for and one it gave an empty separator
+        // for are the same case, and neither names a parent however many
+        // slashes are in the name.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![nested("Work/2026", None), nested("Notes", Some(""))];
+
+        store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        assert_eq!(parent_of(&cache, "acct", "Work/2026"), Some(None));
+        assert_eq!(parent_of(&cache, "acct", "Notes"), Some(None));
+        let rows = cache.get_folders_for_account("acct").expect("the rows");
+        assert_eq!(
+            rows.iter()
+                .find(|r| r.path == "Work/2026")
+                .map(|r| r.name.as_str()),
+            Some("Work/2026"),
+            "a name was split on a separator the server did not give"
+        );
+    }
+
+    #[test]
+    fn test_a_separator_of_several_characters_is_used_whole() {
+        // Nothing in the protocol promises one character, and a reader that
+        // took the last character of it would split on a fragment.
+        let (_dir, cache) = a_fresh_cache();
+        let listed = vec![
+            nested("Archive", Some("::")),
+            nested("Archive::2026", Some("::")),
+        ];
+
+        let stored = store_folders(&cache, "acct", &listed).expect("the list is stored");
+
+        assert_eq!(
+            parent_of(&cache, "acct", "Archive::2026"),
+            Some(Some(id_of(&stored, "Archive")))
+        );
     }
 
     #[test]
@@ -2785,6 +3062,7 @@ mod tests {
             selectable: true,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         };
         (cache, folder_id, folder, kept.id)
     }
@@ -3335,6 +3613,7 @@ mod tests {
             selectable,
             holds_all_mail: false,
             subscribed: true,
+            delimiter: None,
         }
     }
 

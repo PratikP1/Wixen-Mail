@@ -6401,6 +6401,13 @@ fn spawn_the_folder_write(
             selectable: true,
             holds_all_mail: false,
             subscribed,
+            // No separator, so this row is stored at the top level under the
+            // name it was given. A folder is made where it is named, and this
+            // path never came from a LIST response, so there is no separator
+            // to carry: guessing one is what would file it under a parent the
+            // server has not got. The next folder list carries the server's
+            // own answer and settles where it really sits.
+            delimiter: None,
         };
         if let Err(why) = crate::application::mail_sync::store_folders(
             &cache,

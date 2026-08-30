@@ -215,6 +215,19 @@ pub struct ImapFolder {
     /// server that keeps no subscriptions reports none, and then subscription
     /// is not what decides which folders sync.
     pub subscribed: bool,
+    /// What separates this mailbox's name from its parent's, as the server
+    /// gave it for this mailbox.
+    ///
+    /// Per mailbox, not per server: LIST carries a separator on every line and
+    /// a server may answer differently for different parts of its namespace,
+    /// so one taken from the first line and used for the rest splits the wrong
+    /// names. `None` means the server named none, which is a flat namespace
+    /// and not an unknown separator, so nothing is split rather than something
+    /// being guessed. An empty separator arrives as `None` for the same
+    /// reason: a separator that is nothing separates nothing, and normalising
+    /// it here makes that structural instead of something every reader has to
+    /// remember.
+    pub delimiter: Option<String>,
 }
 
 /// What one mailbox holds, without opening it.
@@ -765,10 +778,15 @@ impl ImapSession {
             .into_iter()
             .map(|(attributes, delimiter, path)| {
                 let display_path = mailbox_name::decode(&path);
-                // The delimiter is read here to find the last segment and to
-                // classify the folder. It is not carried on the struct: the
-                // tree is one flat level, so nothing downstream has anything to
-                // do with it. It comes back when the tree gains a hierarchy.
+                // The separator is read here to find the last segment and to
+                // classify the folder, and carried on the struct as well,
+                // because the tree now nests and the sync splits the path once
+                // to work out which folder each one sits under. It is the
+                // server's answer for this mailbox alone; see the field.
+                let carried = delimiter
+                    .as_deref()
+                    .filter(|d| !d.is_empty())
+                    .map(str::to_string);
                 let leaf = match delimiter.as_deref().filter(|d| !d.is_empty()) {
                     Some(sep) => display_path.rsplit(sep).next().unwrap_or(&display_path),
                     None => display_path.as_str(),
@@ -783,6 +801,7 @@ impl ImapSession {
                     selectable: special_use::selectable(&attributes),
                     holds_all_mail: special_use::holds_all_mail(&attributes),
                     subscribed: subscribed.contains(&path),
+                    delimiter: carried,
                     display_path,
                     path,
                 }
@@ -3282,6 +3301,81 @@ pub(crate) mod against_a_server_that_answers {
             .expect("the folder the server called sent");
         assert_eq!(sent.folder_type, FolderType::Sent, "{folders:?}");
         assert!(sent.selectable, "{folders:?}");
+    }
+
+    #[tokio::test]
+    async fn test_each_mailbox_carries_the_separator_the_server_gave_for_it() {
+        // IMAP returns a hierarchy separator per mailbox in the LIST response,
+        // not one per server. A reader that took the first one and used it for
+        // the rest would split "Work.2026" on a slash, find nothing, and leave
+        // a folder called "Work.2026" at the top level on any server that
+        // answers this way for part of its namespace.
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("LIST").then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n\
+                     * LIST (\\HasChildren) \"/\" \"Archive\"\r\n\
+                     * LIST (\\HasNoChildren) \".\" \"Work.2026\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the folder list")
+            .await
+            .expect("the folders to arrive");
+
+        let separator = |path: &str| {
+            folders
+                .iter()
+                .find(|f| f.path == path)
+                .unwrap_or_else(|| panic!("the mailbox {path}: {folders:?}"))
+                .delimiter
+                .clone()
+        };
+        assert_eq!(separator("INBOX"), Some("/".to_string()), "{folders:?}");
+        assert_eq!(separator("Archive"), Some("/".to_string()), "{folders:?}");
+        assert_eq!(
+            separator("Work.2026"),
+            Some(".".to_string()),
+            "the second mailbox was given the first one's separator: {folders:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_mailbox_the_server_gives_no_separator_for_carries_none() {
+        // A flat namespace answers NIL, and NIL means there is no separator
+        // rather than that the separator is unknown. Guessing one splits a
+        // name that has no parts, so a mailbox somebody called "Work/2026"
+        // would be filed under a folder called "Work" the server never listed.
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("LIST").then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) NIL \"INBOX\"\r\n\
+                     * LIST (\\HasNoChildren) NIL \"Work/2026\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the folder list")
+            .await
+            .expect("the folders to arrive");
+
+        assert!(
+            folders.iter().all(|f| f.delimiter.is_none()),
+            "a separator was invented for a server that named none: {folders:?}"
+        );
+        let flat = folders
+            .iter()
+            .find(|f| f.path == "Work/2026")
+            .expect("the mailbox with a slash in its name");
+        assert_eq!(
+            flat.name, "Work/2026",
+            "the name was split on a separator the server did not give: {folders:?}"
+        );
     }
 
     #[tokio::test]
