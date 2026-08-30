@@ -2852,6 +2852,60 @@ fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() 
     );
 }
 
+/// Enter on a branch of the folder tree opens or closes it and does nothing
+/// else.
+///
+/// A branch is an account, the group for what is kept on this computer, a
+/// heading, or a folder with folders inside it. None of them is a thing to
+/// open, so Enter has one meaning there, and it is the meaning Enter already
+/// has on a non-selectable folder a server lists.
+///
+/// The order is the whole of it. The branch arm has to answer and return before
+/// the arm that runs a saved search, because a match is read top down and
+/// pressing Enter on a branch would otherwise fall through to the resolver
+/// below it.
+///
+/// What this cannot see, measured rather than guessed. Taken red by deleting
+/// the arm, it fails, which is the regression worth catching. Taken red by
+/// changing its condition to `false`, it stays green: the arm is still written
+/// there, and a source read cannot tell code that is present from code that
+/// runs. So this defends the arm existing, being in front of the resolver, and
+/// returning. Whether it is reached is not something any reading of the text
+/// can answer, and nothing else here answers it either.
+///
+/// It also cannot see whether the control really toggles or whether the new
+/// state is heard. `tests/tree_selection_raises.rs` asks a real control the
+/// neighbouring question.
+#[test]
+fn test_enter_on_a_branch_of_the_folder_tree_only_opens_or_closes_it() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let answering = body_of(ship, "            folder_tree.on_item_activated(");
+
+    let toggles = answering
+        .find("toggle(")
+        .expect("Enter on a branch does not open or close it");
+    let runs = answering
+        .find("the_search_a_row_names(")
+        .expect("Enter no longer resolves a saved-search row at all");
+    assert!(
+        toggles < runs,
+        "the branch arm sits after the saved-search resolver, so Enter on a branch falls \
+         through it"
+    );
+    assert!(
+        answering[toggles..runs].contains("return"),
+        "Enter on a branch opens or closes it and then carries on into the rest of the \
+         handler, so it does a second thing as well"
+    );
+    assert!(
+        answering[toggles..runs].contains("expanded")
+            && answering[toggles..runs].contains("collapsed"),
+        "opening or closing a branch says nothing, so somebody working by ear presses Enter \
+         and hears only silence"
+    );
+}
+
 /// A saved search is never treated as a mailbox.
 ///
 /// It has no folder on any server: nothing to select, nothing to fetch more
