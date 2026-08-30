@@ -1104,8 +1104,36 @@ impl MessageCache {
     /// because the obvious next edit to this function is the one that breaks
     /// it.
     pub fn mark_folder_read(&self, folder_ids: &[i64]) -> Result<usize> {
-        let _ = folder_ids;
-        Ok(0)
+        let mut changed: usize = 0;
+        for folder_id in folder_ids {
+            // `read = 0` in the clause as well as `read = 1` in the set, so
+            // the number sqlite reports back is the number of messages that
+            // were really unread. Without it every message in the folder
+            // counts as changed and the announcement says a number nobody
+            // could recognise.
+            let here = self
+                .conn
+                .execute(
+                    "UPDATE messages SET read = 1 WHERE folder_id = ?1 AND read = 0",
+                    params![folder_id],
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Failed to mark a folder's messages read: {}", e))
+                })?;
+            // The column the folder tree reads. Set from here rather than left
+            // for the next sync, which on a POP account or a folder on this
+            // computer may never come.
+            self.conn
+                .execute(
+                    "UPDATE folders SET unread_count = 0 WHERE id = ?1",
+                    params![folder_id],
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Failed to clear a folder's unread count: {}", e))
+                })?;
+            changed = changed.saturating_add(here);
+        }
+        Ok(changed)
     }
 
     /// Save a message to cache
