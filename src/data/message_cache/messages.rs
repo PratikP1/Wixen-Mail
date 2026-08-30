@@ -1,6 +1,7 @@
 //! Message persistence operations
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
+use crate::application::conversations::{AConversationReaches, ConversationItem};
 use crate::application::importing_messages::WrittenDownAs;
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
@@ -1359,6 +1360,25 @@ impl MessageCache {
         Ok(())
     }
 
+    /// List a folder as conversations rather than as messages.
+    ///
+    /// One row per conversation that touches this folder, describing the whole
+    /// conversation (D-02) across whatever `reach` says to count (D-08).
+    ///
+    /// `order_by` must come from `Sort::conversation_order_by_clause`, which
+    /// builds it from fixed strings chosen by matching on an enum. Nothing a
+    /// user typed reaches it, which is what makes interpolating it here safe.
+    /// `None` is newest first.
+    pub fn conversations_in(
+        &self,
+        _folder_id: i64,
+        _account_id: &str,
+        _reach: AConversationReaches,
+        _order_by: Option<&str>,
+    ) -> Result<Vec<ConversationItem>> {
+        Ok(Vec::new())
+    }
+
     /// Search an account's messages across every folder.
     ///
     /// Subject, correspondent and snippet, which is what someone remembers
@@ -2093,6 +2113,63 @@ mod tests {
                 .unwrap()
                 .contains_key("aaa")
         );
+    }
+
+    /// A folder in a named account, for the tests that need more than one.
+    fn folder_in(cache: &super::super::MessageCache, account_id: &str, path: &str) -> i64 {
+        cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: account_id.to_string(),
+                name: path.to_string(),
+                path: path.to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap()
+    }
+
+    /// A folder the server says holds a copy of every message, as Gmail's All
+    /// Mail does.
+    ///
+    /// Written through `set_folder_server_facts`, which is what a real sync
+    /// writes it with, so the exclusion is tested against the same column the
+    /// running program fills.
+    fn all_mail_folder(cache: &super::super::MessageCache, path: &str) -> i64 {
+        let id = folder(cache, path);
+        cache.set_folder_server_facts(id, true, true).unwrap();
+        id
+    }
+
+    /// A message belonging to a named conversation, on a chosen day.
+    ///
+    /// The conversation is named by its root's identifier, which is what
+    /// `thread_identity::conversation_root` takes from the `References` chain
+    /// and what `upsert_message` writes into `thread_id`.
+    fn in_conversation(
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+        root: &str,
+        day: u32,
+    ) -> super::IncomingMessage {
+        let mut message = incoming(folder_id, uid, subject);
+        message.date = format!("2026-07-{day:02}T10:00:00+00:00");
+        message.internal_date = Some(format!("2026-07-{day:02}T10:00:05+00:00"));
+        message.refs_header = Some(format!("<{root}>"));
+        message
+    }
+
+    /// One conversation out of a listing, by which conversation it is.
+    fn conversation<'a>(
+        found: &'a [crate::application::conversations::ConversationItem],
+        thread: &str,
+    ) -> &'a crate::application::conversations::ConversationItem {
+        found
+            .iter()
+            .find(|row| row.thread_id == thread)
+            .unwrap_or_else(|| panic!("no conversation {thread} among {found:#?}"))
     }
 
     fn folder(cache: &super::super::MessageCache, path: &str) -> i64 {
@@ -4242,6 +4319,373 @@ mod tests {
         let fetched = cache.get_message(msg_id).unwrap().unwrap();
         assert!(!fetched.read);
         assert!(!fetched.starred);
+    }
+    // -- Conversations: what a row says about the whole of one (D-02, D-08) --
+
+    use crate::application::conversations::AConversationReaches::{
+        TheWholeAccount, ThisFolderOnly,
+    };
+
+    /// Three in the inbox and two filed away, all one conversation.
+    ///
+    /// Returns the cache and the two folder ids, because every test below
+    /// stands in one of them and asks the same question.
+    fn split_across_two_folders(name: &str) -> (TempHome<super::super::MessageCache>, i64, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        for (uid, folder_id, day) in [
+            (1, inbox, 1),
+            (2, inbox, 3),
+            (3, inbox, 5),
+            (4, archive, 2),
+            (5, archive, 4),
+        ] {
+            cache
+                .upsert_message(&in_conversation(
+                    folder_id,
+                    uid,
+                    "Re: Quarterly report",
+                    "root@example.com",
+                    day,
+                ))
+                .unwrap();
+        }
+        (cache, inbox, archive)
+    }
+
+    #[test]
+    fn test_a_conversation_split_across_two_folders_counts_the_same_from_either() {
+        // D-08. The whole point of the decision: the number does not change as
+        // somebody walks between folders, because a number that did would give
+        // no way to tell which of the two answers was about the conversation.
+        let (cache, inbox, archive) = split_across_two_folders("conversation_across_folders");
+
+        for (standing_in, where_that_is) in [(inbox, "the inbox"), (archive, "the archive")] {
+            let found = cache
+                .conversations_in(standing_in, "acc", TheWholeAccount, None)
+                .unwrap();
+            assert_eq!(
+                conversation(&found, "root@example.com").messages,
+                5,
+                "counted from {where_that_is}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here() {
+        // The other answer the setting offers, and it has to be a different
+        // number or the setting would be offering one thing twice.
+        let (cache, inbox, archive) = split_across_two_folders("conversation_one_folder");
+
+        for (standing_in, expected) in [(inbox, 3), (archive, 2)] {
+            let found = cache
+                .conversations_in(standing_in, "acc", ThisFolderOnly, None)
+                .unwrap();
+            assert_eq!(conversation(&found, "root@example.com").messages, expected);
+        }
+    }
+
+    #[test]
+    fn test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count() {
+        // On Gmail a label is a mailbox and All Mail holds a copy of
+        // everything, so without the exclusion every conversation on the
+        // largest provider there is reports twice its size. A plausible wrong
+        // number is worse than an obviously wrong one.
+        let cache = fresh("conversation_all_mail");
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+
+        for (uid, folder_id, day) in [
+            (1, inbox, 1),
+            (2, inbox, 3),
+            (11, all_mail, 1),
+            (12, all_mail, 3),
+        ] {
+            cache
+                .upsert_message(&in_conversation(
+                    folder_id,
+                    uid,
+                    "Quarterly report",
+                    "root@example.com",
+                    day,
+                ))
+                .unwrap();
+        }
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            2,
+            "the copies in All Mail were counted again"
+        );
+    }
+
+    #[test]
+    fn test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one() {
+        // The exclusion is about counting, not about what is listed. Standing
+        // in All Mail still shows the conversations it holds; they are counted
+        // through the labels that hold them.
+        let cache = fresh("conversation_standing_in_all_mail");
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+        for (uid, folder_id, day) in [
+            (1, inbox, 1),
+            (2, inbox, 3),
+            (11, all_mail, 1),
+            (12, all_mail, 3),
+        ] {
+            cache
+                .upsert_message(&in_conversation(
+                    folder_id,
+                    uid,
+                    "Quarterly report",
+                    "root@example.com",
+                    day,
+                ))
+                .unwrap();
+        }
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&found, "root@example.com").messages, 2);
+    }
+
+    #[test]
+    fn test_a_deleted_message_is_not_counted() {
+        // Matching every other listing query. A conversation that went on
+        // saying five after somebody deleted one of them would be the count
+        // disagreeing with the folder it is counting.
+        let cache = fresh("conversation_deleted");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly report",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+        let doomed = cache
+            .upsert_message(&in_conversation(
+                inbox,
+                2,
+                "Re: Quarterly report",
+                "root@example.com",
+                2,
+            ))
+            .unwrap();
+
+        let before = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&before, "root@example.com").messages, 2);
+
+        cache.delete_message(doomed).unwrap();
+
+        let after = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&after, "root@example.com").messages, 1);
+    }
+
+    #[test]
+    fn test_two_accounts_do_not_share_a_conversation() {
+        // Threat T-01-47. Two accounts can hold replies to the same mailing
+        // list message, so the same conversation identifier in both is the
+        // ordinary case rather than the odd one. A row that merged them would
+        // show one account's mail to somebody who believes they are reading
+        // another's.
+        let cache = fresh("conversation_two_accounts");
+        let work = folder_in(&cache, "acc", "INBOX");
+        let home = folder_in(&cache, "other", "INBOX");
+        for (uid, folder_id) in [(1, work), (2, work), (3, home)] {
+            cache
+                .upsert_message(&in_conversation(
+                    folder_id,
+                    uid,
+                    "Quarterly report",
+                    "root@example.com",
+                    1,
+                ))
+                .unwrap();
+        }
+
+        let at_work = cache
+            .conversations_in(work, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&at_work, "root@example.com").messages, 2);
+
+        let at_home = cache
+            .conversations_in(home, "other", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&at_home, "root@example.com").messages, 1);
+    }
+
+    #[test]
+    fn test_the_unread_count_is_the_unread_messages_by_the_same_reach() {
+        // The second number the Thread column says, and it follows the same
+        // reach as the first. Two numbers answering to two different reaches
+        // would read as "five messages, seven unread".
+        let cache = fresh("conversation_unread");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        let read_one = cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly report",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                2,
+                "Re: Quarterly report",
+                "root@example.com",
+                2,
+            ))
+            .unwrap();
+        cache
+            .upsert_message(&in_conversation(
+                archive,
+                3,
+                "Re: Quarterly report",
+                "root@example.com",
+                3,
+            ))
+            .unwrap();
+        cache.update_message_flags(read_one, true, false).unwrap();
+
+        let whole_account = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        let row = conversation(&whole_account, "root@example.com");
+        assert_eq!((row.messages, row.unread), (3, 2));
+
+        let here_only = cache
+            .conversations_in(inbox, "acc", ThisFolderOnly, None)
+            .unwrap();
+        let row = conversation(&here_only, "root@example.com");
+        assert_eq!((row.messages, row.unread), (2, 1));
+    }
+
+    #[test]
+    fn test_a_conversation_of_one_message_counts_one() {
+        // The ordinary case. Most mail is one message, and a rule tested only
+        // against conversations of five cannot tell a working count from one
+        // that always says more than it should.
+        let cache = fresh("conversation_of_one");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly report",
+                "alone@example.com",
+                1,
+            ))
+            .unwrap();
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        let row = conversation(&found, "alone@example.com");
+        assert_eq!((row.messages, row.unread), (1, 1));
+        assert_eq!(row.subject, "Quarterly report");
+    }
+
+    #[test]
+    fn test_an_older_message_arriving_renames_the_conversation() {
+        // D-04. The oldest message present names it, and present moves: Get
+        // Older Messages can bring in something earlier. So the name is asked
+        // of what is loaded now rather than pinned against the conversation
+        // the first time it was seen.
+        let cache = fresh("conversation_renamed_by_older_mail");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                2,
+                "Re: Quarterly report",
+                "root@example.com",
+                5,
+            ))
+            .unwrap();
+
+        let before = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&before, "root@example.com").subject,
+            "Quarterly report"
+        );
+
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly figures",
+                "root@example.com",
+                1,
+            ))
+            .unwrap();
+
+        let after = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&after, "root@example.com").subject,
+            "Quarterly figures",
+            "the name stayed pinned to the message that was there first"
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_that_does_not_touch_this_folder_is_not_listed() {
+        // A row appears in every folder the conversation touches, and in no
+        // others. Paired with a positive in the same fixture, because a test
+        // made only of "this is not there" passes against a listing that
+        // returns nothing at all.
+        let cache = fresh("conversation_elsewhere");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+        cache
+            .upsert_message(&in_conversation(
+                inbox,
+                1,
+                "Quarterly report",
+                "here@example.com",
+                1,
+            ))
+            .unwrap();
+        cache
+            .upsert_message(&in_conversation(
+                archive,
+                2,
+                "Old business",
+                "elsewhere@example.com",
+                1,
+            ))
+            .unwrap();
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&found, "here@example.com").messages, 1);
+        assert!(
+            !found
+                .iter()
+                .any(|row| row.thread_id == "elsewhere@example.com"),
+            "a conversation that never touches this folder was listed: {found:#?}"
+        );
     }
 }
 

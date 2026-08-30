@@ -39,6 +39,116 @@ use mail_parser::parsers::fields::thread::{thread_name, trim_trailing_fwd};
 /// two different names for the same emptiness.
 pub use crate::application::from_message::NO_SUBJECT;
 
+/// How far a conversation reaches when its row is counted up.
+///
+/// D-08 says the account, and that is the default: a conversation's row appears
+/// in every folder it touches and says the same thing wherever somebody is
+/// standing. A count that changed as you walked between folders would be a
+/// number nobody could use, because there would be no way to tell which of the
+/// two answers was about the conversation.
+///
+/// The other answer is here because it is a real preference rather than a
+/// lesser version of the first: somebody who files by folder and reads one
+/// folder at a time is asking about what is in front of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AConversationReaches {
+    /// Every folder in the account, which is D-08's answer.
+    #[default]
+    TheWholeAccount,
+    /// The folder being read, and nothing else.
+    ThisFolderOnly,
+}
+
+impl AConversationReaches {
+    /// Both, so a chooser and its tests cover the set.
+    pub const ALL: [AConversationReaches; 2] = [
+        AConversationReaches::TheWholeAccount,
+        AConversationReaches::ThisFolderOnly,
+    ];
+
+    /// How the setting stores itself, and reads back.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AConversationReaches::TheWholeAccount => "the_whole_account",
+            AConversationReaches::ThisFolderOnly => "this_folder_only",
+        }
+    }
+
+    /// Read a stored setting.
+    ///
+    /// Anything unrecognised is the whole account, which is the default. A
+    /// settings file written by hand, or by a later version, falls to the
+    /// answer D-08 chose rather than to whichever branch happens to be written
+    /// first.
+    pub fn from_stored(_stored: &str) -> Self {
+        AConversationReaches::default()
+    }
+
+    /// What the choice says on the settings screen.
+    pub const fn words(self) -> &'static str {
+        match self {
+            AConversationReaches::TheWholeAccount => "The whole account",
+            AConversationReaches::ThisFolderOnly => "Only the folder being read",
+        }
+    }
+
+    /// Read back what somebody chose, by the words they were shown.
+    ///
+    /// By the words rather than by the row number, for the reason `font_family`
+    /// gives on the same screen: a row number means nothing without the list it
+    /// counts into.
+    pub fn from_words(_words: &str) -> Self {
+        AConversationReaches::default()
+    }
+}
+
+/// One conversation, as a row describing the whole of it needs it.
+///
+/// D-02: every field here answers about the conversation rather than about its
+/// newest message, and each one is filled by the SQL expression
+/// [`crate::presentation::message_columns::MessageColumn::conversation_sort_expression`]
+/// gives for its column. That is what keeps the value a row shows and the value
+/// the list sorts by from coming apart: they are one expression, not two.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationItem {
+    /// Which conversation, from `messages.thread_id`.
+    pub thread_id: String,
+    /// What it is called: the oldest message present, named by [`name_of`].
+    pub subject: String,
+    /// How many messages, within the reach that was asked for.
+    pub messages: i64,
+    /// How many of those have not been read.
+    pub unread: i64,
+    /// The newest arrival time in it, as the list formats a date.
+    ///
+    /// Two date fields rather than one, because D-02 gives Received and Sent
+    /// their own rules: one is when the server took delivery and the other is
+    /// when the sender says they sent it, and the second is sender controlled.
+    pub newest_received: String,
+    /// The newest sender date in it.
+    pub newest_sent: String,
+    /// The newest message's first line.
+    pub snippet: String,
+    /// Every distinct sender, as stored.
+    pub senders: String,
+    /// Every distinct addressee.
+    pub to: String,
+    /// Everyone distinctly copied in.
+    pub cc: String,
+    /// The sum of what the messages weigh, where any of them says.
+    pub size_bytes: Option<i64>,
+    /// Whether any message in it carries an attachment.
+    pub any_attachment: bool,
+    /// Whether any message in it is flagged.
+    pub any_flagged: bool,
+    /// Whether any message in it has been replied to.
+    pub any_answered: bool,
+    /// Whether any message in it is an unsent draft.
+    pub any_draft: bool,
+    /// The worst verdict any message in it carries.
+    pub worst_safety: crate::service::safety::Safety,
+}
+
 /// The conversation's own name, from the subject of the oldest message present.
 ///
 /// Every reply and forward marker chain taken off, in any of the seventeen

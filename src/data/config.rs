@@ -199,6 +199,23 @@ pub struct AppConfig {
     /// different one from destroying mail.
     #[serde(default = "default_true")]
     pub mark_read_reaches_subfolders: bool,
+    /// How far a conversation reaches when its row is counted up.
+    ///
+    /// The whole account by default, D-08: a conversation's row appears in
+    /// every folder it touches and says the same thing wherever somebody is
+    /// standing. A count that changed as they walked between folders would
+    /// give no way to tell which of the two answers was about the
+    /// conversation.
+    ///
+    /// A choice rather than a check box, for the reason
+    /// `unread_on_a_parent` gives: neither answer is the absence of the other,
+    /// and a box labelled for one would have to word the other as "not that".
+    ///
+    /// The `#[serde(default = "...")]` is not optional. Without it every
+    /// settings file already on disk fails to parse, and a settings file that
+    /// fails to parse takes every other setting with it.
+    #[serde(default = "default_a_conversation_reaches")]
+    pub a_conversation_reaches: String,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -467,6 +484,12 @@ fn default_unread_on_a_parent() -> String {
         .to_string()
 }
 
+fn default_a_conversation_reaches() -> String {
+    crate::application::conversations::AConversationReaches::default()
+        .as_str()
+        .to_string()
+}
+
 fn default_clock_hours() -> String {
     "auto".to_string()
 }
@@ -514,6 +537,7 @@ impl Default for AppConfig {
             add_signature_automatically: default_true(),
             start_in_all_inboxes: false,
             unread_on_a_parent: default_unread_on_a_parent(),
+            a_conversation_reaches: default_a_conversation_reaches(),
             empty_reaches_subfolders: default_true(),
             mark_read_reaches_subfolders: default_true(),
             hold_back_remote_pictures: default_true(),
@@ -1150,6 +1174,72 @@ mod permission_tests {
         // default that drifts, which is what the language setting did.
         assert!(AppConfig::default().empty_reaches_subfolders);
         assert!(AppConfig::default().mark_read_reaches_subfolders);
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_a_conversation_had_a_reach_reaches_the_whole_account() {
+        // D-08's answer, and an upgrade has to arrive at it the same way a
+        // fresh installation does. Falling back to the folder would make a
+        // conversation say a different size in every folder it touches, which
+        // is the thing D-08 exists to stop.
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("a_conversation_reaches").is_some(),
+            "a_conversation_reaches is not written to the settings file any more,              so this test covers nothing"
+        );
+
+        let parsed: AppConfig =
+            serde_json::from_value(older).expect("an older settings file still opens");
+
+        assert_eq!(
+            crate::application::conversations::AConversationReaches::from_stored(
+                &parsed.a_conversation_reaches
+            ),
+            crate::application::conversations::AConversationReaches::TheWholeAccount
+        );
+    }
+
+    #[test]
+    fn test_a_fresh_installation_counts_a_conversation_across_the_whole_account() {
+        // The other half of the pair above. A default written twice is a
+        // default that drifts, which is what the language setting did.
+        assert_eq!(
+            crate::application::conversations::AConversationReaches::from_stored(
+                &AppConfig::default().a_conversation_reaches
+            ),
+            crate::application::conversations::AConversationReaches::TheWholeAccount
+        );
+    }
+
+    #[test]
+    fn test_the_reach_a_conversation_has_reads_back_by_the_words_it_was_offered_under() {
+        // Read back by the words rather than the row number, the way
+        // `font_family` and `unread_on_a_parent` are, so a list that differed
+        // between showing and saving cannot store an answer nobody chose.
+        use crate::application::conversations::AConversationReaches;
+
+        for option in AConversationReaches::ALL {
+            assert_eq!(AConversationReaches::from_words(option.words()), option);
+            assert_eq!(AConversationReaches::from_stored(option.as_str()), option);
+        }
+        // Words and stored values nothing recognises fall to the default,
+        // which is the answer D-08 chose rather than whichever branch happens
+        // to be written first.
+        assert_eq!(
+            AConversationReaches::from_words("something a later version offered"),
+            AConversationReaches::TheWholeAccount
+        );
+        assert_eq!(
+            AConversationReaches::from_stored("hand_edited"),
+            AConversationReaches::TheWholeAccount
+        );
+        // The two options have to be two, or the setting is offering one
+        // answer twice.
+        assert_ne!(
+            AConversationReaches::TheWholeAccount.words(),
+            AConversationReaches::ThisFolderOnly.words()
+        );
     }
 
     #[test]
