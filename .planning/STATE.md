@@ -4,13 +4,13 @@ current_phase: 1
 current_phase_name: Folders and conversations
 status: planning
 stopped_at: Phase 1 context gathered
-last_updated: "2026-08-29T23:51:34.170Z"
+last_updated: "2026-08-30T02:07:53.251Z"
 last_activity: 2026-08-29, all eight phases' acceptance criteria reviewed against the tree
-state_head: 1482488ab8a5dfef542554395b8545df7fb409e9
+state_head: baf40402cad189c5ee9f2b7f416eae5d7fbce1cf
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 0
+  total_plans: 13
   completed_plans: 0
   percent: 0
 ---
@@ -26,8 +26,11 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 1 of 8 (Folders and conversations)
-Plan: none yet
+Phase: 1 (Folders and conversations) — READY TO EXECUTE
+Plans: 13, one per wave, `01-01-PLAN.md` to `01-13-PLAN.md`. 38 tasks, of which
+35 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
+are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
+only copy of the user's mail. Those two plans are `autonomous: false`.
 Status: Phase 1 discussed, CONTEXT.md written. Ready to plan phase 1.
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
@@ -65,7 +68,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-29, all eight phases' acceptance criteria reviewed against the tree
+Last activity: 2026-08-29, phase 1 researched, pattern-mapped, planned and checked
 
 Progress: [..........] 0%
 
@@ -139,6 +142,7 @@ None yet.
   Nothing is outside the phase's domain. Resolved 2026-08-29: the roadmap's
   Phase 1 criteria were rewritten from five to eight to match, and carry a scope
   note pointing at CONTEXT.md as the authority on the detail.
+
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
   otherwise, and none may be rewritten to.
@@ -156,7 +160,13 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-29T23:51:34.160Z
-Stopped at: Phase 1 context gathered. 38 decisions, 5 settings, nothing planned
-or executed yet.
-Resume file: .planning/phases/01-folders-and-conversations/01-CONTEXT.md
+Last session: 2026-08-29
+Stopped at: Phase 1 planned. 43 decisions, 5 settings, 13 plans, all gates passed.
+Research found three things the discussion could not have known, and two of them
+needed Pratik's answer: `messages.thread_id` is a column nothing writes and
+nothing reads back, so D-08 had no key to span an account with, and the D-19
+migration would have hit `UNIQUE(folder_id, uid)` collisions on the user's only
+copy of that mail. Both answered and recorded as D-39 and D-40. A third,
+the modified UTF-7 encoder, is new scope nobody had costed and is not optional.
+Nothing executed.
+Resume file: .planning/phases/01-folders-and-conversations/01-01-PLAN.md
