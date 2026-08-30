@@ -4,6 +4,79 @@ use super::{CachedFolder, MessageCache};
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
+/// What the last folder list from an account's server said about one folder,
+/// and what somebody has said back about it.
+///
+/// D-27. Three answers rather than two, because "the server has stopped listing
+/// this" and "the server has stopped listing this and I said keep it" are
+/// different things to a program deciding whether to ask. Held as one value
+/// rather than as two flags so no row can say both.
+///
+/// A type rather than the number the column holds, so the compiler enumerates
+/// the places that read it and no caller can invent a fourth meaning. Converted
+/// at the SQL boundary and nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WhatTheServerSaid {
+    /// The last list held this folder. The ordinary state, and the one every
+    /// row in a database written before this column reads as.
+    #[default]
+    ItListedIt,
+    /// The last list left this folder out, and nobody has answered about it.
+    /// The one state that is a question waiting to be asked.
+    ItStoppedListingIt,
+    /// The last list left this folder out and somebody said to keep it anyway.
+    ///
+    /// A decision, so it is stored rather than remembered for the session: the
+    /// alternative is asking the same question at every launch about a folder
+    /// somebody has already answered for. The row still reads as one the server
+    /// no longer lists, because that is still true and the tree still says so.
+    ItStoppedListingItAndSomebodySaidKeepIt,
+}
+
+impl WhatTheServerSaid {
+    /// The number the column holds.
+    fn stored(self) -> i64 {
+        match self {
+            Self::ItListedIt => 0,
+            Self::ItStoppedListingIt => 1,
+            Self::ItStoppedListingItAndSomebodySaidKeepIt => 2,
+        }
+    }
+
+    /// What a stored number means.
+    ///
+    /// Anything else reads as the folder having been listed, which is the
+    /// reading that neither hides a folder nor offers to delete one. A number
+    /// this does not know can only come from a newer version of the program
+    /// having written the same database, and refusing to show somebody their
+    /// mail over it would be the wrong way round.
+    fn from_stored(value: i64) -> Self {
+        match value {
+            1 => Self::ItStoppedListingIt,
+            2 => Self::ItStoppedListingItAndSomebodySaidKeepIt,
+            _ => Self::ItListedIt,
+        }
+    }
+
+    /// Whether the server has stopped listing this folder, whatever anybody has
+    /// said about it since.
+    ///
+    /// What the tree asks, because a row says the same thing either way: the
+    /// server is not listing it. One question asked in one place, so a row and
+    /// the decision to ask cannot drift apart about what "gone" covers.
+    pub fn the_server_no_longer_lists_it(self) -> bool {
+        self != Self::ItListedIt
+    }
+
+    /// Whether somebody still has to be asked about this folder.
+    ///
+    /// Only the undecided state. A folder somebody has said to keep is not a
+    /// question, and asking again would be the program not listening.
+    pub fn somebody_has_yet_to_answer(self) -> bool {
+        self == Self::ItStoppedListingIt
+    }
+}
+
 impl MessageCache {
     /// Record a folder the server listed, and return its id.
     ///
@@ -123,10 +196,10 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Record that the server's folder list left this folder out, or that it
-    /// did not.
+    /// Record what the last folder list from this account's server said about
+    /// a folder.
     ///
-    /// D-27. This writes one flag and nothing else. It deliberately touches no
+    /// D-27. This writes one value and nothing else. It deliberately touches no
     /// message: the mail in the folder stays cached and readable until somebody
     /// has been asked and has answered, and a sync is a timer event, so a sync
     /// that destroyed mail while working out what to ask would destroy it
@@ -134,57 +207,54 @@ impl MessageCache {
     /// the folder either side of the call rather than trusting the statement to
     /// have been read correctly.
     ///
-    /// Both directions, because a folder can come back: a server moving
+    /// Every direction, because a folder can come back: a server moving
     /// mailboxes about, a partial subscription list, somebody re-subscribing.
-    pub fn mark_folder_gone(&self, folder_id: i64, gone: bool) -> Result<()> {
+    pub fn set_what_the_server_said(&self, folder_id: i64, said: WhatTheServerSaid) -> Result<()> {
         self.conn
             .execute(
                 "UPDATE folders SET the_server_stopped_listing_it = ?1 WHERE id = ?2",
-                params![i64::from(gone), folder_id],
+                params![said.stored(), folder_id],
             )
             .map_err(|e| {
                 Error::Other(format!(
-                    "Failed to record that the server stopped listing the folder: {}",
+                    "Failed to record what the server said about the folder: {}",
                     e
                 ))
             })?;
         Ok(())
     }
 
-    /// The paths of an account's folders the server's last list left out.
+    /// What the server last said about each of an account's folders, by path.
     ///
     /// By path, because that is what the tree pairs a row with, and one query
     /// for the account rather than one per row, for the reason
     /// [`Self::folder_parents`] gives.
-    pub fn folders_the_server_stopped_listing(
+    ///
+    /// A path absent from the answer is a folder this account does not have.
+    pub fn what_the_server_said(
         &self,
         account_id: &str,
-    ) -> Result<std::collections::HashSet<String>> {
+    ) -> Result<std::collections::HashMap<String, WhatTheServerSaid>> {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT path FROM folders \
-                 WHERE account_id = ?1 AND the_server_stopped_listing_it = 1",
+                "SELECT path, the_server_stopped_listing_it FROM folders \
+                 WHERE account_id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
-        let paths = stmt
-            .query_map(params![account_id], |row| row.get::<_, String>(0))
-            .map_err(|e| {
-                Error::Other(format!(
-                    "Failed to read the folders the server stopped listing: {}",
-                    e
+        let said = stmt
+            .query_map(params![account_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    WhatTheServerSaid::from_stored(row.get::<_, i64>(1)?),
                 ))
-            })?
-            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
-            .map_err(|e| {
-                Error::Other(format!(
-                    "Failed to read the folders the server stopped listing: {}",
-                    e
-                ))
-            })?;
+            })
+            .map_err(|e| Error::Other(format!("Failed to read what the server said: {}", e)))?
+            .collect::<std::result::Result<std::collections::HashMap<_, _>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read what the server said: {}", e)))?;
 
-        Ok(paths)
+        Ok(said)
     }
 
     /// Remember that a row of the folder tree is collapsed, or that it is not.
@@ -668,6 +738,18 @@ mod tests {
             .expect("a message")
     }
 
+    /// The paths of an account's folders the tree would say the server no
+    /// longer lists, read through the one function that answers it.
+    fn no_longer_listed(cache: &MessageCache, account: &str) -> std::collections::HashSet<String> {
+        cache
+            .what_the_server_said(account)
+            .expect("what the server said")
+            .into_iter()
+            .filter(|(_, said)| said.the_server_no_longer_lists_it())
+            .map(|(path, _)| path)
+            .collect()
+    }
+
     #[test]
     fn test_a_folder_the_server_stopped_listing_reads_back_and_one_it_still_lists_does_not() {
         // The ordinary case in the same fixture as the absent one, so a read
@@ -677,11 +759,11 @@ mod tests {
         let archive = a_folder(cache, "acc", "Archive");
         a_folder(cache, "acc", "INBOX");
 
-        cache.mark_folder_gone(archive, true).expect("marked");
+        cache
+            .set_what_the_server_said(archive, WhatTheServerSaid::ItStoppedListingIt)
+            .expect("marked");
 
-        let gone = cache
-            .folders_the_server_stopped_listing("acc")
-            .expect("the folders the server stopped listing");
+        let gone = no_longer_listed(cache, "acc");
         assert!(
             gone.contains("Archive"),
             "the folder marked gone did not read back: {gone:?}"
@@ -702,21 +784,19 @@ mod tests {
         let cache = &*home;
         let archive = a_folder(cache, "acc", "Archive");
 
-        cache.mark_folder_gone(archive, true).expect("marked");
+        cache
+            .set_what_the_server_said(archive, WhatTheServerSaid::ItStoppedListingIt)
+            .expect("marked");
         assert!(
-            cache
-                .folders_the_server_stopped_listing("acc")
-                .expect("the folders")
-                .contains("Archive"),
+            no_longer_listed(cache, "acc").contains("Archive"),
             "the mark never went on, so unmarking it proves nothing"
         );
 
-        cache.mark_folder_gone(archive, false).expect("unmarked");
+        cache
+            .set_what_the_server_said(archive, WhatTheServerSaid::ItListedIt)
+            .expect("unmarked");
         assert!(
-            !cache
-                .folders_the_server_stopped_listing("acc")
-                .expect("the folders")
-                .contains("Archive"),
+            !no_longer_listed(cache, "acc").contains("Archive"),
             "the folder came back and the mark stayed"
         );
     }
@@ -739,7 +819,9 @@ mod tests {
             .expect("the count before");
         assert_eq!(before, 3, "the fixture never had the mail it is about");
 
-        cache.mark_folder_gone(archive, true).expect("marked");
+        cache
+            .set_what_the_server_said(archive, WhatTheServerSaid::ItStoppedListingIt)
+            .expect("marked");
 
         assert_eq!(
             cache
@@ -767,21 +849,19 @@ mod tests {
             })
             .expect("a folder for the other account");
 
-        cache.mark_folder_gone(mine, true).expect("marked");
-        cache.mark_folder_gone(theirs, false).expect("not marked");
+        cache
+            .set_what_the_server_said(mine, WhatTheServerSaid::ItStoppedListingIt)
+            .expect("marked");
+        cache
+            .set_what_the_server_said(theirs, WhatTheServerSaid::ItListedIt)
+            .expect("not marked");
 
         assert!(
-            cache
-                .folders_the_server_stopped_listing("acc")
-                .expect("mine")
-                .contains("Archive"),
+            no_longer_listed(cache, "acc").contains("Archive"),
             "the account whose folder went did not read it back"
         );
         assert!(
-            cache
-                .folders_the_server_stopped_listing("other")
-                .expect("theirs")
-                .is_empty(),
+            no_longer_listed(cache, "other").is_empty(),
             "the other account's identically named folder read back as gone"
         );
     }

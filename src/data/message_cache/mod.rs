@@ -15,6 +15,7 @@ mod folders;
 mod messages;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
+pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
 pub use searching::WhereToSearch;
 pub mod notes;

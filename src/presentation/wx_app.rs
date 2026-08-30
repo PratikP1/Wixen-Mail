@@ -9084,12 +9084,10 @@ fn folder_tree_updates(
     // failure logged rather than swallowed. Read as nothing on a failure means
     // no row says the server has stopped listing it, which is the reading that
     // understates rather than the one that alarms.
-    let stopped_listing = cache
-        .folders_the_server_stopped_listing(account_id)
-        .unwrap_or_else(|e| {
-            tracing::warn!("The folders the server stopped listing could not be read: {e}");
-            std::collections::HashSet::new()
-        });
+    let said = cache.what_the_server_said(account_id).unwrap_or_else(|e| {
+        tracing::warn!("What the server said about the folders could not be read: {e}");
+        std::collections::HashMap::new()
+    });
     let in_the_tree: Vec<folder_tree::FolderInTheTree> = folders
         .iter()
         .map(|folder| folder_tree::FolderInTheTree {
@@ -9099,7 +9097,9 @@ fn folder_tree_updates(
             name: folder.name.clone(),
             unread: folder.unread_count,
             parent: parents.get(&folder.path).copied().flatten(),
-            gone: stopped_listing.contains(&folder.path),
+            gone: said
+                .get(&folder.path)
+                .is_some_and(|said| said.the_server_no_longer_lists_it()),
         })
         .collect();
     let rows = folder_tree::rows(
@@ -16610,18 +16610,22 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
         let listed_paths: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
         match cache.get_folders_for_account(&account.id) {
             Ok(held) => {
+                use crate::data::message_cache::WhatTheServerSaid;
                 let no_longer_listed =
                     crate::application::mail_sync::folders_the_server_no_longer_lists(
                         &held,
                         &listed_paths,
                     );
                 for folder in &held {
-                    // Both directions, in one pass over the rows: a folder in
+                    // Every direction, in one pass over the rows: a folder in
                     // this answer that was marked last time has come back, and
                     // leaving the mark on it would go on telling somebody a
                     // folder plainly in front of them had gone.
-                    let gone = no_longer_listed.contains(&folder.id);
-                    if let Err(e) = cache.mark_folder_gone(folder.id, gone) {
+                    let now = match no_longer_listed.contains(&folder.id) {
+                        true => WhatTheServerSaid::ItStoppedListingIt,
+                        false => WhatTheServerSaid::ItListedIt,
+                    };
+                    if let Err(e) = cache.set_what_the_server_said(folder.id, now) {
                         tracing::warn!("The folder's listing state could not be recorded: {e}");
                     }
                 }
