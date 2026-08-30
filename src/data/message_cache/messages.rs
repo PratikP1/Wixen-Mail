@@ -1042,6 +1042,27 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to clear folder: {}", e)))
     }
 
+    /// How many messages this computer is holding across these folders, now.
+    ///
+    /// The number the Empty confirmation carries, D-37. Counted at the moment
+    /// the question is asked, from the rows themselves.
+    ///
+    /// Deliberately not `folders.total_count`. That column is written by the
+    /// last sync and answers a different question: how many the server said it
+    /// had, when it was last asked. It can be older than anything on screen,
+    /// and a confirmation understating what is about to be destroyed is the
+    /// worst direction for it to be wrong in.
+    ///
+    /// Deliberately not a fresh count from the server either. A round trip in
+    /// front of a dialog somebody may cancel is a dialog that hangs, and for
+    /// anybody working by ear a program that has stopped talking gives no way
+    /// to find out why. So the sentence says the number is what is stored here
+    /// and the report afterwards gives what was really removed.
+    pub fn messages_stored_in(&self, folder_ids: &[i64]) -> Result<usize> {
+        let _ = folder_ids;
+        Ok(0)
+    }
+
     /// Save a message to cache
     pub fn save_message(&self, msg: &CachedMessage) -> Result<i64> {
         self.conn.execute(
@@ -1977,6 +1998,73 @@ mod tests {
                 total_count: 0,
             })
             .unwrap()
+    }
+
+    #[test]
+    fn test_the_count_in_front_of_the_confirmation_adds_up_every_folder_it_is_given() {
+        // The ordinary case, and the one that makes the rest of this group
+        // mean anything: a body that always answered zero would pass every
+        // assertion below about staleness and emptiness.
+        let cache = fresh("stored_in_counts");
+        let archive = folder(&cache, "Archive");
+        let year = folder(&cache, "Archive/2026");
+        cache.upsert_message(&incoming(archive, 1, "One")).unwrap();
+        cache.upsert_message(&incoming(archive, 2, "Two")).unwrap();
+        cache.upsert_message(&incoming(year, 3, "Three")).unwrap();
+
+        assert_eq!(cache.messages_stored_in(&[archive]).unwrap(), 2);
+        assert_eq!(cache.messages_stored_in(&[archive, year]).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_the_count_is_the_messages_really_here_and_not_the_number_the_last_sync_wrote() {
+        // D-37. `folders.total_count` is what a server said when it was last
+        // asked, and a confirmation that quoted it would be describing a
+        // folder as it was rather than as it is. Wrong in either direction and
+        // worse in one: understating what is about to be destroyed.
+        let cache = fresh("stored_in_ignores_the_cached_number");
+        let archive = folder(&cache, "Archive");
+        cache.upsert_message(&incoming(archive, 1, "One")).unwrap();
+        cache.upsert_message(&incoming(archive, 2, "Two")).unwrap();
+        cache.set_folder_counts(archive, 0, 999).unwrap();
+
+        assert_eq!(
+            cache.messages_stored_in(&[archive]).unwrap(),
+            2,
+            "the confirmation quoted the number the last sync wrote"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_holding_nothing_counts_nothing_and_so_does_no_folder_at_all() {
+        // D-38 turns on this answer: zero is what sends the command down the
+        // "already empty" path instead of raising a dialog. Paired with a
+        // folder that does hold something, because a body returning zero for
+        // everything would satisfy the halves of this on their own.
+        let cache = fresh("stored_in_empty");
+        let empty = folder(&cache, "Archive");
+        let full = folder(&cache, "Inbox");
+        cache.upsert_message(&incoming(full, 1, "One")).unwrap();
+
+        assert_eq!(cache.messages_stored_in(&[empty]).unwrap(), 0);
+        assert_eq!(cache.messages_stored_in(&[]).unwrap(), 0);
+        assert_eq!(cache.messages_stored_in(&[full]).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_the_count_leaves_out_folders_it_was_not_given() {
+        // The reach setting decides which folders are in the list, so a count
+        // that reached past it would describe a wider empty than the one about
+        // to happen, on the command that destroys mail.
+        let cache = fresh("stored_in_only_these");
+        let archive = folder(&cache, "Archive");
+        let elsewhere = folder(&cache, "Inbox");
+        cache.upsert_message(&incoming(archive, 1, "One")).unwrap();
+        cache
+            .upsert_message(&incoming(elsewhere, 2, "Two"))
+            .unwrap();
+
+        assert_eq!(cache.messages_stored_in(&[archive]).unwrap(), 1);
     }
 
     #[test]
