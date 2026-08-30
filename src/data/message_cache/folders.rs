@@ -123,6 +123,37 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Record that the server's folder list left this folder out, or that it
+    /// did not.
+    ///
+    /// D-27. This writes one flag and nothing else. It deliberately touches no
+    /// message: the mail in the folder stays cached and readable until somebody
+    /// has been asked and has answered, and a sync is a timer event, so a sync
+    /// that destroyed mail while working out what to ask would destroy it
+    /// without anybody being there. The test beside this counts the messages in
+    /// the folder either side of the call rather than trusting the statement to
+    /// have been read correctly.
+    ///
+    /// Both directions, because a folder can come back: a server moving
+    /// mailboxes about, a partial subscription list, somebody re-subscribing.
+    pub fn mark_folder_gone(&self, folder_id: i64, gone: bool) -> Result<()> {
+        let _ = (folder_id, gone);
+        Ok(())
+    }
+
+    /// The paths of an account's folders the server's last list left out.
+    ///
+    /// By path, because that is what the tree pairs a row with, and one query
+    /// for the account rather than one per row, for the reason
+    /// [`Self::folder_parents`] gives.
+    pub fn folders_the_server_stopped_listing(
+        &self,
+        account_id: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        let _ = account_id;
+        Ok(std::collections::HashSet::new())
+    }
+
     /// Remember that a row of the folder tree is collapsed, or that it is not.
     ///
     /// `identity` is `folder_tree::WhichRow::stored`, never a label. See the
@@ -570,6 +601,156 @@ mod tests {
             unread_count: 0,
             total_count: 0,
         }
+    }
+
+    /// One message in a folder, so a count either side of something has
+    /// something to count.
+    fn a_message(cache: &MessageCache, folder_id: i64, uid: u32) -> i64 {
+        cache
+            .upsert_message(&crate::data::message_cache::IncomingMessage {
+                folder_id,
+                uid,
+                message_id: format!("<{uid}@example.com>"),
+                subject: format!("Message {uid}"),
+                from_addr: "them@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-08-30T09:00:00Z".to_string(),
+                internal_date: Some("2026-08-30T09:00:00Z".to_string()),
+                size_bytes: Some(10),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            })
+            .expect("a message")
+    }
+
+    #[test]
+    fn test_a_folder_the_server_stopped_listing_reads_back_and_one_it_still_lists_does_not() {
+        // The ordinary case in the same fixture as the absent one, so a read
+        // that answers with nothing at all cannot pass this.
+        let home = fresh("gone_reads_back");
+        let cache = &*home;
+        let archive = a_folder(cache, "acc", "Archive");
+        a_folder(cache, "acc", "INBOX");
+
+        cache.mark_folder_gone(archive, true).expect("marked");
+
+        let gone = cache
+            .folders_the_server_stopped_listing("acc")
+            .expect("the folders the server stopped listing");
+        assert!(
+            gone.contains("Archive"),
+            "the folder marked gone did not read back: {gone:?}"
+        );
+        assert!(
+            !gone.contains("INBOX"),
+            "a folder the server still lists read back as gone: {gone:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_that_came_back_stops_being_marked_gone() {
+        // A server can leave a folder out of one answer and send it in the
+        // next. Left marked, the tree would go on saying a folder that is
+        // plainly there has gone, and the question would be asked about it
+        // again.
+        let home = fresh("gone_came_back");
+        let cache = &*home;
+        let archive = a_folder(cache, "acc", "Archive");
+
+        cache.mark_folder_gone(archive, true).expect("marked");
+        assert!(
+            cache
+                .folders_the_server_stopped_listing("acc")
+                .expect("the folders")
+                .contains("Archive"),
+            "the mark never went on, so unmarking it proves nothing"
+        );
+
+        cache.mark_folder_gone(archive, false).expect("unmarked");
+        assert!(
+            !cache
+                .folders_the_server_stopped_listing("acc")
+                .expect("the folders")
+                .contains("Archive"),
+            "the folder came back and the mark stayed"
+        );
+    }
+
+    #[test]
+    fn test_marking_a_folder_gone_changes_no_message_row() {
+        // D-27's rule, and the reason the modal was acceptable at all: the mail
+        // is untouched until somebody answers. A sync runs on a timer, so a
+        // sync that destroyed mail while working out what to ask would destroy
+        // it with nobody there. Counted rather than trusted.
+        let home = fresh("gone_touches_no_mail");
+        let cache = &*home;
+        let archive = a_folder(cache, "acc", "Archive");
+        a_message(cache, archive, 1);
+        a_message(cache, archive, 2);
+        a_message(cache, archive, 3);
+
+        let before = cache
+            .messages_stored_in(&[archive])
+            .expect("the count before");
+        assert_eq!(before, 3, "the fixture never had the mail it is about");
+
+        cache.mark_folder_gone(archive, true).expect("marked");
+
+        assert_eq!(
+            cache
+                .messages_stored_in(&[archive])
+                .expect("the count after"),
+            before,
+            "marking a folder gone took mail with it"
+        );
+    }
+
+    #[test]
+    fn test_one_accounts_gone_folders_are_not_another_accounts() {
+        // The read is per account, like every other read of this table. Without
+        // that, one account's server going quiet would mark folders gone in a
+        // tree branch belonging to somebody else's mailbox.
+        let home = fresh("gone_per_account");
+        let cache = &*home;
+        let mine = a_folder(cache, "acc", "Archive");
+        let theirs = cache
+            .save_folder(&CachedFolder {
+                account_id: "other".to_string(),
+                path: "Archive".to_string(),
+                name: "Archive".to_string(),
+                ..inbox()
+            })
+            .expect("a folder for the other account");
+
+        cache.mark_folder_gone(mine, true).expect("marked");
+        cache.mark_folder_gone(theirs, false).expect("not marked");
+
+        assert!(
+            cache
+                .folders_the_server_stopped_listing("acc")
+                .expect("mine")
+                .contains("Archive"),
+            "the account whose folder went did not read it back"
+        );
+        assert!(
+            cache
+                .folders_the_server_stopped_listing("other")
+                .expect("theirs")
+                .is_empty(),
+            "the other account's identically named folder read back as gone"
+        );
     }
 
     #[test]

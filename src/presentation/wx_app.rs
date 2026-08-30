@@ -9079,6 +9079,17 @@ fn folder_tree_updates(
         tracing::warn!("The folder parents could not be read: {e}");
         std::collections::HashMap::new()
     });
+    // Which of this account's folders the server's last list left out (D-27),
+    // on the same terms as the parents above: one read for the account, and a
+    // failure logged rather than swallowed. Read as nothing on a failure means
+    // no row says the server has stopped listing it, which is the reading that
+    // understates rather than the one that alarms.
+    let stopped_listing = cache
+        .folders_the_server_stopped_listing(account_id)
+        .unwrap_or_else(|e| {
+            tracing::warn!("The folders the server stopped listing could not be read: {e}");
+            std::collections::HashSet::new()
+        });
     let in_the_tree: Vec<folder_tree::FolderInTheTree> = folders
         .iter()
         .map(|folder| folder_tree::FolderInTheTree {
@@ -9088,6 +9099,7 @@ fn folder_tree_updates(
             name: folder.name.clone(),
             unread: folder.unread_count,
             parent: parents.get(&folder.path).copied().flatten(),
+            gone: stopped_listing.contains(&folder.path),
         })
         .collect();
     let rows = folder_tree::rows(

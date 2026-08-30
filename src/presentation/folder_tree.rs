@@ -204,6 +204,13 @@ pub struct TreeRow {
     /// How many folders an account branch holds. Nought for every other row,
     /// which is the only kind of row that says a folder count.
     pub folders: usize,
+    /// Whether the server has stopped listing the folder this row is about
+    /// (D-27). False for every row that is not a folder.
+    ///
+    /// Held on the row rather than worked out where the tree is built, because
+    /// [`TreeRow::worded`] runs again whenever a branch is opened or closed and
+    /// a row worded two ways is a row the cursor cannot be put back on.
+    pub gone: bool,
 }
 
 impl TreeRow {
@@ -250,6 +257,7 @@ impl TreeRow {
                 self.unread_in_all,
                 closed,
                 setting,
+                self.gone,
             )),
             _ => None,
         }
@@ -278,6 +286,12 @@ pub struct FolderInTheTree {
     pub unread: i32,
     /// Which folder it sits under, or `None` at the top of its account.
     pub parent: Option<i64>,
+    /// Whether the server's last folder list left this one out (D-27).
+    ///
+    /// A fact about the server's answer, not a decision about the folder. It is
+    /// still in the tree and it still holds its mail; what happens to it is a
+    /// question somebody is asked and answers.
+    pub gone: bool,
 }
 
 /// A label, as much of one as a tree needs.
@@ -337,19 +351,40 @@ pub fn unread_text(here: i32, in_all: i32, closed: bool, setting: UnreadOnAParen
     }
 }
 
-/// How a folder row reads: its name, and what is new in it.
+/// What a row says about a folder the server has stopped listing.
+///
+/// Plain words, and words that say only what is known: the server's last list
+/// left this folder out. Not "deleted", because nothing has been deleted and
+/// the mail in it is still there to read; a row that said so would be a claim
+/// about the server that the answer to a LIST cannot support, and D-27 makes
+/// removing it somebody's decision rather than a sync's.
+///
+/// Last in the row, after the counts, because it is the least common thing a
+/// row can say and somebody arrowing through twenty folders hears the name and
+/// the count of each one first.
+pub const NO_LONGER_LISTED: &str = "the server no longer lists it";
+
+/// How a folder row reads: its name, what is new in it, and whether the server
+/// has stopped listing it.
 ///
 /// "Inbox, 12 unread" rather than "Inbox", and "Archive, 3 unread here, 41 in
 /// all" for a folder holding folders. The wording of the counts is
 /// [`unread_text`]'s, so a folder, an account branch and the group of things
 /// kept on this computer all say it the same way.
+///
+/// A folder the server has stopped listing says so last, in
+/// [`NO_LONGER_LISTED`]'s words. The level and the expanded state stay out of
+/// it, as they do for every other row here: the control announces both, and
+/// saying them twice is how the two come to disagree.
 pub fn folder_text(
     name: &str,
     here: i32,
     in_all: i32,
     closed: bool,
     setting: UnreadOnAParent,
+    gone: bool,
 ) -> String {
+    let _ = gone;
     match unread_text(here, in_all, closed, setting) {
         counts if counts.is_empty() => name.to_string(),
         counts => format!("{name}, {counts}"),
@@ -446,6 +481,9 @@ fn plain_row(identity: WhichRow, label: String, depth: usize, expandable: bool) 
         unread_here: 0,
         unread_in_all: 0,
         folders: 0,
+        // A heading, a label or a saved search. None of them is a folder, so
+        // none of them can be one the server has stopped listing.
+        gone: false,
     }
 }
 
@@ -505,6 +543,7 @@ pub fn rows(
             unread_here: 0,
             unread_in_all: unread,
             folders: mine.len(),
+            gone: false,
         }));
         out.extend(nested(&mine, 1, setting, collapsed));
     }
@@ -527,6 +566,9 @@ pub fn rows(
             unread_here: 0,
             unread_in_all: local.iter().map(|folder| folder.unread).sum(),
             folders: 0,
+            // The group of folders kept here, which no server lists and so no
+            // server can stop listing.
+            gone: false,
         }));
         out.extend(nested(&local, 1, setting, collapsed));
     }
@@ -705,6 +747,7 @@ fn favourite_rows(
         unread_here: 0,
         unread_in_all: branches.iter().map(|(_, _, found)| unread_of(found)).sum(),
         folders: 0,
+        gone: false,
     })];
 
     for (account, name, found) in branches {
@@ -717,6 +760,7 @@ fn favourite_rows(
             unread_here: 0,
             unread_in_all: unread_of(&found),
             folders: found.len(),
+            gone: false,
         }));
         out.extend(found.into_iter().map(|folder| {
             word(TreeRow {
@@ -734,6 +778,12 @@ fn favourite_rows(
                 unread_here: folder.unread,
                 unread_in_all: folder.unread,
                 folders: 0,
+                // D-32: a folder marked gone keeps its pin, and the row in the
+                // group says so too. A shortcut that read as an ordinary folder
+                // while the folder's own row said the server had stopped
+                // listing it would be the two rows disagreeing about one
+                // folder.
+                gone: folder.gone,
             })
         }));
     }
@@ -776,6 +826,7 @@ fn nested(
             unread_here: folder.unread,
             unread_in_all: unread_underneath(folders, at),
             folders: 0,
+            gone: folder.gone,
         };
         let closed = collapsed.contains(&row.identity.stored());
         row.label = row
@@ -983,6 +1034,7 @@ mod tests {
             name: path.rsplit('/').next().unwrap_or(path).to_string(),
             unread: 0,
             parent,
+            gone: false,
         }
     }
 
@@ -1039,6 +1091,141 @@ mod tests {
         rows.iter()
             .find(|row| row.label == label)
             .unwrap_or_else(|| panic!("no row labelled {label:?} in {:?}", labelled(rows)))
+    }
+
+    /// The same folder, with the server's last list having left it out.
+    fn a_folder_the_server_stopped_listing(
+        account: &str,
+        id: i64,
+        path: &str,
+        parent: Option<i64>,
+    ) -> FolderInTheTree {
+        FolderInTheTree {
+            gone: true,
+            ..folder(account, id, path, parent)
+        }
+    }
+
+    #[test]
+    fn test_a_folder_the_server_stopped_listing_says_so_and_one_it_still_lists_does_not() {
+        // D-27. The row is the only place somebody arrowing through the tree
+        // finds out, so it has to say it, and an ordinary folder in the same
+        // fixture is what says the wording is not on every row.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[
+                a_folder_the_server_stopped_listing("a", 1, "Archive", None),
+                folder("a", 2, "INBOX", None),
+            ],
+            &[],
+            &[],
+        );
+        let said = |path: &str| {
+            rows.iter()
+                .find(|row| {
+                    row.identity
+                        == WhichRow::Folder {
+                            account: "a".to_string(),
+                            path: path.to_string(),
+                        }
+                })
+                .map(|row| row.label.clone())
+                .unwrap_or_else(|| panic!("no row for {path}"))
+        };
+        assert_eq!(said("Archive"), format!("Archive, {NO_LONGER_LISTED}"));
+        assert_eq!(
+            said("INBOX"),
+            "INBOX",
+            "a folder the server still lists was told it had gone"
+        );
+    }
+
+    #[test]
+    fn test_a_gone_folder_still_says_what_is_unread_in_it() {
+        // The mail is still there until somebody answers, so the row still
+        // answers the question somebody arrowing onto it is asking. The counts
+        // come first because they are what every other row says.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[FolderInTheTree {
+                unread: 3,
+                ..a_folder_the_server_stopped_listing("a", 1, "Archive", None)
+            }],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            row_for(&rows, &format!("Archive, 3 unread, {NO_LONGER_LISTED}")).unread_here,
+            3
+        );
+    }
+
+    #[test]
+    fn test_a_gone_folders_row_carries_no_level_and_no_expanded_state() {
+        // The rule every row here follows: the control announces the level and
+        // whether the row is open, and a label that said either would be the
+        // two disagreeing. A gone folder holding a folder is the case that
+        // would tempt it, because it has both.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[
+                a_folder_the_server_stopped_listing("a", 1, "Archive", None),
+                a_folder_the_server_stopped_listing("a", 2, "Archive/2026", Some(1)),
+            ],
+            &[],
+            &[],
+        );
+        let gone: Vec<&TreeRow> = rows.iter().filter(|row| row.gone).collect();
+        assert_eq!(gone.len(), 2, "the fixture lost the rows it is about");
+        for row in gone {
+            assert!(
+                row.label.contains(NO_LONGER_LISTED),
+                "a gone row did not say so: {:?}",
+                row.label
+            );
+            for forbidden in ["level", "expanded", "collapsed", "closed"] {
+                assert!(
+                    !row.label.to_lowercase().contains(forbidden),
+                    "the row said {forbidden:?}, which is the control's to say: {:?}",
+                    row.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_pinned_folder_marked_gone_keeps_its_pin_and_its_favourites_row_says_gone() {
+        // D-32, both halves. A folder the server stopped listing has not been
+        // deleted, so the pin stays; and the copy in the group has to say the
+        // same thing the folder's own row says, or the two rows disagree about
+        // one folder.
+        let rows = tree_with_pins(
+            &[account("a", "Work")],
+            &[
+                a_folder_the_server_stopped_listing("a", 1, "Archive", None),
+                folder("a", 2, "INBOX", None),
+            ],
+            &[pin("a", "Archive", 0)],
+        );
+        let pinned = rows
+            .iter()
+            .find(|row| {
+                row.identity
+                    == WhichRow::Pinned {
+                        account: "a".to_string(),
+                        path: "Archive".to_string(),
+                    }
+            })
+            .unwrap_or_else(|| panic!("the pin was lost: {:?}", labelled(&rows)));
+        assert_eq!(pinned.label, format!("Archive, {NO_LONGER_LISTED}"));
+        assert!(
+            !rows.iter().any(|row| row.identity
+                == WhichRow::Pinned {
+                    account: "a".to_string(),
+                    path: "INBOX".to_string()
+                }),
+            "a folder nobody pinned turned up in the group"
+        );
     }
 
     #[test]
@@ -1899,10 +2086,10 @@ mod tests {
         // A folder with nothing under it: both numbers are the same, so it
         // gives one and there is nothing to distinguish.
         assert_eq!(
-            folder_text("Inbox", 12, 12, false, both),
+            folder_text("Inbox", 12, 12, false, both, false),
             "Inbox, 12 unread"
         );
-        assert_eq!(folder_text("Inbox", 0, 0, false, both), "Inbox");
+        assert_eq!(folder_text("Inbox", 0, 0, false, both, false), "Inbox");
     }
 
     /// An account holding a folder with a folder under it, and a plain folder
@@ -2379,7 +2566,7 @@ mod tests {
         assert_eq!(before.stored(), before.clone().stored());
         assert_ne!(
             before.stored(),
-            folder_text("2026", 4, 4, false, UnreadOnAParent::default())
+            folder_text("2026", 4, 4, false, UnreadOnAParent::default(), false)
         );
         assert!(!before.stored().contains("unread"));
     }

@@ -39,6 +39,7 @@ fn folder(id: i64, path: &str, parent: Option<i64>) -> FolderInTheTree {
         name: path.rsplit('/').next().unwrap_or(path).to_string(),
         unread: 0,
         parent,
+        gone: false,
     }
 }
 

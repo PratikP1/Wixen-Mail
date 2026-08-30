@@ -472,6 +472,36 @@ pub fn store_folders(
     Ok(stored)
 }
 
+/// The stored folders a fresh LIST no longer holds.
+///
+/// D-27's first half. A folder the server has stopped listing is not removed
+/// without asking, so this only says which ones they are; marking and asking
+/// are somebody else's job and deleting is nobody's until the answer arrives.
+///
+/// A comparison over two lists and nothing else. It takes no cache handle on
+/// purpose: every rule below is a rule about two lists, and each one is worth a
+/// test that needs no database and no server.
+///
+/// # An empty answer is a failed sync, never a mass deletion
+///
+/// On the wire, a server that lists nothing and a server whose mailboxes have
+/// all been deleted send the same thing. Only one of those is survivable, so an
+/// empty `listed` reports nothing at all. The other reading offers to delete
+/// somebody's whole mailbox because their connection dropped between the
+/// greeting and the LIST.
+///
+/// # Folders the server was never told about are never reported
+///
+/// Two kinds, filtered for the same reason [`store_folders`] refuses to store
+/// them: a folder kept on this computer, and a folder owned by the reserved
+/// this-computer account. The server has never seen either, so its silence
+/// about them says nothing. Without this a server that answered with one
+/// mailbox would appear to have deleted the user's Drafts and Outbox.
+pub fn folders_the_server_no_longer_lists(stored: &[CachedFolder], listed: &[String]) -> Vec<i64> {
+    let _ = (stored, listed);
+    Vec::new()
+}
+
 /// The path of the folder this one sits under, if its own path names one.
 ///
 /// The wire path, not the readable one: the wire path is the identifier, it is
@@ -2423,6 +2453,133 @@ mod tests {
             cache.folder_parents("acct").expect("the parents").len(),
             1,
             "a row was invented for the parent the server did not list"
+        );
+    }
+
+    /// A stored folder, as much of one as the comparison reads.
+    ///
+    /// The account and the path are what decide whether a folder is even the
+    /// server's to have an opinion about, and the id is what comes back.
+    fn stored_row(id: i64, account_id: &str, path: &str) -> CachedFolder {
+        CachedFolder {
+            id,
+            account_id: account_id.to_string(),
+            name: path.rsplit('/').next().unwrap_or(path).to_string(),
+            path: path.to_string(),
+            folder_type: "Custom".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        }
+    }
+
+    #[test]
+    fn test_a_stored_folder_the_list_no_longer_holds_is_reported_and_one_it_holds_is_not() {
+        // The ordinary case, and the one that says the comparison discriminates
+        // at all: two folders, one in the answer and one not.
+        let stored = vec![
+            stored_row(1, "acct", "INBOX"),
+            stored_row(2, "acct", "Archive"),
+        ];
+        let listed = vec!["INBOX".to_string()];
+
+        assert_eq!(
+            folders_the_server_no_longer_lists(&stored, &listed),
+            vec![2],
+            "the folder missing from the answer was not reported, or the one in it was"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_that_came_back_stops_being_reported() {
+        // A folder can be missing from one answer and present in the next: a
+        // server moving mailboxes, a partial LSUB, somebody re-subscribing. The
+        // comparison is against this answer and carries nothing over from the
+        // last one.
+        let stored = vec![stored_row(2, "acct", "Archive")];
+
+        assert_eq!(
+            folders_the_server_no_longer_lists(&stored, &["INBOX".to_string()]),
+            vec![2],
+            "the folder absent from the answer was not reported"
+        );
+        assert!(
+            folders_the_server_no_longer_lists(
+                &stored,
+                &["INBOX".to_string(), "Archive".to_string()]
+            )
+            .is_empty(),
+            "the folder came back and was still reported gone"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_kept_on_this_computer_is_never_reported() {
+        // The test that matters most here. The server has never seen a folder
+        // kept on this computer, so its silence about one says nothing, and
+        // reading that silence as a deletion would offer to destroy somebody's
+        // Drafts because their mail server did not mention them.
+        let local = crate::application::local_folders::SHARED_BY_EVERY_ACCOUNT[2].path();
+        let stored = vec![
+            stored_row(1, "acct", &local),
+            stored_row(2, "acct", "Archive"),
+        ];
+        let listed = vec!["INBOX".to_string()];
+
+        let gone = folders_the_server_no_longer_lists(&stored, &listed);
+        assert!(
+            gone.contains(&2),
+            "the server's own folder was not reported, so this fixture proves nothing"
+        );
+        assert!(
+            !gone.contains(&1),
+            "a folder kept on this computer was reported as deleted by the server"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_owned_by_the_reserved_account_is_never_reported() {
+        // The other half of the same rule, and a separate one: the shared five
+        // are filtered by their path, and this is filtered by their owner. A
+        // row under the reserved id whose path is an ordinary one proves the
+        // owner is read rather than only the path.
+        let stored = vec![
+            stored_row(1, crate::application::local_folders::THIS_COMPUTER, "Sent"),
+            stored_row(2, "acct", "Sent"),
+        ];
+        let listed = vec!["INBOX".to_string()];
+
+        let gone = folders_the_server_no_longer_lists(&stored, &listed);
+        assert!(
+            gone.contains(&2),
+            "the account's own folder was not reported, so this fixture proves nothing"
+        );
+        assert!(
+            !gone.contains(&1),
+            "a folder owned by the reserved this-computer account was reported gone"
+        );
+    }
+
+    #[test]
+    fn test_an_answer_holding_nothing_reports_nothing() {
+        // An empty LIST and a mailbox whose every folder has been deleted are
+        // the same answer on the wire. Reported, this would ask somebody
+        // whether to delete their whole mailbox because a connection dropped.
+        // The pairing is what stops this passing against a function that
+        // reports nothing at all: the same stored rows, against an answer that
+        // really is missing them, are both reported.
+        let stored = vec![
+            stored_row(1, "acct", "INBOX"),
+            stored_row(2, "acct", "Archive"),
+        ];
+
+        assert!(
+            folders_the_server_no_longer_lists(&stored, &[]).is_empty(),
+            "an empty answer was read as every folder having been deleted"
+        );
+        assert_eq!(
+            folders_the_server_no_longer_lists(&stored, &["Junk".to_string()]).len(),
+            2,
+            "an answer that really is missing both did not report them"
         );
     }
 

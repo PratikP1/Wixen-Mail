@@ -2204,6 +2204,19 @@ impl MessageCache {
         // read as: nothing in it was ever recorded as unsubscribed, and a
         // default of 0 would read as "nobody wants any of these folders".
         self.ensure_column_exists("folders", "subscribed", "INTEGER NOT NULL DEFAULT 1")?;
+        // Whether the last folder list this account's server sent left this
+        // folder out. The name is long on purpose: it says what the flag is a
+        // record of rather than what somebody might do about it, so no reader
+        // has to be told that a folder marked with it has not been deleted and
+        // still holds all of its mail. D-27 turns it into a question and only
+        // an answer to that question removes anything. Defaults to nought,
+        // which is what every row in an existing database should read as: no
+        // server has been asked yet, so none of them has been left out.
+        self.ensure_column_exists(
+            "folders",
+            "the_server_stopped_listing_it",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // Which folder this one sits under, worked out once at sync from the
         // separator the server sent for that mailbox. Nullable on purpose: a
         // folder at the top level has no parent, and that is an answer rather
