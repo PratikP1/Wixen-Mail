@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-08-30T11:35:49.254Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-08-30T13:36:36.045Z"
 last_activity: 2026-08-30
 last_activity_desc: "01-04 done: rename, move and delete a folder, with the separator read rather than guessed"
-state_head: 3f0e720574db1971c249b805fc8c3b61abb31687
+state_head: a255e3b7e985be1ceeacb170ad59a904d8dcdff0
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -69,17 +69,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-04 done: FOLDER-01's last two verbs, the inbox refused before anything is sent, and a delete that says how far it got
+Last activity: 2026-08-30 — 01-05 done: the folder tree nests, rows are found by identity rather than by their words, and the 01-03 regression is closed
 
-Progress: [███░░░░░░░] 4 of 13 plans in phase 01
+Progress: [████░░░░░░] 38% (5 of 13 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 2h 7m
-- Total execution time: 4h 15m
+- Total plans completed: 5
+- Average duration: 2h 13m
+- Total execution time: 11h 3m
 
 **By Phase:**
 
@@ -89,10 +89,16 @@ Progress: [███░░░░░░░] 4 of 13 plans in phase 01
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (3h 5m), 01-02 (1h 10m)
-- Trend: down sharply, and the reason is measurable rather than encouraging. 01-01
-  ran the whole library on every check; 01-02 ran it four times on purpose and
-  used targeted runs, 1 second against 188, for every red and green step.
+- Last 5 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
+  01-05 (1h 38m)
+
+- Trend: no trend, and the spread is the finding. The three fast plans used
+  targeted test runs, 1 second against about 175, for every red and green step,
+  and spent their full library runs only on measuring guard records by hand.
+  The two slow ones were slow for different reasons worth telling apart: 01-01
+  ran the whole library on every check, which is waste, while 01-04 was a large
+  plan with four wrong premises to find, which is work. Duration alone cannot
+  tell those two apart, so it is a poor measure of anything on its own.
 
 *Updated after each plan completion*
 **Per-Plan Metrics:**
@@ -103,6 +109,7 @@ Progress: [███░░░░░░░] 4 of 13 plans in phase 01
 | Phase 01 P02 | 1h 10m | 3 tasks | 9 files |
 | Phase 01 P03 | 1h 0m | 3 tasks | 9 files |
 | Phase 01 P04 | 4h 10m | 3 tasks | 16 files |
+| Phase 01 P05 | 1h 38m | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -134,6 +141,11 @@ ahead:
 - [Phase 01]: 01-04: the hierarchy separator 01-03 read is not persisted, so no command running from the cache can see it. A rename reads it from the gap between a folder's path and its parent's; a move reads it off a LIST line on the worker, after the confirmation, so D-37 still holds.
 - [Phase 01]: 01-04: folders kept on this computer are a const array of &'static str, so renaming, moving and deleting one are refused with a sentence rather than half-built. 01-06 builds user-named local folders.
 - [Phase 01]: 01-04: a behaviour RED is taken by stubbing the body and reading which assertions fail. A compile error proves a symbol was absent, not that the assertions discriminate; four tests here stayed green against a stub returning nothing.
+- [Phase 01]: 01-05: the 01-03 regression was worse than its changelog said. folder_ids is a HashMap keyed on the row's displayed text, so two folders sharing a leaf were one entry and one of them opened the other's mail. Closing it meant keying on identity, not nesting the display.
+- [Phase 01]: 01-05: selected_folder became the WhichRow enum rather than an identity string, so the compiler enumerates every consumer that read it as display text. Four did, and two of those were already broken: Get Older Messages and writing a mailbox out both passed the row's words where a folder path belonged.
+- [Phase 01]: 01-05: wxdragon's TreeItemId has no PartialEq and no public pointer, so two tree items cannot be compared and a row can only be interrogated by its text. That is why this codebase was label-keyed. A row is paired to its identity by the chain of labels above it, which is unique because siblings cannot share a path.
+- [Phase 01]: 01-05: no per-archive branch was built (D-21). Nothing records which archive an imported folder came from, so the plan's archives parameter has no producer. Building it is work in import_tree at import time; an enum variant nothing can construct would be a stub.
+- [Phase 01]: 01-05: only the account being looked at gets a branch. D-13's property is proven of folder_tree::rows, which is multi-account throughout, but drawing every account at once before D-18 gives one Drafts, Sent and Outbox row per account, which is the duplicate-rows fault this plan removes.
 
 ### Pending Todos
 
@@ -197,7 +209,9 @@ None yet.
 
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
-  otherwise, and none may be rewritten to.
+  otherwise, and may be rewritten to.
+
+- 01-05 found two dialogs (wx_destination, wx_thread_view) hanging row data off the control, which wxdragon never frees for a leaf, and a spellcheck test that fails about one full library run in five through a Windows COM call made twice. Both are written up in .planning/phases/01-folders-and-conversations/deferred-items.md.
 
 ## Deferred Items
 
@@ -212,8 +226,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T11:35:30.993Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-08-30T13:36:28.007Z
+Stopped at: Completed 01-05-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19

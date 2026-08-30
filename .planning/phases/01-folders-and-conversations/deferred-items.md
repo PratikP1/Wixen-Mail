@@ -36,3 +36,34 @@ closed.
 
 **Size:** small each, one parallel vector apiece, following
 `WxUIState::tree_rows`.
+
+## A spellcheck test fails about one full library run in five
+
+**Found during:** 01-05, running the whole suite to confirm the plan's work.
+
+`data::config::permission_tests::test_a_fresh_installation_checks_spelling_in_this_machine_s_language`
+failed once in five full runs of `cargo test --lib` and passed every other
+time, including when run on its own.
+
+It compares `AppConfig::default().language` against
+`service::spellcheck::language_of_this_machine()`. That reaches
+`available_languages()`, which on Windows asks the platform speller through COM
+for its supported languages. Under the test harness's threads that call can
+answer with an empty list, and an empty list makes `best_available_match`
+answer `None`, so the test's own side falls back to `"en"` while the default it
+is comparing against was computed when the call worked. The two then disagree
+and neither is wrong.
+
+**Not caused by this plan.** Nothing in 01-05 touches configuration, language or
+spelling. Adding about thirty-five tests changes how the harness schedules
+threads, which is enough to expose a race that was already there.
+
+**What it costs.** A suite that fails once in five runs for a reason nobody has
+diagnosed is the shape CLAUDE.md's fourth guardrail is about: a check that fails
+two ways without saying which. Somebody will eventually read this failure as a
+real one, or worse, learn to rerun until it passes.
+
+**What would fix it.** Ask the platform once and cache it, or have the test take
+the language list as an argument the way `choices_from` already allows, so the
+COM call is not made twice and compared with itself. The second is the smaller
+change and matches the reasoning already written above `choices_from`.
