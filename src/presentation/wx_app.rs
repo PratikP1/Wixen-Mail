@@ -16599,6 +16599,38 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
             stored.len(),
         )));
 
+        // D-27. Which of this account's stored folders this answer left out.
+        // Read back rather than taken from `stored`, because `stored` is what
+        // the server just listed and the question is about what it did not.
+        //
+        // Marked and nothing else: the folders stay in the tree saying the
+        // server no longer lists them, and every message in them stays cached
+        // and readable. A sync runs on a timer, so anything destroyed here
+        // would be destroyed with nobody there to have agreed to it.
+        let listed_paths: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
+        match cache.get_folders_for_account(&account.id) {
+            Ok(held) => {
+                let no_longer_listed =
+                    crate::application::mail_sync::folders_the_server_no_longer_lists(
+                        &held,
+                        &listed_paths,
+                    );
+                for folder in &held {
+                    // Both directions, in one pass over the rows: a folder in
+                    // this answer that was marked last time has come back, and
+                    // leaving the mark on it would go on telling somebody a
+                    // folder plainly in front of them had gone.
+                    let gone = no_longer_listed.contains(&folder.id);
+                    if let Err(e) = cache.mark_folder_gone(folder.id, gone) {
+                        tracing::warn!("The folder's listing state could not be recorded: {e}");
+                    }
+                }
+            }
+            // Said rather than swallowed. Nothing is marked, which is the
+            // reading that understates: the tree shows what it showed before.
+            Err(e) => tracing::warn!("The stored folder list could not be read back: {e}"),
+        }
+
         // A watch that fires names one folder, and re-reading the whole
         // account because one message arrived in the inbox is work nobody
         // asked for.
