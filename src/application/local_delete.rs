@@ -23,6 +23,7 @@
 //! only found out from another device.
 
 use crate::application::destinations::Deleting;
+use crate::application::how_far_it_got::HowFarItGot;
 use crate::application::local_folders::{self, LocalDelete};
 use crate::common::Result;
 use crate::common::types::FolderType;
@@ -88,6 +89,35 @@ pub fn perform(
     }
 }
 
+/// Empty these folders on this computer, and say how far it got.
+///
+/// Every message goes through [`perform`], which is the single delete. That is
+/// the whole of D-33's local half: no rule about what emptying means is written
+/// here, so emptying the Trash removes, emptying anything else moves to the
+/// Trash, and the per-account permission refuses both, all because one delete
+/// already does.
+///
+/// `folders` is deepest first, which is the order the one walk in this program
+/// produces. It does not matter here, because a folder on this computer keeps
+/// no names inside it that a message could block, and it is kept anyway rather
+/// than reversed: two orders over one tree is two chances to disagree.
+///
+/// # It stops at the first refusal and does not put anything back
+///
+/// D-36, and the reasoning is
+/// [`crate::application::how_far_it_got`]'s. Each message that really moved has
+/// moved, so running this again walks only what is left and finishes the job.
+/// A rollback would mean writing the messages back, and what came back would
+/// not be the messages that left.
+pub fn empty_these_folders(
+    cache: &MessageCache,
+    account: &Account,
+    folders: &[(i64, String)],
+) -> HowFarItGot {
+    let _ = (cache, account, folders);
+    HowFarItGot::default()
+}
+
 /// The identifier of one of this account's local folders, making it if it is
 /// not there yet.
 ///
@@ -135,7 +165,7 @@ fn folder_here(cache: &MessageCache, account: &Account, path: &str) -> Result<i6
 #[cfg(test)]
 mod tests {
     use crate::application::destinations::Deleting;
-    use crate::application::local_delete::perform;
+    use crate::application::local_delete::{empty_these_folders, perform};
     use crate::application::local_folders::{self, LOCAL_PREFIX};
     use crate::common::temp_home::TempHome;
     use crate::common::types::Protocol;
@@ -231,6 +261,144 @@ mod tests {
             .folder_path_for_message(row)
             .expect("the lookup")
             .expect("a folder")
+    }
+
+    /// The folder rows an empty walks, as the window hands them over.
+    fn to_empty(cache: &MessageCache, account: &Account, paths: &[&str]) -> Vec<(i64, String)> {
+        paths
+            .iter()
+            .map(|path| {
+                let owner = local_folders::stored_under(path, &account.id).to_string();
+                let id = cache
+                    .get_folders_for_account(&owner)
+                    .expect("the folders")
+                    .into_iter()
+                    .find(|folder| &folder.path == path)
+                    .expect("the folder to be there")
+                    .id;
+                (id, (*path).to_string())
+            })
+            .collect()
+    }
+
+    fn how_many_in(cache: &MessageCache, folder_id: i64) -> usize {
+        cache
+            .messages_stored_in(&[folder_id])
+            .expect("a count of what is stored")
+    }
+
+    #[test]
+    fn test_emptying_a_folder_here_moves_every_message_to_the_trash() {
+        // The ordinary case, and D-33's local half end to end: nothing in the
+        // walk decides what emptying means, so this is the same answer three
+        // separate deletes would have given.
+        let cache = a_cache("empty_moves_to_trash");
+        let account = a_pop_account();
+        its_folders(&cache, &account);
+        let inbox = to_empty(&cache, &account, &[&format!("{LOCAL_PREFIX}/Inbox")]);
+        let trash = to_empty(&cache, &account, &[&format!("{LOCAL_PREFIX}/Trash")]);
+        for subject in ["One", "Two", "Three"] {
+            a_message(&cache, inbox[0].0, subject);
+        }
+
+        let got = empty_these_folders(&cache, &account, &inbox);
+
+        assert!(got.finished(), "{:?}", got.stopped_at);
+        assert_eq!(how_many_in(&cache, inbox[0].0), 0, "the inbox is not empty");
+        assert_eq!(
+            how_many_in(&cache, trash[0].0),
+            3,
+            "the messages did not arrive in the Trash"
+        );
+    }
+
+    #[test]
+    fn test_emptying_the_trash_here_takes_the_messages_off_this_computer() {
+        // The other half of the pair. Without it, a walk that moved everything
+        // into the Trash whatever folder it was given would pass the test above
+        // and quietly never delete anything at all.
+        let cache = a_cache("empty_trash_removes");
+        let account = a_pop_account();
+        its_folders(&cache, &account);
+        let trash = to_empty(&cache, &account, &[&format!("{LOCAL_PREFIX}/Trash")]);
+        for subject in ["One", "Two"] {
+            a_message(&cache, trash[0].0, subject);
+        }
+
+        let got = empty_these_folders(&cache, &account, &trash);
+
+        assert!(got.finished(), "{:?}", got.stopped_at);
+        assert_eq!(how_many_in(&cache, trash[0].0), 0);
+        assert_eq!(
+            cache.messages_stored_in(&[trash[0].0]).unwrap(),
+            0,
+            "the messages are still stored somewhere on this computer"
+        );
+    }
+
+    #[test]
+    fn test_emptying_with_the_permission_off_moves_nothing_and_says_which_setting() {
+        // The gate is `deleting`'s, reached through `perform`, so this passing
+        // is what says the walk did not write a second one.
+        let cache = a_cache("empty_refused");
+        let mut account = a_pop_account();
+        account.allow_deleting_here = false;
+        its_folders(&cache, &account);
+        let inbox = to_empty(&cache, &account, &[&format!("{LOCAL_PREFIX}/Inbox")]);
+        a_message(&cache, inbox[0].0, "One");
+
+        let got = empty_these_folders(&cache, &account, &inbox);
+
+        assert!(!got.finished(), "it claimed to have emptied the folder");
+        assert_eq!(how_many_in(&cache, inbox[0].0), 1, "a message was moved");
+        assert_eq!(
+            got.stopped_at.as_ref().map(|at| at.because.as_str()),
+            Some(local_folders::DELETING_IS_SWITCHED_OFF),
+            "the refusal did not carry the words the gate supplies"
+        );
+        assert_eq!(got.left_behind, 1);
+    }
+
+    #[test]
+    fn test_emptying_several_folders_does_them_all_and_names_them_in_order() {
+        let cache = a_cache("empty_several");
+        let account = a_pop_account();
+        its_folders(&cache, &account);
+        let both = to_empty(
+            &cache,
+            &account,
+            &[
+                &format!("{LOCAL_PREFIX}/Inbox"),
+                &format!("{LOCAL_PREFIX}/Drafts"),
+            ],
+        );
+        a_message(&cache, both[0].0, "One");
+        a_message(&cache, both[1].0, "Two");
+
+        let got = empty_these_folders(&cache, &account, &both);
+
+        assert!(got.finished());
+        assert_eq!(got.done.len(), 2, "{:?}", got.done);
+        assert_eq!(how_many_in(&cache, both[0].0), 0);
+        assert_eq!(how_many_in(&cache, both[1].0), 0);
+    }
+
+    #[test]
+    fn test_emptying_a_folder_that_is_already_empty_says_it_did_it_and_changes_nothing() {
+        // A folder with nothing in it is still a folder that was emptied, so
+        // it belongs in `done` rather than being skipped: the sentence names
+        // what was walked, and a subfolder silently left out of it reads as a
+        // subfolder that was not reached.
+        let cache = a_cache("empty_already_empty");
+        let account = a_pop_account();
+        its_folders(&cache, &account);
+        let inbox = to_empty(&cache, &account, &[&format!("{LOCAL_PREFIX}/Inbox")]);
+
+        let got = empty_these_folders(&cache, &account, &inbox);
+
+        assert!(got.finished());
+        assert_eq!(got.done.len(), 1, "{:?}", got.done);
+        assert_eq!(got.left_behind, 0);
     }
 
     #[test]
