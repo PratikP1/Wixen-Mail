@@ -237,8 +237,16 @@ pub fn what_to_record(answer: Answer) -> Option<WhatTheServerSaid> {
 /// is the thing D-27 exists to prevent, so this is said whatever the numbers
 /// are.
 pub fn what_removing_them_did(folders: usize, messages: usize) -> String {
-    let _ = (folders, messages);
-    String::new()
+    let counted = match folders {
+        1 => "1 folder".to_string(),
+        several => format!("{several} folders"),
+    };
+    let mail = match messages {
+        0 => "They held no mail on this computer.".to_string(),
+        1 => "1 message went with them.".to_string(),
+        several => format!("{several} messages went with them."),
+    };
+    format!("{counted} taken off this computer. {mail}")
 }
 
 /// What to say once somebody has said to keep the folders.
@@ -248,8 +256,14 @@ pub fn what_removing_them_did(folders: usize, messages: usize) -> String {
 /// because that is what the tree will go on announcing and it would otherwise
 /// read as the answer not having taken.
 pub fn what_keeping_them_did(folders: usize) -> String {
-    let _ = folders;
-    String::new()
+    let counted = match folders {
+        1 => "1 folder".to_string(),
+        several => format!("{several} folders"),
+    };
+    format!(
+        "{counted} kept. The tree goes on saying {} until it comes back.",
+        crate::presentation::folder_tree::NO_LONGER_LISTED
+    )
 }
 
 thread_local! {
