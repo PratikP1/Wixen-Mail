@@ -134,3 +134,29 @@ is a weaker answer than this file usually accepts and it is recorded as such.
 
 **Size:** small to fix the arithmetic, medium to decide and test what exhaustion
 should mean.
+
+---
+
+## `.planning/intel/context.md` still lists folder management as not working (found in 01-09)
+
+`.planning/intel/context.md:25` says, of a source it is quoting, that "a folder
+cannot be created, renamed or deleted, and a whole folder cannot be marked read
+or emptied". Every one of those five is now built: create, rename and delete in
+01-04, mark read and empty in 01-09.
+
+**Why it is not fixed here.** The line is framed as "Not working per this
+source", so it is a record of what one source said at a point in time rather
+than a live claim by this project. Rewriting a quotation to match the tree makes
+the intel document say the source said something it did not. What it needs is a
+date or a note saying the snapshot has been overtaken, which is a decision about
+how that file records things and is nothing to do with emptying a folder.
+
+The two documents that *were* making the claim in their own voice,
+`docs/ALPHA_TESTING.md` and `docs/IMPLEMENTATION_STATUS.md`, were corrected in
+01-09 commit `463fc41`.
+
+**How it stays visible.** This entry. Nothing reads `.planning/intel/` in any
+check, which is the whole reason it went stale unnoticed.
+
+**Size:** small, once somebody decides whether that file dates its claims or
+refreshes them.

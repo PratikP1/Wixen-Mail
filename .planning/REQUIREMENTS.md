@@ -41,7 +41,7 @@ write path added by this milestone passes through that gate.
 
 ### Folders
 
-- [ ] **FOLDER-01**: Create, rename and delete a mail folder; mark a whole folder read; empty
+- [x] **FOLDER-01**: Create, rename and delete a mail folder; mark a whole folder read; empty
   a folder.
 
   - Evidence: `grep -rn "create_folder|rename_folder|delete_folder" src/` finds no mail-folder
@@ -944,7 +944,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOLDER-01 | Phase 1 | Pending |
+| FOLDER-01 | Phase 1 | Complete |
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Pending |

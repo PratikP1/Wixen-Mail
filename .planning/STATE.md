@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-08-PLAN.md
-last_updated: "2026-08-30T19:15:53.613Z"
+stopped_at: Completed 01-09-PLAN.md
+last_updated: "2026-08-30T21:01:34.011Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-08 done: folders can be pinned to a Favourites group above All Inboxes, arranged by account, as a copy rather than a move, and nothing on the pinning path reaches a server"
-state_head: ee27e106a9a88a9a8878e15bdfeb09f197d34062
+last_activity_desc: "01-09 done: a folder can be emptied and marked read from the keyboard, emptying routes through both functions that decide what deleting means so the Trash removes and the Inbox moves on this computer and at a server, and two settings say how far each reaches. FOLDER-01 complete"
+state_head: 463fc41231e94e136cee03cd4eb40d7934488ade
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -113,6 +113,7 @@ Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 | Phase 01 P06 | 1h 4m | 3 tasks | 15 files |
 | Phase 01 P07 | 1h 31m | 3 tasks | 14 files |
 | Phase 01 P08 | 2h 5m | 3 tasks | 13 files |
+| Phase 01 P09 | one session | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,9 @@ ahead:
 - [Phase 01]: D-18 was self-contradictory about the Outbox and Pratik corrected it: shared for everyone, FOR_IMAP empty, one send queue on this computer
 - [Phase 01]: The merge of the local folders reuses move_message rather than a second mover, because a separate one would have missed filed_here and written rows the next sync deletes
 - [Phase 01]: The merge records both the original uid and the original account for every moved message, so it is reversible from the data even though no command undoes it
+- [Phase 01]: Emptying asks both functions that decide what deleting means, local and server, and carries all their answers across; a single AtTheServer variant was written first and would have destroyed an Inbox
+- [Phase 01]: The empty count and the empty walk both skip messages already soft-deleted, so running Empty twice is a no-op and an emptied Trash stops reading as full
+- [Phase 01]: A setting ships in one commit with its screen and its consumer; splitting them leaves the two settings guards red with no honest way to satisfy them
 
 ### Pending Todos
 
@@ -246,8 +250,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T19:15:53.593Z
-Stopped at: Completed 01-08-PLAN.md
+Last session: 2026-08-30T21:01:25.119Z
+Stopped at: Completed 01-09-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
