@@ -136,9 +136,9 @@ None yet.
   branch per account, a shared "On this computer" group whose folders belong to
   no account, a migration that moves existing mail between rows, five settings,
   and three IMAP verbs that do not exist yet (CREATE, RENAME, DELETE mailbox).
-  Nothing is outside the phase's domain. The planner is told in CONTEXT.md's
-  boundary section; the roadmap's criteria should be brought into line before
-  the phase is verified against them.
+  Nothing is outside the phase's domain. Resolved 2026-08-29: the roadmap's
+  Phase 1 criteria were rewritten from five to eight to match, and carry a scope
+  note pointing at CONTEXT.md as the authority on the detail.
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
   otherwise, and none may be rewritten to.

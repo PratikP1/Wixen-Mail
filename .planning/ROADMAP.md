@@ -39,17 +39,21 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Folders and conversations
-**Goal**: A user can shape and work through their mail by its own structure: folders they can make and manage, nested the way the server nests them, favourites at the top, and conversations collapsed to one row.
+**Goal**: A user can shape and work through their mail by its own structure: an account they can tell from the next one, folders they can make and manage, nested the way the server nests them, favourites at the top, and conversations collapsed to one row.
 **Depends on**: Nothing (first phase)
 **Requirements**: FOLDER-01, FOLDER-02, FOLDER-03, THREAD-01, THREAD-02
 **Success Criteria** (what must be TRUE):
-  1. A user creates, renames, deletes, marks read and empties a folder from the folder tree using the keyboard alone, and each is refused with a reason rather than attempted when mail writes are off.
-  2. A folder named `Archive/2026` reads as `2026` nested under `Archive`, with its level announced by the native tree control, and the tree remembers what was collapsed across a restart.
-  3. A user pins a folder and it stays in a labelled group at the top of the tree across a restart, without ever writing to the server.
-  4. The View menu's thread view is enabled, and switching it collapses the list to one row per conversation announcing subject, message count and unread count.
-  5. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
+  1. A user creates, renames, moves, marks read, empties and deletes a folder from the folder tree using the keyboard alone. Renaming changes the name; moving to another parent is its own command. A server folder is refused with a reason rather than attempted when mail writes are off; a local one is not gated, because a POP account has no server folders at all.
+  2. A folder named `Archive/2026` reads as `2026` nested under `Archive`, with its level announced by the native tree control, and the tree remembers what was collapsed across a restart, keyed by identity rather than by label so a rename does not lose it.
+  3. Each account is its own branch, ordered by the user and moved with the keyboard, so two POP accounts no longer show two folders called Inbox with nothing to tell them apart.
+  4. Sent, Outbox, Drafts, Junk and Trash are one each, shared across accounts under "On this computer", and an existing database is migrated into that shape message by message with nothing removed until every message has landed and a count reported.
+  5. A user pins a folder and it stays in a group at the top of the tree across a restart, without ever writing to the server, appearing there as well as in its account branch rather than instead of it.
+  6. The View menu's thread view is enabled, and switching it collapses the list to one row per conversation announcing subject, message count and unread count, with every column answering about the conversation rather than about its newest message.
+  7. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
+  8. The five settings this phase adds are each reachable and operable from a real settings screen by keyboard, with their state announced. A setting the model holds and no screen writes is what FEEDBACK-01 exists to fix; this phase must not add a sixth.
 **Plans**: TBD
 **UI hint**: yes
+**Scope note**: These criteria were rewritten 2026-08-29 after the phase discussion. The original five described nesting a flat tree. What the discussion decided is in `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`, which is the authority on the detail; these criteria are what the phase is verified against. The phase also needs three IMAP verbs that do not exist in `src/service/protocols/imap.rs` today: CREATE, RENAME and DELETE mailbox.
 
 ### Phase 2: Search that says what it covers
 **Goal**: A search returns what the user asked for, and says plainly what it could not reach.

@@ -419,7 +419,126 @@ because it has already happened here once.
 
 </deferred>
 
+<post_research>
+## Decisions added after research (2026-08-29)
+
+`01-RESEARCH.md` found five things the discussion could not have known. Two
+needed answering and were put to Pratik; three are findings that change how a
+decision above is built rather than what it decides. Every claim below was
+verified against the tree before it was written here.
+
+### New decisions
+
+- **D-39:** `messages.thread_id` gets a **stable id derived from the
+  conversation's root**, computed once when a message is stored, from the root
+  its `References` chain points at, and never recomputed by batch. The same
+  conversation carries the same id in every folder and across time.
+  This is a producer to build, not a query to write: `thread_id` is a column
+  **nothing writes and nothing reads back**. Its only occurrence in `src/data/`
+  is the `ensure_column_exists` at `mod.rs:2065` that creates it, and
+  `ui_types.rs:136` says outright that threading is not computed yet. Threading
+  today is an in-memory computation over one folder's loaded page in
+  `wx_app.rs::apply_threading`. Meanwhile `message_columns.rs:131` sorts on
+  `m.thread_id`, so sorting by Thread orders every row by NULL and does not
+  fail. D-08 cannot span an account without this, and it must be ordered before
+  anything that reads a thread id.
+  The rejected shape matters: today's in-memory id is the least Message-ID in
+  the batch, so the same conversation gets a different id per folder and an
+  arriving message can lower it. A THREAD-02 implementation adopting a found
+  thread's id would then disagree with the next batch recompute. That is the
+  lenient-reader-strict-writer shape this project has been bitten by before.
+  — **Reversibility:** one-way — once ids are written, changing the derivation
+  means recomputing every stored row. It is free today only because the column
+  has never held a value.
+
+- **D-40:** The D-19 migration assigns a **fresh uid unique within the shared
+  folder** and records the original in an additive column beside it.
+  `messages` carries `UNIQUE(folder_id, uid)` and IMAP UIDs are per-mailbox, so
+  two accounts' local Trash both holding uid 42 is expected rather than
+  hypothetical. Without this the migration either fails or drops a message, and
+  it is the likeliest way D-19 loses mail. Nothing that keys on
+  `(folder_id, uid)` changes and the constraint is untouched, which keeps the
+  additive-only schema rule.
+  — **Reversibility:** one-way — it rewrites uids on the user's only copy of
+  that mail. The original column is what makes the move traceable afterwards.
+
+- **D-41:** A **modified UTF-7 encoder** is in scope, and FOLDER-01's create,
+  rename and move cannot ship without it.
+  `src/service/protocols/imap/mailbox_name.rs` decodes and does not encode, and
+  its own module comment says: *"An encoder belongs here the day something
+  creates or renames a mailbox."* This phase is that day. `async-imap 0.11.3`
+  does no modified UTF-7 anywhere and its `validate_str` only quotes and rejects
+  CR/LF, so a name goes to the server exactly as handed over. Without an
+  encoder, creating a folder works in English and corrupts every other alphabet.
+  Nothing named this: not FOLDER-01's evidence, not the roadmap, not the
+  discussion. It is new work, it is not optional, and it needs the round-trip
+  test against the existing decoder that makes an encoder trustworthy.
+
+- **D-42:** The five settings go on the **Reading** page of the settings
+  notebook, under one labelled group. The notebook has seven pages (General,
+  Compose, Reading, Permissions, Calendar & PIM, Feedback, Advanced); all five
+  are about how the message list and folder tree behave, so one group in one
+  place beats scattering them. If the group's name is ever named in a sentence
+  elsewhere, it comes from one constant rather than being typed twice, which is
+  what `test_the_settings_screen_does_not_write_the_section_name_out_itself`
+  already enforces for the Allow Changes section.
+
+- **D-43:** This phase adds the **mirror of the settings guard**, and criterion 8
+  is not met without it. `test_every_setting_somebody_can_change_is_read_by_something`
+  (`src/data/config.rs:1306`) walks every shipping file *except* `config.rs` and
+  `wx_settings.rs`, by name, with a stated reason. So it catches a setting that
+  is offered and ignored, and is **structurally blind** to one that is stored and
+  never offered. That blind spot is exactly FEEDBACK-01, and exactly the risk of
+  adding five settings at once. The mirror reuses `stored_setting_names` and
+  `what_ships` and asks the opposite question of `wx_settings.rs` alone.
+
+### Amendments to decisions above
+
+- **D-04 is already written, in a dependency.** Do not write a reply-prefix
+  stripper. `mail-parser 0.11.5` is already in `Cargo.toml` and exposes
+  `parsers::fields::thread::thread_name(&str) -> &str` on a public path,
+  implementing the RFC 5256 base-subject algorithm with 19 reply and 22 forward
+  prefixes across 17 languages. Separately, `wx_compose.rs:161-175` prepends
+  `"Re: "` on a case-sensitive ASCII `starts_with` and will disagree with it;
+  bring the two into line in the same change.
+
+- **D-26's Move To is one command, not a walk.** RFC 9051 §6.3.6 requires RENAME
+  to rename inferior names too, so moving `Archive/2026` to `Old/2026` takes its
+  children with it in one operation. **Renaming INBOX is a special case that must
+  be refused before it is attempted**: the RFC has it create a new mailbox and
+  move INBOX's messages into it, leaving INBOX empty, which is a data-shaped
+  surprise dressed as a rename.
+
+- **FOLDER-01's delete needs a depth-first walk.** RFC 9051 §6.3.5 requires
+  DELETE **not** to remove inferior names, the opposite of RENAME. Deleting a
+  subtree means deleting deepest-first, and a `\Noselect` parent that only names
+  a hierarchy has its own rules.
+
+- **D-25 must not use wxdragon's tree item custom data.** That data goes into a
+  process-global registry; `delete_all_items` does not clear it, and
+  `cleanup_all_custom_data` returns early on any childless item, so it never
+  clears a leaf. The tree is rebuilt on every `FoldersLoaded`, so building
+  expansion state on it leaks one entry per folder per sync, forever. Use a
+  parallel vector keyed by the stable identity D-25 already names, which is what
+  `collect_rows` (`wx_app.rs:10103`) already does.
+
+- **THREAD-02 has its mechanism.** `ListCtrl::refresh_item`
+  (`wxdragon 0.9.17`, `list_ctrl.rs:781`, with `refresh_items` beside it at
+  `:791`) repaints one row without touching the rest, which is precisely
+  "rethreading on arrival does not re-announce rows the user is not on".
+
+### One correction the researcher made to its own work
+
+It first reported that the loopback harness lacks CREATE, RENAME and DELETE and
+that extending it was a prerequisite. True of `a_server_that_can`, and wrong as a
+conclusion: a second harness, `a_server_answering`, sits further down the same
+module with a permissive fallback and needs no change. Recorded because the
+first version of that claim would have added a task nobody needed.
+
+</post_research>
+
 ---
 
 *Phase: 1-Folders and conversations*
 *Context gathered: 2026-08-29*
+*Amended after research: 2026-08-29*

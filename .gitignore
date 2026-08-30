@@ -68,3 +68,8 @@ docs/*.html
 .claude/.gsd-profile
 .claude/.gsd-runtime
 .claude/VERSION
+
+# The phase researcher's web-fetch cache. Content, not decisions: the pages it
+# read are quoted in RESEARCH.md, which is tracked. Caching them again here
+# would put a few hundred kilobytes of somebody else's HTML in the history.
+.planning/research/.cache/
