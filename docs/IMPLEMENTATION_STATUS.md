@@ -66,9 +66,16 @@ thread identifiers; nothing groups by them.
 
 **Folder management.** A folder can be made on the server, renamed there, moved
 under a different folder or back out to the top level, and deleted along with
-everything inside it. Marking a whole folder read and emptying a folder are not
-built. Folders kept on this computer are a fixed set and none of these commands
-applies to them. Nothing here has run against a real mail server.
+everything inside it. A whole folder can be marked read, and a folder can be
+emptied: emptying does to every message what deleting one of them does, so
+emptying the inbox moves the mail to the trash and emptying the trash removes
+it, and the confirmation says which. Two settings decide whether either command
+reaches the folders inside the one chosen.
+
+Making, renaming, moving and deleting a folder apply to folders on a server
+only; folders kept on this computer are a fixed set. Emptying and marking read
+apply to both. Nothing on the server side of any of this has run against a real
+mail server.
 
 **Moving a task between lists.** A task goes into your provider's default list
 when you make it, and moving and copying work for mail only.
