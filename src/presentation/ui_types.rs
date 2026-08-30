@@ -332,6 +332,15 @@ pub enum UIUpdate {
     /// said nothing at all. From the keyboard that is indistinguishable from a
     /// shortcut that was never wired up, and it was reported as one.
     CommandRefused(String),
+    /// The answer to a command that worked.
+    ///
+    /// The twin of [`Self::CommandRefused`] and announced the same way, above
+    /// the ordinary run of status and under its own topic. `StatusUpdated` is
+    /// the wrong channel for it: that one is announced at low priority under a
+    /// shared topic, so it coalesces with the steady traffic a sync produces
+    /// and the answer to a key somebody just pressed can be the one that is
+    /// dropped.
+    CommandAnswered(String),
     OutboxSendResult {
         queue_id: String,
         success: bool,

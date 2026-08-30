@@ -762,7 +762,13 @@ const MAIL_TRANSPORTS: [(&str, usize); 3] = [
 /// `send_email` and `send_raw` both open an SMTP conversation and differ only
 /// by which address the row names.
 #[cfg(test)]
-const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 10] = [
+const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 11] = [
+    (
+        "src/service/protocols/imap.rs",
+        "create_mailbox",
+        "src/service/protocols/imap.rs",
+        "CREATE \"Entw&APw-rfe\"",
+    ),
     (
         "src/service/protocols/imap.rs",
         "set_subscribed",

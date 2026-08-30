@@ -8,6 +8,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can make a folder on the server.** File, New, Folder asks for a name and
+  makes it on the account you are looking at. The folder tree shows it straight
+  away, so you do not have to check for mail first, and the name is read out
+  when it arrives.
+
+  The name is written in the spelling IMAP uses for mailbox names, so a folder
+  called `Entwurfe` with an umlaut, or one named in Japanese, arrives on the
+  server correctly rather than as punctuation. Before this the program only read
+  that spelling and never wrote it, because nothing here had ever made a folder.
+
+  Making a folder counts as choosing it, so it is kept up to date from the
+  start, and the program subscribes to it so your other mail apps list it too.
+
+  Known limits, said here rather than found later:
+
+  - The new folder is made where you type it, at the top of the account. Putting
+    one inside another is not built yet, because the character a server uses to
+    separate folder names is not carried far enough into the program yet to use
+    it, and guessing it would put the folder somewhere else.
+  - Making a folder on this computer, under the folders that hold mail no server
+    has, is not built yet. Asking for one says so.
+  - Renaming, moving and deleting a folder are not built yet.
+  - Changing mail on the server is switched off for a new install. With it off,
+    asking for a folder says so and names the setting, and nothing at all is
+    sent to the server.
+  - This has been tested against a mail server written for the tests, not
+    against a real account. Nothing in this program has ever run against one.
+
 - **A search you run every morning can be kept under a name.** Search your mail,
   then choose Edit, Save This Search. Give it a name, and it appears in the
   folder tree under a heading called Saved Searches, beside your real folders.

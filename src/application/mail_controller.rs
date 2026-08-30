@@ -529,6 +529,17 @@ impl MailController {
         session.set_subscribed(path, subscribed).await
     }
 
+    /// Make a folder on the server.
+    ///
+    /// No logic here on purpose. Whether the change is allowed and how the name
+    /// is spelled on the wire are both decided inside the session, so this
+    /// cannot answer either question differently.
+    pub async fn create_mailbox(&self, path: &str) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.create_mailbox(path).await
+    }
+
     /// How many messages a folder holds, and how many are unread.
     pub async fn folder_counts(&self, folder: &str) -> Result<FolderCounts> {
         let mut guard = self.require_imap().await?;
@@ -707,6 +718,7 @@ mod tests {
             controller.copy_message("INBOX", 1, "Archive").await.err(),
             controller.append_message("Sent", None, b"raw").await.err(),
             controller.set_subscribed("Work", true).await.err(),
+            controller.create_mailbox("Work").await.err(),
             controller.fetch_flags("INBOX", &[1], None).await.err(),
             // A count here is worse than an error. The caller reads it as the
             // old copy of the draft having been cleaned up, appends the new
@@ -861,7 +873,7 @@ mod against_a_server_that_answers {
     use super::*;
     use crate::common::answering::{Conversation, Turn, conversing};
     use crate::service::protocols::imap::against_a_server_that_answers::{
-        a_server_that_can, a_server_that_refuses, reading_only_on,
+        a_server_answering, a_server_that_can, a_server_that_refuses, reading_only_on,
         signed_in_to as a_session_allowed_on,
     };
 
@@ -1165,6 +1177,34 @@ mod against_a_server_that_answers {
         assert!(
             server.was_told(" SUBSCRIBE \"Work\"").await,
             "the subscription never reached the server: {transcript:?}"
+        );
+        assert!(
+            !server.was_told("SELECT").await,
+            "a mailbox was opened underneath the caller: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_making_a_folder_reaches_the_server_encoded_and_opens_nothing() {
+        // The facade is three lines and no logic, so what is worth pinning is
+        // that it is three lines of the right thing: the name goes through the
+        // encoder on its way out, and no mailbox is opened underneath whoever
+        // is reading one.
+        //
+        // `a_server_answering` rather than the shared script, which answers
+        // CREATE with `BAD unscripted`.
+        let server = a_server_answering(|_, _| None).await;
+        let controller = allowed_on(&server).await;
+
+        controller
+            .create_mailbox("Entw\u{fc}rfe")
+            .await
+            .expect("the folder to be made");
+
+        let transcript = server.transcript().await;
+        assert!(
+            transcript.iter().any(|line| line.contains("Entw&APw-rfe")),
+            "the folder name did not reach the server encoded: {transcript:?}"
         );
         assert!(
             !server.was_told("SELECT").await,

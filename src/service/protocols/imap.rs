@@ -857,6 +857,32 @@ impl ImapSession {
         outcome.map_err(protocol_error("Could not change the folder subscription"))
     }
 
+    /// Make a mailbox on the server.
+    ///
+    /// The name is encoded on the way out, and that call is not optional.
+    /// `async-imap` does no modified UTF-7 anywhere: `validate_str` quotes the
+    /// name and refuses a line break, so whatever it is handed is what the
+    /// server is asked for. Without [`mailbox_name::encode`] this verb works in
+    /// English and makes an unreadable folder in every other alphabet, which is
+    /// the sort of defect that only shows up once somebody who does not write
+    /// in English tries it.
+    ///
+    /// The library's own `create` rather than a hand-written command line, for
+    /// the reason [`Self::set_flag`] gives at length about the opposite case:
+    /// this one reads the tagged response, so a server saying no is a failure
+    /// here rather than a folder somebody is told they have.
+    pub async fn create_mailbox(&mut self, path: &str) -> Result<()> {
+        self.may_i("create a folder on the server")?;
+        let encoded = mailbox_name::encode(path);
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.create(encoded),
+            "creating a folder",
+        )
+        .await?
+        .map_err(protocol_error("Could not create the folder"))
+    }
+
     /// How many messages a mailbox holds, and how many are unread.
     ///
     /// One STATUS command, without opening the mailbox. What this replaced was
@@ -3095,6 +3121,7 @@ pub(crate) mod against_a_server_that_answers {
             the_failure(session.append_message("Sent", None, b"raw").await),
             the_failure(session.delete_message(7, Some("Trash")).await),
             the_failure(session.set_subscribed("Work", true).await),
+            the_failure(session.create_mailbox("Work").await),
         ];
 
         for said in &refusals {
@@ -3108,6 +3135,7 @@ pub(crate) mod against_a_server_that_answers {
             "save a copy of the message",
             "delete a message",
             "change which folders you are subscribed to",
+            "create a folder on the server",
         ] {
             assert!(
                 refusals.iter().any(|said| said.contains(act)),
@@ -3117,7 +3145,7 @@ pub(crate) mod against_a_server_that_answers {
         let transcript = server.transcript().await;
         // SUBSCRIBE covers UNSUBSCRIBE as well, which for a negative
         // assertion is exactly what is wanted.
-        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE"] {
+        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE", "CREATE"] {
             assert!(
                 !server.was_told(command).await,
                 "a change reached the server with the gate closed: {transcript:?}"
@@ -3131,8 +3159,13 @@ pub(crate) mod against_a_server_that_answers {
     ///
     /// Preferred over widening the shared script above: the shared one answers
     /// a search with one message found, so a test about a folder that really
-    /// holds nothing cannot use it.
-    async fn a_server_answering(
+    /// holds nothing cannot use it, and it refuses CREATE, RENAME and DELETE
+    /// as unscripted.
+    ///
+    /// Reachable inside the crate for the same reason the module is: the
+    /// controller's tests drive the same server, so the two layers cannot
+    /// disagree about what a mail server does.
+    pub(crate) async fn a_server_answering(
         answer: impl Fn(&str, &str) -> Option<Turn> + Send + Sync + 'static,
     ) -> Conversation {
         conversing("* OK loopback ready\r\n", move |line| {
@@ -3669,5 +3702,65 @@ pub(crate) mod against_a_server_that_answers {
             self.split_once(' ')
                 .is_some_and(|(_, rest)| rest.starts_with(command))
         }
+    }
+
+    // ── Making a folder ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_creating_a_folder_sends_the_name_in_the_encoding_the_server_reads() {
+        // The whole reason `mailbox_name::encode` exists. The library sends
+        // what it is handed, so a name that skipped the encoder would arrive as
+        // the UTF-8 bytes of the word and every client reading the folder list
+        // back, this one included, would announce punctuation.
+        //
+        // `a_server_answering` rather than the shared script, which refuses
+        // CREATE as unscripted and would fail this on the harness rather than
+        // on the client.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = signed_in_to(&server).await;
+
+        waiting_for(session.create_mailbox("Entw\u{fc}rfe"), "the folder")
+            .await
+            .expect("the folder to be made");
+
+        // The whole command line, and a raw string so it reads here exactly as
+        // it goes out. `MAIL_MEASURED_ON_THE_WIRE` names this line as the
+        // evidence that this write was read off a socket, and it can only find
+        // it if it is spelled once and not escaped.
+        //
+        // A leading space, because the transcript is searched by substring and
+        // the tag sits in front of the verb.
+        let asked_for = r#" CREATE "Entw&APw-rfe""#;
+        let transcript = server.transcript().await;
+        // Read case-sensitively rather than through `was_told`, which matches
+        // without case: modified Base64 carries meaning in its case, so `APw`
+        // and `APW` are different mailboxes and a check that cannot tell them
+        // apart is not checking the encoding at all.
+        assert!(
+            transcript.iter().any(|line| line.contains(asked_for)),
+            "the name did not go out encoded: {transcript:?}"
+        );
+        assert!(
+            !transcript.iter().any(|line| line.contains("Entw\u{fc}rfe")),
+            "the raw name reached the server: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_creating_a_folder_with_the_gate_closed_says_nothing_to_the_server() {
+        // The gate is the first line of the verb, so the refusal happens before
+        // a command is built rather than after one is sent and turned down.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = reading_only_on(&server).await;
+
+        let said = the_failure(waiting_for(session.create_mailbox("Work"), "the refusal").await);
+
+        let transcript = server.transcript().await;
+        assert!(said.contains("create a folder on the server"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            !server.was_told(" CREATE ").await,
+            "a folder was made with the gate closed: {transcript:?}"
+        );
     }
 }

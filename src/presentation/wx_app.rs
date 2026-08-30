@@ -76,6 +76,7 @@ macro_rules! menu_ids {
 
 menu_ids!(
     ID_MUTE_CONTENT,
+    ID_NEW_FOLDER,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3164,18 +3165,45 @@ impl WxMailApp {
                                 );
                             }
                         }
+                        _ if id == ID_NEW_FOLDER => {
+                            make_a_new_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                            );
+                        }
                         _ if id == ID_CONTEXT_NEW_CONTAINER
                             || id == ID_CONTEXT_DELETE_CONTAINER =>
                         {
                             let module = lock_state(&state).active_module;
                             let Some(container) = module.container_kind() else {
-                                // Mail folders are the server's, not ours to
-                                // make or remove from here.
-                                send_status(
-                                    &ui_tx,
-                                    &runtime,
-                                    "Mail folders are made on the server, not here",
-                                );
+                                // Mail has no container kind of its own, so
+                                // this lands here for a mail folder. Making one
+                                // is now a command, so this sends it there
+                                // rather than saying folders are not made here,
+                                // which stopped being true the day New Folder
+                                // was written. Removing one still is not built.
+                                if id == ID_CONTEXT_NEW_CONTAINER {
+                                    make_a_new_folder(
+                                        AppHandles {
+                                            state: &state,
+                                            tx: &ui_tx,
+                                            rt: &runtime,
+                                        },
+                                        &message_cache,
+                                        &frame,
+                                    );
+                                } else {
+                                    send_status(
+                                        &ui_tx,
+                                        &runtime,
+                                        "Removing a mail folder is not built yet",
+                                    );
+                                }
                                 return;
                             };
                             if id == ID_CONTEXT_NEW_CONTAINER {
@@ -4812,6 +4840,15 @@ impl WxMailApp {
                 "Make another calendar, task list, note folder or contact group, \
                  whichever the module you are in keeps its items in",
             )
+            // Making a folder stays here rather than moving to Action, which
+            // acts on whatever is chosen. A mnemonic and no chord: a new chord
+            // needs a line in docs/KEYBOARD_SHORTCUTS.md in the same commit,
+            // and there is no key anybody asked for here.
+            .append_item(
+                ID_NEW_FOLDER,
+                "&Folder...",
+                "Make a folder on the server, in the account you are looking at",
+            )
             .append_item(ID_NEW_ACCOUNT, "&Account", "Open Account Manager")
             .build();
 
@@ -6091,6 +6128,284 @@ fn delete_the_chosen_search(
             )));
         }
     }
+}
+
+/// What a new folder is called, or why the name cannot be used.
+///
+/// Values in, values out, so the step that turns a name somebody typed into a
+/// path that decides where bytes get written has a test rather than a window.
+/// `under` is the path of the folder the tree cursor is on, if it is on one.
+///
+/// A name that cannot be used is refused rather than repaired, which is the
+/// rule [`crate::application::import_tree`] states and the reason it gives: the
+/// repaired form is not the safe form of the same name, it is a different name
+/// nobody asked for, written in silence.
+///
+/// Only a folder kept on this computer gets its parent's path in front of it.
+/// Those paths are ours, so their separator is known. A server's is read in
+/// `ImapSession::list_folders` and deliberately not carried past it while the
+/// tree is one flat level, and guessing a slash writes the folder somewhere
+/// else entirely on any server that separates with a dot.
+/// `Result` is spelled out here: this file's bare `Result` is
+/// [`crate::common::Result`], which carries its own error type, and the reason
+/// a name is refused is one of the sentences below rather than a program error.
+fn the_path_of_a_new_folder(
+    under: Option<&str>,
+    typed: &str,
+) -> std::result::Result<String, &'static str> {
+    let name = typed.trim();
+    if name.is_empty() {
+        return Err(A_FOLDER_NEEDS_A_NAME);
+    }
+    // A control character is the one that matters: a line break in a mailbox
+    // name is how a name ends one command and begins another. It also catches
+    // the character `LOCAL_PREFIX` opens with, so a typed name cannot reach
+    // into the group holding the only copy of somebody's mail.
+    if name.chars().any(char::is_control) {
+        return Err(THAT_FOLDER_NAME_CANNOT_BE_USED);
+    }
+    match under {
+        Some(parent) if crate::application::local_folders::is_local(parent) => {
+            Ok(format!("{parent}/{name}"))
+        }
+        _ => Ok(name.to_string()),
+    }
+}
+
+/// What is said when somebody asks for a folder and types no name.
+const A_FOLDER_NEEDS_A_NAME: &str = "A folder needs a name, so nothing was made.";
+
+/// What is said when a typed folder name holds something a mailbox name cannot.
+const THAT_FOLDER_NAME_CANNOT_BE_USED: &str = "That name holds a character a folder name cannot carry, so nothing was made. \
+     Try a name without tabs or line breaks.";
+
+/// What is said when somebody asks for a folder on this computer.
+///
+/// Gated rather than half-built. Making one is real work: the folders on this
+/// computer are a fixed set today, and adding to it needs somewhere to keep the
+/// list and a rule for what happens to the mail in one that goes away.
+const FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET: &str = "Making a folder on this computer is not built yet. \
+     Choose a folder on the server first, and the new one is made there.";
+
+/// What is said when the account's own setting is what refused the folder.
+///
+/// The same register as [`crate::application::local_folders::DELETING_IS_SWITCHED_OFF`]:
+/// name the setting somebody would go and change, because "permission denied"
+/// sends them looking for a broken account.
+const MAIL_CHANGES_ARE_SWITCHED_OFF: &str = "Changing mail on the server is switched off, so no folder was made. \
+     Turn mail changes on in Allowed Changes if you want it.";
+
+/// The note above the box while a new folder is being named.
+const A_NEW_FOLDER_GOES_TO_THE_SERVER: &str =
+    "The folder is made on the server, so every mail app using this account sees it.";
+
+/// Make a folder, from File then New.
+///
+/// Which side it lands on is decided by
+/// [`crate::application::local_folders::is_local`] asked about the path, and
+/// nowhere else: one answer to that question rather than one per command.
+fn make_a_new_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, frame: &Frame) {
+    let AppHandles { state, tx, rt } = app;
+
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(
+            tx,
+            "No mail is stored on this computer yet, so there is nowhere to record a folder.",
+        );
+    };
+    let (account, on_row) = {
+        let s = lock_state(state);
+        let account = s
+            .active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
+        let on_row = s
+            .selected_folder
+            .as_ref()
+            .and_then(|row| s.folder_ids.get(row).copied());
+        (account, on_row)
+    };
+    let Some(account) = account else {
+        return refuse_a_command(
+            tx,
+            "Open an account first, so a new folder has somewhere to go.",
+        );
+    };
+    // The path of the row the cursor is on, read through the folder id because
+    // what `selected_folder` holds is the tree's label, unread count and all.
+    let under = on_row.and_then(|id| {
+        cache
+            .get_folders_for_account(&account.id)
+            .ok()?
+            .into_iter()
+            .find(|folder| folder.id == id)
+            .map(|folder| folder.path)
+    });
+
+    let Some(typed) = ask_for_a_name(
+        frame,
+        Asking {
+            window: "New Folder",
+            label: "Folder &name:",
+            note: Some(A_NEW_FOLDER_GOES_TO_THE_SERVER),
+            filled_in: "",
+            button: "C&reate",
+        },
+    ) else {
+        // Cancelled. A decision with no outcome needs no sentence.
+        return;
+    };
+
+    let path = match the_path_of_a_new_folder(under.as_deref(), &typed) {
+        Ok(path) => path,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+
+    if crate::application::local_folders::is_local(&path) {
+        return refuse_a_command(tx, FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET);
+    }
+    if account.protocol() != crate::common::types::Protocol::Imap {
+        // A POP account has no folders on a server to make one in. Said rather
+        // than attempted, because attempting it is a connection to a server
+        // that is not there and two minutes of nothing.
+        return refuse_a_command(
+            tx,
+            "This account keeps its mail on this computer, so there are no folders \
+             on a server to make one in.",
+        );
+    }
+
+    // Said before the worker is handed the job, the way Check Mail and the
+    // mailbox import both open. A server has two minutes to answer, and a
+    // command that says nothing until it finishes is one somebody cannot tell
+    // from a key that did not work.
+    send_status(tx, rt, &format!("Making {path} on the server..."));
+    spawn_the_folder_write(tx, rt, account, path);
+}
+
+/// Ask the server for the folder, then read the tree back from what is stored.
+///
+/// On a thread of its own because a mail server has two minutes to answer and
+/// the window cannot wait, and opening its own cache for the reason every other
+/// worker here does: a database handle belongs to the thread that opened it.
+fn spawn_the_folder_write(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    path: String,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return say(UIUpdate::CommandRefused(
+                "This account has no usable IMAP port set, so no folder was made.".to_string(),
+            ));
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return say(UIUpdate::CommandRefused(
+                "This account could not be signed in to, so no folder was made.".to_string(),
+            ));
+        };
+
+        let controller = MailController::new();
+        if let Err(why) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return say(UIUpdate::CommandRefused(format!(
+                "The mail server could not be reached, so no folder was made. {why}"
+            )));
+        }
+
+        let made = handle.block_on(controller.create_mailbox(&path));
+        // Subscribed as well as made, and only if it was made. A server that
+        // keeps a subscription list leaves a new mailbox out of it, and this
+        // tree hides an unsubscribed folder, so without this somebody makes a
+        // folder and cannot see it. Best effort: the choice recorded below is
+        // what actually puts the row in the tree, and this is the courtesy that
+        // makes every other mail app on the account agree.
+        let subscribed = made.is_ok()
+            && handle
+                .block_on(controller.set_subscribed(&path, true))
+                .inspect_err(|why| tracing::warn!("The new folder could not be subscribed: {why}"))
+                .is_ok();
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        if let Err(why) = made {
+            // The two refusals are told apart here, while the error still knows
+            // which it was. `protocol_error` collapses a server's No, a BAD and
+            // a dropped connection into one shape, so the gate against
+            // everything else is the distinction still available, and it is the
+            // one that changes what somebody does next.
+            return say(UIUpdate::CommandRefused(
+                if crate::service::outward::was_refused_by_the_gate(&why) {
+                    MAIL_CHANGES_ARE_SWITCHED_OFF.to_string()
+                } else {
+                    format!("The server would not make {path}. {why}")
+                },
+            ));
+        }
+
+        // Recorded before the tree is read back, because the tree is read from
+        // what is stored: a sentence saying a folder was made beside a tree
+        // that has not changed is the shape this program has shipped twice.
+        let made_but_not_here = format!(
+            "{path} was made on the server. It appears here after the next check for mail."
+        );
+        let Ok(paths) = AppPaths::resolve() else {
+            return say(UIUpdate::CommandAnswered(made_but_not_here));
+        };
+        let Ok(cache) = crate::data::message_cache::MessageCache::new(paths.cache_dir(), None)
+        else {
+            return say(UIUpdate::CommandAnswered(made_but_not_here));
+        };
+        let folder = crate::service::protocols::imap::ImapFolder {
+            name: path.clone(),
+            display_path: path.clone(),
+            // How the server spells it, which is the identifier the cache
+            // stores and SELECT sends back.
+            path: crate::service::protocols::imap::mailbox_name::encode(&path),
+            folder_type: crate::common::types::FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed,
+        };
+        if let Err(why) = crate::application::mail_sync::store_folders(
+            &cache,
+            &account.id,
+            std::slice::from_ref(&folder),
+        ) {
+            return say(UIUpdate::CommandAnswered(format!(
+                "{path} was made on the server, but could not be recorded here, so it \
+                 appears after the next check for mail. {why}"
+            )));
+        }
+        // Making a folder is choosing it. Without this the tree's own rule
+        // would leave it out on a server whose subscription list the SUBSCRIBE
+        // above failed to reach.
+        if let Err(why) = cache.set_folder_choice(&account.id, &folder.path, true) {
+            tracing::warn!("The new folder could not be marked as one to keep up to date: {why}");
+        }
+        if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
+            for update in updates {
+                say(update);
+            }
+        }
+        say(UIUpdate::CommandAnswered(format!(
+            "{path} made on the server."
+        )));
+    });
 }
 
 /// What is said when a saved-search command is asked for with no search chosen.
@@ -10744,6 +11059,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // mailbox syncs: the queue coalesces same-topic announcements, so
             // the most recent one is heard rather than all of them.
             let _ = a11y.announce_topic(status, Priority::Low, "status");
+        }
+        UIUpdate::CommandAnswered(said) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // High and on its own topic, for the same reason a refusal is: this
+            // is the answer to a key somebody just pressed, and it must not be
+            // coalesced away by the status a sync is producing underneath it.
+            let _ = a11y.announce_topic(said, Priority::High, "command");
         }
         UIUpdate::CommandRefused(why) => {
             {
@@ -19654,6 +19980,84 @@ mod what_the_search_box_offers_to_look_in {
                 .iter()
                 .any(|(_, looking_in)| matches!(looking_in, WhereToSearch::OneFolder(_))),
             "an answer narrowing to a folder survived with no folder to narrow to"
+        );
+    }
+}
+
+#[cfg(test)]
+mod making_a_folder {
+    use super::*;
+
+    #[test]
+    fn test_a_folder_on_the_server_is_named_by_what_was_typed() {
+        // Not the parent's path in front of it. The server's hierarchy
+        // delimiter is read in `list_folders` and deliberately not carried past
+        // it while the tree is one flat level, and a guess writes the folder
+        // somewhere else entirely on any server that separates with a dot.
+        assert_eq!(
+            the_path_of_a_new_folder(Some("Archive"), "2026"),
+            Ok("2026".to_string())
+        );
+        assert_eq!(
+            the_path_of_a_new_folder(None, "Work"),
+            Ok("Work".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_folder_under_one_kept_on_this_computer_keeps_that_prefix() {
+        // These paths are ours, so their separator is known rather than
+        // guessed, and the prefix is what `is_local` reads to route the
+        // command.
+        let under = crate::application::local_folders::LOCAL_PREFIX;
+        let made = the_path_of_a_new_folder(Some(under), "Receipts").expect("a path");
+        assert!(
+            crate::application::local_folders::is_local(&made),
+            "the folder left the local side: {made}"
+        );
+        assert!(made.ends_with("/Receipts"), "{made}");
+    }
+
+    #[test]
+    fn test_a_name_that_is_only_spaces_is_refused_rather_than_made() {
+        // A folder whose name reads as nothing is a row somebody can only tell
+        // from its neighbours by counting.
+        assert!(the_path_of_a_new_folder(None, "   ").is_err());
+        assert!(the_path_of_a_new_folder(None, "").is_err());
+    }
+
+    #[test]
+    fn test_surrounding_spaces_are_taken_off_the_name() {
+        assert_eq!(
+            the_path_of_a_new_folder(None, "  Work  "),
+            Ok("Work".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_name_that_cannot_be_used_is_refused_rather_than_repaired() {
+        // The rule `crate::application::import_tree` states, and its reason: a
+        // repaired name is a different name nobody asked for, written in
+        // silence. A line break is the one that matters most, because it is how
+        // a mailbox name would end one command and begin another.
+        for name in ["a\rb", "a\nb", "a\u{7f}b", "tab\there"] {
+            assert!(
+                the_path_of_a_new_folder(None, name).is_err(),
+                "{name:?} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_name_opening_with_the_local_prefix_cannot_be_typed_into_the_local_side() {
+        // The prefix opens with a character no mailbox name carries, which is
+        // half of what reserves it. Somebody typing one by hand would otherwise
+        // put a folder on the server into the group that holds the only copy of
+        // their mail.
+        let sneaky = crate::application::local_folders::LOCAL_PREFIX;
+        assert!(
+            the_path_of_a_new_folder(None, sneaky).is_err(),
+            "the local prefix was accepted as a typed name"
         );
     }
 }
