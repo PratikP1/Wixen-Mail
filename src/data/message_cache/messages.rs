@@ -1081,6 +1081,33 @@ impl MessageCache {
         Ok(counted)
     }
 
+    /// Mark every unread message in these folders read, and say how many
+    /// changed.
+    ///
+    /// The number is what the announcement says out loud, so it counts the
+    /// messages that were really unread rather than the messages looked at. A
+    /// folder somebody has already read through reports nothing rather than
+    /// claiming four hundred messages just changed.
+    ///
+    /// The cached unread count on each folder row goes to zero in the same
+    /// breath, and that is not tidying up. `folders.unread_count` is the column
+    /// the folder tree reads to say "Archive, 3 unread": a run that set every
+    /// message read and left that column alone would leave the tree announcing
+    /// a number that is no longer true, and FOLDER-01's criterion is about what
+    /// the tree announces.
+    ///
+    /// # Nothing here reaches a server
+    ///
+    /// The local flag is what changes. Carrying a read flag to a server is a
+    /// later phase's work, and nothing in this milestone claims behaviour
+    /// against a live account. Said here rather than left to be assumed,
+    /// because the obvious next edit to this function is the one that breaks
+    /// it.
+    pub fn mark_folder_read(&self, folder_ids: &[i64]) -> Result<usize> {
+        let _ = folder_ids;
+        Ok(0)
+    }
+
     /// Save a message to cache
     pub fn save_message(&self, msg: &CachedMessage) -> Result<i64> {
         self.conn.execute(
@@ -2016,6 +2043,146 @@ mod tests {
                 total_count: 0,
             })
             .unwrap()
+    }
+
+    /// What the folder tree would announce for this folder, in its own words.
+    ///
+    /// Asked through `unread_text` rather than by reading the row's number and
+    /// asserting it is zero. FOLDER-01's criterion is about what somebody
+    /// arrowing onto the row hears, and the wording function is the thing that
+    /// decides that; a test on the column alone would stay green over a tree
+    /// that had stopped reading the column.
+    fn what_the_tree_would_say(cache: &super::super::MessageCache, path: &str) -> String {
+        let folder = cache
+            .get_folder("acc", path)
+            .expect("the folder to be readable")
+            .expect("the folder to be there");
+        crate::presentation::folder_tree::unread_text(
+            folder.unread_count,
+            folder.unread_count,
+            true,
+            crate::application::folder_settings::UnreadOnAParent::BothAlways,
+        )
+    }
+
+    /// A folder holding `unread` unread messages and `read` read ones.
+    fn a_folder_holding(
+        cache: &super::super::MessageCache,
+        path: &str,
+        unread: u32,
+        read: u32,
+    ) -> i64 {
+        let id = folder(cache, path);
+        for uid in 0..unread {
+            cache
+                .upsert_message(&incoming(id, uid + 1, "Unread"))
+                .unwrap();
+        }
+        for uid in 0..read {
+            let mut already = incoming(id, unread + uid + 1, "Read");
+            already.read = true;
+            cache.upsert_message(&already).unwrap();
+        }
+        cache
+            .set_folder_counts(id, unread as usize, (unread + read) as usize)
+            .unwrap();
+        id
+    }
+
+    /// How many messages in this folder are still unread, read back from the
+    /// rows rather than from the cached count on the folder.
+    fn still_unread_in(cache: &super::super::MessageCache, folder_id: i64) -> i64 {
+        cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND read = 0",
+                params![folder_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_marking_a_folder_read_reads_every_message_in_it_and_says_how_many_changed() {
+        // The ordinary case. Three unread and one already read, so the count
+        // returned has to be three: a body that answered with the number of
+        // messages in the folder would say four, and a body that did nothing
+        // would say nothing changed.
+        let cache = fresh("mark_folder_read");
+        let archive = a_folder_holding(&cache, "Archive", 3, 1);
+
+        assert_eq!(cache.mark_folder_read(&[archive]).unwrap(), 3);
+        assert_eq!(still_unread_in(&cache, archive), 0);
+    }
+
+    #[test]
+    fn test_the_unread_count_the_folder_tree_announces_becomes_nothing() {
+        // FOLDER-01's own criterion, asked of the wording function the tree
+        // uses. The "before" is what stops this being vacuous: a folder whose
+        // row never said anything would satisfy the "after" on its own.
+        let cache = fresh("mark_folder_read_tree");
+        let archive = a_folder_holding(&cache, "Archive", 3, 0);
+
+        assert_eq!(what_the_tree_would_say(&cache, "Archive"), "3 unread");
+
+        cache.mark_folder_read(&[archive]).unwrap();
+
+        assert_eq!(
+            what_the_tree_would_say(&cache, "Archive"),
+            "",
+            "every message is read and the row still announces a number"
+        );
+    }
+
+    #[test]
+    fn test_marking_a_folder_that_is_already_read_changes_nothing_rather_than_failing() {
+        // Paired with a folder that does have something to change, because
+        // "returns zero" is what a body that does nothing at all returns for
+        // every folder in the world.
+        let cache = fresh("mark_folder_read_again");
+        let already = a_folder_holding(&cache, "Archive", 0, 2);
+        let not_yet = a_folder_holding(&cache, "Inbox", 2, 0);
+
+        assert_eq!(cache.mark_folder_read(&[already]).unwrap(), 0);
+        assert_eq!(cache.mark_folder_read(&[not_yet]).unwrap(), 2);
+        assert_eq!(
+            cache.mark_folder_read(&[not_yet]).unwrap(),
+            0,
+            "the second run claimed to have changed something again"
+        );
+    }
+
+    #[test]
+    fn test_marking_read_reaches_every_folder_it_is_given_and_no_others() {
+        // The reach setting decides what is in the list, so a run that reached
+        // past it would read a folder somebody had not finished, and there is
+        // no undo for that either.
+        let cache = fresh("mark_folder_read_only_these");
+        let archive = a_folder_holding(&cache, "Archive", 2, 0);
+        let year = a_folder_holding(&cache, "Archive/2026", 3, 0);
+        let elsewhere = a_folder_holding(&cache, "Inbox", 4, 0);
+
+        assert_eq!(cache.mark_folder_read(&[archive, year]).unwrap(), 5);
+
+        assert_eq!(still_unread_in(&cache, archive), 0);
+        assert_eq!(still_unread_in(&cache, year), 0);
+        assert_eq!(
+            still_unread_in(&cache, elsewhere),
+            4,
+            "a folder nobody asked about was read too"
+        );
+        assert_eq!(what_the_tree_would_say(&cache, "Inbox"), "4 unread");
+    }
+
+    #[test]
+    fn test_marking_no_folders_read_changes_nothing_and_does_not_fail() {
+        // The reach walk answers with an empty list for a folder that has gone
+        // since the tree was read, so this is a real call and not a curiosity.
+        let cache = fresh("mark_folder_read_none");
+        let archive = a_folder_holding(&cache, "Archive", 2, 0);
+
+        assert_eq!(cache.mark_folder_read(&[]).unwrap(), 0);
+        assert_eq!(still_unread_in(&cache, archive), 2);
     }
 
     #[test]
@@ -3928,5 +4095,87 @@ mod tests {
         let fetched = cache.get_message(msg_id).unwrap().unwrap();
         assert!(!fetched.read);
         assert!(!fetched.starred);
+    }
+}
+
+/// Marking a folder read changes a flag here and tells no server about it.
+///
+/// What is being defended is an **absence**, and an absence leaves nothing for
+/// a behaviour test to count: there is no call to instrument, so a test
+/// asserting "no server was told" passes identically against this function and
+/// against a body that does nothing at all. So the check reads the function's
+/// source, in call syntax rather than bare words, which is the shape
+/// `favourites::nothing_here_reaches_a_server` uses for the same reason.
+///
+/// Why it is worth a check rather than a sentence: carrying the read flag to
+/// the server is the obvious next thing anybody would add to this function,
+/// and it is a later phase's work. Nothing in this milestone has ever run
+/// against a real account, so a read flag sent to a server here would be an
+/// untested write to somebody's mailbox on a path that reports success.
+#[cfg(test)]
+mod marking_read_tells_no_server {
+    /// The one function this is about, and the file it lives in.
+    const WHERE_IT_LIVES: &str = "src/data/message_cache/messages.rs";
+    const THE_FUNCTION: &str = "pub fn mark_folder_read";
+
+    /// How a call out of this machine is spelled, in call syntax.
+    ///
+    /// Call syntax rather than bare words, because the paragraphs above name
+    /// what they forbid. A check that fires on the explanation of its own rule
+    /// is a check somebody switches off.
+    const A_CALL_THAT_LEAVES_THIS_MACHINE: [&str; 4] = [
+        "crate::service::",
+        "super::super::service::",
+        "reqwest::",
+        "a_session_at(",
+    ];
+
+    /// The body of one function, from its signature to the brace that ends it.
+    fn the_body_of(source: &str, signature: &str) -> String {
+        let from = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature} to be in the file"));
+        let rest = &source[from..];
+        let ends = rest.find("\n    }").map(|at| at + 6).unwrap_or(rest.len());
+        rest[..ends].to_string()
+    }
+
+    fn calls_out_of_this_machine(text: &str) -> Vec<String> {
+        text.lines()
+            .filter(|line| {
+                A_CALL_THAT_LEAVES_THIS_MACHINE
+                    .iter()
+                    .any(|call| line.contains(call))
+            })
+            .map(|line| line.trim().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_marking_a_folder_read_makes_no_call_that_leaves_this_machine() {
+        let source = std::fs::read_to_string(WHERE_IT_LIVES).expect("the message store");
+        assert!(
+            source.contains(THE_FUNCTION),
+            "{THE_FUNCTION} has been renamed, so this check reads nothing"
+        );
+
+        let found = calls_out_of_this_machine(&the_body_of(&source, THE_FUNCTION));
+
+        assert!(
+            found.is_empty(),
+            "marking a folder read told a server about it: {found:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_call_that_leaves_this_machine() {
+        // The companion. Without it the check above is green over a reading
+        // that has stopped working, which is what it would be the day the
+        // spelling of a call to the service layer changed.
+        assert_eq!(
+            calls_out_of_this_machine("        crate::service::whatever();"),
+            ["crate::service::whatever();"]
+        );
+        assert!(calls_out_of_this_machine("        let x = 1 + 1;").is_empty());
     }
 }
