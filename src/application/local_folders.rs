@@ -67,6 +67,30 @@ pub const LOCAL_PREFIX: &str = "\u{1}Local";
 /// other.
 pub const ON_THIS_COMPUTER: &str = "On this computer";
 
+/// The account id the folders shared by every account are stored under.
+///
+/// `folders` is keyed on the account and the path, and there is no column
+/// saying a row belongs to nobody. So a folder shared by every account needs an
+/// account of its own to be stored under, and this is it: a reserved id, in the
+/// same spirit as [`LOCAL_PREFIX`] and for the same reason. It opens with a
+/// character an account id cannot carry, because an account id is a string
+/// somebody's setup produced and nothing there can put a control character in
+/// one. That is what stops a real account ever colliding with this.
+///
+/// Nothing compares against this by writing the literal out. Ask
+/// [`is_this_computer`], which is the one place that decides.
+pub const THIS_COMPUTER: &str = "this-computer";
+
+/// Whether an account id is the reserved one the shared folders are stored
+/// under.
+///
+/// One function rather than a comparison at each site, so that the reserved id
+/// can never be half-recognised: a second spelling of this test is a place that
+/// treats the shared Trash as somebody's own.
+pub fn is_this_computer(_account_id: &str) -> bool {
+    false
+}
+
 /// One folder that lives here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LocalFolder {
@@ -87,44 +111,60 @@ pub fn is_local(path: &str) -> bool {
     path.starts_with(LOCAL_PREFIX)
 }
 
-/// Everything a POP account keeps here, which is everything.
-const FOR_POP: [LocalFolder; 6] = [
+/// The folders there is one of, shared by every account.
+///
+/// D-18. Sent, Outbox, Drafts, Junk and Trash are one each rather than one per
+/// account, stored under [`THIS_COMPUTER`]. `Inbox` is deliberately not here:
+/// it is the one folder that stays per account, because an account's incoming
+/// mail is the one thing that is genuinely its own.
+///
+/// Which accounts reach which of these is a different question, answered by
+/// [`used_by`]. An IMAP account reaches only the Outbox, because its Sent,
+/// Drafts, Trash and Junk are on its server.
+pub const SHARED_BY_EVERY_ACCOUNT: [LocalFolder; 5] = [
     LocalFolder {
         kind: FolderType::Inbox,
         name: "Inbox",
     },
     LocalFolder {
-        kind: FolderType::Drafts,
-        name: "Drafts",
+        kind: FolderType::Inbox,
+        name: "Inbox",
     },
     LocalFolder {
-        kind: FolderType::Outbox,
-        name: "Outbox",
+        kind: FolderType::Inbox,
+        name: "Inbox",
     },
     LocalFolder {
-        kind: FolderType::Sent,
-        name: "Sent",
+        kind: FolderType::Inbox,
+        name: "Inbox",
     },
     LocalFolder {
-        kind: FolderType::Spam,
-        name: "Junk",
-    },
-    LocalFolder {
-        kind: FolderType::Trash,
-        name: "Trash",
+        kind: FolderType::Inbox,
+        name: "Inbox",
     },
 ];
 
-/// What an IMAP account would keep here, which is the queue and nothing else.
+/// What a POP account keeps under its own id, which is its incoming mail.
 ///
-/// Everything else it has on the server, and a second local copy would be a
-/// second place for the same mail to be, with nothing to say which is right.
-const FOR_IMAP: [LocalFolder; 1] = [LocalFolder {
-    kind: FolderType::Outbox,
-    name: "Outbox",
+/// Everything else it keeps here is shared with every other account, so it is
+/// in [`SHARED_BY_EVERY_ACCOUNT`] and stored under [`THIS_COMPUTER`]. The
+/// account still reaches all of it; [`used_by`] is the function that says so.
+const FOR_POP: [LocalFolder; 1] = [LocalFolder {
+    kind: FolderType::Inbox,
+    name: "Inbox",
 }];
 
-/// The folders this account needs on this computer.
+/// What an IMAP account keeps under its own id, which is nothing.
+///
+/// Its Inbox and the rest are on the server, and the one folder on this
+/// computer it uses is the shared Outbox, which is not its to own. Empty rather
+/// than absent because the question "what rows does this account make here" has
+/// an answer for every protocol, and "none" is it.
+const FOR_IMAP: [LocalFolder; 0] = [];
+
+/// The folders this account makes under its own id.
+///
+/// Not what it can reach: that is [`used_by`], and the two came apart at D-18.
 pub fn for_account(protocol: Protocol) -> &'static [LocalFolder] {
     match protocol {
         Protocol::Pop3 => &FOR_POP,
@@ -132,9 +172,39 @@ pub fn for_account(protocol: Protocol) -> &'static [LocalFolder] {
     }
 }
 
+/// Every folder on this computer this account reaches.
+///
+/// Not the same question as [`for_account`], and keeping the two apart is the
+/// whole of what D-18 needed. `for_account` says which rows are made under this
+/// account's own id; this says which folders on this computer the account
+/// actually uses, its own and the shared ones together. A POP account reaches
+/// all five shared folders. An IMAP account reaches only the Outbox, because
+/// its Sent, Drafts, Trash and Junk are on its server and a second copy here
+/// would be a second place for the same mail to be.
+///
+/// Everything that used to search `for_account` for a particular kind is asking
+/// this question rather than that one. Searching `for_account` after D-18
+/// finds nothing and reads as "this account has no Trash", which is a different
+/// answer with a destructive branch behind it.
+pub fn used_by(protocol: Protocol) -> Vec<LocalFolder> {
+    for_account(protocol).to_vec()
+}
+
+/// The account id a folder on this computer is stored under.
+///
+/// A shared folder's row belongs to [`THIS_COMPUTER`] and an account's own
+/// folder belongs to the account, so anything resolving a path to a row has to
+/// ask which. One function rather than the test written out at each site: the
+/// three places that write into a local folder all resolve a path the same way,
+/// and a site that gets this wrong does not fail, it quietly fails to find the
+/// folder and reports that there is no Drafts folder.
+pub fn stored_under<'a>(_path: &str, account_id: &'a str) -> &'a str {
+    account_id
+}
+
 /// Where an account's sent mail is filed, when it is filed here.
 pub fn local_sent(protocol: Protocol) -> Option<String> {
-    for_account(protocol)
+    used_by(protocol)
         .iter()
         .find(|folder| folder.kind == FolderType::Sent)
         .map(LocalFolder::path)
@@ -146,7 +216,7 @@ pub fn local_sent(protocol: Protocol) -> Option<String> {
 /// this computer would be somewhere mail could go and never come back from,
 /// with nothing on any other device to say where it went.
 pub fn local_trash(protocol: Protocol) -> Option<String> {
-    for_account(protocol)
+    used_by(protocol)
         .iter()
         .find(|folder| folder.kind == FolderType::Trash)
         .map(LocalFolder::path)
@@ -475,11 +545,16 @@ mod tests {
     }
 
     #[test]
-    fn test_a_pop_account_keeps_all_six_here() {
+    fn test_a_pop_account_still_reaches_all_six_here() {
         // POP3 is one mailbox with no folders at all, so an account without
         // these is a list of incoming mail and nothing else: nowhere for sent
         // mail, no drafts, and a delete that can only be permanent.
-        let kinds: Vec<FolderType> = for_account(Protocol::Pop3)
+        //
+        // D-18 moved five of the six out from under this account's own id and
+        // did not take them away from it. So this asks what the account
+        // reaches, which is the question the rest of the program asks, and not
+        // what it owns.
+        let kinds: Vec<FolderType> = used_by(Protocol::Pop3)
             .iter()
             .map(|folder| folder.kind)
             .collect();
@@ -497,6 +572,111 @@ mod tests {
     }
 
     #[test]
+    fn test_a_pop_account_owns_only_its_inbox() {
+        // The other half of D-18, and the half that is a change. Its incoming
+        // mail is its own; the five it shares are stored under the reserved id
+        // and made once rather than once per account.
+        let kinds: Vec<FolderType> = for_account(Protocol::Pop3)
+            .iter()
+            .map(|folder| folder.kind)
+            .collect();
+
+        assert_eq!(kinds, vec![FolderType::Inbox]);
+    }
+
+    #[test]
+    fn test_the_five_shared_folders_are_the_five_and_the_inbox_is_not_one_of_them() {
+        // Pinned as an exact list rather than trusted from the comment above
+        // it, because D-18 turns on which five these are and the migration
+        // that moves somebody's mail reads this array to decide what moves.
+        let kinds: Vec<FolderType> = SHARED_BY_EVERY_ACCOUNT
+            .iter()
+            .map(|folder| folder.kind)
+            .collect();
+
+        assert_eq!(
+            kinds,
+            vec![
+                FolderType::Sent,
+                FolderType::Outbox,
+                FolderType::Drafts,
+                FolderType::Spam,
+                FolderType::Trash,
+            ]
+        );
+        assert!(
+            !kinds.contains(&FolderType::Inbox),
+            "the inbox is the one folder that stays per account"
+        );
+    }
+
+    #[test]
+    fn test_the_reserved_account_id_holds_a_character_an_account_id_cannot() {
+        // The same property LOCAL_PREFIX has and for the same reason: an
+        // account id is a string somebody's setup produced, and nothing there
+        // can put a control character in one. Without this the reserved id is
+        // an ordinary string a real account could hold, and the shared Trash
+        // would be somebody's own.
+        assert!(
+            THIS_COMPUTER.contains('\u{1}'),
+            "the reserved account id is one a real account could hold: {THIS_COMPUTER:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_reserved_account_id_is_recognised_and_a_real_one_is_not() {
+        // The ordinary case is the second half. A function answering true for
+        // everything passes the first assertion on its own.
+        assert!(is_this_computer(THIS_COMPUTER));
+
+        for real in [
+            "acct",
+            "me@example.com",
+            "",
+            "This computer",
+            THIS_COMPUTER.trim_start_matches('\u{1}'),
+        ] {
+            assert!(
+                !is_this_computer(real),
+                "{real:?} was taken for the reserved account id"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_shared_folder_is_stored_under_the_reserved_id_and_an_accounts_own_is_not() {
+        // Both halves, because a function that always answers the reserved id
+        // passes the first on its own and would send every account's Inbox
+        // into the shared group.
+        for shared in SHARED_BY_EVERY_ACCOUNT {
+            assert_eq!(
+                stored_under(&shared.path(), "acct"),
+                THIS_COMPUTER,
+                "{} is shared and was stored under the account",
+                shared.name
+            );
+        }
+
+        let inbox = for_account(Protocol::Pop3)[0].path();
+        assert_eq!(
+            stored_under(&inbox, "acct"),
+            "acct",
+            "the inbox is the account's own"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_somebody_made_under_their_account_stays_theirs() {
+        // D-20. A folder a person creates under a POP account is local, and it
+        // is theirs rather than everybody's, so it is stored under their
+        // account and shows under their branch.
+        let made = format!("{LOCAL_PREFIX}{NESTS_WITH}Receipts");
+
+        assert!(is_local(&made));
+        assert_eq!(stored_under(&made, "acct"), "acct");
+    }
+
+    #[test]
     fn test_the_only_folder_here_with_no_trash_under_it_is_the_outbox() {
         // Written down because the server path answers the same question and
         // now answers it differently: an account whose trash is not recognised
@@ -507,7 +687,7 @@ mod tests {
         // out of the send queue, and there is no trash for a queued message to
         // wait in. A POP account keeps its own trash, so its delete moves.
         // Neither is a message whose only copy is quietly destroyed.
-        let outbox = for_account(Protocol::Imap)
+        let outbox = used_by(Protocol::Imap)
             .iter()
             .find(|folder| folder.kind == FolderType::Outbox)
             .map(LocalFolder::path)
@@ -528,10 +708,10 @@ mod tests {
     }
 
     #[test]
-    fn test_an_imap_account_keeps_only_the_outbox_here() {
+    fn test_an_imap_account_reaches_only_the_outbox_here() {
         // The rest are on the server. A second local copy would be a second
         // place for the same mail to be with nothing to say which is right.
-        let kinds: Vec<FolderType> = for_account(Protocol::Imap)
+        let kinds: Vec<FolderType> = used_by(Protocol::Imap)
             .iter()
             .map(|folder| folder.kind)
             .collect();
@@ -540,14 +720,26 @@ mod tests {
     }
 
     #[test]
+    fn test_an_imap_account_makes_no_folders_of_its_own_here() {
+        // D-18, corrected on 2026-08-30. As first written the decision said
+        // the Outbox was shared and that FOR_IMAP stayed [Outbox] in the same
+        // sentence, and both cannot hold: this array is what creates the rows,
+        // so leaving the Outbox in it means every IMAP account goes on making
+        // its own. One send queue on this computer, because a queued message
+        // already knows which account sends it.
+        assert!(
+            for_account(Protocol::Imap).is_empty(),
+            "an IMAP account made a folder of its own: {:?}",
+            for_account(Protocol::Imap)
+        );
+    }
+
+    #[test]
     fn test_no_two_local_folders_share_a_path() {
         // Two rows with one path is one folder in the database and two in the
         // tree, and messages filed into whichever the cache found first.
         for protocol in [Protocol::Imap, Protocol::Pop3] {
-            let mut paths: Vec<String> = for_account(protocol)
-                .iter()
-                .map(LocalFolder::path)
-                .collect();
+            let mut paths: Vec<String> = used_by(protocol).iter().map(LocalFolder::path).collect();
             let before = paths.len();
             paths.sort();
             paths.dedup();
@@ -559,7 +751,7 @@ mod tests {
     fn test_a_local_path_is_recognisable_as_local() {
         // What decides whether a sync tries to open it over the network.
         for protocol in [Protocol::Imap, Protocol::Pop3] {
-            for folder in for_account(protocol) {
+            for folder in used_by(protocol) {
                 assert!(is_local(&folder.path()), "{}", folder.path());
             }
         }
@@ -603,6 +795,28 @@ mod tests {
             Some(LocalDelete::MoveTo(
                 local_trash(Protocol::Pop3).expect("a trash folder")
             ))
+        );
+    }
+
+    #[test]
+    fn test_a_pop_delete_never_becomes_permanent_because_the_trash_was_not_found() {
+        // The failure this guards is silent by construction, and it is the one
+        // D-18 walked into. `local_trash` is an Option and `deleting` falls
+        // through to RemoveFromThisComputer when it is None, so anything that
+        // stops a POP account finding its Trash does not fail to compile and
+        // does not error: Delete stops moving mail and starts destroying the
+        // only copy of it.
+        //
+        // Asserted on the variant rather than through an expect on the trash
+        // path, so a run that fails says what went wrong instead of panicking
+        // on the way in.
+        let inbox = for_account(Protocol::Pop3)[0].path();
+
+        let what = deleting(&inbox, Protocol::Pop3, Deleting::ToTrash, true);
+
+        assert!(
+            matches!(what, Some(LocalDelete::MoveTo(_))),
+            "Delete on a POP account stopped moving mail to the Trash: {what:?}"
         );
     }
 
