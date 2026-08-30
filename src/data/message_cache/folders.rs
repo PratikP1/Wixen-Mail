@@ -171,6 +171,55 @@ impl MessageCache {
         Ok(rows)
     }
 
+    /// Pin a folder to the top of the tree, FOLDER-03.
+    ///
+    /// A new pin goes to the bottom of its own account's part of the group,
+    /// D-31, so pinning three folders puts them in the order they were pinned
+    /// and nothing already there moves under somebody.
+    ///
+    /// Pinning a folder that is already pinned changes nothing and is not a
+    /// failure. The caller has a sentence to say about it, and a second row for
+    /// one folder is the defect this whole phase exists to remove.
+    ///
+    /// A folder this computer does not have cannot be pinned: the row points at
+    /// a real folder through a foreign key, so a pin can never outlive one.
+    /// Nothing here reaches a server. See `application::favourites`.
+    pub fn pin_row(&self, account_id: &str, path: &str) -> Result<()> {
+        let _ = (account_id, path);
+        Ok(())
+    }
+
+    /// Take a folder off the top of the tree.
+    ///
+    /// The folder itself is untouched: a pin was a copy, and the row in the
+    /// account's own branch was never the pin. Unpinning something that is not
+    /// pinned is not a failure, for the reason `forget_folder` gives.
+    pub fn unpin_row(&self, account_id: &str, path: &str) -> Result<()> {
+        let _ = (account_id, path);
+        Ok(())
+    }
+
+    /// Every pinned folder, by account and then by where it sits.
+    ///
+    /// One query returning the lot, because the tree asks this once per rebuild
+    /// and then arranges what it got. Asked per folder it would be one query
+    /// per row per sync, on a timer, which is what `collapsed_rows` says just
+    /// above and for the same reason.
+    pub fn pinned_rows(&self) -> Result<Vec<crate::application::favourites::Pin>> {
+        Ok(Vec::new())
+    }
+
+    /// Put a pin at a given place in its own account's part of the group.
+    ///
+    /// The whole of that account's order is written by the caller, one call per
+    /// pin, for the reason `account_order::Moved` gives about writing only the
+    /// pair that swapped: a group half ordered by choice and half by arrival
+    /// rearranges itself the next time anything is added.
+    pub fn set_pin_position(&self, account_id: &str, path: &str, position: i64) -> Result<()> {
+        let _ = (account_id, path, position);
+        Ok(())
+    }
+
     /// What the server said about each folder, by path.
     pub fn folder_server_facts(
         &self,
@@ -555,6 +604,273 @@ mod tests {
         // thrown away by the rename.
         cache.set_row_collapsed("account\u{1f}acc", true).unwrap();
         assert!(cache.collapsed_rows().unwrap().contains("account\u{1f}acc"));
+    }
+
+    /// A folder row for a pin to point at, since a pin cannot outlive one.
+    fn a_folder(cache: &MessageCache, account: &str, path: &str) -> i64 {
+        let leaf = path.rsplit('/').next().unwrap_or(path).to_string();
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: account.to_string(),
+                name: leaf,
+                path: path.to_string(),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to pin")
+    }
+
+    /// What is pinned, as `(account, path)` in the order it came back.
+    fn pinned(cache: &MessageCache) -> Vec<(String, String)> {
+        cache
+            .pinned_rows()
+            .expect("what is pinned")
+            .into_iter()
+            .map(|pin| (pin.account, pin.path))
+            .collect()
+    }
+
+    #[test]
+    fn test_a_folder_that_was_pinned_reads_back_as_pinned() {
+        let home = fresh("favourites_one");
+        let cache = &*home;
+        a_folder(cache, "acc", "Receipts");
+        cache.pin_row("acc", "Receipts").unwrap();
+        assert_eq!(pinned(cache), vec![("acc".to_string(), "Receipts".into())]);
+    }
+
+    #[test]
+    fn test_unpinning_takes_that_folder_out_and_leaves_the_others() {
+        let home = fresh("favourites_unpin");
+        let cache = &*home;
+        a_folder(cache, "acc", "Receipts");
+        a_folder(cache, "acc", "Invoices");
+        cache.pin_row("acc", "Receipts").unwrap();
+        cache.pin_row("acc", "Invoices").unwrap();
+        cache.unpin_row("acc", "Receipts").unwrap();
+        // Both halves. Without the second, a body that emptied the table
+        // wholesale would pass the first just as well.
+        assert_eq!(pinned(cache), vec![("acc".to_string(), "Invoices".into())]);
+    }
+
+    #[test]
+    fn test_unpinning_leaves_the_folder_itself_where_it_was() {
+        // D-30. A pin was a copy, so taking it off must not take the folder
+        // with it, and the cascade that removes a pin when a folder goes must
+        // not be readable in the other direction.
+        let home = fresh("favourites_unpin_keeps_folder");
+        let cache = &*home;
+        a_folder(cache, "acc", "Receipts");
+        cache.pin_row("acc", "Receipts").unwrap();
+        // That it was pinned at all, before asking whether it stopped being
+        // pinned. An empty answer is what a read that does nothing gives, so
+        // without this line the assertion below is satisfied by a pin that was
+        // never stored and an unpin that never ran, and this test would say the
+        // folder survived an operation nothing performed.
+        assert_eq!(pinned(cache).len(), 1, "it was pinned to begin with");
+        cache.unpin_row("acc", "Receipts").unwrap();
+        // The folder surviving is what D-30 is about, but on its own it is
+        // satisfied by an unpin that does nothing, so the pin having gone is
+        // asserted too.
+        assert!(
+            pinned(cache).is_empty(),
+            "the pin came off, so something happened"
+        );
+        assert!(
+            cache.get_folder("acc", "Receipts").unwrap().is_some(),
+            "and unpinning a folder never removes the folder"
+        );
+    }
+
+    #[test]
+    fn test_what_was_pinned_is_still_pinned_after_a_restart() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            a_folder(&cache, "acc", "Receipts");
+            cache.pin_row("acc", "Receipts").unwrap();
+        }
+        let again =
+            MessageCache::new(folder.path().to_path_buf(), None).expect("the cache to open again");
+        assert_eq!(pinned(&again), vec![("acc".to_string(), "Receipts".into())]);
+    }
+
+    #[test]
+    fn test_a_new_pin_goes_to_the_bottom_of_its_accounts_group() {
+        // D-31. Three rather than two, so an implementation that put every new
+        // pin at the top would give the exact reverse and be caught, and one
+        // that swapped the last two would be caught as well.
+        let home = fresh("favourites_bottom");
+        let cache = &*home;
+        for path in ["One", "Two", "Three"] {
+            a_folder(cache, "acc", path);
+            cache.pin_row("acc", path).unwrap();
+        }
+        let order: Vec<String> = cache
+            .pinned_rows()
+            .unwrap()
+            .into_iter()
+            .map(|pin| pin.path)
+            .collect();
+        assert_eq!(order, vec!["One", "Two", "Three"]);
+    }
+
+    #[test]
+    fn test_each_account_counts_its_own_pins_from_the_top() {
+        // The ordinary case as well as the odd one. A group numbered across
+        // every account would give the second account's first pin a position of
+        // one, and every rule below about moving a pin within its own account
+        // would then be working on numbers that mean something else.
+        let home = fresh("favourites_per_account");
+        let cache = &*home;
+        a_folder(cache, "one", "Receipts");
+        a_folder(cache, "two", "Receipts");
+        cache.pin_row("one", "Receipts").unwrap();
+        cache.pin_row("two", "Receipts").unwrap();
+        let firsts: Vec<i64> = cache
+            .pinned_rows()
+            .unwrap()
+            .into_iter()
+            .map(|pin| pin.position)
+            .collect();
+        assert_eq!(
+            firsts,
+            vec![0, 0],
+            "each account's first pin is its own first"
+        );
+    }
+
+    #[test]
+    fn test_a_pin_put_in_a_new_place_stays_there_after_a_restart() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            for path in ["One", "Two"] {
+                a_folder(&cache, "acc", path);
+                cache.pin_row("acc", path).unwrap();
+            }
+            cache.set_pin_position("acc", "Two", 0).unwrap();
+            cache.set_pin_position("acc", "One", 1).unwrap();
+        }
+        let again =
+            MessageCache::new(folder.path().to_path_buf(), None).expect("the cache to open again");
+        let order: Vec<String> = again
+            .pinned_rows()
+            .unwrap()
+            .into_iter()
+            .map(|pin| pin.path)
+            .collect();
+        assert_eq!(order, vec!["Two", "One"]);
+    }
+
+    #[test]
+    fn test_pinning_the_same_folder_twice_leaves_one_pin() {
+        let home = fresh("favourites_twice");
+        let cache = &*home;
+        a_folder(cache, "acc", "Receipts");
+        cache.pin_row("acc", "Receipts").unwrap();
+        cache
+            .pin_row("acc", "Receipts")
+            .expect("pinning what is already pinned is not a failure");
+        assert_eq!(pinned(cache).len(), 1, "one folder, one row in the group");
+    }
+
+    #[test]
+    fn test_a_renamed_folder_keeps_its_pin_under_its_new_name() {
+        // D-32's first half, and the one that decided the shape of the table. A
+        // rename rewrites a folder's path, `set_folder_path` says so in as many
+        // words, so a pin holding its own copy of that path would be orphaned
+        // by exactly the thing D-32 promises it survives. The pin follows
+        // because the path has one writer and the row points at it.
+        let home = fresh("favourites_rename");
+        let cache = &*home;
+        let id = a_folder(cache, "acc", "Reciepts");
+        cache.pin_row("acc", "Reciepts").unwrap();
+        cache.set_folder_path(id, "Receipts", "Receipts").unwrap();
+        assert_eq!(
+            pinned(cache),
+            vec![("acc".to_string(), "Receipts".into())],
+            "a folder somebody renamed is still pinned, under the name it has now"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_that_is_really_gone_takes_its_pin_with_it() {
+        // D-32's second half. Not lazily and not on the next rebuild: in the
+        // same statement that removes the folder, so there is no window in
+        // which a pin names a folder nothing has.
+        let home = fresh("favourites_deleted");
+        let cache = &*home;
+        let id = a_folder(cache, "acc", "Receipts");
+        a_folder(cache, "acc", "Invoices");
+        cache.pin_row("acc", "Receipts").unwrap();
+        cache.pin_row("acc", "Invoices").unwrap();
+        cache.forget_folder(id).unwrap();
+        assert_eq!(
+            pinned(cache),
+            vec![("acc".to_string(), "Invoices".into())],
+            "the deleted folder's pin went with it and the other one stayed"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_made_again_at_the_same_path_is_not_pinned_already() {
+        // T-01-33. A pin that outlived its folder would pre-pin whatever turned
+        // up at that path next, which for a mailbox name a server reuses is
+        // somebody else's folder in somebody's favourites.
+        let home = fresh("favourites_recreated");
+        let cache = &*home;
+        let id = a_folder(cache, "acc", "Receipts");
+        cache.pin_row("acc", "Receipts").unwrap();
+        cache.forget_folder(id).unwrap();
+        a_folder(cache, "acc", "Receipts");
+        assert!(
+            pinned(cache).is_empty(),
+            "a folder made again at an old path starts unpinned"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_this_computer_does_not_have_cannot_be_pinned() {
+        // The pin points at a real folder, so this is refused rather than
+        // stored and later found to name nothing.
+        let home = fresh("favourites_no_such_folder");
+        let cache = &*home;
+        assert!(
+            cache.pin_row("acc", "Nowhere").is_err(),
+            "there is no such folder to pin"
+        );
+        assert!(pinned(cache).is_empty());
+    }
+
+    #[test]
+    fn test_a_database_written_before_anything_was_ever_pinned_still_opens() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            a_folder(&cache, "acc", "Receipts");
+            // An older database is one with no such table at all.
+            cache
+                .conn
+                .execute("DROP TABLE favourites", [])
+                .expect("the table to come off, making this an older database");
+        }
+        let again = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("an older database still opens");
+        assert!(
+            again.pinned_rows().unwrap().is_empty(),
+            "and nothing is pinned yet, rather than the open failing"
+        );
+        // The table really came back, rather than the read merely surviving its
+        // absence. Without this the test passes against a database that still
+        // has no such table.
+        again.pin_row("acc", "Receipts").unwrap();
+        assert_eq!(pinned(&again).len(), 1);
     }
 
     #[test]

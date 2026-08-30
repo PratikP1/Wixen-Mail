@@ -2042,6 +2042,47 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create tree_state table: {}", e)))?;
 
+        // Which folders somebody has pinned to the top of the tree, FOLDER-03.
+        //
+        // Keyed on `(account_id, path)`, which is three things at once and that
+        // is the point of it. It is D-25's stable identity for a folder, so
+        // D-32 holds. It is the pair `folders` is unique on, so the two
+        // cascades below can do D-32's work in the database rather than in a
+        // second writer somebody has to remember. And it is the pair
+        // `imap::set_subscribed` names a mailbox by, sitting on the row
+        // `folders.subscribed` is already a column of, so the day subscription
+        // backs this the two facts are one join apart and nothing has to move.
+        // FOLDER-03 asks for exactly that and `application::favourites` records
+        // which of the two wins when they disagree.
+        //
+        // `ON UPDATE CASCADE` is not decoration. A rename rewrites a folder's
+        // path, `set_folder_path` says so, so without it every pin in the
+        // account would be orphaned by the rename D-32 promises it survives.
+        // With it there is one writer of a folder's path and the pin follows
+        // it, rather than two places answering where a folder is.
+        //
+        // `ON DELETE CASCADE` is the other half of D-32 and of T-01-33: a
+        // folder that is really gone takes its pin, in the same statement that
+        // removes it, so a folder made later at the same path does not turn up
+        // silently pre-pinned.
+        //
+        // Deliberately not an `AppConfig` field, for the reason `tree_state`
+        // gives just above: which folders somebody pinned is a record of what
+        // they did to their tree, not a setting any screen sets.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS favourites (
+                account_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (account_id, path),
+                FOREIGN KEY (account_id, path) REFERENCES folders(account_id, path)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create favourites table: {}", e)))?;
+
         // Message text is packed before it is stored, and these hold the
         // packed form. The two TEXT columns above stay, because a column that
         // shipped is never dropped from under somebody's database and every

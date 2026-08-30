@@ -29,6 +29,7 @@ pub mod draft_message;
 pub mod due;
 pub mod editing;
 pub mod export_tree;
+pub mod favourites;
 pub mod filing;
 pub mod filters;
 pub mod folder_settings;
