@@ -47,7 +47,7 @@ use crate::application::destinations::Deleting;
 use crate::application::folders_underneath::{Placed, deepest_first};
 use crate::application::how_far_it_got::HowFarItGot;
 use crate::application::local_folders::{self, LocalDelete};
-use crate::common::types::Protocol;
+use crate::common::types::{FolderType, Protocol};
 
 /// How far a command that acts on a folder reaches.
 ///
@@ -82,41 +82,90 @@ impl Reach {
 
 /// What emptying one folder does to the messages in it.
 ///
-/// The same four answers [`LocalDelete`] gives, with its `None` given a name
-/// instead of being left as an absence: a folder on a server is emptied by the
-/// route that asks the server, and calling that `None` at a call site that has
-/// to branch on it is how "I do not know" and "there is nothing to do" became
-/// one answer elsewhere in this program.
+/// Five answers, and both halves of each: what happens, and where. Where is
+/// carried rather than worked out again from the path, because the sentence
+/// somebody hears needs it and because it decides whether the count in front
+/// of the question is the whole figure or a floor.
+///
+/// Neither `None` nor a catch-all "the server deals with it". A folder on a
+/// server has the same four outcomes a folder here does, and collapsing them
+/// is the exact mistake [`crate::application::destinations::DeletedGoesTo`]
+/// exists to prevent: "there is nowhere to move it to" and "I do not know
+/// where this account's trash is" used to be one answer, and that answer took
+/// the message off the server for good.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhatEmptyingDoes {
     /// Move every message into that folder on this computer.
-    MoveTo(String),
+    MoveToOnThisComputer(String),
+    /// Move every message into that folder on the server, where every device
+    /// using the account sees it happen.
+    MoveToOnTheServer(String),
     /// Take every message off this computer. There is no other copy.
     RemoveFromThisComputer,
+    /// Take every message off the server, on every device at once.
+    RemoveFromTheServer,
     /// Do nothing, and say this.
     Refuse(&'static str),
-    /// The folder is on a server, so the route that asks the server runs.
-    AtTheServer,
 }
 
-/// What emptying this folder will do, decided by the one function that decides
-/// what deleting means.
+impl WhatEmptyingDoes {
+    /// Whether what is stored on this computer is all there is to empty.
+    ///
+    /// False for a folder on a server, where the cache holds what has been
+    /// downloaded and the server may hold a great deal more. The question says
+    /// so where this is false, because a number presented as the whole figure
+    /// when it is a floor is the confirmation understating what somebody is
+    /// agreeing to.
+    pub const fn stored_here_is_all_of_it(&self) -> bool {
+        matches!(
+            self,
+            WhatEmptyingDoes::MoveToOnThisComputer(_)
+                | WhatEmptyingDoes::RemoveFromThisComputer
+                | WhatEmptyingDoes::Refuse(_)
+        )
+    }
+}
+
+/// What emptying this folder will do, decided by the two functions that already
+/// decide what deleting means.
+///
+/// D-33 in full. A folder on this computer is answered by
+/// [`local_folders::deleting`], which carries the per-account "Let me delete
+/// mail on this computer" permission. A folder on a server is answered by
+/// [`where_a_deleted_message_goes`], which is what one delete at a server asks
+/// and which knows the difference between an account whose trash is not
+/// recognised and one that has never been asked what folders it has. Two
+/// functions because there are two routes, and neither answer is written again
+/// here.
 ///
 /// `asked` is not a parameter: emptying is the ordinary delete, never
-/// `Shift+Delete`. Which means emptying the Trash still removes for good,
-/// because [`local_folders::deleting`] already knows there is nowhere further
-/// for a message in the Trash to go, and that is exactly the knowledge this
-/// must not repeat.
-pub fn what_will_happen(folder: &str, protocol: Protocol, allowed: bool) -> WhatEmptyingDoes {
-    // The one call site for this decision in the whole module. Every arm below
-    // carries an answer across rather than working one out: the day this grows
-    // an `if` of its own is the day emptying and deleting can disagree about
-    // what deleting means.
+/// `Shift+Delete`. Emptying the Trash still removes for good, because both of
+/// those functions already know a message in the trash has nowhere further to
+/// go, and that is exactly the knowledge this must not repeat.
+///
+/// `folders_on_the_account` is what the server half needs to find the trash.
+/// It is the folder list already in hand from the tree, so nothing is fetched
+/// to answer this.
+pub fn what_will_happen<'a>(
+    folder: &str,
+    protocol: Protocol,
+    allowed: bool,
+    _folders_on_the_account: impl IntoIterator<Item = (&'a str, FolderType)>,
+) -> WhatEmptyingDoes {
+    // The one call site for each of the two decisions in the whole module.
+    // Every arm carries an answer across rather than working one out: the day
+    // this grows an `if` of its own is the day emptying and deleting can
+    // disagree about what deleting means.
     match local_folders::deleting(folder, protocol, Deleting::ToTrash, allowed) {
-        None => WhatEmptyingDoes::AtTheServer,
         Some(LocalDelete::Refuse(why)) => WhatEmptyingDoes::Refuse(why),
-        Some(LocalDelete::MoveTo(trash)) => WhatEmptyingDoes::MoveTo(trash),
+        Some(LocalDelete::MoveTo(trash)) => WhatEmptyingDoes::MoveToOnThisComputer(trash),
         Some(LocalDelete::RemoveFromThisComputer) => WhatEmptyingDoes::RemoveFromThisComputer,
+        // Not on this computer, so the route that asks the server decides, and
+        // it is asked here rather than after the confirmation. A question that
+        // said "taken off the server for good" about a folder whose messages
+        // are really about to be moved to the trash would be describing a
+        // different command.
+        None => WhatEmptyingDoes::RemoveFromTheServer,
     }
 }
 
@@ -173,22 +222,29 @@ pub fn the_question(
     let what_gets_emptied = names_the_folder_and_its_subfolders(folder, subfolders);
     let messages = a_count_of(stored_here, "message");
     let and_then = match what {
-        WhatEmptyingDoes::MoveTo(trash) => format!("They will be moved to {trash}."),
+        WhatEmptyingDoes::MoveToOnThisComputer(trash) => format!("They will be moved to {trash}."),
+        WhatEmptyingDoes::MoveToOnTheServer(trash) => format!("They will be moved to {trash}."),
         WhatEmptyingDoes::RemoveFromThisComputer => {
             "They will be taken off this computer for good, and there is no other copy.".to_string()
         }
-        WhatEmptyingDoes::AtTheServer => {
-            "They will be taken off the server for good. The server may hold more than is stored \
-             here."
+        WhatEmptyingDoes::RemoveFromTheServer => {
+            "They will be taken off the server for good, on every device using this account."
                 .to_string()
         }
         // A refusal never reaches a question: the caller says the words the
         // gate supplied and stops. Answered rather than left to a catch-all so
-        // that a fifth answer on the enum is a compiler error here rather than
+        // that a sixth answer on the enum is a compiler error here rather than
         // a question that silently says nothing about what it will do.
         WhatEmptyingDoes::Refuse(why) => (*why).to_string(),
     };
-    format!("Empty {what_gets_emptied}? {messages} stored on this computer. {and_then}")
+    let and_the_count_is = match what.stored_here_is_all_of_it() {
+        true => String::new(),
+        false => " The server may hold more than is stored here.".to_string(),
+    };
+    format!(
+        "Empty {what_gets_emptied}? {messages} stored on this computer. {and_then}\
+         {and_the_count_is}"
+    )
 }
 
 /// What D-38 says when there is nothing to empty.
@@ -239,11 +295,35 @@ fn a_count_of(how_many: usize, thing: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::destinations::{NO_FOLDERS_KNOWN_YET, NO_TRASH_FOLDER_FOUND};
     use crate::application::local_folders::{DELETING_IS_SWITCHED_OFF, LOCAL_PREFIX};
 
     /// A folder on this computer, spelled the way one is stored.
     fn local(name: &str) -> String {
         format!("{LOCAL_PREFIX}/{name}")
+    }
+
+    /// An ordinary account's folders, as the tree already holds them.
+    fn folders_on_a_server() -> Vec<(&'static str, FolderType)> {
+        vec![
+            ("INBOX", FolderType::Inbox),
+            ("Archive", FolderType::Custom),
+            ("Deleted Items", FolderType::Trash),
+        ]
+    }
+
+    /// An account whose folders are known and none of which reads as its trash.
+    fn folders_with_no_trash() -> Vec<(&'static str, FolderType)> {
+        vec![
+            ("INBOX", FolderType::Inbox),
+            ("Archive", FolderType::Custom),
+        ]
+    }
+
+    /// A folder on this computer needs no folder list, so the calls that are
+    /// about the local half say so rather than passing a list nothing reads.
+    fn no_folders() -> Vec<(&'static str, FolderType)> {
+        Vec::new()
     }
 
     fn placed(id: i64, path: &str, parent: Option<i64>) -> Placed {
@@ -271,11 +351,12 @@ mod tests {
 
     #[test]
     fn test_emptying_the_trash_removes_and_emptying_the_inbox_moves() {
-        // The whole of D-33 in one assertion. Both answers are asked of
-        // `local_folders::deleting`, so if this module ever grew its own rule
-        // the two would stop differing in the way that function says they do.
-        let trash = what_will_happen(&local("Trash"), Protocol::Pop3, true);
-        let inbox = what_will_happen(&local("Inbox"), Protocol::Pop3, true);
+        // The whole of D-33's local half in one assertion. Both answers are
+        // asked of `local_folders::deleting`, so if this module ever grew its
+        // own rule the two would stop differing in the way that function says
+        // they do.
+        let trash = what_will_happen(&local("Trash"), Protocol::Pop3, true, no_folders());
+        let inbox = what_will_happen(&local("Inbox"), Protocol::Pop3, true, no_folders());
 
         assert_eq!(
             trash,
@@ -284,7 +365,7 @@ mod tests {
         );
         assert_eq!(
             inbox,
-            WhatEmptyingDoes::MoveTo(local("Trash")),
+            WhatEmptyingDoes::MoveToOnThisComputer(local("Trash")),
             "emptying the Inbox moves, the same as deleting one of its messages does"
         );
         assert_ne!(trash, inbox);
@@ -296,34 +377,86 @@ mod tests {
         // sentence says which setting to turn on and where, and a second
         // wording written here would be a second sentence to keep true.
         assert_eq!(
-            what_will_happen(&local("Inbox"), Protocol::Pop3, false),
+            what_will_happen(&local("Inbox"), Protocol::Pop3, false, no_folders()),
             WhatEmptyingDoes::Refuse(DELETING_IS_SWITCHED_OFF)
         );
     }
 
     #[test]
-    fn test_a_folder_on_a_server_is_left_to_the_route_that_asks_the_server() {
+    fn test_emptying_a_folder_on_a_server_moves_to_its_trash_and_emptying_that_trash_removes() {
+        // D-33's other half, and the one this module got wrong first. A folder
+        // on a server has the same four outcomes a folder here does, decided by
+        // the same function one delete at a server asks. Answering "taken off
+        // the server for good" for every server folder would empty somebody's
+        // Inbox rather than moving it to their Deleted Items, and would say so
+        // in a confirmation that was describing a different command.
+        let inbox = what_will_happen("INBOX", Protocol::Imap, true, folders_on_a_server());
+        let trash = what_will_happen("Deleted Items", Protocol::Imap, true, folders_on_a_server());
+
         assert_eq!(
-            what_will_happen("Archive/2026", Protocol::Imap, true),
-            WhatEmptyingDoes::AtTheServer
+            inbox,
+            WhatEmptyingDoes::MoveToOnTheServer("Deleted Items".to_string())
+        );
+        assert_eq!(trash, WhatEmptyingDoes::RemoveFromTheServer);
+        assert_ne!(inbox, trash);
+    }
+
+    #[test]
+    fn test_an_account_whose_trash_is_not_recognised_is_refused_rather_than_emptied() {
+        // The refusal that matters most in this module. Every folder on this
+        // account is about to be treated as though it had nowhere to go, and
+        // the wrong reading of that is "so take it off the server", which is
+        // an Inbox destroyed on an account whose only fault is calling its
+        // trash something this program does not know.
+        assert_eq!(
+            what_will_happen("INBOX", Protocol::Imap, true, folders_with_no_trash()),
+            WhatEmptyingDoes::Refuse(NO_TRASH_FOLDER_FOUND)
         );
     }
 
     #[test]
-    fn test_the_permission_gates_emptying_without_a_second_gate_being_asked() {
-        // The permission is off and the folder is on a server, so the answer
-        // is still the server's route: the local permission has nothing to say
-        // about a folder that is not on this computer. The pair matters,
-        // because a gate written here rather than taken from `deleting` would
-        // most likely refuse both.
+    fn test_an_account_that_has_never_been_asked_what_folders_it_has_is_refused_separately() {
+        // A different refusal with a different thing to do next, which is why
+        // the two are not one answer. Nothing is known yet rather than nothing
+        // was found.
         assert_eq!(
-            what_will_happen("Archive", Protocol::Imap, false),
-            WhatEmptyingDoes::AtTheServer
+            what_will_happen("INBOX", Protocol::Imap, true, no_folders()),
+            WhatEmptyingDoes::Refuse(NO_FOLDERS_KNOWN_YET)
+        );
+    }
+
+    #[test]
+    fn test_the_permission_gates_emptying_here_and_says_nothing_about_a_folder_on_a_server() {
+        // The permission is off in both calls. It is the local delete gate, so
+        // it refuses the folder on this computer and has nothing to say about
+        // the one on a server. The pair matters, because a gate written here
+        // rather than taken from `deleting` would most likely refuse both.
+        assert_eq!(
+            what_will_happen("INBOX", Protocol::Imap, false, folders_on_a_server()),
+            WhatEmptyingDoes::MoveToOnTheServer("Deleted Items".to_string())
         );
         assert!(matches!(
-            what_will_happen(&local("Inbox"), Protocol::Pop3, false),
+            what_will_happen(&local("Inbox"), Protocol::Pop3, false, no_folders()),
             WhatEmptyingDoes::Refuse(_)
         ));
+    }
+
+    #[test]
+    fn test_what_is_stored_here_is_all_of_it_only_for_a_folder_on_this_computer() {
+        // Which decides whether the question presents its number as the figure
+        // or as a floor.
+        assert!(
+            what_will_happen(&local("Inbox"), Protocol::Pop3, true, no_folders())
+                .stored_here_is_all_of_it()
+        );
+        assert!(
+            !what_will_happen("INBOX", Protocol::Imap, true, folders_on_a_server())
+                .stored_here_is_all_of_it()
+        );
+        assert!(
+            !what_will_happen("Deleted Items", Protocol::Imap, true, folders_on_a_server())
+                .stored_here_is_all_of_it()
+        );
     }
 
     #[test]
@@ -366,7 +499,7 @@ mod tests {
         // says which of them went missing.
         let said = the_question(
             "Inbox",
-            &WhatEmptyingDoes::MoveTo("Trash".to_string()),
+            &WhatEmptyingDoes::MoveToOnThisComputer("Trash".to_string()),
             118,
             3,
         );
@@ -384,7 +517,7 @@ mod tests {
         // above and tell somebody nothing about what they were agreeing to.
         let moved = the_question(
             "Inbox",
-            &WhatEmptyingDoes::MoveTo("Trash".to_string()),
+            &WhatEmptyingDoes::MoveToOnThisComputer("Trash".to_string()),
             4,
             0,
         );
@@ -403,15 +536,57 @@ mod tests {
     }
 
     #[test]
-    fn test_the_question_says_the_number_is_what_is_stored_on_this_computer() {
-        // D-37. The number is the cache's, and a question that gave it without
-        // saying so would be read as the whole of what is there.
-        let said = the_question("Archive", &WhatEmptyingDoes::AtTheServer, 118, 2);
+    fn test_the_question_about_a_server_folder_says_which_of_the_two_it_will_do() {
+        // The same pair on the other route, which is where getting it wrong
+        // costs the most: a message taken off a server is gone from every
+        // device at once, and the sentence has to be the one that matches.
+        let moved = the_question(
+            "INBOX",
+            &WhatEmptyingDoes::MoveToOnTheServer("Deleted Items".to_string()),
+            9,
+            0,
+        );
+        let removed = the_question(
+            "Deleted Items",
+            &WhatEmptyingDoes::RemoveFromTheServer,
+            9,
+            0,
+        );
 
-        assert!(said.contains("stored on this computer"), "{said}");
+        assert!(moved.contains("moved to Deleted Items"), "{moved}");
         assert!(
-            said.contains("The server may hold more than is stored here."),
-            "a server folder's count is a floor and has to say so: {said}"
+            !moved.contains("for good"),
+            "moving is not for good: {moved}"
+        );
+        assert!(removed.contains("for good"), "{removed}");
+        assert!(
+            removed.contains("every device"),
+            "a server delete happens everywhere and has to say so: {removed}"
+        );
+    }
+
+    #[test]
+    fn test_the_number_is_a_floor_for_a_server_folder_and_the_whole_of_it_for_one_here() {
+        // D-37. The number is the cache's either way, and for a folder on a
+        // server the cache holds what has been downloaded rather than what is
+        // there. Both halves, because a sentence that always warned would be
+        // wrong about a folder on this computer, where the number really is
+        // all of it, and warning about everything is warning about nothing.
+        let at_a_server = the_question("Archive", &WhatEmptyingDoes::RemoveFromTheServer, 118, 2);
+        let here = the_question("Archive", &WhatEmptyingDoes::RemoveFromThisComputer, 118, 2);
+
+        assert!(
+            at_a_server.contains("stored on this computer"),
+            "{at_a_server}"
+        );
+        assert!(
+            at_a_server.contains("The server may hold more than is stored here."),
+            "a server folder's count is a floor and has to say so: {at_a_server}"
+        );
+        assert!(here.contains("stored on this computer"), "{here}");
+        assert!(
+            !here.contains("The server may hold more"),
+            "there is no server holding any of this: {here}"
         );
     }
 
