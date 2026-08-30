@@ -321,15 +321,63 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Known limits, said here rather than found later:
 
-  - The tree is still one flat level. It shows the shorter names but does not
-    yet nest them, so until it does, two folders called `2026` under different
-    parents read the same on screen. Before this they read as `Archive/2026` and
-    `Work/2026`. Nesting them is the next piece of this work, and nothing is
-    lost meanwhile: both folders still open and still hold their own mail.
   - Nothing about your mail moved or was deleted. This changes what a folder is
     labelled and adds a note of where it sits.
   - This has been tested against a mail server written for the tests, not
     against a real account. Nothing in this program has ever run against one.
+
+- **The folder tree now has a shape.** Your folders sit under the folders they
+  belong to, your account has a branch of its own, and anything kept on this
+  computer is grouped under "On this computer".
+
+  This finishes the change above and closes what it left open. Between the two,
+  two folders called `2026` under different parents read the same on screen, and
+  worse than that: the program found a folder by the words in its row, so only
+  one of the two could be opened at all and choosing the other one showed the
+  first one's mail. Both now open their own mail.
+
+  Your screen reader says how deep a folder sits, whether a branch is open, and
+  which of how many rows you are on. Those are not written into the row's text,
+  because a row that says "expanded" out of one side of its mouth while the
+  control says "collapsed" out of the other is worse than a row that says
+  neither.
+
+  **Enter on a branch opens or closes it and says which it now is.** It does
+  nothing else. A branch is not a folder, so there is nothing to open.
+
+  **The tree comes back the way you left it.** Branches you closed stay closed
+  the next time you start the program. What it remembers is tied to the folder
+  itself rather than to what the folder is called, so renaming a folder, or an
+  account, does not lose it, and neither does mail arriving.
+
+  Two things that were quietly broken are fixed by the same change, because both
+  were looking a folder up by the words in its row:
+
+  - **Get Older Messages now fetches from the folder you are in.** It was
+    sending the row's text where a folder name belonged, so it matched no folder
+    and fetched nothing.
+  - **Writing a mailbox out to a file now works for a folder with unread mail
+    in it.** The row's text carries the unread count, so the same mistake meant
+    the archive came out empty unless the folder happened to have nothing new.
+
+  Known limits, said here rather than found later:
+
+  - Only the account you are looking at has a branch. Showing every account's
+    folders at once is the next piece of this work, and it waits on the change
+    that gives Drafts, Sent and Outbox one home each instead of one per account.
+    Without that, every account would contribute its own Drafts and the tree
+    would list the same thing several times over, which is the fault this change
+    exists to remove.
+  - Imported mail archives appear under "On this computer" in the Imported
+    folder, not each under a branch named after the file it came from. Nothing
+    records which archive a folder arrived in, so there is nothing yet to build
+    those branches from.
+  - Two accounts you have given exactly the same name are the one case the tree
+    cannot tell apart when putting your cursor back. Give them different names
+    and it is exact.
+  - Nothing about your mail moved or was deleted.
+  - This has been tested against a mail server written for the tests, not
+    against a real account.
 
 ### Fixed
 

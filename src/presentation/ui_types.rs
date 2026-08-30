@@ -309,9 +309,18 @@ pub enum UIUpdate {
     /// about what a link may ask for are applied once, by the copy that is
     /// going to act on it. See [`crate::application::handover`].
     HandedOver(String),
-    FoldersLoaded(Vec<String>),
+    /// The whole shape of the folder tree, worked out by
+    /// [`crate::presentation::folder_tree::rows`].
+    ///
+    /// Rows rather than names. A name is what a row says and cannot tell two
+    /// folders apart: since the stored name became the leaf, `Archive/2026` and
+    /// `Work/2026` are both `2026`, so a tree built from names has two rows
+    /// reading the same and a map keyed on them keeps only one of the folders.
+    /// Each row carries its own identity, its depth, and whether anything hangs
+    /// under it.
+    FoldersLoaded(Vec<crate::presentation::folder_tree::TreeRow>),
     MessagesLoaded(Vec<MessageItem>),
-    /// Folder names paired with their database ids.
+    /// Folder identities paired with their database ids.
     ///
     /// The tree shows names, but reading a folder needs its id, and looking
     /// one up by name would break the moment two accounts both have an INBOX.

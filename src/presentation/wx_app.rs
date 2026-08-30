@@ -13,6 +13,7 @@ use crate::data::account::Account;
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
+use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
@@ -214,8 +215,29 @@ menu_ids!(
 #[derive(Debug)]
 pub struct WxUIState {
     pub folders: Vec<String>,
+    /// Every row of the folder tree, in the order it was appended.
+    ///
+    /// This is the parallel vector, and it is deliberately here rather than
+    /// hung off the control. `wxdragon`'s tree item data goes into a
+    /// process-global map: `store_item_data` inserts into a static registry,
+    /// `delete_all_items` does not clear it, and `cleanup_all_custom_data`
+    /// returns early on any item with no children, so it never clears a leaf
+    /// and every folder row is a leaf. This tree is rebuilt on every sync, on a
+    /// timer, so keying rows on the control would leak one entry per folder per
+    /// sync for the life of the process.
+    ///
+    /// `collect_rows` walks the built tree depth first and the rebuild appends
+    /// depth first, so `collect_rows`'s items and this line up by position.
+    pub tree_rows: Vec<crate::presentation::folder_tree::TreeRow>,
     pub messages: Vec<MessageItem>,
-    pub selected_folder: Option<String>,
+    /// Which row of the folder tree is open.
+    ///
+    /// The identity itself rather than its string form, so that asking what
+    /// kind of row is open is a match rather than a guess at a prefix. It held
+    /// the row's words before, which could not tell two folders whose leaf is
+    /// the same word apart, and which changed under it whenever mail arrived or
+    /// somebody renamed something.
+    pub selected_folder: Option<crate::presentation::folder_tree::WhichRow>,
     /// How much of the selected folder the list asks the cache for.
     ///
     /// Reset to [`FOLDER_LIST_PAGE_SIZE`] on every folder change and grown by
@@ -332,6 +354,7 @@ impl Default for WxUIState {
     fn default() -> Self {
         Self {
             folders: Vec::new(),
+            tree_rows: Vec::new(),
             messages: Vec::new(),
             selected_folder: None,
             message_list_limit: FOLDER_LIST_PAGE_SIZE,
@@ -2274,13 +2297,44 @@ impl WxMailApp {
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
+                let a11y = a11y.clone();
                 move |event| {
-                    let Some(name) = event
-                        .get_item()
-                        .and_then(|item| folder_tree.get_item_text(&item))
-                    else {
+                    let Some(item) = event.get_item() else {
                         return;
                     };
+                    let Some(name) = folder_tree.get_item_text(&item) else {
+                        return;
+                    };
+                    // D-16. Enter on a branch opens or closes it and says which
+                    // it now is, and does nothing else: a branch is not a
+                    // folder and opening one is not a thing. This is how a
+                    // non-selectable IMAP folder already behaves.
+                    //
+                    // Asked of the row rather than of the control, because a
+                    // branch whose every child is filtered out has nothing
+                    // under it on screen and is still a branch.
+                    let branch = which_row(&state, &folder_tree, &item).is_some_and(|which| {
+                        lock_state(&state)
+                            .tree_rows
+                            .iter()
+                            .any(|row| row.identity == which && row.expandable)
+                    });
+                    if branch {
+                        folder_tree.toggle(&item);
+                        // The control announces the state as it changes it, and
+                        // this is the answer to a key somebody just pressed, so
+                        // it is said outright rather than coalesced.
+                        let said = if folder_tree.is_expanded(&item) {
+                            format!("{name}, expanded")
+                        } else {
+                            format!("{name}, collapsed")
+                        };
+                        let _ = a11y.announce(
+                            &said,
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        return;
+                    }
                     let chosen = the_search_a_row_names(&lock_state(&state), &name);
                     if let Some(chosen) = chosen {
                         run_a_saved_search(
@@ -2295,6 +2349,25 @@ impl WxMailApp {
                 }
             });
 
+            // What somebody opened or closed is remembered, keyed on the row's
+            // identity, so a rename does not lose it and the tree comes back
+            // the way they left it. Written as it happens rather than at close,
+            // because a program that is not running has nothing to write.
+            folder_tree.on_item_expanded({
+                let state = state.clone();
+                let cache = message_cache.clone();
+                move |event| {
+                    remember_the_row(&state, &cache, &folder_tree, event.get_item(), false);
+                }
+            });
+            folder_tree.on_item_collapsed({
+                let state = state.clone();
+                let cache = message_cache.clone();
+                move |event| {
+                    remember_the_row(&state, &cache, &folder_tree, event.get_item(), true);
+                }
+            });
+
             folder_tree.on_selection_changed({
                 let state = state.clone();
                 let ui_tx = ui_tx.clone();
@@ -2303,103 +2376,99 @@ impl WxMailApp {
                 let column_layout = column_layout.clone();
                 let a11y = a11y.clone();
                 move |event| {
+                    use crate::presentation::folder_tree::WhichRow;
                     if let Some(item) = event.get_item()
                         && let Some(name) = folder_tree.get_item_text(&item)
                     {
-                        if name == "Mail Folders" {
+                        // What the row is, asked of the identity beside it
+                        // rather than worked out from its words. The chain of
+                        // comparisons this replaces could not tell two folders
+                        // whose leaf is the same word apart, and had to put
+                        // every heading's spelling in one more place.
+                        let Some(which) = which_row(&state, &folder_tree, &item) else {
                             return;
-                        }
-                        if name == ALL_INBOXES {
-                            {
-                                let mut s = lock_state(&state);
-                                s.selected_folder = Some(name.clone());
-                            }
-                            frame.set_title("All Inboxes - Mail - Wixen Mail");
-                            load_every_inbox(&folder_cache, &ui_tx);
-                            return;
-                        }
-                        // The Labels branch header itself, which is not a
-                        // label. Landing on it does nothing, the same way
-                        // landing on the tree's own root does.
-                        if name == "Labels" {
-                            return;
-                        }
-                        // A label, found by matching the one spelling of a
-                        // label row. Before the folder lookup, because a label
-                        // row is not in the folder map and would otherwise
-                        // fall through to a folder that does not exist.
-                        let label = {
-                            let s = lock_state(&state);
-                            s.labels
-                                .iter()
-                                .find(|(_, label_name)| label_row(label_name) == name)
-                                .cloned()
                         };
-                        if let Some((tag_id, label_name)) = label {
-                            {
-                                let mut s = lock_state(&state);
-                                s.selected_folder = Some(name.clone());
+                        let identity = which.stored();
+                        match &which {
+                            // A branch is not a folder and landing on one opens
+                            // nothing, the same way landing on the tree's own
+                            // root does. Enter expands it; see the key handler.
+                            WhichRow::Labels
+                            | WhichRow::SavedSearches
+                            | WhichRow::Account(_)
+                            | WhichRow::OnThisComputer => {
+                                lock_state(&state).selected_folder = Some(which.clone());
+                                return;
                             }
-                            frame.set_title(&format!("{label_name} - Mail - Wixen Mail"));
-                            load_messages_with_label(&folder_cache, &state, &tag_id, &ui_tx);
-                            return;
-                        }
-                        // The Saved Searches heading itself, which is not a
-                        // search. Landing on it does nothing, the same way
-                        // landing on the Labels header does.
-                        if name == crate::application::saved_searches::THE_HEADING {
-                            return;
-                        }
-                        // A saved search, matched by the one spelling of a
-                        // saved-search row. Before the folder lookup, because
-                        // a search row is not in the folder map and would
-                        // otherwise fall through to a folder that does not
-                        // exist.
-                        //
-                        // Landing on it does not run it. Running one reads
-                        // every message the account has cached, and arrowing
-                        // down a tree past five saved searches would start
-                        // five of those. Enter runs it, which is what Enter
-                        // does everywhere else in a tree.
-                        let chosen = the_search_a_row_names(&lock_state(&state), &name);
-                        if let Some(chosen) = chosen {
-                            // The path, not the row's words. Everything that
-                            // would otherwise treat what is chosen as a
-                            // mailbox asks `is_a_saved_search` about this, and
-                            // only the path can answer.
-                            let path = chosen.path();
-                            let arrived = {
-                                let mut s = lock_state(&state);
-                                let arrived = s.selected_folder.as_deref() != Some(path.as_str());
-                                s.selected_folder = Some(path);
-                                arrived
-                            };
-                            frame.set_title(&format!("{} - Mail - Wixen Mail", chosen.name()));
-                            // Only on arriving. A sync finishing rebuilds this
-                            // tree on a timer and puts the cursor back where it
-                            // was, which lands here again; saying it every time
-                            // would read a hint over whatever somebody was
-                            // doing, every few minutes, about a row they had
-                            // not moved to.
-                            if arrived {
-                                let _ = a11y.announce_topic(
-                                    PRESS_ENTER_TO_RUN,
-                                    crate::presentation::accessibility::announcements::Priority::Low,
-                                    "saved search",
-                                );
-                                send_status(&ui_tx, &runtime, PRESS_ENTER_TO_RUN);
+                            WhichRow::AllInboxes => {
+                                lock_state(&state).selected_folder = Some(which.clone());
+                                frame.set_title("All Inboxes - Mail - Wixen Mail");
+                                load_every_inbox(&folder_cache, &ui_tx);
+                                return;
                             }
-                            return;
+                            WhichRow::Label(tag_id) => {
+                                let label_name = {
+                                    let mut s = lock_state(&state);
+                                    s.selected_folder = Some(which.clone());
+                                    s.labels
+                                        .iter()
+                                        .find(|(id, _)| id == tag_id)
+                                        .map(|(_, label_name)| label_name.clone())
+                                };
+                                if let Some(label_name) = label_name {
+                                    frame
+                                        .set_title(&format!("{label_name} - Mail - Wixen Mail"));
+                                }
+                                load_messages_with_label(&folder_cache, &state, tag_id.as_str(), &ui_tx);
+                                return;
+                            }
+                            // Landing on a saved search does not run it.
+                            // Running one reads every message the account has
+                            // cached, and arrowing down a tree past five saved
+                            // searches would start five of those. Enter runs
+                            // it, which is what Enter does everywhere else in a
+                            // tree.
+                            WhichRow::SavedSearch(_) => {
+                                let chosen = the_search_a_row_names(&lock_state(&state), &name);
+                                let arrived = {
+                                    let mut s = lock_state(&state);
+                                    let arrived = s.selected_folder.as_ref() != Some(&which);
+                                    s.selected_folder = Some(which.clone());
+                                    arrived
+                                };
+                                if let Some(chosen) = &chosen {
+                                    frame.set_title(&format!(
+                                        "{} - Mail - Wixen Mail",
+                                        chosen.name()
+                                    ));
+                                }
+                                // Only on arriving. A sync finishing rebuilds
+                                // this tree on a timer and puts the cursor back
+                                // where it was, which lands here again; saying
+                                // it every time would read a hint over whatever
+                                // somebody was doing, every few minutes, about
+                                // a row they had not moved to.
+                                if arrived {
+                                    let _ = a11y.announce_topic(
+                                        PRESS_ENTER_TO_RUN,
+                                        crate::presentation::accessibility::announcements::Priority::Low,
+                                        "saved search",
+                                    );
+                                    send_status(&ui_tx, &runtime, PRESS_ENTER_TO_RUN);
+                                }
+                                return;
+                            }
+                            WhichRow::Folder { .. } => {}
                         }
                         let (folder_id, account_id) = {
                             let mut s = lock_state(&state);
-                            s.selected_folder = Some(name.clone());
+                            s.selected_folder = Some(which.clone());
                             // A folder somebody just switched to is read from
                             // its first page again, whatever Get Older
                             // Messages had grown a previous folder's view to.
                             s.message_list_limit = FOLDER_LIST_PAGE_SIZE;
                             (
-                                s.folder_ids.get(&name).copied(),
+                                s.folder_ids.get(&identity).copied(),
                                 s.active_account_id.clone(),
                             )
                         };
@@ -3078,11 +3147,13 @@ impl WxMailApp {
                         _ if id == ID_REFRESH_FOLDER => {
                             let (folder_id, account_id, name, limit) = {
                                 let s = lock_state(&state);
-                                let name = s.selected_folder.clone();
                                 (
-                                    name.as_ref().and_then(|n| s.folder_ids.get(n).copied()),
+                                    folder_on_screen(&s),
                                     s.active_account_id.clone(),
-                                    name,
+                                    // The row's words, for the sentence that
+                                    // names it. What is open is an identity and
+                                    // an identity is not something to read out.
+                                    what_the_open_row_says(&s),
                                     s.message_list_limit,
                                 )
                             };
@@ -3099,7 +3170,10 @@ impl WxMailApp {
                                     &ui_tx,
                                 );
                                 let _ = a11y.announce_topic(
-                                    &format!("Refreshed {}", name.unwrap_or_default()),
+                                    &format!(
+                                        "Refreshed {}",
+                                        name.unwrap_or_else(|| "this folder".to_string())
+                                    ),
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                     "refresh",
                                 );
@@ -3606,7 +3680,12 @@ impl WxMailApp {
                             // inbox loaded behind the contacts list is a list
                             // nobody can see.
                             do_switch(PimModule::Mail);
-                            if !select_row_named(&folder_tree, ALL_INBOXES) {
+                            let rows = lock_state(&state).tree_rows.clone();
+                            if !select_row(
+                                &folder_tree,
+                                &rows,
+                                &folder_tree::WhichRow::AllInboxes.stored(),
+                            ) {
                                 // The tree has no rows yet, which means no
                                 // account has loaded its folders. Saying so
                                 // beats a command that looks like it did
@@ -3795,36 +3874,29 @@ impl WxMailApp {
                         // staying hidden behind the bound the folder view
                         // reads through.
                         _ if id == ID_GET_OLDER => {
-                            let (folder, folder_id, account_id, limit) = {
+                            let (open, folder_id, account_id, limit) = {
                                 let mut s = lock_state(&state);
-                                let folder = s.selected_folder.clone();
-                                let folder_id = folder
-                                    .as_ref()
-                                    .and_then(|name| s.folder_ids.get(name).copied());
+                                let open = s.selected_folder.clone();
+                                let folder_id = folder_on_screen(&s);
                                 if folder_id.is_some() {
                                     s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
                                 }
                                 (
-                                    folder,
+                                    open,
                                     folder_id,
                                     s.active_account_id.clone(),
                                     s.message_list_limit,
                                 )
                             };
-                            match folder {
-                                // A saved search is not a mailbox. There is
-                                // nothing on a server to select and nothing
-                                // older to fetch, and asking anyway would send
-                                // the row's path to the server as a folder
-                                // name.
-                                Some(folder)
-                                    if crate::application::saved_searches::is_a_saved_search(
-                                        &folder,
-                                    ) =>
-                                {
-                                    refuse_a_command(&ui_tx, NOT_A_FOLDER);
-                                }
-                                Some(folder) => {
+                            match open {
+                                // The path the server spells, taken off the
+                                // row's identity. What went here before was
+                                // what `selected_folder` held, which was the
+                                // row's words, unread count and all: no folder
+                                // ever had that path, so the filter this feeds
+                                // matched nothing and Get Older fetched from no
+                                // folder at all.
+                                Some(folder_tree::WhichRow::Folder { path, .. }) => {
                                     if folder_id.is_some() {
                                         load_folder_messages(
                                             &message_cache,
@@ -3835,8 +3907,12 @@ impl WxMailApp {
                                         );
                                     }
                                     send_status(&ui_tx, &runtime, "Getting older messages...");
-                                    spawn_mail_sync(app, Some(folder));
+                                    spawn_mail_sync(app, Some(path));
                                 }
+                                // A saved search is not a mailbox, and neither
+                                // is a branch or a label. There is nothing on a
+                                // server to select and nothing older to fetch.
+                                Some(_) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
                                 None => send_refusal(&ui_tx, &runtime, "Choose a folder first"),
                             }
                         }
@@ -4120,11 +4196,7 @@ impl WxMailApp {
                             // promise nothing keeps, one module along.
                             let (showing, folder_showing) = {
                                 let s = lock_state(&state);
-                                let folder = s
-                                    .selected_folder
-                                    .as_ref()
-                                    .and_then(|named| s.folder_ids.get(named))
-                                    .copied();
+                                let folder = folder_on_screen(&s);
                                 (s.active_module, folder)
                             };
                             let offers = if showing == PimModule::Mail {
@@ -5641,13 +5713,6 @@ pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGu
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// What the one-list-for-every-account row is called in the folder tree.
-///
-/// Plain words rather than "Unified Inbox", which is a phrase from other mail
-/// clients rather than from English. Somebody hearing this row read out should
-/// know what it holds without having met the term.
-const ALL_INBOXES: &str = "All Inboxes";
-
 /// What is said when the cursor lands on a saved search.
 ///
 /// Landing on a folder loads it and landing on a saved search does not, so
@@ -5895,7 +5960,7 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
 fn what_is_open_is_called(state: &WxUIState) -> Option<String> {
     match the_chosen_saved_search(state) {
         Some(chosen) => Some(chosen.name().to_string()),
-        None => state.selected_folder.clone(),
+        None => what_the_open_row_says(state),
     }
 }
 
@@ -6423,10 +6488,7 @@ fn make_a_new_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, fra
             .active_account_id
             .as_ref()
             .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
-        let on_row = s
-            .selected_folder
-            .as_ref()
-            .and_then(|row| s.folder_ids.get(row).copied());
+        let on_row = folder_on_screen(&s);
         (account, on_row)
     };
     let Some(account) = account else {
@@ -6654,10 +6716,7 @@ fn the_chosen_folder(
             .active_account_id
             .as_ref()
             .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned());
-        let on_row = s
-            .selected_folder
-            .as_ref()
-            .and_then(|row| s.folder_ids.get(row).copied());
+        let on_row = folder_on_screen(&s);
         (account, on_row)
     };
     let Some(account) = account else {
@@ -8233,6 +8292,21 @@ fn folder_tree_updates(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
+    // What the branch is called, read here rather than passed in, so that the
+    // seven callers do not each have to hold an account to name one. A branch
+    // whose account has gone from the list still reads as something rather than
+    // as an empty row.
+    let account_name = cache
+        .load_accounts()
+        .ok()
+        .and_then(|accounts| {
+            accounts
+                .iter()
+                .find(|account| account.id == account_id)
+                .map(|account| account.display_name())
+        })
+        .unwrap_or_else(|| "This account".to_string());
+
     let folders = folders_in_the_tree(cache, account_id)?;
     // The tree label carries the unread count, because a folder name alone
     // does not answer the question somebody is asking when they arrow onto it.
@@ -8262,6 +8336,41 @@ fn folder_tree_updates(
             tracing::warn!("The saved searches could not be read: {e}");
             crate::data::message_cache::saved_searches::SavedSearchesRead::default()
         });
+    // The parents this account's folders were given at sync, which is what
+    // nests the tree. Read once for the account rather than per folder, and
+    // read rather than computed: no path is split here, because the separator
+    // that would split it is the server's own and was only in hand at sync.
+    let parents = cache.folder_parents(account_id).unwrap_or_else(|e| {
+        tracing::warn!("The folder parents could not be read: {e}");
+        std::collections::HashMap::new()
+    });
+    let in_the_tree: Vec<folder_tree::FolderInTheTree> = folders
+        .iter()
+        .map(|folder| folder_tree::FolderInTheTree {
+            account: folder.account_id.clone(),
+            id: folder.id,
+            path: folder.path.clone(),
+            name: folder.name.clone(),
+            unread: folder.unread_count,
+            parent: parents.get(&folder.path).copied().flatten(),
+        })
+        .collect();
+    let rows = folder_tree::rows(
+        &[folder_tree::AccountInTheTree {
+            id: account_id.to_string(),
+            name: account_name,
+        }],
+        &in_the_tree,
+        &labels
+            .iter()
+            .map(|tag| folder_tree::LabelInTheTree {
+                id: tag.id.clone(),
+                name: tag.name.clone(),
+            })
+            .collect::<Vec<_>>(),
+        &every_saved_search(&saved),
+    );
+
     Ok(vec![
         UIUpdate::LabelsLoaded(
             labels
@@ -8270,8 +8379,25 @@ fn folder_tree_updates(
                 .collect(),
         ),
         UIUpdate::SavedSearchesLoaded(Box::new(saved)),
-        UIUpdate::FolderIdsLoaded(folders.iter().map(|f| (folder_label(f), f.id)).collect()),
-        UIUpdate::FoldersLoaded(folders.iter().map(folder_label).collect()),
+        // Keyed on the identity rather than on the label. Keyed on the label,
+        // two folders whose leaf is the same word collapse into one entry of
+        // this map and one of them becomes a row that opens the other's mail.
+        UIUpdate::FolderIdsLoaded(
+            folders
+                .iter()
+                .map(|f| {
+                    (
+                        folder_tree::WhichRow::Folder {
+                            account: f.account_id.clone(),
+                            path: f.path.clone(),
+                        }
+                        .stored(),
+                        f.id,
+                    )
+                })
+                .collect(),
+        ),
+        UIUpdate::FoldersLoaded(rows),
     ])
 }
 
@@ -8302,32 +8428,34 @@ fn folders_in_the_tree(
         .collect())
 }
 
-/// How a folder reads in the tree.
+/// Every saved search's row, in the order they sit in the tree.
 ///
-/// "Inbox, 12 unread" rather than "Inbox". A count of zero is left off: a
-/// folder with nothing new in it should be one word, not three, when somebody
-/// is arrowing through twenty of them.
-fn folder_label(folder: &crate::data::message_cache::CachedFolder) -> String {
-    if folder.unread_count > 0 {
-        format!("{}, {} unread", folder.name, folder.unread_count)
-    } else {
-        folder.name.clone()
-    }
-}
-
-/// How a label reads in the mail sidebar.
+/// The readable ones first and the rest after, which is the order they were
+/// read in, so a row does not move because a newer version wrote one of them.
+/// Every row reads the same way, because somebody arrowing past is not being
+/// asked to tell a readable search from an unreadable one by ear.
 ///
-/// The word is there to be heard as much as seen, and it is doing a second
-/// job: this tree holds text and nothing else, and the binding gives no way
-/// to ask which branch a row sits under, so the row's own words are the only
-/// way the handler can tell a label from a folder. A folder row is a bare
-/// name or ends in " unread", so nothing a folder produces reads this way.
-///
-/// One spelling, used by the tree that draws the row and the handler that
-/// resolves it, for the reason the calendar sidebar has one: two spellings
-/// would mean a row nothing could resolve.
-fn label_row(name: &str) -> String {
-    format!("{name}, label")
+/// A search this build cannot run is still a row somebody can land on, rename
+/// and remove. Leaving it out would make it unreachable rather than merely
+/// unrunnable, and somebody would go looking for a search that is still there.
+fn every_saved_search(
+    read: &crate::data::message_cache::saved_searches::SavedSearchesRead,
+) -> Vec<folder_tree::SearchInTheTree> {
+    read.searches
+        .iter()
+        .map(|search| folder_tree::SearchInTheTree {
+            id: search.id.clone(),
+            name: search.name.clone(),
+        })
+        .chain(
+            read.saved_by_another_version
+                .iter()
+                .map(|search| folder_tree::SearchInTheTree {
+                    id: search.id.clone(),
+                    name: search.name.clone(),
+                }),
+        )
+        .collect()
 }
 
 /// Which saved search a row in the folder tree names.
@@ -8359,34 +8487,6 @@ impl ChosenSearch {
             ChosenSearch::SavedByAnotherVersion { name, .. } => name,
         }
     }
-
-    /// The path its row is found by, which is what `selected_folder` holds
-    /// while the row is chosen.
-    fn path(&self) -> String {
-        crate::application::saved_searches::the_path_of(self.id())
-    }
-}
-
-/// Every saved search's row, in the order they sit in the tree.
-///
-/// The readable ones first and the rest after, which is the order they were
-/// read in, so a row does not move because a newer version wrote one of them.
-/// Every row reads the same way, because somebody arrowing past is not being
-/// asked to tell a readable search from an unreadable one by ear.
-fn saved_search_rows(
-    read: &crate::data::message_cache::saved_searches::SavedSearchesRead,
-) -> Vec<String> {
-    use crate::application::saved_searches::a_row_for;
-
-    read.searches
-        .iter()
-        .map(|search| a_row_for(&search.name))
-        .chain(
-            read.saved_by_another_version
-                .iter()
-                .map(|search| a_row_for(&search.name)),
-        )
-        .collect()
 }
 
 /// The saved search a row in the folder tree names, if it names one.
@@ -8424,24 +8524,24 @@ fn the_search_a_row_names(state: &WxUIState, row: &str) -> Option<ChosenSearch> 
 /// character no mailbox name can carry, which is what
 /// [`crate::application::saved_searches::is_a_saved_search`] reads.
 fn the_chosen_saved_search(state: &WxUIState) -> Option<ChosenSearch> {
-    use crate::application::saved_searches::{is_a_saved_search, the_path_of};
-
-    let chosen = state.selected_folder.as_deref()?;
-    if !is_a_saved_search(chosen) {
+    // A match on what the row is, rather than a question about how its path
+    // is spelled. The identity says outright that this row is a saved search
+    // and which one, so nothing has to recognise a prefix to find out.
+    let folder_tree::WhichRow::SavedSearch(chosen) = state.selected_folder.as_ref()? else {
         return None;
-    }
+    };
     state
         .saved_searches
         .searches
         .iter()
-        .find(|search| search.path() == chosen)
+        .find(|search| &search.id == chosen)
         .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
         .or_else(|| {
             state
                 .saved_searches
                 .saved_by_another_version
                 .iter()
-                .find(|search| the_path_of(&search.id) == chosen)
+                .find(|search| &search.id == chosen)
                 .map(|search| ChosenSearch::SavedByAnotherVersion {
                     id: search.id.clone(),
                     name: search.name.clone(),
@@ -9739,17 +9839,22 @@ fn export_a_mailbox(
         let held = lock_state(state);
         (held.active_account_id.clone(), held.selected_folder.clone())
     };
-    let (Some(account), Some(folder)) = (account, folder) else {
+    let (Some(account), Some(open)) = (account, folder) else {
         refuse("Choose the folder to write out first.");
         return;
     };
-    // A saved search holds no mail of its own. Every message it lists lives in
-    // a real folder, so writing one out would either produce an empty archive
-    // or claim to have exported mail from somewhere that does not exist.
-    if crate::application::saved_searches::is_a_saved_search(&folder) {
-        refuse("That is a saved search rather than a folder. Choose the folder the mail is in.");
+    // The path the server spells, off the row's identity. What went here
+    // before was the row's words, which is a path no folder has as soon as the
+    // folder has any unread mail in it, so the archive came out empty.
+    //
+    // A saved search holds no mail of its own, and neither does a branch or a
+    // label. Every message a search lists lives in a real folder, so writing
+    // one out would either produce an empty archive or claim to have exported
+    // mail from somewhere that does not exist.
+    let folder_tree::WhichRow::Folder { path: folder, .. } = open else {
+        refuse("That is not a folder. Choose the folder the mail is in.");
         return;
-    }
+    };
 
     let picker = FileDialog::builder(frame)
         .with_message("Write this mailbox out to a file")
@@ -11094,9 +11199,143 @@ fn scan_only_account() -> crate::data::account::Account {
 ///
 /// Read before `delete_all_items`, given back to [`land_the_cursor`] after
 /// the rows have been added again.
+/// Write down that a row of the folder tree is open, or that it is closed.
+///
+/// Keyed on the row's identity, which a rename does not change: an account id
+/// for a branch, an account and a path for a folder. Keyed on the words, every
+/// rename and every arriving message would look like a different row and what
+/// somebody had collapsed would be quietly forgotten.
+///
+/// A failure is logged rather than said. Somebody collapsing a branch is not
+/// asking a question, and interrupting them to report that the tree's memory
+/// did not save would be noise over a real task; the branch still collapses.
+fn remember_the_row(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    tree: &TreeCtrl,
+    item: Option<TreeItemId>,
+    collapsed: bool,
+) {
+    let (Some(cache), Some(item)) = (cache.as_ref(), item) else {
+        return;
+    };
+    let Some(which) = which_row(state, tree, &item) else {
+        return;
+    };
+    if let Err(why) = cache.set_row_collapsed(&which.stored(), collapsed) {
+        tracing::warn!("The folder tree could not remember that row: {why}");
+    }
+}
+
+/// Which row of the folder tree an item is.
+///
+/// Found by position: the rebuild appends depth first and `collect_rows` walks
+/// back depth first, so the item at position `i` is the row at position `i` in
+/// the vector held beside the control. Nothing is hung off the control itself,
+/// for the reason `WxUIState::tree_rows` gives.
+///
+/// `None` for the tree's own root, which is not one of the rows, and for a tree
+/// that has been drawn since the vector was last filled.
+fn which_row(
+    state: &Arc<StdMutex<WxUIState>>,
+    tree: &TreeCtrl,
+    item: &TreeItemId,
+) -> Option<folder_tree::WhichRow> {
+    let rows = lock_state(state).tree_rows.clone();
+    let at = the_row_on_screen(tree, item, &rows)?;
+    rows.get(at).map(|row| row.identity.clone())
+}
+
+/// Which row of the list the item on screen is, by the words above it.
+///
+/// The control cannot be asked which row it is holding. `TreeItemId` has no
+/// equality and its pointer is not public, so two items cannot be compared and
+/// the only question a row answers is what it says. Walking up with
+/// `get_item_parent` collects the same chain of words
+/// [`folder_tree::where_a_row_sits`] builds from the list, and the two are
+/// matched.
+///
+/// This is why the whole of this tree used to be keyed on labels: it is the
+/// only handle the binding gives. The difference now is that the words are used
+/// once, to find the row, and everything after that is the row's identity.
+fn the_row_on_screen(tree: &TreeCtrl, item: &TreeItemId, rows: &[TreeRow]) -> Option<usize> {
+    let root = tree.get_root_item()?;
+    let root_says = tree.get_item_text(&root);
+    let mut chain = vec![tree.get_item_text(item)?];
+    let mut above = tree.get_item_parent(item);
+    while let Some(one) = above {
+        let says = tree.get_item_text(&one)?;
+        // The tree's own root is not one of the rows.
+        if Some(&says) == root_says.as_ref() && tree.get_item_parent(&one).is_none() {
+            break;
+        }
+        chain.push(says);
+        above = tree.get_item_parent(&one);
+    }
+    chain.reverse();
+    (0..rows.len()).find(|at| folder_tree::where_a_row_sits(rows, *at) == chain)
+}
+
+/// Which row the cursor is on, as an identity rather than as its words.
+///
+/// The words are what a rebuild changes: mail arriving edits the unread count
+/// in them and a rename replaces them outright. Both used to take the cursor to
+/// the top of the tree, or worse to a different row that happened to read the
+/// same. Found by position, because the identities were filled in the same
+/// depth-first order the rows were appended.
+pub fn the_folder_row_the_cursor_was_on(tree: &TreeCtrl, rows: &[TreeRow]) -> Option<String> {
+    let selected = tree.get_selection()?;
+    let at = the_row_on_screen(tree, &selected, rows)?;
+    rows.get(at).map(|row| row.identity.stored())
+}
+
+/// Which row the cursor is on in one of the other sidebars, by its words.
+///
+/// The calendar, reminders, tasks, notes and contacts trees are rebuilt the
+/// same way and have no identities of their own: their rows are names somebody
+/// typed and the tree is the only record of them. They keep the older answer,
+/// which is right for them and is what the mail folder tree could not use once
+/// two of its rows could read the same.
 fn what_the_cursor_was_on(tree: &TreeCtrl) -> Option<String> {
     tree.get_selection()
         .and_then(|item| tree.get_item_text(&item))
+}
+
+/// Draw every row, and say which identity ended up at each position.
+///
+/// The rows arrive in the order somebody arrowing down meets them, each
+/// carrying how deep it sits, so the parent of the next row is whichever item
+/// was last seen one level up. Kept as a stack rather than looked up on the
+/// control, because the binding gives no way to ask which branch a row is on.
+///
+/// A branch is expanded unless somebody collapsed it, which is read from
+/// `tree_state` by identity and never by label.
+pub fn fill_the_tree(
+    tree: &TreeCtrl,
+    root: &TreeItemId,
+    rows: &[TreeRow],
+    collapsed: &std::collections::HashSet<String>,
+) {
+    let mut above: Vec<TreeItemId> = vec![root.clone()];
+    let mut open: Vec<TreeItemId> = Vec::new();
+    for row in rows {
+        above.truncate(row.depth + 1);
+        let Some(parent) = above.last().cloned() else {
+            continue;
+        };
+        let Some(item) = tree.append_item(&parent, &row.label, None, None) else {
+            continue;
+        };
+        if row.expandable && !collapsed.contains(&row.identity.stored()) {
+            open.push(item.clone());
+        }
+        above.push(item);
+    }
+    // Expanding is a second pass because expanding a branch with nothing on it
+    // yet does nothing, and every branch is empty at the moment it is appended.
+    for item in open {
+        tree.expand(&item);
+    }
 }
 
 /// Put the cursor back where it was, on a tree that has just been rebuilt.
@@ -11409,16 +11648,20 @@ fn put_on_the_clipboard(words: &str, a11y: &Arc<Accessibility>) {
     }
 }
 
-fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
+/// Put the cursor on the row with this identity, if the tree still has one.
+///
+/// By identity rather than by the row's words, so renaming what somebody is
+/// looking at keeps them on it.
+pub fn select_row(tree: &TreeCtrl, rows: &[TreeRow], identity: &str) -> bool {
     let Some(root) = tree.get_root_item() else {
         return false;
     };
     let mut items = Vec::new();
     let mut labels = Vec::new();
     collect_rows(tree, &root, &mut items, &mut labels);
-    let Some(item) = labels
+    let Some(item) = rows
         .iter()
-        .position(|row| row == name)
+        .position(|row| row.identity.stored() == identity)
         .and_then(|at| items.get(at))
     else {
         return false;
@@ -11428,10 +11671,40 @@ fn select_row_named(tree: &TreeCtrl, name: &str) -> bool {
     true
 }
 
+/// Put the cursor back on one of the other sidebars, by the row's words.
+///
+/// The label answer, kept for the five trees whose rows have no identity. See
+/// [`the_folder_row_the_cursor_was_on`].
 fn land_the_cursor(tree: &TreeCtrl, root: &TreeItemId, was: Option<&str>) {
     let mut items = Vec::new();
     let mut labels = Vec::new();
     collect_rows(tree, root, &mut items, &mut labels);
+    let Some(at) = the_row_to_land_on(was, &labels, None) else {
+        return;
+    };
+    if let Some(item) = items.get(at) {
+        tree.select_item(item);
+        tree.ensure_visible(item);
+    }
+}
+
+/// Put the cursor back on the mail folder tree, by identity.
+pub fn land_the_folder_cursor(
+    tree: &TreeCtrl,
+    root: &TreeItemId,
+    rows: &[TreeRow],
+    was: Option<&str>,
+) {
+    let mut items = Vec::new();
+    let mut labels = Vec::new();
+    collect_rows(tree, root, &mut items, &mut labels);
+
+    // Identities, not labels. Matching on the words is what took somebody to
+    // the top of the tree whenever a rename or an arriving message changed
+    // them, and what could land them on a different folder that happened to
+    // read the same. Two folders whose leaf is the same word are exactly that
+    // case, and since the stored name became the leaf they are common.
+    let now: Vec<String> = rows.iter().map(|row| row.identity.stored()).collect();
 
     // Read only when nothing was selected, which is the first build and the
     // only build this can decide. Every rebuild after that keeps somebody
@@ -11442,8 +11715,8 @@ fn land_the_cursor(tree: &TreeCtrl, root: &TreeItemId, was: Option<&str>) {
         .then(crate::data::config::ConfigManager::load_stored)
         .and_then(|stored| stored.ok())
         .filter(|stored| stored.app_config().start_in_all_inboxes)
-        .map(|_| ALL_INBOXES);
-    let Some(at) = the_row_to_land_on(was, &labels, start_at) else {
+        .map(|_| folder_tree::WhichRow::AllInboxes.stored());
+    let Some(at) = the_row_to_land_on(was, &now, start_at.as_deref()) else {
         return;
     };
     if let Some(item) = items.get(at) {
@@ -11766,7 +12039,33 @@ fn folder_on_screen(state: &WxUIState) -> Option<i64> {
     state
         .selected_folder
         .as_ref()
-        .and_then(|name| state.folder_ids.get(name).copied())
+        .and_then(|which| the_id_of(state, which))
+}
+
+/// The database id behind a row of the folder tree, where it has one.
+///
+/// Keyed on the identity, so two folders whose leaf is the same word are two
+/// entries. Keyed on the label, which is what this was, they were one, and one
+/// of the two folders became a row that opened the other's mail.
+///
+/// `None` for every row that is not a folder: `All Inboxes`, an account branch,
+/// a label, a saved search. None of those is a mailbox and none has an id.
+fn the_id_of(state: &WxUIState, which: &folder_tree::WhichRow) -> Option<i64> {
+    state.folder_ids.get(&which.stored()).copied()
+}
+
+/// What the open row says, for a sentence that has to name it.
+///
+/// Read from the rows beside the tree rather than from what is open, because
+/// what is open is an identity and an identity is not words anybody should
+/// hear: it holds a path that opens with a character read out as nothing.
+fn what_the_open_row_says(state: &WxUIState) -> Option<String> {
+    let which = state.selected_folder.as_ref()?;
+    state
+        .tree_rows
+        .iter()
+        .find(|row| &row.identity == which)
+        .map(|row| row.label.clone())
 }
 
 /// Re-read a folder's messages when, and only when, it is the one open on
@@ -11880,73 +12179,51 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             );
             opens_a_handover(argument);
         }
-        UIUpdate::FoldersLoaded(folders) => {
+        UIUpdate::FoldersLoaded(rows) => {
+            let was_on = {
+                let s = lock_state(state);
+                the_folder_row_the_cursor_was_on(folder_tree, &s.tree_rows)
+            };
+            // Once per rebuild, not once per row. This runs whenever a sync
+            // finishes, which is on a timer, and a query per folder per sync
+            // would be paying for the tree's memory over and over.
+            let collapsed = message_cache
+                .as_ref()
+                .and_then(|cache| cache.collapsed_rows().ok())
+                .unwrap_or_default();
             {
                 let mut s = lock_state(state);
-                s.folders = folders.clone();
+                s.folders = rows.iter().map(|row| row.label.clone()).collect();
+                s.tree_rows = rows.clone();
             }
-            let was_on = what_the_cursor_was_on(folder_tree);
             folder_tree.delete_all_items();
             if let Some(root) = folder_tree.add_root("Mail Folders", None, None) {
-                // First, because it is where somebody with more than one
-                // account starts, and because arrowing past it to reach a
-                // named folder costs one keystroke while hunting for it at the
-                // bottom of a list of twenty costs twenty.
-                folder_tree.append_item(&root, ALL_INBOXES, None, None);
-                for f in folders {
-                    folder_tree.append_item(&root, f, None, None);
-                }
-                // Labels last and under a branch of their own, so arrowing
-                // through the folders somebody opens every day does not pass
-                // through a list of labels first. No branch at all when there
-                // are none, rather than an empty one to arrow into.
-                let labels = lock_state(state).labels.clone();
-                if !labels.is_empty()
-                    && let Some(branch) = folder_tree.append_item(&root, "Labels", None, None)
-                {
-                    for (_, name) in &labels {
-                        folder_tree.append_item(&branch, &label_row(name), None, None);
-                    }
-                    folder_tree.expand(&branch);
-                }
-                // Saved searches last, under one heading, for the reason the
-                // labels are on a branch of their own: arrowing through the
-                // folders somebody opens every day should not pass through a
-                // list of saved questions first. No heading at all when there
-                // are none, rather than an empty one to arrow into.
-                let searches = saved_search_rows(&lock_state(state).saved_searches);
-                if !searches.is_empty()
-                    && let Some(branch) = folder_tree.append_item(
-                        &root,
-                        crate::application::saved_searches::THE_HEADING,
-                        None,
-                        None,
-                    )
-                {
-                    for row in &searches {
-                        folder_tree.append_item(&branch, row, None, None);
-                    }
-                    folder_tree.expand(&branch);
-                }
+                // Every row, at the depth `folder_tree::rows` gave it. What used
+                // to be five stretches of appending here, each with its own
+                // rule about when a branch is left out, is one walk over a list
+                // that already decided all of it, and every one of those rules
+                // now has a test that needs no window.
+                fill_the_tree(folder_tree, &root, rows, &collapsed);
                 folder_tree.expand(&root);
-                // Back where it was. A sync finishing on a timer used to take
-                // the cursor away mid-list with only a count spoken.
-                land_the_cursor(folder_tree, &root, was_on.as_deref());
-                // A saved search keeps its row through a rebuild even when its
-                // name has just changed. What is open is held as the row's
-                // path, which a rename does not touch, while `land_the_cursor`
-                // matches on the row's words, which a rename does. Without
-                // this, renaming a search takes the cursor to the top of the
-                // tree and reads out a different row.
-                let renamed = the_chosen_saved_search(&lock_state(state));
-                if let Some(chosen) = renamed {
-                    select_row_named(
-                        folder_tree,
-                        &crate::application::saved_searches::a_row_for(chosen.name()),
-                    );
-                }
+                // Back where it was, found by identity. A sync finishing on a
+                // timer used to take the cursor away mid-list with only a count
+                // spoken, and a rename used to take it to a different row: what
+                // was open was held as one thing and the cursor was put back by
+                // matching another. Both are one lookup now, so the saved
+                // search that needed a second pass here does not.
+                land_the_folder_cursor(folder_tree, &root, rows, was_on.as_deref());
             }
-            let msg = how_many_loaded(folders.len(), "folder");
+            let msg = how_many_loaded(
+                rows.iter()
+                    .filter(|row| {
+                        matches!(
+                            row.identity,
+                            crate::presentation::folder_tree::WhichRow::Folder { .. }
+                        )
+                    })
+                    .count(),
+                "folder",
+            );
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "folders");
         }
@@ -12175,7 +12452,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let s = lock_state(state);
                 s.selected_folder
                     .as_ref()
-                    .and_then(|name| s.folder_ids.get(name).copied())
+                    .and_then(|which| s.folder_ids.get(&which.stored()).copied())
             };
             if let (Some(cache), Some(folder_id)) = (&message_cache, open)
                 && cache.folder_kind(folder_id).ok().flatten()
@@ -17664,8 +17941,11 @@ mod tests {
         // tree. Leaving it out would take it off the tree with nothing said,
         // and somebody would go looking for a search that is still there.
         assert_eq!(
-            super::saved_search_rows(&state_with_saved_searches().saved_searches),
-            ["Unread from Ann, saved search", "Invoices, saved search"]
+            super::every_saved_search(&state_with_saved_searches().saved_searches)
+                .iter()
+                .map(|search| search.name.clone())
+                .collect::<Vec<_>>(),
+            ["Unread from Ann", "Invoices"]
         );
     }
 
@@ -17696,31 +17976,34 @@ mod tests {
     }
 
     #[test]
-    fn test_what_is_chosen_is_a_saved_search_only_when_its_path_says_so() {
-        // The guard the whole design rests on. What is chosen is held as a
-        // path, and a saved search's path opens with a character no mailbox
-        // name can carry, so everything that would otherwise treat it as a
-        // mailbox has one question to ask.
+    fn test_what_is_chosen_is_a_saved_search_only_when_the_row_says_so() {
+        // The guard the whole design rests on, and it is a match now rather
+        // than a question about how a path is spelled: the row's identity says
+        // outright what kind of row it is and which one.
+        use crate::presentation::folder_tree::WhichRow;
         let mut state = state_with_saved_searches();
 
-        state.selected_folder = Some("Inbox, 3 unread".to_string());
+        state.selected_folder = Some(WhichRow::Folder {
+            account: "acc".to_string(),
+            path: "INBOX".to_string(),
+        });
         assert!(super::the_chosen_saved_search(&state).is_none());
 
-        state.selected_folder = Some(crate::application::saved_searches::the_path_of("s1"));
+        state.selected_folder = Some(WhichRow::SavedSearch("s1".to_string()));
         assert_eq!(
             super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
             Some("Unread from Ann".to_string())
         );
-        // And the title says the name rather than the path, which opens with
-        // a character that is read out as nothing.
+        // And the title says the name rather than the identity, which holds a
+        // path opening with a character that is read out as nothing.
         assert_eq!(
             super::what_is_open_is_called(&state).as_deref(),
             Some("Unread from Ann")
         );
 
         // Renaming does not lose the row. This is why what is chosen is held
-        // as the path and not as the row's words: the words change when
-        // somebody tidies a name, and the path does not.
+        // as an identity and not as the row's words: the words change when
+        // somebody tidies a name, and the identifier does not.
         state.saved_searches.searches[0].name = "Mail from Ann".to_string();
         assert_eq!(
             super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
@@ -17728,13 +18011,14 @@ mod tests {
             "renaming a saved search left what was open pointing at nothing"
         );
 
-        // A path under the prefix that names nothing is not a folder either.
-        // Answering "no saved search" here would send it on to be opened as a
-        // mailbox with a control character in its name.
-        state.selected_folder = Some(crate::application::saved_searches::the_path_of("gone"));
+        // A search row naming one that has gone is still a saved-search row.
+        // Answering "no saved search" and falling through would send it on to
+        // be opened as a mailbox that does not exist.
+        state.selected_folder = Some(WhichRow::SavedSearch("gone".to_string()));
         assert!(super::the_chosen_saved_search(&state).is_none());
-        assert!(crate::application::saved_searches::is_a_saved_search(
-            state.selected_folder.as_deref().expect("a chosen row")
+        assert!(matches!(
+            state.selected_folder,
+            Some(WhichRow::SavedSearch(_))
         ));
     }
 
@@ -18192,7 +18476,12 @@ mod tests {
         assert!(
             updates
                 .iter()
-                .any(|u| matches!(u, UIUpdate::FoldersLoaded(names) if names == &["INBOX"])),
+                .any(|u| matches!(u, UIUpdate::FoldersLoaded(rows)
+                if rows.iter().any(|row| row.identity
+                    == crate::presentation::folder_tree::WhichRow::Folder {
+                        account: "acct-1".to_string(),
+                        path: "INBOX".to_string(),
+                    }))),
             "mail did not load its folders"
         );
         // And the ids come with them, because reading a folder needs the id
@@ -18294,12 +18583,47 @@ mod tests {
 
     #[test]
     fn test_folder_on_screen_resolves_the_selected_folders_id() {
+        let open = crate::presentation::folder_tree::WhichRow::Folder {
+            account: "acc".to_string(),
+            path: "INBOX".to_string(),
+        };
         let mut state = WxUIState {
-            selected_folder: Some("Inbox, 3 unread".to_string()),
+            selected_folder: Some(open.clone()),
             ..Default::default()
         };
-        state.folder_ids.insert("Inbox, 3 unread".to_string(), 42);
+        state.folder_ids.insert(open.stored(), 42);
         assert_eq!(folder_on_screen(&state), Some(42));
+    }
+
+    #[test]
+    fn test_folder_on_screen_answers_nothing_for_a_row_that_is_not_a_folder() {
+        // An account branch, All Inboxes, a label and a saved search are all
+        // rows somebody can be sitting on and none of them is a mailbox.
+        // Answering with an id here would read one folder's mail while the
+        // cursor was on something else entirely.
+        use crate::presentation::folder_tree::WhichRow;
+        for row in [
+            WhichRow::AllInboxes,
+            WhichRow::Account("acc".to_string()),
+            WhichRow::Labels,
+            WhichRow::Label("t1".to_string()),
+            WhichRow::SavedSearch("s1".to_string()),
+            WhichRow::OnThisComputer,
+        ] {
+            let mut state = WxUIState {
+                selected_folder: Some(row.clone()),
+                ..Default::default()
+            };
+            state.folder_ids.insert(
+                WhichRow::Folder {
+                    account: "acc".to_string(),
+                    path: "INBOX".to_string(),
+                }
+                .stored(),
+                42,
+            );
+            assert_eq!(folder_on_screen(&state), None, "{row:?} is not a folder");
+        }
     }
 
     #[test]
@@ -18351,8 +18675,18 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         {
             let mut s = lock_state(&state);
-            s.selected_folder = Some("INBOX".to_string());
-            s.folder_ids.insert("INBOX".to_string(), folder_id);
+            s.selected_folder = Some(crate::presentation::folder_tree::WhichRow::Folder {
+                account: "acct-1".to_string(),
+                path: "INBOX".to_string(),
+            });
+            s.folder_ids.insert(
+                crate::presentation::folder_tree::WhichRow::Folder {
+                    account: "acct-1".to_string(),
+                    path: "INBOX".to_string(),
+                }
+                .stored(),
+                folder_id,
+            );
             s.active_account_id = Some("acct-1".to_string());
         }
         let (tx, rx) = async_channel::unbounded();
@@ -18391,8 +18725,18 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         {
             let mut s = lock_state(&state);
-            s.selected_folder = Some("Archive".to_string());
-            s.folder_ids.insert("Archive".to_string(), 999);
+            s.selected_folder = Some(crate::presentation::folder_tree::WhichRow::Folder {
+                account: "acct-1".to_string(),
+                path: "Archive".to_string(),
+            });
+            s.folder_ids.insert(
+                crate::presentation::folder_tree::WhichRow::Folder {
+                    account: "acct-1".to_string(),
+                    path: "Archive".to_string(),
+                }
+                .stored(),
+                999,
+            );
             s.active_account_id = Some("acct-1".to_string());
         }
         let (tx, rx) = async_channel::unbounded();
@@ -18448,8 +18792,18 @@ mod tests {
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         {
             let mut s = lock_state(&state);
-            s.selected_folder = Some("INBOX".to_string());
-            s.folder_ids.insert("INBOX".to_string(), folder_id);
+            s.selected_folder = Some(crate::presentation::folder_tree::WhichRow::Folder {
+                account: "acct-1".to_string(),
+                path: "INBOX".to_string(),
+            });
+            s.folder_ids.insert(
+                crate::presentation::folder_tree::WhichRow::Folder {
+                    account: "acct-1".to_string(),
+                    path: "INBOX".to_string(),
+                }
+                .stored(),
+                folder_id,
+            );
             s.active_account_id = Some("acct-1".to_string());
             s.message_list_limit = 2;
         }
@@ -19162,49 +19516,75 @@ mod what_the_status_line_says {
 }
 
 #[cfg(test)]
-mod folder_labels {
-    use super::folder_label;
+mod what_the_id_map_is_keyed_on {
     use crate::data::message_cache::CachedFolder;
+    use crate::presentation::folder_tree::WhichRow;
 
-    fn folder(name: &str, unread: i32) -> CachedFolder {
+    fn folder(id: i64, name: &str, path: &str, unread: i32) -> CachedFolder {
         CachedFolder {
-            id: 1,
+            id,
             account_id: "acc".to_string(),
             name: name.to_string(),
-            path: name.to_string(),
+            path: path.to_string(),
             folder_type: "Inbox".to_string(),
             unread_count: unread,
             total_count: 100,
         }
     }
 
-    #[test]
-    fn test_a_folder_with_unread_mail_says_how_much() {
-        // The question somebody is asking when they arrow onto a folder.
-        assert_eq!(folder_label(&folder("Inbox", 12)), "Inbox, 12 unread");
+    fn keyed(rows: &[CachedFolder]) -> std::collections::HashMap<String, i64> {
+        rows.iter()
+            .map(|f| {
+                (
+                    WhichRow::Folder {
+                        account: f.account_id.clone(),
+                        path: f.path.clone(),
+                    }
+                    .stored(),
+                    f.id,
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn test_a_folder_with_nothing_new_is_one_word() {
-        // "Inbox, 0 unread" on twenty folders is sixty words to say nothing.
-        assert_eq!(folder_label(&folder("Inbox", 0)), "Inbox");
-    }
-
-    #[test]
-    fn test_the_label_is_what_the_id_map_is_keyed_on() {
-        // Selecting a folder looks its id up by the tree item's text. If the
-        // map were keyed on the bare name, every folder with unread mail would
-        // miss, which is the set somebody is most likely to open.
-        let rows = [folder("Inbox", 3), folder("Archive", 0)];
-        let map: std::collections::HashMap<String, i64> =
-            rows.iter().map(|f| (folder_label(f), f.id)).collect();
+    fn test_two_folders_whose_leaf_is_the_same_word_are_two_entries() {
+        // The whole reason this map stopped being keyed on the row's words.
+        // Since the stored name became the leaf, `Archive/2026` and
+        // `Work/2026` both read as `2026`, so a map keyed on what the row says
+        // kept one of them and the other became a row that opened the first
+        // one's mail.
+        let rows = [
+            folder(1, "2026", "Archive/2026", 0),
+            folder(2, "2026", "Work/2026", 0),
+        ];
+        let map = keyed(&rows);
+        assert_eq!(map.len(), 2, "neither folder is lost");
         for row in &rows {
-            assert!(
-                map.contains_key(&folder_label(row)),
-                "{} could not be looked up",
-                row.name
+            assert_eq!(
+                map.get(
+                    &WhichRow::Folder {
+                        account: row.account_id.clone(),
+                        path: row.path.clone(),
+                    }
+                    .stored()
+                ),
+                Some(&row.id),
+                "{} opens its own mail",
+                row.path
             );
         }
+    }
+
+    #[test]
+    fn test_mail_arriving_does_not_change_what_a_folder_is_looked_up_by() {
+        // Keyed on the words, the key carried the unread count, so the key
+        // changed every time a message arrived. The tree and the map were
+        // rebuilt together, which hid it, and reading the two a moment apart
+        // could still miss.
+        let quiet = folder(1, "Inbox", "INBOX", 0);
+        let busy = folder(1, "Inbox", "INBOX", 12);
+        assert_eq!(keyed(&[quiet]), keyed(&[busy]));
     }
 }
 
@@ -20139,13 +20519,14 @@ mod where_the_cursor_lands_after_a_rebuild {
         // so it is the one that decides where somebody opens. Without this the
         // answer is nowhere: the tree comes up with no row chosen and no mail
         // listed until somebody arrows onto a folder themselves.
+        let all_inboxes = crate::presentation::folder_tree::WhichRow::AllInboxes.stored();
         let now = [
-            ALL_INBOXES.to_string(),
+            all_inboxes.clone(),
             "Inbox".to_string(),
             "Archive".to_string(),
         ];
 
-        assert_eq!(the_row_to_land_on(None, &now, Some(ALL_INBOXES)), Some(0));
+        assert_eq!(the_row_to_land_on(None, &now, Some(&all_inboxes)), Some(0));
     }
 
     #[test]
@@ -20154,10 +20535,11 @@ mod where_the_cursor_lands_after_a_rebuild {
         // Starting somewhere is about opening the application, not about being
         // moved out of the folder currently being read every time the tree is
         // rebuilt underneath it.
-        let now = [ALL_INBOXES.to_string(), "Archive".to_string()];
+        let all_inboxes = crate::presentation::folder_tree::WhichRow::AllInboxes.stored();
+        let now = [all_inboxes.clone(), "Archive".to_string()];
 
         assert_eq!(
-            the_row_to_land_on(Some("Archive"), &now, Some(ALL_INBOXES)),
+            the_row_to_land_on(Some("Archive"), &now, Some(&all_inboxes)),
             Some(1)
         );
     }
@@ -20167,9 +20549,10 @@ mod where_the_cursor_lands_after_a_rebuild {
         // All Inboxes is built unconditionally today, so this is the guard
         // against a build where it is not: landing on row nought regardless
         // would drop somebody into whatever happened to be first.
+        let all_inboxes = crate::presentation::folder_tree::WhichRow::AllInboxes.stored();
         let now = ["Inbox".to_string()];
 
-        assert_eq!(the_row_to_land_on(None, &now, Some(ALL_INBOXES)), None);
+        assert_eq!(the_row_to_land_on(None, &now, Some(&all_inboxes)), None);
     }
 }
 
@@ -20306,7 +20689,7 @@ mod hiding_a_calendar {
 
 #[cfg(test)]
 mod showing_the_mail_with_a_label {
-    use super::{PimModule, UIUpdate, folder_label, label_row, load_module_data};
+    use super::{PimModule, UIUpdate, load_module_data};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, Tag};
     use std::sync::Arc;
@@ -20340,28 +20723,29 @@ mod showing_the_mail_with_a_label {
     }
 
     #[test]
-    fn test_a_label_row_cannot_be_mistaken_for_a_folder() {
-        // The tree holds text and nothing else, and the binding gives no way
-        // to ask which branch a row sits under, so the row's own words are all
-        // the handler has to tell a label from a folder. A folder row is a
-        // bare name or ends in " unread".
-        let folder = CachedFolder {
-            id: 1,
-            account_id: "acct".to_string(),
-            name: "Work".to_string(),
-            path: "Work".to_string(),
-            folder_type: "Custom".to_string(),
-            unread_count: 0,
-            total_count: 0,
-        };
-        let with_unread = CachedFolder {
-            unread_count: 3,
-            ..folder.clone()
-        };
+    fn test_a_label_row_cannot_be_mistaken_for_a_folder_even_when_they_read_alike() {
+        // This used to rest on the words: a folder row was a bare name or
+        // ended in " unread", so nothing a label produced could read like one.
+        // That held only as long as no two rows could read the same, which
+        // stopped being true when the stored folder name became the leaf.
+        //
+        // A row says what it is now, so the case that would have broken the
+        // old rule is the one asserted here: a folder genuinely called
+        // "Work, label" is still not the label called "Work".
+        use crate::presentation::folder_tree::{WhichRow, label_text};
 
-        assert_ne!(label_row("Work"), folder_label(&folder));
-        assert_ne!(label_row("Work"), folder_label(&with_unread));
-        assert_eq!(label_row("Work"), "Work, label");
+        let awkward = WhichRow::Folder {
+            account: "acct".to_string(),
+            path: "Work, label".to_string(),
+        };
+        let real_label = WhichRow::Label("t1".to_string());
+
+        assert_eq!(label_text("Work"), "Work, label");
+        assert_ne!(
+            awkward.stored(),
+            real_label.stored(),
+            "two rows reading the same are still two different rows"
+        );
     }
 
     #[test]

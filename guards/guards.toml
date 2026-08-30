@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 318 records have arrived since and have not been through it.
+# 320 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9306,4 +9306,84 @@ red = [
     "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
     "service::protocols::imap::against_a_server_that_answers::test_deleting_a_folder_with_the_gate_closed_says_nothing_to_the_server",
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
+]
+
+[[guard]]
+# What the tree remembers, and where the cursor lands after a rebuild, are keyed
+# on a row's identity. Finding that row again on screen is the one step that
+# still has to go through words, because the binding gives nothing else:
+# `TreeItemId` has no equality and its pointer is not public, so two items
+# cannot be compared, and the only question a row answers is what it says.
+#
+# `where_a_row_sits` is what makes that sound. It collects the words of every
+# row above one, and `the_row_on_screen` retraces the same chain with
+# `get_item_parent`. Two rows under one parent never read the same, so the chain
+# is unique where a single label is not.
+#
+# The break is the whole of the old behaviour: match on the row's own words and
+# ignore what is above it. That is what this tree did until now, and since plan
+# 01-03 made the stored folder name the leaf it means `Archive/2026` and
+# `Work/2026` are one row as far as every lookup is concerned.
+#
+# Measured by hand on 2026-08-30 against the whole library: three tests.
+#
+# What stayed green, and why, because guessing would have named more.
+# `test_a_top_level_row_sits_under_nothing_but_itself` is correct either way: a
+# row at the top level has nothing above it, so its chain really is its own
+# label and the break cannot change it. Every test about identities themselves
+# stays green too, because `WhichRow::stored` is untouched by this: the
+# identities are still distinct, and the break is that nothing can work out
+# which of them the row on screen belongs to.
+#
+# The test that shows the real cost is not here, because it needs a control.
+# `tests/folder_tree_rows_pair_with_the_control.rs` puts the cursor on
+# `Sent/2026`, applies this same break, and reads the row back as
+# `Archive/2026`: the cursor on one folder and the program acting on another.
+# `scripts/guards.sh` runs `cargo test --lib` and never builds that.
+name = "the row on screen is found by the words above it and not by its own"
+file = "src/presentation/folder_tree.rs"
+before = """    for above in rows[..at].iter().rev() {"""
+after = """    for above in rows[..0].iter().rev() {"""
+red = [
+    "presentation::folder_tree::tests::test_every_row_of_a_tree_sits_somewhere_no_other_row_does",
+    "presentation::folder_tree::tests::test_two_folders_reading_the_same_are_told_apart_by_what_is_above_them",
+    "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
+]
+
+[[guard]]
+# No row of the folder tree hangs its identity off the control.
+#
+# `wxdragon` keeps tree item data in a process-global map. `store_item_data`
+# inserts into a static registry, `delete_all_items` calls the raw FFI and
+# removes nothing from it, and `cleanup_all_custom_data`, the escape hatch,
+# returns early on any item with no children and so never clears a leaf. Every
+# folder row is a leaf. This tree is emptied and rebuilt whenever a sync
+# finishes, on a timer, so one call here leaks an entry per folder per sync for
+# the life of the process.
+#
+# Nothing in a test suite notices memory that only grows, which is why this is a
+# source read rather than a behaviour test. It reads the shipping half of each
+# file with `what_ships`, because this codebase has test modules sitting between
+# stretches of shipping code and cutting at the first `#[cfg(test)]` would call
+# the rest clean.
+#
+# The break is the obvious way somebody would write this feature: put the
+# identity on the item, where it looks like it belongs.
+#
+# Measured by hand on 2026-08-30 against the whole library: one test.
+#
+# One, and that is the point rather than a weakness. There is no second test
+# that could see this: the leak has no observable behaviour, so the source read
+# is the only thing standing between this tree and an unbounded leak. If this
+# record ever reddens nothing, the check has stopped reading the file rather
+# than the file having stopped calling it, and
+# `test_the_reading_can_see_such_a_call_when_there_is_one` beside it is what
+# says which.
+name = "no row in the folder tree hangs data off the control"
+file = "src/presentation/wx_app.rs"
+before = """        if row.expandable && !collapsed.contains(&row.identity.stored()) {"""
+after = """        tree.set_custom_data(&item, row.identity.stored());
+        if row.expandable && !collapsed.contains(&row.identity.stored()) {"""
+red = [
+    "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
 ]

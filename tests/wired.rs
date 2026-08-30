@@ -2829,10 +2829,16 @@ fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() 
         "the folder tree is built without asking what saved searches there are, so none of \
          them can ever appear in it"
     );
-    let rebuild = body_of(ship, "        UIUpdate::FoldersLoaded(folders) => {");
     assert!(
-        rebuild.contains("saved_search_rows("),
-        "the tree rebuild draws no saved-search rows, so the searches are read and thrown away"
+        body_of(ship, "fn folder_tree_updates(").contains("every_saved_search("),
+        "the searches are read and thrown away: nothing turns them into rows, so none of \
+         them reaches the tree"
+    );
+    let rebuild = body_of(ship, "        UIUpdate::FoldersLoaded(rows) => {");
+    assert!(
+        rebuild.contains("fill_the_tree("),
+        "the tree rebuild draws none of the rows it was handed, so every row the folder \
+         tree decides on, saved searches among them, is worked out and then dropped"
     );
     assert!(
         ship.contains("folder_tree.on_item_activated("),
@@ -2871,9 +2877,9 @@ fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
         ),
     ] {
         assert!(
-            body.contains("is_a_saved_search("),
-            "{what} does not ask whether what is chosen is a saved search, so it sends the \
-             search's own path to the server as a folder name"
+            body.contains("WhichRow::Folder"),
+            "{what} does not check that what is chosen is a folder, so it sends whatever \
+             the cursor is on to the server as a folder name"
         );
     }
 }
