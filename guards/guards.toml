@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 316 records have arrived since and have not been through it.
+# 318 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9242,4 +9242,68 @@ after = """                let carried = Some("/".to_string());"""
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_mailbox_the_server_gives_no_separator_for_carries_none",
     "service::protocols::imap::against_a_server_that_answers::test_each_mailbox_carries_the_separator_the_server_gave_for_it",
+]
+
+[[guard]]
+name = "a folder with folders inside it is deleted deepest first"
+file = "src/application/folders_underneath.rs"
+# RFC 9051 section 6.3.5: "The DELETE command MUST NOT remove inferior
+# hierarchical names." That is the exact opposite of RENAME, which section
+# 6.3.6 requires to carry them along, and the two sit two sections apart in one
+# document. A reader who had just implemented the rename is the most likely
+# person to write the walk the wrong way round, because for a rename the order
+# genuinely does not matter.
+#
+# What the break costs: the first DELETE goes to the folder at the top, which
+# still has folders inside it. A server answers NO, the walk stops there, and
+# nothing at all is deleted. So the visible symptom is a command that never
+# works rather than one that destroys anything, which is the better of the two
+# and is still a command that never works.
+#
+# The break reverses the order and nothing else. It is one call, and it is the
+# smallest edit that turns a correct walk into a wrong one, which is what makes
+# it worth recording: it would read as a tidy-up in a diff.
+#
+# Measured by hand on 2026-08-30 against the whole library: five tests, and the
+# two beyond the three obvious ones are the point. `where_the_rows_move_to`
+# reverses this walk to get shallowest first, so a rename's row updates depend
+# on this order as well, in the opposite direction. Measuring by expectation
+# would have named the three tests about deleting and missed both of those.
+before = "    levels.into_iter().rev().flatten().collect()"
+after = "    levels.into_iter().flatten().collect()"
+red = [
+    "application::folders_underneath::tests::test_a_folder_moved_under_another_takes_its_own_shape_with_it",
+    "application::folders_underneath::tests::test_a_three_level_tree_comes_back_deepest_first",
+    "application::folders_underneath::tests::test_renaming_a_folder_moves_every_row_underneath_it_too",
+    "application::folders_underneath::tests::test_the_separator_each_row_already_had_is_the_one_it_keeps",
+    "application::folders_underneath::tests::test_two_branches_of_the_same_depth_both_come_back",
+]
+
+[[guard]]
+name = "deleting a folder on a server asks the gate before it builds a command"
+file = "src/service/protocols/imap.rs"
+# The gate is one line and it is the first line, so it is also the easiest line
+# in the file to lose to a merge or to a refactor that reorders a body. What it
+# costs here is the most of any write in this file: a delete cannot be undone,
+# it takes the mail in the folder with it, and it happens at the server, so
+# every device on the account loses it too. Mail writes are off for a new
+# install, which is exactly the state somebody trying the program is in.
+#
+# Measured by hand on 2026-08-30 against the whole library: three tests.
+#
+# The third is the one worth writing down. `test_every_mailbox_write_is_on_the
+# _mail_wire_list` reddens not because it knows about this verb but because
+# MAIL_TRANSPORTS' imap floor says 11 and removing a gate leaves ten writes that
+# ask it. That floor is what turns a lost gate into a failure rather than a
+# quiet count, and 01-01 recorded what happens when it is left behind: with a
+# spare write above the floor, the copy_message record lost one of its three
+# reddening tests and every run stayed green. So the floor rising with each new
+# gated write is not bookkeeping, it is this record's third test.
+before = '''        self.may_i("delete a folder on the server")?;
+'''
+after = ""
+red = [
+    "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::protocols::imap::against_a_server_that_answers::test_deleting_a_folder_with_the_gate_closed_says_nothing_to_the_server",
+    "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]

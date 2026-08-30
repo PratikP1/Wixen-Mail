@@ -742,13 +742,13 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
 /// and the floor is what turns that into a failure rather than a quiet count.
 #[cfg(test)]
 const MAIL_TRANSPORTS: [(&str, usize); 3] = [
-    // 10 since `rename_mailbox` arrived, 9 since `create_mailbox` did. The
+    // 11 since `delete_mailbox` arrived, 10 since `rename_mailbox` did. The
     // floor is not decoration: while it said 8 with nine writes present, one
     // write could lose its gate and the count still cleared it, which took the
     // guard recorded for exactly that break down from three reddening tests to
     // two. `scripts/guards.sh` is what noticed. A gated write added here raises
     // this in the same commit.
-    ("src/service/protocols/imap.rs", 10),
+    ("src/service/protocols/imap.rs", 11),
     ("src/service/protocols/smtp.rs", 2),
     ("src/service/protocols/pop3.rs", 1),
 ];
@@ -768,7 +768,7 @@ const MAIL_TRANSPORTS: [(&str, usize); 3] = [
 /// `send_email` and `send_raw` both open an SMTP conversation and differ only
 /// by which address the row names.
 #[cfg(test)]
-const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 12] = [
+const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 13] = [
     (
         "src/service/protocols/imap.rs",
         "create_mailbox",
@@ -780,6 +780,12 @@ const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 12] = [
         "rename_mailbox",
         "src/service/protocols/imap.rs",
         "RENAME \"Entw&APw-rfe/Alt\" \"Entw&APw-rfe/Neu\"",
+    ),
+    (
+        "src/service/protocols/imap.rs",
+        "delete_mailbox",
+        "src/service/protocols/imap.rs",
+        "DELETE \"Entw&APw-rfe/Alt\"",
     ),
     (
         "src/service/protocols/imap.rs",

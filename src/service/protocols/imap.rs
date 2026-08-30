@@ -938,6 +938,38 @@ impl ImapSession {
         .map_err(protocol_error("Could not rename the folder"))
     }
 
+    /// Take a mailbox off the server.
+    ///
+    /// The path is the server's own spelling and goes out exactly as it is
+    /// given, the same rule [`Self::rename_mailbox`] follows and the opposite
+    /// of [`Self::create_mailbox`], which is handed a name a person typed.
+    ///
+    /// **One folder, never a subtree.** RFC 9051 section 6.3.5: "The DELETE
+    /// command MUST NOT remove inferior hierarchical names." That is the exact
+    /// opposite of `RENAME`, which is required to carry them along, so a caller
+    /// removing a folder that has folders inside it sends one of these per
+    /// folder, deepest first, and never aims one at a name that still has names
+    /// under it. `crate::application::folders_underneath::deepest_first` is
+    /// where that order is worked out and
+    /// `crate::application::how_far_it_got::HowFarItGot` is how a walk that
+    /// stops partway says where it got to.
+    ///
+    /// A `NO` here is ordinary rather than exceptional. The same section makes
+    /// it an error to delete `INBOX`, and an error to delete a name that has
+    /// names under it while carrying `\Noselect`. Deleting a selectable folder
+    /// that still has one leaves a `\Noselect` shell behind in the hierarchy, so
+    /// a caller lists again afterwards rather than assuming the row has gone.
+    pub async fn delete_mailbox(&mut self, path: &str) -> Result<()> {
+        self.may_i("delete a folder on the server")?;
+        with_timeout(
+            COMMAND_TIMEOUT,
+            self.session.delete(path),
+            "deleting a folder",
+        )
+        .await?
+        .map_err(protocol_error("Could not delete the folder"))
+    }
+
     /// How many messages a mailbox holds, and how many are unread.
     ///
     /// One STATUS command, without opening the mailbox. What this replaced was
@@ -3205,6 +3237,7 @@ pub(crate) mod against_a_server_that_answers {
             the_failure(session.set_subscribed("Work", true).await),
             the_failure(session.create_mailbox("Work").await),
             the_failure(session.rename_mailbox("Work", "Works").await),
+            the_failure(session.delete_mailbox("Work").await),
         ];
 
         for said in &refusals {
@@ -3220,6 +3253,7 @@ pub(crate) mod against_a_server_that_answers {
             "change which folders you are subscribed to",
             "create a folder on the server",
             "rename a folder on the server",
+            "delete a folder on the server",
         ] {
             assert!(
                 refusals.iter().any(|said| said.contains(act)),
@@ -3229,7 +3263,15 @@ pub(crate) mod against_a_server_that_answers {
         let transcript = server.transcript().await;
         // SUBSCRIBE covers UNSUBSCRIBE as well, which for a negative
         // assertion is exactly what is wanted.
-        for command in ["UID", "APPEND", "EXPUNGE", "SUBSCRIBE", "CREATE", "RENAME"] {
+        for command in [
+            "UID",
+            "APPEND",
+            "EXPUNGE",
+            "SUBSCRIBE",
+            "CREATE",
+            "RENAME",
+            "DELETE",
+        ] {
             assert!(
                 !server.was_told(command).await,
                 "a change reached the server with the gate closed: {transcript:?}"
@@ -3968,6 +4010,102 @@ pub(crate) mod against_a_server_that_answers {
             !server.was_told(" CREATE ").await,
             "a folder was made with the gate closed: {transcript:?}"
         );
+    }
+
+    // ── Deleting a folder ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_deleting_a_folder_sends_the_path_as_the_server_spells_it() {
+        // Same rule as RENAME and the opposite of CREATE: the path came off a
+        // LIST response, so it goes back exactly as it arrived. A second trip
+        // through the encoder names a mailbox the server has not got, and for
+        // a delete that is a command aimed at the wrong name.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = signed_in_to(&server).await;
+
+        waiting_for(session.delete_mailbox("Entw&APw-rfe/Alt"), "the delete")
+            .await
+            .expect("the folder to be deleted");
+
+        let asked_for = r#" DELETE "Entw&APw-rfe/Alt""#;
+        let transcript = server.transcript().await;
+        assert!(
+            transcript.iter().any(|line| line.contains(asked_for)),
+            "the delete did not go out as the server spells it: {transcript:?}"
+        );
+        let encoded_twice = mailbox_name::encode("Entw&APw-rfe/Alt");
+        assert!(
+            !transcript
+                .iter()
+                .any(|line| line.contains(encoded_twice.as_str())),
+            "a path the server had already spelled was encoded again: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_will_not_delete_a_folder_is_never_reported_as_deleted() {
+        // The refusal that is expected rather than exceptional. RFC 9051
+        // section 6.3.5 has a server answer NO for a name that still has names
+        // inside it and carries the `\Noselect` attribute, and for INBOX.
+        let server = a_server_that_refuses("", "DELETE").await;
+        let mut session = signed_in_to(&server).await;
+
+        let said = the_failure(waiting_for(session.delete_mailbox("Work"), "the refusal").await);
+
+        assert!(said.contains("Could not delete the folder"), "{said}");
+        assert!(said.contains("the server would not do it"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_folder_with_the_gate_closed_says_nothing_to_the_server() {
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = reading_only_on(&server).await;
+
+        let said = the_failure(waiting_for(session.delete_mailbox("Work"), "the refusal").await);
+
+        let transcript = server.transcript().await;
+        assert!(said.contains("delete a folder on the server"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        assert!(
+            !server.was_told(" DELETE ").await,
+            "a folder was deleted with the gate closed: {transcript:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_subtree_is_deleted_deepest_first_one_command_at_a_time() {
+        // RFC 9051 section 6.3.5: "The DELETE command MUST NOT remove inferior
+        // hierarchical names." The opposite of RENAME, so the client sends one
+        // command per folder and never aims one at a name that still has names
+        // inside it.
+        //
+        // Positions rather than presence, which is what proves three commands
+        // were sent rather than one line matching three times.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = signed_in_to(&server).await;
+
+        for path in ["A/B/C", "A/B", "A"] {
+            waiting_for(session.delete_mailbox(path), "the delete")
+                .await
+                .expect("the folder to be deleted");
+        }
+
+        let transcript = server.transcript().await;
+        let deepest = server
+            .when_told(r#" DELETE "A/B/C""#)
+            .await
+            .unwrap_or_else(|| panic!("the deepest folder was never deleted: {transcript:?}"));
+        let middle = server
+            .when_told(r#" DELETE "A/B""#)
+            .await
+            .unwrap_or_else(|| panic!("the middle folder was never deleted: {transcript:?}"));
+        let top = server
+            .when_told(r#" DELETE "A""#)
+            .await
+            .unwrap_or_else(|| panic!("the top folder was never deleted: {transcript:?}"));
+
+        assert!(deepest < middle, "{transcript:?}");
+        assert!(middle < top, "{transcript:?}");
     }
 
     // ── What separates a folder from one inside it ──────────────────────────

@@ -64,10 +64,11 @@ the days it lands on. None of it has been exercised against a live account.
 **Threaded view.** Present in the View menu and disabled. The data model carries
 thread identifiers; nothing groups by them.
 
-**Folder management.** A folder can be made on the server, renamed there, and
-moved under a different folder or back out to the top level. Deleting one is not
-built, and a whole folder cannot be marked read or emptied. Nothing here has run
-against a real mail server.
+**Folder management.** A folder can be made on the server, renamed there, moved
+under a different folder or back out to the top level, and deleted along with
+everything inside it. Marking a whole folder read and emptying a folder are not
+built. Folders kept on this computer are a fixed set and none of these commands
+applies to them. Nothing here has run against a real mail server.
 
 **Moving a task between lists.** A task goes into your provider's default list
 when you make it, and moving and copying work for mail only.

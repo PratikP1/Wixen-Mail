@@ -125,10 +125,13 @@ Written down so you do not spend time reporting things already on the list.
   conversation here may be split differently from the same one in Gmail's web
   interface. Gmail publishes its own grouping and the library this is built on
   gives no way to read it.
-- **A folder can be created, renamed and moved, but not deleted**, and a whole
-  folder cannot be marked read or emptied. Renaming or moving the inbox is
-  refused on purpose, because on a mail server that empties the inbox into a
-  new folder rather than renaming it.
+- **A folder can be created, renamed, moved and deleted, but a whole folder
+  cannot be marked read or emptied.** Renaming or moving the inbox is refused on
+  purpose, because on a mail server that empties the inbox into a new folder
+  rather than renaming it, and deleting the inbox is refused because a server
+  does not allow it. Deleting a folder that has folders inside it is several
+  commands with no way to undo half of it, so if it stops partway it says
+  exactly where it got to.
 - **A POP account has never been run against a real POP server.** Everything
   about it is new in this version: the client, the local folders, the sync, and
   the policy that removes mail from the server. Mail is left on the server

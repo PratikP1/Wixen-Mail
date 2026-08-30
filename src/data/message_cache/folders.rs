@@ -188,6 +188,27 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Take a folder off this computer, along with the mail it held.
+    ///
+    /// Called after the server has taken it, so this is the copy catching up
+    /// rather than a delete of its own. The mail goes with it, which is not
+    /// incidental: a folder row removed while its messages stayed would leave
+    /// the words of somebody's mail on the disk under a folder nothing lists,
+    /// reachable by search and by nothing else. `foreign_keys` is on and the
+    /// messages table cascades from the folder, so the one statement is enough,
+    /// and the test beside this asserts the cascade really runs rather than
+    /// trusting the schema to have been read correctly.
+    ///
+    /// A folder that is already gone is not a failure. A delete that stopped
+    /// partway is run again against the folders left, and a row that went in
+    /// between is one less thing to do.
+    pub fn forget_folder(&self, folder_id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM folders WHERE id = ?1", params![folder_id])
+            .map_err(|e| Error::Other(format!("Failed to remove the folder: {}", e)))?;
+        Ok(())
+    }
+
     /// Which folder each of an account's folders sits under, by path.
     ///
     /// One query for the whole account, because the tree is built from all of
@@ -486,6 +507,58 @@ mod tests {
             Some(&Some(id)),
             "the folder inside it lost the folder above it"
         );
+    }
+
+    #[test]
+    fn test_a_folder_taken_off_the_server_takes_its_mail_off_this_computer_too() {
+        // A folder row removed while its messages stayed would leave the words
+        // of somebody's mail on the disk under a folder nothing lists, which is
+        // the opposite of what deleting a folder is for. `foreign_keys` is on
+        // and the messages table cascades from the folder, so this asserts the
+        // cascade really runs rather than assuming the schema is enough.
+        let cache = fresh("forget_folder");
+        let mut folder = inbox();
+        folder.path = "Archive".to_string();
+        let id = cache.save_folder(&folder).unwrap();
+        cache
+            .save_message(&crate::data::message_cache::CachedMessage {
+                id: 0,
+                uid: 7,
+                folder_id: id,
+                message_id: "<one@example.com>".to_string(),
+                subject: "Quarterly report".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-08-24".to_string(),
+                body_plain: Some("the words of somebody's mail".to_string()),
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+            })
+            .expect("a message");
+
+        cache.forget_folder(id).unwrap();
+
+        assert!(cache.get_folder("acc", "Archive").unwrap().is_none());
+        assert!(
+            cache.get_messages_for_folder(id, "acc").unwrap().is_empty(),
+            "the mail in a deleted folder is still on this computer"
+        );
+    }
+
+    #[test]
+    fn test_forgetting_a_folder_that_is_already_gone_is_not_a_failure() {
+        // A delete run a second time after one that stopped partway walks the
+        // folders left, and a row somebody removed in between is not a fault:
+        // the job of this call is that the row is not there afterwards.
+        let cache = fresh("forget_folder_twice");
+        let id = cache.save_folder(&inbox()).unwrap();
+
+        cache.forget_folder(id).unwrap();
+
+        assert!(cache.forget_folder(id).is_ok());
     }
 
     #[test]

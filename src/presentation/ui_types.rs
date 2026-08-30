@@ -347,6 +347,15 @@ pub enum UIUpdate {
     /// and the answer to a key somebody just pressed can be the one that is
     /// dropped.
     CommandAnswered(String),
+    /// A folder that was open has gone, so nothing should still name it.
+    ///
+    /// Sent by a worker that took a folder off the server, before the tree is
+    /// read back. What `selected_folder` holds is the tree's label rather than
+    /// a path, so this carries no name to compare: what it means is that
+    /// whatever was chosen is no longer a row, which is the same thing
+    /// `delete_the_chosen_search` does on the interface thread when it removes
+    /// the row somebody was standing on.
+    ChosenFolderIsGone,
     OutboxSendResult {
         queue_id: String,
         success: bool,

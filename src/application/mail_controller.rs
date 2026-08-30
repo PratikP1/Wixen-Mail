@@ -554,6 +554,17 @@ impl MailController {
         session.rename_mailbox(from, to).await
     }
 
+    /// Take a folder off the server.
+    ///
+    /// No logic here on purpose. One folder and never a subtree: RFC 9051
+    /// section 6.3.5 forbids `DELETE` from removing the names inside a folder,
+    /// so the caller walks deepest first and sends one of these per folder.
+    pub async fn delete_mailbox(&self, path: &str) -> Result<()> {
+        let mut guard = self.require_imap().await?;
+        let session = &mut *guard;
+        session.delete_mailbox(path).await
+    }
+
     /// How many messages a folder holds, and how many are unread.
     pub async fn folder_counts(&self, folder: &str) -> Result<FolderCounts> {
         let mut guard = self.require_imap().await?;
@@ -734,6 +745,7 @@ mod tests {
             controller.set_subscribed("Work", true).await.err(),
             controller.create_mailbox("Work").await.err(),
             controller.rename_mailbox("Work", "Works").await.err(),
+            controller.delete_mailbox("Work").await.err(),
             controller.fetch_flags("INBOX", &[1], None).await.err(),
             // A count here is worse than an error. The caller reads it as the
             // old copy of the draft having been cleaned up, appends the new

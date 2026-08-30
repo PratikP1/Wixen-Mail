@@ -36,6 +36,7 @@ pub mod forget;
 pub mod from_message;
 pub mod handover;
 pub mod help;
+pub mod how_far_it_got;
 pub mod import_tree;
 pub mod importing_contacts;
 pub mod importing_messages;

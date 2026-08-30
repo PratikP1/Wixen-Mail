@@ -8,6 +8,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can delete a folder from the server.** Choose it, then Action, This
+  Folder, Delete Folder. It asks first, naming the folder, how many folders are
+  inside it, and that the mail in all of them goes too. Enter answers no, so
+  pressing it partway through hearing the question deletes nothing.
+
+  A folder with folders inside it is deleted from the inside out, deepest first,
+  one at a time. That is not a detail: a mail server refuses to delete a folder
+  that still has folders in it, so there is no single command that removes a
+  whole branch.
+
+  **If it stops partway, it tells you exactly where.** There is no way to undo
+  half of it, so instead of pretending it was all or nothing, it says which
+  folders went, which one it stopped at, what the server said about it, and how
+  many were left. Running the command again finishes the job, because the ones
+  already gone are no longer there.
+
+  The inbox is refused. A mail server does not allow it, and there would be
+  nowhere for new mail to arrive.
+
+  Known limits, said here rather than found later:
+
+  - Deleting a folder kept on this computer is not built. For an account that
+    collects its mail, those folders hold the only copy of it, so this is gated
+    rather than half-built.
+  - Marking a whole folder read and emptying a folder are not built yet.
+  - This has been tested against a mail server written for the tests, not
+    against a real account.
+
 - **You can move a folder into a different one, or bring it back out.** Choose
   the folder, then Action, This Folder, Move Folder. A list of the places it can
   go opens, you pick one with the arrow keys and Enter, and it asks before it
@@ -30,7 +58,6 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   - A folder can only move within its own account.
   - Some servers do not nest folders at all. On one of those, the move says so
     and sends nothing, rather than making a folder with a slash in its name.
-  - Deleting a folder is not built yet.
   - Moving a folder kept on this computer is not built yet.
   - This has been tested against a mail server written for the tests, not
     against a real account.
@@ -56,7 +83,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Known limits, said here rather than found later:
 
-  - Deleting a folder is not built yet. Moving one is, and is described above.
+  - Moving and deleting a folder are built too, and each is described above.
   - Renaming a folder kept on this computer is not built yet. Those folders are
     a fixed set the program owns, so there is nothing there to rename. Asking
     says so.
@@ -84,11 +111,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     one inside another is not built yet. Checking for mail now reads and records
     which folder each one sits under, but the box you type a name into does not
     offer a parent to put it under, so a name with a separator in it goes to the
-    server as typed and lands wherever the server decides.
+    server as typed and lands wherever the server decides. Make it at the top
+    and then use Move Folder to put it where you want it.
   - Making a folder on this computer, under the folders that hold mail no server
     has, is not built yet. Asking for one says so.
-  - Deleting a folder is not built yet. Renaming one and moving one are, and
-    are described above.
+  - Renaming, moving and deleting a folder are all built now, and each is
+    described above.
   - Changing mail on the server is switched off for a new install. With it off,
     asking for a folder says so and names the setting, and nothing at all is
     sent to the server.

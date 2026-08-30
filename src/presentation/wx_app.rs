@@ -79,6 +79,7 @@ menu_ids!(
     ID_NEW_FOLDER,
     ID_RENAME_FOLDER,
     ID_MOVE_FOLDER,
+    ID_DELETE_FOLDER,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3178,6 +3179,17 @@ impl WxMailApp {
                                 &frame,
                             );
                         }
+                        _ if id == ID_DELETE_FOLDER => {
+                            delete_the_chosen_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &frame,
+                            );
+                        }
                         _ if id == ID_MOVE_FOLDER => {
                             move_the_chosen_folder(
                                 AppHandles {
@@ -5342,6 +5354,17 @@ impl WxMailApp {
                 "&Move Folder...",
                 "Put the chosen folder inside a different one, or bring it back out",
             )
+            // No Delete key here. Delete on the Action menu removes whichever
+            // message, event, task, note or contact is chosen, and giving a
+            // folder the same key would mean one keystroke doing two very
+            // different things depending on which pane has focus. This one is
+            // reached by name, which is the right cost for a command that
+            // takes somebody's mail with it.
+            .append_item(
+                ID_DELETE_FOLDER,
+                "Delete Fol&der...",
+                "Take the chosen folder off the server, with everything in it",
+            )
             .build();
 
         let message = Menu::builder()
@@ -6276,6 +6299,7 @@ enum FolderAct {
     Made,
     Renamed,
     Moved,
+    Deleted,
 }
 
 impl FolderAct {
@@ -6285,6 +6309,7 @@ impl FolderAct {
             FolderAct::Made => "no folder was made",
             FolderAct::Renamed => "nothing was renamed",
             FolderAct::Moved => "nothing was moved",
+            FolderAct::Deleted => "nothing was deleted",
         }
     }
 
@@ -6294,6 +6319,7 @@ impl FolderAct {
             FolderAct::Made => "make",
             FolderAct::Renamed => "rename",
             FolderAct::Moved => "move",
+            FolderAct::Deleted => "delete",
         }
     }
 }
@@ -6327,16 +6353,32 @@ fn why_the_folder_cannot_be(
             FolderAct::Made => FOLDERS_ON_THIS_COMPUTER_ARE_NOT_MADE_YET,
             FolderAct::Renamed => RENAMING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
             FolderAct::Moved => MOVING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
+            FolderAct::Deleted => DELETING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET,
         });
     }
     if kind == crate::common::types::FolderType::Inbox {
         return Some(match act {
             FolderAct::Made => return None,
             FolderAct::Renamed | FolderAct::Moved => RENAMING_THE_INBOX_EMPTIES_IT,
+            FolderAct::Deleted => THE_INBOX_CANNOT_BE_DELETED,
         });
     }
     None
 }
+
+/// What is said when somebody asks to delete a folder kept on this computer.
+///
+/// Deliberately not offered rather than half-built. These folders are a fixed
+/// set the code owns, and for an account that collects its mail rather than
+/// reading it in place they hold the only copy of it, so a delete here has
+/// nothing on any server to get it back from.
+const DELETING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Deleting a folder kept on this computer is not built yet. \
+     These folders are a fixed set, and for an account that collects its mail \
+     they hold the only copy of it. Folders on the server can be deleted.";
+
+/// What is said when somebody asks to delete the inbox.
+const THE_INBOX_CANNOT_BE_DELETED: &str = "The inbox cannot be deleted. A mail server does not allow it, and there would be \
+     nowhere for new mail to arrive.";
 
 /// What is said when somebody asks to move a folder kept on this computer.
 const MOVING_A_FOLDER_ON_THIS_COMPUTER_IS_NOT_BUILT_YET: &str = "Moving a folder kept on this computer is not built yet. \
@@ -6888,6 +6930,222 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
             said,
         },
     );
+}
+
+/// Take the chosen folder off the server, with everything in it.
+///
+/// Several commands, not one, and this is the opposite of the move above. RFC
+/// 9051 section 6.3.5: "The DELETE command MUST NOT remove inferior
+/// hierarchical names." So a folder with folders inside it is deleted deepest
+/// first, one command each, and no command is ever aimed at a name that still
+/// has names under it.
+///
+/// There is no transaction under that, so a refusal partway leaves some of it
+/// done. What is said afterwards is
+/// [`crate::application::how_far_it_got::HowFarItGot`]: exactly which folders
+/// went, which one it stopped at and why, and how many were left. Running it
+/// again finishes the job, because the folders already gone are no longer in
+/// the tree it walks.
+fn delete_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, frame: &Frame) {
+    use crate::application::folders_underneath::{deepest_first, is_too_deep_to_follow};
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let chosen = match the_chosen_folder(state, cache) {
+        Ok(chosen) => chosen,
+        Err(why) => return refuse_a_command(tx, why),
+    };
+    if let Some(why) = why_the_folder_cannot_be(
+        FolderAct::Deleted,
+        &chosen.folder.path,
+        crate::common::types::FolderType::from_stored(&chosen.folder.folder_type),
+    ) {
+        return refuse_a_command(tx, why);
+    }
+    if !has_folders_on_a_server(&chosen.account) {
+        return refuse_a_command(tx, THIS_ACCOUNT_KEEPS_ITS_MAIL_HERE);
+    }
+    if is_too_deep_to_follow(&chosen.placed, chosen.folder.id) {
+        // A stored parent that points back at something above it. Said rather
+        // than walked, because the walk is bounded and would delete whatever
+        // the bound happened to reach.
+        return refuse_a_command(
+            tx,
+            "The folders recorded for this account disagree about which sits inside which, \
+             so there is no safe order to delete them in. Check for mail once and try again.",
+        );
+    }
+
+    let going = deepest_first(&chosen.placed, chosen.folder.id);
+    if going.is_empty() {
+        return refuse_a_command(tx, WHICH_FOLDER);
+    }
+    // Counted from what is stored, exactly, at the moment the question is
+    // asked, which is D-37's rule. `total_count` is a number from the last
+    // sync and is not used, and no round trip is made in front of a dialog
+    // somebody may cancel.
+    let inside_it = going.len() - 1;
+    let name = chosen.readable_name().to_string();
+    let and_what_is_in_it = if inside_it == 0 {
+        format!("Delete {name} from the server, with all the mail in it?")
+    } else if inside_it == 1 {
+        format!(
+            "Delete {name} from the server, along with the 1 folder inside it and all the mail in both?"
+        )
+    } else {
+        format!(
+            "Delete {name} from the server, along with the {inside_it} folders inside it and all the mail in them?"
+        )
+    };
+    let asked = MessageDialog::builder(
+        frame,
+        &format!("{and_what_is_in_it} This cannot be undone, and it happens on the server, so every mail app using this account loses them too."),
+        "Delete Folder",
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build()
+    .show_modal();
+    if asked != ID_YES {
+        return;
+    }
+
+    send_status(tx, rt, &format!("Deleting {name}..."));
+    spawn_the_folder_delete(
+        tx,
+        rt,
+        chosen.account,
+        DeletingAFolder {
+            // Deepest first, which is the order the commands go out in and
+            // the whole reason this walk exists.
+            going: going
+                .into_iter()
+                .map(|folder| (folder.id, folder.path, folder.name))
+                .collect(),
+        },
+    );
+}
+
+/// One delete, and the folders it walks, deepest first.
+struct DeletingAFolder {
+    /// Each folder to take off the server: its row here, its path, its name.
+    going: Vec<(i64, String, String)>,
+}
+
+/// Delete the folders one at a time, deepest first, and say how far it got.
+///
+/// Stops at the first refusal. There is nothing to roll back to, and putting
+/// messages back is not a rollback: an appended message is a new message with a
+/// new UID, so every flag and every reference to it points at something gone.
+/// What replaces all-or-nothing is saying exactly where it stopped, which is
+/// D-36 and [`crate::application::how_far_it_got::HowFarItGot`].
+///
+/// Each folder that really went is forgotten here as it goes, not in a batch at
+/// the end. So a run that stops halfway leaves the tree agreeing with the
+/// server about both halves, and running it again walks only what is left.
+fn spawn_the_folder_delete(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    deleting: DeletingAFolder,
+) {
+    use crate::application::how_far_it_got::{HowFarItGot, StoppedAt};
+
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return say(UIUpdate::CommandRefused(
+                "This account has no usable IMAP port set, so nothing was deleted.".to_string(),
+            ));
+        };
+        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
+            return say(UIUpdate::CommandRefused(
+                "This account could not be signed in to, so nothing was deleted.".to_string(),
+            ));
+        };
+
+        let controller = MailController::new();
+        if let Err(why) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            return say(UIUpdate::CommandRefused(format!(
+                "The mail server could not be reached, so nothing was deleted. {why}"
+            )));
+        }
+
+        let cache = AppPaths::resolve().ok().and_then(|paths| {
+            crate::data::message_cache::MessageCache::new(paths.cache_dir(), None).ok()
+        });
+
+        let mut got = HowFarItGot::default();
+        for (index, (id, path, name)) in deleting.going.iter().enumerate() {
+            match handle.block_on(controller.delete_mailbox(path)) {
+                Ok(()) => {
+                    got.done.push(name.clone());
+                    // Forgotten as it goes rather than in a batch at the end,
+                    // so a run that stops halfway leaves the tree agreeing
+                    // with the server about both halves of it.
+                    if let Some(cache) = &cache
+                        && let Err(why) = cache.forget_folder(*id)
+                    {
+                        tracing::warn!("A deleted folder could not be forgotten here: {why}");
+                    }
+                }
+                Err(why) => {
+                    // The gate and the server say different things and the
+                    // difference decides what somebody does next, so the
+                    // sentence comes from the one place that tells them apart.
+                    let because = what_came_of(FolderAct::Deleted, path, Err(why))
+                        .err()
+                        .unwrap_or_else(|| "the server refused".to_string());
+                    got.stopped_at = Some(StoppedAt {
+                        name: name.clone(),
+                        because,
+                    });
+                    got.left_behind = deleting.going.len() - index;
+                    break;
+                }
+            }
+        }
+        let _ = handle.block_on(controller.disconnect_imap());
+
+        let said = got.what_deleting_folders_did();
+        let Some(cache) = cache else {
+            return say(UIUpdate::CommandAnswered(said));
+        };
+        if !got.done.is_empty() {
+            // What was open may have gone, so what is chosen must stop naming
+            // a row that is not there, exactly as `delete_the_chosen_search`
+            // does and for the same reason.
+            say(UIUpdate::ChosenFolderIsGone);
+            if let Ok(updates) = folder_tree_updates(&cache, &account.id) {
+                for update in updates {
+                    say(update);
+                }
+            }
+        }
+        // A refusal is a refusal even where some of it worked, because the
+        // thing somebody asked for did not happen and the sentence says which
+        // part did.
+        say(if got.finished() {
+            UIUpdate::CommandAnswered(said)
+        } else {
+            UIUpdate::CommandRefused(said)
+        });
+    });
 }
 
 /// One move, and everything needed to work out the path it lands on.
@@ -11842,6 +12100,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // mailbox syncs: the queue coalesces same-topic announcements, so
             // the most recent one is heard rather than all of them.
             let _ = a11y.announce_topic(status, Priority::Low, "status");
+        }
+        UIUpdate::ChosenFolderIsGone => {
+            // Nothing is open any more, so what was chosen must stop naming a
+            // row that has gone. The same two lines `delete_the_chosen_search`
+            // runs, for the same reason: a command aimed at what is chosen
+            // would otherwise be aimed at a folder that is not there.
+            let mut s = lock_state(state);
+            s.selected_folder = None;
         }
         UIUpdate::CommandAnswered(said) => {
             {
