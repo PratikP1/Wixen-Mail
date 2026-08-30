@@ -1990,6 +1990,33 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create message_bodies table: {}", e)))?;
 
+        // What the folder tree remembers between one run and the next.
+        //
+        // Keyed on `presentation::folder_tree::WhichRow::stored`, which is a
+        // stable identity and never a label: an account id for a branch, an
+        // account and a path for a folder. A key built from the words in the
+        // row would be a different key every time mail arrived or somebody
+        // renamed a folder, which are exactly the two moments the tree is
+        // supposed to stay as they left it.
+        //
+        // Deliberately not an `AppConfig` field. The guard in `data::config`
+        // asserts every field of `AppConfig` is read by something, and its
+        // mirror asserts every field is also offered by a settings screen.
+        // Which branches somebody has collapsed is not a setting anybody sets
+        // from a screen: it is a record of what they did to the tree. Putting
+        // it there would either break that guard or force a control nobody
+        // wants, so it lives here with the other things the program remembers
+        // rather than the things it is told.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS tree_state (
+                identity TEXT PRIMARY KEY,
+                collapsed INTEGER NOT NULL DEFAULT 0
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create tree_state table: {}", e)))?;
+
         // Message text is packed before it is stored, and these hold the
         // packed form. The two TEXT columns above stay, because a column that
         // shipped is never dropped from under somebody's database and every

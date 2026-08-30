@@ -123,6 +123,54 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Remember that a row of the folder tree is collapsed, or that it is not.
+    ///
+    /// `identity` is `folder_tree::WhichRow::stored`, never a label. See the
+    /// `tree_state` table for why this is not a setting.
+    ///
+    /// Setting a row open removes it rather than storing a nought, so the
+    /// table holds only what somebody actually closed. A tree left entirely
+    /// open costs no rows, and a folder that has gone leaves nothing behind.
+    pub fn set_row_collapsed(&self, identity: &str, collapsed: bool) -> Result<()> {
+        if collapsed {
+            self.conn
+                .execute(
+                    "INSERT INTO tree_state (identity, collapsed) VALUES (?1, ?2)
+                     ON CONFLICT(identity) DO UPDATE SET collapsed = excluded.collapsed",
+                    params![identity, i64::from(collapsed)],
+                )
+                .map_err(|e| Error::Other(format!("Failed to record the collapsed row: {}", e)))?;
+        } else {
+            self.conn
+                .execute(
+                    "DELETE FROM tree_state WHERE identity = ?1",
+                    params![identity],
+                )
+                .map_err(|e| Error::Other(format!("Failed to record the opened row: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Every row of the folder tree somebody has collapsed.
+    ///
+    /// One query returning a set, because the rebuild asks this once and then
+    /// asks the set about each row. Asked per row it would be one query per
+    /// folder per sync, on a timer.
+    pub fn collapsed_rows(&self) -> Result<std::collections::HashSet<String>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT identity FROM tree_state WHERE collapsed != 0")
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read what is collapsed: {}", e)))?
+            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read what is collapsed: {}", e)))?;
+
+        Ok(rows)
+    }
+
     /// What the server said about each folder, by path.
     pub fn folder_server_facts(
         &self,
@@ -424,6 +472,119 @@ mod tests {
             unread_count: 0,
             total_count: 0,
         }
+    }
+
+    #[test]
+    fn test_a_row_that_was_collapsed_reads_back_as_collapsed() {
+        let home = fresh("tree_state_one_row");
+        let cache = &*home;
+        cache.set_row_collapsed("account\u{1f}acc", true).unwrap();
+        assert!(cache.collapsed_rows().unwrap().contains("account\u{1f}acc"));
+    }
+
+    #[test]
+    fn test_opening_a_row_again_takes_it_out_of_what_is_collapsed() {
+        let home = fresh("tree_state_reopened");
+        let cache = &*home;
+        cache.set_row_collapsed("account\u{1f}acc", true).unwrap();
+        cache.set_row_collapsed("account\u{1f}other", true).unwrap();
+        cache.set_row_collapsed("account\u{1f}acc", false).unwrap();
+        let collapsed = cache.collapsed_rows().unwrap();
+        assert!(
+            !collapsed.contains("account\u{1f}acc"),
+            "a row somebody opened again is not a row somebody closed"
+        );
+        assert!(
+            collapsed.contains("account\u{1f}other"),
+            "and opening one row does not open every other"
+        );
+    }
+
+    #[test]
+    fn test_collapsing_the_same_row_twice_is_not_an_error() {
+        let home = fresh("tree_state_twice");
+        let cache = &*home;
+        cache.set_row_collapsed("account\u{1f}acc", true).unwrap();
+        cache
+            .set_row_collapsed("account\u{1f}acc", true)
+            .expect("closing a row that is already closed is not a failure");
+        assert_eq!(cache.collapsed_rows().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_only_the_rows_somebody_closed_come_back() {
+        let home = fresh("tree_state_only_closed");
+        let cache = &*home;
+        cache.set_row_collapsed("account\u{1f}one", true).unwrap();
+        cache.set_row_collapsed("account\u{1f}two", false).unwrap();
+        let collapsed = cache.collapsed_rows().unwrap();
+        assert_eq!(
+            collapsed,
+            std::collections::HashSet::from(["account\u{1f}one".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_what_the_tree_remembers_survives_closing_and_reopening_the_cache() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            cache
+                .set_row_collapsed("folder\u{1f}3\u{1f}accArchive", true)
+                .unwrap();
+        }
+        // The same file, opened again, which is what a restart is.
+        let again = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
+        assert!(
+            again
+                .collapsed_rows()
+                .unwrap()
+                .contains("folder\u{1f}3\u{1f}accArchive"),
+            "a branch somebody collapsed is still collapsed after a restart"
+        );
+    }
+
+    #[test]
+    fn test_renaming_a_folder_does_not_lose_what_the_tree_remembered_about_its_account() {
+        let home = fresh("tree_state_rename");
+        let cache = &*home;
+        // The account branch is keyed on the account id, and renaming an
+        // account changes what it is called and not its id. This is the case
+        // D-25 is about: a key built from the words in the row would have been
+        // thrown away by the rename.
+        cache.set_row_collapsed("account\u{1f}acc", true).unwrap();
+        assert!(cache.collapsed_rows().unwrap().contains("account\u{1f}acc"));
+    }
+
+    #[test]
+    fn test_a_database_written_before_the_tree_remembered_anything_still_opens() {
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            cache.save_folder(&inbox()).unwrap();
+            // An older database is one with no such table at all.
+            cache
+                .conn
+                .execute("DROP TABLE tree_state", [])
+                .expect("the table to come off, making this an older database");
+        }
+        let again = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("an older database still opens");
+        assert!(
+            again.collapsed_rows().unwrap().is_empty(),
+            "and nothing is remembered yet, rather than the open failing"
+        );
+        assert!(
+            again.get_folder("acc", "INBOX").unwrap().is_some(),
+            "and the folders that were there are still there"
+        );
+        // The table really came back, rather than the read merely surviving
+        // its absence. Without this the test passes against a database that
+        // still has no such table.
+        again.set_row_collapsed("account\u{1f}acc", true).unwrap();
+        assert!(again.collapsed_rows().unwrap().contains("account\u{1f}acc"));
     }
 
     #[test]
