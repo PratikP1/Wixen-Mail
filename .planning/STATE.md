@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-08-30T09:17:40.751Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-08-30T11:35:49.254Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-03 done: a folder knows its parent, split once from the separator the server sent"
-state_head: 7cbdea2004f4462d7ae4dd87c03585240d1e5396
+last_activity_desc: "01-04 done: rename, move and delete a folder, with the separator read rather than guessed"
+state_head: 3f0e720574db1971c249b805fc8c3b61abb31687
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -69,9 +69,9 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-03 done: nesting is stored rather than computed, and a local folder name may hold the separator
+Last activity: 2026-08-30 — 01-04 done: FOLDER-01's last two verbs, the inbox refused before anything is sent, and a delete that says how far it got
 
-Progress: [██▎░░░░░░░] 3 of 13 plans in phase 01
+Progress: [███░░░░░░░] 4 of 13 plans in phase 01
 
 ## Performance Metrics
 
@@ -102,6 +102,7 @@ Progress: [██▎░░░░░░░] 3 of 13 plans in phase 01
 | Phase 01 P01 | 3h 5m | 3 tasks | 8 files |
 | Phase 01 P02 | 1h 10m | 3 tasks | 9 files |
 | Phase 01 P03 | 1h 0m | 3 tasks | 9 files |
+| Phase 01 P04 | 4h 10m | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,10 @@ ahead:
 - [Phase 01]: A guard for an invariant of the form "exactly one place does this" breaks by ADDING a competing copy, not by deleting the one. Deleting proves only that the value is computed at all. guards.toml now holds one record of each shape for this column.
 - [Phase 01]: 01-03: CachedFolder gained no parent_id field; the phase's consumers (01-04, 01-05) both take the folder_parents map, and the field would have been 79 struct-literal edits with no reader
 - [Phase 01]: 01-03: is_a_name_that_can_be_used is asked of each part between separators, because safe_file_name reads a separator as a path, so asking it about the whole name would refuse the one character D-23 allows
+- [Phase 01]: 01-04: rename_mailbox and delete_mailbox take the server's own spelling verbatim and encode nothing. A path from the cache is already modified UTF-7; only a segment somebody typed is encoded. The plan's instruction to encode both RENAME arguments would have named a mailbox the server has not got.
+- [Phase 01]: 01-04: the hierarchy separator 01-03 read is not persisted, so no command running from the cache can see it. A rename reads it from the gap between a folder's path and its parent's; a move reads it off a LIST line on the worker, after the confirmation, so D-37 still holds.
+- [Phase 01]: 01-04: folders kept on this computer are a const array of &'static str, so renaming, moving and deleting one are refused with a sentence rather than half-built. 01-06 builds user-named local folders.
+- [Phase 01]: 01-04: a behaviour RED is taken by stubbing the body and reading which assertions fail. A compile error proves a symbol was absent, not that the assertions discriminate; four tests here stayed green against a stub returning nothing.
 
 ### Pending Todos
 
@@ -163,9 +168,10 @@ None yet.
   Phase 1 criteria were rewritten from five to eight to match, and carry a scope
   note pointing at CONTEXT.md as the authority on the detail.
 
-- **FOLDER-01 stays open until 01-09.** 01-01 built the create half. The
-  requirement also asks for rename, delete, mark a folder read and empty a
-  folder, which are 01-04, 01-07 and 01-09. `requirements mark-complete` ticked
+- **FOLDER-01 stays open until 01-09.** 01-01 built create; 01-04 built rename,
+  move and delete. The requirement also asks for marking a folder read and
+  emptying a folder, which are 01-07 and 01-09. Not ticked here either, for the
+  same reason it was un-ticked after 01-01. `requirements mark-complete` ticked
   the whole requirement when 01-01 finished, because a plan names a requirement
   and the tool has no notion of a plan covering part of one. The tick was
   reverted. Any plan here that names a requirement four plans share needs the
@@ -206,8 +212,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T09:17:40.736Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-08-30T11:35:30.993Z
+Stopped at: Completed 01-04-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
