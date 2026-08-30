@@ -291,6 +291,11 @@ pub fn ask_for<W: WxWidget>(
         prefill,
     )?;
 
+    // Somebody is filling in an event, a contact, a task or a note. Nothing
+    // raised on a timer may open over that (D-27); held across the call, so the
+    // answer comes back however the window ends.
+    let _typing = crate::presentation::one_question_at_a_time::while_somebody_types();
+
     let answer = widgets.dialog.show_modal();
     // `ID_OK` only happens at all once Save's own handler has already found
     // nothing wrong with what `read_back` would give back, so this second

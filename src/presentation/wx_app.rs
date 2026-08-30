@@ -15,6 +15,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
+use crate::presentation::one_question_at_a_time;
 use crate::presentation::ui_types::*;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
@@ -4719,7 +4720,7 @@ impl WxMailApp {
                 // question rather than two.
                 let waiting_to_be_asked_about: RefCell<
                     crate::presentation::one_question_at_a_time::Pending,
-                > = RefCell::new(crate::presentation::one_question_at_a_time::Pending::default());
+                > = RefCell::new(one_question_at_a_time::Pending::default());
                 // Which message has been open, and since when. `None` when
                 // nothing is open, or when the one that is has already been
                 // dealt with.
@@ -4814,6 +4815,25 @@ impl WxMailApp {
                             date_settings,
                         );
                     }
+
+                    // After the updates are drained and after the reminders, so
+                    // a question never opens over something the rest of this
+                    // tick was about to change. Nothing here removes anything
+                    // before the answer: it puts one question, when there is one
+                    // to put and the moment is free.
+                    ask_about_the_folders_that_have_gone(
+                        &frame,
+                        &state,
+                        &message_cache,
+                        &waiting_to_be_asked_about,
+                        &one_question_on_screen,
+                        &ui_tx,
+                        &[
+                            pim_refs.note_title,
+                            pim_refs.note_body,
+                            pim_refs.contacts_search,
+                        ],
+                    );
                 }
             });
             if !timer.start(POLL_MS, false) {
@@ -8774,6 +8794,118 @@ fn labels_for(
     cache.get_tags_for_account(account_id)
 }
 
+/// Put the one question about folders a server has stopped listing, if this is
+/// a moment to put it, and carry out the answer.
+///
+/// D-27. Called from the interface timer after the updates are drained, which
+/// is where both of its constraints can be answered: the turn says whether a
+/// question is already on screen, and the controls say whether somebody is
+/// typing.
+///
+/// Nothing here removes anything before the answer. The count is taken and the
+/// rows are taken only inside the arm that somebody said yes to, so a question
+/// left unanswered, a window closed, or an answer of No all leave every message
+/// where it was.
+#[allow(clippy::too_many_arguments)]
+fn ask_about_the_folders_that_have_gone(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    waiting: &RefCell<one_question_at_a_time::Pending>,
+    one_question_on_screen: &crate::application::due::OneAtATime,
+    tx: &Sender<UIUpdate>,
+    somewhere_to_type: &[TextCtrl],
+) {
+    use crate::presentation::one_question_at_a_time::{Answer, what_they_said, what_to_raise};
+
+    // Taken here and held to the end, so the window this may open cannot be
+    // covered by a reminder alert and cannot cover one: the tick keeps running
+    // inside a modal, and one gate shared between the two is what stops either
+    // opening over the other.
+    let turn = one_question_on_screen.take();
+
+    // Somebody is typing if a window they type in is open anywhere on this
+    // thread, or if one of this window's own editable boxes has focus. The
+    // first covers the composer and the item editors, which are modal and so
+    // run this tick nested inside themselves; the second covers the note
+    // editor and the search box, which are in this window and have no nesting
+    // to read.
+    let an_editor_has_focus = one_question_at_a_time::somebody_is_typing()
+        || somewhere_to_type
+            .iter()
+            .any(|box_| box_.has_focus() && box_.is_editable());
+
+    let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, turn.is_none())
+    else {
+        return;
+    };
+    let Some(cache) = cache.as_ref() else {
+        return;
+    };
+
+    // Before the window opens, not after. The window is modal and the event
+    // loop keeps running inside it, so this tick happens again while somebody
+    // is still reading the question, and without this it would be asked twice.
+    waiting.borrow_mut().raised(&question);
+
+    // Enter answers No, because Yes here removes mail and cannot be undone.
+    let asked = MessageDialog::builder(frame, &question.words, &question.title)
+        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+        .build()
+        .show_modal();
+
+    match what_they_said(asked) {
+        // Nobody answered. Nothing is written, so a later run of the program
+        // asks again, and nothing has been removed in the meantime.
+        Answer::NotNow => (),
+        Answer::KeepThem => {
+            let Some(said) = one_question_at_a_time::what_to_record(Answer::KeepThem) else {
+                return;
+            };
+            for folder in &question.folders {
+                if let Err(e) = cache.set_what_the_server_said(*folder, said) {
+                    tracing::warn!("The answer about the folder could not be recorded: {e}");
+                }
+            }
+            let _ = tx.try_send(UIUpdate::CommandAnswered(
+                one_question_at_a_time::what_keeping_them_did(question.folders.len()),
+            ));
+        }
+        Answer::RemoveThem => {
+            // Counted before anything is removed, because afterwards there is
+            // nothing left to count and the sentence has to carry what went.
+            let messages = cache.messages_stored_in(&question.folders).unwrap_or(0);
+            // Whether the folder somebody is standing in is one of these, asked
+            // before the rows go, because afterwards its id resolves to nothing.
+            let was_open = {
+                let s = lock_state(state);
+                s.selected_folder
+                    .as_ref()
+                    .and_then(|which| which.opens())
+                    .and_then(|which| the_id_of(&s, &which))
+                    .is_some_and(|open| question.folders.contains(&open))
+            };
+            let mut removed = 0usize;
+            for folder in &question.folders {
+                match cache.forget_folder(*folder) {
+                    Ok(()) => removed += 1,
+                    // Said rather than swallowed, and the count that is
+                    // reported is what really went rather than what was asked
+                    // for.
+                    Err(e) => tracing::warn!("The folder could not be removed: {e}"),
+                }
+            }
+            if was_open {
+                let _ = tx.try_send(UIUpdate::ChosenFolderIsGone);
+            }
+            read_the_tree_back(&Some(cache.clone()), state, tx);
+            let _ = tx.try_send(UIUpdate::CommandAnswered(
+                one_question_at_a_time::what_removing_them_did(removed, messages),
+            ));
+        }
+    }
+}
+
 fn raise_what_is_due(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
@@ -11461,6 +11593,13 @@ fn open_compose(
         }
     };
 
+    // Somebody is writing a message. A question about folders a server has
+    // stopped listing must not open over that (D-27), and the composer is the
+    // window this codebase has already had a timer open a modal over: an
+    // automatic draft save used to raise the spelling check mid-sentence. Held
+    // across the call, so the answer comes back however the window ends.
+    let _typing = one_question_at_a_time::while_somebody_types();
+
     match wx_compose::show_compose_dialog_full(
         frame,
         mode,
@@ -12859,7 +12998,7 @@ struct UpdateTargets<'a> {
     /// Filled here and read by the tick that follows, rather than acted on
     /// here: a question raised while updates are still being drained would open
     /// over whatever the rest of them are about to change.
-    waiting_to_be_asked_about: &'a RefCell<crate::presentation::one_question_at_a_time::Pending>,
+    waiting_to_be_asked_about: &'a RefCell<one_question_at_a_time::Pending>,
     /// What to do when another copy of Wixen Mail hands this one a link or a
     /// file it was started for.
     ///
@@ -16669,13 +16808,11 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                         continue;
                     }
                     if now.somebody_has_yet_to_answer() {
-                        to_ask_about.push(
-                            crate::presentation::one_question_at_a_time::GoneFolder {
-                                id: folder.id,
-                                account: account.display_name(),
-                                name: folder.name.clone(),
-                            },
-                        );
+                        to_ask_about.push(one_question_at_a_time::GoneFolder {
+                            id: folder.id,
+                            account: account.display_name(),
+                            name: folder.name.clone(),
+                        });
                     }
                 }
                 if !to_ask_about.is_empty() {
