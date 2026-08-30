@@ -498,8 +498,21 @@ pub fn store_folders(
 /// about them says nothing. Without this a server that answered with one
 /// mailbox would appear to have deleted the user's Drafts and Outbox.
 pub fn folders_the_server_no_longer_lists(stored: &[CachedFolder], listed: &[String]) -> Vec<i64> {
-    let _ = (stored, listed);
-    Vec::new()
+    // Before the comparison, not inside it. An answer holding nothing is a
+    // sync that failed, and the difference between saying so here and reading
+    // it as a deletion is the difference between somebody seeing a warning and
+    // somebody being asked whether to delete their whole mailbox.
+    if listed.is_empty() {
+        return Vec::new();
+    }
+
+    stored
+        .iter()
+        .filter(|folder| !crate::application::local_folders::is_local(&folder.path))
+        .filter(|folder| !crate::application::local_folders::is_this_computer(&folder.account_id))
+        .filter(|folder| !listed.contains(&folder.path))
+        .map(|folder| folder.id)
+        .collect()
 }
 
 /// The path of the folder this one sits under, if its own path names one.

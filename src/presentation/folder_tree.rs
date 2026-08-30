@@ -384,10 +384,13 @@ pub fn folder_text(
     setting: UnreadOnAParent,
     gone: bool,
 ) -> String {
-    let _ = gone;
-    match unread_text(here, in_all, closed, setting) {
+    let said = match unread_text(here, in_all, closed, setting) {
         counts if counts.is_empty() => name.to_string(),
         counts => format!("{name}, {counts}"),
+    };
+    match gone {
+        true => format!("{said}, {NO_LONGER_LISTED}"),
+        false => said,
     }
 }
 

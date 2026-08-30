@@ -137,7 +137,17 @@ impl MessageCache {
     /// Both directions, because a folder can come back: a server moving
     /// mailboxes about, a partial subscription list, somebody re-subscribing.
     pub fn mark_folder_gone(&self, folder_id: i64, gone: bool) -> Result<()> {
-        let _ = (folder_id, gone);
+        self.conn
+            .execute(
+                "UPDATE folders SET the_server_stopped_listing_it = ?1 WHERE id = ?2",
+                params![i64::from(gone), folder_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record that the server stopped listing the folder: {}",
+                    e
+                ))
+            })?;
         Ok(())
     }
 
@@ -150,8 +160,31 @@ impl MessageCache {
         &self,
         account_id: &str,
     ) -> Result<std::collections::HashSet<String>> {
-        let _ = account_id;
-        Ok(std::collections::HashSet::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT path FROM folders \
+                 WHERE account_id = ?1 AND the_server_stopped_listing_it = 1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+
+        let paths = stmt
+            .query_map(params![account_id], |row| row.get::<_, String>(0))
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to read the folders the server stopped listing: {}",
+                    e
+                ))
+            })?
+            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to read the folders the server stopped listing: {}",
+                    e
+                ))
+            })?;
+
+        Ok(paths)
     }
 
     /// Remember that a row of the folder tree is collapsed, or that it is not.
