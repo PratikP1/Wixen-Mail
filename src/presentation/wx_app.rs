@@ -4704,9 +4704,22 @@ impl WxMailApp {
                 // than stored, because dismissing is a decision about now.
                 let already_raised: RefCell<std::collections::HashSet<String>> =
                     RefCell::new(std::collections::HashSet::new());
-                // Whether an alert is on screen right now, which is a different
-                // question from what has already gone off.
-                let one_alert_at_a_time = crate::application::due::OneAtATime::default();
+                // Whether a question is on screen right now, which is a
+                // different question from what has already gone off.
+                //
+                // One gate for the reminder alerts and for the folders a server
+                // has stopped listing, deliberately: two gates would let one of
+                // them open over the other, which is the pile-up this type was
+                // written for wearing a different hat. It lives in
+                // `application::due` because reminders needed it first.
+                let one_question_on_screen = crate::application::due::OneAtATime::default();
+                // The folders a sync has found the server no longer lists,
+                // waiting to be asked about (D-27). One set for every account,
+                // which is what makes two accounts syncing together one
+                // question rather than two.
+                let waiting_to_be_asked_about: RefCell<
+                    crate::presentation::one_question_at_a_time::Pending,
+                > = RefCell::new(crate::presentation::one_question_at_a_time::Pending::default());
                 // Which message has been open, and since when. `None` when
                 // nothing is open, or when the one that is has already been
                 // dealt with.
@@ -4750,6 +4763,7 @@ impl WxMailApp {
                                 tx: &ui_tx,
                                 rt: &runtime,
                                 focus_home: &focus_home_cell,
+                                waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                 opens_a_handover: &open_a_handover,
                             },
                         );
@@ -4796,7 +4810,7 @@ impl WxMailApp {
                             &message_cache,
                             &a11y,
                             &already_raised,
-                            &one_alert_at_a_time,
+                            &one_question_on_screen,
                             date_settings,
                         );
                     }
@@ -12839,6 +12853,13 @@ struct UpdateTargets<'a> {
     /// browser takes focus partway through a load and the answer has to be
     /// recorded before that happens to still be true.
     focus_home: &'a Rc<std::cell::Cell<FocusHome>>,
+    /// The folders a sync has found the server no longer lists, waiting to be
+    /// asked about (D-27).
+    ///
+    /// Filled here and read by the tick that follows, rather than acted on
+    /// here: a question raised while updates are still being drained would open
+    /// over whatever the rest of them are about to change.
+    waiting_to_be_asked_about: &'a RefCell<crate::presentation::one_question_at_a_time::Pending>,
     /// What to do when another copy of Wixen Mail hands this one a link or a
     /// file it was started for.
     ///
@@ -12979,6 +13000,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         tx,
         rt,
         focus_home: focus_home_cell,
+        waiting_to_be_asked_about,
         opens_a_handover,
     } = targets;
 
@@ -13198,6 +13220,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // mailbox syncs: the queue coalesces same-topic announcements, so
             // the most recent one is heard rather than all of them.
             let _ = a11y.announce_topic(status, Priority::Low, "status");
+        }
+        UIUpdate::FoldersTheServerStoppedListing(folders) => {
+            // Added and nothing else. Nothing has been removed and nothing will
+            // be until somebody answers; the tree already says the server no
+            // longer lists them, because the sync wrote that before this was
+            // sent.
+            waiting_to_be_asked_about
+                .borrow_mut()
+                .add(folders.iter().cloned());
         }
         UIUpdate::ChosenFolderIsGone => {
             // Nothing is open any more, so what was chosen must stop naming a
@@ -16610,24 +16641,45 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
         let listed_paths: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
         match cache.get_folders_for_account(&account.id) {
             Ok(held) => {
-                use crate::data::message_cache::WhatTheServerSaid;
+                use crate::application::mail_sync::what_the_server_now_says;
+                let said_before = cache.what_the_server_said(&account.id).unwrap_or_else(|e| {
+                    tracing::warn!("What the server said before could not be read: {e}");
+                    std::collections::HashMap::new()
+                });
                 let no_longer_listed =
                     crate::application::mail_sync::folders_the_server_no_longer_lists(
                         &held,
                         &listed_paths,
                     );
+                // Only the ones somebody still has to answer for. A folder
+                // already answered for is not a question, and a folder already
+                // put to somebody this session is caught further on by the set
+                // that holds them.
+                let mut to_ask_about = Vec::new();
                 for folder in &held {
                     // Every direction, in one pass over the rows: a folder in
                     // this answer that was marked last time has come back, and
                     // leaving the mark on it would go on telling somebody a
                     // folder plainly in front of them had gone.
-                    let now = match no_longer_listed.contains(&folder.id) {
-                        true => WhatTheServerSaid::ItStoppedListingIt,
-                        false => WhatTheServerSaid::ItListedIt,
-                    };
+                    let before = said_before.get(&folder.path).copied().unwrap_or_default();
+                    let now =
+                        what_the_server_now_says(before, !no_longer_listed.contains(&folder.id));
                     if let Err(e) = cache.set_what_the_server_said(folder.id, now) {
                         tracing::warn!("The folder's listing state could not be recorded: {e}");
+                        continue;
                     }
+                    if now.somebody_has_yet_to_answer() {
+                        to_ask_about.push(
+                            crate::presentation::one_question_at_a_time::GoneFolder {
+                                id: folder.id,
+                                account: account.display_name(),
+                                name: folder.name.clone(),
+                            },
+                        );
+                    }
+                }
+                if !to_ask_about.is_empty() {
+                    say(UIUpdate::FoldersTheServerStoppedListing(to_ask_about));
                 }
             }
             // Said rather than swallowed. Nothing is marked, which is the

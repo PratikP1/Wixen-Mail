@@ -365,6 +365,13 @@ pub enum UIUpdate {
     /// `delete_the_chosen_search` does on the interface thread when it removes
     /// the row somebody was standing on.
     ChosenFolderIsGone,
+    /// A sync found the server no longer lists these folders (D-27).
+    ///
+    /// Carried rather than acted on where it was found: the sync runs on a
+    /// worker thread, and a window may only be opened on the interface thread.
+    /// Nothing has been removed and nothing will be until somebody answers, so
+    /// this is a set of folders to ask about and not a set of folders to delete.
+    FoldersTheServerStoppedListing(Vec<crate::presentation::one_question_at_a_time::GoneFolder>),
     OutboxSendResult {
         queue_id: String,
         success: bool,

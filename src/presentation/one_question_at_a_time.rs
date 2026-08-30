@@ -228,6 +228,30 @@ pub fn what_to_record(answer: Answer) -> Option<WhatTheServerSaid> {
     }
 }
 
+/// What to say once the folders a question named have been taken off this
+/// computer.
+///
+/// Both counts, because neither answers the other: how many folders went is
+/// what somebody agreed to, and how many messages went with them is the part
+/// they would not have been able to work out. A folder that goes without a word
+/// is the thing D-27 exists to prevent, so this is said whatever the numbers
+/// are.
+pub fn what_removing_them_did(folders: usize, messages: usize) -> String {
+    let _ = (folders, messages);
+    String::new()
+}
+
+/// What to say once somebody has said to keep the folders.
+///
+/// Said rather than left silent, for the same reason: an answer that appears to
+/// do nothing is one somebody gives again. It also says the folders stay marked,
+/// because that is what the tree will go on announcing and it would otherwise
+/// read as the answer not having taken.
+pub fn what_keeping_them_did(folders: usize) -> String {
+    let _ = folders;
+    String::new()
+}
+
 thread_local! {
     /// How many windows somebody could be typing in are open on this thread.
     ///
@@ -496,6 +520,57 @@ mod tests {
             "closing the window was written down as an answer"
         );
         assert_eq!(what_to_record(Answer::RemoveThem), None);
+    }
+
+    #[test]
+    fn test_what_removing_them_did_gives_both_counts_and_reads_singular_for_one() {
+        // How many folders went is what somebody agreed to; how many messages
+        // went with them is the part they could not have worked out.
+        let several = what_removing_them_did(3, 412);
+        assert!(several.contains('3'), "{several:?}");
+        assert!(several.contains("412"), "{several:?}");
+        assert!(several.contains("folders"), "{several:?}");
+        assert!(several.contains("messages"), "{several:?}");
+
+        let one = what_removing_them_did(1, 1);
+        assert!(
+            !one.contains("folders") && !one.contains("messages"),
+            "one folder and one message were read out in the plural: {one:?}"
+        );
+        assert!(one.contains("folder"), "{one:?}");
+        assert!(one.contains("message"), "{one:?}");
+    }
+
+    #[test]
+    fn test_removing_folders_that_held_nothing_still_says_so() {
+        // Nought messages is a real answer and the sentence has to carry it.
+        // Left out, somebody who agreed to remove empty folders would hear
+        // nothing about the mail and have to guess whether any went.
+        let said = what_removing_them_did(2, 0);
+        assert!(said.contains('2'), "{said:?}");
+        assert!(
+            said.to_lowercase().contains("no mail") || said.contains('0'),
+            "the sentence said nothing about the mail: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_what_keeping_them_did_says_they_stay_and_still_read_as_gone() {
+        // The tree goes on saying the server no longer lists them, so a
+        // sentence that only said "kept" would read as the answer not having
+        // taken when the next row announced itself.
+        let said = what_keeping_them_did(2);
+        assert!(said.contains('2'), "{said:?}");
+        assert!(said.contains("folders"), "{said:?}");
+        assert!(
+            said.contains(crate::presentation::folder_tree::NO_LONGER_LISTED)
+                || said.to_lowercase().contains("no longer lists"),
+            "the sentence did not say the tree will go on saying so: {said:?}"
+        );
+        assert!(
+            !what_keeping_them_did(1).contains("folders"),
+            "one folder was read out in the plural"
+        );
     }
 
     #[test]
