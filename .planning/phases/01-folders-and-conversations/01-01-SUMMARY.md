@@ -402,3 +402,16 @@ Ready for 01-02 and for the rest of the phase.
 ---
 *Phase: 01-folders-and-conversations*
 *Completed: 2026-08-30*
+
+## Self-Check: PASSED
+
+Every file, commit hash and symbol this summary names was checked against disk
+and `git log` after it was written. All present: the four files, the five
+commits, `mailbox_name::encode`, `ImapSession::create_mailbox`,
+`MailController::create_mailbox`, `ID_NEW_FOLDER`, `make_a_new_folder`, and 503
+guard records.
+
+`bash scripts/check.sh` is green: rustfmt, clippy with `-D warnings`, 5,292
+library tests plus every target under `tests/`, and the release build. It ran on
+every one of the five commits through the pre-commit hook. `--no-verify` was
+never used.
