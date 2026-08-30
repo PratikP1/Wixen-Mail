@@ -120,7 +120,11 @@ impl HowFarItGot {
 ///
 /// "A, B and C" rather than a comma-separated list, because a synthesiser
 /// reading the last comma gives no signal that the list has ended.
-fn in_a_list(names: &[String]) -> String {
+///
+/// Public because that reasoning is not about folders being emptied: it holds
+/// for every list this program reads out. One spelling, so two sentences
+/// listing things cannot come to punctuate them differently.
+pub fn in_a_list(names: &[String]) -> String {
     match names {
         [] => String::new(),
         [only] => only.clone(),

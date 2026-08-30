@@ -84,7 +84,13 @@ impl Pending {
     /// session, are both left alone: the first would be named twice in one
     /// sentence and the second would be a question somebody has already had.
     pub fn add(&mut self, folders: impl IntoIterator<Item = GoneFolder>) {
-        let _ = (folders, self.asked.len());
+        for folder in folders {
+            let known = self.asked.contains(&folder.id)
+                || self.waiting.iter().any(|held| held.id == folder.id);
+            if !known {
+                self.waiting.push(folder);
+            }
+        }
     }
 
     /// Record that the question has been put, before the window opens.
@@ -94,7 +100,9 @@ impl Pending {
     /// it, so the tick that opened it happens again while somebody is still
     /// reading it.
     pub fn raised(&mut self, question: &Question) {
-        let _ = question;
+        self.asked.extend(question.folders.iter().copied());
+        self.waiting
+            .retain(|folder| !question.folders.contains(&folder.id));
     }
 
     /// How many folders are waiting to be asked about.
@@ -128,8 +136,52 @@ pub fn what_to_raise(
     an_editor_has_focus: bool,
     already_asking: bool,
 ) -> Option<Question> {
-    let _ = (pending, an_editor_has_focus, already_asking);
-    None
+    // Every one of these is a reason to raise nothing now rather than a reason
+    // to drop anything: the folders stay waiting and the next moment that is
+    // free asks about them.
+    if pending.waiting.is_empty() || an_editor_has_focus || already_asking {
+        return None;
+    }
+
+    // The account after each folder only where more than one is involved.
+    // Two accounts both have an Archive, and "Archive and Archive" is one
+    // folder said twice to anybody hearing it; with one account it is a word
+    // repeated on every item of a list somebody is listening to.
+    let accounts: HashSet<&str> = pending
+        .waiting
+        .iter()
+        .map(|folder| folder.account.as_str())
+        .collect();
+    let named: Vec<String> = pending
+        .waiting
+        .iter()
+        .map(|folder| match accounts.len() > 1 {
+            true => format!("{} in {}", folder.name, folder.account),
+            false => folder.name.clone(),
+        })
+        .collect();
+    let listed = crate::application::how_far_it_got::in_a_list(&named);
+
+    let (title, words) = match named.len() {
+        1 => (
+            "Folder your mail server no longer lists".to_string(),
+            format!(
+                "Your mail server no longer lists the folder {listed}.                  Remove it from this computer? The mail cached in it goes with                  it. Answer No to keep it."
+            ),
+        ),
+        several => (
+            "Folders your mail server no longer lists".to_string(),
+            format!(
+                "Your mail server no longer lists {several} folders: {listed}.                  Remove them from this computer? The mail cached in them goes                  with them. Answer No to keep them."
+            ),
+        ),
+    };
+
+    Some(Question {
+        folders: pending.waiting.iter().map(|folder| folder.id).collect(),
+        title,
+        words,
+    })
 }
 
 /// What somebody said when the question was put to them.
@@ -158,8 +210,11 @@ pub enum Answer {
 /// dangerous reading is a dismissal counting as Yes, and that cannot happen
 /// when only the Yes button itself says yes.
 pub fn what_they_said(from_the_dialog: wxdragon::Id) -> Answer {
-    let _ = from_the_dialog;
-    Answer::NotNow
+    match from_the_dialog {
+        wxdragon::id::ID_YES => Answer::RemoveThem,
+        wxdragon::id::ID_NO => Answer::KeepThem,
+        _ => Answer::NotNow,
+    }
 }
 
 /// What to record about the folders a question named, given the answer.
@@ -167,8 +222,10 @@ pub fn what_they_said(from_the_dialog: wxdragon::Id) -> Answer {
 /// `None` where nothing is written: the folders are being removed, so their
 /// rows go entirely, or nobody answered, so nothing is decided.
 pub fn what_to_record(answer: Answer) -> Option<WhatTheServerSaid> {
-    let _ = answer;
-    None
+    match answer {
+        Answer::KeepThem => Some(WhatTheServerSaid::ItStoppedListingItAndSomebodySaidKeepIt),
+        Answer::RemoveThem | Answer::NotNow => None,
+    }
 }
 
 thread_local! {
@@ -192,6 +249,7 @@ thread_local! {
 /// Held across the modal call rather than set and cleared by hand, so the count
 /// comes back however the window ends, including a way out nobody thought of.
 pub fn while_somebody_types() -> Typing {
+    WINDOWS_SOMEBODY_TYPES_IN.with(|open| open.set(open.get().saturating_add(1)));
     Typing(())
 }
 
@@ -206,7 +264,9 @@ pub fn somebody_is_typing() -> bool {
 pub struct Typing(());
 
 impl Drop for Typing {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        WINDOWS_SOMEBODY_TYPES_IN.with(|open| open.set(open.get().saturating_sub(1)));
+    }
 }
 
 #[cfg(test)]

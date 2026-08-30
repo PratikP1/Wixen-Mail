@@ -536,8 +536,13 @@ pub fn what_the_server_now_says(
     before: WhatTheServerSaid,
     still_listed: bool,
 ) -> WhatTheServerSaid {
-    let _ = (before, still_listed);
-    WhatTheServerSaid::ItListedIt
+    match (still_listed, before) {
+        (true, _) => WhatTheServerSaid::ItListedIt,
+        (false, WhatTheServerSaid::ItStoppedListingItAndSomebodySaidKeepIt) => {
+            WhatTheServerSaid::ItStoppedListingItAndSomebodySaidKeepIt
+        }
+        (false, _) => WhatTheServerSaid::ItStoppedListingIt,
+    }
 }
 
 /// The path of the folder this one sits under, if its own path names one.
