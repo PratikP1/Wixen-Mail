@@ -7609,28 +7609,26 @@ fn spawn_the_folder_empty(
                 got.done.push(name.clone());
                 continue;
             }
-            let outcome = match &emptying.into {
-                // One at a time, because a move is per message on the wire and
-                // a failure partway has to name how many are left.
-                Some(trash) => {
-                    let mut moved = 0usize;
-                    let mut failed = None;
-                    for uid in &uids {
-                        match handle.block_on(controller.move_message(path, *uid, trash)) {
-                            Ok(_) => moved += 1,
-                            Err(why) => {
-                                failed = Some((why.to_string(), uids.len() - moved));
-                                break;
-                            }
-                        }
-                    }
-                    failed
+            // One message at a time, through the same call one delete at a
+            // server makes. `trash` is the answer `what_will_happen` already
+            // got from the function that decides where a deleted message goes,
+            // carried here rather than worked out again with a connection
+            // open: `Some` moves it there, `None` takes it off the server, and
+            // those are the same two things Delete means on one message.
+            //
+            // Not `remove_these`, which does the same thing in one command and
+            // is refused in the words "replace a saved draft", because that is
+            // the caller it was written for. Somebody emptying their Trash
+            // without permission to change this account would have heard it.
+            let mut outcome = None;
+            for (done, uid) in uids.iter().enumerate() {
+                if let Err(why) =
+                    handle.block_on(controller.delete_message(path, *uid, emptying.into.as_deref()))
+                {
+                    outcome = Some((why.to_string(), uids.len() - done));
+                    break;
                 }
-                None => match handle.block_on(controller.remove_these(path, &uids)) {
-                    Ok(_) => None,
-                    Err(why) => Some((why.to_string(), uids.len())),
-                },
-            };
+            }
             match outcome {
                 None => got.done.push(name.clone()),
                 Some((because, left)) => {
