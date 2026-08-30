@@ -1,17 +1,18 @@
 ---
 gsd_state_version: 1.0
-current_phase: 1
+current_phase: 01
 current_phase_name: Folders and conversations
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-08-30T02:07:53.251Z"
-last_activity: 2026-08-29, all eight phases' acceptance criteria reviewed against the tree
-state_head: baf40402cad189c5ee9f2b7f416eae5d7fbce1cf
+status: executing
+stopped_at: Completed 01-01-PLAN.md, the phase tracer
+last_updated: "2026-08-30T06:29:03.638Z"
+last_activity: 2026-08-30
+last_activity_desc: Phase 01 execution started
+state_head: 2c62f0dec2ac7a2d67566a5534d0771c54869d6d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -22,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-29)
 
 **Core value:** Making correspondence and personal information legible to people who cannot see it.
-**Current focus:** Phase 1, Folders and conversations
+**Current focus:** Phase 01 — Folders and conversations
 
 ## Current Position
 
-Phase: 1 (Folders and conversations) — READY TO EXECUTE
+Phase: 01 (Folders and conversations) — EXECUTING
 Plans: 13, one per wave, `01-01-PLAN.md` to `01-13-PLAN.md`. 38 tasks, of which
 35 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
-Status: Phase 1 discussed, CONTEXT.md written. Ready to plan phase 1.
+Status: Executing Phase 01
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
 
@@ -68,17 +69,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-29, phase 1 researched, pattern-mapped, planned and checked
+Last activity: 2026-08-30 — 01-01 done: a folder is made on the server, encoder and all
 
-Progress: [..........] 0%
+Progress: [█░░░░░░░░░] 1 of 13 plans in phase 01
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: not measured
-- Total execution time: not measured
+- Total plans completed: 1
+- Average duration: 3h 5m
+- Total execution time: 3h 5m
 
 **By Phase:**
 
@@ -88,10 +89,15 @@ Progress: [..........] 0%
 
 **Recent Trend:**
 
-- Last 5 plans: none yet
-- Trend: not measured
+- Last 5 plans: 01-01 (3h 5m)
+- Trend: one point, no trend yet
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 3h 5m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -109,6 +115,10 @@ ahead:
 
 - The cached mail database is not encrypted, and the docs say so. Phase 7 decides whether that
   changes.
+
+- [Phase 01]: A new folder is made where it is named, not under the cursor: the IMAP hierarchy delimiter is dropped after list_folders by design, and guessing it writes the folder elsewhere on a dot-separated server. Nesting is 01-03 and 01-05.
+- [Phase 01]: Making a folder records it in the cache, subscribes it, and marks it as one to keep up to date. The tree is read from the cache, and an unsubscribed folder is hidden, so creating on the server alone would show nothing.
+- [Phase 01]: MAIL_TRANSPORTS' imap floor rises with every gated write added. Left at 8 with nine writes present, it had already cost the copy_message gate guard one of its three reddening tests.
 
 ### Pending Todos
 
@@ -143,6 +153,14 @@ None yet.
   Phase 1 criteria were rewritten from five to eight to match, and carry a scope
   note pointing at CONTEXT.md as the authority on the detail.
 
+- **FOLDER-01 stays open until 01-09.** 01-01 built the create half. The
+  requirement also asks for rename, delete, mark a folder read and empty a
+  folder, which are 01-04, 01-07 and 01-09. `requirements mark-complete` ticked
+  the whole requirement when 01-01 finished, because a plan names a requirement
+  and the tool has no notion of a plan covering part of one. The tick was
+  reverted. Any plan here that names a requirement four plans share needs the
+  same check before its state update is believed.
+
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
   otherwise, and none may be rewritten to.
@@ -160,13 +178,23 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-29
-Stopped at: Phase 1 planned. 43 decisions, 5 settings, 13 plans, all gates passed.
+Last session: 2026-08-30T06:29:03.619Z
+Stopped at: Completed 01-01-PLAN.md, the phase tracer
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
 migration would have hit `UNIQUE(folder_id, uid)` collisions on the user's only
 copy of that mail. Both answered and recorded as D-39 and D-40. A third,
 the modified UTF-7 encoder, is new scope nobody had costed and is not optional.
-Nothing executed.
-Resume file: .planning/phases/01-folders-and-conversations/01-01-PLAN.md
+
+01-01 is done and is the phase's tracer, so the shape it proved is what the
+other twelve plans lean on. Three things it found that the plan had not: the
+tree is read from the cache rather than the server, so a folder must be recorded
+and marked as one to keep up to date or nobody sees it; a new mailbox is
+unsubscribed and this tree hides unsubscribed folders, so it is subscribed too;
+and the IMAP hierarchy delimiter is deliberately dropped after `list_folders`,
+so a folder is made where it is named and nesting waits for 01-03 and 01-05.
+A fourth is a warning for every later plan here: `MAIL_TRANSPORTS`' imap floor
+must rise with every gated write added, because left at 8 with nine present it
+had already taken one reddening test off the `copy_message` gate guard.
+Resume file: .planning/phases/01-folders-and-conversations/01-02-PLAN.md

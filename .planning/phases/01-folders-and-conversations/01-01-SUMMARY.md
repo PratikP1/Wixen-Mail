@@ -50,7 +50,15 @@ patterns-established:
   - "Task 1 established the whole layer stack for a server-writing verb; 01-04's RENAME and DELETE add to it rather than inventing one each"
   - "a_server_answering is now pub(crate), so the controller's tests drive the same script as the session's"
 
-requirements-completed: [FOLDER-01]
+# FOLDER-01 is NOT complete and is deliberately not listed here. This plan's own
+# frontmatter names it, and its source-coverage table says it is covered by
+# 01-01, 01-04, 01-07 and 01-09 together. FOLDER-01 asks for create, rename,
+# delete, mark a folder read and empty a folder; this plan built create.
+# `gsd-tools requirements mark-complete FOLDER-01` ticked it and the tick was
+# reverted: a requirement recorded complete on a quarter of its scope is exactly
+# the kind of claim this project's guardrails exist to stop.
+requirements-completed: []
+requirements-advanced: [FOLDER-01]
 
 coverage:
   - id: D1
