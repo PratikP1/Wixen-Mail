@@ -84,6 +84,42 @@ fn fold_case_the_way_rust_does(conn: &Connection) -> Result<()> {
     .map_err(|e| Error::Other(format!("Failed to prepare text comparison: {e}")))
 }
 
+/// Teach this connection what a conversation is called.
+///
+/// D-04's rule is a chain of reply and forward markers in seventeen languages,
+/// and SQL has no way to express it. Rather than spell an approximation of it
+/// in the query, the query calls the one function that answers it. That is the
+/// arrangement `fold_case_the_way_rust_does` above already uses, and for the
+/// same reason: a second spelling of a rule is a second answer to the question
+/// the rule is about, and this project keeps being bitten by those.
+///
+/// What it buys is the half D-02 turns on. A conversation's name is worked out
+/// in Rust, so a list sorted by Subject in SQL could only have ordered by the
+/// raw subject of the oldest message, and a row reading "Quarterly report"
+/// would have sorted under R. Here the value the row shows and the value the
+/// list sorts by are one call to one function.
+fn teach_it_what_a_conversation_is_called(conn: &Connection) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+
+    conn.create_scalar_function(
+        "conversation_name",
+        1,
+        // Deterministic and reading nothing outside its argument, so SQLite may
+        // call it once per distinct value rather than once per mention.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            // A conversation whose oldest message has no subject stored at all
+            // is named the same as one whose subject is empty, which is what
+            // `name_of` already decides.
+            let subject: Option<String> = context.get(0)?;
+            Ok(crate::application::conversations::name_of(
+                &subject.unwrap_or_default(),
+            ))
+        },
+    )
+    .map_err(|e| Error::Other(format!("Failed to prepare conversation names: {e}")))
+}
+
 /// Bring the statistics up to date on the way out, which is where SQLite's
 /// own documentation says to do it: this connection has seen a session's worth
 /// of queries and knows more about the data than it did at open.
@@ -1134,6 +1170,7 @@ impl MessageCache {
         let conn = Connection::open(db_path)
             .map_err(|e| Error::Other(format!("Failed to open database: {}", e)))?;
         fold_case_the_way_rust_does(&conn)?;
+        teach_it_what_a_conversation_is_called(&conn)?;
 
         // Performance pragmas for large mailboxes
         conn.execute_batch(

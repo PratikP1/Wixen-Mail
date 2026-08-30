@@ -80,8 +80,11 @@ impl AConversationReaches {
     /// settings file written by hand, or by a later version, falls to the
     /// answer D-08 chose rather than to whichever branch happens to be written
     /// first.
-    pub fn from_stored(_stored: &str) -> Self {
-        AConversationReaches::default()
+    pub fn from_stored(stored: &str) -> Self {
+        match stored.trim().to_ascii_lowercase().as_str() {
+            "this_folder_only" => AConversationReaches::ThisFolderOnly,
+            _ => AConversationReaches::TheWholeAccount,
+        }
     }
 
     /// What the choice says on the settings screen.
@@ -97,8 +100,11 @@ impl AConversationReaches {
     /// By the words rather than by the row number, for the reason `font_family`
     /// gives on the same screen: a row number means nothing without the list it
     /// counts into.
-    pub fn from_words(_words: &str) -> Self {
-        AConversationReaches::default()
+    pub fn from_words(words: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|option| option.words() == words)
+            .unwrap_or_default()
     }
 }
 
@@ -160,6 +166,25 @@ pub fn name_of(oldest_subject: &str) -> String {
         NO_SUBJECT.to_string()
     } else {
         base.to_string()
+    }
+}
+
+/// How big a conversation is, in words somebody wants read aloud.
+///
+/// D-03. The Thread column held a conversation identifier, which is a mail
+/// server's `<CAJ7...@mail.example.com>` and no use at all to anybody hearing
+/// it. This is what it says instead.
+///
+/// Both numbers, because they answer different questions: how much is here, and
+/// how much of it is waiting. Nothing about the unread count when there is none,
+/// which is most of a mailbox and would otherwise be two words on every row
+/// carrying no information.
+pub fn counts_read_as(messages: i64, unread: i64) -> String {
+    let how_many = format!("{messages} message{}", if messages == 1 { "" } else { "s" });
+    if unread <= 0 {
+        how_many
+    } else {
+        format!("{how_many}, {unread} unread")
     }
 }
 
@@ -307,6 +332,42 @@ mod tests {
         // real database in `message_cache::messages`.
         assert_eq!(name_of("Re: Quarterly report"), "Quarterly report");
         assert_eq!(name_of("Quarterly figures"), "Quarterly figures");
+    }
+
+    #[test]
+    fn test_a_conversation_says_how_many_messages_and_how_many_unread() {
+        // D-03, and every word of it is heard. "5 messages, 2 unread" is what
+        // somebody arrowing onto the row learns; the conversation identifier
+        // this replaces was a mail server's angle-bracketed nonsense.
+        assert_eq!(counts_read_as(5, 2), "5 messages, 2 unread");
+        assert_eq!(counts_read_as(2, 2), "2 messages, 2 unread");
+    }
+
+    #[test]
+    fn test_a_conversation_with_nothing_unread_does_not_say_so() {
+        // Two words on every row of a read mailbox, carrying nothing. The
+        // rows where the number changes what somebody does next are the ones
+        // with something waiting in them.
+        assert_eq!(counts_read_as(5, 0), "5 messages");
+        assert_eq!(counts_read_as(1, 0), "1 message");
+    }
+
+    #[test]
+    fn test_one_message_is_not_said_as_one_messages() {
+        // Heard, not read, so a plural with nothing plural about it is a
+        // syllable that says the wrong thing.
+        assert_eq!(counts_read_as(1, 1), "1 message, 1 unread");
+        assert_eq!(counts_read_as(3, 1), "3 messages, 1 unread");
+    }
+
+    #[test]
+    fn test_the_counts_never_read_as_an_identifier() {
+        // What this replaced. A row saying <CAJ7@mail.example.com> is a row
+        // nobody can use, and the point of D-03 is that nothing of the sort
+        // reaches the words.
+        let said = counts_read_as(5, 2);
+        assert!(!said.contains('<') && !said.contains('@'), "{said}");
+        assert!(said.contains("5") && said.contains("2"), "{said}");
     }
 
     #[test]

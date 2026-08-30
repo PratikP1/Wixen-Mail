@@ -138,6 +138,91 @@ impl MessageColumn {
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
         }
     }
+
+    /// The SQL expression this column takes over a whole conversation.
+    ///
+    /// D-02: a row describes the conversation, not its newest message, and the
+    /// rule is stated once here and used twice. `conversations_in` selects
+    /// these expressions to fill `ConversationItem`'s fields, and
+    /// [`Sort::conversation_order_by_clause`] puts the same strings in the
+    /// `ORDER BY`. The value a row shows and the value the list sorts by are
+    /// therefore the same expression, and there is no second spelling of the
+    /// rule to keep in step.
+    ///
+    /// A fourth method beside [`Self::sort_expression`] rather than that one
+    /// with the aggregate wrapped round it. String surgery on a sort expression
+    /// is exactly how the two halves come apart, and it would also give up the
+    /// property the method above states: fixed strings chosen by matching on
+    /// the enum, never built from anything a user typed, because the result is
+    /// interpolated into a query.
+    ///
+    /// [`MessageColumn::ALL`] being a fixed-size array is what keeps this
+    /// honest over time. Adding a variant makes every `match` in this file go
+    /// red at compile time, and this is one of them, so a new column cannot
+    /// arrive with a display rule and no sort rule.
+    ///
+    /// The families, in D-02's own words:
+    ///
+    /// - Dates and Snippet take the newest message's value.
+    /// - `Attachment`, `Flagged`, `Answered` and `Draft` are true if any is.
+    /// - `Safety` is the worst.
+    /// - `Size` is the sum.
+    /// - `Correspondent` is the distinct senders, and `To` and `Cc` follow it.
+    /// - `Subject` is the conversation's name, per D-04.
+    /// - `Thread` is the counts, per D-03.
+    ///
+    /// `m` is the reach: the rows this conversation has within the folders the
+    /// setting says to count. `conversations_in` names it, so an expression
+    /// here reads exactly like its message-level sibling above.
+    pub(crate) fn conversation_sort_expression(&self) -> &'static str {
+        match self {
+            // How many have not been read, which is also the second number the
+            // Thread column says. A conversation is unread when that is not
+            // zero.
+            MessageColumn::Unread => "SUM(CASE WHEN m.read = 0 THEN 1 ELSE 0 END)",
+            MessageColumn::Attachment => "MAX(m.has_attachments)",
+            // D-04, through the one function that answers it. Registered on
+            // the connection rather than spelled again in SQL, the same way
+            // `lower` is, because a second spelling of this rule is a second
+            // answer to the question of what a conversation is called.
+            MessageColumn::Subject => {
+                "conversation_name(\
+                 (SELECT o.subject FROM here o WHERE o.thread_id = m.thread_id \
+                  ORDER BY o.received_at ASC, o.id ASC LIMIT 1))"
+            }
+            MessageColumn::Correspondent => "GROUP_CONCAT(DISTINCT m.from_addr)",
+            // The server's arrival time, falling back to the sender's date for
+            // rows stored before arrival times were kept. `received_at` is that
+            // fallback, applied once where the reach is worked out.
+            MessageColumn::Received => "MAX(m.received_at)",
+            MessageColumn::Sent => "MAX(m.date)",
+            MessageColumn::Snippet => {
+                "(SELECT n.snippet FROM here n \
+                 WHERE n.thread_id = m.thread_id \
+                 ORDER BY n.received_at DESC, n.id DESC LIMIT 1)"
+            }
+            MessageColumn::Thread => "COUNT(*)",
+            // Null where no message in it says what it weighs, which reads as
+            // blank rather than as "0 bytes", a claim we cannot make.
+            MessageColumn::Size => "SUM(m.size_bytes)",
+            MessageColumn::Flagged => "MAX(m.starred)",
+            MessageColumn::Answered => "MAX(m.answered)",
+            MessageColumn::Draft => "MAX(m.draft)",
+            // The worst, which is not the largest of the words stored. Safety
+            // is written down as "ordinary", "suspicious", "spam" and
+            // "phishing" so a stored mailbox can be read by a person, and in
+            // that alphabet the worst of the three sorts first. So the ranking
+            // is spelled here, worst last, matching the order the enum itself
+            // is declared in.
+            MessageColumn::Safety => {
+                "MAX(CASE m.safety \
+                 WHEN 'phishing' THEN 3 WHEN 'spam' THEN 2 WHEN 'suspicious' THEN 1 \
+                 ELSE 0 END)"
+            }
+            MessageColumn::To => "GROUP_CONCAT(DISTINCT m.to_addr)",
+            MessageColumn::Cc => "GROUP_CONCAT(DISTINCT m.cc)",
+        }
+    }
 }
 
 /// Which way a sort runs. Every column supports both.
@@ -185,6 +270,23 @@ impl By {
             SortDirection::Descending => "DESC",
         };
         format!("{} {}", self.column.sort_expression(), direction)
+    }
+
+    /// The same term, over a whole conversation.
+    ///
+    /// The direction is worked out once, above and here, from the same enum, so
+    /// a list of conversations and a list of messages cannot come to mean
+    /// opposite things by the same word.
+    fn conversation_term(&self) -> String {
+        let direction = match self.direction {
+            SortDirection::Ascending => "ASC",
+            SortDirection::Descending => "DESC",
+        };
+        format!(
+            "{} {}",
+            self.column.conversation_sort_expression(),
+            direction
+        )
     }
 
     /// How it is written in the stored layout.
@@ -303,6 +405,29 @@ impl Sort {
         match self.then.filter(|then| then.column != self.column) {
             Some(then) => format!("{}, {}", self.first().term(), then.term()),
             None => self.first().term(),
+        }
+    }
+
+    /// The `ORDER BY` body for this sort, over a list of conversations.
+    ///
+    /// The same two levels and the same rule about a second level naming the
+    /// first's column, because a sort means the same thing in either view.
+    /// D-12: the sort column and direction survive a switch between the two
+    /// unchanged, and the header announces the same thing before and after,
+    /// which only holds if one `Sort` can express itself both ways.
+    ///
+    /// Every term comes from
+    /// [`MessageColumn::conversation_sort_expression`], which is the same
+    /// method `conversations_in` fills its fields from. So the list is ordered
+    /// by the values its rows are showing.
+    pub fn conversation_order_by_clause(&self) -> String {
+        match self.then.filter(|then| then.column != self.column) {
+            Some(then) => format!(
+                "{}, {}",
+                self.first().conversation_term(),
+                then.conversation_term()
+            ),
+            None => self.first().conversation_term(),
         }
     }
 

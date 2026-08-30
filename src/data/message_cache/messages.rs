@@ -68,6 +68,149 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
     )
 }
 
+/// The order a list of conversations arrives in when nothing has asked for one.
+///
+/// Newest first, matching the message list's own default, so switching between
+/// the two views does not reorder the mailbox under somebody.
+pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
+
+/// The query a conversation listing runs, in one place.
+///
+/// Built here rather than inline for the reason [`listing_query`] gives: a test
+/// can ask what this really contains, and a copy held in a test is the copy that
+/// goes stale.
+///
+/// # One rule per column, used twice
+///
+/// Every column of the `SELECT` is
+/// [`MessageColumn::conversation_sort_expression`], and `order` is built from
+/// the same method. So the value a row shows and the value the list sorts by are
+/// one expression rather than two that have to be kept in step. D-02 says that
+/// in words; this is where it is true.
+///
+/// # What the two CTEs are for
+///
+/// `reach` is which folders count, and it is a parameter rather than a branch
+/// around two queries, so both answers go down one path and cannot drift apart.
+/// `?3` is 1 for the whole account and 0 for this folder alone.
+///
+/// The exclusion of folders holding a copy of every message is tied to the
+/// account-wide answer, and that is deliberate. On Gmail a label is a mailbox
+/// and All Mail holds a copy of everything, so counting across the account
+/// without the exclusion reports twice the size of every conversation. Counting
+/// one folder cannot double anything, and applying the exclusion there would
+/// leave somebody standing in All Mail with a reach of one folder and no rows
+/// at all.
+///
+/// `here` is this conversation's messages within that reach, with the arrival
+/// time worked out once as `received_at` so the newest and the oldest are asked
+/// the same way. Which conversations to list is a separate question and is asked
+/// without the exclusion: a row appears in every folder the conversation
+/// touches, and All Mail is one of them.
+///
+/// # The index this needs
+///
+/// `idx_messages_thread`, added by plan 01-02. The existing indexes cannot serve
+/// this: an index is searched from its leftmost column and theirs begin with
+/// `folder_id`, which [`unified_inbox_query`] already explains for a query of
+/// the same shape.
+pub(super) fn conversations_query(order: &str) -> String {
+    use crate::presentation::message_columns::MessageColumn;
+
+    format!(
+        "WITH reach AS (
+             SELECT id FROM folders
+             WHERE account_id = ?1
+               AND (?3 = 0 OR holds_all_mail = 0)
+               AND (?3 = 1 OR id = ?2)
+         ),
+         here AS (
+             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
+                    m.answered, m.draft, m.has_attachments, m.safety,
+                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
+                    COALESCE(m.internaldate, m.date) AS received_at
+             FROM messages m
+             WHERE m.folder_id IN (SELECT id FROM reach)
+               AND m.deleted = 0
+               AND m.thread_id IS NOT NULL AND m.thread_id <> ''
+               AND m.thread_id IN (
+                   SELECT thread_id FROM messages
+                   WHERE folder_id = ?2 AND deleted = 0
+                     AND thread_id IS NOT NULL AND thread_id <> ''
+               )
+         )
+         SELECT m.thread_id,
+                {subject},
+                {messages},
+                {unread},
+                {received},
+                {sent},
+                {snippet},
+                {correspondent},
+                {to_addr},
+                {cc},
+                {size},
+                {attachment},
+                {flagged},
+                {answered},
+                {draft},
+                {safety}
+         FROM here m
+         GROUP BY m.thread_id
+         ORDER BY {order}, m.thread_id ASC",
+        subject = MessageColumn::Subject.conversation_sort_expression(),
+        messages = MessageColumn::Thread.conversation_sort_expression(),
+        unread = MessageColumn::Unread.conversation_sort_expression(),
+        received = MessageColumn::Received.conversation_sort_expression(),
+        sent = MessageColumn::Sent.conversation_sort_expression(),
+        snippet = MessageColumn::Snippet.conversation_sort_expression(),
+        correspondent = MessageColumn::Correspondent.conversation_sort_expression(),
+        to_addr = MessageColumn::To.conversation_sort_expression(),
+        cc = MessageColumn::Cc.conversation_sort_expression(),
+        size = MessageColumn::Size.conversation_sort_expression(),
+        attachment = MessageColumn::Attachment.conversation_sort_expression(),
+        flagged = MessageColumn::Flagged.conversation_sort_expression(),
+        answered = MessageColumn::Answered.conversation_sort_expression(),
+        draft = MessageColumn::Draft.conversation_sort_expression(),
+        safety = MessageColumn::Safety.conversation_sort_expression(),
+    )
+}
+
+/// Read one row of a conversation listing.
+///
+/// Column order is the contract between this and the query above, stated in
+/// each rather than derived, because SQLite has no way to ask for a column by
+/// name from a positional row. The same arrangement [`listing_row`] has, and
+/// for the same reason: one reader rather than one per query, so a drifted
+/// column cannot put one conversation's name beside another's count.
+pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationItem> {
+    Ok(ConversationItem {
+        thread_id: row.get(0)?,
+        subject: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        messages: row.get(2)?,
+        unread: row.get(3)?,
+        newest_received: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+        newest_sent: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+        snippet: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        senders: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        to: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+        cc: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+        size_bytes: row.get(10)?,
+        any_attachment: row.get::<_, Option<i64>>(11)?.unwrap_or_default() != 0,
+        any_flagged: row.get::<_, Option<i64>>(12)?.unwrap_or_default() != 0,
+        any_answered: row.get::<_, Option<i64>>(13)?.unwrap_or_default() != 0,
+        any_draft: row.get::<_, Option<i64>>(14)?.unwrap_or_default() != 0,
+        // Worst last, matching the order the enum is declared in, which is
+        // what the ranking in the column's expression counts up to.
+        worst_safety: match row.get::<_, Option<i64>>(15)?.unwrap_or_default() {
+            3 => crate::service::safety::Safety::Phishing,
+            2 => crate::service::safety::Safety::Spam,
+            1 => crate::service::safety::Safety::Suspicious,
+            _ => crate::service::safety::Safety::Ordinary,
+        },
+    })
+}
+
 /// Read one row of a message listing.
 ///
 /// Every listing query selects the same columns in the same order, and each
@@ -1371,12 +1514,29 @@ impl MessageCache {
     /// `None` is newest first.
     pub fn conversations_in(
         &self,
-        _folder_id: i64,
-        _account_id: &str,
-        _reach: AConversationReaches,
-        _order_by: Option<&str>,
+        folder_id: i64,
+        account_id: &str,
+        reach: AConversationReaches,
+        order_by: Option<&str>,
     ) -> Result<Vec<ConversationItem>> {
-        Ok(Vec::new())
+        let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
+        let query = conversations_query(order);
+        let mut stmt = self
+            .conn
+            .prepare_cached(&query)
+            .map_err(|e| Error::Other(format!("Failed to prepare conversation listing: {e}")))?;
+
+        let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        let rows = stmt
+            .query_map(
+                params![account_id, folder_id, i64::from(counts_the_account)],
+                conversation_row,
+            )
+            .map_err(|e| Error::Other(format!("Failed to list conversations: {e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect conversations: {e}")))?;
+
+        Ok(rows)
     }
 
     /// Search an account's messages across every folder.
@@ -4646,6 +4806,28 @@ mod tests {
             "Quarterly figures",
             "the name stayed pinned to the message that was there first"
         );
+    }
+
+    #[test]
+    fn test_every_value_in_the_conversation_query_is_bound_rather_than_written_in() {
+        // Threat T-01-46. The only things interpolated into this query are the
+        // fixed strings the column enum gives, and they are checked here rather
+        // than described: the query has to contain every one of them, and the
+        // values have to arrive as parameters.
+        let built = super::conversations_query("COUNT(*) DESC");
+        for column in crate::presentation::message_columns::MessageColumn::ALL {
+            assert!(
+                built.contains(column.conversation_sort_expression()),
+                "{column:?}'s rule is not in the query that fills its field"
+            );
+        }
+        assert!(
+            built.contains("?1") && built.contains("?2") && built.contains("?3"),
+            "the account, the folder and the reach have to be bound"
+        );
+        // Proving the measurement: the check above would pass against a query
+        // that also pasted something else in, so the shape is asserted too.
+        assert!(built.contains("GROUP BY"), "{built}");
     }
 
     #[test]

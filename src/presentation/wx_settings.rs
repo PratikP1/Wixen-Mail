@@ -5,6 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
+use crate::application::conversations::AConversationReaches;
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
@@ -81,6 +82,7 @@ pub struct SettingsWidgets {
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
+    a_conversation_reaches: Choice,
     empty_reaches_subfolders: CheckBox,
     mark_read_reaches_subfolders: CheckBox,
     hold_back_remote_pictures: CheckBox,
@@ -228,6 +230,7 @@ pub fn build_settings_dialog(
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        a_conversation_reaches,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -366,6 +369,7 @@ pub fn build_settings_dialog(
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        a_conversation_reaches,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -907,6 +911,7 @@ struct ReadingTabControls {
     sort_order: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
+    a_conversation_reaches: Choice,
     hold_back_remote_pictures: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
@@ -1010,6 +1015,25 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         UnreadOnAParent::ALL
             .iter()
             .position(|option| *option == UnreadOnAParent::from_stored(&config.unread_on_a_parent))
+            .unwrap_or(0) as u32,
+    );
+
+    // D-08. A choice rather than a check box for the same reason the one
+    // above is: both answers say something, and neither is the absence of the
+    // other. A box labelled "count a conversation across the account" would
+    // have to word the other answer as not doing that, which says nothing
+    // about what it does instead.
+    let a_conversation_reaches = labelled_choice(
+        panel,
+        &folders_sec,
+        "A &conversation is counted across:",
+        "A conversation is counted across",
+        &AConversationReaches::ALL.map(|option| option.words()),
+        AConversationReaches::ALL
+            .iter()
+            .position(|option| {
+                *option == AConversationReaches::from_stored(&config.a_conversation_reaches)
+            })
             .unwrap_or(0) as u32,
     );
 
@@ -1301,6 +1325,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
+        a_conversation_reaches,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -2087,6 +2112,14 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .get_string_selection()
         .map(|chosen| UnreadOnAParent::from_words(&chosen))
         .unwrap_or_else(|| UnreadOnAParent::from_stored(&cfg.unread_on_a_parent))
+        .as_str()
+        .to_string();
+    // D-08, read back by the words for the reason `font_family` gives above.
+    cfg.a_conversation_reaches = w
+        .a_conversation_reaches
+        .get_string_selection()
+        .map(|chosen| AConversationReaches::from_words(&chosen))
+        .unwrap_or_else(|| AConversationReaches::from_stored(&cfg.a_conversation_reaches))
         .as_str()
         .to_string();
     // D-34 and D-35, written back separately because they are two answers.

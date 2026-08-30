@@ -2718,13 +2718,20 @@ impl WxMailApp {
                     // in the mailbox having lost their place, and for anybody
                     // navigating by ear their place is the only thing telling
                     // them where they are.
-                    // What the conversation is called, not what the row you
-                    // happened to be standing on was called. Opening a
-                    // conversation from a reply used to title it
-                    // "Re: Re: Quarterly report", which is three words of
-                    // marker before the two that say what it is about, read
-                    // out every time the dialog opens. D-04.
-                    let named = crate::application::conversations::name_of(&subject);
+                    // What the conversation is called and how big it is, in
+                    // one sentence, because the tree's accessible name and the
+                    // announcement both read it and two strings would be two
+                    // answers to one question.
+                    //
+                    // The name is the conversation's, not the row's: opening
+                    // one from a reply used to title it "Re: Re: Quarterly
+                    // report", three words of marker before the two that say
+                    // what it is about, read out every time (D-04). The counts
+                    // are the account's rather than the loaded page's, so they
+                    // say the same thing whichever folder somebody opened the
+                    // conversation from (D-08, D-03).
+                    let named =
+                        how_a_conversation_reads(&state, &thread_cache, &thread_id, &subject);
                     open_conversation_again(
                         &frame,
                         &reader,
@@ -13027,6 +13034,71 @@ fn folder_on_screen(state: &WxUIState) -> Option<i64> {
         .selected_folder
         .as_ref()
         .and_then(|which| the_id_of(state, which))
+}
+
+/// What a conversation is called and how big it is, in one sentence.
+///
+/// One string rather than two, because the conversation dialog reads it twice:
+/// once as the tree's accessible name and once as the announcement made when it
+/// opens. Two strings would be two answers to one question, and the two used to
+/// disagree already: the announcement counted the loaded page while the title
+/// carried whichever message the cursor happened to be on.
+///
+/// The counts come from the database rather than from the rows on screen, and
+/// they honour `a_conversation_reaches`. D-08: a conversation says the same
+/// thing wherever somebody is standing, so opening the same conversation from
+/// the inbox and from the archive has to give the same number. The loaded page
+/// cannot answer that, because it is one folder's worth.
+///
+/// Falls back to the name alone when the count cannot be had: no cache, no
+/// folder open, or a query that failed. A name with no number is still a name;
+/// a number that might be wrong is worse than none.
+fn how_a_conversation_reads(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    thread_id: &str,
+    subject: &str,
+) -> String {
+    let named = crate::application::conversations::name_of(subject);
+    let Some(counted) = count_a_conversation(state, cache, thread_id) else {
+        return named;
+    };
+    format!("{named}, {counted}")
+}
+
+/// How many messages and how many unread, across the reach somebody chose.
+///
+/// `None` where the question cannot be asked at all, which the caller reads as
+/// "say the name and nothing about the size".
+fn count_a_conversation(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    thread_id: &str,
+) -> Option<String> {
+    let cache = cache.as_ref()?;
+    let (folder_id, account_id) = {
+        let s = lock_state(state);
+        let which = s.selected_folder.as_ref()?;
+        let folder_id = the_id_of(&s, which)?;
+        let account_id = s.messages.first()?.account_id.clone();
+        (folder_id, account_id)
+    };
+    let reach = crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .map(|stored| {
+            crate::application::conversations::AConversationReaches::from_stored(
+                &stored.app_config().a_conversation_reaches,
+            )
+        })
+        .unwrap_or_default();
+    let found = cache
+        .conversations_in(folder_id, &account_id, reach, None)
+        .ok()?;
+    let row = found.iter().find(|row| row.thread_id == thread_id)?;
+    Some(crate::application::conversations::counts_read_as(
+        row.messages,
+        row.unread,
+    ))
 }
 
 /// The database id behind a row of the folder tree, where it has one.
