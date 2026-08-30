@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-01-PLAN.md, the phase tracer
-last_updated: "2026-08-30T06:29:03.638Z"
+stopped_at: Completed 01-02-PLAN.md, the conversation id
+last_updated: "2026-08-30T08:15:17.416Z"
 last_activity: 2026-08-30
-last_activity_desc: Phase 01 execution started
-state_head: 2c62f0dec2ac7a2d67566a5534d0771c54869d6d
+last_activity_desc: 01-02 done: messages.thread_id has a writer, a backfill and two indexes
+state_head: a7b0c092dbbdfcbdf7e5fddac950d0806c7ebb66
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -69,17 +69,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-01 done: a folder is made on the server, encoder and all
+Last activity: 2026-08-30 — 01-02 done: every message carries a conversation id, old rows included
 
-Progress: [█░░░░░░░░░] 1 of 13 plans in phase 01
+Progress: [█▌░░░░░░░░] 2 of 13 plans in phase 01
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
-- Average duration: 3h 5m
-- Total execution time: 3h 5m
+- Total plans completed: 2
+- Average duration: 2h 7m
+- Total execution time: 4h 15m
 
 **By Phase:**
 
@@ -89,8 +89,10 @@ Progress: [█░░░░░░░░░] 1 of 13 plans in phase 01
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (3h 5m)
-- Trend: one point, no trend yet
+- Last 5 plans: 01-01 (3h 5m), 01-02 (1h 10m)
+- Trend: down sharply, and the reason is measurable rather than encouraging. 01-01
+  ran the whole library on every check; 01-02 ran it four times on purpose and
+  used targeted runs, 1 second against 188, for every red and green step.
 
 *Updated after each plan completion*
 **Per-Plan Metrics:**
@@ -98,6 +100,7 @@ Progress: [█░░░░░░░░░] 1 of 13 plans in phase 01
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 3h 5m | 3 tasks | 8 files |
+| Phase 01 P02 | 1h 10m | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -119,6 +122,10 @@ ahead:
 - [Phase 01]: A new folder is made where it is named, not under the cursor: the IMAP hierarchy delimiter is dropped after list_folders by design, and guessing it writes the folder elsewhere on a dot-separated server. Nesting is 01-03 and 01-05.
 - [Phase 01]: Making a folder records it in the cache, subscribes it, and marks it as one to keep up to date. The tree is read from the cache, and an unsubscribed folder is hidden, so creating on the server alone would show nothing.
 - [Phase 01]: MAIL_TRANSPORTS' imap floor rises with every gated write added. Left at 8 with nine writes present, it had already cost the copy_message gate guard one of its three reddening tests.
+
+- [Phase 01]: D-39 confirmed at the gate by Pratik, conditional on no existing threading being lost. The condition was checked and holds: threading.rs is untouched, so the conversation view behind Enter is unchanged. thread_id is derived from the first identifier of the References chain, computed once when a message is stored.
+- [Phase 01]: The conversation id is written at one call site, inside upsert_message, not at both named entry paths. file_message_here is upsert_message plus one UPDATE, so a second call there would build the duplication as_stored's doc comment forbids. Any later plan told to write a derived value "in both places" should read the second place's body first.
+- [Phase 01]: A guard for an invariant of the form "exactly one place does this" breaks by ADDING a competing copy, not by deleting the one. Deleting proves only that the value is computed at all. guards.toml now holds one record of each shape for this column.
 
 ### Pending Todos
 
@@ -161,6 +168,24 @@ None yet.
   reverted. Any plan here that names a requirement four plans share needs the
   same check before its state update is believed.
 
+- **THREAD-01 and THREAD-02 stay open after 01-02.** Same shape as FOLDER-01
+  above, and checked before the state update rather than after. THREAD-01 asks
+  for the message list to collapse to one row per conversation, which is 01-12.
+  THREAD-02 asks for rethreading as mail arrives without the folder being
+  rebuilt, which is 01-13. 01-02 built the thing both of them read, a stored
+  conversation id. Neither was ticked.
+
+- **The version bump rule has not been followed for 27 commits, and its check is
+  vacuous.** CLAUDE.md says a behaviour change bumps the version in the same
+  commit. Cargo.toml last moved 27 commits before 01-02, which includes all of
+  01-01's create-a-folder feature. 01-02 bumped 0.45.0 to 0.46.0, so the bump is
+  late and covers more than one plan. The nearest check,
+  `test_no_status_page_names_a_version_the_code_does_not_ship`, compares versions
+  named in README.md and docs/IMPLEMENTATION_STATUS.md against the shipped one,
+  and neither file names a version, so it passes over an empty set. Its own
+  comment recommends exactly that omission. This is Pratik's call, not a thing to
+  fix inside a phase plan.
+
 - **Phase 7, SHIP-01** is blocked on a certificate decision that is Pratik's.
 - **Nothing has ever run against a real mail account.** No criterion in this milestone claims
   otherwise, and none may be rewritten to.
@@ -178,8 +203,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T06:29:03.619Z
-Stopped at: Completed 01-01-PLAN.md, the phase tracer
+Last session: 2026-08-30T08:15:17.416Z
+Stopped at: Completed 01-02-PLAN.md, the conversation id
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
