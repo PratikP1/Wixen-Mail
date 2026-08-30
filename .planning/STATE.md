@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-08-30T17:38:14.488Z"
+stopped_at: Completed 01-08-PLAN.md
+last_updated: "2026-08-30T19:15:53.613Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-07 done: one Sent, Outbox, Drafts, Junk and Trash for every account, existing mail moved into them with a count said aloud, and colliding message numbers both kept"
-state_head: c68feebf8ba092baab62caa8a4967e555e017bed
+last_activity_desc: "01-08 done: folders can be pinned to a Favourites group above All Inboxes, arranged by account, as a copy rather than a move, and nothing on the pinning path reaches a server"
+state_head: ee27e106a9a88a9a8878e15bdfeb09f197d34062
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -71,13 +71,13 @@ which the newest, 5,269, was the unit count wearing the label of the total. The 
 
 Last activity: 2026-08-30 — 01-07 done: the human gate was returned rather than answered and came back with three corrections, the five local folders are now one each, and the merge reuses the mover that already existed rather than the second one the plan asked for
 
-Progress: [█████░░░░░] 54% (7 of 13 plans)
+Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 1h 57m
 - Total execution time: 13h 38m
 
@@ -89,8 +89,8 @@ Progress: [█████░░░░░] 54% (7 of 13 plans)
 
 **Recent Trend:**
 
-- Last 7 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
-  01-05 (1h 38m), 01-06 (1h 4m), 01-07 (1h 31m)
+- Last 8 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
+  01-05 (1h 38m), 01-06 (1h 4m), 01-07 (1h 31m), 01-08 (2h 5m)
 
 - Trend: no trend, and the spread is the finding. The three fast plans used
   targeted test runs, 1 second against about 175, for every red and green step,
@@ -112,6 +112,7 @@ Progress: [█████░░░░░] 54% (7 of 13 plans)
 | Phase 01 P05 | 1h 38m | 3 tasks | 13 files |
 | Phase 01 P06 | 1h 4m | 3 tasks | 15 files |
 | Phase 01 P07 | 1h 31m | 3 tasks | 14 files |
+| Phase 01 P08 | 2h 5m | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,15 @@ ahead:
 
 - The cached mail database is not encrypted, and the docs say so. Phase 7 decides whether that
   changes.
+
+- A pin and a server subscription are two questions, so neither overrules the other. Pinning
+  never writes a subscription and a subscription changing never adds or removes a pin. Recorded
+  in `src/application/favourites.rs` and in PROJECT.md before the storage shape was fixed, which
+  is what FOLDER-03 asked for.
+
+- Favourites are keyed on `(account_id, path)` with both cascades. A rename rewrites a folder's
+  path, so `ON UPDATE CASCADE` is what makes D-32's "a rename keeps the pin" true rather than a
+  second writer nobody remembers.
 
 - [Phase 01]: A new folder is made where it is named, not under the cursor: the IMAP hierarchy delimiter is dropped after list_folders by design, and guessing it writes the folder elsewhere on a dot-separated server. Nesting is 01-03 and 01-05.
 - [Phase 01]: Making a folder records it in the cache, subscribes it, and marks it as one to keep up to date. The tree is read from the cache, and an unsubscribed folder is hidden, so creating on the server alone would show nothing.
@@ -236,8 +246,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T17:37:23.723Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-08-30T19:15:53.593Z
+Stopped at: Completed 01-08-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19

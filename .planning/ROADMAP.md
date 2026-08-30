@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   7. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
   8. The five settings this phase adds are each reachable and operable from a real settings screen by keyboard, with their state announced. A setting the model holds and no screen writes is what FEEDBACK-01 exists to fix; this phase must not add a sixth.
 
-**Plans**: 7/13 plans executed, one per wave. Two shared files, `guards/guards.toml` and `docs/changelog.md`, are touched by most plans under the same-commit rules, and `src/presentation/wx_app.rs` by most, so the plans are ordered rather than run in parallel.
+**Plans**: 8/13 plans executed, one per wave. Two shared files, `guards/guards.toml` and `docs/changelog.md`, are touched by most plans under the same-commit rules, and `src/presentation/wx_app.rs` by most, so the plans are ordered rather than run in parallel.
 
 Plans:
 **Wave 1**
@@ -88,7 +88,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 01-08-PLAN.md — Favourites (D-28 to D-32)
+- [x] 01-08-PLAN.md — Favourites (D-28 to D-32)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -232,7 +232,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Folders and conversations | 7/13 | In Progress|  |
+| 1. Folders and conversations | 8/13 | In Progress|  |
 | 2. Search that says what it covers | 0/TBD | Not started | - |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
