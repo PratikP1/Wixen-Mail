@@ -51,7 +51,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   6. The View menu's thread view is enabled, and switching it collapses the list to one row per conversation announcing subject, message count and unread count, with every column answering about the conversation rather than about its newest message.
   7. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
   8. The five settings this phase adds are each reachable and operable from a real settings screen by keyboard, with their state announced. A setting the model holds and no screen writes is what FEEDBACK-01 exists to fix; this phase must not add a sixth.
-**Plans**: TBD
+**Plans**: 13 plans, one per wave. Two shared files, `guards/guards.toml` and `docs/changelog.md`, are touched by most plans under the same-commit rules, and `src/presentation/wx_app.rs` by most, so the plans are ordered rather than run in parallel.
+
+Plans:
+- [ ] 01-01-PLAN.md — Tracer: create a folder end to end, encoder included (D-41)
+- [ ] 01-02-PLAN.md — A conversation identity that is stored, and the two indexes (D-39)
+- [ ] 01-03-PLAN.md — Nesting stored as a parent link, and local names that contain the separator (D-22, D-23)
+- [ ] 01-04-PLAN.md — Rename the leaf, move the subtree, delete deepest first (D-26)
+- [ ] 01-05-PLAN.md — The tree's shape: account branches, "On this computer", identity keying (D-13, D-15 to D-17, D-21, D-25)
+- [ ] 01-06-PLAN.md — Moving accounts, counting unread, and the settings guard (D-14, D-24, D-42, D-43)
+- [ ] 01-07-PLAN.md — Five local folders shared, and the migration that gets there (D-18 to D-20, D-40)
+- [ ] 01-08-PLAN.md — Favourites (D-28 to D-32)
+- [ ] 01-09-PLAN.md — Empty a folder and mark one read (D-33 to D-38)
+- [ ] 01-10-PLAN.md — A folder the server stopped listing (D-27)
+- [ ] 01-11-PLAN.md — What a conversation is and what its row says (D-02 to D-04, D-08)
+- [ ] 01-12-PLAN.md — Switching the view, and what survives it (D-01, D-05 to D-07, D-09 to D-12)
+- [ ] 01-13-PLAN.md — Rethread as mail arrives, including the two-tree merge (THREAD-02)
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-29 after the phase discussion. The original five described nesting a flat tree. What the discussion decided is in `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`, which is the authority on the detail; these criteria are what the phase is verified against. The phase also needs three IMAP verbs that do not exist in `src/service/protocols/imap.rs` today: CREATE, RENAME and DELETE mailbox.
 
