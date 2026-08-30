@@ -780,15 +780,17 @@ and it is not in the tab order while it is empty.
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
 | Refresh Folder | `F5` | Reload current folder |
-| Move Account Up | `Alt+Shift+Up` | Move the account the cursor is on one place up the list. Nothing is sent to any server. See the warning below |
-| Move Account Down | `Alt+Shift+Down` | Move the account the cursor is on one place down the list. Nothing is sent to any server. See the warning below |
+| Move Up | `Alt+Shift+Up` | Move the account, or the pinned folder, the cursor is on one place up. Nothing is sent to any server. See the warning below |
+| Move Down | `Alt+Shift+Down` | Move the account, or the pinned folder, the cursor is on one place down. Nothing is sent to any server. See the warning below |
+| Pin Folder | none | On the Action menu. Put the folder the cursor is on in Favourites, at the top of the tree. The folder also stays where it was |
+| Unpin Folder | none | On the Action menu. Take a folder out of Favourites. The folder itself is untouched |
 
 #### A warning about Alt+Shift
 
 Alt and Shift pressed together, with nothing else, is the Windows shortcut for
 switching to your next keyboard layout. If you have more than one layout
 installed, letting go of Alt and Shift after the arrow key can switch your
-layout as well as moving the account.
+layout as well as moving the row.
 
 Nothing in Wixen Mail can stop that. Windows sees the two modifier keys go down
 and come back up and acts on it, whatever any program does in between. So this

@@ -19,78 +19,22 @@
 //! from a keystroke that was not received, so they press it again. It answers
 //! instead, and the answer says where the account already is.
 
-/// Which way an account is being moved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Move {
-    Up,
-    Down,
-}
+/// Which way an account is being moved, and what a move came to.
+///
+/// The gesture's own, in `reordering`, because D-31 gives pinned folders the
+/// same one and a second copy of these would be a second answer to a question
+/// with one.
+pub use crate::application::reordering::{Move, Moved};
 
-/// What moving an account came to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Moved {
-    /// Every account's id, in the order they should now be stored in.
-    ///
-    /// The whole list rather than the two that swapped. Writing only the pair
-    /// would leave the rest with no stored position, and a list half ordered by
-    /// choice and half by arrival reorders itself the next time an account is
-    /// added.
-    pub order: Vec<String>,
-    /// What to say, whether or not anything moved.
-    pub say: String,
-    /// Whether anything actually changed, so a caller can skip the writing.
-    pub moved: bool,
-}
+/// What is said when the cursor is not on an account branch.
+pub const WHICH_ACCOUNT: &str = "Choose an account first. Move Up and Move Down \
+                                 act on the row the cursor is on.";
 
 /// Move one account up or down the list.
 ///
 /// `accounts` is every account as `(id, name)` in the order they sit in now.
 pub fn moved(accounts: &[(String, String)], which: &str, direction: Move) -> Moved {
-    let order: Vec<String> = accounts.iter().map(|(id, _)| id.clone()).collect();
-    let howmany = accounts.len();
-
-    let Some(at) = accounts.iter().position(|(id, _)| id == which) else {
-        // Nothing is chosen, or the chosen row is not an account. Said rather
-        // than ignored, because the alternative is a key that sometimes works
-        // and never explains itself.
-        return Moved {
-            order,
-            say: "Choose an account first. Move Account Up and Move Account Down \
-                  act on the account branch the cursor is on."
-                .to_string(),
-            moved: false,
-        };
-    };
-    let name = accounts[at].1.clone();
-
-    let swap_with = match direction {
-        Move::Up if at == 0 => {
-            return Moved {
-                order,
-                say: format!("{name} is already first of {howmany}."),
-                moved: false,
-            };
-        }
-        Move::Down if at + 1 == howmany => {
-            return Moved {
-                order,
-                say: format!("{name} is already last of {howmany}."),
-                moved: false,
-            };
-        }
-        Move::Up => at - 1,
-        Move::Down => at + 1,
-    };
-
-    let mut order = order;
-    order.swap(at, swap_with);
-    Moved {
-        // One past the index, because somebody counting a list of three says
-        // first, second, third rather than nought, one, two.
-        say: format!("{name}, {} of {howmany}.", swap_with + 1),
-        order,
-        moved: true,
-    }
+    crate::application::reordering::moved(accounts, which, direction, WHICH_ACCOUNT)
 }
 
 /// Where the command that moves an account is written, so the check below can

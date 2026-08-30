@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 326 records have arrived since and have not been through it.
+# 328 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9572,4 +9572,77 @@ after = """                FOREIGN KEY (account_id, path) REFERENCES folders(acc
 red = [
     "data::message_cache::folders::tests::test_a_folder_made_again_at_the_same_path_is_not_pinned_already",
     "data::message_cache::folders::tests::test_a_folder_that_is_really_gone_takes_its_pin_with_it",
+]
+
+[[guard]]
+# D-30 makes pinning a copy: the folder stays in its account's branch and turns
+# up at the top as well. The obvious implementation of a favourites group is
+# the other one, where pinning moves a folder, and it is what most other mail
+# programs do, so this is the shape somebody would reintroduce while tidying
+# rather than while breaking something.
+#
+# It matters because a move cannot be undone by unpinning without knowing where
+# the folder used to be. A copy can: the original was never touched.
+#
+# The break is that implementation, filtering a pinned folder out of the branch
+# it belongs to.
+#
+# Measured by hand on 2026-08-30 against the whole library: three tests. Two of
+# the three are about closing and about unpinning rather than about the copy
+# itself, which is the evidence that D-30 is load-bearing for more than the one
+# rule it states.
+name = "a pinned folder is still in its own account branch"
+file = "src/presentation/folder_tree.rs"
+before = """        let mine: Vec<&FolderInTheTree> = folders
+            .iter()
+            .filter(|folder| folder.account == account.id)
+            .collect();"""
+after = """        let mine: Vec<&FolderInTheTree> = folders
+            .iter()
+            .filter(|folder| {
+                folder.account == account.id
+                    && !pins.iter().any(|pin| {
+                        pin.account == folder.account && pin.path == folder.path
+                    })
+            })
+            .collect();"""
+red = [
+    "presentation::folder_tree::tests::test_a_pinned_folder_is_still_in_its_own_account_branch",
+    "presentation::folder_tree::tests::test_the_group_and_the_account_branch_are_closed_apart",
+    "presentation::folder_tree::tests::test_unpinning_leaves_the_account_branchs_row_untouched",
+]
+
+[[guard]]
+# FOLDER-03 says pinning writes only on this computer, never to the server, and
+# never passes through `Allowed`. What is being defended is an **absence**, and
+# an absence leaves nothing for a behaviour test to count: there is no call to
+# instrument, so a test asserting "zero calls were made" passes identically
+# against a working pin and against a body that does nothing at all.
+#
+# So the check reads the source of the pinning path instead, in call syntax
+# rather than bare words, the same shape `account_order` uses for the same
+# reason. Its companion tests prove the reading can see such a call, that it
+# does not fire on the paragraphs explaining the rule, and that reading one
+# function of wx_app.rs stops at that function rather than running on into the
+# many places that do reach a server.
+#
+# The break puts the service layer on the pinning path. It is a mention rather
+# than a live call because the break has to compile, and a mention is exactly
+# what the check reads for; the companion beside it is what ties that reading
+# to a real call.
+#
+# Measured by hand on 2026-08-30 against the whole library: one test.
+name = "pinning a folder never reaches a server"
+file = "src/presentation/wx_app.rs"
+before = """    let done = match pinning {
+        true => cache.pin_row(&account, &path),
+        false => cache.unpin_row(&account, &path),
+    };"""
+after = """    let _ = std::mem::size_of::<crate::service::protocols::imap::ImapFolder>();
+    let done = match pinning {
+        true => cache.pin_row(&account, &path),
+        false => cache.unpin_row(&account, &path),
+    };"""
+red = [
+    "application::favourites::nothing_here_reaches_a_server::test_pinning_a_folder_makes_no_call_that_leaves_this_machine",
 ]

@@ -127,6 +127,64 @@ pub fn in_account_order(pins: &[Pin], accounts: &[(String, String)]) -> Vec<Pinn
         .collect()
 }
 
+/// What is said when a pinning command is asked for with no folder chosen.
+pub const WHICH_FOLDER: &str = "Choose a folder in the folder tree first. Pin Folder \
+                                and Unpin Folder act on the folder the cursor is on.";
+
+/// What is said when the reorder gesture is used on a row it cannot move.
+pub const WHICH_ROW: &str = "Move Up and Move Down rearrange accounts and pinned \
+                             folders. Choose an account branch, or a folder under \
+                             Favourites.";
+
+/// What is said when a folder somebody has just pinned goes into the group.
+///
+/// It says the folder is still where it was, because that is the surprising
+/// half: every other program's favourites move a folder, and somebody who has
+/// used one will otherwise go looking for the original.
+pub fn now_pinned(name: &str) -> String {
+    format!("{name} is in {FAVOURITES}. It is still in its account as well.")
+}
+
+/// What is said when somebody pins what is already pinned.
+///
+/// Said rather than greyed out (D-38's rule): a menu item that greys out for a
+/// reason somebody cannot see is what twenty-eight status-line messages were
+/// removed for. It says where the folder already is, so the answer is useful
+/// rather than only a refusal.
+pub fn already_pinned(name: &str) -> String {
+    format!("{name} is already in {FAVOURITES}.")
+}
+
+/// What is said when a folder comes out of the group.
+///
+/// The reassurance is the point of the sentence, in the register
+/// `delete_the_chosen_search` uses for the same worry: the row that has gone
+/// was a copy, and somebody who has just pressed a key they were not sure about
+/// needs telling that nothing of theirs went with it.
+pub fn now_unpinned(name: &str) -> String {
+    format!("{name} is out of {FAVOURITES}. The folder itself is untouched.")
+}
+
+/// What is said when somebody unpins something that was not pinned.
+pub fn was_not_pinned(name: &str) -> String {
+    format!("{name} is not in {FAVOURITES}.")
+}
+
+/// Move one pinned folder up or down its own account's part of the group.
+///
+/// `pins` is that one account's pins as `(path, name)` in the order they sit in
+/// now. One account's rather than every account's, because the group is
+/// arranged by account and moving a pin past the end of its own branch would
+/// mean moving it into somebody else's account, which is not a thing a folder
+/// can do.
+pub fn moved(
+    pins: &[(String, String)],
+    which: &str,
+    direction: crate::application::reordering::Move,
+) -> crate::application::reordering::Moved {
+    crate::application::reordering::moved(pins, which, direction, WHICH_ROW)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +202,87 @@ mod tests {
             .iter()
             .map(|(id, name)| (id.to_string(), name.to_string()))
             .collect()
+    }
+
+    fn three_pins() -> Vec<(String, String)> {
+        [("One", "One"), ("Two", "Two"), ("Three", "Three")]
+            .iter()
+            .map(|(path, name)| (path.to_string(), name.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_a_pin_moves_within_its_own_accounts_group_and_says_where_it_now_is() {
+        use crate::application::reordering::Move;
+        let after = moved(&three_pins(), "One", Move::Down);
+        assert_eq!(after.order, vec!["Two", "One", "Three"]);
+        assert!(after.moved);
+        assert_eq!(after.say, "One, 2 of 3.");
+    }
+
+    #[test]
+    fn test_a_pin_already_at_the_end_says_so_rather_than_doing_nothing_silently() {
+        use crate::application::reordering::Move;
+        let first = moved(&three_pins(), "One", Move::Up);
+        assert!(!first.moved);
+        assert_eq!(first.say, "One is already first of 3.");
+        let last = moved(&three_pins(), "Three", Move::Down);
+        assert!(!last.moved);
+        assert_eq!(last.say, "Three is already last of 3.");
+    }
+
+    #[test]
+    fn test_moving_an_account_and_moving_a_pin_are_worded_the_same_way() {
+        // D-31 says one gesture. A gesture that announced itself two ways
+        // would be two gestures to the person hearing it, whatever the code
+        // says.
+        use crate::application::reordering::Move;
+        let accounts = crate::application::account_order::moved(
+            &[
+                ("One".to_string(), "One".to_string()),
+                ("Two".to_string(), "Two".to_string()),
+                ("Three".to_string(), "Three".to_string()),
+            ],
+            "One",
+            Move::Down,
+        );
+        assert_eq!(accounts.say, moved(&three_pins(), "One", Move::Down).say);
+    }
+
+    #[test]
+    fn test_what_pinning_says_names_the_folder_and_where_it_still_is() {
+        assert_eq!(
+            now_pinned("Receipts"),
+            "Receipts is in Favourites. It is still in its account as well."
+        );
+        assert_eq!(
+            already_pinned("Receipts"),
+            "Receipts is already in Favourites."
+        );
+    }
+
+    #[test]
+    fn test_what_unpinning_says_promises_the_folder_is_untouched() {
+        // The reassurance is the point. Somebody who has just pressed a key
+        // they were not sure about needs telling that nothing of theirs went.
+        let said = now_unpinned("Receipts");
+        assert!(said.contains("untouched"), "{said}");
+        assert!(said.starts_with("Receipts is out of Favourites"), "{said}");
+        assert_eq!(was_not_pinned("Receipts"), "Receipts is not in Favourites.");
+    }
+
+    #[test]
+    fn test_every_sentence_names_the_folder_it_is_about() {
+        // A status line that says "Done" is no use to somebody who cannot see
+        // which row the cursor is on.
+        for said in [
+            now_pinned("Receipts"),
+            already_pinned("Receipts"),
+            now_unpinned("Receipts"),
+            was_not_pinned("Receipts"),
+        ] {
+            assert!(said.contains("Receipts"), "{said}");
+        }
     }
 
     #[test]
@@ -320,12 +459,39 @@ mod nothing_here_reaches_a_server {
     /// the pin is stored or where the command is answered, and a check reading
     /// only the module named after the feature would never look at either.
     ///
-    /// `wx_app.rs` is read for one function rather than whole, and joins this
-    /// list in plan 01-08's third task, where the command is written.
-    const THE_WHOLE_PATH: [&str; 2] = [
+    /// `wx_app.rs` is not among them: it is twenty-two thousand lines and does
+    /// reach a server, in the many places that are not this. It is read one
+    /// function at a time, below.
+    const THE_WHOLE_PATH: [&str; 3] = [
         "src/application/favourites.rs",
+        "src/application/reordering.rs",
         "src/data/message_cache/folders.rs",
     ];
+
+    /// Where the commands that pin and rearrange are written.
+    const WHERE_THE_COMMANDS_LIVE: &str = "src/presentation/wx_app.rs";
+
+    /// Their names, which are what marks off the parts to read.
+    ///
+    /// Named rather than read whole, and each name is checked to still be there
+    /// below: a renamed function would make the reading find nothing and report
+    /// a clean result over a file it never looked into.
+    const THE_COMMANDS: [&str; 3] = [
+        "fn pin_or_unpin_the_chosen_folder",
+        "fn move_the_chosen_pin",
+        "fn move_the_chosen_row",
+    ];
+
+    /// The body of one function, from its signature to the margin brace that
+    /// ends it.
+    fn the_body_of(source: &str, signature: &str) -> String {
+        let from = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature} to be in the file"));
+        let rest = &source[from..];
+        let ends = rest.find("\n}").map(|at| at + 2).unwrap_or(rest.len());
+        rest[..ends].to_string()
+    }
 
     /// How a call out of this machine is spelled, in call syntax.
     ///
@@ -354,6 +520,9 @@ mod nothing_here_reaches_a_server {
 
     #[test]
     fn test_pinning_a_folder_makes_no_call_that_leaves_this_machine() {
+        let commands = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string(WHERE_THE_COMMANDS_LIVE).expect("the commands"),
+        );
         let found: Vec<String> = THE_WHOLE_PATH
             .iter()
             .flat_map(|path| {
@@ -363,6 +532,11 @@ mod nothing_here_reaches_a_server {
                     .into_iter()
                     .map(move |found| format!("{path} {found}"))
             })
+            .chain(THE_COMMANDS.iter().flat_map(|command| {
+                calls_out_of_this_machine(&the_body_of(&commands, command))
+                    .into_iter()
+                    .map(move |found| format!("{WHERE_THE_COMMANDS_LIVE} {command} {found}"))
+            }))
             .collect();
 
         assert!(
@@ -412,5 +586,40 @@ mod nothing_here_reaches_a_server {
                 "{path} has moved, so the check that reads it is reading nothing"
             );
         }
+    }
+
+    #[test]
+    fn test_the_commands_this_reads_are_still_there_under_those_names() {
+        let source = std::fs::read_to_string(WHERE_THE_COMMANDS_LIVE).expect("the commands");
+        for command in THE_COMMANDS {
+            assert!(
+                source.contains(command),
+                "{command} has been renamed, so the check that reads it is \
+                 reading nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reading_one_function_stops_at_that_function() {
+        // The whole file does reach a server, in the many places that are not
+        // these three. Without this, a body reader that ran past its function's
+        // end would report those and the check would be red for the wrong
+        // reason, which is how a check comes to be scoped until it sees
+        // nothing.
+        let pretend = "fn move_the_chosen_pin(app: AppHandles) {\n    \
+                       let _ = app;\n}\n\n\
+                       fn something_else() {\n    \
+                       crate::service::protocols::imap::a_session_at(host);\n}";
+        assert!(
+            calls_out_of_this_machine(&the_body_of(pretend, "fn move_the_chosen_pin")).is_empty(),
+            "the reading stopped at the end of the function it was given"
+        );
+        // And it does find one inside the function it was given, so this is
+        // not passing because the reading found nothing at all.
+        assert_eq!(
+            calls_out_of_this_machine(&the_body_of(pretend, "fn something_else")).len(),
+            1
+        );
     }
 }

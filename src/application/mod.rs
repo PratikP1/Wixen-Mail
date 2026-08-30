@@ -67,6 +67,7 @@ pub mod pop_sync;
 pub mod reading_habits;
 pub mod reading_style;
 pub mod receipts;
+pub mod reordering;
 pub mod repeating;
 pub mod reply;
 pub mod running;

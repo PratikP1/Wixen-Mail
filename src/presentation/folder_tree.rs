@@ -161,10 +161,10 @@ impl WhichRow {
     ///
     /// A pinned copy opens the folder it is a copy of (D-30), so this answers
     /// with that folder's own identity and not its own. Everything keyed on a
-    /// folder — which folder id a row names, what mail to load, what the title
-    /// bar says — asks this rather than matching on the row twice, because the
-    /// two identities are deliberately different and a lookup by the pinned
-    /// one finds nothing.
+    /// folder asks this rather than matching on the row twice: which folder id
+    /// a row names, what mail to load, and what the title bar says. The two
+    /// identities are deliberately different, so a lookup by the pinned one
+    /// finds nothing.
     pub fn opens(&self) -> Option<WhichRow> {
         match self {
             WhichRow::Folder { .. } => Some(self.clone()),
@@ -561,6 +561,41 @@ pub fn rows(
     }
 
     out
+}
+
+/// What Alt+Shift+Up and Alt+Shift+Down rearrange, given the row the cursor is
+/// on.
+///
+/// D-31: one gesture for rearranging anything in this tree, rather than a
+/// second chord for pinned folders. Which of the two it means is a question
+/// about the row, so it is answered here where a row's identity lives and can
+/// be asked without a window, rather than by a chain of `if`s inside an event
+/// handler that only a running application can reach.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatMoves {
+    /// The account whose branch the cursor is on.
+    Account(String),
+    /// The pinned folder the cursor is on, and the account whose part of the
+    /// group it sits in.
+    Pin { account: String, path: String },
+    /// Nothing this gesture rearranges.
+    Nothing,
+}
+
+/// Which of the two the gesture means, or neither.
+pub fn what_the_gesture_moves(row: Option<&WhichRow>) -> WhatMoves {
+    match row {
+        Some(WhichRow::Account(id)) => WhatMoves::Account(id.clone()),
+        Some(WhichRow::Pinned { account, path }) => WhatMoves::Pin {
+            account: account.clone(),
+            path: path.clone(),
+        },
+        // A folder's own row is deliberately not a pin, even when that folder
+        // is pinned. Inside an account branch the order is `tree_position`,
+        // which is what the folder is for and then its name, and it is not
+        // somebody's to rearrange; the copy at the top is.
+        _ => WhatMoves::Nothing,
+    }
 }
 
 /// The labels from the top level down to one row, that row's own last.
@@ -1036,6 +1071,53 @@ mod tests {
                 WhichRow::SavedSearches,
             ]
         );
+    }
+
+    #[test]
+    fn test_the_gesture_moves_an_account_on_an_account_row_and_a_pin_on_a_pinned_row() {
+        // D-31, and the whole of what makes one gesture do two things safely.
+        assert_eq!(
+            what_the_gesture_moves(Some(&WhichRow::Account("a".to_string()))),
+            WhatMoves::Account("a".to_string())
+        );
+        assert_eq!(
+            what_the_gesture_moves(Some(&WhichRow::Pinned {
+                account: "a".to_string(),
+                path: "Receipts".to_string(),
+            })),
+            WhatMoves::Pin {
+                account: "a".to_string(),
+                path: "Receipts".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_the_gesture_moves_nothing_on_a_row_that_is_neither() {
+        // A folder's own row included, and that is the case worth naming: the
+        // same folder can be pinned, and it is the copy at the top that moves,
+        // not the row inside the account branch whose order is tree_position.
+        for row in [
+            WhichRow::Folder {
+                account: "a".to_string(),
+                path: "Receipts".to_string(),
+            },
+            WhichRow::Favourites,
+            WhichRow::PinnedIn("a".to_string()),
+            WhichRow::AllInboxes,
+            WhichRow::OnThisComputer,
+            WhichRow::Labels,
+            WhichRow::Label("t1".to_string()),
+            WhichRow::SavedSearches,
+            WhichRow::SavedSearch("s1".to_string()),
+        ] {
+            assert_eq!(
+                what_the_gesture_moves(Some(&row)),
+                WhatMoves::Nothing,
+                "{row:?}"
+            );
+        }
+        assert_eq!(what_the_gesture_moves(None), WhatMoves::Nothing);
     }
 
     #[test]

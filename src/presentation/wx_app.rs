@@ -81,8 +81,10 @@ menu_ids!(
     ID_RENAME_FOLDER,
     ID_MOVE_FOLDER,
     ID_DELETE_FOLDER,
-    ID_MOVE_ACCOUNT_UP,
-    ID_MOVE_ACCOUNT_DOWN,
+    ID_MOVE_UP,
+    ID_MOVE_DOWN,
+    ID_PIN_FOLDER,
+    ID_UNPIN_FOLDER,
     ID_LOAD_SCALE_SAMPLE,
     ID_CHECK_MAIL,
     ID_NEW_MESSAGE,
@@ -3286,18 +3288,31 @@ impl WxMailApp {
                                 &frame,
                             );
                         }
-                        _ if id == ID_MOVE_ACCOUNT_UP || id == ID_MOVE_ACCOUNT_DOWN => {
-                            move_the_chosen_account(
+                        _ if id == ID_MOVE_UP || id == ID_MOVE_DOWN => {
+                            move_the_chosen_row(
                                 AppHandles {
                                     state: &state,
                                     tx: &ui_tx,
                                     rt: &runtime,
                                 },
                                 &message_cache,
-                                match id == ID_MOVE_ACCOUNT_UP {
-                                    true => crate::application::account_order::Move::Up,
-                                    false => crate::application::account_order::Move::Down,
+                                &a11y,
+                                match id == ID_MOVE_UP {
+                                    true => crate::application::reordering::Move::Up,
+                                    false => crate::application::reordering::Move::Down,
                                 },
+                            );
+                        }
+                        _ if id == ID_PIN_FOLDER || id == ID_UNPIN_FOLDER => {
+                            pin_or_unpin_the_chosen_folder(
+                                AppHandles {
+                                    state: &state,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                },
+                                &message_cache,
+                                &a11y,
+                                id == ID_PIN_FOLDER,
                             );
                         }
                         _ if id == ID_MOVE_FOLDER => {
@@ -5489,15 +5504,37 @@ impl WxMailApp {
             // this program can suppress that, so it is written down in
             // docs/KEYBOARD_SHORTCUTS.md where somebody will look when their
             // layout changes, rather than papered over here.
+            // Named for what they do rather than for one of the two things
+            // they do. D-31 gives pinned folders the same gesture rather than a
+            // second chord, so the item that used to say Move Account Up now
+            // moves whichever of the two the cursor is on, and a label naming
+            // only the account would be wrong on every pinned row.
             .append_item(
-                ID_MOVE_ACCOUNT_UP,
-                "Move Account &Up\tAlt+Shift+Up",
-                "Move the chosen account one place up the list",
+                ID_MOVE_UP,
+                "Move &Up\tAlt+Shift+Up",
+                "Move the chosen account or pinned folder one place up",
             )
             .append_item(
-                ID_MOVE_ACCOUNT_DOWN,
-                "Move Account Do&wn\tAlt+Shift+Down",
-                "Move the chosen account one place down the list",
+                ID_MOVE_DOWN,
+                "Move Do&wn\tAlt+Shift+Down",
+                "Move the chosen account or pinned folder one place down",
+            )
+            // No chord. Both need a menu item regardless, by the rule above:
+            // on Windows a shortcut with no menu item behind it is not a
+            // shortcut. Neither is given one because the keys worth spending
+            // are spent, and pinning is not something somebody does often
+            // enough to want a chord for it.
+            .append_item(
+                ID_PIN_FOLDER,
+                "&Pin Folder",
+                "Put the chosen folder in Favourites, at the top of the tree",
+            )
+            .append_item(
+                ID_UNPIN_FOLDER,
+                // Not the leading U: Move Up on this same menu has it, and two
+                // items claiming one letter is a key that runs neither.
+                "Unp&in Folder",
+                "Take the chosen folder out of Favourites; the folder itself stays",
             )
             .build();
 
@@ -7594,10 +7631,159 @@ const NOT_A_FOLDER: &str =
 /// Every account's place is written, not only the two that swapped. Leaving the
 /// rest unwritten would give a list half ordered by choice and half by arrival,
 /// which reorders itself the next time an account is added.
+/// Alt+Shift+Up and Alt+Shift+Down, sent to whichever of the two the cursor is
+/// on.
+///
+/// D-31: one gesture for rearranging anything in this tree. Which of the two it
+/// means is `folder_tree::what_the_gesture_moves`, decided over the row's
+/// identity where it can be tested without a window, rather than by a chain of
+/// comparisons here where only a running application could reach it.
+fn move_the_chosen_row(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    direction: crate::application::reordering::Move,
+) {
+    use folder_tree::WhatMoves;
+
+    let on_row = lock_state(app.state).selected_folder.clone();
+    match folder_tree::what_the_gesture_moves(on_row.as_ref()) {
+        WhatMoves::Account(_) => move_the_chosen_account(app, cache, direction),
+        WhatMoves::Pin { account, path } => {
+            move_the_chosen_pin(app, cache, a11y, &account, &path, direction);
+        }
+        WhatMoves::Nothing => {
+            refuse_a_command(app.tx, crate::application::favourites::WHICH_ROW);
+        }
+    }
+}
+
+/// Move one pinned folder up or down its own account's part of the group.
+///
+/// Nothing here reaches a server, and the check in `application::favourites`
+/// reads this function to say so.
+fn move_the_chosen_pin(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    account: &str,
+    path: &str,
+    direction: crate::application::reordering::Move,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { tx, rt, .. } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    let Ok(pinned) = cache.pinned_rows() else {
+        return refuse_a_command(tx, "What is pinned could not be read from this computer.");
+    };
+    // This account's pins only. The group is arranged by account, so moving a
+    // pin past the end of its own branch would mean moving it into another
+    // account, which is not something a folder can do.
+    let mine: Vec<(String, String)> = pinned
+        .iter()
+        .filter(|pin| pin.account == account)
+        .map(|pin| {
+            let leaf = pin.path.rsplit('/').next().unwrap_or(&pin.path).to_string();
+            (pin.path.clone(), leaf)
+        })
+        .collect();
+
+    let after = crate::application::favourites::moved(&mine, path, direction);
+    if !after.moved {
+        // Nothing moved, and that is said rather than left silent: a key that
+        // does nothing and says nothing reads as a key that was not received.
+        let _ = tx.try_send(UIUpdate::CommandAnswered(after.say));
+        return;
+    }
+    for (at, moved_path) in after.order.iter().enumerate() {
+        if let Err(why) = cache.set_pin_position(account, moved_path, at as i64) {
+            tracing::warn!("Where the pinned folders sit could not be saved: {why}");
+            return refuse_a_command(tx, "Where the pinned folders sit could not be saved.");
+        }
+    }
+    read_the_tree_back(&Some(cache.clone()), app.state, tx);
+    send_status(tx, rt, &after.say);
+    let _ = a11y.announce(&after.say, Priority::High);
+}
+
+/// Put the chosen folder in Favourites, or take it out again.
+///
+/// One function for both because they are one decision made twice: the same
+/// row, the same refusals, and two sentences. Nothing here reaches a server;
+/// FOLDER-03 forbids it and the check in `application::favourites` reads this
+/// function to say so rather than trusting this paragraph.
+fn pin_or_unpin_the_chosen_folder(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    pinning: bool,
+) {
+    use crate::application::favourites;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = cache.as_ref() else {
+        return refuse_a_command(tx, "No mail is stored on this computer yet.");
+    };
+    // Either the folder's own row or its pinned copy: unpinning from the copy
+    // is the obvious thing to do while standing on it, and both name the same
+    // folder through `opens`.
+    let on_row = lock_state(state).selected_folder.clone();
+    let Some(folder_tree::WhichRow::Folder { account, path }) =
+        on_row.as_ref().and_then(folder_tree::WhichRow::opens)
+    else {
+        return refuse_a_command(tx, favourites::WHICH_FOLDER);
+    };
+    let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+
+    let Ok(already) = cache.pinned_rows() else {
+        return refuse_a_command(tx, "What is pinned could not be read from this computer.");
+    };
+    let is_pinned = already
+        .iter()
+        .any(|pin| pin.account == account && pin.path == path);
+
+    // Refused rather than greyed out, D-38's rule: a menu item that greys out
+    // for a reason somebody cannot see is what twenty-eight status-line
+    // messages were removed for. The refusal says where the folder already is,
+    // so it answers the question rather than only declining.
+    if pinning == is_pinned {
+        return refuse_a_command(
+            tx,
+            &match pinning {
+                true => favourites::already_pinned(&name),
+                false => favourites::was_not_pinned(&name),
+            },
+        );
+    }
+
+    let done = match pinning {
+        true => cache.pin_row(&account, &path),
+        false => cache.unpin_row(&account, &path),
+    };
+    if let Err(why) = done {
+        tracing::warn!("The folder could not be pinned or unpinned: {why}");
+        return refuse_a_command(tx, "What is pinned could not be saved on this computer.");
+    }
+
+    // The cursor stays where it was: `read_the_tree_back` puts it back on the
+    // row it was on, and pinning a folder is not a reason to move somebody.
+    read_the_tree_back(&Some(cache.clone()), state, tx);
+    let said = match pinning {
+        true => favourites::now_pinned(&name),
+        false => favourites::now_unpinned(&name),
+    };
+    send_status(tx, rt, &said);
+    let _ = a11y.announce(&said, Priority::High);
+}
+
 fn move_the_chosen_account(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    direction: crate::application::account_order::Move,
+    direction: crate::application::reordering::Move,
 ) {
     use crate::application::account_order::moved;
 
@@ -7607,11 +7793,7 @@ fn move_the_chosen_account(
     };
     let on_row = lock_state(state).selected_folder.clone();
     let Some(folder_tree::WhichRow::Account(which)) = on_row else {
-        return refuse_a_command(
-            tx,
-            "Choose an account first. Move Account Up and Move Account Down \
-             act on the account branch the cursor is on.",
-        );
+        return refuse_a_command(tx, crate::application::account_order::WHICH_ACCOUNT);
     };
     let Ok(accounts) = cache.load_accounts() else {
         return refuse_a_command(tx, "The accounts could not be read from this computer.");

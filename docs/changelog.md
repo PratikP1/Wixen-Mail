@@ -49,8 +49,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can keep your most-used folders at the top of the tree.** Move the cursor
+  onto a folder, then Action, Pin Folder. A **Favourites** group appears above
+  All Inboxes, holding what you pinned. Action, Unpin Folder takes one out
+  again.
+
+  **The folder stays where it was as well.** Pinning puts a second row at the
+  top; it does not move anything. So unpinning cannot lose a folder, and the
+  tree you have learned does not change under you.
+
+  Inside Favourites your folders are grouped by account, the same way the rest
+  of the tree is. If two accounts both have an Inbox and you pin both, you get
+  one under each account's name rather than two rows both called Inbox.
+
+  New pins go to the bottom of their account's group, and Alt+Shift+Up and
+  Alt+Shift+Down move them, which is the same pair of keys that moves an
+  account. One way of rearranging anything in the tree.
+
+  The group is not there at all until you pin something, rather than sitting
+  empty for you to arrow into.
+
+  **Nothing is sent to any server.** What you have pinned is kept on this
+  computer only. Renaming a folder keeps its pin; a folder that is really
+  deleted takes its pin with it.
+
 - **You can put your accounts in the order you want them.** Move the cursor onto
-  an account, then Action, Move Account Up or Move Account Down, or press
+  an account, then Action, Move Up or Move Down, or press
   Alt+Shift+Up or Alt+Shift+Down. It says the account's name and where it now
   sits, as in "Work, 2 of 3". Moving the first account up says "Work is already
   first of 3" rather than doing nothing quietly, because a key that does nothing
