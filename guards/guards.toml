@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 330 records have arrived since and have not been through it.
+# 332 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9712,4 +9712,65 @@ red = [
     "data::message_cache::messages::tests::test_the_count_is_the_messages_really_here_and_not_the_number_the_last_sync_wrote",
     "data::message_cache::messages::tests::test_the_count_leaves_out_folders_it_was_not_given",
     "data::message_cache::messages::tests::test_the_rows_an_empty_walks_are_the_rows_the_count_counted",
+]
+
+[[guard]]
+# D-27 and threat T-01-42. A folder the server has stopped listing is marked and
+# nothing else. The mail cached in it stays where it is, readable, until
+# somebody has been asked and has answered, and that is the whole reason a modal
+# raised by a background sync was acceptable at all: the worst outcome of the
+# question never being answered is a tree that tells the truth about a folder.
+#
+# A sync runs on a timer, so anything this destroyed would be destroyed with
+# nobody there to have agreed to it. And `folders` cascades into `messages`, so
+# the destructive version of this is one statement away at all times, which is
+# what makes it worth writing down.
+#
+# The break makes marking a folder gone delete the mail in it. It compiles, it
+# is one statement, and it leaves the folder in the tree, so nothing about the
+# shape of the code says which of the two was written.
+#
+# Measured by hand on 2026-08-30 against the whole library: four tests. Three of
+# them are about the mark reading back rather than about the mail, because the
+# break also stops the mark being written; the count is the one that is about
+# the rule, and the other three are what says the break really applied.
+name = "nothing is removed for a folder the server stopped listing until somebody has answered"
+file = "src/data/message_cache/folders.rs"
+before = """                "UPDATE folders SET the_server_stopped_listing_it = ?1 WHERE id = ?2","""
+after = """                "DELETE FROM messages WHERE folder_id = ?2 AND ?1 IS NOT NULL","""
+red = [
+    "data::message_cache::folders::tests::test_a_folder_that_came_back_stops_being_marked_gone",
+    "data::message_cache::folders::tests::test_a_folder_the_server_stopped_listing_reads_back_and_one_it_still_lists_does_not",
+    "data::message_cache::folders::tests::test_marking_a_folder_gone_changes_no_message_row",
+    "data::message_cache::folders::tests::test_one_accounts_gone_folders_are_not_another_accounts",
+]
+
+[[guard]]
+# D-27 and threat T-01-43. One question about every folder waiting, never one
+# per folder and never one per account syncing at the same moment. That is a
+# property of there being one set rather than a queue of windows, so the break
+# is at the set: it keeps the last folder added instead of adding to what is
+# there.
+#
+# The failure it defends against is not hypothetical here. Reminder alerts
+# opened one over another about a minute apart, each covering the one being
+# read, because the clock that opened them kept running inside the modal. A
+# sync is a timer too, and five folders going missing at once is the ordinary
+# case rather than the odd one: a server that has moved its mailboxes moves all
+# of them.
+#
+# Measured by hand on 2026-08-30 against the whole library: four tests. Two are
+# about the question covering the whole set and two are about how it words the
+# accounts, which only differ once more than one folder is in it. A weaker
+# break, truncating the list of ids where the question is built, reddened two of
+# these four and was set aside for this one.
+name = "one question is asked about every folder waiting rather than one per folder"
+file = "src/presentation/one_question_at_a_time.rs"
+before = """                self.waiting.push(folder);"""
+after = """                self.waiting = vec![folder];"""
+red = [
+    "presentation::one_question_at_a_time::tests::test_a_question_naming_two_accounts_says_which_account_each_folder_is_in",
+    "presentation::one_question_at_a_time::tests::test_five_folders_going_missing_in_one_sync_produce_one_question_naming_five",
+    "presentation::one_question_at_a_time::tests::test_one_accounts_folders_are_not_read_out_with_the_account_after_each",
+    "presentation::one_question_at_a_time::tests::test_two_accounts_syncing_at_the_same_time_produce_one_question",
 ]

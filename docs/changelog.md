@@ -49,6 +49,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A folder your mail server has stopped listing is never removed without
+  asking you first.** When a check for mail comes back and a folder you had is
+  no longer in the list, the folder stays where it is, the mail in it stays on
+  this computer, and its row in the sidebar says the server no longer lists it.
+  Nothing is deleted.
+
+  You are then asked once, in a window, whether to remove it. Answering No keeps
+  it, and you are not asked again. Closing the window without answering also
+  keeps everything, and you will be asked again next time you start the program.
+  Only Yes removes anything, and it says afterwards how many folders went and
+  how many messages went with them. Enter answers No.
+
+  **One question, whatever happened.** Five folders going missing at once is one
+  question naming all five, not five windows. Two accounts checking at the same
+  time is still one question. And it waits while you are typing: if you are
+  writing a message, or filling in an event, a contact, a task or a note, it
+  does not open over you.
+
+  **A server that answers with nothing at all is treated as a check that
+  failed**, not as every folder having been deleted. Those two look identical
+  coming from the server, and only one of them is survivable. Folders kept on
+  this computer, such as your Drafts and Outbox, are never included whatever the
+  server says, because the server has never seen them.
+
 - **You can empty a folder, and mark a whole folder read.** Move the cursor onto
   a folder in the tree, then Action, Empty Folder, or Action, Mark Folder Read.
 

@@ -162,17 +162,21 @@ pub fn what_to_raise(
         .collect();
     let listed = crate::application::how_far_it_got::in_a_list(&named);
 
+    // Each sentence on one line, because a line continuation inside a string
+    // carries the source indentation into the middle of it, and
+    // `test_no_sentence_is_written_with_the_source_indentation_inside_it` is
+    // there because that draws as a gap in a label and reads as one aloud.
     let (title, words) = match named.len() {
         1 => (
             "Folder your mail server no longer lists".to_string(),
             format!(
-                "Your mail server no longer lists the folder {listed}.                  Remove it from this computer? The mail cached in it goes with                  it. Answer No to keep it."
+                "Your mail server no longer lists the folder {listed}. Remove it from this computer? The mail cached in it goes with it. Answer No to keep it."
             ),
         ),
         several => (
             "Folders your mail server no longer lists".to_string(),
             format!(
-                "Your mail server no longer lists {several} folders: {listed}.                  Remove them from this computer? The mail cached in them goes                  with them. Answer No to keep them."
+                "Your mail server no longer lists {several} folders: {listed}. Remove them from this computer? The mail cached in them goes with them. Answer No to keep them."
             ),
         ),
     };
