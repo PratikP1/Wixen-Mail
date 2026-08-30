@@ -12,6 +12,7 @@
 use super::date_display::{DateSettings, format_for_list};
 use super::message_columns::MessageColumn;
 use super::ui_types::MessageItem;
+use crate::application::conversations::ConversationItem;
 
 /// Shown in a cell whose page has not been loaded yet.
 ///
@@ -70,6 +71,30 @@ pub fn cell_text(
         MessageColumn::To => display_address(&message.to),
         MessageColumn::Cc => display_address(&message.cc),
     }
+}
+
+/// The text for one cell of a conversation row.
+///
+/// The sibling of [`cell_text`], one arm per column, over a whole conversation
+/// instead of one message. D-02: every arm answers about the conversation, and
+/// the value each one reads was filled by the very SQL expression the list is
+/// ordered by, so what a row says and what it sorts by cannot come apart.
+///
+/// The module's two rules hold here as they do above. A cell is self-describing,
+/// because the headings are not being read and "Yes" would be a word with
+/// nothing attached to it. And the negative case is the empty string, which
+/// costs no listening time.
+///
+/// Pure over data already in memory, like everything else in this module: the
+/// virtual list calls back for cell text while it is painting, so this cannot
+/// query the database, cannot block, and has nowhere to report an error to.
+pub fn conversation_cell_text(
+    _conversation: &ConversationItem,
+    _column: MessageColumn,
+    _dates: DateSettings,
+    _now: chrono::DateTime<chrono::Local>,
+) -> String {
+    String::new()
 }
 
 /// A size in units rather than raw bytes.
@@ -150,6 +175,7 @@ pub fn conversation_size(rows: &[MessageItem], index: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::conversations;
 
     fn in_thread(id: Option<&str>) -> MessageItem {
         let mut row = message();
@@ -687,6 +713,336 @@ mod tests {
                 !text.chars().any(|c| c.is_control()),
                 "{:?} produced a control character",
                 column
+            );
+        }
+    }
+
+    // -- Conversation rows: one rule per column family, D-02 and D-03 --
+
+    /// A conversation with something to say in every column.
+    ///
+    /// The ordinary case, and every test below starts from it and changes one
+    /// thing. A fixture made only of edge cases cannot tell a working rule from
+    /// one that does nothing.
+    fn conversation() -> ConversationItem {
+        ConversationItem {
+            thread_id: "root@example.com".to_string(),
+            subject: "Quarterly report".to_string(),
+            messages: 5,
+            unread: 2,
+            newest_received: "2026-07-26T10:00:05+00:00".to_string(),
+            newest_sent: "2026-07-26T10:00:00+00:00".to_string(),
+            snippet: "The figures are attached".to_string(),
+            senders: "\nAda Lovelace <ada@example.com>\nBob <bob@example.com>".to_string(),
+            to: "\nme@example.com".to_string(),
+            cc: "\n".to_string(),
+            size_bytes: Some(4096),
+            any_attachment: true,
+            any_flagged: true,
+            any_answered: true,
+            any_draft: true,
+            worst_safety: crate::service::safety::Safety::Phishing,
+        }
+    }
+
+    fn conversation_cell(conversation: &ConversationItem, column: MessageColumn) -> String {
+        conversation_cell_text(
+            conversation,
+            column,
+            DateSettings::default(),
+            chrono::Local::now(),
+        )
+    }
+
+    #[test]
+    fn test_the_dates_and_the_snippet_take_the_newest_message() {
+        // D-02's first family. The row is about the conversation, and what a
+        // conversation's date means is when something last happened in it.
+        let conversation = conversation();
+        let newest = ConversationItem {
+            newest_received: "2026-07-28T09:00:00+00:00".to_string(),
+            newest_sent: "2026-07-28T08:00:00+00:00".to_string(),
+            snippet: "One more thing".to_string(),
+            ..conversation.clone()
+        };
+
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Snippet),
+            "The figures are attached"
+        );
+        assert_eq!(
+            conversation_cell(&newest, MessageColumn::Snippet),
+            "One more thing"
+        );
+        assert_ne!(
+            conversation_cell(&conversation, MessageColumn::Received),
+            conversation_cell(&newest, MessageColumn::Received),
+            "the Received cell said the same thing for two different days"
+        );
+        assert_ne!(
+            conversation_cell(&conversation, MessageColumn::Sent),
+            conversation_cell(&newest, MessageColumn::Sent)
+        );
+        // The two dates are two rules, not one: Received is when the server
+        // took delivery and Sent is what the sender claims.
+        let claimed = ConversationItem {
+            newest_sent: "2031-01-01T00:00:00+00:00".to_string(),
+            ..conversation.clone()
+        };
+        assert_eq!(
+            conversation_cell(&claimed, MessageColumn::Received),
+            conversation_cell(&conversation, MessageColumn::Received),
+            "a forged sender date moved the arrival time"
+        );
+    }
+
+    #[test]
+    fn test_the_state_columns_are_true_if_any_message_is() {
+        // D-02's second family: Attachment, Flagged, Answered and Draft. Four
+        // members, and each one gets asked both ways, because a family with one
+        // member tested and the rest untested is what mutation testing found
+        // here before.
+        let any = conversation();
+        let none = ConversationItem {
+            any_attachment: false,
+            any_flagged: false,
+            any_answered: false,
+            any_draft: false,
+            ..any.clone()
+        };
+
+        for (column, said) in [
+            (MessageColumn::Attachment, "Has attachment"),
+            (MessageColumn::Flagged, "Flagged"),
+            (MessageColumn::Answered, "Answered"),
+            (MessageColumn::Draft, "Draft"),
+        ] {
+            assert_eq!(conversation_cell(&any, column), said);
+            assert_eq!(
+                conversation_cell(&none, column),
+                "",
+                "{column:?} said something about a conversation that has none"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_negative_state_is_an_empty_cell_rather_than_a_word() {
+        // The module's own rule, stated for conversations. A cell reading "No"
+        // on every row of a mailbox is a word per row that carries nothing, and
+        // it is heard rather than seen.
+        let none = ConversationItem {
+            any_attachment: false,
+            ..conversation()
+        };
+        assert_eq!(conversation_cell(&none, MessageColumn::Attachment), "");
+        // Paired with the positive in the same fixture: a cell rule that
+        // returned nothing for everything would satisfy the line above.
+        assert_eq!(
+            conversation_cell(&conversation(), MessageColumn::Attachment),
+            "Has attachment"
+        );
+    }
+
+    #[test]
+    fn test_unread_is_true_if_any_message_in_it_is_unread() {
+        let some = conversation();
+        let all_read = ConversationItem {
+            unread: 0,
+            ..some.clone()
+        };
+        assert_eq!(conversation_cell(&some, MessageColumn::Unread), "Unread");
+        assert_eq!(conversation_cell(&all_read, MessageColumn::Unread), "");
+    }
+
+    #[test]
+    fn test_safety_is_the_worst_verdict_in_the_conversation() {
+        // D-02's third family, and the one where the worst is not the largest.
+        // Safety is stored as words so a person can read the database, and in
+        // that alphabet "suspicious" sorts last while being the mildest of the
+        // three.
+        use crate::service::safety::Safety;
+
+        for verdict in [
+            Safety::Ordinary,
+            Safety::Suspicious,
+            Safety::Spam,
+            Safety::Phishing,
+        ] {
+            let conversation = ConversationItem {
+                worst_safety: verdict,
+                ..conversation()
+            };
+            assert_eq!(
+                conversation_cell(&conversation, MessageColumn::Safety),
+                verdict.label()
+            );
+        }
+        // Ordinary is the empty cell, like the other flag columns.
+        assert_eq!(
+            conversation_cell(
+                &ConversationItem {
+                    worst_safety: Safety::Ordinary,
+                    ..conversation()
+                },
+                MessageColumn::Safety
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_size_is_the_sum_and_reads_in_units() {
+        // D-02's fourth family. The same wording a message's size gets, so a
+        // conversation of one and the message in it read the same.
+        let conversation = ConversationItem {
+            size_bytes: Some(4096),
+            ..conversation()
+        };
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Size),
+            "4 KB"
+        );
+
+        let unknown = ConversationItem {
+            size_bytes: None,
+            ..conversation.clone()
+        };
+        assert_eq!(
+            conversation_cell(&unknown, MessageColumn::Size),
+            "",
+            "blank rather than 0 bytes, which is a claim we cannot make"
+        );
+    }
+
+    #[test]
+    fn test_correspondent_lists_the_distinct_senders_by_name() {
+        // D-02's fifth family. Names rather than addresses, the same way one
+        // message's Correspondent cell already reads, because "Ada Lovelace" is
+        // quicker to hear than "ada dot lovelace at example dot com".
+        let conversation = conversation();
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Correspondent),
+            "Ada Lovelace, Bob"
+        );
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::To),
+            "me@example.com"
+        );
+        // Nobody copied in is an empty cell, not a stray separator.
+        assert_eq!(conversation_cell(&conversation, MessageColumn::Cc), "");
+    }
+
+    #[test]
+    fn test_a_sender_whose_name_holds_a_comma_is_still_one_person() {
+        // "Smith, John" is an ordinary way to write a name and the reason the
+        // senders arrive a line apiece rather than comma separated: SQLite's
+        // own separator is a comma, so splitting on one would make two people
+        // out of one.
+        let conversation = ConversationItem {
+            senders: "\n\"Smith, John\" <john@example.com>\nAda <ada@example.com>".to_string(),
+            ..conversation()
+        };
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Correspondent),
+            "Smith, John, Ada"
+        );
+    }
+
+    #[test]
+    fn test_the_subject_cell_is_the_conversations_name() {
+        // D-02's sixth family, which is D-04. The name arrives already worked
+        // out, because the same rule ordered the list.
+        let conversation = ConversationItem {
+            subject: "Quarterly report".to_string(),
+            ..conversation()
+        };
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Subject),
+            "Quarterly report"
+        );
+        // A conversation whose oldest message had no subject at all still has
+        // a name, because a row reading nothing is a row somebody arrows onto
+        // and hears silence from.
+        let unnamed = ConversationItem {
+            subject: String::new(),
+            ..conversation
+        };
+        assert_eq!(
+            conversation_cell(&unnamed, MessageColumn::Subject),
+            conversations::NO_SUBJECT
+        );
+    }
+
+    #[test]
+    fn test_the_thread_cell_says_the_counts_rather_than_an_identifier() {
+        // D-03, and the whole of what makes THREAD-01's announcement possible:
+        // there is no per-item accessible name on this list control, so what a
+        // screen reader reads for a conversation row is exactly the cell text.
+        let conversation = conversation();
+        assert_eq!(
+            conversation_cell(&conversation, MessageColumn::Thread),
+            "5 messages, 2 unread"
+        );
+
+        let said = conversation_cell(&conversation, MessageColumn::Thread);
+        assert!(
+            !said.contains(&conversation.thread_id),
+            "the conversation identifier reached the words: {said}"
+        );
+        assert!(
+            !said.contains('@') && !said.contains('<'),
+            "something identifier-shaped reached the words: {said}"
+        );
+    }
+
+    #[test]
+    fn test_every_column_has_both_a_conversation_rule_and_a_way_to_sort_by_it() {
+        // The mechanism D-02 turns on. `MessageColumn::ALL` is a fixed-size
+        // array with a match arm apiece, so a new column cannot arrive with a
+        // display rule and no sort rule without the compiler saying so. This
+        // says the other half: neither answer is empty, and no two columns
+        // share a sort expression, which is what a copied arm looks like.
+        let mut seen: Vec<&str> = Vec::new();
+        for column in MessageColumn::ALL {
+            let expression = column.conversation_sort_expression();
+            assert!(
+                !expression.trim().is_empty(),
+                "{column:?} has no conversation sort rule"
+            );
+            assert!(
+                !seen.contains(&expression),
+                "{column:?} shares its conversation sort rule with another column: {expression}"
+            );
+            seen.push(expression);
+        }
+        assert_eq!(seen.len(), MessageColumn::ALL.len());
+
+        // Every column answers with something for a conversation that has
+        // something to say in all of them. Proving the measurement: the loop
+        // would pass over an empty array.
+        assert!(MessageColumn::ALL.len() > 10);
+        for column in MessageColumn::ALL {
+            let said = conversation_cell(&conversation(), column);
+            assert!(
+                !said.trim().is_empty(),
+                "{column:?} said nothing about a conversation that has something \
+                 to say in every column"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_conversation_sort_rule_is_built_out_of_the_message_one() {
+        // The named anti-pattern. Deriving the aggregate by wrapping the
+        // message expression is how D-02's two halves come apart, and it would
+        // also give up the property that keeps a sort expression safe to
+        // interpolate: a fixed string chosen by matching on the enum.
+        for column in MessageColumn::ALL {
+            let conversation_rule = column.conversation_sort_expression();
+            assert!(
+                conversation_rule.contains('(') || conversation_rule.contains("COUNT"),
+                "{column:?} takes no aggregate over the conversation: {conversation_rule}"
             );
         }
     }

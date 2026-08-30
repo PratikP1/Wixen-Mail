@@ -190,7 +190,12 @@ impl MessageColumn {
                  (SELECT o.subject FROM here o WHERE o.thread_id = m.thread_id \
                   ORDER BY o.received_at ASC, o.id ASC LIMIT 1))"
             }
-            MessageColumn::Correspondent => "GROUP_CONCAT(DISTINCT m.from_addr)",
+            // One per line, not one per comma. SQLite's own separator is a
+            // comma and a display name is allowed to contain one, so
+            // "Smith, John <j@example.com>" would come back as two people.
+            // The same reasoning `safety_reasons` already records for storing
+            // its sentences a line apiece.
+            MessageColumn::Correspondent => "GROUP_CONCAT(DISTINCT char(10) || m.from_addr)",
             // The server's arrival time, falling back to the sender's date for
             // rows stored before arrival times were kept. `received_at` is that
             // fallback, applied once where the reach is worked out.
@@ -219,8 +224,8 @@ impl MessageColumn {
                  WHEN 'phishing' THEN 3 WHEN 'spam' THEN 2 WHEN 'suspicious' THEN 1 \
                  ELSE 0 END)"
             }
-            MessageColumn::To => "GROUP_CONCAT(DISTINCT m.to_addr)",
-            MessageColumn::Cc => "GROUP_CONCAT(DISTINCT m.cc)",
+            MessageColumn::To => "GROUP_CONCAT(DISTINCT char(10) || m.to_addr)",
+            MessageColumn::Cc => "GROUP_CONCAT(DISTINCT char(10) || m.cc)",
         }
     }
 }

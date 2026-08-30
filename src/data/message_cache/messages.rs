@@ -4808,6 +4808,149 @@ mod tests {
         );
     }
 
+    /// Two conversations, built so that in every single column the first one's
+    /// cell is the one that should come first.
+    ///
+    /// One fixture rather than fifteen, and it is what makes the agreement
+    /// between a cell and the sort checkable in the same shape for every
+    /// column. "Apples" before "Zebras", one message before three, read before
+    /// unread, nothing before something, small before large, oldest before
+    /// newest, ordinary before phishing.
+    fn apples_and_zebras(name: &str) -> (TempHome<super::super::MessageCache>, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+
+        let mut apples = in_conversation(inbox, 1, "Apples", "apples@example.com", 1);
+        apples.from_addr = "Ada <ada@example.com>".to_string();
+        apples.to_addr = "aa@example.com".to_string();
+        apples.cc = Some("aa@example.com".to_string());
+        apples.size_bytes = Some(1024);
+        apples.read = true;
+        let apples_row = cache.upsert_message(&apples).unwrap();
+        cache
+            .save_message_body(apples_row, Some("aaa"), None)
+            .unwrap();
+
+        for (uid, day, everything) in [(11, 3, false), (12, 4, true), (13, 5, false)] {
+            let mut zebras = in_conversation(inbox, uid, "Zebras", "zebras@example.com", day);
+            zebras.from_addr = "Zoe <zoe@example.com>".to_string();
+            zebras.to_addr = "zz@example.com".to_string();
+            zebras.cc = Some("zz@example.com".to_string());
+            zebras.size_bytes = Some(1_048_576);
+            zebras.read = uid == 11;
+            zebras.has_attachments = everything;
+            zebras.starred = everything;
+            zebras.answered = everything;
+            zebras.draft = everything;
+            if everything {
+                zebras.safety = crate::service::safety::Verdict {
+                    level: crate::service::safety::Safety::Phishing,
+                    reasons: vec!["a test said so".to_string()],
+                };
+            }
+            let row = cache.upsert_message(&zebras).unwrap();
+            cache.save_message_body(row, Some("zzz"), None).unwrap();
+        }
+
+        (cache, inbox)
+    }
+
+    #[test]
+    fn test_sorting_by_a_column_agrees_with_what_that_column_says() {
+        // D-02's whole point, checked one column at a time. The rule for a
+        // column is stated once, so the list has to come back in the order the
+        // cells themselves read: sorting by Subject puts "Apples" above
+        // "Zebras", and it does that because the same expression filled the
+        // cell and built the ORDER BY.
+        //
+        // Every column, not the easy ones. Three of these cannot be checked by
+        // comparing the cells as text and are the reason this is built round a
+        // fixture instead: "10 KB" sorts before "9 KB" as words, and so does
+        // "10 messages" before "9 messages".
+        use crate::presentation::date_display::DateSettings;
+        use crate::presentation::message_columns::{MessageColumn, Sort, SortDirection};
+        use crate::presentation::message_rows::conversation_cell_text;
+
+        let (cache, inbox) = apples_and_zebras("conversation_sorting_agrees");
+        let now = chrono::Local::now();
+
+        for column in MessageColumn::ALL {
+            for (direction, expected) in [
+                (
+                    SortDirection::Ascending,
+                    ["apples@example.com", "zebras@example.com"],
+                ),
+                (
+                    SortDirection::Descending,
+                    ["zebras@example.com", "apples@example.com"],
+                ),
+            ] {
+                let sort = Sort {
+                    column,
+                    direction,
+                    then: None,
+                };
+                let found = cache
+                    .conversations_in(
+                        inbox,
+                        "acc",
+                        TheWholeAccount,
+                        Some(&sort.conversation_order_by_clause()),
+                    )
+                    .unwrap();
+                let order: Vec<&str> = found.iter().map(|row| row.thread_id.as_str()).collect();
+                assert_eq!(
+                    order,
+                    expected.to_vec(),
+                    "sorting by {column:?} {direction:?} disagreed with what the column says"
+                );
+
+                // And the two cells differ, or the ordering above proves
+                // nothing: two rows that read the same could come back either
+                // way round and satisfy it by luck.
+                let cells: Vec<String> = found
+                    .iter()
+                    .map(|row| conversation_cell_text(row, column, DateSettings::default(), now))
+                    .collect();
+                assert_ne!(
+                    cells[0], cells[1],
+                    "{column:?} says the same thing about both conversations, \
+                     so its order proves nothing: {cells:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_second_sort_level_is_taken_over_the_conversation_too() {
+        // D-12: a sort survives the switch between messages and conversations
+        // unchanged, and it has two levels. A second level built from the
+        // message rule would put a bare column into a grouped query, which
+        // either fails or quietly orders by whichever row SQLite picked.
+        use crate::presentation::message_columns::{By, MessageColumn, Sort, SortDirection};
+
+        let (cache, inbox) = apples_and_zebras("conversation_sorting_two_levels");
+        let sort = Sort {
+            column: MessageColumn::Unread,
+            direction: SortDirection::Ascending,
+            then: Some(By {
+                column: MessageColumn::Received,
+                direction: SortDirection::Descending,
+            }),
+        };
+
+        let clause = sort.conversation_order_by_clause();
+        assert!(
+            clause.contains(','),
+            "the second level was dropped: {clause}"
+        );
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, Some(&clause))
+            .unwrap();
+        assert_eq!(found.len(), 2, "{found:#?}");
+        assert_eq!(found[0].thread_id, "apples@example.com");
+    }
+
     #[test]
     fn test_every_value_in_the_conversation_query_is_bound_rather_than_written_in() {
         // Threat T-01-46. The only things interpolated into this query are the
