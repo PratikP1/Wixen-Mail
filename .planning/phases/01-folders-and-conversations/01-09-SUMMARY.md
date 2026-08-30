@@ -457,9 +457,11 @@ Taken on 2026-08-30 on this branch.
 - `bash scripts/check.sh`: formatting and clippy pass. The suite and the release
   build wait for the merge, which is what this branch's gate does.
 
-The full library was run three times: twice to measure the guard breaks, and
-once at the end with nothing broken. The spellcheck flake recorded in
-`deferred-items.md` did not fire on any of them.
+The full library was run four times: twice to measure the guard breaks, once
+after those were reverted, and once more after the server loop was changed to
+go through the single delete. The spellcheck flake recorded in
+`deferred-items.md` did not fire on any of them, which is luck rather than
+evidence about it: one in five over four runs is not a result.
 
 ## Self-Check: PASSED
 
