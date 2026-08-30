@@ -136,7 +136,14 @@ phase's domain, and the phase is larger than it looked.
   **reserved "this computer" account id** — the same trick `LOCAL_PREFIX` plays
   with paths, so `UNIQUE(account_id, path)` keeps working and no schema change
   is needed. An IMAP account uses the same shared `Outbox` and keeps its server
-  `Sent`, `Drafts`, `Trash` and `Junk`, so `FOR_IMAP` stays `[Outbox]`.
+  `Sent`, `Drafts`, `Trash` and `Junk`, so **`FOR_IMAP` becomes empty**.
+  Corrected 2026-08-30. As first written this said `FOR_IMAP` stays `[Outbox]`,
+  in the same sentence as saying the Outbox is shared. Both cannot hold:
+  `for_account` is what creates the per-account folder rows, so keeping `Outbox`
+  in `FOR_IMAP` means every IMAP account goes on making its own, which is the
+  repetition this decision removes. The executor of 01-07 found it before
+  writing anything and Pratik ruled: shared for everyone, one send queue on this
+  computer, because a queued message already knows which account sends it.
   — **Reversibility:** one-way — existing databases are migrated by D-19, which
   moves messages between folder rows. Undoing it means knowing which account
   each message came from after they have been merged.
