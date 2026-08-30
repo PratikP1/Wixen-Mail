@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-08-30T13:36:36.045Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-08-30T14:55:26.564Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-04 done: rename, move and delete a folder, with the separator read rather than guessed"
-state_head: a255e3b7e985be1ceeacb170ad59a904d8dcdff0
+last_activity_desc: "01-06 done: a setting stored and offered by no screen now fails a test, a parent says which of its two unread numbers is which, and accounts sit where they are put"
+state_head: 33d0c8bafe4b45163d965e689240da52e766703b
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -69,17 +69,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-05 done: the folder tree nests, rows are found by identity rather than by their words, and the 01-03 regression is closed
+Last activity: 2026-08-30 — 01-06 done: the D-43 mirror guard is in and found a real defect on its first run, a parent counts its children and says which number is which, and accounts move with Alt+Shift+Up and Down
 
-Progress: [████░░░░░░] 38% (5 of 13 plans)
+Progress: [█████░░░░░] 46% (6 of 13 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
-- Average duration: 2h 13m
-- Total execution time: 11h 3m
+- Total plans completed: 6
+- Average duration: 2h 1m
+- Total execution time: 12h 7m
 
 **By Phase:**
 
@@ -89,8 +89,8 @@ Progress: [████░░░░░░] 38% (5 of 13 plans)
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
-  01-05 (1h 38m)
+- Last 6 plans: 01-01 (3h 5m), 01-02 (1h 10m), 01-03 (1h 0m), 01-04 (4h 10m),
+  01-05 (1h 38m), 01-06 (1h 4m)
 
 - Trend: no trend, and the spread is the finding. The three fast plans used
   targeted test runs, 1 second against about 175, for every red and green step,
@@ -110,6 +110,7 @@ Progress: [████░░░░░░] 38% (5 of 13 plans)
 | Phase 01 P03 | 1h 0m | 3 tasks | 9 files |
 | Phase 01 P04 | 4h 10m | 3 tasks | 16 files |
 | Phase 01 P05 | 1h 38m | 3 tasks | 13 files |
+| Phase 01 P06 | 1h 4m | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,10 @@ ahead:
 - [Phase 01]: 01-05: wxdragon's TreeItemId has no PartialEq and no public pointer, so two tree items cannot be compared and a row can only be interrogated by its text. That is why this codebase was label-keyed. A row is paired to its identity by the chain of labels above it, which is unique because siblings cannot share a path.
 - [Phase 01]: 01-05: no per-archive branch was built (D-21). Nothing records which archive an imported folder came from, so the plan's archives parameter has no producer. Building it is work in import_tree at import time; an enum variant nothing can construct would be a stub.
 - [Phase 01]: 01-05: only the account being looked at gets a branch. D-13's property is proven of folder_tree::rows, which is multi-account throughout, but drawing every account at once before D-18 gives one Drafts, Sent and Outbox row per account, which is the duplicate-rows fault this plan removes.
+- [Phase 01]: 01-06: the D-43 mirror guard was red on arrival naming six settings, and only allowed_per_account is the defect. It is stored, read by allowed_for and honoured out to the provider clients, and no screen has offered it since the testing page stopped naming an account. Named in an exception list with the reason rather than the guard being narrowed until it could not see it.
+- [Phase 01]: 01-06: an exception list is the part of a check most likely to rot, so each exception carries a claim the check tests. One test reads the screen an exception names and fails if the control has gone; another fails when the recorded defect stops being one, so whoever fixes it is told to delete the entry.
+- [Phase 01]: 01-06: the plan's unread_text would have had no caller and both settings guards would still have passed, because a module reading its own setting counts as a reader and a control counts as an offer. Reachability is a third question no test of the parts asks. rows() now takes the setting and what is closed, and the expand handler words that one row again.
+- [Phase 01]: 01-06: accounts order by tree_order IS NULL, tree_order, created_at, so an untouched database keeps arrival order and an account added after a move goes to the end. The move writes every ordinal, not the two that swapped, because a list half ordered by choice and half by arrival reorders itself the next time an account is added.
 
 ### Pending Todos
 
@@ -212,6 +217,7 @@ None yet.
   otherwise, and may be rewritten to.
 
 - 01-05 found two dialogs (wx_destination, wx_thread_view) hanging row data off the control, which wxdragon never frees for a leaf, and a spellcheck test that fails about one full library run in five through a Windows COM call made twice. Both are written up in .planning/phases/01-folders-and-conversations/deferred-items.md.
+- 01-06 found allowed_per_account stored, honoured out to the provider clients and offered by no screen: the exact FEEDBACK-01 shape, already in the tree before the guard that found it. Named in STORED_AND_OFFERED_BY_NOTHING in src/data/config.rs and written up in .planning/phases/01-folders-and-conversations/deferred-items.md. Closing it is a per-account group on the settings screen.
 
 ## Deferred Items
 
@@ -226,8 +232,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T13:36:28.007Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-08-30T14:55:19.790Z
+Stopped at: Completed 01-06-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
