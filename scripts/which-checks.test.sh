@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# What `which-checks.sh` answers, for every branch it can be asked about.
+# What `which-checks.sh` answers, for every branch and every kind of change.
 #
-# The decision lives in its own script rather than inside the hook so that it
-# can be asked a question without running four minutes of checks to find out.
-# A hook that decides something is a hook that can decide it wrongly, and this
-# is the only place that would show.
+# The rule it encodes has two halves. Where you are decides whether the slow
+# checks can be deferred at all: `main` is what CI builds and what ships, so it
+# always earns everything. What you changed decides which tests can say anything
+# about it, and that half holds on any branch.
+#
+# A guard that refuses the wrong thing is worse than none, so the allow cases
+# below matter as much as the refusals. In particular: a markdown change can
+# break a Rust test in this repository, because `tests/house_style.rs` reads
+# documents. That caught two real em-dash breaks on 2026-08-31, and a rule that
+# skipped tests for markdown would have let both through.
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,36 +19,59 @@ subject="$root/scripts/which-checks.sh"
 failures=0
 
 expect() {
-    local branch="$1" want="$2" got
-    got="$("$subject" "$branch" 2>/dev/null)"
+    local want="$1" desc="$2"
+    shift 2
+    local got
+    got="$("$subject" "$@" 2>/dev/null)"
     if [ "$got" != "$want" ]; then
-        echo "FAIL: branch '$branch' answered '$got', wanted '$want'"
+        echo "FAIL [$desc]: answered '$got', wanted '$want'"
+        echo "       args: $*"
         failures=$((failures + 1))
     fi
 }
 
-# The default branch earns everything. Every commit here lands on it, so the
-# four checks are what stands between a broken commit and the branch CI builds.
-expect "main" all
-expect "master" all
+# ── Where you are: main always earns everything ─────────────────────────────
+# Every commit here lands on main, so the four checks are what stands between a
+# broken commit and the branch CI builds. What changed does not soften that.
+expect all "main, whatever changed" main src/presentation/wx_app.rs
+expect all "main, docs only" main docs/changelog.md
+expect all "master, docs only" master README.md
+expect all "main with no file list" main
 
-# A work-in-progress branch nobody builds earns the quick pair. The hook's own
-# comment already sanctioned this case in words; this is the same rule, made
-# something the machine applies rather than something a person remembers.
-expect "gsd/plan-01-02" all_but_slow
-expect "gsd/phase-1-folders-and-conversations" all_but_slow
-expect "some-experiment" all_but_slow
+# A name that could be read two ways is not a licence.
+expect affected "maintenance is a branch nobody builds" maintenance src/lib.rs
+expect affected "mainline likewise" mainline src/lib.rs
 
-# A name that could be read two ways is not a licence. `main` is matched
-# exactly, so a branch merely starting with it is still a branch nobody builds.
-expect "maintenance" all_but_slow
-expect "mainline" all_but_slow
+# ── A check that cannot tell where it is answers with everything ────────────
+expect all "detached HEAD" HEAD src/lib.rs
+expect all "no branch name at all" "" src/lib.rs
 
-# The failure this is most likely to meet: a detached HEAD, a rebase in
-# progress, or a git call that returned nothing. A check that cannot tell where
-# it is must not answer "safe". It answers with the whole suite.
-expect "" all
-expect "HEAD" all
+# ── What changed: documents only ────────────────────────────────────────────
+# Formatting, clippy, and the targets that read documents. Not the whole
+# library, and not nothing.
+expect docs_only "one planning file" gsd/plan-02-01 .planning/ROADMAP.md
+expect docs_only "several docs" gsd/plan-02-01 docs/changelog.md docs/roadmap.md
+expect docs_only "a summary and a context" gsd/x .planning/phases/01/01-SUMMARY.md .planning/phases/01/01-CONTEXT.md
+expect docs_only "a readme" gsd/x README.md
+
+# ── What changed: anything the compiler sees ────────────────────────────────
+expect affected "one rust file" gsd/x src/application/threading.rs
+expect affected "rust beside a doc" gsd/x src/application/threading.rs docs/changelog.md
+expect affected "an integration test" gsd/x tests/wired.rs
+
+# Build inputs are not documents, however they are spelled. A dependency bump
+# or a lint change reaches everything, so it earns everything.
+expect affected "Cargo.toml" gsd/x Cargo.toml
+expect affected "Cargo.lock" gsd/x Cargo.lock
+expect affected "the hook itself" gsd/x .githooks/pre-commit
+expect affected "this decision" gsd/x scripts/which-checks.sh
+
+# `guards/guards.toml` names breaks in source and the runner applies them, so a
+# record change is not a document change however much it reads like one.
+expect affected "a guard record" gsd/x guards/guards.toml
+
+# ── No file list means we cannot tell, so defer only what the branch allows ──
+expect all_but_slow "a branch, nothing said about the change" gsd/x
 
 if [ "$failures" -eq 0 ]; then
     echo "which-checks: all cases pass"
