@@ -9133,13 +9133,34 @@ file = "src/data/message_cache/messages.rs"
 # the Thread column's sort has always been "m.thread_id", so with the writer
 # gone the sort silently orders every row by NULL, which is what nobody noticed
 # for the life of the column.
-before = """                    crate::application::thread_identity::conversation_root(
-                        &incoming.message_id,
-                        incoming.refs_header.as_deref(),
-                    ),"""
+#
+# Measured a fourth time on 2026-08-31, after plan 01-13 moved the call out of
+# the parameter list into a name above it, because the merge that plan added
+# needs the same answer and computing it twice would be two places able to come
+# to differ. The run said the recorded text was no longer in the file, which is
+# the check working: the break now replaces what the parameter list passes, so
+# the column goes back to holding NULL exactly as it did before, and the writer
+# still exists above it for the merge to use.
+#
+# Twenty-one tests became thirty-one. Ten, not the eight this note first
+# predicted before the run was taken: the number was written down as a guess,
+# the run disagreed, and the guess is recorded here rather than quietly
+# replaced, because the file's own rule is to write down what really went red
+# and not what somebody expected.
+#
+# Nine of the ten are 01-13's, and the tenth is the one worth reading. It is in
+# `wx_app`, not here: a conversation listing groups on this column, so with no
+# row naming a conversation the list comes back empty and the test that mail
+# arriving into an open folder reaches the rows on screen fails. A guard about
+# a database column now reaches the interface, which is what a column having
+# acquired real readers looks like.
+before = """                    &conversation,"""
 after = """                    None::<String>,"""
 red = [
     "data::message_cache::messages::tests::test_a_chain_that_arrives_later_moves_the_message_into_its_conversation",
+    "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
+    "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
+    "data::message_cache::messages::tests::test_a_conversation_is_found_by_a_message_in_the_middle_of_it_not_only_its_root",
     "data::message_cache::messages::tests::test_a_conversation_of_one_message_counts_one",
     "data::message_cache::messages::tests::test_a_conversation_split_across_two_folders_counts_the_same_from_either",
     "data::message_cache::messages::tests::test_a_conversation_that_does_not_touch_this_folder_is_not_listed",
@@ -9147,19 +9168,26 @@ red = [
     "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
     "data::message_cache::messages::tests::test_a_hostile_reference_chain_is_stored_and_read_back_unchanged",
+    "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
     "data::message_cache::messages::tests::test_a_message_a_sync_stores_carries_its_conversation_id",
     "data::message_cache::messages::tests::test_a_message_already_deleted_is_not_reached_again",
+    "data::message_cache::messages::tests::test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names",
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
+    "data::message_cache::messages::tests::test_an_identifier_nothing_holds_names_no_conversation",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
+    "data::message_cache::messages::tests::test_rerooting_says_how_many_messages_it_moved",
     "data::message_cache::messages::tests::test_sorting_by_a_column_agrees_with_what_that_column_says",
     "data::message_cache::messages::tests::test_sorting_by_thread_groups_a_conversation",
+    "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
     "data::message_cache::messages::tests::test_the_messages_an_action_reaches_are_the_ones_its_row_counted",
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
+    "data::message_cache::messages::tests::test_the_same_message_arriving_twice_moves_nothing_the_second_time",
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
     "data::message_cache::messages::tests::test_the_two_reaches_take_different_numbers_of_messages",
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
     "data::message_cache::messages::tests::test_two_accounts_do_not_share_a_conversation",
     "data::message_cache::messages::tests::test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here",
+    "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 
 [[guard]]
