@@ -33,10 +33,15 @@ expect() {
 # ── Where you are: main always earns everything ─────────────────────────────
 # Every commit here lands on main, so the four checks are what stands between a
 # broken commit and the branch CI builds. What changed does not soften that.
-expect all "main, whatever changed" main src/presentation/wx_app.rs
-expect all "main, docs only" main docs/changelog.md
-expect all "master, docs only" master README.md
+expect all "main, code changed" main src/presentation/wx_app.rs
 expect all "main with no file list" main
+
+# But a document cannot break the release build or a test that never reads one,
+# wherever it is committed. Deferring the slow half is about the branch; what a
+# change can possibly break is about the change. These are separate questions
+# and main only answers the first.
+expect docs_only "main, docs only" main docs/changelog.md
+expect docs_only "master, docs only" master README.md
 
 # A name that could be read two ways is not a licence.
 expect affected "maintenance is a branch nobody builds" maintenance src/lib.rs

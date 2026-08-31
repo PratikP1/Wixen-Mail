@@ -17,14 +17,20 @@ if [ "$(git config core.hooksPath || true)" != ".githooks" ]; then
   echo
 fi
 
-# Which checks this run does. Given as an argument, or worked out from the
-# branch by `which-checks.sh`, which is where that decision lives and where it
-# is tested. Pass `all` to force the whole gate wherever you are, which is what
-# merging a branch into main does before the merge.
+# Which checks this run does. Given as an argument, or worked out by
+# `which-checks.sh` from where you are and what is staged, which is where that
+# decision lives and where it is tested. Pass `all` to force the whole gate
+# wherever you are, which is what merging a branch into main does first.
 #
-# The slow two are 295 of the 311 seconds this takes warm, measured 2026-08-30.
-# On a branch nobody builds they wait for the merge rather than running once per
-# commit. On main they always run.
+# Two questions, and they are separate. Whether the slow half can be deferred is
+# about the branch: main cannot defer, because every commit here lands on it.
+# What a change can possibly break is about the change, and that holds
+# everywhere, including on main. So a documents-only commit runs the tests that
+# read documents wherever it is made, and a code commit on a branch runs the
+# tests reaching what it touched.
+#
+# Measured warm: the whole gate is about 330 seconds, of which the suite is 239
+# and the release build 56. A documents-only run is about 51.
 mode="${1:-}"
 # What is about to be committed, which is what the tests should be scoped to.
 # Staged rather than working-tree, because that is what the hook is deciding
@@ -60,7 +66,13 @@ fi
 # these run rather than being skipped as "not code".
 if [ "$mode" = "docs_only" ]; then
     echo "== the targets that read documents =="
-    cargo test --test house_style --test docs_links --test wired
+    # Five, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
+    # help pages from inside the library, so a documents-only run that skipped
+    # `--lib` would miss the guard that catches a dead link in a help page. That
+    # guard has already caught one this month. `checkbox_labels` and
+    # `manager_delete_stays_open` read documents too.
+    cargo test --lib help_page::
+    cargo test --test house_style --test docs_links --test wired \n               --test checkbox_labels --test manager_delete_stays_open
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"

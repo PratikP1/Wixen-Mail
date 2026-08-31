@@ -52,7 +52,26 @@ case "$branch" in
     # Matched exactly. `maintenance` and `mainline` are branches nobody builds
     # and must not inherit main's answer by sharing its first four letters.
     main | master)
-        echo all
+        # `main` cannot defer the slow half, because every commit here lands on
+        # it and it is what CI builds. That is a statement about the branch. It
+        # is not a statement about what a change can break, and those are
+        # separate questions: a document cannot fail a release build or a test
+        # that never reads one, wherever it is committed. So fall through to the
+        # what-changed question with the slow half still owed.
+        if [ "$#" -eq 0 ]; then
+            echo all
+            exit 0
+        fi
+        for path in "$@"; do
+            case "$path" in
+                *.md | *.txt) ;;
+                *)
+                    echo all
+                    exit 0
+                    ;;
+            esac
+        done
+        echo docs_only
         exit 0
         ;;
 esac
