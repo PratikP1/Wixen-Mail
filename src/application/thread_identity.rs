@@ -112,11 +112,25 @@ pub const MOST_IDENTIFIERS_ASKED_ABOUT: usize = 64;
 /// than that, the root is kept and the tail is kept, and the middle is
 /// dropped: the root is what names the conversation and the tail is the
 /// nearest ancestors, so those are the two ends worth asking about.
-pub fn identifiers_worth_asking_about(
-    _message_id: &str,
-    _refs_header: Option<&str>,
-) -> Vec<String> {
-    Vec::new()
+pub fn identifiers_worth_asking_about(message_id: &str, refs_header: Option<&str>) -> Vec<String> {
+    let mut asking: Vec<String> = Vec::new();
+    let named = refs_header
+        .unwrap_or_default()
+        .split_whitespace()
+        .chain(std::iter::once(message_id));
+    for identifier in named.map(bare).filter(|id| !id.is_empty()) {
+        if !asking.iter().any(|held| held == identifier) {
+            asking.push(identifier.to_string());
+        }
+    }
+
+    if asking.len() > MOST_IDENTIFIERS_ASKED_ABOUT {
+        // The root, then the tail, with the middle dropped. Drained in place
+        // rather than rebuilt, so a chain of a hundred thousand identifiers
+        // costs one pass and no second allocation of its own size.
+        asking.drain(1..=asking.len() - MOST_IDENTIFIERS_ASKED_ABOUT);
+    }
+    asking
 }
 
 /// What an arriving message reveals about conversations already stored.
@@ -164,10 +178,29 @@ pub struct Rerooting {
 /// smaller identifier turned up. It cannot forbid the rename that *is* the
 /// merge.
 pub fn rejoin(
-    _the_arriving_conversation: &str,
-    _conversations_found: &[String],
+    the_arriving_conversation: &str,
+    conversations_found: &[String],
 ) -> Option<Rerooting> {
-    None
+    // A message with no conversation of its own names no winner, and rewriting
+    // other people's conversations onto nothing would empty them.
+    if the_arriving_conversation.is_empty() {
+        return None;
+    }
+
+    let mut roots_to_rewrite: Vec<String> = Vec::new();
+    for found in conversations_found {
+        let worth_rewriting = !found.is_empty()
+            && found != the_arriving_conversation
+            && !roots_to_rewrite.iter().any(|held| held == found);
+        if worth_rewriting {
+            roots_to_rewrite.push(found.clone());
+        }
+    }
+
+    (!roots_to_rewrite.is_empty()).then(|| Rerooting {
+        winning_root: the_arriving_conversation.to_string(),
+        roots_to_rewrite,
+    })
 }
 
 #[cfg(test)]
