@@ -21,10 +21,27 @@ failures=0
 expect() {
     local want="$1" desc="$2"
     shift 2
-    local got
+    local got status
     got="$("$subject" "$@" 2>/dev/null)"
-    if [ "$got" != "$want" ]; then
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "FAIL [$desc]: refused (exit $status) instead of answering '$want'"
+        echo "       args: $*"
+        failures=$((failures + 1))
+    elif [ "$got" != "$want" ]; then
         echo "FAIL [$desc]: answered '$got', wanted '$want'"
+        echo "       args: $*"
+        failures=$((failures + 1))
+    fi
+}
+
+# A refusal is an answer too, and the cases below are the ones where answering
+# anything at all would be the defect.
+expect_refused() {
+    local desc="$1"
+    shift
+    if "$subject" "$@" >/dev/null 2>&1; then
+        echo "FAIL [$desc]: answered instead of refusing"
         echo "       args: $*"
         failures=$((failures + 1))
     fi
@@ -77,6 +94,77 @@ expect affected "a guard record" gsd/x guards/guards.toml
 
 # ── No file list means we cannot tell, so defer only what the branch allows ──
 expect all_but_slow "a branch, nothing said about the change" gsd/x
+
+# ── A commit that says which tests must fail ────────────────────────────────
+# Red/green needs a commit whose tests fail, and this gate refuses one unless it
+# says so and is held to it. `red-commit.sh` reads the marker; this file decides
+# only where such a commit is allowed to be made.
+
+red_marker="$(mktemp)"
+plain_message="$(mktemp)"
+broken_marker="$(mktemp)"
+trap 'rm -f "$red_marker" "$plain_message" "$broken_marker"' EXIT
+
+cat > "$red_marker" <<'MSG'
+test(02-02): failing tests for the narrower question set
+
+Fails-until-green: application::saved_searches::tests::test_a
+MSG
+
+cat > "$plain_message" <<'MSG'
+feat(02-02): the narrower question set
+
+One question instead of three.
+MSG
+
+cat > "$broken_marker" <<'MSG'
+test(02-02): failing tests
+
+Fails-until-green:
+MSG
+
+expect red "a branch, a commit naming the tests that must fail" \
+    --message-file="$red_marker" gsd/plan-02-02 src/application/saved_searches.rs
+
+# A document change can redden a document-reading test, so a red commit is not
+# a code-only idea and is not refused for touching only markdown.
+expect red "a branch, a red commit touching only documents" \
+    --message-file="$red_marker" gsd/plan-02-02 docs/changelog.md
+
+# The overwhelmingly common case, and it must not get slower or stranger for
+# the sake of the rare one.
+expect affected "a message with no marker changes nothing" \
+    --message-file="$plain_message" gsd/plan-02-02 src/application/saved_searches.rs
+
+expect docs_only "a message with no marker, documents only" \
+    --message-file="$plain_message" gsd/plan-02-02 README.md
+
+# ── Where a red commit may not be made ──────────────────────────────────────
+
+# `main` is what CI builds and every commit here lands on it. A commit that
+# leaves a test failing on main is a broken branch for everybody, and no marker
+# makes it not one. The red belongs on a branch, and the merge brings the pair.
+expect_refused "a red commit on main" \
+    --message-file="$red_marker" main src/application/saved_searches.rs
+
+expect_refused "a red commit on master" \
+    --message-file="$red_marker" master src/application/saved_searches.rs
+
+# A check that cannot tell where it is must not hand out an exemption, for the
+# same reason it answers `all` rather than `affected`.
+expect_refused "a red commit on a detached HEAD" \
+    --message-file="$red_marker" HEAD src/application/saved_searches.rs
+
+expect_refused "a red commit with no branch name at all" \
+    --message-file="$red_marker" "" src/application/saved_searches.rs
+
+# A marker that names no test is a typo, and answering `affected` to it would
+# run the tests and refuse the commit while naming the wrong cause.
+expect_refused "a marker that names nothing" \
+    --message-file="$broken_marker" gsd/plan-02-02 src/application/saved_searches.rs
+
+expect_refused "a message file that is not there" \
+    --message-file="$red_marker.absent" gsd/plan-02-02 src/application/saved_searches.rs
 
 if [ "$failures" -eq 0 ]; then
     echo "which-checks: all cases pass"

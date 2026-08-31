@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# The checks, run by the commit itself.
+#
+# Running them by hand and then committing is two steps, and the result of the
+# first can be lost between them. It has been, twice: once when a clippy run
+# reused a build fingerprint and reported clean, and once when the output was
+# piped somewhere and the pipeline's exit status was the pipe's rather than the
+# check's. Both put a commit on the branch that CI then failed. This closes the
+# gap by making the commit itself the thing that runs them.
+#
+# Turned on by `git config core.hooksPath .githooks`, which `scripts/check.sh`
+# offers the first time it is run.
+#
+# # Why `commit-msg` and not `pre-commit`
+#
+# This used to be a `pre-commit` hook, and it moved on 2026-08-31 because of
+# what that cost. `pre-commit` runs before the commit message exists, so the
+# gate could not read it, so it could not tell the RED half of red/green from
+# any other commit. It therefore refused every commit whose tests fail, which is
+# every RED commit, and red/green is the rule this project holds above all the
+# others.
+#
+# That was not noticed when the hook was turned on. Phase 1 committed failing
+# tests freely because there was no hook; turning it on closed a gate nobody
+# meant to close, and the next plan worked around it rather than reporting a
+# rule it could not follow. The lesson is written into `CLAUDE.md`: a rule that
+# lives in a document is one somebody has to notice being broken.
+#
+# `commit-msg` runs after the message is written and is handed its path, so the
+# gate can read what the commit says about itself. Everything else is the same:
+# it still runs before the commit is made, and a non-zero exit still stops it.
+#
+# What runs depends on where you are, what you changed, and now on what the
+# message says. `scripts/which-checks.sh` decides it and is tested.
+#
+# `--no-verify` skips this hook as it skipped the last one, and the case it used
+# to exist for is now handled: a RED commit says so in its message and is held
+# to exactly the failures it names.
+#
+# Whoever merges a branch into main runs `scripts/check.sh all` first.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+exec "$root/scripts/check.sh" --message-file="$1"

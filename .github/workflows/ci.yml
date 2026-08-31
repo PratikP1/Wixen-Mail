@@ -127,6 +127,17 @@ jobs:
       run: cargo clippy --all-targets --all-features -- -D warnings
       working-directory: search-handler
 
+    # The scripts that decide what the commit gate runs, and whether a failing
+    # test may be committed at all. They have their own suites, and for a day
+    # nothing ran them: not the gate, not CI. A defect in either is a defect in
+    # every check this project makes.
+    - name: Test the scripts that decide what runs
+      shell: bash
+      run: |
+        for suite in scripts/*.test.sh; do
+          bash "$suite"
+        done
+
 
   audit:
     name: Security Audit

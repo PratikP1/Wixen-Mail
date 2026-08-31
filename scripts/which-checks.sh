@@ -30,6 +30,15 @@
 #   docs_only     format, clippy, and the targets that read documents
 #   all_but_slow  format and clippy; nothing said about what changed, so nothing
 #                 can be scoped to it
+#   red           format, clippy, the tests that reach what changed, and the
+#                 run held to exactly the failures the commit named
+#
+# `red` is the RED half of red/green, which this gate refused outright once the
+# hook was turned on: a commit whose tests fail could not be made, and
+# `--no-verify` is not available here. It is not an exemption. A commit earns it
+# by naming the tests that must fail, and `red-commit.sh` then requires every
+# named test to have run, every named test to have failed, and nothing else to
+# have failed. That costs more to misuse than to use honestly.
 #
 # `scripts/check.sh` turns these into commands. The decision lives here so it can
 # be asked a question without minutes of checking to find out the answer, and it
@@ -37,8 +46,45 @@
 # and the cases that must not collapse into a weaker one.
 set -euo pipefail
 
+# The commit message, when there is one. Only a commit knows whether it is the
+# RED half of red/green, and only the message can say so, which is why the gate
+# runs from `commit-msg` rather than `pre-commit`: the message does not exist
+# yet when `pre-commit` runs.
+message_file=""
+case "${1-}" in
+    --message-file=*)
+        message_file="${1#--message-file=}"
+        shift
+        ;;
+esac
+
 branch="${1-}"
 shift || true
+
+# A commit that names the tests it expects to fail. `red-commit.sh` reads the
+# marker and refuses a malformed one; this only decides where such a commit may
+# be made, and the answer is: on a branch, never on main.
+#
+# Not an exemption. The `red` answer still runs the tests, and holds the run to
+# exactly the tests the commit named. What it buys is the ability to commit a
+# failing test at all, which this gate took away when the hook was turned on.
+if [ -n "$message_file" ]; then
+    named="$("$(dirname "$0")/red-commit.sh" names "$message_file")" || exit $?
+    if [ -n "$named" ]; then
+        case "$branch" in
+            "" | HEAD | main | master)
+                echo "which-checks: a commit naming tests that must fail cannot be made" >&2
+                echo "  on '${branch:-an unknown branch}'. Every commit here lands on what CI" >&2
+                echo "  builds, and a failing test on it is a broken branch for everybody." >&2
+                echo "  Make the red commit and its green pair on a branch, and merge them" >&2
+                echo "  together." >&2
+                exit 1
+                ;;
+        esac
+        echo red
+        exit 0
+    fi
+fi
 
 case "$branch" in
     # Not a branch name at all: a detached HEAD, a rebase in progress, or a git

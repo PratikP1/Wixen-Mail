@@ -80,3 +80,7 @@ docs/*.html
 # of anything; both are regenerated, and both would conflict on every merge.
 .gsd/
 .planning/milestone.lock
+
+# Written by scripts/check.sh when a red commit is not the red it claimed,
+# so the whole run can be read after the commit was refused.
+red-run.log

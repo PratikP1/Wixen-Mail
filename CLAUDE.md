@@ -75,6 +75,34 @@ Unit tests live in `#[cfg(test)] mod tests` beside the code they cover. Cross-la
 `tests/integration_tests.rs`. Async code uses `tokio-test`; anything touching the filesystem uses
 `tempfile` rather than real user directories.
 
+**Committing the red half.** The commit gate runs the tests reaching what you changed, so a commit
+whose tests fail is refused, and `--no-verify` is not the answer here. A RED commit says so in its
+message and is held to it:
+
+```
+test(02-02): failing tests for the narrower question set
+
+Fails-until-green: application::saved_searches::tests::test_a
+Fails-until-green: application::saved_searches::tests::test_b
+```
+
+This is not an exemption, and it costs more to misuse than to use honestly. The tests still run, and
+`scripts/red-commit.sh` then requires three things at once: every named test ran, every named test
+failed, and nothing else failed. Name a test that passes and the commit is refused. Leave an
+unrelated failure in the tree and it is refused. A red commit is therefore stronger evidence than an
+unchecked one, because it records which tests were red and proves they were.
+
+A red commit may only be made on a branch. On `main` it is refused: every commit here lands on what
+CI builds, and a failing test on it is a broken branch for everybody. The red and its green pair go
+on a branch and arrive together at the merge.
+
+This existed as a hole for one day and nobody noticed, which is the point of writing it down here.
+Phase 1 committed failing tests freely because no hook was installed. Turning the hook on closed the
+gate, the next plan worked around it by recording red as a measurement in its summary rather than
+reporting a rule it could not follow, and the workaround was better evidence than the rule required
+but it was still a workaround. A rule that lives only in a document is one somebody has to notice
+being broken.
+
 **This binds GSD too, and GSD disagrees by default.** GSD Core is installed here and plans work
 through `.planning/`. Its planner decides per task whether the test comes first, and with
 `workflow.tdd_mode` off, which is its default, it decides opportunistically. That is not the
@@ -166,12 +194,24 @@ first, and that is the run they are paid for.
 empty branch name and a detached `HEAD`. A check that cannot tell where it is
 must not answer "safe".
 
+The hook is `commit-msg`, not `pre-commit`, and that is not arbitrary. Only the
+commit message can say that a commit is the red half of red/green, and at
+`pre-commit` time the message does not exist yet. As a `pre-commit` hook this
+gate could not tell a red commit from a broken one and refused both.
+
 **Do not reach for `--no-verify`.** The advice used to be that it was for a work
 in progress on a branch nobody builds. That was right about the case and wrong
 about the tool: it skips formatting and clippy as well, which cost fifteen
 seconds and catch real things, and it is a habit that does not stay on the
-branch it was learned on. The case it existed for is now handled by the branch
-itself.
+branch it was learned on. Both cases it existed for are now handled: a branch
+defers the slow half, and a commit whose tests must fail says so in its message
+and is measured against what it said.
+
+**The scripts that decide all this have their own suites, and the gate runs
+them.** `scripts/*.test.sh` runs on every invocation of `check.sh`, in every
+mode, before anything else, and in CI. It costs milliseconds. For one day these
+suites existed and nothing ran them, which is guardrail 4 exactly: a check
+nobody reads is worse than no check, because it reads as covered.
 
 Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.
