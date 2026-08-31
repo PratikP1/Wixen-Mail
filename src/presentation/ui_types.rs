@@ -299,6 +299,29 @@ pub struct CompositionData {
     pub answering: Option<crate::application::threading::Continuing>,
 }
 
+/// Why the open folder's conversations were read again.
+///
+/// THREAD-02 turns on this distinction. Reading them because somebody asked is
+/// a whole new list and the control is told so; reading them because mail
+/// arrived is a change to rows already on screen, and the requirement is that
+/// it "does not re-announce rows the user is not on". A virtual list
+/// re-announces every row it is told to refresh, so the two readings cannot
+/// share one answer about how much of the list to touch.
+///
+/// A named pair rather than a boolean, because at the call site
+/// `MailArrived` says what the caller knows and `true` would not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WhyTheRowsWereRead {
+    /// A folder was opened, or the view was switched to conversations. The
+    /// list is a new list: its size is set, every row is repainted, and a
+    /// selection held across a view switch is put back.
+    SomebodyAskedForThem,
+    /// Mail arrived into the folder already on screen. Only the rows whose
+    /// contents changed are repainted, the size is set only if it changed, and
+    /// the selection is left exactly where the reader left it.
+    MailArrived,
+}
+
 /// UI update messages sent from async tasks to the UI thread
 #[derive(Clone, Debug)]
 pub enum UIUpdate {
@@ -328,7 +351,13 @@ pub enum UIUpdate {
     /// opens the conversation tree, which is built from the messages. The list
     /// stays a virtual `ListCtrl` either way, so what changes on a switch is
     /// which vector the paint callback reads and the count the control is told.
-    ConversationsLoaded(Vec<crate::application::conversations::ConversationItem>),
+    ///
+    /// Carries why it was read, because the answer decides how much of the
+    /// list may be touched. See [`WhyTheRowsWereRead`].
+    ConversationsLoaded(
+        Vec<crate::application::conversations::ConversationItem>,
+        WhyTheRowsWereRead,
+    ),
     /// Folder identities paired with their database ids.
     ///
     /// The tree shows names, but reading a folder needs its id, and looking

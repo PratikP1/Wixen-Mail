@@ -2610,6 +2610,7 @@ impl WxMailApp {
                                 &folder_cache,
                                 folder_id,
                                 account_id,
+                                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
                                 &ui_tx,
                             );
                         }
@@ -11346,6 +11347,7 @@ fn load_folder_conversations(
     cache: &Option<Arc<MessageCache>>,
     folder_id: Option<i64>,
     account_id: Option<String>,
+    why: crate::presentation::ui_types::WhyTheRowsWereRead,
     tx: &Sender<UIUpdate>,
 ) {
     let (Some(cache), Some(folder_id), Some(account_id)) = (cache.as_ref(), folder_id, account_id)
@@ -11366,7 +11368,7 @@ fn load_folder_conversations(
 
     match cache.conversations_in(folder_id, &account_id, reach, order.as_deref()) {
         Ok(rows) => {
-            let _ = tx.try_send(UIUpdate::ConversationsLoaded(rows));
+            let _ = tx.try_send(UIUpdate::ConversationsLoaded(rows, why));
         }
         Err(e) => {
             tracing::error!("Failed to read the conversations in {}: {}", folder_id, e);
@@ -11579,7 +11581,13 @@ fn switch_the_view(
     };
     match now_showing {
         view_state::Showing::Conversations => {
-            load_folder_conversations(cache, folder_id, account_id, tx);
+            load_folder_conversations(
+                cache,
+                folder_id,
+                account_id,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+                tx,
+            );
         }
         view_state::Showing::Messages => {
             show_the_thread_column_if_it_is_wanted(state, cache, msg_list, column_layout);
@@ -13899,34 +13907,51 @@ fn what_the_open_row_says(state: &WxUIState) -> Option<String> {
         .map(|row| row.label.clone())
 }
 
-/// Re-read a folder's messages when, and only when, it is the one open on
-/// screen right now.
+/// Re-read a folder when, and only when, it is the one open on screen right
+/// now.
 ///
 /// "On screen" is resolved fresh from `state` rather than carried from
 /// whatever was true when the sync that calls this began: the reader may
 /// have switched folders, or accounts, while the sync was still running,
 /// and the answer has to be the one true at the moment mail actually
 /// arrived, not the one true when the request for it went out.
+///
+/// Both readings when the folder is showing conversations, which is THREAD-02.
+/// The rows on screen in that view are the conversations, so reading only the
+/// messages leaves every visible row exactly as it was and an arrival is
+/// invisible until the folder is reopened. Opening a folder already reads both
+/// for the same reason (D-01), and this is the other half of that pair.
 fn reread_folder_if_open(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     folder_id: i64,
     tx: &Sender<UIUpdate>,
 ) {
-    let (open, account_id, limit) = {
+    let (open, account_id, limit, showing) = {
         let s = lock_state(state);
         (
             folder_on_screen(&s),
             s.active_account_id.clone(),
             s.message_list_limit,
+            s.showing,
         )
     };
-    if open == Some(folder_id) {
-        // Whatever Get Older Messages had already grown the view to, not
-        // reset back to the first page: the same reasoning ID_REFRESH_FOLDER
-        // uses, because this is "is the folder still current", not "start
-        // over".
-        load_folder_messages(cache, Some(folder_id), account_id, limit, tx);
+    if open != Some(folder_id) {
+        return;
+    }
+    // Whatever Get Older Messages had already grown the view to, not
+    // reset back to the first page: the same reasoning ID_REFRESH_FOLDER
+    // uses, because this is "is the folder still current", not "start
+    // over".
+    load_folder_messages(cache, Some(folder_id), account_id.clone(), limit, tx);
+    if showing.showing_conversations() {
+        load_folder_conversations(
+            cache,
+            Some(folder_id),
+            account_id,
+            crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
+            tx,
+        );
     }
 }
 
@@ -14130,19 +14155,48 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
             }
         }
-        UIUpdate::ConversationsLoaded(conversations) => {
-            {
+        UIUpdate::ConversationsLoaded(conversations, why) => {
+            let repaint = {
                 let mut s = lock_state(state);
+                let repaint = view_state::what_changed(&s.conversations, conversations);
                 s.conversations = conversations.clone();
-            }
+                repaint
+            };
             // The Thread column is decided before the columns are rebuilt, and
             // never by giving it a width of nought: a zero-width column still
             // exists in the UI Automation tree and may still be read aloud
-            // (D-05, D-06).
+            // (D-05, D-06). Asked on both paths, because a conversation of one
+            // growing to two is exactly what turns the column on, and it
+            // returns without touching anything when the answer has not moved.
             show_the_thread_column_if_it_is_wanted(state, message_cache, msg_list, column_layout);
-            tell_the_list_how_many(state, msg_list);
-            msg_list.refresh(true, None);
-            select_the_conversations_holding_it(state, msg_list);
+            match why {
+                // A new list. Its size is set, every row is painted, and a
+                // selection held across a view switch goes back.
+                WhyTheRowsWereRead::SomebodyAskedForThem => {
+                    tell_the_list_how_many(state, msg_list);
+                    msg_list.refresh(true, None);
+                    select_the_conversations_holding_it(state, msg_list);
+                }
+                // THREAD-02. Mail arrived into rows already on screen, so only
+                // the rows whose contents changed are painted. Refreshing the
+                // list would re-announce every row, which the requirement
+                // forbids, and telling the control its size again is a change
+                // of set size a screen reader may report, so that happens only
+                // when the size really moved. The selection is not touched at
+                // all: putting it back would move focus and take the screen
+                // reader's cursor with it, which is the fault the folder tree
+                // already had to be fixed for.
+                WhyTheRowsWereRead::MailArrived => {
+                    if repaint.count_changed() {
+                        tell_the_list_how_many(state, msg_list);
+                    }
+                    match repaint.run() {
+                        Some((row, last)) if row == last => msg_list.refresh_item(row as i64),
+                        Some((from, to)) => msg_list.refresh_items(from as i64, to as i64),
+                        None => {}
+                    }
+                }
+            }
 
             let unread = conversations.iter().filter(|c| c.unread > 0).count();
             let msg = what_a_mailbox_holds(conversations.len(), unread);
@@ -20625,9 +20679,13 @@ mod tests {
 
         let sent = drain(&rx);
         assert!(
-            sent.iter()
-                .any(|u| matches!(u, UIUpdate::ConversationsLoaded(rows) if !rows.is_empty())),
-            "the rows the reader is standing on were never read again: {sent:?}"
+            sent.iter().any(|u| matches!(
+                u,
+                UIUpdate::ConversationsLoaded(rows, why)
+                    if !rows.is_empty() && *why == WhyTheRowsWereRead::MailArrived
+            )),
+            "the rows the reader is standing on were never read again, or were \
+             read as though somebody had asked for a new list: {sent:?}"
         );
         assert!(
             sent.iter()
@@ -20655,7 +20713,7 @@ mod tests {
         assert!(
             !sent
                 .iter()
-                .any(|u| matches!(u, UIUpdate::ConversationsLoaded(_))),
+                .any(|u| matches!(u, UIUpdate::ConversationsLoaded(..))),
             "nothing on screen is drawn from conversations, so reading them is \
              a query nobody asked for"
         );
@@ -23903,6 +23961,34 @@ mod what_the_list_is_told_it_holds {
             !asks.is_empty(),
             "the count is worked out here rather than by the rule that knows \
              about both views"
+        );
+    }
+
+    #[test]
+    fn test_an_arrival_repaints_rows_rather_than_the_list() {
+        // THREAD-02: rethreading on arrival "does not re-announce rows the
+        // user is not on". A virtual list re-announces every row it is told to
+        // refresh, so the mechanism has to be the per-row one. Read from the
+        // source because the branch that calls it needs a window, and a
+        // mechanism that is written and never reached is the failure guardrail
+        // 1 is about.
+        let ships = ships();
+        for narrow in ["msg_list.refresh_item(", "msg_list.refresh_items("] {
+            assert!(
+                !every_line_calling(&ships, narrow).is_empty(),
+                "nothing calls {narrow}, so the only repaint left is the one \
+                 that speaks every row"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_arrival_branch_decides_what_to_repaint_by_the_rule() {
+        // The decision belongs with the other rules about the two views, not
+        // inline here where it cannot be tested without a control.
+        assert!(
+            !every_line_calling(&ships(), "view_state::what_changed(").is_empty(),
+            "the arrival path works out for itself which rows changed"
         );
     }
 

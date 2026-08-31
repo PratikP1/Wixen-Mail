@@ -231,10 +231,12 @@ impl Repainting {
 /// list is virtual and paints by index, so what a row draws is decided by what
 /// sits at that index: a conversation that has not itself changed still has to
 /// be repainted if something above it appeared and pushed it down.
-pub fn what_changed(_was: &[ConversationItem], _now: &[ConversationItem]) -> Repainting {
+pub fn what_changed(was: &[ConversationItem], now: &[ConversationItem]) -> Repainting {
     Repainting {
-        rows: Vec::new(),
-        count_changed: false,
+        rows: (0..now.len())
+            .filter(|row| was.get(*row) != Some(&now[*row]))
+            .collect(),
+        count_changed: was.len() != now.len(),
     }
 }
 

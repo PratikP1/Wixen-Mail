@@ -58,6 +58,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Mail arriving into the folder you are reading now joins its conversation
+  straight away.** You no longer have to leave the folder and come back to see
+  a new reply counted. The one row that changed is redrawn, and nothing else
+  is, so your screen reader does not read the list out again and the row you
+  are standing on is left alone. Where you were and what you had selected stay
+  where you put them.
+
+  **Two conversations that turn out to be one are joined.** Some messages name
+  more than one earlier conversation in the reply chain their sender wrote,
+  usually because somebody replied to a forwarded message. When one of those
+  arrives, the conversations it names are joined into a single one, everywhere
+  they are held, not only in the folder that was being checked. The joined
+  conversation keeps the name of the oldest of them, so a conversation you are
+  reading does not get renamed under you by a new message unless that message
+  really did join two together.
+
+  Conversations are only ever joined inside one account. A sender writes their
+  own reply chain, so anyone who can send you mail can name any conversation
+  and place their message in it, which every mail program allows. Keeping the
+  joining inside one account means no message can put two of your accounts'
+  mail together.
+
+  **Known limitation.** A conversation that starts with a message you receive
+  *after* a reply that names it stays separate. This happens when a message
+  names another one that has not arrived yet and that names nothing itself.
+  The reply is filed correctly; the later message starts a conversation of its
+  own instead of joining. Reopening the folder does not fix it, because the
+  information needed is in the reply's own headers and nothing searches them.
+  It is written down as work to do.
+
 - **Thread View works.** It is on the View menu, on Ctrl+T, and it has been
   visible and greyed out since it was written. Turning it on collapses the
   message list to one row per conversation. The row says what the conversation
