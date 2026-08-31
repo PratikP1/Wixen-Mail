@@ -265,6 +265,13 @@ impl MessageCache {
     /// Setting a row open removes it rather than storing a nought, so the
     /// table holds only what somebody actually closed. A tree left entirely
     /// open costs no rows, and a folder that has gone leaves nothing behind.
+    ///
+    /// It removes it only when the row holds nothing else. Since D-09 the same
+    /// row also carries which view the folder was left in and what was chosen
+    /// about its Thread column, and deleting on open would throw both away the
+    /// first time somebody expanded the folder. That is a setting reverting
+    /// under the user, which is the failure D-06's tri-state exists to prevent,
+    /// arriving through the other half of D-09.
     pub fn set_row_collapsed(&self, identity: &str, collapsed: bool) -> Result<()> {
         if collapsed {
             self.conn
@@ -277,7 +284,16 @@ impl MessageCache {
         } else {
             self.conn
                 .execute(
-                    "DELETE FROM tree_state WHERE identity = ?1",
+                    "DELETE FROM tree_state
+                     WHERE identity = ?1
+                       AND thread_view IS NULL
+                       AND thread_column IS NULL",
+                    params![identity],
+                )
+                .map_err(|e| Error::Other(format!("Failed to record the opened row: {}", e)))?;
+            self.conn
+                .execute(
+                    "UPDATE tree_state SET collapsed = 0 WHERE identity = ?1",
                     params![identity],
                 )
                 .map_err(|e| Error::Other(format!("Failed to record the opened row: {}", e)))?;
@@ -320,7 +336,13 @@ impl MessageCache {
         identity: &str,
         showing: crate::presentation::view_state::Showing,
     ) -> Result<()> {
-        let _ = (identity, showing);
+        self.conn
+            .execute(
+                "INSERT INTO tree_state (identity, thread_view) VALUES (?1, ?2)
+                 ON CONFLICT(identity) DO UPDATE SET thread_view = excluded.thread_view",
+                params![identity, showing.stored()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record the folder's view: {}", e)))?;
         Ok(())
     }
 
@@ -329,8 +351,7 @@ impl MessageCache {
     /// `None` is a real answer and not a failure: D-09 says a folder nobody has
     /// set is flat, and the caller reads that through `Showing::from_stored`.
     pub fn folder_view(&self, identity: &str) -> Result<Option<i64>> {
-        let _ = identity;
-        Ok(None)
+        self.one_number_from_the_tree_state("thread_view", identity)
     }
 
     /// Remember a hand choice about the Thread column in a folder, D-06.
@@ -343,14 +364,42 @@ impl MessageCache {
         identity: &str,
         chosen: crate::presentation::view_state::ThreadColumn,
     ) -> Result<()> {
-        let _ = (identity, chosen);
+        self.conn
+            .execute(
+                "INSERT INTO tree_state (identity, thread_column) VALUES (?1, ?2)
+                 ON CONFLICT(identity) DO UPDATE SET thread_column = excluded.thread_column",
+                params![identity, chosen.stored()],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to record the Thread column choice: {}", e))
+            })?;
         Ok(())
     }
 
     /// What was chosen about the Thread column in a folder, if anything.
     pub fn folder_thread_column(&self, identity: &str) -> Result<Option<i64>> {
-        let _ = identity;
-        Ok(None)
+        self.one_number_from_the_tree_state("thread_column", identity)
+    }
+
+    /// One nullable number about a tree row, where absent and null are one
+    /// answer.
+    ///
+    /// A row that is not there and a row whose column is null both mean nobody
+    /// has said, and the two callers above want the same word for both. The
+    /// column name is a fixed string chosen by the two callers and never
+    /// anything a user typed, for the reason `sort_expression` states: it is
+    /// interpolated into a query.
+    fn one_number_from_the_tree_state(&self, column: &str, identity: &str) -> Result<Option<i64>> {
+        let found: Option<Option<i64>> = self
+            .conn
+            .query_row(
+                &format!("SELECT {column} FROM tree_state WHERE identity = ?1"),
+                params![identity],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read what the tree remembers: {}", e)))?;
+        Ok(found.flatten())
     }
 
     /// Every folder this computer knows about, as the pair that names one.
@@ -359,7 +408,18 @@ impl MessageCache {
     /// pair `WhichRow::Folder` holds, so applying a view to a scope names
     /// folders the same way everything else here does.
     pub fn every_folder(&self) -> Result<Vec<(String, String)>> {
-        Ok(Vec::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT account_id, path FROM folders")
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the folders: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read the folders: {}", e)))?;
+        Ok(rows)
     }
 
     /// The folders under one, itself included, by the nesting that is stored.
@@ -369,8 +429,43 @@ impl MessageCache {
     /// 01-04 recorded, so a subtree worked out by cutting paths on a guessed
     /// character would take in the wrong folders on a dot-separated server.
     pub fn folders_under(&self, account_id: &str, path: &str) -> Result<Vec<String>> {
-        let _ = (account_id, path);
-        Ok(Vec::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id, path, parent_id FROM folders WHERE account_id = ?1")
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        let rows: Vec<(i64, String, Option<i64>)> = stmt
+            .query_map(params![account_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the folders: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read the folders: {}", e)))?;
+
+        let Some(top) = rows.iter().find(|(_, held, _)| held == path) else {
+            return Ok(Vec::new());
+        };
+
+        // Breadth first from the folder itself. Bounded by the number of
+        // folders in the account, because each is taken once: a cycle written
+        // by a hand-edited database cannot make this run forever.
+        let mut reached: Vec<String> = vec![top.1.clone()];
+        let mut ids: Vec<i64> = vec![top.0];
+        let mut looked_at = 0;
+        while looked_at < ids.len() {
+            let parent = ids[looked_at];
+            looked_at += 1;
+            for (id, held, under) in &rows {
+                if *under == Some(parent) && !ids.contains(id) {
+                    ids.push(*id);
+                    reached.push(held.clone());
+                }
+            }
+        }
+        Ok(reached)
     }
 
     /// Pin a folder to the top of the tree, FOLDER-03.

@@ -2080,6 +2080,20 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create tree_state table: {}", e)))?;
 
+        // What view a folder was left in, and what was chosen about its Thread
+        // column. D-09 keeps them here rather than in a table of their own so a
+        // folder's view and its collapsed state restore together.
+        //
+        // Both nullable, and null carries meaning in each. A folder with no
+        // `thread_view` is one nobody has set, which D-09 says is flat. A
+        // folder with no `thread_column` is one nobody has chosen for, which is
+        // D-06's third state and the one that follows the adaptive rule. Added
+        // to a table that has shipped, so both go in with `ensure_column_exists`
+        // and existing rows read as never set without anything migrating them,
+        // which is what null being the answer buys.
+        self.ensure_column_exists("tree_state", "thread_view", "INTEGER")?;
+        self.ensure_column_exists("tree_state", "thread_column", "INTEGER")?;
+
         // Which folders somebody has pinned to the top of the tree, FOLDER-03.
         //
         // Keyed on `(account_id, path)`, which is three things at once and that
