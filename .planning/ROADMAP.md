@@ -132,7 +132,42 @@ Plans:
   5. Fetching the missing text is built and gated. Since it is a read and every `may_i` call gates a write, `application::allowed` gains a read dimension, on by default, which is a stated exception to that type's rule that `Default` is the safe end.
   6. Saved searches sit inside the account structure the way pinned folders do, so two accounts each holding a search of the same name are never two identical rows.
 
-**Plans**: TBD
+**Plans**: 8 plans, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Tracer: a read dimension on `Allowed`, end to end from the stored settings file to the one fetch that already exists (D-2-06, D-2-07, D-2-11, D-2-12)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — What a body-reading saved search covers, said before it runs, naming which search it is about (D-2-08, D-2-13)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-03-PLAN.md — Fetching the missing text, behind the gate, marked experimental where somebody meets it (D-2-08)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02-04-PLAN.md — One vocabulary: the filter dialog offers the eleven fields and eleven match types the engine answers, in words
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02-05-PLAN.md — A saved search keeps both halves of its scope, and says what it asks (D-2-03, D-2-04, D-2-14)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 02-06-PLAN.md — Writing a whole question list back atomically, and a dialog for one condition (D-2-01)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 02-07-PLAN.md — The rule editor: a manager over one search's conditions, reached from the tree, one group however a search was made (D-2-01, D-2-02)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 02-08-PLAN.md — Saved searches inside the account structure, and a search that runs against its own account (D-2-05)
+
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-31 after the phase discussion, from four to six. The original criterion 4 assumed a smart folder was a separate object from a saved search; `Question::as_a_rule` converts a saved-search question into a `FilterRule` to evaluate it, so they are one vocabulary and the gap is only reach. `.planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md` is the authority on the detail. The largest thing here is not search: widening `Allowed` to cover reads touches a model three places must agree on, and if it ripples further it is a candidate for its own phase rather than something to absorb quietly.
 
