@@ -2,6 +2,9 @@
 phase: 01-folders-and-conversations
 verified: 2026-08-31T00:00:00Z
 status: gaps_found
+superseded_by_work: 01-14-PLAN.md
+gap_closed: 2026-08-31
+needs_reverification: true
 score: 7/8 roadmap success criteria verified (1 partial)
 behavior_unverified: 0
 overrides_applied: 0
@@ -42,6 +45,24 @@ human_verification:
     expected: "Only one modal question is ever on screen; a reminder does not open over someone typing (a disclosed, deliberate gap: it currently does, tracked in deferred-items.md)."
     why_human: "src/presentation/wx_app.rs::ask_about_the_folders_that_have_gone is, by the phase's own account, the one function in 01-10 no test reaches; wxWidgets' one-application-per-process limitation makes it untestable without a running window."
 ---
+
+
+> **Read this before acting on the gap below.** This report was written before
+> plan 01-14 existed, and 01-14 was written to close the one gap it found. That
+> gap, roadmap success criterion 3, is closed: `folder_tree::rows` is now called
+> with every account rather than a one-element slice, two accounts each holding
+> an `Inbox` produce two rows a caller can tell apart, and switching between
+> accounts no longer rebuilds the tree.
+>
+> The findings below are a true record of the tree on 2026-08-31 before that
+> plan landed. They are not a description of it now. A tool reading only this
+> file's `status` will recommend planning gap fixes for work that is already
+> done, which is what happened on the next manager run.
+>
+> What remains genuinely open on this phase is not in this report: FOLDER-02
+> stays Pending because two of its criteria say a screen reader announces the
+> folder's level from the native control, and no test in this project can answer
+> that. Re-verification against the current tree has not been run.
 
 # Phase 1: Folders and conversations Verification Report
 
