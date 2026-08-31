@@ -30,6 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Folders and conversations** - Make and manage folders, nest them, pin them, and collapse the list to one row per conversation
 - [ ] **Phase 2: Search that says what it covers** - The scope selector scopes, the coverage is disclosed, and a rule can be a folder
+- [ ] **Phase 2.1: What phase 1 found on its way past** (INSERTED) - Six defects and two stale documents that belong to no other phase
 - [ ] **Phase 3: Mail at scale on the wire** - Resume rather than re-list, hold one connection, fetch a whole mailbox, and never pick a conflict winner silently
 - [ ] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
 - [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere, recurring events across weeks and months, notes that sync, contacts over CardDAV
@@ -124,13 +125,34 @@ Plans:
 **Requirements**: SEARCH-01, SEARCH-02, SEARCH-03
 **Success Criteria** (what must be TRUE):
 
-  1. A search saved with Subject Only or From Only reruns with that restriction, not across subject, sender and recipients. The live search already honours all four scopes; only the saved one loses half of what it was given.
-  2. Opening a saved search shows the scope it holds, so a short list reads as a narrow scope rather than as an empty mailbox.
-  3. A search whose terms need body text says, before it runs, how much of the mailbox has body text stored, and offers to fetch the rest.
-  4. A user defines a smart folder from the same rule vocabulary the filters use, and it appears in the folder tree listing what matches now rather than a snapshot.
+  1. A search saved with Subject Only or From Only reruns with that restriction, not across subject, sender and recipients. The live search already honours all four scopes; only the saved one loses half of what it was given. This needs no schema change: `saved_search_questions` already stores an arbitrary set, so the narrower search writes fewer questions.
+  2. Opening a saved search says what it asks, in one sentence that reads the same whether or not the In box has a name for it: "looks at subject and body". A short result list is then legible as narrow coverage rather than as an empty mailbox.
+  3. A rule editor writes into the same saved searches the search box writes, reaching all eleven fields in `A_FIELD_A_RULE_MAY_NAME` rather than the three the search box uses. There is one stored thing with two doors, one matcher, and one group in the tree however a search was made.
+  4. A search that can reach message text says, before it runs, how many messages in the account have body text stored and how many do not, so a short answer is never mistaken for a complete one.
+  5. Fetching the missing text is built and gated. Since it is a read and every `may_i` call gates a write, `application::allowed` gains a read dimension, on by default, which is a stated exception to that type's rule that `Default` is the safe end.
+  6. Saved searches sit inside the account structure the way pinned folders do, so two accounts each holding a search of the same name are never two identical rows.
 
 **Plans**: TBD
 **UI hint**: yes
+**Scope note**: These criteria were rewritten 2026-08-31 after the phase discussion, from four to six. The original criterion 4 assumed a smart folder was a separate object from a saved search; `Question::as_a_rule` converts a saved-search question into a `FilterRule` to evaluate it, so they are one vocabulary and the gap is only reach. `.planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md` is the authority on the detail. The largest thing here is not search: widening `Allowed` to cover reads touches a model three places must agree on, and if it ripples further it is a candidate for its own phase rather than something to absorb quietly.
+
+### Phase 2.1: What phase 1 found on its way past (INSERTED)
+
+**Goal**: Fix the defects phase 1 uncovered that belong to no other phase, and correct the documents that describe work as unbuilt when it ships.
+**Depends on**: Phase 1
+**Requirements**: none new; this closes recorded defects rather than adding capability
+**Success Criteria** (what must be TRUE):
+
+  1. Two dialogs stop leaking a registry entry per row. `wx_destination.rs` and `wx_thread_view.rs` hang row data off the tree control, whose data goes into a process-global registry that `delete_all_items` does not clear and whose cleanup returns early on any childless item. Each takes a parallel vector, which is what `collect_rows` already does.
+  2. Sorting messages by Safety orders them by severity rather than by the alphabet. `MAX(m.safety)` returns the mildest verdict today, because safety is stored as words and the alphabet puts "suspicious" last. The `CASE` the conversation expression already uses is the answer.
+  3. One spelling of a message identifier is written by every writer. Mail through `mail_parser` is stored bare and a draft this program files keeps its angle brackets, so a join between them finds nothing and the symptom is indistinguishable from a bad test fixture. Normalise on write, and backfill.
+  4. The ten checks in `tests/wired.rs` that read `wx_app.rs` read the half that ships rather than a prefix of it. They cut at the first `#[cfg(test)]`, which in a file of 24,650 lines with 19 test modules means reading 77% and being blind to 5,762 lines. Four failed loudly when a module was added mid-file; six passed in silence, which is the defect. `common::what_ships` is the right reader and cannot currently be reached from an integration test, so this decides whether it ships, moves to a test-support crate, or is duplicated.
+  5. Every document that says folder management does not work is corrected. `docs/IMPLEMENTATION_STATUS.md` and `.planning/intel/context.md` both describe as unbuilt what phase 1 shipped, and a page that describes a feature you have as missing wastes exactly as much of somebody's time as the reverse.
+  6. The window that asks about folders the server has stopped listing is exercised by something. `ask_about_the_folders_that_have_gone` is the only code in 01-10 no test reaches: everything it decides is tested without a window, but if the call site stopped passing `turn.is_none()` or stopped asking for focus, every test would stay green.
+
+**Plans**: TBD
+**UI hint**: yes
+**Scope note**: Inserted 2026-08-31 after routing phase 1's deferred items by subject. Three items went to phase 3 and two to phase 6, where somebody planning those subjects will meet them. These six belong to no phase, which is why they were deferred and why they would otherwise stay deferred. One further item, the spellcheck test that fails about one full library run in five through a Windows COM call made twice, is diagnosed only as far as reading and is not in the criteria above: it needs investigation before it can be planned, and inventing a criterion for it would be pretending otherwise.
 
 ### Phase 3: Mail at scale on the wire
 
@@ -147,6 +169,11 @@ Plans:
   6. When a local copy and a server copy have both changed, the user is shown both and chooses, and nothing is pushed until they do.
 
 **Plans**: TBD
+
+**Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
+- Gmail mail archived with no label vanishes from a conversation count, because D-08 excludes All Mail by folder rather than by message identity. One extra predicate in one query.
+- A conversation root arriving after a message that already names it is not merged, so three of six arrival orders over such a set merge. One table, one index, one writer.
+- `next_local_uid` hands out 0 after the number range wraps, because it saturates on `i64` and then casts to `u32`. Not reachable in any database this program can currently produce.
 
 ### Phase 4: Writing and reading a message in full
 
@@ -196,6 +223,10 @@ Plans:
 
 **Plans**: TBD
 **UI hint**: yes
+
+**Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
+- A permission per account is stored, read by `allowed_for`, honoured out to the provider clients, and offered by no screen. This is FEEDBACK-01's exact shape already live in the tree, found by the mirror guard 01-06 added, and it belongs with the requirement written for that fault.
+- A reminder alert still opens over somebody who is typing. It shares the one-at-a-time gate 01-10 built but does not ask the typing count. Whether a reminder should wait is a question about what a reminder is for.
 
 ### Phase 7: Installing, updating and what is stored
 

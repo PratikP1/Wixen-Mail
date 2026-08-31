@@ -123,12 +123,98 @@ are filter rules with the action ignored. The only real gap is reach:
 
 ### One coupling the requirements do not state
 
-- **D-2-09:** **SEARCH-02's problem does not exist until SEARCH-03 creates it.**
-  The live search reads `m.subject`, `m.from_addr`, `m.to_addr` and `m.snippet`
-  and never touches the bodies table, so no search today can need body text. The
-  rule editor is what makes the body field reachable, and therefore what makes
-  the coverage disclosure necessary. Order the work accordingly: the vocabulary
-  widening comes before or with the disclosure, never after it.
+- **D-2-09:** Keep the ordering: the vocabulary widening comes before or with
+  the disclosure, never after it. **The reason first given for it was wrong, and
+  the correction matters more than the ordering does.**
+
+  As written on 2026-08-31 this said the live search reads `m.subject`,
+  `m.from_addr`, `m.to_addr` and `m.snippet` and never touches the bodies table,
+  so no search could need body text until a rule editor existed. Those four
+  columns are the `SELECT` payload, not the predicate. Message text is already
+  reachable by both search paths and always has been:
+
+  - The FTS5 index is declared `fts5(subject, from_addr, snippet, body, ...)` at
+    `src/data/message_cache/mod.rs:2170`, and `index_message_for_search` fills
+    the `body` column whenever a body is stored
+    (`src/data/message_cache/bodies.rs:314`).
+  - `run_a_saved_search` chooses `TheMessageText::Read` and joins
+    `message_bodies` (`src/presentation/wx_app.rs:6324`).
+
+  **So the disclosure in D-2-08 is independently shippable and does not wait for
+  the editor.** A search can silently cover a fraction of the mailbox today, and
+  that is a live defect rather than one this phase is about to introduce.
+
+  The lesson is worth keeping beside the correction, because it is general: a
+  negative claim about a query must cite the predicate, never the columns the
+  query returns. This one was made by reading a `SELECT` list, and it is the
+  fourth decision in this project to read as careful and be wrong.
+
+- **D-2-10:** **Eviction does not reindex, and the two search paths now disagree
+  about the same message.** `evict_bodies_over` deletes the row from
+  `message_bodies` and never calls `index_message_for_search`, so the FTS index
+  goes on holding the words while the saved-search scan, which joins the table,
+  loses them.
+
+  This inverts what D-2-08 assumes. The disclosure was written to stop a search
+  looking complete while covering a fraction of the mailbox; here one path is
+  more complete than the other and neither says so. Whether eviction reindexes,
+  or the disclosure carries the difference between the two paths, is a decision
+  the plan must make rather than inherit, and it is recorded here as open.
+
+### The two traps the compiler cannot catch
+
+Both found by the phase research, both verified against the source, and both
+severe enough that widening `Allowed` without them is worse than not widening it.
+
+- **D-2-11:** `Allowed::NOTHING` **holds `reading: true`**, and the constant
+  stops meaning "every field false".
+
+  `src/presentation/first_run.rs:61` maps `Choice::ReadOnly` to
+  `Allowed::NOTHING`, and line 70 labels that choice **"Read my mail, change
+  nothing"**. `--read-only` resolves to the same constant. So a reading field
+  defaulting to `false` inside `NOTHING` would switch reading off for the one
+  option whose label promises it, and it would do that to the most cautious
+  person in the user base, who chose it precisely because it sounded safe.
+
+  The constant's own doc comment already says "Nothing may be changed", which is
+  the meaning to keep. What changes is that the shape stops matching the name
+  literally, so the reason goes in the comment beside it rather than being left
+  for the next reader to reconstruct.
+
+  **`Default` must be written by hand.** Deriving it gives `false` for a bool,
+  which is exactly the wrong answer here, and D-2-07 already made this field an
+  exception to the safe-end rule.
+
+- **D-2-12:** **A third field must not break every existing config file.**
+  `Allowed` carries no field-level serde attributes and is serialised into
+  `app_config.json`. Adding a field without handling the absent case makes every
+  existing file fail to parse, **and that takes every other setting down with
+  it**, not just this one. Whatever is done here, the deserialisation of a file
+  written before this phase is a test, not an assumption.
+
+  Note the interaction with D-2-11 and D-2-07: the absent case and `Default`
+  must both answer `true`, and a bare `#[serde(default)]` answers `false`. The
+  two obvious ways to write this are both wrong in the same direction.
+
+### Eviction, and the two paths that disagree
+
+- **D-2-13:** **Eviction reindexes.** `evict_bodies_over` calls
+  `index_message_for_search` so the FTS index forgets what `message_bodies`
+  forgot, and the two search paths agree about the same message again.
+
+  Chosen because it is what makes D-2-08's disclosure mean anything: if quick
+  search and a saved search cover different sets, one number cannot honestly
+  describe both, and the sentence explaining the difference would be the kind
+  nobody reads twice.
+
+  It was raised that this predates the phase and is really a cache defect rather
+  than a search one. That is true, and it is fixed here anyway because the
+  disclosure this phase ships would otherwise describe a coverage that is not
+  quite true for one of the two paths.
+
+  **The cost is unmeasured.** Evicting stops being a pure delete, and
+  reindexing a large eviction batch has a price nobody has taken. Measure it
+  rather than assuming it is small, and say the number.
 
 ### Claude's Discretion
 

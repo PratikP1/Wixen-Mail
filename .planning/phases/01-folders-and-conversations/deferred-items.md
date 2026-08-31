@@ -1,5 +1,29 @@
 # Deferred items, phase 01
 
+> **Routed 2026-08-31. Read this before acting on anything below.**
+>
+> Every live item here now has a phase, because a deferred list goes stale the
+> same way a tick list does and this one already had. Three went to phase 3
+> (the Gmail conversation count, the late-arriving conversation root, the uid
+> wrap), two to phase 6 (the per-account permission nothing offers, the reminder
+> that opens over typing), and six into an inserted phase 2.1 for the ones that
+> belong to no phase. The roadmap carries them; this file is now the detail
+> behind those lines rather than the place they live.
+>
+> Three entries are not routed, for three different reasons. **"The conversation
+> row is built and tested but nothing draws it yet" is closed**: it says in its
+> own text that 01-12 is the plan that renders it, and 01-12 landed.
+> **"The plan's order-independence criterion could not be met as written" is not
+> work**, it is guidance for whoever writes the next plan of that shape. And
+> **"nothing has watched a screen reader read a rethreaded row" is Pratik's**,
+> like every other listening item in this project.
+>
+> One live item is deliberately in no phase: the spellcheck test that fails
+> about one full library run in five through a Windows COM call made twice. It
+> is diagnosed as far as reading and no further, so it needs investigating
+> before it can be planned. Writing a criterion for it would be pretending we
+> know what it is.
+
 Things found while executing this phase that are real and are not this phase's
 to fix. Written down at the moment they were found, so they stay visible.
 
