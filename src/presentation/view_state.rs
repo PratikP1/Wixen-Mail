@@ -177,6 +177,67 @@ pub const fn how_many_rows(showing: Showing, messages: usize, conversations: usi
     }
 }
 
+/// What a virtual list has to repaint when its rows are replaced.
+///
+/// THREAD-02's criterion, made into a value. The requirement is that
+/// rethreading on arrival "does not re-announce rows the user is not on", and a
+/// virtual list re-announces every row it is told to refresh. So the question
+/// the control is asked has to be "which rows changed", never "refresh".
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Repainting {
+    /// The row indices whose drawn content is not what it was.
+    rows: Vec<usize>,
+    /// Whether the number of rows changed, so the control must be told again.
+    count_changed: bool,
+}
+
+impl Repainting {
+    /// Whether the number of rows changed.
+    ///
+    /// The one thing that must reach `set_item_count`, and only this. In
+    /// virtual mode that number is the set size UI Automation reports, and
+    /// setting it on every arrival is a change of set size a screen reader may
+    /// report, which is the flooding guardrail 5 forbids.
+    pub const fn count_changed(&self) -> bool {
+        self.count_changed
+    }
+
+    /// Whether nothing at all has to be repainted.
+    pub fn nothing_to_repaint(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// The rows to repaint, in order.
+    pub fn rows(&self) -> &[usize] {
+        &self.rows
+    }
+
+    /// The first and last row to repaint, when there is anything to repaint.
+    ///
+    /// `wxdragon`'s `refresh_items(from, to)` takes a run, so a scattered set
+    /// of changes is covered by the run that spans them. That is still a great
+    /// deal narrower than refreshing the list, which is the comparison the
+    /// requirement is about, and a merge changes a run of adjacent rows anyway
+    /// because the conversations it joins sort together.
+    pub fn run(&self) -> Option<(usize, usize)> {
+        Some((*self.rows.first()?, *self.rows.last()?))
+    }
+}
+
+/// Which rows changed between the conversations on screen and the ones just
+/// read.
+///
+/// Compared row by row rather than by conversation identity on purpose. The
+/// list is virtual and paints by index, so what a row draws is decided by what
+/// sits at that index: a conversation that has not itself changed still has to
+/// be repainted if something above it appeared and pushed it down.
+pub fn what_changed(_was: &[ConversationItem], _now: &[ConversationItem]) -> Repainting {
+    Repainting {
+        rows: Vec::new(),
+        count_changed: false,
+    }
+}
+
 /// The `ORDER BY` body for the list as it is being shown.
 ///
 /// D-12: one [`Sort`] answers in both views, so a switch cannot change the
@@ -398,6 +459,122 @@ mod tests {
             any_draft: false,
             worst_safety: crate::service::safety::Safety::Ordinary,
         }
+    }
+
+    // ── What an arrival repaints, THREAD-02 ─────────────────────────────────
+
+    #[test]
+    fn test_a_conversation_growing_repaints_that_one_row() {
+        // A message joined the second conversation, so its Thread column and
+        // its counts changed. One row, not a list.
+        let was = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 1),
+            a_conversation("c@x", 1),
+        ];
+        let now = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 2),
+            a_conversation("c@x", 1),
+        ];
+
+        let repaint = what_changed(&was, &now);
+        assert_eq!(repaint.rows(), [1]);
+        assert_eq!(repaint.run(), Some((1, 1)));
+        assert!(
+            !repaint.count_changed(),
+            "an existing conversation growing does not change how many rows there are"
+        );
+    }
+
+    #[test]
+    fn test_nothing_changing_repaints_nothing_and_leaves_the_count_alone() {
+        // Mail arrived into a conversation that is not on screen, or into
+        // another folder. The paired positive is the test above: without it
+        // this passes against anything that answers nothing to everything.
+        let held = [a_conversation("a@x", 1), a_conversation("b@x", 1)];
+
+        let repaint = what_changed(&held, &held);
+        assert!(repaint.nothing_to_repaint());
+        assert_eq!(repaint.run(), None);
+        assert!(!repaint.count_changed());
+    }
+
+    #[test]
+    fn test_a_merge_repaints_the_run_it_touched_and_not_the_whole_list() {
+        // Two conversations became one. Everything from the merge down shifts
+        // up by a row, and the last row goes. The rows above it are untouched
+        // and must not be repainted, because repainting a row is what
+        // re-announces it.
+        let was = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 1),
+            a_conversation("c@x", 1),
+            a_conversation("d@x", 1),
+        ];
+        let now = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 2),
+            a_conversation("d@x", 1),
+        ];
+
+        let repaint = what_changed(&was, &now);
+        assert_eq!(repaint.rows(), [1, 2]);
+        assert_eq!(repaint.run(), Some((1, 2)));
+        assert!(
+            !repaint.rows().contains(&0),
+            "the row above the merge did not change and must not be re-announced"
+        );
+        assert!(
+            repaint.count_changed(),
+            "two conversations became one, so the control holds one row fewer"
+        );
+        assert!(
+            repaint.rows().iter().all(|row| *row < now.len()),
+            "a row past the end of the new list cannot be painted: {:?}",
+            repaint.rows()
+        );
+    }
+
+    #[test]
+    fn test_a_new_conversation_appearing_changes_the_count() {
+        let was = [a_conversation("b@x", 1)];
+        let now = [a_conversation("a@x", 1), a_conversation("b@x", 1)];
+
+        let repaint = what_changed(&was, &now);
+        assert!(repaint.count_changed());
+        assert_eq!(
+            repaint.rows(),
+            [0, 1],
+            "the new row and the one it pushed down both draw something else now"
+        );
+    }
+
+    #[test]
+    fn test_the_first_read_of_a_folder_repaints_every_row() {
+        // Opening a folder is the same rule with nothing on screen before, so
+        // there is no second path for it to disagree with.
+        let now = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 1),
+            a_conversation("c@x", 1),
+        ];
+
+        let repaint = what_changed(&[], &now);
+        assert_eq!(repaint.rows(), [0, 1, 2]);
+        assert!(repaint.count_changed());
+    }
+
+    #[test]
+    fn test_a_folder_emptying_changes_the_count_and_paints_nothing() {
+        let was = [a_conversation("a@x", 1)];
+
+        let repaint = what_changed(&was, &[]);
+        assert!(repaint.count_changed());
+        assert!(
+            repaint.nothing_to_repaint(),
+            "there are no rows left to paint"
+        );
     }
 
     fn a_sort(column: MessageColumn, direction: SortDirection) -> Sort {

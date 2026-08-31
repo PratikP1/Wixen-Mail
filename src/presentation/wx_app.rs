@@ -20541,6 +20541,155 @@ mod tests {
         ));
     }
 
+    // ── Rethreading as mail arrives, THREAD-02 ──────────────────────────────
+
+    /// A cache, the interface state that goes with it, and the folder on
+    /// screen.
+    type AFolderOnScreen = (
+        TempHome<Option<Arc<MessageCache>>>,
+        Arc<StdMutex<WxUIState>>,
+        i64,
+    );
+
+    /// A cache holding one folder with a conversation of two messages in it,
+    /// and the state of somebody looking at that folder.
+    fn looking_at_a_folder(showing: view_state::Showing) -> AFolderOnScreen {
+        let cache = test_cache();
+        let held = cache.as_ref().expect("a cache");
+        let folder_id = held
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: "acct-1".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        for (uid, id, chain) in [(1u32, "a@x", None), (2, "b@x", Some("a@x"))] {
+            let mut arriving = crate::data::message_cache::IncomingMessage {
+                folder_id,
+                uid,
+                message_id: id.to_string(),
+                subject: "Quarterly report".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-07-26T10:00:00+00:00".to_string(),
+                internal_date: Some("2026-07-26T10:00:05+00:00".to_string()),
+                size_bytes: Some(10),
+                answered: false,
+                draft: false,
+                refs_header: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                pop_uidl: None,
+            };
+            arriving.refs_header = chain.map(str::to_string);
+            held.upsert_message(&arriving).expect("a stored message");
+        }
+
+        let open = crate::presentation::folder_tree::WhichRow::Folder {
+            account: "acct-1".to_string(),
+            path: "INBOX".to_string(),
+        };
+        let mut state = WxUIState {
+            selected_folder: Some(open.clone()),
+            active_account_id: Some("acct-1".to_string()),
+            message_list_limit: FOLDER_LIST_PAGE_SIZE,
+            showing,
+            ..Default::default()
+        };
+        state.folder_ids.insert(open.stored(), folder_id);
+        (cache, Arc::new(StdMutex::new(state)), folder_id)
+    }
+
+    #[test]
+    fn test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them() {
+        // THREAD-02: a message arriving joins its conversation without the
+        // folder being reopened. Showing conversations, the rows on screen are
+        // the conversations, so reading only the messages leaves every visible
+        // row exactly as it was and the arrival is invisible.
+        let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Conversations);
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id, &tx);
+
+        let sent = drain(&rx);
+        assert!(
+            sent.iter()
+                .any(|u| matches!(u, UIUpdate::ConversationsLoaded(rows) if !rows.is_empty())),
+            "the rows the reader is standing on were never read again: {sent:?}"
+        );
+        assert!(
+            sent.iter()
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(_))),
+            "the messages are still needed, because a row opens into a tree \
+             built from them (D-01)"
+        );
+    }
+
+    #[test]
+    fn test_mail_arriving_while_showing_messages_reads_only_the_messages() {
+        // The paired positive is the test above. Without it this passes
+        // against a body that reads nothing at all.
+        let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Messages);
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id, &tx);
+
+        let sent = drain(&rx);
+        assert!(
+            sent.iter()
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(_))),
+            "the folder on screen must still be read: {sent:?}"
+        );
+        assert!(
+            !sent
+                .iter()
+                .any(|u| matches!(u, UIUpdate::ConversationsLoaded(_))),
+            "nothing on screen is drawn from conversations, so reading them is \
+             a query nobody asked for"
+        );
+    }
+
+    #[test]
+    fn test_mail_arriving_into_a_folder_nobody_is_looking_at_reads_nothing() {
+        let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Conversations);
+        let (tx, rx) = async_channel::unbounded();
+
+        reread_folder_if_open(&state, &cache, folder_id + 1, &tx);
+
+        assert!(
+            drain(&rx).is_empty(),
+            "a folder that is not on screen has no rows to repaint"
+        );
+    }
+
+    #[test]
+    fn test_a_sync_of_two_hundred_messages_tells_the_interface_exactly_once() {
+        // Guardrail 5, and THREAD-02's bound on announcements. Nothing here
+        // announces per message: what the interface hears about is a folder
+        // that got mail, once per sync of that folder, whether the sync
+        // brought one message or two hundred.
+        let one = folder_arrival_update(7, 1).into_iter().count();
+        let many = folder_arrival_update(7, 200).into_iter().count();
+
+        assert_eq!(one, 1, "a sync that fetched something says so");
+        assert_eq!(
+            many, one,
+            "two hundred messages produced more interface work than one did"
+        );
+    }
+
     #[test]
     fn test_folder_on_screen_resolves_the_selected_folders_id() {
         let open = crate::presentation::folder_tree::WhichRow::Folder {
