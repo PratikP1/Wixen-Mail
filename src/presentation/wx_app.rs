@@ -2459,7 +2459,18 @@ impl WxMailApp {
                             | WhichRow::Favourites
                             | WhichRow::PinnedIn(_)
                             | WhichRow::OnThisComputer => {
-                                lock_state(&state).selected_folder = Some(which.clone());
+                                let mut s = lock_state(&state);
+                                s.selected_folder = Some(which.clone());
+                                // An account's own branch opens nothing and
+                                // still says whose mail somebody is on, which
+                                // is what New Folder and Check for Mail act
+                                // against. The headings among these name no
+                                // account and leave it alone.
+                                if let Some(whose) =
+                                    folder_tree::the_account_a_row_belongs_to(&which)
+                                {
+                                    s.active_account_id = Some(whose);
+                                }
                                 return;
                             }
                             WhichRow::AllInboxes => {
@@ -2531,6 +2542,25 @@ impl WxMailApp {
                             // its first page again, whatever Get Older
                             // Messages had grown a previous folder's view to.
                             s.message_list_limit = FOLDER_LIST_PAGE_SIZE;
+                            // Whose mail this is, taken from the row rather
+                            // than from whichever account was open. The tree
+                            // holds every account now, so those are two
+                            // different answers, and the open one is wrong the
+                            // moment somebody arrows into another account's
+                            // branch: the mail below would be read against the
+                            // account they came from.
+                            //
+                            // The tree is not read back. That is the whole
+                            // point of holding every account: this folder is
+                            // already on screen, so arriving at it is a
+                            // selection and not a rebuild. Reading it back here
+                            // would put five cache reads per account on every
+                            // press of the down arrow.
+                            if let Some(whose) =
+                                folder_tree::the_account_a_row_belongs_to(&which)
+                            {
+                                s.active_account_id = Some(whose);
+                            }
                             (
                                 s.folder_ids.get(&identity).copied(),
                                 s.active_account_id.clone(),
@@ -24472,6 +24502,24 @@ mod moving_between_accounts_does_not_rebuild_the_tree {
         &after[..end]
     }
 
+    /// The tail of that handler: what runs once the row turns out to be a
+    /// folder, after every branch and heading has returned.
+    ///
+    /// Narrower than the handler on purpose, and the narrowing was measured
+    /// rather than guessed. Asked of the whole handler, "does this ask whose
+    /// row it is" is satisfied by the branch arm near the top, so taking the
+    /// question out of the folder arm below left the check green: the same
+    /// failure `guards.toml` records from the contacts sync, where two guards
+    /// started reaching a different arm than the one they were about and
+    /// nothing was ever red.
+    fn the_folder_that_was_chosen(ships: &str) -> &str {
+        let handler = the_selection_handler(ships);
+        let at = handler
+            .find("let (folder_id, account_id) = {")
+            .expect("the point where the row is known to be a folder");
+        &handler[at..]
+    }
+
     #[test]
     fn test_the_reading_really_covers_the_handler_rather_than_a_prefix_of_it() {
         // A slice that had collapsed to nothing, or to the first few lines,
@@ -24493,6 +24541,19 @@ mod moving_between_accounts_does_not_rebuild_the_tree {
                  handler rather than the handler"
             );
         }
+        // And the narrower slice really starts after the branches rather than
+        // at the top of the handler, or the check below it is answered by the
+        // branch arm again.
+        let folder = the_folder_that_was_chosen(&ships);
+        assert!(
+            folder.contains("load_folder_messages("),
+            "the folder slice stops before the folder is opened"
+        );
+        assert!(
+            !folder.contains("WhichRow::AllInboxes"),
+            "the folder slice still holds the branch arms, so it cannot tell \
+             the two apart"
+        );
     }
 
     #[test]
@@ -24532,12 +24593,38 @@ mod moving_between_accounts_does_not_rebuild_the_tree {
         // account's mail. Once the tree holds every account, whichever account
         // happens to be open is no longer the account whose folder is under the
         // cursor, and every command reading the open account inherits that.
+        //
+        // Asked of the folder tail rather than of the whole handler. Asked of
+        // the whole handler this was green with the call taken out, because the
+        // branch arm above asks the same question and the reading could not
+        // tell the two apart. That was found by applying the recorded break and
+        // watching this stay green, which is the whole reason the break is
+        // recorded.
         let ships = ships();
         assert!(
-            the_selection_handler(&ships).contains("folder_tree::the_account_a_row_belongs_to("),
+            the_folder_that_was_chosen(&ships)
+                .contains("folder_tree::the_account_a_row_belongs_to("),
             "landing on a folder does not ask whose it is, so opening one of \
              another account's folders reads it against whichever account was \
              open"
+        );
+    }
+
+    #[test]
+    fn test_an_account_branch_also_says_whose_mail_somebody_is_on() {
+        // The branch arm returns before the folder tail, so the check above
+        // cannot see it, and landing on an account's own branch is how somebody
+        // says "this account" before New Folder or Check for Mail.
+        let ships = ships();
+        let handler = the_selection_handler(&ships);
+        let branches = handler
+            .split_once("let (folder_id, account_id) = {")
+            .map(|(before, _)| before)
+            .unwrap_or(handler);
+        assert!(
+            branches.contains("folder_tree::the_account_a_row_belongs_to("),
+            "arrowing onto an account's branch leaves the program acting on \
+             whichever account was open"
         );
     }
 }

@@ -18,6 +18,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   already on screen, so getting to them is moving the cursor rather than
   reloading the sidebar.
 
+  **The folder you land on is read as its own account's.** Landing on a folder,
+  or on an account's own branch, is what says which account you are working in,
+  so the mail that loads and the next command you give both belong to it. This
+  is new and it had to be: until now the sidebar only ever held one account's
+  folders, so whichever account was open was always the right answer. With every
+  account in the tree it stopped being, and without this a folder you arrowed to
+  would have been opened against the account you came from.
+
+  Landing on "All Inboxes", on the shared folders under "On this computer", or
+  on a heading leaves the account you are working in alone. None of those
+  belongs to one account, so there is nothing for them to change it to.
+
   **The tree is longer than it was, and every branch opens expanded.** With four
   accounts you now arrow past four accounts' folders where you used to pass one.
   Closing a branch you are not using is remembered, so you close it once and it

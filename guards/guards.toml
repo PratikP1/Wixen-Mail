@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 340 records have arrived since and have not been through it.
+# 341 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10074,3 +10074,61 @@ before = """        rows: (0..now.len())
             .filter(|row| was.get(*row) != Some(&now[*row]))
             .collect(),"""
 after = """        rows: (0..now.len()).collect(),"""
+
+[[guard]]
+# Moving between accounts is a selection, not a rebuild.
+#
+# This is what holding every account at once (01-14) is for. Before it the tree
+# drew one account's folders, so reaching another account's meant a rebuild:
+# `delete_all_items` and five cache reads per account on the interface thread,
+# because `MessageCache` wraps a connection that is not `Sync`. Held
+# multi-account the other account's folders are already on screen, so arriving
+# at one is an arrow key.
+#
+# The break is the wrong fix somebody reaches for, and it is worth spelling out
+# because it does not look like a mistake. Landing on another account's folder
+# has to change whose mail the next command acts on. The obvious way to make
+# everything downstream agree is to read the tree back, which is what every
+# other command in this file does after changing something. Here it would put a
+# whole-tree rebuild on every press of the down arrow: the cost paid per
+# keystroke instead of per switch, which is worse than what this plan removed.
+#
+# So the break replaces asking the row whose it is with reading the tree back,
+# in one edit, which is exactly the shape of that mistake. A second candidate
+# was measured and kept out: removing the call and adding nothing reddens one
+# test rather than two, and says nothing about the rebuild half.
+#
+# A source read rather than a behaviour test. The handler is a closure inside
+# the window builder and wxWidgets allows one application per process, so no
+# test in this crate can reach it. What that buys is narrow: the handler names
+# the pure answer and names neither rebuild. Whether a running window rebuilds
+# is a running window.
+#
+# Measured by hand on 2026-08-31 against the whole library: two tests.
+#
+# Two, and both halves are needed. A handler that rebuilds nothing and never
+# notices whose row it is passes the absence test and reads the wrong account's
+# mail; a handler that notices and rebuilds passes the other and costs a
+# rebuild per keystroke. Neither test alone is the property.
+#
+# The two companions beside them stay green under this break and are what say
+# the reading means anything: one proves the slice can see a rebuild when there
+# is one, the other proves the slice really covers the handler rather than a
+# prefix of it. That second one exists because `the_window_itself` in this same
+# file used to cut at the first `#[cfg(test)]` and read 9,500 lines of 24,000.
+name = "moving between accounts is a selection and not a rebuild"
+file = "src/presentation/wx_app.rs"
+before = """                            if let Some(whose) =
+                                folder_tree::the_account_a_row_belongs_to(&which)
+                            {
+                                s.active_account_id = Some(whose);
+                            }
+                            (
+                                s.folder_ids.get(&identity).copied(),"""
+after = """                            read_the_tree_back(&folder_cache, &state, &ui_tx);
+                            (
+                                s.folder_ids.get(&identity).copied(),"""
+red = [
+    "presentation::wx_app::moving_between_accounts_does_not_rebuild_the_tree::test_landing_on_a_row_asks_which_account_it_belongs_to",
+    "presentation::wx_app::moving_between_accounts_does_not_rebuild_the_tree::test_landing_on_a_row_does_not_read_the_tree_back",
+]

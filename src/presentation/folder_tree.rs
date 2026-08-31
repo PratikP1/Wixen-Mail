@@ -662,8 +662,25 @@ pub fn what_the_gesture_moves(row: Option<&WhichRow>) -> WhatMoves {
 /// of them must not change whose mail the next command acts on, because none of
 /// them names a different account to change it to.
 pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
-    let _ = row;
-    None
+    let named = match row {
+        WhichRow::Account(id) | WhichRow::PinnedIn(id) => id,
+        // A pin is a copy that sits at the top of the tree rather than inside
+        // its account's branch (D-30), so the rows above it say nothing about
+        // whose it is and only the identity can answer.
+        WhichRow::Folder { account, .. } | WhichRow::Pinned { account, .. } => account,
+        // All Inboxes is every account at once, and a heading is not mail.
+        WhichRow::AllInboxes
+        | WhichRow::Favourites
+        | WhichRow::OnThisComputer
+        | WhichRow::Labels
+        | WhichRow::Label(_)
+        | WhichRow::SavedSearches
+        | WhichRow::SavedSearch(_) => return None,
+    };
+    // The reserved owner is not an account. Answering with it would make the
+    // next command act against a thing no account row names, so landing on the
+    // shared Drafts leaves whose mail is being acted on alone.
+    (!is_this_computer(named)).then(|| named.clone())
 }
 
 /// The labels from the top level down to one row, that row's own last.
