@@ -4321,12 +4321,36 @@ impl WxMailApp {
                         {
                             delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
+                        _ if (id == ID_DELETE || id == ID_DELETE_OUTRIGHT)
+                            && lock_state(&state).showing.showing_conversations() =>
+                        {
+                            delete_the_conversation_row(
+                                app,
+                                &frame,
+                                &a11y,
+                                &message_cache,
+                                if id == ID_DELETE_OUTRIGHT {
+                                    Deleting::Outright
+                                } else {
+                                    Deleting::ToTrash
+                                },
+                            );
+                        }
                         _ if id == ID_DELETE || id == ID_DELETE_OUTRIGHT => {
                             // Neither asks first. Delete is a key somebody
                             // presses twenty times going through a morning's
                             // mail, and a question in front of it is twenty
                             // questions. The ordinary one is recoverable from
                             // the trash, which is what makes not asking safe.
+                            //
+                            // A collapsed conversation row does ask, and the
+                            // branch above is where. The difference is not
+                            // caution for its own sake: that row's contents are
+                            // not on screen, and the Thread column that would
+                            // say how many there are can be switched off (D-05,
+                            // D-06), so a row holding five is indistinguishable
+                            // from one holding one until the question names the
+                            // number.
                             //
                             // The row is not removed here. Deleting cannot be
                             // put back by sending an update, so the server is
@@ -11351,6 +11375,132 @@ fn load_folder_conversations(
             )));
         }
     }
+}
+
+/// Delete every message a collapsed conversation row reaches, D-07.
+///
+/// Three things make this D-07 rather than a loop over a delete.
+///
+/// The count is named before anything happens, and it is the length of the very
+/// list this walks, so the question and the deletion cannot be two answers.
+/// `MessageCache::messages_in_conversation` reads it under the reach the
+/// setting names, and the row's own count comes from the same reach.
+///
+/// How far it reaches is the fifth of this phase's settings, defaulting to this
+/// folder's messages. A collapsed row is a row whose contents nobody can see,
+/// so the narrower reach is the one that surprises somebody least.
+///
+/// And every message goes down the route a single message already goes down:
+/// cancel it if it is queued, delete it here if it lives here, ask the server
+/// otherwise. `local_folders::deleting` is what decides what deleting means and
+/// there is no second answer to that here. Three commands now destroy mail and
+/// all three ask the same function.
+fn delete_the_conversation_row(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    cache: &Option<Arc<MessageCache>>,
+    asked: Deleting,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache_handle) = cache.as_ref() else {
+        return;
+    };
+    let chosen = {
+        let s = lock_state(state);
+        s.selected_message_index
+            .and_then(|index| s.conversations.get(index))
+            .map(|conversation| (conversation.thread_id.clone(), conversation.subject.clone()))
+    };
+    let Some((thread_id, name)) = chosen else {
+        send_refusal(tx, rt, "No conversation selected to delete");
+        return;
+    };
+    let (folder_id, account_id) = {
+        let s = lock_state(state);
+        let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
+            Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => {
+                Some(account)
+            }
+            _ => None,
+        };
+        (folder_on_screen(&s), account)
+    };
+    let (Some(folder_id), Some(account_id)) = (folder_id, account_id) else {
+        send_refusal(tx, rt, "No conversation selected to delete");
+        return;
+    };
+
+    let reach = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::conversations::DeletingAConversationRow::from_stored(
+                &stored.app_config().deleting_a_conversation_row,
+            )
+        })
+        .unwrap_or_default();
+    let reaching = match cache_handle.messages_in_conversation(
+        &thread_id,
+        &account_id,
+        folder_id,
+        reach.counted_the_same_way(),
+    ) {
+        Ok(reaching) => reaching,
+        Err(e) => {
+            send_refusal(tx, rt, &format!("The conversation could not be read: {e}"));
+            return;
+        }
+    };
+    if reaching.is_empty() {
+        send_refusal(
+            tx,
+            rt,
+            "There is nothing left in this conversation to delete",
+        );
+        return;
+    }
+
+    let question = view_state::deleting_a_conversation_asks(&name, reaching.len());
+    // Spoken as well as shown. The dialog says it, and this puts it on the
+    // announcement channel at the moment it opens, which is what a braille
+    // display reads.
+    let _ = a11y.announce(
+        &question,
+        crate::presentation::accessibility::announcements::Priority::High,
+    );
+    let answer = MessageDialog::builder(frame, &question, "Delete Conversation")
+        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+        .build()
+        .show_modal();
+    if answer != ID_YES {
+        return;
+    }
+
+    for message_id in &reaching {
+        let Ok(Some(message)) = cache_handle.get_message(*message_id) else {
+            continue;
+        };
+        if cancel_if_queued(app, cache, *message_id) {
+            continue;
+        }
+        if delete_if_local(app, cache, *message_id, &message.subject, asked) {
+            continue;
+        }
+        spawn_server_change(
+            app,
+            *message_id,
+            message.uid,
+            message.subject.clone(),
+            ServerChange::Deleted(asked),
+        );
+    }
+    send_status(
+        tx,
+        rt,
+        &format!(
+            "Deleting {} in {name}...",
+            crate::service::caldav::how_many(reaching.len(), "message")
+        ),
+    );
 }
 
 /// Switch the message list between messages and conversations, D-01.

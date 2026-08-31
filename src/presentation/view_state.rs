@@ -368,8 +368,10 @@ pub fn what_applying_would_do(
 /// number counted separately. `MessageCache::messages_in_conversation` is where
 /// it comes from, and its doc comment says why.
 pub fn deleting_a_conversation_asks(name: &str, messages: usize) -> String {
-    let _ = (name, messages);
-    String::new()
+    if messages == 1 {
+        return format!("Delete {name}?");
+    }
+    format!("Delete {messages} messages in {name}?")
 }
 
 #[cfg(test)]

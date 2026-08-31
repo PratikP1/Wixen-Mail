@@ -114,6 +114,37 @@ pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
 /// this: an index is searched from its leftmost column and theirs begin with
 /// `folder_id`, which [`unified_inbox_query`] already explains for a query of
 /// the same shape.
+/// The messages of one conversation, under the reach its row is counted with.
+///
+/// The `reach` and `here` parts are the same two the listing query uses, with
+/// the same three parameters in the same order, and that is the point of them
+/// being written this way. D-07 needs the number named before a deletion to be
+/// the number of messages that go; two queries agreeing today would drift the
+/// first time somebody changed one of them.
+///
+/// The fourth parameter narrows to a single conversation. Nothing else differs:
+/// the same account bound, the same all-mail exclusion for the account-wide
+/// reach, the same folder bound for the narrow one, and the same rule that a
+/// message already deleted is not there.
+const MESSAGES_IN_ONE_CONVERSATION: &str = "WITH reach AS (
+         SELECT id FROM folders
+         WHERE account_id = ?1
+           AND (?3 = 0 OR holds_all_mail = 0)
+           AND (?3 = 1 OR id = ?2)
+     )
+     SELECT m.id
+     FROM messages m
+     WHERE m.folder_id IN (SELECT id FROM reach)
+       AND m.deleted = 0
+       AND m.thread_id = ?4
+       AND m.thread_id IS NOT NULL AND m.thread_id <> ''
+       AND m.thread_id IN (
+           SELECT thread_id FROM messages
+           WHERE folder_id = ?2 AND deleted = 0
+             AND thread_id IS NOT NULL AND thread_id <> ''
+       )
+     ORDER BY COALESCE(m.internaldate, m.date) ASC, m.id ASC";
+
 pub(super) fn conversations_query(order: &str) -> String {
     use crate::presentation::message_columns::MessageColumn;
 
@@ -1556,8 +1587,25 @@ impl MessageCache {
         folder_id: i64,
         reach: AConversationReaches,
     ) -> Result<Vec<i64>> {
-        let _ = (thread_id, account_id, folder_id, reach);
-        Ok(Vec::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached(MESSAGES_IN_ONE_CONVERSATION)
+            .map_err(|e| Error::Other(format!("Failed to prepare the conversation read: {e}")))?;
+        let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        let rows = stmt
+            .query_map(
+                params![
+                    account_id,
+                    folder_id,
+                    i64::from(counts_the_account),
+                    thread_id
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to read the conversation: {e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect the conversation: {e}")))?;
+        Ok(rows)
     }
 
     /// Search an account's messages across every folder.

@@ -137,8 +137,10 @@ impl DeletingAConversationRow {
 
     /// How the setting stores itself, and reads back.
     pub const fn as_str(self) -> &'static str {
-        let _ = self;
-        "this_folders_messages"
+        match self {
+            DeletingAConversationRow::ThisFoldersMessages => "this_folders_messages",
+            DeletingAConversationRow::TheWholeConversation => "the_whole_conversation",
+        }
     }
 
     /// Read a stored setting.
@@ -147,20 +149,28 @@ impl DeletingAConversationRow {
     /// and the narrower reach. A settings file written by hand or by a later
     /// version falls to the answer that destroys least.
     pub fn from_stored(stored: &str) -> Self {
-        let _ = stored;
-        Self::ThisFoldersMessages
+        match stored.trim().to_ascii_lowercase().as_str() {
+            "the_whole_conversation" => DeletingAConversationRow::TheWholeConversation,
+            _ => DeletingAConversationRow::ThisFoldersMessages,
+        }
     }
 
     /// What the choice says on the settings screen.
     pub const fn words(self) -> &'static str {
-        let _ = self;
-        ""
+        match self {
+            DeletingAConversationRow::ThisFoldersMessages => {
+                "Only the messages in the folder being read"
+            }
+            DeletingAConversationRow::TheWholeConversation => "Every message in the conversation",
+        }
     }
 
     /// Read back what somebody chose, by the words they were shown.
     pub fn from_words(words: &str) -> Self {
-        let _ = words;
-        Self::ThisFoldersMessages
+        Self::ALL
+            .into_iter()
+            .find(|option| option.words() == words)
+            .unwrap_or_default()
     }
 
     /// The reach the count is read under, so the question and the row agree.
@@ -170,8 +180,10 @@ impl DeletingAConversationRow {
     /// call site is what stops the sentence and the deletion coming from two
     /// queries that could answer differently.
     pub const fn counted_the_same_way(self) -> AConversationReaches {
-        let _ = self;
-        AConversationReaches::TheWholeAccount
+        match self {
+            DeletingAConversationRow::TheWholeConversation => AConversationReaches::TheWholeAccount,
+            DeletingAConversationRow::ThisFoldersMessages => AConversationReaches::ThisFolderOnly,
+        }
     }
 }
 
