@@ -198,23 +198,46 @@ severe enough that widening `Allowed` without them is worse than not widening it
 
 ### Eviction, and the two paths that disagree
 
-- **D-2-13:** **Eviction reindexes.** `evict_bodies_over` calls
-  `index_message_for_search` so the FTS index forgets what `message_bodies`
-  forgot, and the two search paths agree about the same message again.
+- **D-2-13:** **Eviction leaves the index alone, and the disclosure names which
+  search it is about.** Reversed 2026-08-31, on the same day it was decided.
 
-  Chosen because it is what makes D-2-08's disclosure mean anything: if quick
-  search and a saved search cover different sets, one number cannot honestly
-  describe both, and the sentence explaining the difference would be the kind
-  nobody reads twice.
+  As first written this said eviction should call `index_message_for_search` so
+  the FTS index forgets what `message_bodies` forgot, and the two search paths
+  agree again. The question that produced it framed the disagreement as a
+  defect and did not carry the cost, which the phase research names: **an
+  evicted message stays findable by quick search**, on words the cache no longer
+  stores. That is not a bug from where somebody is standing. It is a search that
+  works, and reindexing takes it away, so a message becomes unfindable at the
+  moment its body is evicted rather than merely unsearchable by body.
 
-  It was raised that this predates the phase and is really a cache defect rather
-  than a search one. That is true, and it is fixed here anyway because the
-  disclosure this phase ships would otherwise describe a coverage that is not
-  quite true for one of the two paths.
+  So the index keeps what it has. What changes is the sentence: the coverage
+  disclosure says **which** search it describes, rather than implying one number
+  covers both. There are genuinely two coverages here and naming them is more
+  honest than collapsing them.
 
-  **The cost is unmeasured.** Evicting stops being a pure delete, and
-  reindexing a large eviction batch has a price nobody has taken. Measure it
-  rather than assuming it is small, and say the number.
+  The objection to this, raised when it was first offered and still true, is
+  that it asks a person to hold two models. That is the price, and it buys back
+  a capability nobody asked to lose.
+
+  **The eviction path still gets a comment.** The behaviour is now deliberate
+  rather than accidental, and `evict_bodies_over` not reindexing should say so
+  where somebody reading it would otherwise file a bug.
+
+### The folder half of a saved scope
+
+- **D-2-14:** **Choosing Current Folder writes the folder into the saved
+  search**, alongside the narrower question set, and one path writes and reads
+  both halves.
+
+  `wx_app.rs:6545` hardcodes `folder: None` today, with a reason that stops
+  holding the moment D-2-03 writes the field restriction down. SEARCH-01's
+  second criterion asks for the folder half and the field half to be "written
+  and read back together", and D-2-03 covers only the field half, so without
+  this the criterion is not met and one of the In box's four options is still
+  not saved.
+
+  Writing them together is also the point rather than a tidiness: two things
+  describing one scope, written by different code, is the shape that comes apart.
 
 ### Claude's Discretion
 
