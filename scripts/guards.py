@@ -2,15 +2,18 @@
 
 Read `scripts/guards.sh` for why this exists. This file is the mechanism.
 
-Never touches git. Every file it is about to edit is copied byte for byte into
-a scratch directory keyed by its whole path, and put back from there whether
-the run finishes, fails or is interrupted. Two files in this project are both
-called `calendar.rs`, so the key is the whole path and never the basename.
+Never changes anything through git. Every file it is about to edit is copied
+byte for byte into a scratch directory keyed by its whole path, and put back
+from there whether the run finishes, fails or is interrupted. Two files in this
+project are both called `calendar.rs`, so the key is the whole path and never
+the basename. It reads git in exactly one place, `files_changed_since`, to work
+out which records a branch could have disturbed.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -21,6 +24,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "guards" / "guards.toml"
+
+# How many test threads the suite runs on, which is not a tuning preference but
+# a measurement, and it is worth more than any other change made to this script.
+#
+# Measured on 2026-08-31, on a machine with 24 logical cores, running the
+# library suite of 5,837 tests five times:
+#
+#     2 threads   131s
+#     4 threads    88s
+#     8 threads   106s
+#    16 threads   164s
+#    default(24)  196s
+#
+# The suite is contended rather than compute-bound, so the harness default of
+# one thread per core is the worst of the five and more than twice the cost of
+# the best. Every guard record pays this once, so 536 records is 31 hours at
+# the default and 14 at four threads.
+#
+# What contends was not diagnosed. Overridable rather than fixed, because the
+# shape of that curve belongs to this machine: on a two-core CI runner the
+# default is already below the turning point and forcing four would be worse.
+TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "4")
 
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
@@ -95,6 +120,138 @@ def read_record() -> list[Guard]:
     return guards
 
 
+def module_of(path: str) -> str | None:
+    """The module a changed source file's tests live under, if it has one.
+
+    A unit test lives beside the code it covers, so the tests belonging to
+    `src/a/b.rs` are named `a::b::...`. Anything that is not library source has
+    no module and answers None.
+
+    >>> module_of("src/application/allowed.rs")
+    'application::allowed'
+    >>> module_of("src/data/message_cache/mod.rs")
+    'data::message_cache'
+    >>> module_of("src/lib.rs") is None
+    True
+    >>> module_of("docs/changelog.md") is None
+    True
+    >>> module_of("tests/wired.rs") is None
+    True
+    """
+    path = path.replace("\\", "/")
+    if not path.startswith("src/") or not path.endswith(".rs"):
+        return None
+    module = path[len("src/") : -len(".rs")]
+    if module.endswith("/mod"):
+        module = module[: -len("/mod")]
+    if module == "lib":
+        return None
+    return module.replace("/", "::")
+
+
+def could_have_gone_stale(guard: "Guard", changed: list[str]) -> bool:
+    """Whether a change could have made this record wrong, either way round.
+
+    A record goes stale in two directions and only one of them is obvious.
+
+    **The break stops applying.** The guarded file changed, so the exact text
+    the record replaces may have moved or gone. This one announces itself the
+    next time anybody runs the record.
+
+    **The red set grows.** A test was added that reaches the rule the record is
+    about, so the record now names too few and *nothing fails*. That is the
+    silent one, and it is the direction that caught this project four times in
+    one phase. New tests live in the files a change touched, so a record whose
+    red set already names a test in one of those modules is a record that
+    change could have widened.
+
+    This is a candidate set, not a proof. A new test in a module the record has
+    never named can still redden it, and no reading of the record can predict
+    that. Only the full sweep can, and the full sweep is hours.
+
+    >>> about_allowed = Guard(
+    ...     name="the constant that changes nothing still reads mail",
+    ...     file=ROOT / "src/application/allowed.rs",
+    ...     before="reading: true",
+    ...     after="reading: false",
+    ...     red=("application::allowed::tests::test_a",
+    ...          "application::mail_controller::tests::test_b"),
+    ... )
+
+    The guarded file itself changed, so the break may no longer apply:
+
+    >>> could_have_gone_stale(about_allowed, ["src/application/allowed.rs"])
+    True
+
+    A different file changed, and this record already names a test in it. New
+    tests there could reach the same rule, which is the silent direction:
+
+    >>> could_have_gone_stale(about_allowed, ["src/application/mail_controller.rs"])
+    True
+
+    Nothing this record has ever mentioned:
+
+    >>> could_have_gone_stale(about_allowed, ["src/presentation/wx_compose.rs"])
+    False
+    >>> could_have_gone_stale(about_allowed, ["docs/changelog.md"])
+    False
+
+    A record measured against an integration target, and that target changed:
+
+    >>> about_house_style = Guard(
+    ...     name="no page names a version the code does not ship",
+    ...     file=ROOT / "README.md",
+    ...     before="a",
+    ...     after="b",
+    ...     red=("test_no_dashes_that_should_be_punctuation",),
+    ...     suite=("--test", "house_style"),
+    ... )
+    >>> could_have_gone_stale(about_house_style, ["tests/house_style.rs"])
+    True
+    >>> could_have_gone_stale(about_house_style, ["tests/wired.rs"])
+    False
+    """
+    paths = [path.replace("\\", "/") for path in changed]
+    guarded = str(guard.file.relative_to(ROOT)).replace("\\", "/")
+    if guarded in paths:
+        return True
+
+    for path in paths:
+        module = module_of(path)
+        if module and any(name.startswith(f"{module}::") for name in guard.red):
+            return True
+        if guard.suite[0] == "--test" and path == f"tests/{guard.suite[1]}.rs":
+            return True
+    return False
+
+
+def files_changed_since(ref: str) -> list[str]:
+    """What this branch has changed, as paths relative to the repository root.
+
+    The one place this script reads git. It still changes nothing through git:
+    a broken file is put back from the bytes that were copied aside, never by
+    checking it out, for the reason the module docstring gives.
+    """
+    finished = subprocess.run(
+        ["git", "diff", "--name-only", f"{ref}...HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if finished.returncode != 0:
+        raise Wrong(
+            f"git could not say what changed since {ref!r}:\n"
+            f"{finished.stderr.strip()}"
+        )
+    changed = [line.strip() for line in finished.stdout.splitlines() if line.strip()]
+    if not changed:
+        raise Wrong(
+            f"nothing has changed since {ref!r}, so there is no branch here to "
+            "check. Name the ref this branch came from."
+        )
+    return changed
+
+
 def why_no_test_was_named(status: int, said: str) -> str:
     """Why a run named no test, saying only the part that is known.
 
@@ -146,7 +303,7 @@ def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
     Almost always the library.
     """
     finished = subprocess.run(
-        ["cargo", "test", *suite],
+        ["cargo", "test", *suite, "--", f"--test-threads={TEST_THREADS}"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -289,6 +446,12 @@ def main() -> int:
         nargs="?",
         help="measure one guard, matched on any part of its name",
     )
+    parsing.add_argument(
+        "--touched-by",
+        metavar="REF",
+        help="only the records this branch could have made stale since REF, "
+        "which is what a merge needs and is minutes rather than hours",
+    )
     asked = parsing.parse_args()
 
     try:
@@ -302,6 +465,32 @@ def main() -> int:
         if not guards:
             print(f"\nNo guard is named anything like {asked.only!r}.\n")
             return 1
+
+    if asked.touched_by:
+        try:
+            changed = files_changed_since(asked.touched_by)
+        except Wrong as wrong:
+            print(f"\n{wrong}\n")
+            return 1
+        whole = len(guards)
+        guards = [g for g in guards if could_have_gone_stale(g, changed)]
+        # Said out loud, because a run that quietly measured 14 of 536 and
+        # printed a clean result would read as a clean sweep. It is not one,
+        # and the sentence below is the only place anybody learns that.
+        print(
+            f"{how_many(len(changed), 'file')} changed since {asked.touched_by}. "
+            f"Measuring {len(guards)} of {whole} records: the ones those files "
+            "could have made stale.\n"
+            "This is a candidate set, not a sweep. A test added in a module a "
+            "record has never named can still redden it, and no reading of the "
+            "record predicts that. Only the whole run does, and it is hours.\n"
+        )
+        if not guards:
+            print(
+                "No record could have been disturbed by these files, so none "
+                "was measured. That is an answer, not a clean sweep.\n"
+            )
+            return 0
 
     header = (
         "== 1 guard, one build and one run =="

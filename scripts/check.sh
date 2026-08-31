@@ -196,6 +196,18 @@ if [ "$mode" = "affected" ]; then
     exit 0
 fi
 
+# How many threads the suite runs on, which is a measurement rather than a
+# preference. Measured 2026-08-31 on 24 logical cores, running the 5,837-test
+# library suite: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s,
+# and the harness default of one per core 196s. The suite is contended rather
+# than compute-bound, so the default is the worst of the five and more than
+# twice the cost of the best. What contends was not diagnosed.
+#
+# Overridable because that curve belongs to this machine. On a two-core CI
+# runner the default is already below the turning point, and forcing four there
+# would be worse, so CI does not set it.
+threads="${WIXEN_TEST_THREADS:-4}"
+
 echo "== tests =="
 # --no-fail-fast because without it cargo stops at the first target that fails,
 # and the library is the first target. One failing test there means none of the
@@ -203,7 +215,7 @@ echo "== tests =="
 # started. That is how a broken guard record once reached main while this gate
 # looked like it had checked it. The run still fails; it just says everything
 # that is wrong rather than the first thing.
-cargo test --all-targets --no-fail-fast
+cargo test --all-targets --no-fail-fast -- --test-threads="$threads"
 
 echo "== release build =="
 cargo build --release

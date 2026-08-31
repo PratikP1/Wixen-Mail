@@ -273,10 +273,51 @@ change adds tests that reach a rule an existing record is about, so the record
 now names too few, and nothing fails. `01-02`'s writer record named 5 tests when
 it was written, 17 a day later, 21 the day after, and 31 by the end of the
 phase. So: **any change that adds tests near a rule re-measures that rule's
-record**, in the same commit. Run `scripts/guards.sh` unfiltered before you
-finish, rather than the filter you would naturally pick for your own subject.
-One record turned out to redden nine tests, two of them in a module nobody
-working on that feature would have filtered for.
+record.** The filter you would naturally pick for your own subject is not
+enough. One record turned out to redden nine tests, two of them in a module
+nobody working on that feature would have filtered for.
+
+**Guard re-measurement is not on the critical path.** This used to say "run
+`scripts/guards.sh` unfiltered before you finish", and that instruction put the
+whole library on a branch once per record. Plan 02-01 ran fourteen records, 49
+minutes of a 189-minute plan and the largest single cost in it. It also
+contradicted the rule that until a branch is about to be merged, only the tests
+reaching what changed need to run: that rule was written about commits, and
+nobody extended it to the thing that runs the full suite most often.
+
+The reason it can come off the critical path is worth stating, because it is
+what makes the rest safe. **A stale record does not break anything.** The build
+is green and the tests pass. What it means is that a guard is weaker than its
+record claims, and nobody has been told. That has to be caught reliably. It does
+not have to be caught before a merge.
+
+So: the executor does not run guards, and neither does the merge. After merging,
+run the records the branch could have disturbed, in the background:
+
+```bash
+scripts/guards.sh --touched-by <the commit the branch left main at>
+```
+
+That reads the diff and measures every record those files could have made stale,
+both ways round: the guarded file changed so the break may no longer apply, or a
+record already names a test in a module that changed so its red set may have
+grown. What it finds becomes a follow-up commit correcting the record.
+
+**Know what it costs before starting it.** For plan 02-01 that is 63 records of
+536, about 90 minutes. Narrowing the rule to modules that actually gained a test
+only reaches 52, because one large shared file gained tests and many records name
+a test in it, so there is no clever selection that makes this quick. The whole
+sweep is 536 records and about 15 hours, which is an overnight job rather than an
+impossible one since the thread setting halved it.
+
+Running the records in parallel across git worktrees was measured and rejected:
+two concurrent suites take 131s each against 88s alone, so the contention is on
+something shared rather than on the processor and crosses process boundaries.
+Five workers would buy about 1.8x for 43GB of disk and a five-minute build each.
+
+**It is a candidate set and it says so when it runs.** A test added in a module a
+record has never named can still redden it, and no reading of the record predicts
+that. Only the whole sweep does.
 
 **A census that asserts a floor is itself a guard, and it weakens others.** A
 constant saying "at least 8 of these exist" stops being load-bearing the moment
