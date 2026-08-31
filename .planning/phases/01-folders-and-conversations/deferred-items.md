@@ -443,3 +443,54 @@ arrival itself has never happened outside a test.
 flag on the coverage entry in `01-13-SUMMARY.md`.
 
 **Size:** none in code. One session with a screen reader.
+
+
+## Ten checks in tests/wired.rs read a prefix of wx_app.rs and cannot say so (found in 01-14)
+
+**Found during:** 01-14, task 1, by adding a test module partway through
+`src/presentation/wx_app.rs` and watching four unrelated integration tests fail.
+
+Ten checks in `tests/wired.rs` read that file's source and cut it with
+
+```rust
+let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+```
+
+That is not "the half that ships". It is "the file up to the first test module",
+and the two are the same string only while every test module sits at the end of
+the file. A module added at line 9,683 of 24,000 left those ten reading the
+first 9,600 lines.
+
+**Four of the ten failed loudly, and that was luck.** They call `body_of`, which
+panics when the signature it is looking for has gone, so they said "this guard is
+measuring nothing". The other six only use `contains`, so they went on passing
+over a third of the file and said nothing at all. Those six are the real defect:
+a check that has silently narrowed cannot be told from a check that has nothing
+to find.
+
+**What was done instead.** The new test module was moved to the foot of the file
+and a note left where it would naturally have gone, saying why. `the_window_itself`
+in `wx_app.rs` had exactly the same bug and was fixed properly, because it is
+inside the crate and can call `common::what_ships`, which is the one correct
+answer this tree already has and whose own module doc opens by naming this bug.
+
+**Why the ten are not fixed the same way.** `common::what_ships` is `#[cfg(test)]`,
+and an integration test links the library built without `cfg(test)`, so
+`tests/wired.rs` cannot reach it. Copying the parser into `wired.rs` would be a
+second copy of the thing whose whole point is being the only copy, and three
+wrong copies of it are what `what_ships` was written to replace.
+
+**What would fix it.** Make one correct answer reachable from both. The options,
+none of them free: put `what_ships` behind a cargo feature that dev builds turn
+on; move it to its own small crate that both depend on; or give up the release
+gating and make it a plain `pub mod`, which costs about sixty lines of pure
+string handling in the binary and puts a source-slicer in the library's public
+surface. That is a decision about the crate's shape, not a fix to make in
+passing, which is why it is here.
+
+**How it stays visible.** This entry, and the note in `wx_app.rs` where the test
+module would otherwise have gone, which is the place somebody will be standing
+when it next matters.
+
+**Size:** small to add the feature flag and change ten lines. The size is in
+deciding which of the three shapes the crate should have.
