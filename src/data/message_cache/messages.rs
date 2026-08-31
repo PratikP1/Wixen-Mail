@@ -818,6 +818,14 @@ impl MessageCache {
     /// [`Self::upsert_messages`] is the one to reach for when a sync has a
     /// batch in hand, which is the usual case.
     pub fn upsert_message(&self, incoming: &IncomingMessage) -> Result<i64> {
+        // Which conversation this belongs to, from this message alone. Held in
+        // a name rather than computed inside the parameter list, because the
+        // merge below needs the same answer and computing it twice is two
+        // places able to come to differ.
+        let conversation = crate::application::thread_identity::conversation_root(
+            &incoming.message_id,
+            incoming.refs_header.as_deref(),
+        );
         let id: i64 = self
             .conn
             .query_row(
@@ -897,18 +905,14 @@ impl MessageCache {
                         .pop_uidl
                         .as_ref()
                         .map(|_| chrono::Utc::now().to_rfc3339()),
-                    // Which conversation this belongs to, from this message
-                    // alone. Written here and nowhere else on purpose:
+                    // Written here and nowhere else on purpose:
                     // `file_message_here` is this method plus one UPDATE, so
                     // this one call already serves both ways a message reaches
                     // the cache. A second copy in the filing path is how the
                     // same message ends up threaded one way when it arrives
                     // and another when it is sent, which is the thing
                     // `threading::as_stored` says in its own doc comment.
-                    crate::application::thread_identity::conversation_root(
-                        &incoming.message_id,
-                        incoming.refs_header.as_deref(),
-                    ),
+                    &conversation,
                 ],
                 |row| row.get(0),
             )
@@ -919,7 +923,55 @@ impl MessageCache {
         // that could be listed and not found would be the worse half of the
         // gap this replaced.
         self.index_message_for_search(id)?;
+        self.merge_what_this_message_connects(incoming, &conversation)?;
         Ok(id)
+    }
+
+    /// Bring together the conversations an arriving message reveals to be one.
+    ///
+    /// THREAD-02. A message whose chain names two conversations that were
+    /// stored separately is the moment their separateness is disproved, and it
+    /// is the only moment: nothing else in the program ever re-asks.
+    ///
+    /// Here rather than at each place mail is stored, for the reason plan 01-02
+    /// gave for putting `conversation_root` here. Every door into the cache
+    /// goes through [`Self::upsert_message`] — a sync's batch, a POP download,
+    /// a copy of something sent, an imported mailbox — so one call serves all
+    /// of them and there is no second copy to come to differ.
+    ///
+    /// Returns how many messages moved, which is nought for almost every
+    /// arrival.
+    fn merge_what_this_message_connects(
+        &self,
+        incoming: &IncomingMessage,
+        conversation: &str,
+    ) -> Result<usize> {
+        let asking = crate::application::thread_identity::identifiers_worth_asking_about(
+            &incoming.message_id,
+            incoming.refs_header.as_deref(),
+        );
+        // No account means no such folder, in which case the insert above
+        // already failed on the foreign key. Nothing to merge either way.
+        let Some(account_id) = self.account_of_folder(incoming.folder_id)? else {
+            return Ok(0);
+        };
+        let found = self.threads_holding_any_of(&account_id, &asking)?;
+        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {
+            return Ok(0);
+        };
+        let moved =
+            self.reroot_threads(&account_id, &merge.roots_to_rewrite, &merge.winning_root)?;
+        // A count and how many conversations, never an identifier: a
+        // `Message-ID` carries a hostname and a local part, which is somebody's
+        // mail turning up in a log file.
+        if moved > 0 {
+            tracing::info!(
+                "An arriving message joined {} conversations into one, moving {} messages",
+                merge.roots_to_rewrite.len() + 1,
+                moved
+            );
+        }
+        Ok(moved)
     }
 
     /// Give a conversation id to every message stored before there was one.
@@ -973,6 +1025,58 @@ impl MessageCache {
             tracing::info!("Gave {} stored messages a conversation id", filled);
         }
         Ok(filled)
+    }
+
+    /// Which conversations this account already files any of these identifiers
+    /// under.
+    ///
+    /// Asked of the identifiers
+    /// [`crate::application::thread_identity::identifiers_worth_asking_about`]
+    /// picks out of an arriving message, and answered from
+    /// `idx_messages_message_id`, which plan 01-02 added for this. Every index
+    /// that existed before it begins with `folder_id`, and an index is searched
+    /// from its leftmost column, so none of them could serve a question that
+    /// does not know the folder.
+    ///
+    /// # Which conversation, not which root
+    ///
+    /// The question is deliberately "which conversation is this identifier
+    /// filed under", not "is this identifier the root of a conversation". A
+    /// chain names ancestors, and an ancestor is usually somewhere in the
+    /// middle of a conversation rather than at its head: a message whose own
+    /// chain named an earlier root is stored under that root and is not a root
+    /// itself. Asking only about roots would miss every merge revealed through
+    /// a message in the middle, which is the common shape rather than a corner.
+    ///
+    /// Scoped to one account. A root identifier is a `Message-ID` chosen by a
+    /// stranger and can collide, deliberately or otherwise, and merging two
+    /// accounts' conversations because of one is a disclosure rather than a
+    /// threading nicety (T-01-56).
+    pub fn threads_holding_any_of(
+        &self,
+        _account_id: &str,
+        _identifiers: &[String],
+    ) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    /// Move every message of these conversations into another one.
+    ///
+    /// The write half of a merge. Returns how many messages moved, so a caller
+    /// can decide what to repaint without asking the database the same question
+    /// twice.
+    ///
+    /// One `UPDATE` over an indexed column rather than a loop over rows, so a
+    /// chain that connects a very large conversation is one statement and not
+    /// one per message (T-01-57).
+    ///
+    /// Reaches every folder of the account, because a conversation is not a
+    /// folder's property: the losing conversation's messages sit in whatever
+    /// folders they were filed into, and rewriting only the folder being synced
+    /// would leave the same conversation under two names, which is the defect
+    /// the merge exists to remove.
+    pub fn reroot_threads(&self, _account_id: &str, _from: &[String], _to: &str) -> Result<usize> {
+        Ok(0)
     }
 
     /// Write a batch of arriving mail as one transaction.
@@ -2399,6 +2503,385 @@ mod tests {
             .iter()
             .find(|row| row.thread_id == thread)
             .unwrap_or_else(|| panic!("no conversation {thread} among {found:#?}"))
+    }
+
+    // ── Rethreading as mail arrives, THREAD-02 ──────────────────────────────
+
+    /// A message with an identifier and a chain of this test's choosing.
+    ///
+    /// `chain` is written the way a sender writes `References`, oldest first
+    /// and space separated, and `None` is a message that names no ancestors
+    /// and therefore starts a conversation of its own.
+    fn naming(
+        folder_id: i64,
+        uid: u32,
+        message_id: &str,
+        chain: Option<&str>,
+    ) -> super::IncomingMessage {
+        let mut message = incoming(folder_id, uid, "A message");
+        message.message_id = format!("<{message_id}>");
+        message.refs_header = chain.map(|chain| {
+            chain
+                .split_whitespace()
+                .map(|id| format!("<{id}>"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        });
+        message
+    }
+
+    /// Which conversation the cache says this stored message is in.
+    fn conversation_of(cache: &super::super::MessageCache, row: i64) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT thread_id FROM messages WHERE id = ?1",
+                params![row],
+                |found| found.get::<_, Option<String>>(0),
+            )
+            .expect("the message to be readable")
+            .unwrap_or_default()
+    }
+
+    /// How many separate conversations these stored messages are in.
+    ///
+    /// The assertion THREAD-02's merge criterion turns on: two trees left
+    /// separate is two, and merged is one. Counted rather than compared to a
+    /// name, so the test fails whichever of the two survived.
+    fn how_many_conversations(cache: &super::super::MessageCache, rows: &[i64]) -> usize {
+        let mut seen: Vec<String> = rows
+            .iter()
+            .map(|row| conversation_of(cache, *row))
+            .collect();
+        seen.sort();
+        seen.dedup();
+        seen.len()
+    }
+
+    #[test]
+    fn test_a_late_message_naming_two_conversations_merges_them_into_one() {
+        // THREAD-02's own criterion, and the test that must fail if the two
+        // trees are left separate. `a` and `c` each started a conversation and
+        // neither names the other; `x` says they are one.
+        let cache = fresh("merge_two_conversations");
+        let inbox = folder(&cache, "INBOX");
+
+        let a = cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+        let c = cache
+            .upsert_message(&naming(inbox, 2, "c@x", None))
+            .unwrap();
+        assert_eq!(
+            how_many_conversations(&cache, &[a, c]),
+            2,
+            "before the connecting message arrives these must be two conversations, \
+             or this test could not tell a merge from a starting state"
+        );
+
+        let x = cache
+            .upsert_message(&naming(inbox, 3, "x@x", Some("a@x c@x")))
+            .unwrap();
+
+        assert_eq!(
+            how_many_conversations(&cache, &[a, c, x]),
+            1,
+            "the connecting message left the two trees separate"
+        );
+        assert_eq!(
+            conversation_of(&cache, c),
+            "a@x",
+            "the surviving conversation is the one the chain names first, because \
+             the chain is oldest first"
+        );
+    }
+
+    #[test]
+    fn test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed() {
+        // A conversation is not a folder's property. Rewriting only the folder
+        // being synced leaves the same conversation under two names, which is
+        // the defect the merge exists to remove.
+        let cache = fresh("merge_across_folders");
+        let inbox = folder(&cache, "INBOX");
+        let archive = folder(&cache, "Archive");
+
+        let a = cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+        let c_here = cache
+            .upsert_message(&naming(inbox, 2, "c@x", None))
+            .unwrap();
+        let c_there = cache
+            .upsert_message(&naming(archive, 1, "c2@x", Some("c@x")))
+            .unwrap();
+        assert_eq!(
+            conversation_of(&cache, c_there),
+            "c@x",
+            "the message in the other folder starts out in the losing conversation"
+        );
+
+        let x = cache
+            .upsert_message(&naming(inbox, 3, "x@x", Some("a@x c@x")))
+            .unwrap();
+
+        assert_eq!(how_many_conversations(&cache, &[a, c_here, c_there, x]), 1);
+        assert_eq!(
+            conversation_of(&cache, c_there),
+            "a@x",
+            "the message filed in another folder was left behind by the merge"
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_in_another_account_is_never_merged_into_this_one() {
+        // T-01-56. A root identifier is a `Message-ID` a stranger chose and
+        // can collide, deliberately or otherwise. Merging two accounts'
+        // conversations on one is a disclosure, not a threading nicety.
+        let cache = fresh("merge_stays_in_one_account");
+        let mine = folder(&cache, "INBOX");
+        let theirs = folder_of("other", &cache, "INBOX");
+
+        let a = cache.upsert_message(&naming(mine, 1, "a@x", None)).unwrap();
+        let c = cache.upsert_message(&naming(mine, 2, "c@x", None)).unwrap();
+        let elsewhere = cache
+            .upsert_message(&naming(theirs, 1, "c3@x", Some("c@x")))
+            .unwrap();
+
+        let x = cache
+            .upsert_message(&naming(mine, 3, "x@x", Some("a@x c@x")))
+            .unwrap();
+
+        assert_eq!(
+            how_many_conversations(&cache, &[a, c, x]),
+            1,
+            "this account's own merge must still happen, or the account scoping \
+             has been tested by breaking the feature"
+        );
+        assert_eq!(
+            conversation_of(&cache, elsewhere),
+            "c@x",
+            "the other account's conversation was rewritten by this account's mail"
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time() {
+        // Pitfall 6's agreement, driven through the real storage path rather
+        // than only through the pure function.
+        let cache = fresh("merge_batch_agrees");
+        let batched = folder(&cache, "Batched");
+        let singly = folder(&cache, "Singly");
+
+        let as_written = |folder_id: i64| {
+            [
+                naming(folder_id, 1, "a@x", None),
+                naming(folder_id, 2, "c@x", None),
+                naming(folder_id, 3, "x@x", Some("a@x c@x")),
+            ]
+        };
+
+        let in_one_go = cache.upsert_messages(&as_written(batched)).unwrap();
+        let one_by_one: Vec<i64> = as_written(singly)
+            .iter()
+            .map(|message| cache.upsert_message(message).unwrap())
+            .collect();
+
+        let batched_ids: Vec<String> = in_one_go
+            .iter()
+            .map(|row| conversation_of(&cache, *row))
+            .collect();
+        let single_ids: Vec<String> = one_by_one
+            .iter()
+            .map(|row| conversation_of(&cache, *row))
+            .collect();
+
+        assert_eq!(batched_ids, vec!["a@x", "a@x", "a@x"]);
+        assert_eq!(
+            batched_ids, single_ids,
+            "a batch and the same messages one at a time disagreed about which \
+             conversation they are in"
+        );
+    }
+
+    #[test]
+    fn test_the_same_message_arriving_twice_moves_nothing_the_second_time() {
+        let cache = fresh("merge_is_idempotent");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+        cache
+            .upsert_message(&naming(inbox, 2, "c@x", None))
+            .unwrap();
+
+        let connecting = naming(inbox, 3, "x@x", Some("a@x c@x"));
+        let conversation = crate::application::thread_identity::conversation_root(
+            &connecting.message_id,
+            connecting.refs_header.as_deref(),
+        );
+        let first = cache
+            .merge_what_this_message_connects(&connecting, &conversation)
+            .unwrap();
+        let again = cache
+            .merge_what_this_message_connects(&connecting, &conversation)
+            .unwrap();
+
+        assert!(
+            first > 0,
+            "the first delivery must move something, or the second moving nothing \
+             says only that nothing ever moves"
+        );
+        assert_eq!(again, 0, "the second delivery rewrote messages again");
+    }
+
+    #[test]
+    fn test_rerooting_says_how_many_messages_it_moved() {
+        let cache = fresh("reroot_counts");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&naming(inbox, 1, "c@x", None))
+            .unwrap();
+        cache
+            .upsert_message(&naming(inbox, 2, "c2@x", Some("c@x")))
+            .unwrap();
+        cache
+            .upsert_message(&naming(inbox, 3, "c3@x", Some("c@x c2@x")))
+            .unwrap();
+
+        assert_eq!(
+            cache
+                .reroot_threads("acc", &["c@x".to_string()], "a@x")
+                .unwrap(),
+            3,
+            "all three messages of the losing conversation move"
+        );
+        assert_eq!(
+            cache
+                .reroot_threads("acc", &["c@x".to_string()], "a@x")
+                .unwrap(),
+            0,
+            "there is nothing left in the losing conversation to move"
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_is_found_by_a_message_in_the_middle_of_it_not_only_its_root() {
+        // The correction the plan needed. A chain names ancestors, and an
+        // ancestor is usually in the middle of a conversation rather than at
+        // its head: `c2@x`'s own chain names `c@x`, so `c2@x` is stored under
+        // `c@x` and is not a root. A lookup that asked only about roots would
+        // find nothing here, and every merge revealed through a message in the
+        // middle would be missed.
+        let cache = fresh("merge_finds_the_middle");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&naming(inbox, 1, "c@x", None))
+            .unwrap();
+        let middle = cache
+            .upsert_message(&naming(inbox, 2, "c2@x", Some("c@x")))
+            .unwrap();
+        assert_eq!(
+            conversation_of(&cache, middle),
+            "c@x",
+            "the middle message is filed under the root and is not a root itself"
+        );
+
+        assert_eq!(
+            cache
+                .threads_holding_any_of("acc", &["c2@x".to_string()])
+                .unwrap(),
+            vec!["c@x".to_string()],
+            "asking about a message in the middle must name the conversation it is in"
+        );
+    }
+
+    #[test]
+    fn test_an_identifier_nothing_holds_names_no_conversation() {
+        // Paired with the test above, which is what stops this being green
+        // against a body that answers nothing to everything.
+        let cache = fresh("merge_finds_nothing");
+        let inbox = folder(&cache, "INBOX");
+        cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+
+        assert_eq!(
+            cache
+                .threads_holding_any_of("acc", &["a@x".to_string()])
+                .unwrap(),
+            vec!["a@x".to_string()]
+        );
+        assert!(
+            cache
+                .threads_holding_any_of("acc", &["nobody@x".to_string()])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            cache.threads_holding_any_of("acc", &[]).unwrap().is_empty(),
+            "asking about nothing must not answer with every conversation there is"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_identifier_does_not_join_every_other_one() {
+        // The cache stores "this message had no identifier" as an empty
+        // string, so an empty identifier reaching the lookup would match every
+        // such message in the account and merge strangers' mail together.
+        let cache = fresh("merge_ignores_the_nameless");
+        let inbox = folder(&cache, "INBOX");
+
+        let mut nameless = incoming(inbox, 1, "No identifier");
+        nameless.message_id = String::new();
+        let first = cache.upsert_message(&nameless).unwrap();
+
+        let mut also_nameless = incoming(inbox, 2, "Also none");
+        also_nameless.message_id = String::new();
+        let second = cache.upsert_message(&also_nameless).unwrap();
+
+        assert!(
+            cache
+                .threads_holding_any_of("acc", &[String::new()])
+                .unwrap()
+                .is_empty(),
+            "an empty identifier must name no conversation at all"
+        );
+        assert_eq!(conversation_of(&cache, first), "");
+        assert_eq!(conversation_of(&cache, second), "");
+    }
+
+    #[test]
+    fn test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names() {
+        // The ordinary case, and the positive half the absence assertions
+        // above lean on. Nothing here is a merge: the reply's own chain names
+        // the conversation and that is the whole of it.
+        let cache = fresh("arrival_joins");
+        let inbox = folder(&cache, "INBOX");
+        let started = cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+        let reply = cache
+            .upsert_message(&naming(inbox, 2, "b@x", Some("a@x")))
+            .unwrap();
+
+        assert_eq!(conversation_of(&cache, started), "a@x");
+        assert_eq!(conversation_of(&cache, reply), "a@x");
+        assert_eq!(how_many_conversations(&cache, &[started, reply]), 1);
+    }
+
+    /// A folder belonging to a named account, for the tests that need two.
+    fn folder_of(account_id: &str, cache: &super::super::MessageCache, path: &str) -> i64 {
+        cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: account_id.to_string(),
+                name: path.to_string(),
+                path: format!("{account_id}/{path}"),
+                folder_type: "Custom".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap()
     }
 
     fn folder(cache: &super::super::MessageCache, path: &str) -> i64 {
