@@ -96,6 +96,7 @@ pub struct SettingsWidgets {
     check_spelling_before_send: CheckBox,
     allow_mail: CheckBox,
     allow_pim: CheckBox,
+    allow_message_text: CheckBox,
     send_contact_changes_everywhere: CheckBox,
     check_spelling_as_you_type: CheckBox,
     // Calendar & PIM
@@ -241,7 +242,7 @@ pub fn build_settings_dialog(
 
     // ── Tab 4: what this application may change
     let permissions_panel = Panel::builder(&notebook).build();
-    let (allow_mail, allow_pim, send_contact_changes_everywhere) =
+    let (allow_mail, allow_pim, allow_message_text, send_contact_changes_everywhere) =
         build_permissions_tab(&permissions_panel, config);
     notebook.add_page(&permissions_panel, "Permissions", false, None);
 
@@ -385,6 +386,7 @@ pub fn build_settings_dialog(
         check_spelling_as_you_type,
         allow_mail,
         allow_pim,
+        allow_message_text,
         send_contact_changes_everywhere,
         default_reminder,
         day_starts,
@@ -1467,7 +1469,10 @@ const CONTACT_CHANGES_WHEN_THIS_IS_OFF: &str =
 /// now, and what was left is the two permissions and the contacts rule. Named
 /// for what it holds, because a tab named for something it does not contain is
 /// a tab nobody looks in for what it does.
-fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckBox, CheckBox) {
+fn build_permissions_tab(
+    panel: &Panel,
+    config: &AppConfig,
+) -> (CheckBox, CheckBox, CheckBox, CheckBox) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Spell Check
@@ -1523,6 +1528,49 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckB
     // run against a real account had nowhere to appear.
     sizer.add_sizer(&allowed_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // ── Message text ─────────────────────────────────────────────────────
+    //
+    // Its own section rather than a third box under the heading above, because
+    // a read is not a change. Under that heading it would be a box saying one
+    // thing inside a heading saying another, which is the drift the constant
+    // naming that heading was introduced to stop.
+    //
+    // The heading above is not named here in words on purpose: the guard that
+    // keeps it in one constant reads this file as text and cannot tell a
+    // comment quoting it from a screen writing it out.
+    //
+    // The heading is also not "Reading", which this dialog already uses for a
+    // tab about how messages are shown. The sentence a refused fetch says
+    // names this heading, and it has to name a heading that is on this page.
+    let reading_sec = section(panel, crate::application::allowed::READING_SECTION);
+
+    let allow_message_text = CheckBox::builder(panel)
+        .with_label(crate::application::allowed::MESSAGE_TEXT_LABEL)
+        .build();
+    // Both channels, from the one string. The label serves UI Automation,
+    // which is what Narrator reads from a native control's own text; this
+    // serves MSAA, which is what NVDA reads. Written as the label with its
+    // mnemonic marker taken out rather than typed again, because the two
+    // hand-written copies beside every other control on this page are exactly
+    // what drifted before.
+    set_accessible_name(
+        &allow_message_text,
+        &crate::application::allowed::MESSAGE_TEXT_LABEL.replace('&', ""),
+    );
+    allow_message_text.set_value(config.allowed_changes.reading);
+    reading_sec.add(&allow_message_text, 0, SizerFlag::All, 4);
+
+    let reading_note = StaticText::builder(panel)
+        .with_label(crate::application::allowed::MESSAGE_TEXT_NOTE)
+        .build();
+    set_accessible_name(
+        &reading_note,
+        crate::application::allowed::MESSAGE_TEXT_NOTE,
+    );
+    reading_sec.add(&reading_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    sizer.add_sizer(&reading_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     // ── Contacts ─────────────────────────────────────────────────────────
     //
     // Directly under the warning above, so somebody reading down the panel
@@ -1555,7 +1603,12 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> (CheckBox, CheckB
     sizer.add_sizer(&contacts_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (allow_mail, allow_pim, send_contact_changes_everywhere)
+    (
+        allow_mail,
+        allow_pim,
+        allow_message_text,
+        send_contact_changes_everywhere,
+    )
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -2084,15 +2137,13 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .map(|s| s.id.clone())
         .unwrap_or_default();
 
-    // What may be changed at a server. Read back as two answers, because they
-    // are two: sending cannot be undone, a task can be moved back.
+    // What may be done at a server. Read back as three answers, because they
+    // are three: sending cannot be undone, a task can be moved back, and
+    // fetching a message's text changes nothing there at all.
     cfg.allowed_changes = crate::application::allowed::Allowed {
         mail: w.allow_mail.get_value(),
         personal_information: w.allow_pim.get_value(),
-        // Carried through rather than written, because this screen has no
-        // control for it yet. A constant here would rewrite somebody's stored
-        // answer every time they opened Settings and pressed Save.
-        reading: cfg.allowed_changes.reading,
+        reading: w.allow_message_text.get_value(),
     };
     cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
 

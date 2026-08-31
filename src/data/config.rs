@@ -1755,6 +1755,60 @@ mod every_setting_is_acted_on {
     }
 
     #[test]
+    fn test_whether_message_text_may_be_fetched_is_offered_by_a_screen() {
+        // The companion the test below cannot be. That one reads field names
+        // out of `pub struct AppConfig`, and this setting is not one: it is a
+        // field inside `Allowed`, reached through `allowed_changes`, which is
+        // already offered. So the mirror guard passes whether or not any
+        // screen offers a control for reading, and would go on passing if the
+        // control were deleted tomorrow.
+        //
+        // Named rather than derived, because there is nothing to derive it
+        // from: a field on a nested type has no name in the list that test
+        // walks.
+        let settings_screen = what_ships_in(THE_SETTINGS_SCREEN);
+        assert!(
+            !settings_screen.is_empty(),
+            "the settings screen could not be read, so this proves nothing"
+        );
+
+        // The constants by name rather than by their text, because the screen
+        // names them rather than writing them out. That is the point of both:
+        // the heading a refusal sends somebody to, and the label they read
+        // when they get there, each exist once.
+        for named in ["READING_SECTION", "MESSAGE_TEXT_LABEL"] {
+            assert!(
+                settings_screen.contains(named),
+                "the settings screen does not name {named}, so whether message text may \
+                 be fetched is honoured all the way out to the server with no control \
+                 anybody can see or reach"
+            );
+        }
+
+        // And the control is wired at both ends. A box built from the right
+        // label, showing a fixed value and read back into nothing, would
+        // satisfy every line above this one.
+        assert!(
+            settings_screen.contains("set_value(config.allowed_changes.reading)"),
+            "the control does not show the stored answer, so it shows whatever it was \
+             built with"
+        );
+        assert!(
+            settings_screen.contains("reading: w."),
+            "the control's value is not read back into the configuration, so ticking it \
+             changes nothing"
+        );
+
+        // The heading is not the one the two write boxes sit under. A read is
+        // not a change, and the refusal sentence sends somebody to this
+        // heading by name.
+        assert_ne!(
+            crate::application::allowed::READING_SECTION,
+            crate::application::allowed::SETTINGS_SECTION
+        );
+    }
+
+    #[test]
     fn test_every_setting_somebody_can_change_is_offered_by_a_screen() {
         // The mirror of the test above, and the reason it is needed is that
         // the test above cannot ask this. It skips `config.rs` and

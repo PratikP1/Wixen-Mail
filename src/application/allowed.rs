@@ -195,7 +195,46 @@ pub const SETTINGS_SECTION: &str = "Allow Changes";
 /// Read by the settings screen and by `service::outward`'s read refusal, so
 /// the sentence somebody hears when a fetch is refused names the heading they
 /// will actually find.
-pub const READING_SECTION: &str = "Reading Mail";
+///
+/// Not "Reading Mail", which was the first answer and is the wrong one. The
+/// settings screen already has a tab headed "Reading", about how messages are
+/// shown. A refusal saying "turn on Reading Mail in Settings" would send
+/// somebody to that tab, where there is nothing of the kind, and this control
+/// is on the Permissions tab. That is the same failure `SETTINGS_SECTION`
+/// below records, one step further out: there the sentence and the heading
+/// differed by a word, here they would have differed by a page.
+pub const READING_SECTION: &str = "Message Text";
+
+/// The label on the box under [`READING_SECTION`].
+///
+/// Kept here rather than typed into the settings screen, for the reason
+/// [`EXPERIMENTAL_WARNING`] below gives: the labels that were typed there
+/// drifted from the accessible names beside them, and both had lost their line
+/// continuations. This is one string, so the box carries its own name on both
+/// channels and there is nothing to drift from.
+///
+/// Says what it permits and what it costs, in that order. The ampersand is the
+/// keyboard accelerator, on "F" for fetch, and it is on the label rather than
+/// set separately because a wxWidgets checkbox with a label of its own already
+/// reports that label to the accessibility tree.
+///
+/// It names the server, because the whole difference between this being on and
+/// off is whether anything leaves the machine to get the text of a message
+/// that is not already stored.
+pub const MESSAGE_TEXT_LABEL: &str =
+    "&Fetch the text of a message from the server when it is not already stored";
+
+/// What the box under [`READING_SECTION`] says beneath itself.
+///
+/// Says which way round it starts, because a box somebody finds ticked tells
+/// them nothing about whether that is the answer they were given or one they
+/// chose, and says what turning it off costs, because that is not obvious:
+/// mail already stored goes on being readable, and a search stops covering
+/// what is not.
+pub const MESSAGE_TEXT_NOTE: &str = "This is on unless you turn it off. Mail already stored on \
+     this machine stays readable either way. With it off, nothing fetches the text of a message \
+     that is not stored yet, so opening one of those and searching for words inside it will not \
+     find them.";
 
 /// The sentence a sync says when that setting is holding changes here.
 ///
@@ -572,6 +611,58 @@ mod tests {
         );
         assert!(EXPERIMENTAL_WARNING.contains("cannot be recalled"));
         assert!(EXPERIMENTAL_WARNING.contains("only copy"));
+    }
+
+    #[test]
+    fn test_the_message_text_box_can_be_reached_by_keyboard_and_says_what_it_costs() {
+        // The label is what somebody hears and what they press a letter to
+        // reach, and the note is the only thing that says which way round the
+        // box starts. A tick with no sentence under it cannot say that.
+        assert!(
+            MESSAGE_TEXT_LABEL.contains('&'),
+            "the box has no mnemonic, so it cannot be reached by keyboard from the tab: \
+             {MESSAGE_TEXT_LABEL}"
+        );
+        assert!(
+            MESSAGE_TEXT_LABEL.contains("server"),
+            "{MESSAGE_TEXT_LABEL}"
+        );
+
+        assert!(
+            MESSAGE_TEXT_NOTE.contains("on unless you turn it off"),
+            "the note does not say which way round it starts: {MESSAGE_TEXT_NOTE}"
+        );
+        assert!(
+            MESSAGE_TEXT_NOTE.contains("stays readable"),
+            "the note does not say what turning it off leaves alone, which is the part \
+             somebody weighing it needs: {MESSAGE_TEXT_NOTE}"
+        );
+    }
+
+    #[test]
+    fn test_the_message_text_sentences_read_as_sentences_rather_than_wrapped_literals() {
+        // The same failure `EXPERIMENTAL_WARNING` carries a test for, and the
+        // reason it does: a wrapped literal that loses its continuations keeps
+        // every space of the indenting, and these are read aloud. Runs of
+        // stray spaces are silence in the middle of a sentence.
+        for said in [MESSAGE_TEXT_LABEL, MESSAGE_TEXT_NOTE] {
+            assert!(!said.contains("  "), "{said}");
+        }
+    }
+
+    #[test]
+    fn test_a_refused_read_names_the_heading_the_box_is_actually_under() {
+        // The sentence and the heading are one string apart, which is the
+        // whole reason `READING_SECTION` exists rather than a literal on the
+        // screen. Somebody told to turn something on has to be told the words
+        // they will read when they get there.
+        let said = crate::service::outward::read_refusal("read the text of a message");
+
+        assert!(said.contains(READING_SECTION), "{said}");
+        assert!(
+            !said.contains(SETTINGS_SECTION),
+            "a refused read sends somebody to the heading about changing things: {said}"
+        );
     }
 
     #[test]
