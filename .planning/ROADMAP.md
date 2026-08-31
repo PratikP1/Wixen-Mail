@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   7. A message arriving into an open folder joins its thread without the folder being reopened, including the case where a late message merges two existing trees.
   8. The five settings this phase adds are each reachable and operable from a real settings screen by keyboard, with their state announced. A setting the model holds and no screen writes is what FEEDBACK-01 exists to fix; this phase must not add a sixth.
 
-**Plans**: 12/13 plans executed, one per wave. Two shared files, `guards/guards.toml` and `docs/changelog.md`, are touched by most plans under the same-commit rules, and `src/presentation/wx_app.rs` by most, so the plans are ordered rather than run in parallel.
+**Plans**: 14/14 plans executed, one per wave. Two shared files, `guards/guards.toml` and `docs/changelog.md`, are touched by most plans under the same-commit rules, and `src/presentation/wx_app.rs` by most, so the plans are ordered rather than run in parallel.
 
 Plans:
 **Wave 1**
@@ -109,6 +109,10 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion)*
 
 - [x] 01-13-PLAN.md — Rethread as mail arrives, including the two-tree merge (THREAD-02)
+
+**Wave 14** *(added 2026-08-31, after phase verification found criterion 3 undelivered)*
+
+- [x] 01-14-PLAN.md — The tree holds every account, and moving between them is a selection (criterion 3)
 
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-29 after the phase discussion. The original five described nesting a flat tree. What the discussion decided is in `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`, which is the authority on the detail; these criteria are what the phase is verified against. The phase also needs three IMAP verbs that do not exist in `src/service/protocols/imap.rs` today: CREATE, RENAME and DELETE mailbox.

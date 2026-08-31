@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-12-PLAN.md
-last_updated: "2026-08-31T03:27:14.418Z"
-last_activity: 2026-08-30
-last_activity_desc: "01-12 done: Thread View works. Ctrl+T collapses the message list to one row per conversation, kept per folder, and that item has been visible and greyed out since it was written. A row never opens out where it sits: Enter opens the conversation window, so the list stays flat and keeps reporting a set size a screen reader can trust. The switch loses neither the selection nor the sort, and switching back selects the messages that were selected rather than everything in their conversations. Delete on a conversation row names how many messages it will take before it takes them, and the fifth and last of the phase's settings says how far that reaches. Four documents said the feature was missing and all four are corrected. THREAD-01 ticked on the criterion as written; no screen reader has read one of these rows"
+stopped_at: Completed 01-14-PLAN.md
+last_updated: "2026-08-31T12:00:00.000Z"
+last_activity: 2026-08-31
+last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
 state_head: d567045c691e63f1786b477a07bf71e35ad81367
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 13
-  completed_plans: 12
+  total_plans: 14
+  completed_plans: 14
   percent: 0
 ---
 
@@ -27,12 +27,14 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 01 (Folders and conversations) — EXECUTING
-Plans: 13, one per wave, `01-01-PLAN.md` to `01-13-PLAN.md`. 38 tasks, of which
-35 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
+Phase: 01 (Folders and conversations) — EXECUTED, awaiting re-verification
+Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
+37 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
-Status: Executing Phase 01
+Status: All 14 plans executed. 01-14 was added on 2026-08-31 after the phase
+verification recorded criterion 3 as the one partial of eight, and it closes it.
+The phase wants re-verifying against that report.
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
 
@@ -69,20 +71,25 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-31 — 01-13 done, and with it phase 01: mail arriving into an open folder now joins its conversation and repaints the one row it changed, a late message that connects two conversations merges them everywhere they are filed, and the merge that is not done in the other direction has a passing test saying so rather than being left to be found
+Last activity: 2026-08-31 — 01-14 done: the sidebar shows every account at once, so two accounts that both have an Inbox are two rows a caller can tell apart, moving between them is arrow keys rather than a rebuild, and the folder you land on is read as its own account's
 
-Progress: 13 of 13 plans. Phase 01 is finished. The phase percentage above
-counts phases and this line counts plans, so the two have said different things
-about the same work all through this phase; the plan count read 7 while 11 were
-done, which is how long a number nothing recomputes can sit here being wrong.
+Progress: 14 of 14 plans. Every plan in phase 01 is executed. The phase
+percentage above counts phases and this line counts plans, so the two have said
+different things about the same work all through this phase; the plan count read
+7 while 11 were done, which is how long a number nothing recomputes can sit here
+being wrong.
+
+The suite is 5,818 unit as of `cargo test --lib` on 2026-08-31, with every other
+target green on `cargo test --all-targets` the same day. 01-14 added fifteen.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
-- Average duration: 1h 57m
-- Total execution time: 13h 38m
+- Total plans completed: 14
+- Average duration: not recomputed; the figures below predate 01-10 and nothing
+  recalculates them, which is the same fault the progress note above records
+- Total execution time: not recomputed, for the same reason
 
 **By Phase:**
 
@@ -134,6 +141,15 @@ ahead:
 
 - The message list stays native virtual mode, because only the native control gives UI
   Automation the real set size.
+
+- The folder tree holds every account at once, and whose mail a command acts on is taken from
+  the row under the cursor rather than from a separately held "open account". Those two were
+  the same answer while the tree drew one account's folders, and stopped being the moment it
+  drew them all (01-14).
+
+- Moving between accounts must stay a selection rather than a rebuild, guarded by a record
+  whose break is the wrong fix somebody would reach for. Rebuilding on selection would make
+  everything downstream agree and would cost five cache reads per account on every arrow key.
 
 - The cached mail database is not encrypted, and the docs say so. Phase 7 decides whether that
   changes.
@@ -275,8 +291,42 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-31T00:00:00.000Z
-Stopped at: Completed 01-13-PLAN.md, and with it every plan in phase 01
+Last session: 2026-08-31T12:00:00.000Z
+Stopped at: Completed 01-14-PLAN.md, the plan added to close the one gap
+verification found
+
+01-14 built the multi-account folder tree. Three things worth carrying.
+
+**The plan's account of the code was wrong in a way that would not have shown
+up.** It said twelve call sites divide into "the data changed" and "the account
+being looked at changed", and that the second kind must stop rebuilding. There
+are eleven, and all eleven are the first kind: nothing rebuilt the tree in
+response to an account switch, because nothing changed the looked-at account in
+a way that reached the tree. Carrying out the instruction faithfully would have
+meant classifying eleven sites, changing none, and reporting the criterion met.
+Count the members of every class a plan names, and treat zero as a finding.
+
+**Making hidden state visible turns every writer of it into a staleness bug.**
+Two fell out of task 1 and both are fixed: moving an account wrote the ordinal
+and redrew nothing, and selecting a folder read whichever account was open
+rather than the folder's own. Both were correct while the tree drew one account
+and became wrong the moment it drew them all. The plan enumerates readers; the
+new defects were in the writers.
+
+**Eleven source-reading checks in this tree cut a file at the first
+`#[cfg(test)]` and keep what is above.** That is "the file up to the first test
+module", not "the half that ships", and they agree only while every test module
+sits at the end. One was in `wx_app.rs` and now uses `what_ships`. Ten are in
+`tests/wired.rs` and cannot, because `what_ships` is `#[cfg(test)]` and an
+integration test links the library built without it. Four of those ten fail
+loudly when they narrow; six pass in silence over a third of the file. Written
+up in the phase's deferred items, with the three possible shapes of a fix.
+
+The cost of the change is stated in the summary and the changelog rather than
+buried: every one of the eleven redraws now reads five things per account
+instead of five in all, and syncs run on a timer.
+
+Before 01-14, this said:
 
 01-13 closed THREAD-02 and the phase. Four things it found that the plan had
 not, and the first two matter to anybody writing over this code.
