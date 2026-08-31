@@ -935,9 +935,9 @@ impl MessageCache {
     ///
     /// Here rather than at each place mail is stored, for the reason plan 01-02
     /// gave for putting `conversation_root` here. Every door into the cache
-    /// goes through [`Self::upsert_message`] — a sync's batch, a POP download,
-    /// a copy of something sent, an imported mailbox — so one call serves all
-    /// of them and there is no second copy to come to differ.
+    /// goes through [`Self::upsert_message`]: a sync's batch, a POP download,
+    /// a copy of something sent, an imported mailbox. One call serves all of
+    /// them and there is no second copy to come to differ.
     ///
     /// Returns how many messages moved, which is nought for almost every
     /// arrival.
@@ -1052,6 +1052,12 @@ impl MessageCache {
     /// stranger and can collide, deliberately or otherwise, and merging two
     /// accounts' conversations because of one is a disclosure rather than a
     /// threading nicety (T-01-56).
+    ///
+    /// Ordered, so the same database answers the same way twice. Nothing here
+    /// depends on which conversation comes back first, because the winner is
+    /// derived and not chosen from this list, and that is exactly why the
+    /// order should be defined: an arbitrary one would make a guard over this
+    /// pass or fail by luck.
     pub fn threads_holding_any_of(
         &self,
         account_id: &str,
@@ -1102,7 +1108,8 @@ impl MessageCache {
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE f.account_id = ?
                AND m.thread_id IS NOT NULL AND m.thread_id != ''
-               AND m.message_id IN ({placeholders})"
+               AND m.message_id IN ({placeholders})
+             ORDER BY m.thread_id"
         );
 
         let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(both_forms.len() + 1);

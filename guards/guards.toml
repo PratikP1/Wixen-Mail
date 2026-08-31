@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 336 records have arrived since and have not been through it.
+# 340 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9940,3 +9940,133 @@ red = [
     "presentation::view_state::tests::test_a_selection_of_nothing_survives_as_nothing",
     "presentation::view_state::tests::test_two_of_a_conversation_s_five_messages_come_back_as_those_two",
 ]
+
+[[guard]]
+name = "an arriving message and the conversation rule agree, because one of them is not consulted"
+file = "src/data/message_cache/messages.rs"
+# Pitfall 6 and D-39, which is the decision this whole module was built to
+# make unavailable to get wrong. The defect is an incremental join that adopts
+# the conversation id it happened to find, rather than the one the arriving
+# message's own chain names. Adoption disagrees with the derivation, so the
+# same set of messages comes out under different names depending on which
+# arrived first, and anything keyed on a conversation id is silently orphaned.
+#
+# The break is adoption, written the way somebody would write it: take the
+# conversation the lookup found and use that. It has to name a found one
+# deterministically to be worth recording, which is why the lookup orders its
+# answer, and `last` rather than `first` because a chain names its root first
+# and first would be right here by luck rather than by rule.
+#
+# Note what is NOT broken: `rejoin` still runs and still merges. This break
+# only changes which conversation wins, which is the point. A break that
+# stopped the merge altogether would prove the merge happens, not that it
+# agrees with the rule, and the record below already covers the merge.
+#
+# Measured by hand on 2026-08-31 against the whole library at 5804 tests: three
+# tests. Two of them are the ones worth having, and neither is about a merge
+# failing to happen. The batch one fails because a conversation stored as one
+# batch and the same messages stored one at a time settle on different names,
+# which is Pitfall 6 exactly: the answer depends on what else was in hand. The
+# cross-folder one fails because the conversation that wins is the wrong one,
+# so the rewrite moves the surviving tree instead of the losing one.
+#
+# A fourth test went red and is deliberately not named: the spellcheck test in
+# `data::config`, which fails about one whole-library run in five through a
+# Windows COM call made twice. It is recorded in this phase's deferred items
+# and it is not this break.
+red = [
+    "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
+    "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
+    "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
+]
+before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
+        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
+after = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
+        let conversation = found.last().map_or(conversation, String::as_str);
+        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
+
+[[guard]]
+name = "a merge reaches the losing conversation in every folder it is filed in"
+file = "src/data/message_cache/messages.rs"
+# THREAD-02. A conversation is not a folder's property: its messages sit in
+# whatever folders they were filed into, and the folder being synced is only
+# one of them. A rewrite that stops at that folder leaves the same conversation
+# under two names, which is the exact defect merging exists to remove, and it
+# leaves it in the half nobody was looking at.
+#
+# The break keeps the account scoping and takes one folder out of it, which is
+# what "only the folder being synced" amounts to. Deliberately not a break that
+# removes the rewrite: that would redden every merge test and prove only that
+# merging happens at all.
+#
+# Measured by hand on 2026-08-31 against the whole library at 5804 tests: two
+# tests. The second was not expected and is the better of the pair. The batch
+# test seeds two folders because it is comparing one storing path against
+# another, and one folder each is enough to catch a rewrite that stops at the
+# first: the two paths come out under different names, and the test that is
+# nominally about batching fails for a reason that is nothing to do with
+# batching.
+red = [
+    "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
+    "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
+]
+before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
+after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
+
+[[guard]]
+name = "a merge stays inside one account"
+file = "src/data/message_cache/messages.rs"
+# T-01-56. A conversation's root is a `Message-ID` a stranger chose, so it can
+# collide with another account's by accident or on purpose. Merging across
+# accounts on one is a disclosure: mail from one account appears inside a
+# conversation being read in another, and the thing that decided it was a
+# header somebody else wrote.
+#
+# The break keeps the parameter and stops it meaning anything, so the shape of
+# the statement and its bound values are untouched and only the scoping goes. A
+# break that dropped the clause outright would change the parameter arithmetic
+# and redden for a second reason.
+#
+# Measured by hand on 2026-08-31 against the whole library at 5804 tests: one
+# test, and one is right. The two accounts in that test share a conversation
+# root and nothing else, so no other test can see this clause at all: every
+# other merge test lives inside one account, where the clause is true whether
+# it is enforced or not.
+red = [
+    "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
+]
+before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
+after = """               AND ? IS NOT NULL\""""
+
+[[guard]]
+name = "an arrival repaints the rows that changed and not the ones that did not"
+file = "src/presentation/view_state.rs"
+# THREAD-02's criterion that rethreading on arrival "does not re-announce rows
+# the user is not on". The list is virtual, so it re-announces every row it is
+# told to refresh; repainting rows that did not change is therefore not waste,
+# it is the failure.
+#
+# The break is in the rule and not at the call site, for the reason the
+# neighbouring D-01 record gives: breaking the call site reddens a
+# source-reading test, which proves that a line changed and not that an answer
+# did. Here the rule says every row changed, which is what repainting the whole
+# list amounts to, and the call site is left exactly as it is.
+#
+# Measured by hand on 2026-08-31 against the whole library at 5804 tests: three
+# tests. The third is the one worth reading, and it is the same lesson the
+# selection record two entries above records: the test that asserts nothing is
+# repainted when nothing changed looks vacuous on its own, and it goes red here
+# because this break invents a repaint where there was none. A negative
+# assertion earns its place by going red under a break a positive one cannot
+# see. That test was green against the do-nothing body this rule was written
+# against, so without this record there would be nothing saying it checks
+# anything.
+red = [
+    "presentation::view_state::tests::test_a_conversation_growing_repaints_that_one_row",
+    "presentation::view_state::tests::test_a_merge_repaints_the_run_it_touched_and_not_the_whole_list",
+    "presentation::view_state::tests::test_nothing_changing_repaints_nothing_and_leaves_the_count_alone",
+]
+before = """        rows: (0..now.len())
+            .filter(|row| was.get(*row) != Some(&now[*row]))
+            .collect(),"""
+after = """        rows: (0..now.len()).collect(),"""
