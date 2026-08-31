@@ -1054,10 +1054,72 @@ impl MessageCache {
     /// threading nicety (T-01-56).
     pub fn threads_holding_any_of(
         &self,
-        _account_id: &str,
-        _identifiers: &[String],
+        account_id: &str,
+        identifiers: &[String],
     ) -> Result<Vec<String>> {
-        Ok(Vec::new())
+        // Asking about nothing must answer nothing. Without this the `IN ()`
+        // below is not merely empty, it is a syntax error, and the message
+        // that arrived with no identifiers at all would fail to store.
+        let wanted: Vec<&String> = identifiers.iter().filter(|id| !id.is_empty()).collect();
+        if wanted.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Each identifier is asked about twice, bare and in angle brackets,
+        // because the column holds both and which one depends on where the
+        // message came from. A synced message goes through `mail_parser`,
+        // which strips the brackets, so `filing::a_row_filed_here` and the
+        // sync both store a bare identifier. A draft this program files does
+        // not: `draft_message::message_id_for` builds
+        // `<draft-...@wixen-mail.invalid>` and it is stored as written.
+        // `thread_id` is bare in every row, because `conversation_root` strips
+        // on the way in, so matching only the bare form would silently miss
+        // every conversation rooted at something this program filed.
+        //
+        // Widened here rather than by rewriting the column. What shipped is
+        // not rewritten (CLAUDE.md), and this is a question about how the
+        // column was written rather than about threading, so it belongs with
+        // the query and not with the rule.
+        //
+        // One placeholder per form, so every value a stranger wrote arrives as
+        // a bound parameter and nothing is interpolated. Two per identifier
+        // against a cap of 64 is 128, plus the account: inside SQLite's limit
+        // of 999 with room to spare.
+        let both_forms: Vec<String> = wanted
+            .iter()
+            .flat_map(|id| [(*id).clone(), format!("<{id}>")])
+            .collect();
+        let placeholders = std::iter::repeat_n("?", both_forms.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Every placeholder is anonymous, and that is not a style choice.
+        // SQLite gives a bare `?` the next unused index, so one numbered
+        // parameter beside a generated list of bare ones silently renumbers
+        // whatever follows the list, and the query then reads a value out of
+        // the wrong slot while still running.
+        let asking = format!(
+            "SELECT DISTINCT m.thread_id FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE f.account_id = ?
+               AND m.thread_id IS NOT NULL AND m.thread_id != ''
+               AND m.message_id IN ({placeholders})"
+        );
+
+        let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(both_forms.len() + 1);
+        values.push(&account_id);
+        for identifier in &both_forms {
+            values.push(identifier);
+        }
+
+        let mut statement = self
+            .conn
+            .prepare_cached(&asking)
+            .map_err(|e| Error::Other(format!("Failed to ask which conversations: {e}")))?;
+        statement
+            .query_map(values.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Failed to read which conversations: {e}")))?
+            .collect::<std::result::Result<Vec<String>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read a conversation: {e}")))
     }
 
     /// Move every message of these conversations into another one.
@@ -1075,8 +1137,36 @@ impl MessageCache {
     /// folders they were filed into, and rewriting only the folder being synced
     /// would leave the same conversation under two names, which is the defect
     /// the merge exists to remove.
-    pub fn reroot_threads(&self, _account_id: &str, _from: &[String], _to: &str) -> Result<usize> {
-        Ok(0)
+    pub fn reroot_threads(&self, account_id: &str, from: &[String], to: &str) -> Result<usize> {
+        let losing: Vec<&String> = from
+            .iter()
+            .filter(|old| !old.is_empty() && old.as_str() != to)
+            .collect();
+        if losing.is_empty() || to.is_empty() {
+            return Ok(0);
+        }
+
+        let placeholders = std::iter::repeat_n("?", losing.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Anonymous throughout, for the reason `threads_holding_any_of` gives.
+        // The account comes last because it comes after the generated list.
+        let rewrite = format!(
+            "UPDATE messages SET thread_id = ?
+             WHERE thread_id IN ({placeholders})
+               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)"
+        );
+
+        let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(losing.len() + 2);
+        values.push(&to);
+        for old in &losing {
+            values.push(old);
+        }
+        values.push(&account_id);
+
+        self.conn
+            .execute(&rewrite, values.as_slice())
+            .map_err(|e| Error::Other(format!("Failed to join the conversations: {e}")))
     }
 
     /// Write a batch of arriving mail as one transaction.
