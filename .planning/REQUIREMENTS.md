@@ -120,7 +120,7 @@ write path added by this milestone passes through that gate.
 
 ### Conversations
 
-- [ ] **THREAD-01**: Collapse the message list to one row per conversation.
+- [x] **THREAD-01**: Collapse the message list to one row per conversation.
   - Evidence: `src/presentation/wx_app.rs` line 102 declares `ID_THREAD_VIEW`, line 5026 adds
     the menu item, and line 582 calls `item.enable(false)` on it. The command exists and is
     switched off. Threading itself is built: `src/application/threading.rs` and
@@ -947,7 +947,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOLDER-01 | Phase 1 | Complete |
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
-| THREAD-01 | Phase 1 | Pending |
+| THREAD-01 | Phase 1 | Complete |
 | THREAD-02 | Phase 1 | Pending |
 | SEARCH-01 | Phase 2 | Pending |
 | SEARCH-02 | Phase 2 | Pending |

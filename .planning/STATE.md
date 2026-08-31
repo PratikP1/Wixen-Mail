@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-11-PLAN.md
-last_updated: "2026-08-31T01:12:44.363Z"
+stopped_at: Completed 01-12-PLAN.md
+last_updated: "2026-08-31T03:27:14.418Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-11 done: a conversation is named after its oldest message with the reply and forward markers off, in seventeen languages, and the compose box no longer grows a second marker onto a subject that has one. A conversation is counted across the whole account rather than the folder being read, with Gmail's All Mail left out so nothing doubles, and how far it reaches is the fourth of the five settings. Every column answers about the whole conversation from one rule that serves both the cell and the sort, and the Thread column says '5 messages, 2 unread' instead of a mail server identifier. THREAD-01 advanced; the collapsed list itself is 01-12"
-state_head: ca880eba5e809315717f34f7a0c76a0658aa18ca
+last_activity_desc: "01-12 done: Thread View works. Ctrl+T collapses the message list to one row per conversation, kept per folder, and that item has been visible and greyed out since it was written. A row never opens out where it sits: Enter opens the conversation window, so the list stays flat and keeps reporting a set size a screen reader can trust. The switch loses neither the selection nor the sort, and switching back selects the messages that were selected rather than everything in their conversations. Delete on a conversation row names how many messages it will take before it takes them, and the fifth and last of the phase's settings says how far that reaches. Four documents said the feature was missing and all four are corrected. THREAD-01 ticked on the criterion as written; no screen reader has read one of these rows"
+state_head: d567045c691e63f1786b477a07bf71e35ad81367
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -71,7 +71,10 @@ which the newest, 5,269, was the unit count wearing the label of the total. The 
 
 Last activity: 2026-08-30 — 01-07 done: the human gate was returned rather than answered and came back with three corrections, the five local folders are now one each, and the merge reuses the mover that already existed rather than the second one the plan asked for
 
-Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
+Progress: 12 of 13 plans. The phase percentage above is 0 because no phase is
+finished, and this line counts plans, so the two say different things about the
+same work. The plan count read 7 while 11 were done, which is how long a number
+nothing recomputes can sit here being wrong.
 
 ## Performance Metrics
 
@@ -116,6 +119,7 @@ Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 | Phase 01 P08 | 2h 5m | 3 tasks | 13 files |
 | Phase 01 P09 | one session | 3 tasks | 11 files |
 | Phase 01 P11 | 3h 5m | 3 tasks | 12 files |
+| Phase 01 P12 | 4h 5m | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -184,6 +188,12 @@ ahead:
 - [Phase 01]: The Subject column's conversation sort calls a Rust function registered on the SQLite connection, because a chain of markers in seventeen languages has no SQL expression
 - [Phase 01]: conversations_in takes an order_by so the sort expression has a caller and the agreement between a cell and its sort is run rather than described
 - [Phase 01]: The all-mail exclusion applies only to the account-wide reach, because counting one folder cannot double anything
+- [Phase 01]: 01-12: the message list collapses to one row per conversation, per folder, and Thread View is no longer a disabled menu item
+- [Phase 01]: 01-12: opening a folder row no longer deletes its tree_state row outright, because the view D-09 stores there would have gone with it the first time somebody expanded the folder
+- [Phase 01]: 01-12: the count the virtual list is told has one writer, because that number is the set size UI Automation reports and a second writer is a wrong announcement nobody can see
+- [Phase 01]: 01-12: the selection is held across a view switch rather than recomputed, because a conversation cannot say which of its messages was chosen
+- [Phase 01]: 01-12: a subtree is read from parent_id and never from a path, because the hierarchy separator is not persisted
+- [Phase 01]: 01-12: a conversation row confirms a delete where a single message does not, because its contents are off screen and the column that would say how many can be switched off
 
 ### Pending Todos
 
@@ -265,8 +275,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-31T01:12:34.753Z
-Stopped at: Completed 01-11-PLAN.md
+Last session: 2026-08-31T03:27:11.408Z
+Stopped at: Completed 01-12-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
