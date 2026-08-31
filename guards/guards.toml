@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 334 records have arrived since and have not been through it.
+# 336 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9115,13 +9115,19 @@ file = "src/data/message_cache/messages.rs"
 # made it read like working infrastructure. This break puts it back to that:
 # the column, the sort and the tests all still exist, and nothing fills it.
 #
-# Measured by hand on 2026-08-30 against the whole library, 5310 tests, and
-# again the same day at 5674 after plan 01-11. Five tests became seventeen,
-# and the reason is worth writing down rather than just the number: 01-11 built
-# a conversation listing that groups on this column, so twelve tests about
-# counting and naming conversations now depend on the writer as well. The
-# record was measured again the moment the run said it had fallen behind, which
-# is the whole point of the run asking in both directions.
+# Measured by hand on 2026-08-30 against the whole library, 5310 tests, then
+# again the same day at 5674 after plan 01-11, and a third time at 5761 after
+# plan 01-12. Five tests became seventeen and then twenty-one, and the reasons
+# matter more than the numbers. 01-11 built a conversation listing that groups
+# on this column, so twelve tests about counting and naming conversations came
+# to depend on the writer. 01-12 built what a collapsed conversation row acts
+# on, which reads the same column, so four more did: three about how far a
+# delete reaches and one about a deleted conversation coming back whole.
+#
+# Three measurements, two of them prompted by the run saying the record had
+# fallen behind rather than by anybody remembering to check. That is the whole
+# point of it asking in both directions, and this record is now the clearest
+# example in the file of a guard that would have quietly shrunk otherwise.
 #
 # The one worth having is still `test_sorting_by_thread_groups_a_conversation`:
 # the Thread column's sort has always been "m.thread_id", so with the writer
@@ -9137,16 +9143,20 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_of_one_message_counts_one",
     "data::message_cache::messages::tests::test_a_conversation_split_across_two_folders_counts_the_same_from_either",
     "data::message_cache::messages::tests::test_a_conversation_that_does_not_touch_this_folder_is_not_listed",
+    "data::message_cache::messages::tests::test_a_deleted_conversation_comes_back_whole_and_not_in_part",
     "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
     "data::message_cache::messages::tests::test_a_hostile_reference_chain_is_stored_and_read_back_unchanged",
     "data::message_cache::messages::tests::test_a_message_a_sync_stores_carries_its_conversation_id",
+    "data::message_cache::messages::tests::test_a_message_already_deleted_is_not_reached_again",
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
     "data::message_cache::messages::tests::test_sorting_by_a_column_agrees_with_what_that_column_says",
     "data::message_cache::messages::tests::test_sorting_by_thread_groups_a_conversation",
+    "data::message_cache::messages::tests::test_the_messages_an_action_reaches_are_the_ones_its_row_counted",
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
+    "data::message_cache::messages::tests::test_the_two_reaches_take_different_numbers_of_messages",
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
     "data::message_cache::messages::tests::test_two_accounts_do_not_share_a_conversation",
     "data::message_cache::messages::tests::test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here",
@@ -9846,4 +9856,59 @@ after = """               AND (?3 = 0 OR ?3 = 1)"""
 red = [
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
+]
+
+[[guard]]
+# D-01 and threat T-01-52. This one number is the whole of the accessibility
+# argument for keeping the message list a native virtual control. Virtual mode
+# means the control's size is whatever it is told, and that size is what UI
+# Automation reports, so it is what a screen reader says when it announces "3
+# of 40". Told the message count while forty conversation rows are on screen, it
+# announces a mailbox five times the size of the one being read, and nothing on
+# screen looks wrong to anybody who can see it.
+#
+# The break is in the rule rather than at the call site. Breaking the call site
+# instead only reddens a source-reading test, which proves that a line changed
+# and not that an answer did.
+#
+# Measured by hand on 2026-08-30 against the whole library at 5761 tests: one
+# test. One, because the count in message mode is the same expression either
+# way, so the break cannot reach the other half of the rule.
+name = "the message list is told how many conversations it is showing"
+file = "src/presentation/view_state.rs"
+before = """        Showing::Conversations => conversations,"""
+after = """        Showing::Conversations => messages,"""
+red = [
+    "presentation::view_state::tests::test_the_count_in_conversation_mode_is_the_conversation_count",
+]
+
+[[guard]]
+# D-11. Switching to conversations and back must give exactly the messages that
+# were selected, and the obvious implementation loses it: a conversation cannot
+# say which of its messages was chosen, so recomputing the message selection
+# from the conversation selection turns two of five into five. Somebody who
+# picked two messages and pressed Delete would destroy three they never picked.
+#
+# The break is that recomputation, written as what it really amounts to: every
+# row of the list that the kept conversations cover. It is deliberately not a
+# body that returns nothing, because an empty answer is the shape an absence
+# assertion is already vacuously green against.
+#
+# Measured by hand on 2026-08-30 against the whole library at 5761 tests: two
+# tests. The second is the one that reads as vacuous on its own, an empty
+# selection surviving as empty, and it is red here because this break invents a
+# selection where there was none. That is the pairing paying off rather than a
+# coincidence: a negative assertion earns its place by going red under a break
+# that a positive one cannot see.
+name = "switching the view back selects the messages that were selected, not their whole conversations"
+file = "src/presentation/view_state.rs"
+before = """    let mut rows: Vec<usize> = kept
+        .messages()
+        .iter()
+        .filter_map(|chosen| message_ids_in_row_order.iter().position(|id| id == chosen))
+        .collect();"""
+after = """    let mut rows: Vec<usize> = (0..message_ids_in_row_order.len()).collect();"""
+red = [
+    "presentation::view_state::tests::test_a_selection_of_nothing_survives_as_nothing",
+    "presentation::view_state::tests::test_two_of_a_conversation_s_five_messages_come_back_as_those_two",
 ]

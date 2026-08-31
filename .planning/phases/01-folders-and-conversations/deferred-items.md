@@ -296,3 +296,30 @@ section.
 
 **Size:** none here. It is 01-12's work.
 
+
+## Folder management sits under "What does not work" and describes work that does (found in 01-12)
+
+`docs/IMPLEMENTATION_STATUS.md` has a **Folder management** paragraph under the
+heading `## What does not work`. Everything it describes is built and was built
+by this phase: making, renaming, moving and deleting a folder in 01-04, marking
+one read and emptying it in 01-09, and the two settings that decide how far
+those reach in 01-06.
+
+Only its last sentence justifies the placement, and it is a different claim:
+"Nothing on the server side of any of this has run against a real mail server."
+That is true of every write in the program and has its own entry two paragraphs
+below, **Anything that writes, against a real account**.
+
+**Why it is not fixed here.** Moving it means deciding what the heading means.
+Read as "not built", the paragraph is in the wrong place. Read as "not proven",
+so is most of what is under `## What works`, including the provider sync
+paragraph that ends with the same sentence. The document needs one answer to
+that question rather than a paragraph moved, and choosing it is a decision
+about how this file reports an unproven feature.
+
+**How it stays visible.** This entry. Nothing checks the placement of a
+paragraph under a heading, which is why it went unnoticed after 01-09 rewrote
+the text and left it where it was.
+
+**Size:** small to move the paragraph, medium to settle what the two headings
+mean and re-sort the file against that.

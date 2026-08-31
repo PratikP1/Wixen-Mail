@@ -59,10 +59,17 @@ subscription feeds. All are reachable from the menus, a change made here is
 pushed back when Allow Changes permits it, and a repeating event is shown on
 the days it lands on. None of it has been exercised against a live account.
 
-## What does not work
+**Threaded view.** Ctrl+T on the View menu collapses the message list to one row
+per conversation, and the view is kept per folder. A row says what the
+conversation is about and how many messages and unread messages it holds, and
+every column answers about the whole conversation. A row never opens out where
+it sits: Enter on it opens the conversation window, so the list stays flat and
+keeps reporting a set size a screen reader can trust. Switching the view keeps
+the selection and the sort. Delete on a conversation row names the number of
+messages it will take before it takes them. What no test can say is what a
+screen reader reads for one of these rows; that is a listening pass.
 
-**Threaded view.** Present in the View menu and disabled. The data model carries
-thread identifiers; nothing groups by them.
+## What does not work
 
 **Folder management.** A folder can be made on the server, renamed there, moved
 under a different folder or back out to the top level, and deleted along with

@@ -91,10 +91,10 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Message List View
 - [x] Display message list with sortable columns
-- [ ] Thread view with conversation grouping. The Thread View item is on the
-      View menu and disabled: the data model carries the identifiers, and
-      nothing groups the list by them. Opening one conversation works. Press
-      Enter on a message to see the messages around it as a tree.
+- [x] Thread view with conversation grouping. Ctrl+T on the View menu collapses
+      the list to one row per conversation, kept per folder. A row never opens
+      out where it sits: Enter on it opens the conversation window, so the list
+      stays flat and keeps reporting a set size a screen reader can trust.
 - [x] Unread/starred message indicators
 - [x] Quick search/filter functionality
 

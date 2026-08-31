@@ -203,13 +203,42 @@ Related messages are grouped into a conversation using the `References` and
 `In-Reply-To` headers rather than subject matching, so "Re: lunch" from two
 strangers years apart is not folded into one conversation by mistake.
 
-A `Ctrl+T` toggle to collapse the message list itself to one row per
-conversation is in the View menu, and is not built yet: it is disabled, and
-says so rather than doing nothing silently.
+**Thread View**, `Ctrl+T` on the View menu, collapses the message list to one
+row per conversation. Each row says what the conversation is about, how many
+messages it holds and how many you have not read, and every other column
+answers about the whole conversation rather than about its newest message.
+Press `Ctrl+T` again to go back to one row per message.
 
-**To read a conversation today**, press `Enter` on a message that belongs to
-one. That opens the conversation as a tree; `Enter` on its first row opens
-the whole conversation as one document, with every message a real heading
+A conversation row does not open out where it sits. The list stays flat, which
+is what lets it tell your screen reader how many rows there really are, and a
+list that grew branches when you pressed a key could not say that. Press
+`Enter` on a conversation row to open the conversation window instead.
+
+The Thread column, the one that says how many messages and how many unread,
+appears in folders that hold a conversation of more than one message and stays
+out of folders where every message stands alone. If you show or hide it
+yourself in View, Columns, your choice wins from then on in that folder.
+
+Each folder remembers its own view, and a folder you have never set is flat.
+**Apply View To Other Folders**, on the same menu, gives your choice to the
+folders under this one, to every folder in this account, or to every folder in
+every account. It tells you which folders it will change and how many that is,
+and asks first.
+
+Switching the view keeps your selection and your sort. Switching to
+conversations selects the conversations holding the messages you had selected;
+switching back selects those messages again, not everything in their
+conversations.
+
+**Delete on a conversation row** asks first and names the number: "Delete 5
+messages in Quarterly report?". `Enter` answers no. How far it reaches is a
+setting on the Reading page: only the messages in the folder you are reading,
+which is what it does unless you change it, or every message in the
+conversation wherever it is filed.
+
+**To read one conversation**, press `Enter` on it, or on any message that
+belongs to one. That opens the conversation as a tree; `Enter` on its first row
+opens the whole conversation as one document, with every message a real heading
 you can move between with `H`, and `Enter` on any other row opens that one
 message alone. `Esc` from the tree goes back to the message list, on the row
 you came from. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md#conversations) has

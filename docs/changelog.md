@@ -58,6 +58,54 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Thread View works.** It is on the View menu, on Ctrl+T, and it has been
+  visible and greyed out since it was written. Turning it on collapses the
+  message list to one row per conversation. The row says what the conversation
+  is about, how many messages are in it and how many you have not read, in
+  those words, and every other column answers about the whole conversation
+  rather than about its newest message.
+
+  **A conversation row does not open out where it sits.** Pressing Enter on one
+  opens the conversation window, which is where the replies and their structure
+  already live. The list stays flat on purpose: it is what tells your screen
+  reader how many rows there really are, and a list that grew branches when you
+  pressed a key would stop being able to say that.
+
+  **The Thread column appears when it is worth having.** It shows up in a
+  folder that holds at least one conversation of more than one message, and
+  stays out of a folder where every message stands alone, because a column
+  saying "1 message, 0 unread" on every row is a sentence read aloud on every
+  arrow key. If you show or hide it yourself in View, Columns, your choice wins
+  from then on in that folder.
+
+  **Each folder remembers its own view.** A folder you have never set is flat.
+  Apply View To Other Folders, on the View menu, gives your choice to the
+  folders under this one, to every folder in this account, or to every folder
+  in every account. It says which folders it will change and how many that is
+  before it does anything, and asks first, because it replaces views you may
+  have set by hand. If there is nothing in reach it says so rather than asking
+  about a change to nothing.
+
+  **Switching the view loses nothing.** What you had selected is still selected
+  afterwards, in both directions: switching to conversations selects the
+  conversations holding your messages, and switching back selects the messages
+  you had, not everything in those conversations. The sort column and direction
+  do not change either, and the list is still sorted by what the rows are
+  showing you.
+
+- **Delete on a conversation row tells you how many messages it will take.** It
+  asks "Delete 5 messages in Quarterly report?" before anything happens, and
+  Enter answers no. A conversation row is a row whose contents are not on
+  screen, so the number is the only thing telling you the size of what you just
+  pressed.
+
+  A new setting on the Reading page says how far it reaches: only the messages
+  in the folder you are reading, which is what it does unless you change it, or
+  every message in the conversation wherever it is filed. The number in the
+  question is the number of messages that will actually go, and deleting a
+  conversation puts all of it in the Trash, so putting it back puts back the
+  whole conversation rather than one message of it.
+
 - **A conversation is now named after what it is about, and says how big it
   is.** Opening a conversation used to title it with whichever message your
   cursor happened to be on, so opening one from a reply read out "Re: Re:
