@@ -214,6 +214,36 @@ says so: that is the moment to measure that guard by hand again, not to edit the
 record until it applies. Add an entry the same way, by taking the break by hand
 first and writing down all of what really went red.
 
+**A record is a measurement with a date, and it perishes.** Phase 1 found four
+stale records, one that had fallen behind within the same day and one within the
+same session. The cause is always the same and never announces itself: a later
+change adds tests that reach a rule an existing record is about, so the record
+now names too few, and nothing fails. `01-02`'s writer record named 5 tests when
+it was written, 17 a day later, 21 the day after, and 31 by the end of the
+phase. So: **any change that adds tests near a rule re-measures that rule's
+record**, in the same commit. Run `scripts/guards.sh` unfiltered before you
+finish, rather than the filter you would naturally pick for your own subject.
+One record turned out to redden nine tests, two of them in a module nobody
+working on that feature would have filtered for.
+
+**A census that asserts a floor is itself a guard, and it weakens others.** A
+constant saying "at least 8 of these exist" stops being load-bearing the moment
+there are 9: with a spare above the floor, removing one gated write no longer
+trips the guard that counts them. That happened here, silently, and
+`scripts/guards.sh` was the only thing that saw it. When you add a member to
+anything a census counts, re-measure every record that reads that census.
+
+**A guard whose trigger is "a document mentions X" is disarmed by the workaround
+it recommends.** `test_no_status_page_names_a_version_the_code_does_not_ship`
+compares versions named in `README.md` and `docs/IMPLEMENTATION_STATUS.md`
+against the shipped one. Neither file names a version, so it iterates over
+nothing and passes unconditionally, and its own comment advises that a page
+wanting to stay out of the way should point at the changelog rather than name a
+number. Somebody took the advice and the check stopped checking. The version
+rule has now lapsed five times behind it. A guard that reads documents needs a
+companion proving the reading can see a violation when one exists; several
+guards here already carry one, and that is why.
+
 `application::filters`, `due`, `tagging` and `sign_off` are clean as of
 2026-08-01: 157 mutants, 141 caught, 16 that would not compile, none missed. It
 took three passes to get there, and what the first two found is the pattern
