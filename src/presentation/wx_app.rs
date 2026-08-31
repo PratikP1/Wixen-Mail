@@ -9560,6 +9560,238 @@ fn folders_in_the_tree(
         .collect())
 }
 
+/// Whose folders the tree holds: everybody's, not whichever account is open.
+///
+/// Roadmap criterion 3 for this phase is that two POP accounts stop showing two
+/// folders called `Inbox` with nothing to tell them apart. The only way a person
+/// tells them apart is to see both branches at once, so `folder_tree::rows`,
+/// which has taken a slice of accounts since 01-05, is finally given every one.
+///
+/// These tests go through `folder_tree_updates` rather than through
+/// `folder_tree::rows`, which 01-05 already proved multi-account as a property
+/// of itself. What was missing was never the row builder; it was the caller
+/// handing it a slice of exactly one. So the assertion has to start at the
+/// caller or it re-proves the half that already worked.
+#[cfg(test)]
+mod the_tree_holds_every_account {
+    use super::{UIUpdate, folder_tree, folder_tree_updates};
+    use crate::data::message_cache::{CachedFolder, MessageCache};
+    use crate::presentation::folder_tree::WhichRow;
+
+    fn an_account(id: &str, called: &str) -> crate::data::account::Account {
+        let mut account =
+            crate::data::account::Account::new(called.to_string(), format!("{id}@example.com"));
+        account.id = id.to_string();
+        account
+    }
+
+    fn an_inbox(account: &str) -> CachedFolder {
+        CachedFolder {
+            id: 0,
+            account_id: account.to_string(),
+            name: "Inbox".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        }
+    }
+
+    /// A cache holding two accounts, each with a folder called `Inbox`.
+    ///
+    /// Two POP accounts each keeping their own Inbox is the criterion's own
+    /// example, and it is the case that cannot be told apart from a flat list.
+    fn two_accounts_each_with_an_inbox(dir: &std::path::Path) -> MessageCache {
+        let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
+        for (id, called) in [("first", "Work"), ("second", "Home")] {
+            cache
+                .save_account(&an_account(id, called))
+                .expect("the account is stored");
+            cache
+                .save_folder(&an_inbox(id))
+                .expect("the inbox is stored");
+        }
+        cache
+    }
+
+    fn the_rows(updates: &[UIUpdate]) -> Vec<folder_tree::TreeRow> {
+        updates
+            .iter()
+            .find_map(|update| match update {
+                UIUpdate::FoldersLoaded(rows) => Some(rows.clone()),
+                _ => None,
+            })
+            .expect("the tree was rebuilt")
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_second_accounts_inbox_when_there_is_one() {
+        // Proving the measurement before believing an absence, and proving the
+        // fixture before believing the assertions below. A cache that stored
+        // neither account would fail every test here for the wrong reason, and
+        // a stored folder nothing reads back looks exactly like a tree that
+        // left it out.
+        let home = crate::common::temp_home::TempHome::named("wixen_two_accounts_", |dir| {
+            two_accounts_each_with_an_inbox(dir)
+        });
+        let stored = home.load_accounts().expect("the accounts read back");
+        assert_eq!(
+            stored.len(),
+            2,
+            "the fixture stored {} accounts",
+            stored.len()
+        );
+        for id in ["first", "second"] {
+            let folders = home
+                .get_folders_for_account(id)
+                .expect("the folders read back");
+            assert_eq!(
+                folders.len(),
+                1,
+                "{id} has {} folders stored",
+                folders.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_both_accounts_have_a_branch_when_one_of_them_is_open() {
+        // The whole of the gap phase verification found. `folder_tree::rows`
+        // takes a slice and was only ever handed one account, so a person with
+        // two accounts could see one branch and had to infer which.
+        let home = crate::common::temp_home::TempHome::named("wixen_two_branches_", |dir| {
+            two_accounts_each_with_an_inbox(dir)
+        });
+        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+
+        for id in ["first", "second"] {
+            assert!(
+                rows.iter()
+                    .any(|row| row.identity == WhichRow::Account(id.to_string())),
+                "{id} has no branch, so the tree still draws one account at a time"
+            );
+        }
+    }
+
+    #[test]
+    fn test_two_inboxes_called_the_same_thing_are_two_rows_a_caller_can_tell_apart() {
+        // Criterion 3's own test, worded as the criterion words it. Both rows
+        // say "Inbox"; what tells them apart is the identity beside each, which
+        // is what every command in this file acts on.
+        let home = crate::common::temp_home::TempHome::named("wixen_two_inboxes_", |dir| {
+            two_accounts_each_with_an_inbox(dir)
+        });
+        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+
+        let inboxes: Vec<&WhichRow> = rows
+            .iter()
+            .map(|row| &row.identity)
+            .filter(|identity| matches!(identity, WhichRow::Folder { path, .. } if path == "INBOX"))
+            .collect();
+        assert_eq!(
+            inboxes.len(),
+            2,
+            "{} rows called Inbox, so one account's is missing",
+            inboxes.len()
+        );
+        assert_ne!(
+            inboxes[0], inboxes[1],
+            "both Inbox rows carry the same identity, so they open the same mail"
+        );
+    }
+
+    #[test]
+    fn test_the_folder_ids_carry_both_accounts_inboxes() {
+        // Rows a person can see and a map a command cannot resolve is the same
+        // failure as not drawing the row: arrowing onto the second Inbox and
+        // pressing Enter would find no folder id and open nothing.
+        let home = crate::common::temp_home::TempHome::named("wixen_two_ids_", |dir| {
+            two_accounts_each_with_an_inbox(dir)
+        });
+        let updates = folder_tree_updates(&home, "first").expect("the tree");
+
+        let pairs = updates
+            .iter()
+            .find_map(|update| match update {
+                UIUpdate::FolderIdsLoaded(pairs) => Some(pairs.clone()),
+                _ => None,
+            })
+            .expect("the ids came with the rows");
+        for id in ["first", "second"] {
+            let wanted = WhichRow::Folder {
+                account: id.to_string(),
+                path: "INBOX".to_string(),
+            }
+            .stored();
+            assert!(
+                pairs.iter().any(|(key, _)| key == &wanted),
+                "{id}'s Inbox has a row and no id, so opening it would find nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_account_the_accounts_table_never_got_still_has_its_folders_drawn() {
+        // Folders are stored against an account id, and the accounts table is a
+        // separate write that can fail or predate them. Before this the tree
+        // was built from the open id alone, so such an account was drawn under
+        // "This account". Building from the table instead would take that
+        // person's mail off the screen to tidy up a name.
+        let home = crate::common::temp_home::TempHome::named("wixen_no_account_row_", |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
+            cache
+                .save_folder(&an_inbox("orphan"))
+                .expect("the inbox is stored");
+            cache
+        });
+        let rows = the_rows(&folder_tree_updates(&home, "orphan").expect("the tree"));
+
+        assert!(
+            rows.iter()
+                .any(|row| row.identity == WhichRow::Account("orphan".to_string())),
+            "the open account lost its branch because no row named it"
+        );
+        assert!(
+            rows.iter().any(|row| row.identity
+                == WhichRow::Folder {
+                    account: "orphan".to_string(),
+                    path: "INBOX".to_string(),
+                }),
+            "the open account lost its folders because no row named it"
+        );
+    }
+
+    #[test]
+    fn test_the_branches_are_drawn_in_the_order_the_accounts_are_kept_in() {
+        // D-14 stores an ordinal and Alt+Shift+Up/Down writes it. It has never
+        // been visible in the sidebar because only one branch was ever drawn.
+        // `load_accounts` orders by that ordinal, so reading the accounts from
+        // it is what makes moving one move its branch.
+        let home = crate::common::temp_home::TempHome::named("wixen_branch_order_", |dir| {
+            two_accounts_each_with_an_inbox(dir)
+        });
+        home.set_account_order("second", 0)
+            .expect("second goes first");
+        home.set_account_order("first", 1)
+            .expect("first goes second");
+
+        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+        let branches: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::Account(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            branches,
+            vec!["second".to_string(), "first".to_string()],
+            "the branches ignore the order the accounts are kept in"
+        );
+    }
+}
+
 /// Every saved search's row, in the order they sit in the tree.
 ///
 /// The readable ones first and the rest after, which is the order they were
