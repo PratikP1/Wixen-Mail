@@ -14158,7 +14158,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::ConversationsLoaded(conversations, why) => {
             let repaint = {
                 let mut s = lock_state(state);
-                let repaint = view_state::what_changed(&s.conversations, conversations);
+                let repaint = view_state::which_rows_changed(&s.conversations, conversations);
                 s.conversations = conversations.clone();
                 repaint
             };
@@ -23987,7 +23987,7 @@ mod what_the_list_is_told_it_holds {
         // The decision belongs with the other rules about the two views, not
         // inline here where it cannot be tested without a control.
         assert!(
-            !every_line_calling(&ships(), "view_state::what_changed(").is_empty(),
+            !every_line_calling(&ships(), "view_state::which_rows_changed(").is_empty(),
             "the arrival path works out for itself which rows changed"
         );
     }

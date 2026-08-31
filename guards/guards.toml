@@ -9962,8 +9962,9 @@ file = "src/data/message_cache/messages.rs"
 # stopped the merge altogether would prove the merge happens, not that it
 # agrees with the rule, and the record below already covers the merge.
 #
-# Measured by hand on 2026-08-31 against the whole library at 5804 tests: three
-# tests. Two of them are the ones worth having, and neither is about a merge
+# Measured by hand on 2026-08-31 against the whole library, which passes 5803
+# at 0 failed with 1 ignored on `cargo test --lib`:
+# three tests. Two of them are the ones worth having, and neither is about a merge
 # failing to happen. The batch one fails because a conversation stored as one
 # batch and the same messages stored one at a time settle on different names,
 # which is Pitfall 6 exactly: the answer depends on what else was in hand. The
@@ -9999,8 +10000,9 @@ file = "src/data/message_cache/messages.rs"
 # removes the rewrite: that would redden every merge test and prove only that
 # merging happens at all.
 #
-# Measured by hand on 2026-08-31 against the whole library at 5804 tests: two
-# tests. The second was not expected and is the better of the pair. The batch
+# Measured by hand on 2026-08-31 against the whole library, which passes 5803
+# at 0 failed with 1 ignored on `cargo test --lib`:
+# two tests. The second was not expected and is the better of the pair. The batch
 # test seeds two folders because it is comparing one storing path against
 # another, and one folder each is enough to catch a rewrite that stops at the
 # first: the two paths come out under different names, and the test that is
@@ -10027,8 +10029,9 @@ file = "src/data/message_cache/messages.rs"
 # break that dropped the clause outright would change the parameter arithmetic
 # and redden for a second reason.
 #
-# Measured by hand on 2026-08-31 against the whole library at 5804 tests: one
-# test, and one is right. The two accounts in that test share a conversation
+# Measured by hand on 2026-08-31 against the whole library, which passes 5803
+# at 0 failed with 1 ignored on `cargo test --lib`:
+# one test, and one is right. The two accounts in that test share a conversation
 # root and nothing else, so no other test can see this clause at all: every
 # other merge test lives inside one account, where the clause is true whether
 # it is enforced or not.
@@ -10052,8 +10055,9 @@ file = "src/presentation/view_state.rs"
 # did. Here the rule says every row changed, which is what repainting the whole
 # list amounts to, and the call site is left exactly as it is.
 #
-# Measured by hand on 2026-08-31 against the whole library at 5804 tests: three
-# tests. The third is the one worth reading, and it is the same lesson the
+# Measured by hand on 2026-08-31 against the whole library, which passes 5803
+# at 0 failed with 1 ignored on `cargo test --lib`:
+# three tests. The third is the one worth reading, and it is the same lesson the
 # selection record two entries above records: the test that asserts nothing is
 # repainted when nothing changed looks vacuous on its own, and it goes red here
 # because this break invents a repaint where there was none. A negative

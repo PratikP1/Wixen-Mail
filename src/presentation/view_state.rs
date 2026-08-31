@@ -231,7 +231,12 @@ impl Repainting {
 /// list is virtual and paints by index, so what a row draws is decided by what
 /// sits at that index: a conversation that has not itself changed still has to
 /// be repainted if something above it appeared and pushed it down.
-pub fn what_changed(was: &[ConversationItem], now: &[ConversationItem]) -> Repainting {
+///
+/// Named for rows rather than `what_changed`, which was the first name and is
+/// already taken: [`crate::application::invitations::what_changed`] answers
+/// what changed about a meeting. Two functions of one name in two domains is
+/// how a reader searching for one of them finds the other.
+pub fn which_rows_changed(was: &[ConversationItem], now: &[ConversationItem]) -> Repainting {
     Repainting {
         rows: (0..now.len())
             .filter(|row| was.get(*row) != Some(&now[*row]))
@@ -480,7 +485,7 @@ mod tests {
             a_conversation("c@x", 1),
         ];
 
-        let repaint = what_changed(&was, &now);
+        let repaint = which_rows_changed(&was, &now);
         assert_eq!(repaint.rows(), [1]);
         assert_eq!(repaint.run(), Some((1, 1)));
         assert!(
@@ -496,7 +501,7 @@ mod tests {
         // this passes against anything that answers nothing to everything.
         let held = [a_conversation("a@x", 1), a_conversation("b@x", 1)];
 
-        let repaint = what_changed(&held, &held);
+        let repaint = which_rows_changed(&held, &held);
         assert!(repaint.nothing_to_repaint());
         assert_eq!(repaint.run(), None);
         assert!(!repaint.count_changed());
@@ -520,7 +525,7 @@ mod tests {
             a_conversation("d@x", 1),
         ];
 
-        let repaint = what_changed(&was, &now);
+        let repaint = which_rows_changed(&was, &now);
         assert_eq!(repaint.rows(), [1, 2]);
         assert_eq!(repaint.run(), Some((1, 2)));
         assert!(
@@ -543,7 +548,7 @@ mod tests {
         let was = [a_conversation("b@x", 1)];
         let now = [a_conversation("a@x", 1), a_conversation("b@x", 1)];
 
-        let repaint = what_changed(&was, &now);
+        let repaint = which_rows_changed(&was, &now);
         assert!(repaint.count_changed());
         assert_eq!(
             repaint.rows(),
@@ -562,7 +567,7 @@ mod tests {
             a_conversation("c@x", 1),
         ];
 
-        let repaint = what_changed(&[], &now);
+        let repaint = which_rows_changed(&[], &now);
         assert_eq!(repaint.rows(), [0, 1, 2]);
         assert!(repaint.count_changed());
     }
@@ -571,7 +576,7 @@ mod tests {
     fn test_a_folder_emptying_changes_the_count_and_paints_nothing() {
         let was = [a_conversation("a@x", 1)];
 
-        let repaint = what_changed(&was, &[]);
+        let repaint = which_rows_changed(&was, &[]);
         assert!(repaint.count_changed());
         assert!(
             repaint.nothing_to_repaint(),
