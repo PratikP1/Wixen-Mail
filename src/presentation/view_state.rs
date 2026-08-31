@@ -34,29 +34,47 @@ impl Showing {
     /// D-09 says a folder never set is flat, so the absence of a row and a row
     /// saying nought are the same answer here and both mean messages.
     pub fn from_stored(stored: Option<i64>) -> Self {
-        let _ = stored;
-        Self::Messages
+        // Anything this version does not recognise reads as flat, which is the
+        // same answer a folder nobody has set gets. A settings file from a
+        // later version is a thing that happens, and flat is a better answer
+        // than a guess at what a number was supposed to mean.
+        match stored {
+            Some(1) => Self::Conversations,
+            _ => Self::Messages,
+        }
     }
 
     /// The number written down for this view.
     pub const fn stored(self) -> i64 {
-        let _ = self;
-        0
+        match self {
+            Self::Messages => 0,
+            Self::Conversations => 1,
+        }
     }
 
     /// The other one, which is what the menu item does.
     pub const fn toggled(self) -> Self {
-        self
+        match self {
+            Self::Messages => Self::Conversations,
+            Self::Conversations => Self::Messages,
+        }
     }
 
     /// Whether rows are conversations.
     pub const fn showing_conversations(self) -> bool {
-        false
+        matches!(self, Self::Conversations)
     }
 
     /// How the switch is announced, naming what the list is now showing.
+    ///
+    /// What it is now, not what was pressed. A person who has just toggled
+    /// something needs to hear the state they are in; "thread view on" leaves
+    /// them working out what that means for the rows in front of them.
     pub const fn spoken(self) -> &'static str {
-        ""
+        match self {
+            Self::Messages => "Showing messages",
+            Self::Conversations => "Showing conversations",
+        }
     }
 }
 
@@ -80,8 +98,15 @@ pub enum ThreadColumn {
 impl ThreadColumn {
     /// What was written down, or never chosen if nothing was.
     pub fn from_stored(stored: Option<i64>) -> Self {
-        let _ = stored;
-        Self::NeverChosen
+        match stored {
+            Some(1) => Self::ChosenOn,
+            Some(0) => Self::ChosenOff,
+            // Null, and anything a later version wrote. Never chosen is the
+            // state that defers to the folder, so an unrecognised value leaves
+            // the adaptive rule in charge rather than pinning the column to a
+            // guess.
+            _ => Self::NeverChosen,
+        }
     }
 
     /// The number written down, or nothing at all for never chosen.
@@ -90,14 +115,20 @@ impl ThreadColumn {
     /// null is what a column added to rows that already existed holds, so an
     /// untouched folder reads as never chosen without a migration.
     pub const fn stored(self) -> Option<i64> {
-        let _ = self;
-        None
+        match self {
+            Self::NeverChosen => None,
+            Self::ChosenOn => Some(1),
+            Self::ChosenOff => Some(0),
+        }
     }
 
     /// What a hand choice in the columns menu leaves behind.
     pub const fn chosen(shown: bool) -> Self {
-        let _ = shown;
-        Self::NeverChosen
+        if shown {
+            Self::ChosenOn
+        } else {
+            Self::ChosenOff
+        }
     }
 }
 
@@ -106,8 +137,11 @@ impl ThreadColumn {
 /// D-05 and D-06 together. The hand choice wins permanently when there is one,
 /// and the folder's own contents decide when there is not.
 pub fn thread_column_visible(chosen: ThreadColumn, folder_has_a_conversation: bool) -> bool {
-    let _ = (chosen, folder_has_a_conversation);
-    false
+    match chosen {
+        ThreadColumn::ChosenOn => true,
+        ThreadColumn::ChosenOff => false,
+        ThreadColumn::NeverChosen => folder_has_a_conversation,
+    }
 }
 
 /// Whether the folder holds any conversation of more than one message.
@@ -116,8 +150,7 @@ pub fn thread_column_visible(chosen: ThreadColumn, folder_has_a_conversation: bo
 /// would say "1 message, 0 unread" on every row, which is verbosity spoken
 /// aloud on every arrow key.
 pub fn a_conversation_of_more_than_one(conversations: &[ConversationItem]) -> bool {
-    let _ = conversations;
-    false
+    conversations.iter().any(|held| held.messages > 1)
 }
 
 /// The visible columns with the Thread column put in or taken out.
@@ -130,7 +163,13 @@ pub fn a_conversation_of_more_than_one(conversations: &[ConversationItem]) -> bo
 /// Thread goes last so a column somebody arranged by hand does not move under
 /// them when a conversation arrives in the folder.
 pub fn with_the_thread_column(columns: Vec<MessageColumn>, visible: bool) -> Vec<MessageColumn> {
-    let _ = visible;
+    let mut columns: Vec<MessageColumn> = columns
+        .into_iter()
+        .filter(|column| *column != MessageColumn::Thread)
+        .collect();
+    if visible {
+        columns.push(MessageColumn::Thread);
+    }
     columns
 }
 
@@ -141,8 +180,10 @@ pub fn with_the_thread_column(columns: Vec<MessageColumn>, visible: bool) -> Vec
 /// "1 of 200" in a view holding forty conversations is telling somebody there
 /// is five times as much mail as there is.
 pub const fn how_many_rows(showing: Showing, messages: usize, conversations: usize) -> usize {
-    let _ = (showing, conversations);
-    messages
+    match showing {
+        Showing::Messages => messages,
+        Showing::Conversations => conversations,
+    }
 }
 
 /// The `ORDER BY` body for the list as it is being shown.
@@ -153,8 +194,10 @@ pub const fn how_many_rows(showing: Showing, messages: usize, conversations: usi
 /// conversation listing while carrying a message sort, because the sort is not
 /// the thing that changes.
 pub fn order_by(showing: Showing, sort: &Sort) -> String {
-    let _ = showing;
-    sort.order_by_clause()
+    match showing {
+        Showing::Messages => sort.order_by_clause(),
+        Showing::Conversations => sort.conversation_order_by_clause(),
+    }
 }
 
 /// The selection, held across a view switch rather than recomputed.
@@ -173,10 +216,7 @@ pub struct KeptSelection {
 impl KeptSelection {
     /// Hold these messages, in the order the list had them.
     pub fn of(messages: Vec<i64>) -> Self {
-        let _ = messages;
-        Self {
-            messages: Vec::new(),
-        }
+        Self { messages }
     }
 
     /// What was held.
@@ -200,8 +240,21 @@ pub fn conversations_holding(
     thread_of_message: &[(i64, Option<String>)],
     conversation_ids: &[String],
 ) -> Vec<usize> {
-    let _ = (kept, thread_of_message, conversation_ids);
-    Vec::new()
+    let mut rows: Vec<usize> = Vec::new();
+    for chosen in kept.messages() {
+        let Some((_, Some(thread))) = thread_of_message.iter().find(|(id, _)| id == chosen) else {
+            // A message in no conversation, or one the list does not hold.
+            // Neither is a row here, and neither is a reason to guess.
+            continue;
+        };
+        if let Some(row) = conversation_ids.iter().position(|held| held == thread)
+            && !rows.contains(&row)
+        {
+            rows.push(row);
+        }
+    }
+    rows.sort_unstable();
+    rows
 }
 
 /// Which message rows to select, switching back.
@@ -210,8 +263,14 @@ pub fn conversations_holding(
 /// implementation gets wrong. A message that has gone from the list since is
 /// left out rather than shifting every row after it.
 pub fn the_messages_again(kept: &KeptSelection, message_ids_in_row_order: &[i64]) -> Vec<usize> {
-    let _ = (kept, message_ids_in_row_order);
-    Vec::new()
+    let mut rows: Vec<usize> = kept
+        .messages()
+        .iter()
+        .filter_map(|chosen| message_ids_in_row_order.iter().position(|id| id == chosen))
+        .collect();
+    rows.sort_unstable();
+    rows.dedup();
+    rows
 }
 
 /// How far `Apply View To Other Folders` reaches (D-10).
@@ -236,7 +295,11 @@ impl ApplyTo {
 
     /// What the scope is called where somebody chooses it.
     pub const fn words(self) -> &'static str {
-        ""
+        match self {
+            ApplyTo::ThisSubtree => "The folders under this one",
+            ApplyTo::ThisAccount => "Every folder in this account",
+            ApplyTo::Everywhere => "Every folder in every account",
+        }
     }
 }
 
@@ -262,8 +325,41 @@ pub fn what_applying_would_do(
     named: &str,
     folders: usize,
 ) -> Applying {
-    let _ = (scope, view, named, folders);
-    Applying::NothingToDo(String::new())
+    let where_it_reaches = match scope {
+        ApplyTo::ThisSubtree => format!("under {named}"),
+        ApplyTo::ThisAccount => format!("in {named}"),
+        ApplyTo::Everywhere => "in every account".to_string(),
+    };
+
+    if folders == 0 {
+        return Applying::NothingToDo(match scope {
+            ApplyTo::ThisSubtree => {
+                format!("There are no folders under {named}, so there is nothing to apply this to.")
+            }
+            ApplyTo::ThisAccount => {
+                format!("{named} has no other folders, so there is nothing to apply this to.")
+            }
+            ApplyTo::Everywhere => {
+                "There are no other folders, so there is nothing to apply this to.".to_string()
+            }
+        });
+    }
+
+    // "folder" or "folders" written out rather than an "s" stuck on a number.
+    // A screen reader reads "1 folders" as it is written.
+    let counted = if folders == 1 {
+        "1 folder".to_string()
+    } else {
+        format!("{folders} folders")
+    };
+
+    Applying::Ask(format!(
+        "Show {} in {counted} {where_it_reaches}? This replaces whatever view each of them was set to.",
+        match view {
+            Showing::Conversations => "conversations",
+            Showing::Messages => "messages",
+        }
+    ))
 }
 
 #[cfg(test)]
