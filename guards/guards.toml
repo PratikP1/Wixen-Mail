@@ -9385,6 +9385,16 @@ red = [
 #
 # Measured by hand on 2026-08-30 against the whole library: three tests.
 #
+# Re-measured on 2026-08-31, in 01-14, and it is four now. The record had gone
+# stale without anything being wrong with it, which is the failure this file's
+# both-directions check exists to catch: 01-08 added
+# `test_two_accounts_pinned_inboxes_sit_under_a_branch_each_rather_than_side_by_side`
+# for D-29, whose second half asks `where_a_row_sits` for the chain above each
+# pinned copy and asserts the two differ. That reaches this rule, so it reddens
+# here, and nobody re-measured after adding it. It was found by re-running this
+# record after touching a neighbouring part of the same module, which is the
+# only thing that finds this: no test failed, and the record read as true.
+#
 # What stayed green, and why, because guessing would have named more.
 # `test_a_top_level_row_sits_under_nothing_but_itself` is correct either way: a
 # row at the top level has nothing above it, so its chain really is its own
@@ -9404,6 +9414,7 @@ before = """    for above in rows[..at].iter().rev() {"""
 after = """    for above in rows[..0].iter().rev() {"""
 red = [
     "presentation::folder_tree::tests::test_every_row_of_a_tree_sits_somewhere_no_other_row_does",
+    "presentation::folder_tree::tests::test_two_accounts_pinned_inboxes_sit_under_a_branch_each_rather_than_side_by_side",
     "presentation::folder_tree::tests::test_two_folders_reading_the_same_are_told_apart_by_what_is_above_them",
     "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
 ]
