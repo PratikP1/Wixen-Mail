@@ -305,6 +305,74 @@ impl MessageCache {
         Ok(rows)
     }
 
+    /// Remember which view a folder was left in, D-09.
+    ///
+    /// `identity` is the folder's own row identity, `folder_tree::WhichRow`'s
+    /// `stored` for the folder it opens rather than for the row that was
+    /// clicked, so a pinned copy and the folder itself are one setting. They
+    /// are two rows in the tree on purpose (D-30) and they are one folder, and
+    /// this is about the folder.
+    ///
+    /// Stored beside the collapsed state, in the same row, so D-09's "both
+    /// restore together" is structural rather than remembered.
+    pub fn set_folder_view(
+        &self,
+        identity: &str,
+        showing: crate::presentation::view_state::Showing,
+    ) -> Result<()> {
+        let _ = (identity, showing);
+        Ok(())
+    }
+
+    /// Which view a folder was left in, or nothing if it was never set.
+    ///
+    /// `None` is a real answer and not a failure: D-09 says a folder nobody has
+    /// set is flat, and the caller reads that through `Showing::from_stored`.
+    pub fn folder_view(&self, identity: &str) -> Result<Option<i64>> {
+        let _ = identity;
+        Ok(None)
+    }
+
+    /// Remember a hand choice about the Thread column in a folder, D-06.
+    ///
+    /// Never-chosen writes null rather than a third number, so a folder nobody
+    /// has said anything about is indistinguishable from one whose row has
+    /// never been written, and both follow the adaptive rule.
+    pub fn set_folder_thread_column(
+        &self,
+        identity: &str,
+        chosen: crate::presentation::view_state::ThreadColumn,
+    ) -> Result<()> {
+        let _ = (identity, chosen);
+        Ok(())
+    }
+
+    /// What was chosen about the Thread column in a folder, if anything.
+    pub fn folder_thread_column(&self, identity: &str) -> Result<Option<i64>> {
+        let _ = identity;
+        Ok(None)
+    }
+
+    /// Every folder this computer knows about, as the pair that names one.
+    ///
+    /// Account and path, which is the pair `favourites` is keyed on and the
+    /// pair `WhichRow::Folder` holds, so applying a view to a scope names
+    /// folders the same way everything else here does.
+    pub fn every_folder(&self) -> Result<Vec<(String, String)>> {
+        Ok(Vec::new())
+    }
+
+    /// The folders under one, itself included, by the nesting that is stored.
+    ///
+    /// Read from `parent_id` and never from the path. The hierarchy separator a
+    /// server spells its paths with is deliberately not persisted, which plan
+    /// 01-04 recorded, so a subtree worked out by cutting paths on a guessed
+    /// character would take in the wrong folders on a dot-separated server.
+    pub fn folders_under(&self, account_id: &str, path: &str) -> Result<Vec<String>> {
+        let _ = (account_id, path);
+        Ok(Vec::new())
+    }
+
     /// Pin a folder to the top of the tree, FOLDER-03.
     ///
     /// A new pin goes to the bottom of its own account's part of the group,
@@ -934,6 +1002,285 @@ mod tests {
                 .unwrap()
                 .contains("folder\u{1f}3\u{1f}accArchive"),
             "a branch somebody collapsed is still collapsed after a restart"
+        );
+    }
+
+    /// A folder's own row identity, spelled the way the tree spells it.
+    fn folder_row(account: &str, path: &str) -> String {
+        crate::presentation::folder_tree::WhichRow::Folder {
+            account: account.to_string(),
+            path: path.to_string(),
+        }
+        .stored()
+    }
+
+    #[test]
+    fn test_a_folder_nobody_has_set_has_no_view_written_down() {
+        let home = fresh("view_never_set");
+        let cache = &*home;
+        assert_eq!(
+            cache.folder_view(&folder_row("acc", "INBOX")).unwrap(),
+            None,
+            "a folder never set is flat, and that is the absence of a number"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_left_showing_conversations_reads_back_that_way() {
+        use crate::presentation::view_state::Showing;
+        let home = fresh("view_conversations");
+        let cache = &*home;
+        let row = folder_row("acc", "INBOX");
+        cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::Conversations
+        );
+    }
+
+    #[test]
+    fn test_setting_a_folder_flat_again_reads_back_flat_rather_than_never_set() {
+        use crate::presentation::view_state::Showing;
+        let home = fresh("view_back_to_flat");
+        let cache = &*home;
+        let row = folder_row("acc", "INBOX");
+        cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        cache.set_folder_view(&row, Showing::Messages).unwrap();
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::Messages
+        );
+    }
+
+    #[test]
+    fn test_one_folder_s_view_is_not_every_folder_s() {
+        use crate::presentation::view_state::Showing;
+        let home = fresh("view_per_folder");
+        let cache = &*home;
+        let here = folder_row("acc", "INBOX");
+        let there = folder_row("acc", "Archive");
+        cache
+            .set_folder_view(&here, Showing::Conversations)
+            .unwrap();
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&there).unwrap()),
+            Showing::Messages,
+            "D-09 stores this per folder, so setting one did not set the other"
+        );
+    }
+
+    #[test]
+    fn test_the_view_and_the_collapsed_state_restore_together() {
+        // D-09 asks for exactly this: both are remembered about the same row,
+        // so a folder comes back the way it was left in both respects.
+        use crate::presentation::view_state::Showing;
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let row = folder_row("acc", "Archive");
+        {
+            let cache =
+                MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
+            cache.set_row_collapsed(&row, true).unwrap();
+            cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        }
+        let again = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
+        assert!(
+            again.collapsed_rows().unwrap().contains(&row),
+            "the folder is still collapsed after a restart"
+        );
+        assert_eq!(
+            Showing::from_stored(again.folder_view(&row).unwrap()),
+            Showing::Conversations,
+            "and it is still showing conversations"
+        );
+    }
+
+    #[test]
+    fn test_opening_a_folder_again_does_not_throw_away_the_view_it_was_left_in() {
+        // The trap in storing this beside the collapsed state. Opening a row
+        // deletes it from `tree_state`, deliberately, so a tree left entirely
+        // open costs no rows. A view stored in that same row would go with it,
+        // and a folder somebody expanded would silently be flat again the next
+        // time they looked: exactly the setting reverting under the user that
+        // D-06's tri-state exists to prevent, arriving through the other half
+        // of D-09.
+        use crate::presentation::view_state::Showing;
+        let home = fresh("view_survives_expanding");
+        let cache = &*home;
+        let row = folder_row("acc", "Archive");
+        cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        cache.set_row_collapsed(&row, true).unwrap();
+        cache.set_row_collapsed(&row, false).unwrap();
+
+        assert!(
+            !cache.collapsed_rows().unwrap().contains(&row),
+            "opening the row still opens it"
+        );
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::Conversations,
+            "and it did not take the folder's view with it"
+        );
+    }
+
+    #[test]
+    fn test_opening_a_row_that_carries_nothing_else_still_leaves_no_row_behind() {
+        // The other direction of the same rule. A tree left entirely open
+        // should still cost no rows, so the row is only kept when something
+        // else in it is worth keeping.
+        let home = fresh("view_open_leaves_nothing");
+        let cache = &*home;
+        let row = folder_row("acc", "Plain");
+        cache.set_row_collapsed(&row, true).unwrap();
+        cache.set_row_collapsed(&row, false).unwrap();
+        assert_eq!(
+            cache.folder_view(&row).unwrap(),
+            None,
+            "nothing was set, so nothing is remembered"
+        );
+        assert!(cache.collapsed_rows().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_a_folder_nobody_has_chosen_a_thread_column_for_has_nothing_written_down() {
+        let home = fresh("thread_column_never");
+        let cache = &*home;
+        assert_eq!(
+            cache
+                .folder_thread_column(&folder_row("acc", "INBOX"))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_each_hand_choice_about_the_thread_column_reads_back_as_itself() {
+        use crate::presentation::view_state::ThreadColumn;
+        let home = fresh("thread_column_choices");
+        let cache = &*home;
+        let row = folder_row("acc", "INBOX");
+        for chosen in [ThreadColumn::ChosenOn, ThreadColumn::ChosenOff] {
+            cache.set_folder_thread_column(&row, chosen).unwrap();
+            assert_eq!(
+                ThreadColumn::from_stored(cache.folder_thread_column(&row).unwrap()),
+                chosen,
+                "{chosen:?} did not come back"
+            );
+        }
+    }
+
+    #[test]
+    fn test_chosen_off_is_stored_as_a_choice_and_not_as_never_chosen() {
+        // The distinction the whole tri-state is for. Stored as the absence of
+        // a value, a folder switched off would read as never chosen and the
+        // adaptive rule would turn its column back on.
+        use crate::presentation::view_state::ThreadColumn;
+        let home = fresh("thread_column_off_is_a_choice");
+        let cache = &*home;
+        let row = folder_row("acc", "INBOX");
+        cache
+            .set_folder_thread_column(&row, ThreadColumn::ChosenOff)
+            .unwrap();
+        assert!(
+            cache.folder_thread_column(&row).unwrap().is_some(),
+            "chosen off has to be written down, or it reads as never chosen"
+        );
+    }
+
+    #[test]
+    fn test_the_thread_column_choice_and_the_view_do_not_overwrite_each_other() {
+        use crate::presentation::view_state::{Showing, ThreadColumn};
+        let home = fresh("thread_column_and_view");
+        let cache = &*home;
+        let row = folder_row("acc", "INBOX");
+        cache.set_folder_view(&row, Showing::Conversations).unwrap();
+        cache
+            .set_folder_thread_column(&row, ThreadColumn::ChosenOff)
+            .unwrap();
+        assert_eq!(
+            Showing::from_stored(cache.folder_view(&row).unwrap()),
+            Showing::Conversations
+        );
+        assert_eq!(
+            ThreadColumn::from_stored(cache.folder_thread_column(&row).unwrap()),
+            ThreadColumn::ChosenOff
+        );
+    }
+
+    #[test]
+    fn test_every_folder_names_each_one_by_its_account_and_path() {
+        let home = fresh("every_folder");
+        let cache = &*home;
+        a_folder(cache, "acc", "INBOX");
+        a_folder(cache, "acc", "Archive");
+        a_folder(cache, "other", "INBOX");
+        let mut all = cache.every_folder().unwrap();
+        all.sort();
+        assert_eq!(
+            all,
+            vec![
+                ("acc".to_string(), "Archive".to_string()),
+                ("acc".to_string(), "INBOX".to_string()),
+                ("other".to_string(), "INBOX".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_subtree_is_read_from_the_nesting_that_is_stored_and_not_from_the_path() {
+        // The separator a server spells its paths with is not persisted, which
+        // plan 01-04 recorded, so a subtree cut out of the path would be a
+        // guess. These paths are deliberately spelled with a dot, which is what
+        // a server using a dot as its delimiter looks like here: cutting on a
+        // slash would find nothing and cutting on a dot would be a rule this
+        // code has no right to.
+        let home = fresh("folders_under");
+        let cache = &*home;
+        let top = a_folder(cache, "acc", "Archive");
+        let under = a_folder(cache, "acc", "Archive.2024");
+        let deeper = a_folder(cache, "acc", "Archive.2024.January");
+        let elsewhere = a_folder(cache, "acc", "Archive Notes");
+        cache.set_folder_parent(under, Some(top)).unwrap();
+        cache.set_folder_parent(deeper, Some(under)).unwrap();
+        let _ = elsewhere;
+
+        let mut found = cache.folders_under("acc", "Archive").unwrap();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                "Archive".to_string(),
+                "Archive.2024".to_string(),
+                "Archive.2024.January".to_string(),
+            ],
+            "the folder itself and everything nested under it, however deep"
+        );
+        assert!(
+            !found.contains(&"Archive Notes".to_string()),
+            "a folder whose name merely starts the same way is not under it"
+        );
+    }
+
+    #[test]
+    fn test_a_subtree_of_a_folder_with_nothing_under_it_is_just_that_folder() {
+        let home = fresh("folders_under_leaf");
+        let cache = &*home;
+        a_folder(cache, "acc", "INBOX");
+        assert_eq!(
+            cache.folders_under("acc", "INBOX").unwrap(),
+            vec!["INBOX".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_subtree_does_not_reach_into_another_account() {
+        let home = fresh("folders_under_account");
+        let cache = &*home;
+        a_folder(cache, "acc", "Archive");
+        a_folder(cache, "other", "Archive");
+        assert_eq!(
+            cache.folders_under("acc", "Archive").unwrap(),
+            vec!["Archive".to_string()],
+            "another account's identically named folder is not under this one"
         );
     }
 
