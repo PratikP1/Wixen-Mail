@@ -32,6 +32,7 @@ pub mod scan_target;
 pub mod status_line;
 pub mod theme;
 pub mod ui_types;
+pub mod view_state;
 pub mod wx_account_manager;
 pub mod wx_add_calendar;
 pub mod wx_app;
