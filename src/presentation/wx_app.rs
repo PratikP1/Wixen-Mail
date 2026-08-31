@@ -22863,3 +22863,112 @@ mod local_folders_at_start_up {
         );
     }
 }
+
+/// The one place the message list is told how many rows it has, and the
+/// comment beside the menu item that says the feature is not built.
+///
+/// Both are read out of the shipping half of this file rather than exercised,
+/// because neither can be reached without a window and wxWidgets allows one
+/// application per process. What that buys is narrow and worth stating: it
+/// proves there is one writer of the count and that no comment contradicts the
+/// feature. It does not prove the count is right on screen, which is a screen
+/// reader on a running window.
+#[cfg(test)]
+mod what_the_list_is_told_it_holds {
+    use crate::common::what_ships::what_ships;
+
+    fn ships() -> String {
+        let text = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+        what_ships(&text)
+    }
+
+    fn every_line_calling(text: &str, what: &str) -> Vec<String> {
+        text.lines()
+            .filter(|line| line.contains(what))
+            .map(|line| line.trim().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_call_when_there_is_one() {
+        // Proving the measurement before believing an absence. A source read
+        // that matches nothing passes every test below and is indistinguishable
+        // from one that finds everything.
+        let made_up = "        msg_list.set_item_count(7);\n";
+        assert_eq!(
+            every_line_calling(made_up, "msg_list.set_item_count(").len(),
+            1
+        );
+        assert!(every_line_calling("nothing here\n", "msg_list.set_item_count(").is_empty());
+    }
+
+    #[test]
+    fn test_the_message_list_is_told_its_size_in_one_place_only() {
+        // D-01's whole accessibility argument is this one number: it is what
+        // UI Automation reports as the set size, so a second writer that has
+        // not heard of conversation mode announces a mailbox five times the
+        // size of the one on screen. One writer, which reads the mode.
+        let calls = every_line_calling(&ships(), "msg_list.set_item_count(");
+        assert_eq!(
+            calls.len(),
+            1,
+            "{} places tell the message list how big it is:\n  {}",
+            calls.len(),
+            calls.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_that_one_place_asks_how_many_rows_the_view_has() {
+        let ships = ships();
+        let asks = every_line_calling(&ships, "view_state::how_many_rows(");
+        assert!(
+            !asks.is_empty(),
+            "the count is worked out here rather than by the rule that knows \
+             about both views"
+        );
+    }
+
+    #[test]
+    fn test_nothing_still_says_threading_is_not_implemented() {
+        // The comment above the menu item said the collapsing view "is not
+        // built", which was true and is not. A comment left saying that beside
+        // a working feature is the next reader's wrong answer, and this phase
+        // has already had to correct one of those.
+        let ships = ships();
+        for wrong in ["that is not built", "threading is not implemented"] {
+            assert!(
+                !ships.contains(wrong),
+                "a comment still says the feature is missing: {wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_thread_view_item_is_not_disabled_on_the_way_up() {
+        let ships = ships();
+        let disabled: Vec<&str> = ships
+            .lines()
+            .skip_while(|line| !line.contains("find_item(ID_THREAD_VIEW)"))
+            .take(6)
+            .filter(|line| line.contains("enable(false)"))
+            .collect();
+        assert!(
+            disabled.is_empty(),
+            "the menu item is still switched off where the window is built: {disabled:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_paint_callback_asks_for_a_conversation_cell_when_rows_are_conversations() {
+        // The callback is registered once and reads the mode from state, so a
+        // switch does not re-register it. What that means in the source is that
+        // both cell functions are named inside it.
+        let ships = ships();
+        assert!(
+            ships.contains("message_rows::conversation_cell_text("),
+            "the paint callback never asks for a conversation's cells, so a \
+             conversation row would be drawn as a message"
+        );
+    }
+}
