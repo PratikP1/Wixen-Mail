@@ -8,6 +8,39 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **The sidebar now shows all your accounts at once, each under its own name.**
+  Before, it drew one account's folders at a time, so two accounts that both had
+  a folder called `Inbox` gave you two rows reading "Inbox" with nothing to tell
+  them apart, and you had to work out from elsewhere which one you were looking
+  at. Both are now in the tree, each under the account it belongs to.
+
+  **Moving between accounts is arrow keys.** The other account's folders are
+  already on screen, so getting to them is moving the cursor rather than
+  reloading the sidebar.
+
+  **The tree is longer than it was, and every branch opens expanded.** With four
+  accounts you now arrow past four accounts' folders where you used to pass one.
+  Closing a branch you are not using is remembered, so you close it once and it
+  stays closed, but nothing closes them for you the first time. If that turns
+  out to be the wrong default, it is one setting away and worth telling us
+  about.
+
+  The account branches are in the order you put them in with Alt+Shift+Up and
+  Alt+Shift+Down, and moving one now moves it in the sidebar as you press the
+  keys. It used to write the new order and redraw nothing, which was invisible
+  while only one branch was drawn.
+
+  Sent, Outbox, Drafts, Junk and Trash stay where they were, once each under
+  "On this computer", rather than once per account. That is what made showing
+  every account at once worth doing, and it is the change described below.
+
+  **What this costs, said plainly.** Opening the mail panel now reads each
+  account's folders rather than one account's, so a first draw with several
+  accounts takes longer than it did. So does every redraw: a finished check for
+  mail rebuilds the whole tree, and that now covers every account. The trade is
+  that switching account stopped being a rebuild, which used to happen every
+  time you moved between them.
+
 - **There is now one Sent, one Outbox, one Drafts, one Junk and one Trash,
   shared by all your accounts.** They sit under "On this computer" in the
   sidebar. Before, every account kept its own set, so the sidebar listed
@@ -279,11 +312,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   account. Nothing in Wixen Mail can prevent that. Two ways round it, and how to
   change the Windows key, are in `docs/KEYBOARD_SHORTCUTS.md`.
 
-  Known limit, said here rather than found later: the folder tree draws one
-  account's branch at a time, so today the new order shows in the account list
-  rather than in the sidebar. Drawing every account at once is waiting on the
-  shared local folders work, for the reason the previous entry about the folder
-  tree gives.
+  The new order shows in the sidebar, where you moved it. This note used to say
+  it did not, because the tree drew one account's branch at a time and the order
+  was only visible in the account list. The tree now holds every account, so
+  moving one moves its branch.
 
 - **A folder or account that holds others tells you what is unread inside it,
   and says which number is which.** A folder called `Archive` with three unread
@@ -661,12 +693,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   Known limits, said here rather than found later:
 
-  - Only the account you are looking at has a branch. Showing every account's
-    folders at once is the next piece of this work, and it waits on the change
-    that gives Drafts, Sent and Outbox one home each instead of one per account.
-    Without that, every account would contribute its own Drafts and the tree
-    would list the same thing several times over, which is the fault this change
-    exists to remove.
+  - This entry used to say that only the account you were looking at had a
+    branch, and that showing them all waited on Drafts, Sent and Outbox getting
+    one home each. That change landed, and every account now has a branch. The
+    entry above about seeing all your accounts at once is where that is
+    described.
   - Imported mail archives appear under "On this computer" in the Imported
     folder, not each under a branch named after the file it came from. Nothing
     records which archive a folder arrived in, so there is nothing yet to build

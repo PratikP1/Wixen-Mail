@@ -8504,6 +8504,13 @@ fn move_the_chosen_account(
             return refuse_a_command(tx, "Where the accounts sit could not be saved.");
         }
     }
+    // The sidebar is where the new order shows, now that the tree holds every
+    // account, so writing the ordinal and leaving the tree alone would announce
+    // a move that had not happened on screen. Read back before the sentence and
+    // not after, the way pinning does: `read_the_tree_back` puts the cursor
+    // back on the branch that moved, and the sentence is the answer to the key
+    // somebody pressed.
+    read_the_tree_back(&Some(cache.clone()), state, tx);
     let _ = tx.try_send(UIUpdate::CommandAnswered(after.say));
 }
 
@@ -9379,32 +9386,94 @@ fn whole_message_reading(
 /// Runs on the UI thread rather than in a task: `MessageCache` wraps a rusqlite
 /// connection and is not `Sync`. The channel is unbounded, so sending never
 /// blocks.
+/// Every account whose folders belong in the tree, in the order they are drawn.
+///
+/// `load_accounts` sorts by the ordinal D-14 stores, so moving an account with
+/// Alt+Shift+Up moves its branch. That ordinal has been written since 01-06 and
+/// has never been visible in the sidebar, because only one branch was drawn.
+///
+/// The account being looked at is in the answer even where the accounts table
+/// has no row for it. Folders are stored against an account id and the accounts
+/// table is a separate write that can fail or predate them; before this the
+/// tree drew such an account anyway, under "This account". Building only from
+/// the table would take that person's mail off the screen to tidy up a name.
+fn the_accounts_in_the_tree(
+    cache: &MessageCache,
+    looked_at: &str,
+) -> Vec<folder_tree::AccountInTheTree> {
+    let mut every: Vec<folder_tree::AccountInTheTree> = cache
+        .load_accounts()
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                "The accounts could not be read, so the tree holds only the open one: {e}"
+            );
+            Vec::new()
+        })
+        .iter()
+        .map(|account| folder_tree::AccountInTheTree {
+            id: account.id.clone(),
+            name: account.display_name(),
+        })
+        .collect();
+    if !every.iter().any(|account| account.id == looked_at) {
+        every.push(folder_tree::AccountInTheTree {
+            id: looked_at.to_string(),
+            name: "This account".to_string(),
+        });
+    }
+    every
+}
+
 /// The folder tree, as the updates that redraw it.
 ///
 /// Shared by the ordinary module load and by a finished mail sync, which both
 /// need the tree to say what the cache now holds. Two copies of it would be two
 /// places for the id map and the labels to fall out of step, and a tree whose
 /// labels do not match its ids opens the wrong folder.
+///
+/// Every account at once, not the one being looked at. That is roadmap
+/// criterion 3, and it is also what stops moving between accounts being a
+/// rebuild: the other account's folders are already on screen, so getting to
+/// them is arrow keys rather than five cache reads on the thread that draws.
+///
+/// `account_id` stays, because it still decides two things a tree holding
+/// everybody cannot decide for itself: which account gets a branch when the
+/// accounts table has no row for it, and whose labels and saved searches the
+/// tree shows. Those two are per account by design and are not multiplied here.
+///
+/// The per-account reads stay per account. Five reads times the number of
+/// accounts is the honest cost of drawing them all, and a single all-accounts
+/// query would be a second answer to the question `folders_in_the_tree` owns.
+/// What that costs, said plainly because it is a real trade: every one of the
+/// eleven places that redraw the tree now pays it, and some of them are on a
+/// timer.
 fn folder_tree_updates(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
-    // What the branch is called, read here rather than passed in, so that the
-    // seven callers do not each have to hold an account to name one. A branch
-    // whose account has gone from the list still reads as something rather than
-    // as an empty row.
-    let account_name = cache
-        .load_accounts()
-        .ok()
-        .and_then(|accounts| {
-            accounts
-                .iter()
-                .find(|account| account.id == account_id)
-                .map(|account| account.display_name())
-        })
-        .unwrap_or_else(|| "This account".to_string());
+    let accounts = the_accounts_in_the_tree(cache, account_id);
 
-    let folders = folders_in_the_tree(cache, account_id)?;
+    // Every account's folders, read per account and joined, so a folder still
+    // arrives carrying the account it belongs to and lands in that branch.
+    //
+    // The open account's read is the one that can refuse. A second account
+    // whose folders cannot be read loses its branch and is logged; refusing the
+    // whole tree over it would take the mail somebody is actually looking at
+    // off the screen because a different account is in trouble.
+    let mut folders = Vec::new();
+    for account in &accounts {
+        if account.id == account_id {
+            folders.extend(folders_in_the_tree(cache, account_id)?);
+            continue;
+        }
+        match folders_in_the_tree(cache, &account.id) {
+            Ok(theirs) => folders.extend(theirs),
+            Err(e) => tracing::warn!(
+                "{}'s folders could not be read, so its branch is empty: {e}",
+                account.id
+            ),
+        }
+    }
     // The tree label carries the unread count, because a folder name alone
     // does not answer the question somebody is asking when they arrow onto it.
     //
@@ -9433,42 +9502,63 @@ fn folder_tree_updates(
             tracing::warn!("The saved searches could not be read: {e}");
             crate::data::message_cache::saved_searches::SavedSearchesRead::default()
         });
-    // The parents this account's folders were given at sync, which is what
-    // nests the tree. Read once for the account rather than per folder, and
-    // read rather than computed: no path is split here, because the separator
-    // that would split it is the server's own and was only in hand at sync.
-    let parents = cache.folder_parents(account_id).unwrap_or_else(|e| {
-        tracing::warn!("The folder parents could not be read: {e}");
-        std::collections::HashMap::new()
-    });
-    // Which of this account's folders the server's last list left out (D-27),
-    // on the same terms as the parents above: one read for the account, and a
-    // failure logged rather than swallowed. Read as nothing on a failure means
-    // no row says the server has stopped listing it, which is the reading that
-    // understates rather than the one that alarms.
-    let said = cache.what_the_server_said(account_id).unwrap_or_else(|e| {
-        tracing::warn!("What the server said about the folders could not be read: {e}");
-        std::collections::HashMap::new()
-    });
+    // The parents each account's folders were given at sync, which is what
+    // nests the tree, and which of them the server's last list left out (D-27).
+    // One read of each per account rather than per folder, and read rather than
+    // computed: no path is split here, because the separator that would split
+    // it is the server's own and was only in hand at sync.
+    //
+    // Keyed on the account and the path together, which is D-25's identity and
+    // not tidiness. Keyed on the path alone, two accounts that both have an
+    // `INBOX` are one entry, and whichever was read last decides where the
+    // other one nests and whether it says the server has stopped listing it.
+    // A folder that has gone is a folder somebody is told not to use, so
+    // borrowing that answer from another account is a sentence about the wrong
+    // mailbox.
+    //
+    // A read that fails is logged and taken as nothing, which is the reading
+    // that understates rather than the one that alarms: the folder is drawn
+    // flat and nothing claims the server has dropped it.
+    let mut parents: std::collections::HashMap<(String, String), Option<i64>> =
+        std::collections::HashMap::new();
+    let mut gone: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for account in &accounts {
+        match cache.folder_parents(&account.id) {
+            Ok(theirs) => parents.extend(
+                theirs
+                    .into_iter()
+                    .map(|(path, parent)| ((account.id.clone(), path), parent)),
+            ),
+            Err(e) => tracing::warn!("{}'s folder parents could not be read: {e}", account.id),
+        }
+        match cache.what_the_server_said(&account.id) {
+            Ok(theirs) => gone.extend(theirs.into_iter().filter_map(|(path, said)| {
+                said.the_server_no_longer_lists_it()
+                    .then(|| (account.id.clone(), path))
+            })),
+            Err(e) => tracing::warn!(
+                "What the server said about {}'s folders could not be read: {e}",
+                account.id
+            ),
+        }
+    }
     let in_the_tree: Vec<folder_tree::FolderInTheTree> = folders
         .iter()
-        .map(|folder| folder_tree::FolderInTheTree {
-            account: folder.account_id.clone(),
-            id: folder.id,
-            path: folder.path.clone(),
-            name: folder.name.clone(),
-            unread: folder.unread_count,
-            parent: parents.get(&folder.path).copied().flatten(),
-            gone: said
-                .get(&folder.path)
-                .is_some_and(|said| said.the_server_no_longer_lists_it()),
+        .map(|folder| {
+            let which = (folder.account_id.clone(), folder.path.clone());
+            folder_tree::FolderInTheTree {
+                account: folder.account_id.clone(),
+                id: folder.id,
+                path: folder.path.clone(),
+                name: folder.name.clone(),
+                unread: folder.unread_count,
+                parent: parents.get(&which).copied().flatten(),
+                gone: gone.contains(&which),
+            }
         })
         .collect();
     let rows = folder_tree::rows(
-        &[folder_tree::AccountInTheTree {
-            id: account_id.to_string(),
-            name: account_name,
-        }],
+        &accounts,
         &in_the_tree,
         // What somebody has pinned, read once for the whole tree rather than
         // per folder, the way what is collapsed is read below.
@@ -9574,7 +9664,8 @@ fn folders_in_the_tree(
 /// caller or it re-proves the half that already worked.
 #[cfg(test)]
 mod the_tree_holds_every_account {
-    use super::{UIUpdate, folder_tree, folder_tree_updates};
+    use super::{Arc, UIUpdate, folder_tree, folder_tree_updates};
+    use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, MessageCache};
     use crate::presentation::folder_tree::WhichRow;
 
@@ -9601,17 +9692,30 @@ mod the_tree_holds_every_account {
     ///
     /// Two POP accounts each keeping their own Inbox is the criterion's own
     /// example, and it is the case that cannot be told apart from a flat list.
-    fn two_accounts_each_with_an_inbox(dir: &std::path::Path) -> MessageCache {
-        let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
-        for (id, called) in [("first", "Work"), ("second", "Home")] {
-            cache
-                .save_account(&an_account(id, called))
-                .expect("the account is stored");
-            cache
-                .save_folder(&an_inbox(id))
-                .expect("the inbox is stored");
+    ///
+    /// Built on `tests::test_cache`, which is `pub(super)` and carries the one
+    /// allow for wrapping a cache that is not `Sync`, because the comment above
+    /// it asks for exactly that rather than a second `Arc::new` and a second
+    /// allow beside it.
+    fn two_accounts_each_with_an_inbox() -> TempHome<Option<Arc<MessageCache>>> {
+        let home = super::tests::test_cache();
+        {
+            let cache = home.as_ref().expect("a cache");
+            for (id, called) in [("first", "Work"), ("second", "Home")] {
+                cache
+                    .save_account(&an_account(id, called))
+                    .expect("the account is stored");
+                cache
+                    .save_folder(&an_inbox(id))
+                    .expect("the inbox is stored");
+            }
         }
-        cache
+        home
+    }
+
+    /// The cache inside a temporary home, as `folder_tree_updates` takes it.
+    fn inside(home: &TempHome<Option<Arc<MessageCache>>>) -> &MessageCache {
+        home.as_ref().expect("a cache")
     }
 
     fn the_rows(updates: &[UIUpdate]) -> Vec<folder_tree::TreeRow> {
@@ -9631,10 +9735,10 @@ mod the_tree_holds_every_account {
         // neither account would fail every test here for the wrong reason, and
         // a stored folder nothing reads back looks exactly like a tree that
         // left it out.
-        let home = crate::common::temp_home::TempHome::named("wixen_two_accounts_", |dir| {
-            two_accounts_each_with_an_inbox(dir)
-        });
-        let stored = home.load_accounts().expect("the accounts read back");
+        let home = two_accounts_each_with_an_inbox();
+        let stored = inside(&home)
+            .load_accounts()
+            .expect("the accounts read back");
         assert_eq!(
             stored.len(),
             2,
@@ -9642,7 +9746,7 @@ mod the_tree_holds_every_account {
             stored.len()
         );
         for id in ["first", "second"] {
-            let folders = home
+            let folders = inside(&home)
                 .get_folders_for_account(id)
                 .expect("the folders read back");
             assert_eq!(
@@ -9659,10 +9763,8 @@ mod the_tree_holds_every_account {
         // The whole of the gap phase verification found. `folder_tree::rows`
         // takes a slice and was only ever handed one account, so a person with
         // two accounts could see one branch and had to infer which.
-        let home = crate::common::temp_home::TempHome::named("wixen_two_branches_", |dir| {
-            two_accounts_each_with_an_inbox(dir)
-        });
-        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+        let home = two_accounts_each_with_an_inbox();
+        let rows = the_rows(&folder_tree_updates(inside(&home), "first").expect("the tree"));
 
         for id in ["first", "second"] {
             assert!(
@@ -9678,10 +9780,8 @@ mod the_tree_holds_every_account {
         // Criterion 3's own test, worded as the criterion words it. Both rows
         // say "Inbox"; what tells them apart is the identity beside each, which
         // is what every command in this file acts on.
-        let home = crate::common::temp_home::TempHome::named("wixen_two_inboxes_", |dir| {
-            two_accounts_each_with_an_inbox(dir)
-        });
-        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+        let home = two_accounts_each_with_an_inbox();
+        let rows = the_rows(&folder_tree_updates(inside(&home), "first").expect("the tree"));
 
         let inboxes: Vec<&WhichRow> = rows
             .iter()
@@ -9705,10 +9805,8 @@ mod the_tree_holds_every_account {
         // Rows a person can see and a map a command cannot resolve is the same
         // failure as not drawing the row: arrowing onto the second Inbox and
         // pressing Enter would find no folder id and open nothing.
-        let home = crate::common::temp_home::TempHome::named("wixen_two_ids_", |dir| {
-            two_accounts_each_with_an_inbox(dir)
-        });
-        let updates = folder_tree_updates(&home, "first").expect("the tree");
+        let home = two_accounts_each_with_an_inbox();
+        let updates = folder_tree_updates(inside(&home), "first").expect("the tree");
 
         let pairs = updates
             .iter()
@@ -9737,14 +9835,11 @@ mod the_tree_holds_every_account {
         // was built from the open id alone, so such an account was drawn under
         // "This account". Building from the table instead would take that
         // person's mail off the screen to tidy up a name.
-        let home = crate::common::temp_home::TempHome::named("wixen_no_account_row_", |dir| {
-            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
-            cache
-                .save_folder(&an_inbox("orphan"))
-                .expect("the inbox is stored");
-            cache
-        });
-        let rows = the_rows(&folder_tree_updates(&home, "orphan").expect("the tree"));
+        let home = super::tests::test_cache();
+        inside(&home)
+            .save_folder(&an_inbox("orphan"))
+            .expect("the inbox is stored");
+        let rows = the_rows(&folder_tree_updates(inside(&home), "orphan").expect("the tree"));
 
         assert!(
             rows.iter()
@@ -9767,15 +9862,15 @@ mod the_tree_holds_every_account {
         // been visible in the sidebar because only one branch was ever drawn.
         // `load_accounts` orders by that ordinal, so reading the accounts from
         // it is what makes moving one move its branch.
-        let home = crate::common::temp_home::TempHome::named("wixen_branch_order_", |dir| {
-            two_accounts_each_with_an_inbox(dir)
-        });
-        home.set_account_order("second", 0)
+        let home = two_accounts_each_with_an_inbox();
+        inside(&home)
+            .set_account_order("second", 0)
             .expect("second goes first");
-        home.set_account_order("first", 1)
+        inside(&home)
+            .set_account_order("first", 1)
             .expect("first goes second");
 
-        let rows = the_rows(&folder_tree_updates(&home, "first").expect("the tree"));
+        let rows = the_rows(&folder_tree_updates(inside(&home), "first").expect("the tree"));
         let branches: Vec<String> = rows
             .iter()
             .filter_map(|row| match &row.identity {
@@ -9788,6 +9883,60 @@ mod the_tree_holds_every_account {
             branches,
             vec!["second".to_string(), "first".to_string()],
             "the branches ignore the order the accounts are kept in"
+        );
+    }
+
+    #[test]
+    fn test_moving_an_account_redraws_the_tree_it_has_just_reordered() {
+        // A tree holding every account makes the sidebar the place where the
+        // order shows, and moving an account wrote the new ordinal and redrew
+        // nothing. That was invisible while one branch was drawn and the
+        // changelog said so; with every branch drawn it is a sidebar that
+        // announces a move and does not make it, and the branches stay wrong
+        // until something unrelated happens to rebuild.
+        let home = two_accounts_each_with_an_inbox();
+        let state = Arc::new(super::StdMutex::new(super::WxUIState {
+            active_account_id: Some("first".to_string()),
+            selected_folder: Some(WhichRow::Account("second".to_string())),
+            ..Default::default()
+        }));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(tokio::runtime::Runtime::new().expect("a runtime"));
+
+        super::move_the_chosen_account(
+            super::AppHandles {
+                state: &state,
+                tx: &tx,
+                rt: &rt,
+            },
+            &home,
+            crate::application::reordering::Move::Up,
+        );
+
+        let mut sent = Vec::new();
+        while let Ok(update) = rx.try_recv() {
+            sent.push(update);
+        }
+        // The move happened: without this the test would pass against a
+        // refusal, which sends a message and redraws nothing for a good
+        // reason.
+        assert!(
+            sent.iter()
+                .any(|update| matches!(update, UIUpdate::CommandAnswered(_))),
+            "the move was refused, so this proves nothing about redrawing"
+        );
+        let rows = the_rows(&sent);
+        let branches: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::Account(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            branches,
+            vec!["second".to_string(), "first".to_string()],
+            "the tree was not redrawn where it was reordered"
         );
     }
 }
@@ -21250,14 +21399,21 @@ mod what_the_status_line_says {
     /// a check that reads its own words measures nothing: the first run of the
     /// check on the senders below matched itself and reported the whole of
     /// offline mode as silent.
+    ///
+    /// Cut by `what_ships`, which drops each `#[cfg(test)]` item where it
+    /// really ends. This used to split at the first `#[cfg(test)]` in the file
+    /// and keep what was above it, which is not "the tests cut off" but "the
+    /// file up to the first test module", and the two are the same string only
+    /// while every test module is at the bottom. Adding one in the middle of
+    /// the file left these checks reading the first nine and a half thousand
+    /// lines of twenty-four thousand. That is the failure `what_ships` was
+    /// written for and its own module doc names: a reader that narrows to a
+    /// prefix cannot be told apart from a file with nothing to find.
     fn the_window_itself() -> String {
         let whole = std::fs::read_to_string("src/presentation/wx_app.rs")
             .expect("this file to be readable")
             .replace("\r\n", "\n");
-        match whole.split_once("\n#[cfg(test)]") {
-            Some((code, _)) => code.to_string(),
-            None => whole,
-        }
+        crate::common::what_ships::what_ships(&whole)
     }
 
     /// The body of the one routine that handles every update, and nothing
