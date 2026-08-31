@@ -323,3 +323,123 @@ the text and left it where it was.
 
 **Size:** small to move the paragraph, medium to settle what the two headings
 mean and re-sort the file against that.
+
+
+## A conversation root arriving after a message that names it is not merged (found in 01-13)
+
+**Found during:** 01-13, task 1, by writing the order-independence test as a
+simulation of the storage path rather than as a property of the pure function.
+
+THREAD-02's merge works when the connecting message arrives after the
+conversations it connects, which is the case the requirement names and the case
+that is tested. It does not work in the other direction.
+
+A message `x` names `a` and `c` in its reply chain. Stored first, `x` takes the
+conversation `a`, because that is what its chain names. When `c` then arrives
+with no chain of its own, nothing it can be asked about names `a`, so it starts
+a conversation of its own and the two stay separate. Three of the six arrival
+orders over that set merge and three do not.
+
+**Why it is not fixed here.** The knowledge exists and is unreachable. It lives
+in `x`'s stored `refs_header`, and finding it means asking "does any stored
+message name `c` in its chain", which is a substring search over a text column
+that no index can serve. On a mailbox of any size that is a scan per arriving
+message.
+
+Closing it properly needs a table mapping every identifier a message names to
+the conversation that message is in, written on store and read on arrival. That
+is one indexed lookup in both directions and it is the standard shape for this
+problem. It is also a new table, which is an architectural decision this plan
+did not carry and CLAUDE.md's additive-schema rule would allow but not decide.
+
+**How it stays visible.**
+`src/application/thread_identity.rs#a_root_arriving_after_the_message_that_names_it_is_left_out_of_the_merge`
+is a passing test that asserts the gap, named for what is not achieved, with a
+comment saying that if it starts failing the gap has been closed and it should
+become another case of the test above it. The changelog says it in a sentence
+somebody using the program can read, under **Known limitation**. It is also in
+`WINDOWS.md` and in `01-13-SUMMARY.md`.
+
+**Size:** medium. One table, one index, a writer in `upsert_message` beside the
+existing one, a reader in the merge, and a backfill for mail already held.
+
+
+## The plan's order-independence criterion could not be met as written (found in 01-13)
+
+**Found during:** 01-13, task 1.
+
+`01-13-PLAN.md` task 1 requires "a test [that] assigns ids in at least three
+different orders over a set containing a merge and asserts identical final
+assignments", and mandates a signature taking the arriving message's chain and
+what the cache found. Those two cannot both hold, for the reason in the entry
+above: the lookup can see messages the arriving one names, never messages that
+name it.
+
+**Why this is written down separately.** The gap above is about the product.
+This one is about the planning: the criterion reads as achievable, three
+documents agree with it, and nothing short of running the permutations shows
+otherwise. It is the fourth wrong premise in this phase that was a plan
+asserting a property rather than a plan naming a wrong symbol, and those are the
+expensive kind.
+
+**How it stays visible.** This entry and `01-13-SUMMARY.md`.
+
+**Size:** none. It is a note for whoever writes the next plan over this code.
+
+
+## Two writers spell a message identifier differently (found in 01-13)
+
+**Found during:** 01-13, task 2, when a new lookup joining `messages.message_id`
+against `messages.thread_id` returned nothing.
+
+`messages.message_id` holds two formats:
+
+- Bare, with no angle brackets, for anything that arrived through
+  `mail_parser`, which strips them. That is `service::mime`,
+  `application::filing::a_row_filed_here` and the sync at
+  `application::mail_sync`.
+- Wrapped in angle brackets, for a draft this program composes, because
+  `application::draft_message::message_id_for` builds
+  `<draft-...@wixen-mail.invalid>` and it is stored as written.
+
+`messages.thread_id` is always bare, because `thread_identity::conversation_root`
+strips on the way in. So a lenient reader and a verbatim writer answer the same
+question two ways, which is the shape this project has been bitten by before.
+
+**Why it is not fixed here.** 01-13 widened the query to ask for both forms,
+with the reasoning at the query. Making the column consistent means rewriting
+values that have shipped, which CLAUDE.md forbids without a stated reason, and
+deciding which form is canonical, which affects every reader of the column
+rather than only the one added here.
+
+**How it stays visible.** A comment at
+`MessageCache::threads_holding_any_of` naming both writers, this entry, and
+`WINDOWS.md`.
+
+**Size:** small to normalise on write and add a backfill; medium to be sure
+every reader of `message_id` agrees, including the IMAP search that quotes it
+onto the wire.
+
+
+## Nothing has watched a screen reader read a rethreaded row (found in 01-13)
+
+**Found during:** 01-13, task 3.
+
+THREAD-02's criterion is that rethreading on arrival "does not re-announce rows
+the user is not on". What is proved is the mechanism: the rule deciding which
+rows changed is tested six ways and guarded, the control is told to repaint
+those rows and not the list, it is told its size only when the size moved, and
+the selection is not touched. What is not proved is what somebody hears.
+
+Whether repainting one row of a virtual `wxListCtrl` is silent to NVDA, and
+whether `set_item_count` on an unchanged count would have been audible anyway,
+are questions about a real screen reader on a real window with real mail
+arriving. Nothing in this program has run against a real mail account, so the
+arrival itself has never happened outside a test.
+
+**Why it is not fixed here.** It needs Pratik, NVDA, and an account.
+
+**How it stays visible.** This entry, `WINDOWS.md`, and the `human_judgment`
+flag on the coverage entry in `01-13-SUMMARY.md`.
+
+**Size:** none in code. One session with a screen reader.

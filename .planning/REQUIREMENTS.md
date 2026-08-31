@@ -142,7 +142,7 @@ write path added by this milestone passes through that gate.
   - [D] Switching the view back gives the message list unchanged, with focus on the message
     the user was on.
 
-- [ ] **THREAD-02**: Rethread incrementally as mail arrives, not only when a folder is opened.
+- [x] **THREAD-02**: Rethread incrementally as mail arrives, not only when a folder is opened.
   - Evidence: `src/application/threading.rs` rethreads on folder open. The mail-at-scale plan
     specifies incremental assignment: each arriving message looks up its references against an
     index on `message_id` and joins an existing thread or starts one.
@@ -159,6 +159,21 @@ write path added by this milestone passes through that gate.
   - [D] The merge case has a test that fails if the two trees are left separate.
   - [D] Rethreading on arrival does not re-announce rows the user is not on, so a syncing
     mailbox does not flood the announcement queue.
+
+  - Closed by 01-13, and two things about it are true and worth reading before anybody
+    relies on this row. **The merge runs in one direction only.** A late message that
+    connects two conversations merges them, which is the case this requirement names and
+    the case the test and its guard record cover. A conversation *root* arriving after a
+    message that already named it is not merged: nothing it can be asked about names the
+    other conversation, and the link exists only in the other message's stored reference
+    chain, which no index can search. Three of the six arrival orders over such a set
+    merge and three do not. It has a passing test asserting the gap, an entry in
+    `deferred-items.md` naming the table that would close it, and a sentence in
+    `docs/changelog.md` under Known limitation. **The third criterion is structural.**
+    The rule deciding which rows repaint is tested and guarded, the control is told to
+    repaint those rows rather than the list, it is told its size only when the size
+    moved, and the selection is not touched. Whether that is silent to NVDA has not been
+    heard, because nothing in this program has run against a real mail account.
 
 ### Search
 
@@ -948,7 +963,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Complete |
-| THREAD-02 | Phase 1 | Pending |
+| THREAD-02 | Phase 1 | Complete |
 | SEARCH-01 | Phase 2 | Pending |
 | SEARCH-02 | Phase 2 | Pending |
 | SEARCH-03 | Phase 2 | Pending |

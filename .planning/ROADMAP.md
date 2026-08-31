@@ -108,7 +108,7 @@ Plans:
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 01-13-PLAN.md — Rethread as mail arrives, including the two-tree merge (THREAD-02)
+- [x] 01-13-PLAN.md — Rethread as mail arrives, including the two-tree merge (THREAD-02)
 
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-29 after the phase discussion. The original five described nesting a flat tree. What the discussion decided is in `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`, which is the authority on the detail; these criteria are what the phase is verified against. The phase also needs three IMAP verbs that do not exist in `src/service/protocols/imap.rs` today: CREATE, RENAME and DELETE mailbox.
@@ -232,7 +232,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Folders and conversations | 12/13 | In Progress|  |
+| 1. Folders and conversations | 13/13 | Complete | 2026-08-31 |
 | 2. Search that says what it covers | 0/TBD | Not started | - |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |

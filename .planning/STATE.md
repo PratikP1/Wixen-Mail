@@ -69,12 +69,12 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-30 — 01-07 done: the human gate was returned rather than answered and came back with three corrections, the five local folders are now one each, and the merge reuses the mover that already existed rather than the second one the plan asked for
+Last activity: 2026-08-31 — 01-13 done, and with it phase 01: mail arriving into an open folder now joins its conversation and repaints the one row it changed, a late message that connects two conversations merges them everywhere they are filed, and the merge that is not done in the other direction has a passing test saying so rather than being left to be found
 
-Progress: 12 of 13 plans. The phase percentage above is 0 because no phase is
-finished, and this line counts plans, so the two say different things about the
-same work. The plan count read 7 while 11 were done, which is how long a number
-nothing recomputes can sit here being wrong.
+Progress: 13 of 13 plans. Phase 01 is finished. The phase percentage above
+counts phases and this line counts plans, so the two have said different things
+about the same work all through this phase; the plan count read 7 while 11 were
+done, which is how long a number nothing recomputes can sit here being wrong.
 
 ## Performance Metrics
 
@@ -275,8 +275,34 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-31T03:27:11.408Z
-Stopped at: Completed 01-12-PLAN.md
+Last session: 2026-08-31T00:00:00.000Z
+Stopped at: Completed 01-13-PLAN.md, and with it every plan in phase 01
+
+01-13 closed THREAD-02 and the phase. Four things it found that the plan had
+not, and the first two matter to anybody writing over this code.
+
+The plan's own order-independence criterion is unsatisfiable with the signature
+the same task mandates: the arrival lookup can see messages the arriving one
+names, never messages that name it. So the merge runs in one direction. A late
+message connecting two conversations merges them, which is what THREAD-02 asks
+for; a conversation root arriving after a message that already named it does
+not, and closing that needs an identifier-to-conversation table, which is a
+schema decision this plan did not carry.
+
+`messages.message_id` holds two spellings and `messages.thread_id` holds one:
+mail through `mail_parser` is stored bare, a draft this program composes keeps
+its angle brackets, and the derived column always strips. A new lookup joining
+them found nothing, and the symptom read exactly like a wrong test fixture.
+
+The lookup has to ask which conversation an identifier is *in*, not whether it
+is the root of one. An ancestor named in a chain is usually in the middle of a
+conversation rather than at its head, so asking about roots misses the common
+shape.
+
+Guard record "the column that says which conversation a message is in has a
+writer" was re-measured for the fourth time in two days, now at 31 tests, one of
+them in `wx_app`. It goes stale every time anything near it is touched, which is
+the bidirectional check earning its keep.
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
