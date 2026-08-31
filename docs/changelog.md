@@ -47,7 +47,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   keep backups of `message_cache.db`, taking one before you first open this
   version is worth doing.
 
+- **Replying no longer adds a second `Re:` to a subject that already has one in
+  another language or another case.** Before, this only recognised the exact
+  `Re: `, so replying to `AW: Angebot` gave `Re: AW: Angebot`, and again on the
+  next reply. Forwarding had the same problem with `Fwd: `.
+
+  A reply to something forwarded to you still says `Re: Fwd:`, and a forward of
+  a reply still says `Fwd: Re:`, because each of those says something the other
+  does not.
+
 ### Added
+
+- **A conversation is now named after what it is about, and says how big it
+  is.** Opening a conversation used to title it with whichever message your
+  cursor happened to be on, so opening one from a reply read out "Re: Re:
+  Quarterly report" before it got to the two words that say what it is. It is
+  now named after the oldest message in it, with the reply and forward markers
+  taken off.
+
+  That works in seventeen languages, not just English. `AW:`, `SV:`, `Antw:`,
+  `Odp:`, `R:`, `WG:`, `VS:` and thirty-four more are all recognised, because
+  the rule comes from a library that maintains the list rather than from a list
+  kept here.
+
+  **The name can change.** It comes from the oldest message you have, so
+  fetching older mail can bring in something earlier and rename the
+  conversation. That is deliberate: the conversation is called what it started
+  as.
+
+  The window also says how many messages are in the conversation and how many
+  of them you have not read, in those words, instead of the identifier a mail
+  server gives a conversation.
+
+- **A setting for how far a conversation reaches.** Settings, Reading, under
+  "Folders and Message Lists". A conversation can be counted across the whole
+  account, which is the default, or only across the folder you are reading.
+
+  Counting across the account means a conversation says the same thing wherever
+  you are standing: a conversation with three messages in your Inbox and two in
+  your Archive says five from either. Folders that hold a copy of every message,
+  which on Gmail is All Mail, are left out of the count, so a Gmail conversation
+  does not report twice its size.
+
 
 - **A folder your mail server has stopped listing is never removed without
   asking you first.** When a check for mail comes back and a folder you had is

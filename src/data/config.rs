@@ -1186,7 +1186,7 @@ mod permission_tests {
         let fields = older.as_object_mut().expect("an object");
         assert!(
             fields.remove("a_conversation_reaches").is_some(),
-            "a_conversation_reaches is not written to the settings file any more,              so this test covers nothing"
+            "a_conversation_reaches is not written to the settings file any more, so this test covers nothing"
         );
 
         let parsed: AppConfig =

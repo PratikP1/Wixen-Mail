@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 332 records have arrived since and have not been through it.
+# 334 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9115,10 +9115,18 @@ file = "src/data/message_cache/messages.rs"
 # made it read like working infrastructure. This break puts it back to that:
 # the column, the sort and the tests all still exist, and nothing fills it.
 #
-# Measured by hand on 2026-08-30 against the whole library, 5310 tests. The
-# fifth one below is the one worth having: the Thread column's sort has always
-# been "m.thread_id", so with the writer gone the sort silently orders every
-# row by NULL, which is what nobody noticed for the life of the column.
+# Measured by hand on 2026-08-30 against the whole library, 5310 tests, and
+# again the same day at 5674 after plan 01-11. Five tests became seventeen,
+# and the reason is worth writing down rather than just the number: 01-11 built
+# a conversation listing that groups on this column, so twelve tests about
+# counting and naming conversations now depend on the writer as well. The
+# record was measured again the moment the run said it had fallen behind, which
+# is the whole point of the run asking in both directions.
+#
+# The one worth having is still `test_sorting_by_thread_groups_a_conversation`:
+# the Thread column's sort has always been "m.thread_id", so with the writer
+# gone the sort silently orders every row by NULL, which is what nobody noticed
+# for the life of the column.
 before = """                    crate::application::thread_identity::conversation_root(
                         &incoming.message_id,
                         incoming.refs_header.as_deref(),
@@ -9126,10 +9134,22 @@ before = """                    crate::application::thread_identity::conversatio
 after = """                    None::<String>,"""
 red = [
     "data::message_cache::messages::tests::test_a_chain_that_arrives_later_moves_the_message_into_its_conversation",
+    "data::message_cache::messages::tests::test_a_conversation_of_one_message_counts_one",
+    "data::message_cache::messages::tests::test_a_conversation_split_across_two_folders_counts_the_same_from_either",
+    "data::message_cache::messages::tests::test_a_conversation_that_does_not_touch_this_folder_is_not_listed",
+    "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
+    "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
     "data::message_cache::messages::tests::test_a_hostile_reference_chain_is_stored_and_read_back_unchanged",
     "data::message_cache::messages::tests::test_a_message_a_sync_stores_carries_its_conversation_id",
+    "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
+    "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
+    "data::message_cache::messages::tests::test_sorting_by_a_column_agrees_with_what_that_column_says",
     "data::message_cache::messages::tests::test_sorting_by_thread_groups_a_conversation",
+    "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
+    "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
+    "data::message_cache::messages::tests::test_two_accounts_do_not_share_a_conversation",
+    "data::message_cache::messages::tests::test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here",
 ]
 
 [[guard]]
@@ -9773,4 +9793,57 @@ red = [
     "presentation::one_question_at_a_time::tests::test_five_folders_going_missing_in_one_sync_produce_one_question_naming_five",
     "presentation::one_question_at_a_time::tests::test_one_accounts_folders_are_not_read_out_with_the_account_after_each",
     "presentation::one_question_at_a_time::tests::test_two_accounts_syncing_at_the_same_time_produce_one_question",
+]
+[[guard]]
+# D-02, and the mechanism rather than the wording. A conversation row's value
+# and the value the list sorts by have to be one thing, and what makes them one
+# is that `conversations_query` fills every field from the same method the
+# ORDER BY is built from. Break that and the two can differ while both still
+# look right on their own.
+#
+# So the break fills one field from another column's arm. The Unread field then
+# holds how many messages there are while the ORDER BY still uses how many are
+# unread: the list comes back in the right order and every row says "Unread",
+# which is the shape this is about. A sort that is right and a cell that is
+# wrong reads as a working list.
+#
+# Measured by hand on 2026-08-30 against the whole library: three tests. The
+# agreement test catches it through its own check that the two rows read
+# differently, which is the check that stops an ordering proving anything by
+# luck. The count test catches the number itself. The query test catches the
+# missing expression, because a rule that fills no field is not in the query at
+# all.
+name = "a conversation column's display and its sort come from the same enum arm"
+file = "src/data/message_cache/messages.rs"
+before = """        unread = MessageColumn::Unread.conversation_sort_expression(),"""
+after = """        unread = MessageColumn::Thread.conversation_sort_expression(),"""
+red = [
+    "data::message_cache::messages::tests::test_every_value_in_the_conversation_query_is_bound_rather_than_written_in",
+    "data::message_cache::messages::tests::test_sorting_by_a_column_agrees_with_what_that_column_says",
+    "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
+]
+
+[[guard]]
+# D-08 and threat T-01-50. On Gmail a label is a mailbox and All Mail holds a
+# copy of every message, so counting a conversation across the account without
+# leaving those folders out reports twice its size, on the largest provider
+# there is, for every conversation. The number stays plausible while being
+# wrong, which is worse than one that is obviously wrong.
+#
+# The break leaves the reach parameter in place and makes its exclusion always
+# true, so the shape of the query is untouched and only the exclusion goes. A
+# weaker break, dropping the whole clause, changes the parameter's arithmetic
+# as well and would redden for a second reason.
+#
+# Measured by hand on 2026-08-30 against the whole library: two tests. One is
+# the doubling. The other is the half that is easy to lose while fixing the
+# first, because the exclusion is about counting and not about what is listed:
+# somebody standing in All Mail still sees the conversations it holds.
+name = "a folder holding a copy of every message is left out of a conversation count"
+file = "src/data/message_cache/messages.rs"
+before = """               AND (?3 = 0 OR holds_all_mail = 0)"""
+after = """               AND (?3 = 0 OR ?3 = 1)"""
+red = [
+    "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
+    "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
 ]
