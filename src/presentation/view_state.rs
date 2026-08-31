@@ -353,6 +353,25 @@ pub fn what_applying_would_do(
     ))
 }
 
+/// What deleting a collapsed conversation row asks, D-07.
+///
+/// The count comes first, before the name and before the word "delete" has
+/// finished being read. That is the decision and not a preference: an action on
+/// a collapsed row is an action on messages the person cannot see, so the
+/// number is the only thing telling them the scale, and a sentence that gets to
+/// it last is a sentence somebody answers before hearing it.
+///
+/// A conversation of one is asked about the way a single message is, with no
+/// new wording, because it is not a new case.
+///
+/// `messages` is the length of the list that will actually be deleted, never a
+/// number counted separately. `MessageCache::messages_in_conversation` is where
+/// it comes from, and its doc comment says why.
+pub fn deleting_a_conversation_asks(name: &str, messages: usize) -> String {
+    let _ = (name, messages);
+    String::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,5 +864,60 @@ mod tests {
             }
             other => panic!("did not ask: {other:?}"),
         }
+    }
+
+    // ── D-07: acting on a collapsed row ───────────────────────────────
+
+    #[test]
+    fn test_deleting_a_conversation_names_the_count_before_anything_else() {
+        let said = deleting_a_conversation_asks("Quarterly report", 5);
+        assert!(said.contains('5'), "the number is not in it: {said}");
+        assert!(
+            said.contains("Quarterly report"),
+            "the conversation is not named: {said}"
+        );
+        // Before the name, because a person answering a question they cannot
+        // see the contents of needs the scale first.
+        let number = said.find('5').expect("the number");
+        let name = said.find("Quarterly report").expect("the name");
+        assert!(number < name, "the count comes after the name: {said}");
+    }
+
+    #[test]
+    fn test_the_question_is_a_question() {
+        assert!(deleting_a_conversation_asks("Quarterly report", 5).ends_with('?'));
+    }
+
+    #[test]
+    fn test_a_conversation_of_one_message_is_asked_the_way_one_message_is() {
+        // Not a new case, so not new wording. "Delete 1 messages in x?" is the
+        // shape this exists to avoid, and so is a sentence that makes a lone
+        // message sound like a bulk action.
+        let said = deleting_a_conversation_asks("Quarterly report", 1);
+        assert!(
+            !said.contains("1 message"),
+            "a lone message was counted at somebody: {said}"
+        );
+        assert!(said.contains("Quarterly report"), "{said}");
+        assert!(said.ends_with('?'), "{said}");
+    }
+
+    #[test]
+    fn test_a_bigger_conversation_says_a_bigger_number() {
+        // Against a body that hardcodes one sentence, which the assertions
+        // above would not catch on their own.
+        assert!(deleting_a_conversation_asks("x", 12).contains("12"));
+        assert_ne!(
+            deleting_a_conversation_asks("x", 5),
+            deleting_a_conversation_asks("x", 12)
+        );
+    }
+
+    #[test]
+    fn test_two_conversations_of_the_same_size_are_told_apart_by_name() {
+        assert_ne!(
+            deleting_a_conversation_asks("Quarterly report", 5),
+            deleting_a_conversation_asks("Lunch", 5)
+        );
     }
 }

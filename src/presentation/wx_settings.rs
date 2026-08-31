@@ -5,7 +5,7 @@
 //! and persisted through `AppConfig` / `ConfigManager`.
 
 use crate::application::autosave::AutosaveInterval;
-use crate::application::conversations::AConversationReaches;
+use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
@@ -83,6 +83,7 @@ pub struct SettingsWidgets {
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
     a_conversation_reaches: Choice,
+    deleting_a_conversation_row: Choice,
     empty_reaches_subfolders: CheckBox,
     mark_read_reaches_subfolders: CheckBox,
     hold_back_remote_pictures: CheckBox,
@@ -231,6 +232,7 @@ pub fn build_settings_dialog(
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,
+        deleting_a_conversation_row,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -370,6 +372,7 @@ pub fn build_settings_dialog(
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,
+        deleting_a_conversation_row,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -912,6 +915,7 @@ struct ReadingTabControls {
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
     a_conversation_reaches: Choice,
+    deleting_a_conversation_row: Choice,
     hold_back_remote_pictures: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
@@ -1033,6 +1037,26 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
             .iter()
             .position(|option| {
                 *option == AConversationReaches::from_stored(&config.a_conversation_reaches)
+            })
+            .unwrap_or(0) as u32,
+    );
+
+    // D-07, and it is a second question rather than a wider version of the one
+    // above. That one is how far a conversation is counted; this is how far
+    // Delete reaches when it is pressed on a collapsed row. Somebody who wants
+    // to read about a whole account and delete out of one folder is asking for
+    // something coherent, and one control for both would make them choose.
+    let deleting_a_conversation_row = labelled_choice(
+        panel,
+        &folders_sec,
+        "&Delete on a conversation row removes:",
+        "Delete on a conversation row removes",
+        &DeletingAConversationRow::ALL.map(|option| option.words()),
+        DeletingAConversationRow::ALL
+            .iter()
+            .position(|option| {
+                *option
+                    == DeletingAConversationRow::from_stored(&config.deleting_a_conversation_row)
             })
             .unwrap_or(0) as u32,
     );
@@ -1326,6 +1350,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,
+        deleting_a_conversation_row,
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
@@ -2120,6 +2145,14 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .get_string_selection()
         .map(|chosen| AConversationReaches::from_words(&chosen))
         .unwrap_or_else(|| AConversationReaches::from_stored(&cfg.a_conversation_reaches))
+        .as_str()
+        .to_string();
+    // D-07, written back separately because it is a separate answer.
+    cfg.deleting_a_conversation_row = w
+        .deleting_a_conversation_row
+        .get_string_selection()
+        .map(|chosen| DeletingAConversationRow::from_words(&chosen))
+        .unwrap_or_else(|| DeletingAConversationRow::from_stored(&cfg.deleting_a_conversation_row))
         .as_str()
         .to_string();
     // D-34 and D-35, written back separately because they are two answers.

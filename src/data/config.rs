@@ -216,6 +216,22 @@ pub struct AppConfig {
     /// fails to parse takes every other setting with it.
     #[serde(default = "default_a_conversation_reaches")]
     pub a_conversation_reaches: String,
+    /// How far Delete reaches on a collapsed conversation row, D-07.
+    ///
+    /// A separate question from `a_conversation_reaches` above, which is how
+    /// far a row *counts*. Reading about a whole account and deleting out of
+    /// one folder is a coherent thing to want, and one setting for both would
+    /// make somebody choose between a count they like and a delete they trust.
+    ///
+    /// Defaults to this folder's messages, the narrower reach, because a
+    /// collapsed row is a row whose contents nobody can see.
+    ///
+    /// The `#[serde(default = "...")]` is not optional, for the reason the
+    /// setting above gives: without it every settings file already on disk
+    /// fails to parse, and one that fails to parse takes every other setting
+    /// with it.
+    #[serde(default = "default_deleting_a_conversation_row")]
+    pub deleting_a_conversation_row: String,
     /// The language messages are spell-checked in.
     ///
     /// A BCP 47 tag such as `en-GB` where Windows is doing the checking, and a
@@ -490,6 +506,12 @@ fn default_a_conversation_reaches() -> String {
         .to_string()
 }
 
+fn default_deleting_a_conversation_row() -> String {
+    crate::application::conversations::DeletingAConversationRow::default()
+        .as_str()
+        .to_string()
+}
+
 fn default_clock_hours() -> String {
     "auto".to_string()
 }
@@ -538,6 +560,7 @@ impl Default for AppConfig {
             start_in_all_inboxes: false,
             unread_on_a_parent: default_unread_on_a_parent(),
             a_conversation_reaches: default_a_conversation_reaches(),
+            deleting_a_conversation_row: default_deleting_a_conversation_row(),
             empty_reaches_subfolders: default_true(),
             mark_read_reaches_subfolders: default_true(),
             hold_back_remote_pictures: default_true(),
@@ -1198,6 +1221,55 @@ mod permission_tests {
             ),
             crate::application::conversations::AConversationReaches::TheWholeAccount
         );
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_a_conversation_row_could_be_deleted_takes_this_folder() {
+        // The narrower reach on an upgrade, deliberately. Somebody whose
+        // settings file predates this has never been asked how far a delete on
+        // a collapsed row should go, and the answer that destroys less is the
+        // only honest thing to assume on their behalf.
+        use crate::application::conversations::DeletingAConversationRow;
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("deleting_a_conversation_row").is_some(),
+            "deleting_a_conversation_row is not written to the settings file any more, so this \
+             test covers nothing"
+        );
+
+        let parsed: AppConfig =
+            serde_json::from_value(older).expect("an older settings file still opens");
+
+        assert_eq!(
+            DeletingAConversationRow::from_stored(&parsed.deleting_a_conversation_row),
+            DeletingAConversationRow::ThisFoldersMessages
+        );
+    }
+
+    #[test]
+    fn test_a_fresh_installation_deletes_only_this_folders_messages_from_a_conversation_row() {
+        // The other half of the pair above. A default written twice is a
+        // default that drifts, which is what the language setting did.
+        use crate::application::conversations::DeletingAConversationRow;
+        assert_eq!(
+            DeletingAConversationRow::from_stored(
+                &AppConfig::default().deleting_a_conversation_row
+            ),
+            DeletingAConversationRow::ThisFoldersMessages
+        );
+    }
+
+    #[test]
+    fn test_how_far_deleting_a_row_reaches_reads_back_by_the_words_it_was_offered_under() {
+        use crate::application::conversations::DeletingAConversationRow;
+        for option in DeletingAConversationRow::ALL {
+            assert_eq!(DeletingAConversationRow::from_words(option.words()), option);
+            assert_eq!(
+                DeletingAConversationRow::from_stored(option.as_str()),
+                option
+            );
+        }
     }
 
     #[test]

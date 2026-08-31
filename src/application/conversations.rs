@@ -108,6 +108,73 @@ impl AConversationReaches {
     }
 }
 
+/// How far an action on a collapsed conversation row reaches, D-07.
+///
+/// The default is this folder's messages, which is what D-07's table says, and
+/// it is the cautious answer rather than the obvious one: a collapsed row is a
+/// row whose contents nobody can see, so the reach that surprises somebody
+/// least is the one bounded by where they are standing.
+///
+/// It is a separate question from [`AConversationReaches`], which is how far a
+/// row *counts*. Reading about a whole account and deleting out of one folder
+/// is a coherent thing to want, and folding the two into one setting would make
+/// a person choose between a count they like and a delete they trust.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DeletingAConversationRow {
+    /// Only the messages in the folder being shown, which is D-07's default.
+    #[default]
+    ThisFoldersMessages,
+    /// Every message in the conversation, wherever it is filed.
+    TheWholeConversation,
+}
+
+impl DeletingAConversationRow {
+    /// Both, so a chooser and its tests cover the set.
+    pub const ALL: [DeletingAConversationRow; 2] = [
+        DeletingAConversationRow::ThisFoldersMessages,
+        DeletingAConversationRow::TheWholeConversation,
+    ];
+
+    /// How the setting stores itself, and reads back.
+    pub const fn as_str(self) -> &'static str {
+        let _ = self;
+        "this_folders_messages"
+    }
+
+    /// Read a stored setting.
+    ///
+    /// Anything unrecognised is this folder's messages, which is the default
+    /// and the narrower reach. A settings file written by hand or by a later
+    /// version falls to the answer that destroys least.
+    pub fn from_stored(stored: &str) -> Self {
+        let _ = stored;
+        Self::ThisFoldersMessages
+    }
+
+    /// What the choice says on the settings screen.
+    pub const fn words(self) -> &'static str {
+        let _ = self;
+        ""
+    }
+
+    /// Read back what somebody chose, by the words they were shown.
+    pub fn from_words(words: &str) -> Self {
+        let _ = words;
+        Self::ThisFoldersMessages
+    }
+
+    /// The reach the count is read under, so the question and the row agree.
+    ///
+    /// D-07 says the count is named before the action happens, and it has to be
+    /// the count of what will actually go. Deriving it here rather than at the
+    /// call site is what stops the sentence and the deletion coming from two
+    /// queries that could answer differently.
+    pub const fn counted_the_same_way(self) -> AConversationReaches {
+        let _ = self;
+        AConversationReaches::TheWholeAccount
+    }
+}
+
 /// One conversation, as a row describing the whole of it needs it.
 ///
 /// D-02: every field here answers about the conversation rather than about its
@@ -260,6 +327,87 @@ fn is_a_forward_marker(word: &str) -> bool {
 /// Anything that is not itself a marker in any of the seventeen languages. A
 /// probe built on a word that was one would answer yes about everything.
 const A_WORD_THAT_IS_NOT_A_MARKER: &str = "qzqz";
+
+#[cfg(test)]
+mod how_far_deleting_a_row_reaches {
+    use super::*;
+
+    #[test]
+    fn test_the_default_is_this_folders_messages() {
+        // D-07's table. The narrower of the two, because a collapsed row is a
+        // row whose contents nobody can see.
+        assert_eq!(
+            DeletingAConversationRow::default(),
+            DeletingAConversationRow::ThisFoldersMessages
+        );
+    }
+
+    #[test]
+    fn test_each_option_stores_itself_and_reads_back_as_itself() {
+        for option in DeletingAConversationRow::ALL {
+            assert_eq!(
+                DeletingAConversationRow::from_stored(option.as_str()),
+                option,
+                "{option:?} did not come back"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_two_options_are_not_stored_as_the_same_word() {
+        assert_ne!(
+            DeletingAConversationRow::ThisFoldersMessages.as_str(),
+            DeletingAConversationRow::TheWholeConversation.as_str()
+        );
+    }
+
+    #[test]
+    fn test_a_word_this_version_does_not_know_takes_the_narrower_reach() {
+        assert_eq!(
+            DeletingAConversationRow::from_stored("everything_everywhere"),
+            DeletingAConversationRow::ThisFoldersMessages,
+            "an unrecognised setting must destroy less, not more"
+        );
+        assert_eq!(
+            DeletingAConversationRow::from_stored(""),
+            DeletingAConversationRow::ThisFoldersMessages
+        );
+    }
+
+    #[test]
+    fn test_each_option_is_offered_in_words_and_read_back_by_them() {
+        for option in DeletingAConversationRow::ALL {
+            assert!(
+                !option.words().is_empty(),
+                "{option:?} is offered as nothing"
+            );
+            assert_eq!(DeletingAConversationRow::from_words(option.words()), option);
+        }
+    }
+
+    #[test]
+    fn test_the_two_options_do_not_read_the_same_on_the_screen() {
+        assert_ne!(
+            DeletingAConversationRow::ThisFoldersMessages.words(),
+            DeletingAConversationRow::TheWholeConversation.words()
+        );
+    }
+
+    #[test]
+    fn test_each_reach_is_counted_under_the_matching_one() {
+        // The whole point of this method. The count named in the question and
+        // the messages that go are read under one reach, so they cannot be two
+        // answers.
+        assert_eq!(
+            DeletingAConversationRow::TheWholeConversation.counted_the_same_way(),
+            AConversationReaches::TheWholeAccount
+        );
+        assert_eq!(
+            DeletingAConversationRow::ThisFoldersMessages.counted_the_same_way(),
+            AConversationReaches::ThisFolderOnly
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {

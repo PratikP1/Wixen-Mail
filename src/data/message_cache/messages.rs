@@ -1539,6 +1539,27 @@ impl MessageCache {
         Ok(rows)
     }
 
+    /// Every message of one conversation, under the same reach its row counts.
+    ///
+    /// The set an action on a collapsed row acts on (D-07), and it is the same
+    /// set the row's count is of, because both come from this reach. That is
+    /// not tidiness: D-07 requires the number named before a deletion to be the
+    /// number of messages that will go, and the only way to guarantee that is
+    /// for the question to count the very list the deletion walks.
+    ///
+    /// Deleted messages are left out, the same way `conversations_in` leaves
+    /// them out, so deleting a conversation twice is not asked about twice.
+    pub fn messages_in_conversation(
+        &self,
+        thread_id: &str,
+        account_id: &str,
+        folder_id: i64,
+        reach: AConversationReaches,
+    ) -> Result<Vec<i64>> {
+        let _ = (thread_id, account_id, folder_id, reach);
+        Ok(Vec::new())
+    }
+
     /// Search an account's messages across every folder.
     ///
     /// Subject, correspondent and snippet, which is what someone remembers
@@ -4512,6 +4533,100 @@ mod tests {
                 .unwrap();
         }
         (cache, inbox, archive)
+    }
+
+    #[test]
+    fn test_the_messages_an_action_reaches_are_the_ones_its_row_counted() {
+        // D-07's whole guarantee, asserted as an equality rather than as two
+        // numbers that happen to match: the count named before a deletion is
+        // the length of the very list the deletion walks. Under both reaches,
+        // because a rule that held for one of them would be half a rule.
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_matches_the_row");
+
+        for reach in [TheWholeAccount, ThisFolderOnly] {
+            let row = cache.conversations_in(inbox, "acc", reach, None).unwrap();
+            let counted = conversation(&row, "root@example.com").messages;
+            let reaching = cache
+                .messages_in_conversation("root@example.com", "acc", inbox, reach)
+                .unwrap();
+            assert_eq!(
+                reaching.len() as i64,
+                counted,
+                "{reach:?}: the row says {counted} and the action would take {}",
+                reaching.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_two_reaches_take_different_numbers_of_messages() {
+        // Without this the equality above is satisfied by a function that
+        // always answers with the same list, and both assertions would pass.
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_differs");
+        let everywhere = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        let here = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, ThisFolderOnly)
+            .unwrap();
+        assert_eq!(everywhere.len(), 5);
+        assert_eq!(here.len(), 3);
+    }
+
+    #[test]
+    fn test_the_narrower_reach_takes_a_subset_of_the_wider_one() {
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_subset");
+        let everywhere = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        let here = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, ThisFolderOnly)
+            .unwrap();
+        for one in &here {
+            assert!(
+                everywhere.contains(one),
+                "message {one} is in this folder's reach and not in the account's"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_conversation_nothing_belongs_to_reaches_no_message() {
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_nothing");
+        assert!(
+            cache
+                .messages_in_conversation("nobody@example.com", "acc", inbox, TheWholeAccount)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_message_already_deleted_is_not_reached_again() {
+        // Deleting a conversation twice must not ask about messages that have
+        // already gone, the same rule 01-09's emptying follows.
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_skips_deleted");
+        let all = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        cache.delete_message(all[0]).unwrap();
+        let again = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        assert_eq!(again.len(), all.len() - 1);
+        assert!(!again.contains(&all[0]));
+    }
+
+    #[test]
+    fn test_another_accounts_conversation_is_not_reached() {
+        let (cache, inbox, _archive) = split_across_two_folders("delete_reach_one_account");
+        assert!(
+            cache
+                .messages_in_conversation("root@example.com", "other", inbox, TheWholeAccount)
+                .unwrap()
+                .is_empty(),
+            "an action in one account reached another account's mail"
+        );
     }
 
     #[test]
