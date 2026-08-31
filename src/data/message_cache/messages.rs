@@ -4607,6 +4607,78 @@ mod tests {
     }
 
     #[test]
+    fn test_a_deleted_conversation_comes_back_whole_and_not_in_part() {
+        // D-07's last clause. Deleting a conversation to the trash moves every
+        // message it reached, so putting them back puts the conversation back
+        // rather than whichever row was under the cursor.
+        //
+        // The reversal is a move rather than an undelete, because that is what
+        // the deletion is: `local_folders::deleting` answers `MoveTo(trash)`
+        // for a folder on this computer, and the mail is still there. A test
+        // that soft-deleted and cleared a flag would be testing a mechanism the
+        // program does not use.
+        let (cache, inbox, _archive) = split_across_two_folders("conversation_comes_back_whole");
+        // Under the reserved account the shared folders are stored under, which
+        // is where the trash really is (D-18). Made under "acc" instead, this
+        // fixture passes with one message put back rather than five: the
+        // account-wide reach counts every folder of the account, so mail moved
+        // to an "acc" trash never leaves the count and the assertion below
+        // cannot tell whole from part. It was written that way first and the
+        // break proved it.
+        let trash = cache
+            .save_folder(&super::super::CachedFolder {
+                id: 0,
+                account_id: crate::application::local_folders::THIS_COMPUTER.to_string(),
+                name: "Trash".to_string(),
+                path: format!("{}Trash", crate::application::local_folders::LOCAL_PREFIX),
+                folder_type: "Trash".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
+
+        let taken = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        assert_eq!(taken.len(), 5, "the fixture is the whole conversation");
+        for message in &taken {
+            cache.move_message(*message, trash).unwrap();
+        }
+        assert!(
+            cache
+                .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+                .unwrap()
+                .is_empty(),
+            "the conversation is gone from where it was"
+        );
+
+        for message in &taken {
+            cache.move_message(*message, inbox).unwrap();
+        }
+        let back = cache
+            .messages_in_conversation("root@example.com", "acc", inbox, TheWholeAccount)
+            .unwrap();
+        assert_eq!(back.len(), taken.len(), "every message came back");
+        for message in &taken {
+            assert!(
+                back.contains(message),
+                "message {message} did not come back"
+            );
+        }
+        assert_eq!(
+            conversation(
+                &cache
+                    .conversations_in(inbox, "acc", TheWholeAccount, None)
+                    .unwrap(),
+                "root@example.com"
+            )
+            .messages,
+            5,
+            "and the row says so again"
+        );
+    }
+
+    #[test]
     fn test_the_two_reaches_take_different_numbers_of_messages() {
         // Without this the equality above is satisfied by a function that
         // always answers with the same list, and both assertions would pass.
