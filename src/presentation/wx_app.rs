@@ -24423,3 +24423,121 @@ mod what_the_list_is_told_it_holds {
         );
     }
 }
+
+/// Moving the cursor between accounts moves the selection, and does not rebuild
+/// the tree.
+///
+/// This is the point of holding every account at once (01-14). Before it, the
+/// tree drew one account's folders and getting to another account's meant a
+/// rebuild: `delete_all_items` and five cache reads per account on the thread
+/// that draws, because `MessageCache` wraps a connection that is not `Sync` and
+/// every local read runs on the interface thread. Held multi-account, the other
+/// account's folders are already on screen and getting to them is an arrow key.
+///
+/// The way that gets thrown away is easy to reach for and looks like a bug fix.
+/// Landing on another account's folder has to change whose mail the next
+/// command acts on, and the obvious way to make everything downstream agree is
+/// to read the tree back. That would put a whole-tree rebuild on every press of
+/// the down arrow, which for somebody arrowing through a folder list is the
+/// worst version of this: the cost is now paid per keystroke rather than per
+/// switch. So the handler sets the open account and redraws nothing.
+///
+/// Read from the source because the handler is a closure inside the window
+/// builder and wxWidgets allows one application per process, so no test in this
+/// crate can reach it. What that buys is narrow and worth stating: it proves
+/// the handler names the pure answer and names neither rebuild. It does not
+/// prove the rebuild is absent at run time, which is a running window.
+#[cfg(test)]
+mod moving_between_accounts_does_not_rebuild_the_tree {
+    use crate::common::what_ships::what_ships;
+
+    fn ships() -> String {
+        let text = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+        what_ships(&text)
+    }
+
+    /// The folder tree's selection handler, and nothing after it.
+    ///
+    /// Cut between two anchors rather than by counting braces, and both are
+    /// `expect`ed: an anchor that has been renamed fails here loudly instead of
+    /// leaving an empty slice that every assertion below passes over.
+    fn the_selection_handler(ships: &str) -> &str {
+        let after = ships
+            .split_once("folder_tree.on_selection_changed({")
+            .expect("the folder tree's selection handler")
+            .1;
+        let end = after
+            .find("msg_list.on_item_selected({")
+            .expect("the message list's selection handler, which follows it");
+        &after[..end]
+    }
+
+    #[test]
+    fn test_the_reading_really_covers_the_handler_rather_than_a_prefix_of_it() {
+        // A slice that had collapsed to nothing, or to the first few lines,
+        // would pass every absence assertion below and say nothing at all.
+        // This is the extent companion to the content companions beside it:
+        // `the_window_itself` in this same file used to cut at the first
+        // `#[cfg(test)]` and silently read 9,500 lines of 24,000, which no
+        // content-level check could have noticed.
+        let ships = ships();
+        let handler = the_selection_handler(&ships);
+        for inside in [
+            "WhichRow::AllInboxes",
+            "WhichRow::Label(tag_id)",
+            "load_folder_messages(",
+        ] {
+            assert!(
+                handler.contains(inside),
+                "the slice does not reach {inside}, so it is a prefix of the \
+                 handler rather than the handler"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_rebuild_when_there_is_one() {
+        // Proving the measurement before believing the absence.
+        let made_up = "folder_tree.on_selection_changed({\n    \
+                       read_the_tree_back(&cache, &state, &tx);\n\
+                       msg_list.on_item_selected({";
+        assert!(the_selection_handler(made_up).contains("read_the_tree_back("));
+        assert!(!the_selection_handler(made_up).contains("folder_tree_updates("));
+    }
+
+    #[test]
+    fn test_landing_on_a_row_does_not_read_the_tree_back() {
+        let ships = ships();
+        let handler = the_selection_handler(&ships);
+        for rebuild in ["read_the_tree_back(", "folder_tree_updates("] {
+            let calls: Vec<&str> = handler
+                .lines()
+                .filter(|line| line.contains(rebuild))
+                .map(str::trim)
+                .collect();
+            assert!(
+                calls.is_empty(),
+                "the folder tree is rebuilt from inside its own selection \
+                 handler, so every arrow key down the sidebar tears the tree \
+                 down and reads every account's folders again: {calls:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_landing_on_a_row_asks_which_account_it_belongs_to() {
+        // The other half, and it has to be here rather than in a separate
+        // check: a handler that rebuilds nothing and also never notices which
+        // account it is on passes the test above and acts on the wrong
+        // account's mail. Once the tree holds every account, whichever account
+        // happens to be open is no longer the account whose folder is under the
+        // cursor, and every command reading the open account inherits that.
+        let ships = ships();
+        assert!(
+            the_selection_handler(&ships).contains("folder_tree::the_account_a_row_belongs_to("),
+            "landing on a folder does not ask whose it is, so opening one of \
+             another account's folders reads it against whichever account was \
+             open"
+        );
+    }
+}

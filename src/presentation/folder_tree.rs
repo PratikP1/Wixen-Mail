@@ -643,6 +643,29 @@ pub fn what_the_gesture_moves(row: Option<&WhichRow>) -> WhatMoves {
     }
 }
 
+/// Whose mail the cursor is on, where the row belongs to one account.
+///
+/// A tree holding every account (01-14) is a tree where the row under the
+/// cursor and the account the program is acting on can differ, and before that
+/// they never could: the tree drew one account's folders, so whichever account
+/// was open was the only one whose folders were on screen. Every command that
+/// reads the open account was right by construction and is not any more.
+///
+/// Answered here, where a row's identity lives, rather than by a chain of `if`s
+/// inside the selection handler, which no test can reach without a window. That
+/// is the same reason `what_the_gesture_moves` sits beside it.
+///
+/// `None` where the row belongs to no one account, and that is not the same
+/// answer as "leave it alone" by accident: All Inboxes is every account at
+/// once, the shared five under "On this computer" belong to the reserved owner
+/// since D-18 rather than to anybody, and a heading is not mail. Landing on any
+/// of them must not change whose mail the next command acts on, because none of
+/// them names a different account to change it to.
+pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
+    let _ = row;
+    None
+}
+
 /// The labels from the top level down to one row, that row's own last.
 ///
 /// How a row is found again on a control that cannot be asked which row it is
@@ -1308,6 +1331,80 @@ mod tests {
             );
         }
         assert_eq!(what_the_gesture_moves(None), WhatMoves::Nothing);
+    }
+
+    #[test]
+    fn test_a_folder_row_says_which_account_it_belongs_to() {
+        // The tree holds every account now, so the row under the cursor and
+        // the account the program is acting on are two different questions.
+        // They used to be one, because only one account's folders were drawn.
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::Folder {
+                account: "second".to_string(),
+                path: "INBOX".to_string(),
+            }),
+            Some("second".to_string())
+        );
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::Account("second".to_string())),
+            Some("second".to_string())
+        );
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::PinnedIn("second".to_string())),
+            Some("second".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_pinned_copy_belongs_to_the_account_of_the_folder_it_copies() {
+        // D-30 makes a pin a copy with an identity of its own, and the copy
+        // sits in the Favourites group at the top rather than inside its
+        // account's branch. So the row above it says nothing about whose it is
+        // and only the identity can answer.
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::Pinned {
+                account: "second".to_string(),
+                path: "Receipts".to_string(),
+            }),
+            Some("second".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_shared_folders_and_the_headings_belong_to_no_one_account() {
+        // Since D-18 the shared five have the reserved owner rather than an
+        // account, and All Inboxes is every account at once. Landing on any of
+        // these must leave whose mail is being acted on alone: there is no
+        // other account they name to change it to, and answering with the
+        // reserved owner would make the next command act against a thing that
+        // is not an account at all.
+        //
+        // Paired with the test above rather than left on its own: against a
+        // function that answers nothing for everything, every line here passes
+        // and proves nothing.
+        for row in [
+            WhichRow::AllInboxes,
+            WhichRow::Favourites,
+            WhichRow::OnThisComputer,
+            WhichRow::Labels,
+            WhichRow::Label("t1".to_string()),
+            WhichRow::SavedSearches,
+            WhichRow::SavedSearch("s1".to_string()),
+            WhichRow::Folder {
+                account: crate::application::local_folders::THIS_COMPUTER.to_string(),
+                path: "Drafts".to_string(),
+            },
+            WhichRow::Pinned {
+                account: crate::application::local_folders::THIS_COMPUTER.to_string(),
+                path: "Drafts".to_string(),
+            },
+        ] {
+            assert_eq!(
+                the_account_a_row_belongs_to(&row),
+                None,
+                "{row:?} named an account to switch to"
+            );
+        }
     }
 
     #[test]
