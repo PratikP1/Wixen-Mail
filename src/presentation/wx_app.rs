@@ -17,6 +17,7 @@ use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::one_question_at_a_time;
 use crate::presentation::ui_types::*;
+use crate::presentation::view_state;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
@@ -112,6 +113,7 @@ menu_ids!(
     ID_ADD_CALENDAR_BY_ADDRESS,
     ID_ABOUT,
     ID_THREAD_VIEW,
+    ID_APPLY_VIEW_ELSEWHERE,
     ID_OFFLINE_MODE,
     ID_UNDO_SEND,
     ID_FLUSH_OUTBOX,
@@ -237,6 +239,27 @@ pub struct WxUIState {
     /// depth first, so `collect_rows`'s items and this line up by position.
     pub tree_rows: Vec<crate::presentation::folder_tree::TreeRow>,
     pub messages: Vec<MessageItem>,
+    /// Whether the list is drawing one row per message or one per conversation.
+    ///
+    /// Read by the paint callback, which is registered once and never
+    /// re-registered on a switch, and by the one place that tells the control
+    /// how many rows it has.
+    pub showing: crate::presentation::view_state::Showing,
+    /// The conversations of the open folder, when it is showing them.
+    ///
+    /// Held beside `messages` rather than instead of it. Both are needed at
+    /// once: the rows come from here, and Enter on one of them opens the
+    /// conversation tree, which is built from the messages already in memory
+    /// (D-01). Emptied when the view goes back to messages, so a stale set
+    /// cannot be drawn.
+    pub conversations: Vec<crate::application::conversations::ConversationItem>,
+    /// What was selected before the last view switch, held across it.
+    ///
+    /// D-11: switching back selects exactly the messages that were selected,
+    /// not everything in their conversations. That is only possible if the
+    /// original set is kept, because the map from a message to its
+    /// conversation is lossy in one direction.
+    pub selection_before_the_switch: crate::presentation::view_state::KeptSelection,
     /// Which row of the folder tree is open.
     ///
     /// The identity itself rather than its string form, so that asking what
@@ -363,6 +386,9 @@ impl Default for WxUIState {
             folders: Vec::new(),
             tree_rows: Vec::new(),
             messages: Vec::new(),
+            showing: crate::presentation::view_state::Showing::default(),
+            conversations: Vec::new(),
+            selection_before_the_switch: crate::presentation::view_state::KeptSelection::default(),
             selected_folder: None,
             message_list_limit: FOLDER_LIST_PAGE_SIZE,
             receipt_offered: None,
@@ -623,13 +649,6 @@ impl WxMailApp {
                 a11y.set_content_muted(muted);
                 sync_menu_check(&frame, ID_MUTE_CONTENT, muted);
             }
-            if let Some(item) = frame
-                .get_menu_bar()
-                .and_then(|bar| bar.find_item(ID_THREAD_VIEW))
-            {
-                item.enable(false);
-            }
-
             // ── Main toolbar ─────────────────────────────────────────────
             let toolbar_handle = if let Some(toolbar) =
                 frame.create_tool_bar(Some(ToolBarStyle::Flat | ToolBarStyle::Text), ID_ANY as Id)
@@ -997,6 +1016,13 @@ impl WxMailApp {
 
             // The callback runs while wxWidgets paints, so it reads what is
             // already in memory and never touches the database.
+            //
+            // It reads the view out of state rather than being registered
+            // again when the view changes. Re-registering on a switch would
+            // mean two callbacks existing at different moments, and the one
+            // that answers is whichever was installed last: a switch that
+            // failed to register would leave the list drawing rows of the other
+            // kind with no error anywhere.
             let callback_registered = msg_list.set_virtual_text_callback({
                 let state = state.clone();
                 let column_layout = column_layout.clone();
@@ -1004,18 +1030,29 @@ impl WxMailApp {
                     let Ok(state) = state.lock() else {
                         return message_rows::PLACEHOLDER.to_string();
                     };
-                    let Some(message) = state.messages.get(row as usize) else {
-                        return message_rows::PLACEHOLDER.to_string();
-                    };
                     let columns = column_layout.borrow().visible();
-                    match columns.get(column as usize) {
-                        Some(c) => message_rows::cell_text(
-                            message,
-                            *c,
-                            date_settings,
-                            chrono::Local::now(),
-                        ),
-                        None => String::new(),
+                    let Some(c) = columns.get(column as usize).copied() else {
+                        return String::new();
+                    };
+                    let now = chrono::Local::now();
+                    match state.showing {
+                        view_state::Showing::Conversations => {
+                            match state.conversations.get(row as usize) {
+                                Some(conversation) => message_rows::conversation_cell_text(
+                                    conversation,
+                                    c,
+                                    date_settings,
+                                    now,
+                                ),
+                                None => message_rows::PLACEHOLDER.to_string(),
+                            }
+                        }
+                        view_state::Showing::Messages => match state.messages.get(row as usize) {
+                            Some(message) => {
+                                message_rows::cell_text(message, c, date_settings, now)
+                            }
+                            None => message_rows::PLACEHOLDER.to_string(),
+                        },
                     }
                 }
             });
@@ -2526,16 +2563,56 @@ impl WxMailApp {
                                 apply_columns(&msg_list, &layout);
                             }
                         }
+                        // D-09: the folder comes back in the view it was left
+                        // in, and a folder nobody has ever set is flat. Read
+                        // before the mail is asked for, because the count the
+                        // control is told is decided by which view this is.
+                        let showing = match (
+                            folder_cache.as_ref(),
+                            which.opens().map(|folder| folder.stored()),
+                        ) {
+                            (Some(cache), Some(folder)) => view_state::Showing::from_stored(
+                                cache.folder_view(&folder).unwrap_or_default(),
+                            ),
+                            _ => view_state::Showing::Messages,
+                        };
+                        {
+                            let mut s = lock_state(&state);
+                            s.showing = showing;
+                            // The folder before this one's conversations are
+                            // not this one's, and a stale set would be drawn
+                            // for as long as it took the new one to arrive.
+                            s.conversations.clear();
+                            s.selection_before_the_switch =
+                                view_state::KeptSelection::default();
+                        }
+                        sync_menu_check(
+                            &frame,
+                            ID_THREAD_VIEW,
+                            showing.showing_conversations(),
+                        );
                         // Selecting a folder used to announce "Loading
                         // INBOX..." and then load nothing at all. This is
                         // the read that makes the status true.
                         load_folder_messages(
                             &folder_cache,
                             folder_id,
-                            account_id,
+                            account_id.clone(),
                             FOLDER_LIST_PAGE_SIZE,
                             &ui_tx,
                         );
+                        // Both, when the folder is showing conversations. The
+                        // rows come from the conversations and the tree a row
+                        // opens into is built from the messages, so neither is
+                        // optional (D-01).
+                        if showing.showing_conversations() {
+                            load_folder_conversations(
+                                &folder_cache,
+                                folder_id,
+                                account_id,
+                                &ui_tx,
+                            );
+                        }
                     }
                 }
             });
@@ -2691,6 +2768,57 @@ impl WxMailApp {
                 move |event| {
                     let index = event.get_item_index();
                     if index < 0 {
+                        return;
+                    }
+                    // A collapsed conversation row never expands in place
+                    // (D-01). Enter on it opens the conversation tree, which
+                    // announces level natively and is the only place the
+                    // structure exists. Expanding here would put branches into
+                    // a flat virtual list, which is what keeps UI Automation
+                    // from reporting a set size anybody can trust.
+                    if lock_state(&state).showing.showing_conversations() {
+                        let opening = lock_state(&state)
+                            .conversations
+                            .get(index as usize)
+                            .map(|c| (c.thread_id.clone(), c.subject.clone()));
+                        let Some((thread_id, subject)) = opening else {
+                            return;
+                        };
+                        let nodes = conversation_nodes(&state, &thread_id);
+                        let named =
+                            how_a_conversation_reads(&state, &thread_cache, &thread_id, &subject);
+                        if nodes.len() < 2 {
+                            // One message, so there is nothing to choose
+                            // between. Straight into the reader, the same
+                            // answer a lone message gets in the flat view.
+                            if let Some(only) = nodes.first().and_then(|node| {
+                                let s = lock_state(&state);
+                                s.messages
+                                    .iter()
+                                    .find(|m| m.message_id == node.message_id)
+                                    .cloned()
+                            }) {
+                                open_single_message(
+                                    &frame,
+                                    &reader,
+                                    &a11y,
+                                    &thread_cache,
+                                    &only,
+                                    None,
+                                );
+                            }
+                            return;
+                        }
+                        open_conversation_again(
+                            &frame,
+                            &reader,
+                            &thread_cache,
+                            &a11y,
+                            &msg_list,
+                            named,
+                            nodes,
+                            state.clone(),
+                        );
                         return;
                     }
                     let (thread_id, subject, message) = {
@@ -2998,6 +3126,10 @@ impl WxMailApp {
                 // The sidebar of every module, so F6 cycles the panes of the
                 // one that is open rather than always the mail folder tree.
                 let module_focus = module_focus.clone();
+                // Cloned for the same reason the reader above is: the tick that
+                // drains the updates holds it too, and it has to be the same
+                // layout, not a second one.
+                let column_layout = Rc::clone(&column_layout);
                 // `folder_tree` is copied in by the `move` below, the same as
                 // the lists above. All Inboxes is a row of that tree, and the
                 // command moves the cursor onto it rather than loading it
@@ -3708,14 +3840,31 @@ impl WxMailApp {
                                 )
                             {
                                 let count = chosen.visible().len();
+                                // D-06: a hand choice here beats D-05's
+                                // adaptive rule permanently, and is kept per
+                                // folder. Whatever the dialog came back with is
+                                // the choice, because this dialog is where
+                                // columns are chosen by hand: somebody who saw
+                                // Thread ticked and pressed OK has said yes to
+                                // it as much as somebody who ticked it.
+                                if let Some(folder) = the_folder_being_looked_at(&state)
+                                    && let Some(cache) = message_cache.as_ref()
+                                    && let Err(e) = cache.set_folder_thread_column(
+                                        &folder,
+                                        view_state::ThreadColumn::chosen(
+                                            chosen.is_visible(MessageColumn::Thread),
+                                        ),
+                                    )
+                                {
+                                    tracing::warn!("The Thread column choice was not saved: {e}");
+                                }
                                 *column_layout.borrow_mut() = *chosen;
                                 apply_columns(&msg_list, &column_layout.borrow());
                                 // Virtual mode draws from the callback, so the
                                 // row count has to be set again after the
                                 // columns are rebuilt or the list comes back
                                 // empty.
-                                let rows = state.lock().map(|s| s.messages.len()).unwrap_or(0);
-                                msg_list.set_item_count(rows as i64);
+                                tell_the_list_how_many(&state, &msg_list);
                                 persist_column_layout(&column_layout.borrow());
                                 let _ = a11y.announce(
                                     &format!(
@@ -3726,6 +3875,19 @@ impl WxMailApp {
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                 );
                             }
+                        }
+                        _ if id == ID_THREAD_VIEW => {
+                            switch_the_view(
+                                app,
+                                &frame,
+                                &a11y,
+                                &msg_list,
+                                &message_cache,
+                                &column_layout,
+                            );
+                        }
+                        _ if id == ID_APPLY_VIEW_ELSEWHERE => {
+                            apply_the_view_elsewhere(app, &frame, &a11y, &message_cache);
                         }
                         _ if id == ID_VIEW_MODULE_BUTTONS => {
                             let visible = btn_panel.is_shown();
@@ -4745,6 +4907,12 @@ impl WxMailApp {
                 // was tried and never got there.
                 let looked_at = std::cell::Cell::new(std::time::Instant::now());
                 let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
+                // The same layout the menu handler and the paint callback hold,
+                // not a copy of it. An arriving conversation listing decides
+                // whether the Thread column belongs in this folder, and a
+                // second layout would leave the control showing one set of
+                // columns and the callback answering for another.
+                let column_layout = Rc::clone(&column_layout);
                 move |_| {
                     let n = tick_count.get() + 1;
                     tick_count.set(n);
@@ -4769,6 +4937,7 @@ impl WxMailApp {
                                 state: &state,
                                 folder_tree: &folder_tree,
                                 msg_list: &msg_list,
+                                column_layout: &column_layout,
                                 preview: &preview,
                                 frame: &frame,
                                 a11y: &a11y,
@@ -5288,17 +5457,26 @@ impl WxMailApp {
                 "Stop reading message text aloud. Status and error announcements continue.",
             )
             .append_separator()
-            // Threading is built: conversations are reached with Enter on
-            // a message, and every stored message now carries a conversation
-            // id. What this item offers is the other thing, collapsing the
-            // list to one row per conversation, and that is not built. So it
-            // stays visible and disabled rather than pretending to work: a
-            // screen reader announces a disabled item as unavailable, which is
-            // the truth.
+            // Collapses the list to one row per conversation (D-01). The row
+            // never expands in place: Enter on it opens the conversation tree,
+            // which announces level natively, and the list stays flat and
+            // virtual so UI Automation keeps the real set size. Kept per folder
+            // (D-09), so a folder somebody set stays set and one they never
+            // touched is flat.
             .append_check_item(
                 ID_THREAD_VIEW,
                 "&Thread View\tCtrl+T",
-                "Toggle threaded view",
+                "Show one row per conversation instead of one per message",
+            )
+            // No accelerator. It is a command somebody runs once when they have
+            // decided how they want their mail listed, and a key on it would be
+            // a key that overwrites the view of every folder in an account by
+            // accident. `docs/KEYBOARD_SHORTCUTS.md` carries nothing for it for
+            // the same reason.
+            .append_item(
+                ID_APPLY_VIEW_ELSEWHERE,
+                "&Apply View To Other Folders...",
+                "Give other folders the view this one is in",
             )
             .append_separator()
             .append_check_item(
@@ -11085,22 +11263,7 @@ fn load_folder_messages(
         return;
     }
 
-    // The stored column layout carries the sort, so a folder opens in the
-    // order somebody arranged rather than always by date. Read here rather
-    // than passed in, because this runs on a background thread and the layout
-    // lives with the settings.
-    let order = crate::data::config::ConfigManager::load_stored()
-        .ok()
-        .map(|mgr| mgr.app_config().message_columns.clone())
-        .filter(|stored| !stored.is_empty())
-        .map(|stored| {
-            crate::presentation::message_columns::ColumnLayout::from_stored(
-                &stored,
-                crate::presentation::message_columns::FolderKind::Inbox,
-            )
-            .sort
-            .order_by_clause()
-        });
+    let order = the_sort_as(view_state::Showing::Messages);
 
     match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), Some(limit)) {
         Ok(rows) => {
@@ -11117,6 +11280,458 @@ fn load_folder_messages(
             )));
         }
     }
+}
+
+/// The stored sort, expressed for whichever view is being drawn.
+///
+/// The stored column layout carries the sort, so a folder opens in the order
+/// somebody arranged rather than always by date. Read here rather than passed
+/// in, because both readers run on a background thread and the layout lives
+/// with the settings.
+///
+/// D-12 is why one function answers for both views. The sort is the same
+/// `Sort`, and only the expression each column contributes changes, so there is
+/// no way to ask for a conversation listing while carrying a message sort: the
+/// sort is not the thing that changes across a switch.
+fn the_sort_as(showing: view_state::Showing) -> Option<String> {
+    crate::data::config::ConfigManager::load_stored()
+        .ok()
+        .map(|mgr| mgr.app_config().message_columns.clone())
+        .filter(|stored| !stored.is_empty())
+        .map(|stored| {
+            let layout = crate::presentation::message_columns::ColumnLayout::from_stored(
+                &stored,
+                crate::presentation::message_columns::FolderKind::Inbox,
+            );
+            view_state::order_by(showing, &layout.sort)
+        })
+}
+
+/// Read the open folder's conversations, one per collapsed row.
+///
+/// Alongside [`load_folder_messages`] rather than instead of it: a collapsed
+/// row opens into the conversation tree, and that tree is built from the
+/// messages already in memory, so both are needed while conversations are being
+/// shown (D-01).
+///
+/// A read failure is announced rather than swallowed, for the reason
+/// `load_folder_messages` gives: an empty list because the query failed sounds
+/// exactly like an empty folder, and those are not the same thing to somebody
+/// who cannot see the window.
+fn load_folder_conversations(
+    cache: &Option<Arc<MessageCache>>,
+    folder_id: Option<i64>,
+    account_id: Option<String>,
+    tx: &Sender<UIUpdate>,
+) {
+    let (Some(cache), Some(folder_id), Some(account_id)) = (cache.as_ref(), folder_id, account_id)
+    else {
+        return;
+    };
+    // How far a conversation reaches is the fourth of this phase's settings,
+    // and it is the same answer the conversation window already uses, so a
+    // row's counts and an opened conversation's cannot disagree (D-08).
+    let reach = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::conversations::AConversationReaches::from_stored(
+                &stored.app_config().a_conversation_reaches,
+            )
+        })
+        .unwrap_or_default();
+    let order = the_sort_as(view_state::Showing::Conversations);
+
+    match cache.conversations_in(folder_id, &account_id, reach, order.as_deref()) {
+        Ok(rows) => {
+            let _ = tx.try_send(UIUpdate::ConversationsLoaded(rows));
+        }
+        Err(e) => {
+            tracing::error!("Failed to read the conversations in {}: {}", folder_id, e);
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Could not read this folder's conversations: {e}"
+            )));
+        }
+    }
+}
+
+/// Switch the message list between messages and conversations, D-01.
+///
+/// The list is not replaced and the paint callback is not registered again.
+/// Three things move and nothing else: which vector the callback reads, the
+/// count the control is told, and which `ORDER BY` the listing was asked for.
+/// That narrowness is the decision, not an implementation detail: only the
+/// native virtual control gives UI Automation the real set size, so replacing
+/// it to get structure would cost the thing the structure is for.
+///
+/// The selection survives both ways (D-11). The messages that were selected are
+/// held rather than recomputed, because a conversation cannot say which of its
+/// messages was chosen, so the obvious round trip turns two of five into five.
+fn switch_the_view(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    msg_list: &ListCtrl,
+    cache: &Option<Arc<MessageCache>>,
+    column_layout: &Rc<RefCell<ColumnLayout>>,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let Some(folder) = the_folder_being_looked_at(state) else {
+        sync_menu_check(frame, ID_THREAD_VIEW, false);
+        send_refusal(
+            tx,
+            rt,
+            "Open a folder first. Conversations are shown a folder at a time.",
+        );
+        return;
+    };
+
+    let now_showing = {
+        let mut s = lock_state(state);
+        let now_showing = s.showing.toggled();
+
+        // Held before anything else changes, so what is restored on the way
+        // back is what was really selected and not what the other view makes of
+        // it. Nothing selected is held as nothing, and survives as nothing.
+        if !s.showing.showing_conversations() {
+            let chosen: Vec<i64> = s
+                .selected_message_index
+                .and_then(|index| s.messages.get(index))
+                .map(|message| vec![message.message_id])
+                .unwrap_or_default();
+            s.selection_before_the_switch = view_state::KeptSelection::of(chosen);
+        }
+
+        s.showing = now_showing;
+        if !now_showing.showing_conversations() {
+            s.conversations.clear();
+        }
+        now_showing
+    };
+
+    sync_menu_check(frame, ID_THREAD_VIEW, now_showing.showing_conversations());
+    if let Some(cache) = cache.as_ref()
+        && let Err(e) = cache.set_folder_view(&folder, now_showing)
+    {
+        // The view is already on screen, so saying it did not save while
+        // somebody is looking at it is noise. The log is where it belongs, the
+        // same answer `persist_column_layout` gives.
+        tracing::warn!("The folder's view was not saved: {e}");
+    }
+
+    let (folder_id, account_id) = {
+        let s = lock_state(state);
+        let account = match s.selected_folder.as_ref().and_then(|row| row.opens()) {
+            Some(crate::presentation::folder_tree::WhichRow::Folder { account, .. }) => {
+                Some(account)
+            }
+            _ => None,
+        };
+        (folder_on_screen(&s), account)
+    };
+    match now_showing {
+        view_state::Showing::Conversations => {
+            load_folder_conversations(cache, folder_id, account_id, tx);
+        }
+        view_state::Showing::Messages => {
+            show_the_thread_column_if_it_is_wanted(state, cache, msg_list, column_layout);
+            tell_the_list_how_many(state, msg_list);
+            msg_list.refresh(true, None);
+            put_the_selection_back(state, msg_list);
+        }
+    }
+
+    let _ = a11y.announce(
+        now_showing.spoken(),
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+}
+
+/// Select again exactly what was selected before the switch back, D-11.
+///
+/// Exactly, and that word is the whole decision. Recomputing from the
+/// conversation rows would select every message of every conversation that held
+/// one, so somebody who chose two of five would come back to five chosen and a
+/// Delete would take three messages they never picked.
+fn put_the_selection_back(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
+    let rows = {
+        let s = lock_state(state);
+        let ids: Vec<i64> = s.messages.iter().map(|m| m.message_id).collect();
+        view_state::the_messages_again(&s.selection_before_the_switch, &ids)
+    };
+    let Some(first) = rows.first().copied() else {
+        return;
+    };
+    for row in &rows {
+        msg_list.set_item_state(
+            *row as i64,
+            ListItemState::Selected,
+            ListItemState::Selected,
+        );
+    }
+    // Focus lands on the first of them, and the viewport follows. Selecting
+    // without landing leaves a screen reader's cursor where it was, which for
+    // somebody working by ear means the selection happened somewhere they
+    // cannot see.
+    msg_list.set_item_state(first as i64, ListItemState::Focused, ListItemState::Focused);
+    msg_list.ensure_visible(first as i64);
+    lock_state(state).selected_message_index = Some(first);
+}
+
+/// Select the conversation rows holding what was selected, D-11's other half.
+fn select_the_conversations_holding_it(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
+    let rows = {
+        let s = lock_state(state);
+        let of_each: Vec<(i64, Option<String>)> = s
+            .messages
+            .iter()
+            .map(|m| (m.message_id, m.thread_id.clone()))
+            .collect();
+        let ids: Vec<String> = s
+            .conversations
+            .iter()
+            .map(|c| c.thread_id.clone())
+            .collect();
+        view_state::conversations_holding(&s.selection_before_the_switch, &of_each, &ids)
+    };
+    let Some(first) = rows.first().copied() else {
+        return;
+    };
+    for row in &rows {
+        msg_list.set_item_state(
+            *row as i64,
+            ListItemState::Selected,
+            ListItemState::Selected,
+        );
+    }
+    msg_list.set_item_state(first as i64, ListItemState::Focused, ListItemState::Focused);
+    msg_list.ensure_visible(first as i64);
+    lock_state(state).selected_message_index = Some(first);
+}
+
+/// Give other folders the view this one is in, D-10.
+///
+/// Three scopes, each a plain sentence naming what it will change and how many
+/// folders that is, said before it happens, and confirmed, because it overwrites
+/// views somebody may have set by hand. A scope covering no other folder says
+/// so rather than confirming a change to nothing, which is the rule
+/// `destinations::anywhere` already states for the move dialog.
+fn apply_the_view_elsewhere(
+    app: AppHandles<'_>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+    cache: &Option<Arc<MessageCache>>,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let (Some(cache), Some(here)) = (cache.as_ref(), the_open_folder_row(state)) else {
+        send_refusal(
+            tx,
+            rt,
+            "Open a folder first. This gives other folders the view that one is in.",
+        );
+        return;
+    };
+    let crate::presentation::folder_tree::WhichRow::Folder { account, path } = here.clone() else {
+        send_refusal(
+            tx,
+            rt,
+            "Open a folder first. This gives other folders the view that one is in.",
+        );
+        return;
+    };
+    let showing = lock_state(state).showing;
+
+    let Some(scope) = which_scope_to_apply(frame, a11y) else {
+        return;
+    };
+    let named = match scope {
+        view_state::ApplyTo::ThisSubtree => path.clone(),
+        view_state::ApplyTo::ThisAccount => account.clone(),
+        view_state::ApplyTo::Everywhere => "every account".to_string(),
+    };
+
+    let reaches = match folders_a_scope_reaches(cache, scope, &account, &path) {
+        Ok(reaches) => reaches,
+        Err(e) => {
+            send_refusal(tx, rt, &format!("The folders could not be read: {e}"));
+            return;
+        }
+    };
+    // The folder being looked at is already in this view, so it is not one of
+    // the folders this changes and is not counted as one.
+    let others: Vec<(String, String)> = reaches
+        .into_iter()
+        .filter(|(their_account, their_path)| !(their_account == &account && their_path == &path))
+        .collect();
+
+    match view_state::what_applying_would_do(scope, showing, &named, others.len()) {
+        view_state::Applying::NothingToDo(said) => {
+            let _ = a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+            frame.set_status_text(&said, 0);
+        }
+        view_state::Applying::Ask(said) => {
+            let _ = a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+            let answer = MessageDialog::builder(frame, &said, "Apply View To Other Folders")
+                .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+                .build()
+                .show_modal();
+            if answer != ID_YES {
+                return;
+            }
+            let mut written = 0;
+            for (their_account, their_path) in &others {
+                let identity = crate::presentation::folder_tree::WhichRow::Folder {
+                    account: their_account.clone(),
+                    path: their_path.clone(),
+                }
+                .stored();
+                match cache.set_folder_view(&identity, showing) {
+                    Ok(()) => written += 1,
+                    Err(e) => tracing::warn!("{their_path} kept the view it had: {e}"),
+                }
+            }
+            let done = format!(
+                "{} now {}",
+                crate::service::caldav::how_many(written, "folder"),
+                match showing {
+                    view_state::Showing::Conversations => "showing conversations",
+                    view_state::Showing::Messages => "showing messages",
+                }
+            );
+            let _ = a11y.announce(
+                &done,
+                crate::presentation::accessibility::announcements::Priority::Normal,
+            );
+            frame.set_status_text(&done, 0);
+        }
+    }
+}
+
+/// Which folders a scope reaches, as the pair that names each one.
+fn folders_a_scope_reaches(
+    cache: &MessageCache,
+    scope: view_state::ApplyTo,
+    account: &str,
+    path: &str,
+) -> crate::common::Result<Vec<(String, String)>> {
+    Ok(match scope {
+        view_state::ApplyTo::ThisSubtree => cache
+            .folders_under(account, path)?
+            .into_iter()
+            .map(|held| (account.to_string(), held))
+            .collect(),
+        view_state::ApplyTo::ThisAccount => cache
+            .every_folder()?
+            .into_iter()
+            .filter(|(theirs, _)| theirs == account)
+            .collect(),
+        view_state::ApplyTo::Everywhere => cache.every_folder()?,
+    })
+}
+
+/// Ask which of the three scopes to apply to.
+///
+/// A single-choice dialog rather than three menu items, because the three are
+/// one question and a menu would make them three commands somebody has to
+/// compare by reading three labels.
+fn which_scope_to_apply(frame: &Frame, a11y: &Arc<Accessibility>) -> Option<view_state::ApplyTo> {
+    let choices: Vec<&str> = view_state::ApplyTo::ALL
+        .iter()
+        .map(|scope| scope.words())
+        .collect();
+    let asked = "Which folders should get this view?";
+    let _ = a11y.announce(
+        asked,
+        crate::presentation::accessibility::announcements::Priority::High,
+    );
+    let dialog =
+        SingleChoiceDialog::builder(frame, asked, "Apply View To Other Folders", &choices).build();
+    let answer = dialog.show_modal();
+    let chosen = dialog.get_selection();
+    dialog.destroy();
+    // A negative selection means nothing was chosen, which is the same answer
+    // as cancelling, the way `managers::pick_one` already reads this dialog.
+    if answer != ID_OK || chosen < 0 {
+        return None;
+    }
+    view_state::ApplyTo::ALL.get(chosen as usize).copied()
+}
+
+/// The tree row of whichever folder is open, as the folder it opens.
+fn the_open_folder_row(
+    state: &Arc<StdMutex<WxUIState>>,
+) -> Option<crate::presentation::folder_tree::WhichRow> {
+    lock_state(state)
+        .selected_folder
+        .as_ref()
+        .and_then(|row| row.opens())
+}
+
+/// Put the Thread column in or take it out for the folder being looked at.
+///
+/// D-05 decides from what the folder holds, D-06 lets a hand choice beat that
+/// permanently, and both answers are per folder. The column is added to or
+/// removed from the visible set and the columns are rebuilt, never given a
+/// width of nought: a zero-width column still exists in the UI Automation tree
+/// and a screen reader may still read it, which `apply_columns` states as the
+/// kind of defect that is invisible to sighted users and audible to everyone
+/// else.
+///
+/// Not persisted. The column layout that survives a restart is the one somebody
+/// arranged; whether Thread is in it right now follows the folder, and writing
+/// the adaptive answer into the stored layout would make walking through
+/// folders slowly rewrite it.
+fn show_the_thread_column_if_it_is_wanted(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    msg_list: &ListCtrl,
+    column_layout: &Rc<RefCell<ColumnLayout>>,
+) {
+    let chosen = match (the_folder_being_looked_at(state), cache.as_ref()) {
+        (Some(folder), Some(cache)) => view_state::ThreadColumn::from_stored(
+            cache.folder_thread_column(&folder).unwrap_or_default(),
+        ),
+        _ => view_state::ThreadColumn::NeverChosen,
+    };
+    let holds_one = view_state::a_conversation_of_more_than_one(&lock_state(state).conversations);
+    let wanted = view_state::thread_column_visible(chosen, holds_one);
+
+    if column_layout.borrow().is_visible(MessageColumn::Thread) == wanted {
+        return;
+    }
+    // `set_visible` is the one place a column is shown or hidden, and it holds
+    // the rule that the last visible column cannot go. A second way to do it
+    // here would be a second answer to one question, which is the shape this
+    // codebase has been bitten by often enough to have written it down.
+    if let Err(refused) = column_layout
+        .borrow_mut()
+        .set_visible(MessageColumn::Thread, wanted)
+    {
+        tracing::warn!("The Thread column was left as it was: {refused:?}");
+        return;
+    }
+    apply_columns(msg_list, &column_layout.borrow());
+}
+
+/// The identity a folder's view and column choice are kept under.
+///
+/// The folder a row opens rather than the row that was clicked, so a pinned
+/// copy and the folder it copies are one setting. They are two rows in the tree
+/// on purpose (D-30) and they are one folder, and this is about the folder.
+///
+/// `None` for a row that opens no folder at all: All Inboxes, an account
+/// branch, a label, a saved search. None of those is a folder, so none of them
+/// has a view of its own to remember.
+fn the_folder_being_looked_at(state: &Arc<StdMutex<WxUIState>>) -> Option<String> {
+    lock_state(state)
+        .selected_folder
+        .as_ref()
+        .and_then(|row| row.opens())
+        .map(|folder| folder.stored())
 }
 
 /// Sort from the Sort Messages menu, keeping the column layout in step.
@@ -12987,6 +13602,13 @@ struct UpdateTargets<'a> {
     state: &'a Arc<StdMutex<WxUIState>>,
     folder_tree: &'a TreeCtrl,
     msg_list: &'a ListCtrl,
+    /// The columns the list is showing, so an arriving conversation listing can
+    /// decide whether the Thread column belongs in this folder (D-05, D-06).
+    ///
+    /// Not `Send`, and it does not need to be: every update is handled on the
+    /// interface thread, which is the only thread a control may be touched
+    /// from, and this is read beside the control it rebuilds.
+    column_layout: &'a Rc<RefCell<ColumnLayout>>,
     preview: &'a WebView,
     frame: &'a Frame,
     a11y: &'a Accessibility,
@@ -13208,6 +13830,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         state,
         folder_tree,
         msg_list,
+        column_layout,
         preview,
         frame,
         a11y,
@@ -13304,9 +13927,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // Back to the top of a fresh list. Left where it was, the
                 // cursor would be on a row from the folder that was open
                 // before and the list under it would be somebody else's.
+                // A saved search runs across folders, so its results are a list
+                // of messages and not of one folder's conversations. Back to
+                // the flat view rather than drawing the conversations of
+                // whichever folder was open before.
+                s.showing = view_state::Showing::Messages;
+                s.conversations.clear();
                 s.selected_message_index = None;
             }
-            msg_list.set_item_count(messages.len() as i64);
+            tell_the_list_how_many(state, msg_list);
             frame.set_status_text(said, 0);
             // High, and never coalesced with the message counts. This is the
             // answer to a key somebody just pressed, and it is the one
@@ -13322,7 +13951,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // ask for the ones it paints. Inserting them would be a quarter of
             // a million native calls to render thirty visible lines.
             tracing::info!("Message list now holds {} rows", messages.len());
-            msg_list.set_item_count(messages.len() as i64);
+            tell_the_list_how_many(state, msg_list);
             // Bring the chosen row back into view, if it is still there and the
             // setting asks for it. Only the viewport moves: the selection is
             // deliberately not touched, because re-selecting would move focus
@@ -13339,8 +13968,34 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             {
                 msg_list.ensure_visible(chosen as i64);
             }
-            let unread = messages.iter().filter(|m| !m.read).count();
-            let msg = what_a_mailbox_holds(messages.len(), unread);
+            // Said only when the rows on screen are these. Showing
+            // conversations, the messages still arrive because a collapsed row
+            // opens into a tree built from them, but they are not what is
+            // listed, and announcing their count would tell somebody there are
+            // two hundred rows in a list of forty.
+            if !lock_state(state).showing.showing_conversations() {
+                let unread = messages.iter().filter(|m| !m.read).count();
+                let msg = what_a_mailbox_holds(messages.len(), unread);
+                frame.set_status_text(&msg, 0);
+                let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+            }
+        }
+        UIUpdate::ConversationsLoaded(conversations) => {
+            {
+                let mut s = lock_state(state);
+                s.conversations = conversations.clone();
+            }
+            // The Thread column is decided before the columns are rebuilt, and
+            // never by giving it a width of nought: a zero-width column still
+            // exists in the UI Automation tree and may still be read aloud
+            // (D-05, D-06).
+            show_the_thread_column_if_it_is_wanted(state, message_cache, msg_list, column_layout);
+            tell_the_list_how_many(state, msg_list);
+            msg_list.refresh(true, None);
+            select_the_conversations_holding_it(state, msg_list);
+
+            let unread = conversations.iter().filter(|c| c.unread > 0).count();
+            let msg = what_a_mailbox_holds(conversations.len(), unread);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
         }
@@ -14797,10 +15452,33 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
             None => None,
         }
     };
-    if let Some(count) = removed {
-        msg_list.set_item_count(count as i64);
+    if removed.is_some() {
+        tell_the_list_how_many(state, msg_list);
         msg_list.refresh(true, None);
     }
+}
+
+/// Tell the message list how many rows it has, from whichever view is on.
+///
+/// The one writer of that number, and the reason it is one is D-01. Virtual
+/// mode means the control's size is whatever it is told, and that size is what
+/// UI Automation reports, so it is what a screen reader says when it announces
+/// "3 of 40". A second writer that has not heard of conversation mode reports a
+/// mailbox five times the size of the one being read, and nothing on screen
+/// looks wrong.
+///
+/// Which vector to count is `view_state::how_many_rows`, so the rule lives with
+/// the other rules about the two views rather than here.
+fn tell_the_list_how_many(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
+    let count = {
+        let s = lock_state(state);
+        crate::presentation::view_state::how_many_rows(
+            s.showing,
+            s.messages.len(),
+            s.conversations.len(),
+        )
+    };
+    msg_list.set_item_count(count as i64);
 }
 
 /// Take the message off this computer, if that is where it lives.

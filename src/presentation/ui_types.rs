@@ -320,6 +320,15 @@ pub enum UIUpdate {
     /// under it.
     FoldersLoaded(Vec<crate::presentation::folder_tree::TreeRow>),
     MessagesLoaded(Vec<MessageItem>),
+    /// The open folder's conversations, one per collapsed row (D-01).
+    ///
+    /// Separate from [`UIUpdate::MessagesLoaded`] rather than a second shape
+    /// inside it, because both arrive when the folder is showing conversations
+    /// and both are needed: the rows are drawn from these, and Enter on one
+    /// opens the conversation tree, which is built from the messages. The list
+    /// stays a virtual `ListCtrl` either way, so what changes on a switch is
+    /// which vector the paint callback reads and the count the control is told.
+    ConversationsLoaded(Vec<crate::application::conversations::ConversationItem>),
     /// Folder identities paired with their database ids.
     ///
     /// The tree shows names, but reading a folder needs its id, and looking

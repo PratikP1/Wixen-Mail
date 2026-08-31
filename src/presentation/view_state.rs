@@ -13,7 +13,7 @@
 //! None of those needs a window to decide.
 
 use crate::application::conversations::ConversationItem;
-use crate::presentation::message_columns::{MessageColumn, Sort};
+use crate::presentation::message_columns::Sort;
 
 /// Whether the list is one row per message or one row per conversation.
 ///
@@ -153,25 +153,16 @@ pub fn a_conversation_of_more_than_one(conversations: &[ConversationItem]) -> bo
     conversations.iter().any(|held| held.messages > 1)
 }
 
-/// The visible columns with the Thread column put in or taken out.
-///
-/// Decided here, before `apply_columns` runs, and never by giving the column a
-/// width of nought: a zero-width column still exists in the UI Automation tree
-/// and a screen reader may still read it, which is a defect invisible to
-/// sighted users and audible to everyone else.
-///
-/// Thread goes last so a column somebody arranged by hand does not move under
-/// them when a conversation arrives in the folder.
-pub fn with_the_thread_column(columns: Vec<MessageColumn>, visible: bool) -> Vec<MessageColumn> {
-    let mut columns: Vec<MessageColumn> = columns
-        .into_iter()
-        .filter(|column| *column != MessageColumn::Thread)
-        .collect();
-    if visible {
-        columns.push(MessageColumn::Thread);
-    }
-    columns
-}
+// Putting the column in or taking it out is `ColumnLayout::set_visible`, and it
+// is deliberately not repeated here. That method is the one place a column is
+// shown or hidden, it already holds the rule that the last visible column
+// cannot go, and it already rebuilds rather than setting a width of nought,
+// which `apply_columns` explains: a zero-width column still exists in the UI
+// Automation tree and a screen reader may still read it. A second function
+// doing the same thing is a second answer to one question, and the two coming
+// apart is a defect this codebase has met more than once.
+//
+// What belongs here is the decision, which is `thread_column_visible` above.
 
 /// How many rows the control is told it has.
 ///
@@ -365,7 +356,7 @@ pub fn what_applying_would_do(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presentation::message_columns::{By, SortDirection};
+    use crate::presentation::message_columns::{By, MessageColumn, SortDirection};
 
     fn a_conversation(thread_id: &str, messages: i64) -> ConversationItem {
         ConversationItem {
@@ -572,51 +563,42 @@ mod tests {
     }
 
     #[test]
-    fn test_the_thread_column_goes_in_the_visible_set_rather_than_being_given_no_width() {
-        let columns = vec![MessageColumn::Subject, MessageColumn::Received];
-        let shown = with_the_thread_column(columns, true);
+    fn test_the_thread_column_is_shown_and_hidden_by_the_one_method_that_does_that() {
+        // The decision is here; carrying it out is `ColumnLayout::set_visible`,
+        // which already rebuilds rather than setting a width of nought. This
+        // asserts the two fit together, because a decision with no way to act
+        // on it is what the rest of this module would otherwise be.
+        let mut layout = crate::presentation::message_columns::ColumnLayout::defaults_for(
+            crate::presentation::message_columns::FolderKind::Inbox,
+        );
         assert!(
-            shown.contains(&MessageColumn::Thread),
-            "the column has to be in the set the control is built from: {shown:?}"
+            !layout.is_visible(MessageColumn::Thread),
+            "not there by default"
         );
-    }
 
-    #[test]
-    fn test_hiding_the_thread_column_takes_it_out_of_the_visible_set() {
-        let columns = vec![MessageColumn::Subject, MessageColumn::Thread];
-        let shown = with_the_thread_column(columns, false);
+        layout
+            .set_visible(
+                MessageColumn::Thread,
+                thread_column_visible(ThreadColumn::NeverChosen, true),
+            )
+            .expect("showing a column is never refused");
         assert!(
-            !shown.contains(&MessageColumn::Thread),
-            "a hidden column is absent, not present with no width: {shown:?}"
+            layout.visible().contains(&MessageColumn::Thread),
+            "a folder holding conversations shows it: {:?}",
+            layout.visible()
         );
-    }
 
-    #[test]
-    fn test_showing_the_thread_column_twice_does_not_give_the_list_two_of_them() {
-        let columns = vec![MessageColumn::Subject, MessageColumn::Thread];
-        let shown = with_the_thread_column(columns, true);
-        assert_eq!(
-            shown
-                .iter()
-                .filter(|c| **c == MessageColumn::Thread)
-                .count(),
-            1
+        layout
+            .set_visible(
+                MessageColumn::Thread,
+                thread_column_visible(ThreadColumn::ChosenOff, true),
+            )
+            .expect("hiding one of several columns is never refused");
+        assert!(
+            !layout.visible().contains(&MessageColumn::Thread),
+            "a hidden column is absent, not present with no width: {:?}",
+            layout.visible()
         );
-    }
-
-    #[test]
-    fn test_the_other_columns_keep_their_order_when_thread_is_added() {
-        let columns = vec![
-            MessageColumn::Unread,
-            MessageColumn::Subject,
-            MessageColumn::Received,
-        ];
-        let shown = with_the_thread_column(columns.clone(), true);
-        let without: Vec<MessageColumn> = shown
-            .into_iter()
-            .filter(|c| *c != MessageColumn::Thread)
-            .collect();
-        assert_eq!(without, columns, "a column somebody arranged did not move");
     }
 
     // ── D-12: the sort survives ───────────────────────────────────────

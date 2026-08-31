@@ -286,8 +286,6 @@ const KNOWN_DEAF: &[&str] = &[
     // Reader, Go menu. There is no find in the reader at all. The menu item and
     // its Ctrl+F were written for something that was never built.
     "ID_READER_FIND",
-    // View menu. Nothing handles it, so the item is a no-op.
-    "ID_THREAD_VIEW",
 ];
 
 /// Handlers that are known to be unreachable, and are waiting on a decision.
