@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-14-PLAN.md
-last_updated: "2026-08-31T12:00:00.000Z"
+stopped_at: Phase 2 context gathered
+last_updated: "2026-08-31T09:55:00.639Z"
 last_activity: 2026-08-31
 last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
-state_head: d567045c691e63f1786b477a07bf71e35ad81367
+state_head: 67d12c5bc286489de8f2ae1cb30042782d4f5c51
 progress:
   total_phases: 8
   completed_phases: 0
@@ -34,7 +34,13 @@ are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
 Status: All 14 plans executed. 01-14 was added on 2026-08-31 after the phase
 verification recorded criterion 3 as the one partial of eight, and it closes it.
-The phase wants re-verifying against that report.
+The phase wants re-verifying against that report, which is annotated as
+superseded rather than left to be read as current.
+
+**Phase 02 has context as of 2026-08-31** and is ready to plan. Phase 01 is left
+Pending deliberately: its code is merged, pushed and green, and what keeps
+FOLDER-02 open is a screen reader announcing a folder's level from the native
+control, which no test here can answer and which is Pratik's to run.
 
 **Phase 1 reviewed 2026-08-29 with Pratik.** Two criteria changed:
 
@@ -89,6 +95,7 @@ target green on `cargo test --all-targets` the same day. 01-14 added fifteen.
 - Total plans completed: 14
 - Average duration: not recomputed; the figures below predate 01-10 and nothing
   recalculates them, which is the same fault the progress note above records
+
 - Total execution time: not recomputed, for the same reason
 
 **By Phase:**
@@ -291,8 +298,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-31T12:00:00.000Z
-Stopped at: Completed 01-14-PLAN.md, the plan added to close the one gap
+Last session: 2026-08-31T09:55:00.607Z
+Stopped at: Phase 2 context gathered
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
@@ -370,4 +377,4 @@ so a folder is made where it is named and nesting waits for 01-03 and 01-05.
 A fourth is a warning for every later plan here: `MAIL_TRANSPORTS`' imap floor
 must rise with every gated write added, because left at 8 with nine present it
 had already taken one reddening test off the `copy_message` gate guard.
-Resume file: None
+Resume file: .planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md
