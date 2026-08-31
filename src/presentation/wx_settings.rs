@@ -2089,6 +2089,10 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.allowed_changes = crate::application::allowed::Allowed {
         mail: w.allow_mail.get_value(),
         personal_information: w.allow_pim.get_value(),
+        // Carried through rather than written, because this screen has no
+        // control for it yet. A constant here would rewrite somebody's stored
+        // answer every time they opened Settings and pressed Save.
+        reading: cfg.allowed_changes.reading,
     };
     cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
 

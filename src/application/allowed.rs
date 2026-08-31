@@ -1,12 +1,20 @@
-//! What Wixen Mail may change at somebody's provider.
+//! What Wixen Mail may do at somebody's provider.
 //!
-//! Reading mail into a local cache cannot hurt anybody. Sending a message,
-//! removing one from a server, or deleting a task at a provider can, and none
-//! of those paths has run for real yet. So they are two answers rather than
-//! one, and a new installation allows one of them: tasks, contacts and the
-//! calendar go up to a provider, and mail does not. Sending is the deliberate
-//! step afterwards, and `data::config`'s `default_allowed` is where that is
-//! written down.
+//! Sending a message, removing one from a server, or deleting a task at a
+//! provider can hurt somebody, and none of those paths has run for real yet.
+//! So they are two answers rather than one, and a new installation allows one
+//! of them: tasks, contacts and the calendar go up to a provider, and mail
+//! does not. Sending is the deliberate step afterwards, and `data::config`'s
+//! `default_allowed` is where that is written down.
+//!
+//! Reading mail into a local cache cannot hurt anybody, and that is now the
+//! argument for a third answer rather than a reason there is no third answer.
+//! Fetching a message's text is the one thing here somebody might want to stop
+//! for a reason that is not safety: it costs bandwidth, and it puts the text
+//! of their mail on this machine. So it is a question that can be asked, and
+//! because nothing it does is irreversible, the answer is yes unless somebody
+//! says otherwise. That is the opposite direction from the two above, and the
+//! field's own comment carries the reason.
 //!
 //! # Three places can say no, and any one of them is enough
 //!
@@ -26,15 +34,26 @@
 //! Mail is separate from everything else. Losing a task is annoying and can be
 //! typed again; a message deleted from a server, or sent to the wrong people,
 //! is gone. So they are two answers rather than one.
+//!
+//! Reading is separate from both, and split off for that same reason read the
+//! other way round: it costs nothing to get wrong, so it is the one field
+//! whose safe end is on. Grouping it with the two above would have made
+//! `Default` mean one thing for two fields and its opposite for the third
+//! under a single sentence, which is how the wrong half comes to be copied.
 
 use serde::{Deserialize, Serialize};
 
-/// What may be changed at a provider.
+/// What may be done at a provider: two changes and one read.
 ///
-/// Two answers rather than one boolean, because the two cost different amounts
-/// to get wrong. `Default` is the safe end of both, so anything constructed
-/// without a decision changes nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Three answers rather than one boolean, because they cost different amounts
+/// to get wrong. `Default` is the safe end of each of them, and the safe end
+/// is not the same direction for all three: for a change it is off, and for a
+/// read it is on. Nothing constructed without a decision changes anything, and
+/// nothing constructed without a decision stops mail being read either.
+///
+/// The read answer is last because it arrived last, and because the two above
+/// it are the ones that cannot be undone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Allowed {
     /// Sending a message, and changing or deleting one on the server.
     ///
@@ -46,19 +65,84 @@ pub struct Allowed {
     /// Recoverable by hand, mostly, and this is the least proven code in the
     /// application: none of the three sync paths has met a live account.
     pub personal_information: bool,
+    /// Fetching a message's text back from a provider.
+    ///
+    /// **On by default, which is the exception to the rule the two above
+    /// follow.** That rule holds for a change because off is unambiguously
+    /// safer: nothing happens, and nothing irreversible can. A read inverts
+    /// it. Nothing a body fetch does is irreversible, and off makes every
+    /// search silently cover a fraction of the mailbox until somebody finds
+    /// the setting, which is the failure this was added to prevent.
+    ///
+    /// So `Default` stops meaning "changes nothing" and starts meaning "the
+    /// safe end of each". That is why `Default` is written out below rather
+    /// than derived: deriving it gives `false` for a bool, which is this field
+    /// inverted, and the compiler would never say so.
+    ///
+    /// The default is named rather than restated, the way `data::config`'s
+    /// `default_allowed` is and for the reason its doc gives. A bare
+    /// `#[serde(default)]` here would answer `false` for every settings file
+    /// written before this existed, which is every settings file on every
+    /// machine.
+    #[serde(default = "default_reading")]
+    pub reading: bool,
+}
+
+/// What an absent key, and a value built without a decision, answer for
+/// reading.
+///
+/// A named function rather than `#[serde(default)]`, which answers `false`,
+/// and rather than a literal repeated in two places. Both obvious ways to
+/// write this are wrong in the same direction, and neither would fail to
+/// compile.
+const fn default_reading() -> bool {
+    true
+}
+
+impl Default for Allowed {
+    /// Written by hand, because deriving it is wrong for one of the three.
+    ///
+    /// The derive gives `false` for every bool. That is right for the two
+    /// changes and inverted for the read, and it is the kind of wrong that
+    /// compiles, passes, and only shows up as somebody's search quietly
+    /// covering part of their mailbox.
+    ///
+    /// `NOTHING` rather than a fourth literal, so there is one place the safe
+    /// answer is written down.
+    fn default() -> Self {
+        Self::NOTHING
+    }
 }
 
 impl Allowed {
     /// Nothing may be changed.
+    ///
+    /// The name is still right and the shape no longer matches it literally,
+    /// so the reason is here rather than left for the next reader to work out.
+    /// **Reading stays on.** Two things resolve to this constant and both of
+    /// them promise reading:
+    ///
+    /// - `presentation::first_run`'s first choice, labelled "Read my mail,
+    ///   change nothing", which is the option somebody picks because it
+    ///   sounded safe.
+    /// - `--read-only`, whose help text says "Change nothing at any server
+    ///   this run".
+    ///
+    /// Neither says read nothing. A reading field set to `false` here would
+    /// take mail away from exactly the most cautious person in the user base,
+    /// and it would do it silently, because nothing they could see would have
+    /// changed.
     pub const NOTHING: Self = Self {
         mail: false,
         personal_information: false,
+        reading: true,
     };
 
     /// Everything may be changed, which is what a finished mail client does.
     pub const EVERYTHING: Self = Self {
         mail: true,
         personal_information: true,
+        reading: true,
     };
 
     /// What an alpha tester starts with.
@@ -70,6 +154,7 @@ impl Allowed {
     pub const FOR_TESTING: Self = Self {
         mail: false,
         personal_information: true,
+        reading: true,
     };
 
     /// What both of these allow, which is what actually happens.
@@ -81,6 +166,7 @@ impl Allowed {
         Self {
             mail: self.mail && other.mail,
             personal_information: self.personal_information && other.personal_information,
+            reading: self.reading && other.reading,
         }
     }
 
@@ -98,6 +184,18 @@ impl Allowed {
 /// headed "Allowed Changes", which is near enough to look like the right place
 /// and far enough to make somebody stop and check.
 pub const SETTINGS_SECTION: &str = "Allow Changes";
+
+/// What the settings screen calls the section holding the reading box.
+///
+/// A second heading rather than a third box under `SETTINGS_SECTION`, because
+/// a read is not a change. Putting it under a heading that says Allow Changes
+/// would be the same drift that constant's own doc records: a sentence sending
+/// somebody to a heading that does not describe what they are looking for.
+///
+/// Read by the settings screen and by `service::outward`'s read refusal, so
+/// the sentence somebody hears when a fetch is refused names the heading they
+/// will actually find.
+pub const READING_SECTION: &str = "Reading Mail";
 
 /// The sentence a sync says when that setting is holding changes here.
 ///
@@ -214,6 +312,95 @@ mod tests {
     }
 
     #[test]
+    fn test_the_choice_that_promises_reading_still_reads() {
+        // D-2-11, and the reason this constant stops meaning "every field
+        // false". `presentation::first_run` maps its "Read my mail, change
+        // nothing" choice to this, and `--read-only` resolves to it too. A
+        // reading field that defaulted to false inside here would take reading
+        // away from the one option whose label promises it, and it would do
+        // that to the most cautious person in the user base, who chose it
+        // because it sounded safe.
+        // All three fields at once rather than a reading assertion on its own,
+        // so the name stays honest in both directions: this must go on
+        // permitting reading, and it must go on refusing both writes.
+        assert_eq!(
+            Allowed::NOTHING,
+            Allowed {
+                mail: false,
+                personal_information: false,
+                reading: true,
+            },
+            "the choice labelled 'Read my mail, change nothing' no longer means that"
+        );
+    }
+
+    #[test]
+    fn test_reading_is_on_wherever_anything_is() {
+        // The other two constants. Neither is a cautious answer about reading:
+        // one is what a finished mail client does and the other is what an
+        // alpha tester starts with, and both of those people expect their mail
+        // to arrive.
+        //
+        // Read out of a binding rather than asserted on the constant directly,
+        // because an assertion whose value the compiler already knows is one
+        // clippy will not let through, and rightly: it cannot fail at runtime.
+        for (named, allowed) in [
+            ("EVERYTHING", Allowed::EVERYTHING),
+            ("FOR_TESTING", Allowed::FOR_TESTING),
+        ] {
+            assert!(allowed.reading, "{named} does not permit reading mail");
+        }
+    }
+
+    #[test]
+    fn test_reading_is_narrowed_the_same_independent_way_as_the_two_writes() {
+        // Reading survives unless some place says no, which is the same rule
+        // the two writes follow. Asserted rather than assumed because `and` is
+        // where a third field is forgotten.
+        let says_no = Allowed {
+            mail: true,
+            personal_information: true,
+            reading: false,
+        };
+
+        assert!(!Allowed::EVERYTHING.and(says_no).reading);
+        assert!(!says_no.and(Allowed::EVERYTHING).reading);
+        assert!(
+            Allowed::EVERYTHING.and(Allowed::NOTHING).reading,
+            "nothing said no to reading, so it must survive both writes being refused"
+        );
+    }
+
+    #[test]
+    fn test_reading_is_not_a_change() {
+        // `anything()` answers whether anything may be *changed*, and reading
+        // changes nothing. Widening it would tell every caller that a session
+        // allowed only to read is a session that writes.
+        assert!(!Allowed::NOTHING.anything());
+        assert!(
+            !Allowed {
+                mail: false,
+                personal_information: false,
+                reading: true,
+            }
+            .anything()
+        );
+    }
+
+    #[test]
+    fn test_the_read_section_is_not_the_one_headed_allow_changes() {
+        // A read is not a change, and putting the control under a heading that
+        // says Allow Changes is the label-versus-sentence drift
+        // SETTINGS_SECTION's own doc records happening again. Two constants,
+        // and this asserts they are two.
+        assert_ne!(READING_SECTION, SETTINGS_SECTION);
+        assert!(
+            !READING_SECTION.contains("Change"),
+            "{READING_SECTION} reads as a heading about changing things"
+        );
+    }
+
+    #[test]
     fn test_either_half_on_its_own_counts_as_something_being_allowed() {
         // Half allowed is not nothing allowed. The default answering no is the
         // only thing recorded about this question so far, and "no to
@@ -223,6 +410,7 @@ mod tests {
             Allowed {
                 mail: true,
                 personal_information: false,
+                reading: true,
             }
             .anything()
         );
@@ -230,6 +418,7 @@ mod tests {
             Allowed {
                 mail: false,
                 personal_information: true,
+                reading: true,
             }
             .anything()
         );
@@ -246,6 +435,7 @@ mod tests {
             Allowed {
                 mail: false,
                 personal_information: true,
+                reading: true,
             }
         );
     }
@@ -392,6 +582,7 @@ mod tests {
         let b = Allowed {
             mail: true,
             personal_information: false,
+            reading: true,
         };
 
         assert_eq!(a.and(b), b.and(a));

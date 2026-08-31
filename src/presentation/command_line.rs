@@ -269,6 +269,34 @@ mod tests {
     }
 
     #[test]
+    fn test_nothing_on_the_command_line_turns_reading_off() {
+        // `--read-only` says change nothing, and its help text says so:
+        // "Change nothing at any server this run". It does not say read
+        // nothing. Every spelling that resolves to `Allowed::NOTHING` is
+        // checked, because they are the ones D-2-11 is about, and somebody who
+        // passes one of these is asking for the cautious answer rather than
+        // for an empty mailbox.
+        for restricted in [
+            vec!["--read-only"],
+            vec!["--allow", "nothing"],
+            vec!["--allow", "none"],
+            vec!["--allow", "everything", "--read-only"],
+        ] {
+            assert!(
+                run(&restricted).allowed.reading,
+                "{restricted:?} stopped mail being read, and none of them says so"
+            );
+        }
+
+        // No flag turns reading off, so there is nothing that can. This is
+        // asserted rather than left as an absence: the command line can only
+        // narrow, and a flag for this would be a fifth thing at the end of the
+        // help text that reads as the opposite of --read-only.
+        assert!(run(&["--allow", "tasks"]).allowed.reading);
+        assert!(run(&["--allow", "everything"]).allowed.reading);
+    }
+
+    #[test]
     fn test_allow_takes_a_word_and_narrows_to_it() {
         assert_eq!(run(&["--allow", "nothing"]).allowed, Allowed::NOTHING);
         assert_eq!(run(&["--allow", "tasks"]).allowed, Allowed::FOR_TESTING);

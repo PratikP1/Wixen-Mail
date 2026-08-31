@@ -758,6 +758,7 @@ Subject: Weekly roundup",
             allowed: crate::application::allowed::Allowed {
                 mail: true,
                 personal_information: true,
+                reading: true,
             },
         };
 
@@ -838,6 +839,7 @@ Subject: Weekly roundup",
             allowed: crate::application::allowed::Allowed {
                 mail: true,
                 personal_information: true,
+                reading: true,
             },
         };
         tokio::runtime::Builder::new_current_thread()

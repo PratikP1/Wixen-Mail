@@ -296,6 +296,48 @@ pub fn permitted(may_change: bool, doing: &str) -> Result<()> {
     Err(Error::Security(refusal(doing)))
 }
 
+/// What somebody is told when reading a message's text was refused.
+///
+/// A sentence of its own rather than [`refusal`] above. That one ends "Turn on
+/// Allow Changes for it to send or delete anything", and nothing here is being
+/// sent or deleted: somebody asked to read their own mail and did not get it.
+/// Telling them to turn on the setting that permits deleting, when what they
+/// wanted was to read, names the wrong control and describes the wrong risk.
+///
+/// It names the section the box actually sits under, which is not the one the
+/// change refusal names. Two headings, because a read is not a change, and a
+/// sentence that sends somebody to the wrong heading is the drift
+/// `SETTINGS_SECTION`'s own doc records.
+pub fn read_refusal(doing: &str) -> String {
+    format!(
+        "Refused to {doing}: this account is not allowed to fetch message text \
+         from the server. Turn on {} in Settings to read it.",
+        crate::application::allowed::READING_SECTION
+    )
+}
+
+/// Whether a command that only reads a message's text may go ahead.
+///
+/// Beside [`permitted`] rather than sharing it, and deliberately not named so
+/// that the write census reads it. `SENDS_A_MAIL_CHANGE` recognises a gated
+/// write by the text of a call to [`permitted`], opening bracket included, and
+/// a read gate whose name merely extended that marker would be counted as a
+/// write: the census would then demand a wire measurement for a command that
+/// changes nothing, and the floor in `MAIL_TRANSPORTS` would move for a reason
+/// that has nothing to do with writes.
+///
+/// Being clear of that marker is the other half of the same trap, because a
+/// gate no census sees is a gate that can be deleted quietly. What stops that
+/// is `test_the_read_gate_is_told_apart_from_the_write_census`, which asserts
+/// both halves: that this is not one of the write markers, and that the read
+/// gate is present in the file that is supposed to hold it.
+pub fn permitted_to_read(may_read: bool, doing: &str) -> Result<()> {
+    if may_read {
+        return Ok(());
+    }
+    Err(Error::Security(read_refusal(doing)))
+}
+
 /// Whether a change was refused by the setting rather than by the provider.
 ///
 /// One answer to the question, here beside the refusal itself, because it is

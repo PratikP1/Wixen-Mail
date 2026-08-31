@@ -250,6 +250,32 @@ mod tests {
     }
 
     #[test]
+    fn test_the_choice_that_says_read_my_mail_reads_mail() {
+        // The label is a promise: "Read my mail, change nothing". D-2-11 is
+        // this test. The choice resolves to `Allowed::NOTHING`, so a reading
+        // field that was false in that constant would break the promise on the
+        // screen, in the one option somebody picks because it sounded safe.
+        //
+        // Asserted through the label rather than beside it, so renaming the
+        // choice without meaning to change what it permits fails here.
+        assert!(
+            Choice::ReadOnly.label().contains("Read my mail"),
+            "{}",
+            Choice::ReadOnly.label()
+        );
+        assert!(
+            Choice::ReadOnly.allows().reading,
+            "the choice promising to read mail does not permit reading it"
+        );
+        assert!(!Choice::ReadOnly.allows().mail);
+        assert!(!Choice::ReadOnly.allows().personal_information);
+
+        // And the other two, because nobody picking those expects less mail.
+        assert!(Choice::TasksAndContacts.allows().reading);
+        assert!(Choice::Everything.allows().reading);
+    }
+
+    #[test]
     fn test_the_choices_go_from_safest_to_riskiest() {
         // Safest at the top, so arrowing down widens. The other order would
         // mean arrowing down to become safer, having started on the riskiest

@@ -321,10 +321,19 @@ impl MailController {
 
         let client = ImapClient::new(config)?;
         let mut session = client.connect(&auth).await?;
-        // Reading a mailbox is always allowed; flagging and deleting are not,
-        // unless this account says so and the setting and command line agree.
+        // Flagging and deleting are off unless this account says so and the
+        // setting and command line agree.
         if crate::application::allowed::allowed_for(account_id).mail {
             session.allow_changes();
+        }
+
+        // Fetching a message's text is the same question asked separately, and
+        // the answer is yes unless somebody turned it off. Two lines reading
+        // the same `Allowed`, and neither replaces the other: this used to say
+        // reading was always allowed, and that stopped being true when reading
+        // became something somebody could decline.
+        if crate::application::allowed::allowed_for(account_id).reading {
+            session.allow_reading();
         }
 
         let mut imap_session = self.imap_session.lock().await;

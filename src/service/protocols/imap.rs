@@ -596,6 +596,10 @@ impl ImapClient {
             // without anybody thinking about it should be the one that cannot
             // remove somebody's mail.
             may_change: false,
+            // Asked for, not assumed, for the same reason as the line above:
+            // the answer comes from the account's own setting and `connect_imap`
+            // is where it is read.
+            may_read: false,
             abilities: Abilities::default(),
         };
 
@@ -672,6 +676,16 @@ pub struct ImapSession {
     /// account. So a session may not, unless somebody said otherwise, and
     /// every command that writes asks first.
     may_change: bool,
+    /// Whether this session may fetch a message's text from the server.
+    ///
+    /// Off unless somebody said otherwise, the same way `may_change` is, and
+    /// for the same reason: a session opened without anybody thinking about it
+    /// should not quietly do the thing the setting exists to control. That is
+    /// the opposite of what the stored setting answers, which is on unless
+    /// somebody turned it off, and the two are not in conflict. The setting is
+    /// what somebody chose; this is whether anybody read it. `connect_imap`
+    /// is the one place that turns it on, and it turns it on by asking.
+    may_read: bool,
     /// What this particular server can do, read once at sign-in.
     abilities: Abilities,
 }
@@ -1086,6 +1100,11 @@ impl ImapSession {
     /// not silently mark it read on the server. Marking read is a decision the
     /// application makes on purpose, not a side effect of looking.
     pub async fn fetch_body(&mut self, uid: u32) -> Result<Vec<u8>> {
+        // Before `require_selected`, and that order is the point. Somebody who
+        // turned reading off and is told their folder is not open has been
+        // told something true that is not the reason, and no setting they
+        // could go and find would fix it.
+        self.may_i_read("read the text of a message")?;
         self.require_selected()?;
         let fetched = self
             .read_command(
@@ -1179,6 +1198,49 @@ impl ImapSession {
     /// broken account.
     fn may_i(&self, doing: &str) -> Result<()> {
         crate::service::outward::permitted(self.may_change, doing)
+    }
+
+    /// Whether this session may fetch a message's text from the server.
+    pub const fn may_read(&self) -> bool {
+        self.may_read
+    }
+
+    /// Allow this session to fetch message text from the server.
+    ///
+    /// Separate from opening it, and named, so turning it on is a line
+    /// somebody wrote rather than an argument that defaulted. The same shape
+    /// as `allow_changes` above, and separate from it because the two answer
+    /// different questions: one is about what this program may do to somebody's
+    /// mailbox, the other about what it may bring back from it.
+    pub fn allow_reading(&mut self) {
+        self.may_read = true;
+    }
+
+    /// Refuse a command that would fetch a message's text, if reading is off.
+    ///
+    /// Named so that it is not `may_i` with a longer argument. The write
+    /// census in `service::outward` recognises a gated write by the text of
+    /// the call to `may_i`, opening bracket included, so calling this `may_i`
+    /// would put a command that changes nothing into the list of writes whose
+    /// command has to be measured on the wire.
+    ///
+    /// **The marker is not written out here, and that is deliberate.** The
+    /// census reads this file line by line and attributes what it finds to the
+    /// method it is inside, so a doc comment quoting the marker verbatim is
+    /// counted as a gated write belonging to whichever method the comment
+    /// happens to sit after. That is not hypothetical: this comment said the
+    /// marker out loud when it was first written, and the census reported
+    /// `allow_reading` as a mailbox write with no command to measure.
+    ///
+    /// `test_the_read_gate_is_told_apart_from_the_write_census` holds both
+    /// halves of the naming question: this must not be swallowed by the write
+    /// census, and it must not be invisible to every census either.
+    ///
+    /// `doing` is the act in words, for the same reason `may_i` takes one:
+    /// what reaches somebody is a refusal, and a refusal that does not say
+    /// what was refused sends them looking for a broken account.
+    fn may_i_read(&self, doing: &str) -> Result<()> {
+        crate::service::outward::permitted_to_read(self.may_read, doing)
     }
 
     /// Add or remove a flag on a message.
@@ -2598,8 +2660,12 @@ pub(crate) mod against_a_server_that_answers {
         .await
     }
 
-    /// A session signed in to that server, reading only.
-    pub(crate) async fn reading_only_on(server: &Conversation) -> ImapSession {
+    /// A session signed in to that server and allowed to do nothing at all.
+    ///
+    /// Neither gate open. What `connect_imap` builds before it reads the
+    /// account's settings, and the only way to exercise a refusal, because a
+    /// session that may read cannot be asked what it says when it may not.
+    async fn allowed_nothing_on(server: &Conversation) -> ImapSession {
         let client = ImapClient::new(ImapConfig {
             server: server.server(),
             port: server.port(),
@@ -2615,6 +2681,17 @@ pub(crate) mod against_a_server_that_answers {
         .await
         .expect("the server never finished the sign-in exchange")
         .expect("the server answered, so signing in should work")
+    }
+
+    /// A session signed in to that server, reading only.
+    ///
+    /// Reading is turned on here rather than left off, because the name is a
+    /// claim: a helper called `reading_only_on` that cannot read would make
+    /// every test built on it prove something other than what it says.
+    pub(crate) async fn reading_only_on(server: &Conversation) -> ImapSession {
+        let mut session = allowed_nothing_on(server).await;
+        session.allow_reading();
+        session
     }
 
     /// A session signed in to that server and allowed to change things.
@@ -3682,6 +3759,106 @@ pub(crate) mod against_a_server_that_answers {
         let expected = vec![(42, vec![flag::SEEN.to_string(), flag::FLAGGED.to_string()])];
         assert_eq!(since, expected, "the CONDSTORE path");
         assert_eq!(batched, expected, "the batched path");
+    }
+
+    #[tokio::test]
+    async fn test_a_session_not_allowed_to_read_will_not_fetch_a_message() {
+        // D-2-06. The gate is only worth having if the command does not go
+        // out, so this asserts what the server heard as well as what the
+        // caller was told: a refusal that still put `UID FETCH` on the wire
+        // would be a message already read.
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("UID FETCH")
+                .then(|| Turn::Say(format!("{tag} OK done\r\n")))
+        })
+        .await;
+        let mut session = allowed_nothing_on(&server).await;
+
+        let outcome = waiting_for(session.fetch_body(9), "the refusal").await;
+
+        assert!(
+            matches!(&outcome, Err(Error::Security(_))),
+            "a fetch nobody allowed was not refused as a permission decision: {outcome:?}"
+        );
+        let said = the_failure(outcome);
+        assert!(
+            said.contains("read the text of a message"),
+            "the refusal does not name what was refused: {said}"
+        );
+        assert!(
+            !said.contains("send or delete"),
+            "somebody who asked to read was told about sending and deleting: {said}"
+        );
+        assert!(
+            !server.was_told("UID FETCH").await,
+            "the fetch was refused and the command went out anyway: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_session_not_allowed_to_read_says_so_before_it_says_no_folder_is_open() {
+        // The ordering is the test. `require_selected` runs first in every
+        // other command in this file, and if it ran first here somebody with
+        // reading turned off would be told their folder was not open, which
+        // is true and is not the reason, and no setting they could find would
+        // fix it.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = allowed_nothing_on(&server).await;
+
+        let said = the_failure(waiting_for(session.fetch_body(9), "the refusal").await);
+
+        assert!(
+            said.contains("read the text of a message"),
+            "the refusal named the folder rather than the setting: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_session_allowed_to_read_reaches_the_command() {
+        // The other half, and the one that stops the gate being satisfied by
+        // refusing everything. A gate nothing gets through is not a gate.
+        const RAW: &str = "Subject: Lunch\r\n\r\nOne o'clock?\r\n";
+        let server = a_server_answering(|said, tag| {
+            said.starts_with_command("UID FETCH").then(|| {
+                Turn::Say(format!(
+                    "* 1 FETCH (UID 9 BODY[] {{{}}}\r\n{RAW})\r\n{tag} OK done\r\n",
+                    RAW.len()
+                ))
+            })
+        })
+        .await;
+        let mut session = allowed_nothing_on(&server).await;
+        session.allow_reading();
+        waiting_for(session.select_folder("INBOX"), "the folder to open")
+            .await
+            .expect("the folder to open");
+
+        let raw = waiting_for(session.fetch_body(9), "the message")
+            .await
+            .expect("a session allowed to read should reach the server");
+
+        assert_eq!(String::from_utf8_lossy(&raw), RAW);
+        assert!(session.may_read());
+    }
+
+    #[tokio::test]
+    async fn test_being_allowed_to_change_things_does_not_also_allow_reading() {
+        // Two answers, not one. They are separate fields on `Allowed` and
+        // separate setters here, and a session that got one must not have got
+        // the other for free.
+        let server = a_server_answering(|_, _| None).await;
+        let mut session = allowed_nothing_on(&server).await;
+
+        session.allow_changes();
+        assert!(session.may_change());
+        assert!(
+            !session.may_read(),
+            "opening the write gate opened the read gate as well"
+        );
+
+        session.allow_reading();
+        assert!(session.may_read());
     }
 
     #[tokio::test]

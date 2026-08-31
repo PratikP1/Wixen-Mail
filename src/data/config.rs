@@ -1023,6 +1023,59 @@ mod tests {
     }
 
     #[test]
+    fn test_a_settings_file_written_before_reading_was_a_setting_still_loads() {
+        // D-2-12, and the reason it is a test rather than an assumption.
+        // `Allowed` is serialised whole into `app_config.json`, there is one
+        // `from_str` for the entire file, and a struct that stops parsing
+        // takes every other setting on the machine down with it, not just
+        // this one.
+        //
+        // The key is removed rather than round-tripped, because a round trip
+        // writes the key and then reads it back and proves nothing about a
+        // file that never had it. Every settings file on every machine is the
+        // removed shape until the first save after this ships.
+        //
+        // Nested, so the removal is inside `allowed_changes` rather than at
+        // the top level: the new field is on `Allowed`, not on `AppConfig`.
+        let mut older: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&AppConfig::default()).unwrap()).unwrap();
+        older
+            .as_object_mut()
+            .expect("the config is an object")
+            .get_mut("allowed_changes")
+            .expect("what may be changed is written into every settings file")
+            .as_object_mut()
+            .expect("what may be changed is an object of its own")
+            .remove("reading")
+            .expect("the key is written, so removing it is a real before-and-after");
+
+        // The other settings have to survive it. A missing key that fails the
+        // whole parse is the failure this is about, and asserting only on
+        // reading would pass against a file that lost everything else.
+        let before = AppConfig::default();
+        let older: AppConfig = serde_json::from_value(older)
+            .expect("a settings file written before this existed has to still load");
+
+        assert!(
+            older.allowed_changes.reading,
+            "an absent key answered no, so every search on every existing installation \
+             would quietly cover a fraction of the mailbox"
+        );
+        assert_eq!(older.theme, before.theme);
+        assert_eq!(older.language, before.language);
+        assert_eq!(older.download_folder, before.download_folder);
+        assert_eq!(older.version, before.version);
+        assert_eq!(
+            older.allowed_changes.mail, before.allowed_changes.mail,
+            "the two write halves must be untouched by a third field arriving"
+        );
+        assert_eq!(
+            older.allowed_changes.personal_information,
+            before.allowed_changes.personal_information
+        );
+    }
+
+    #[test]
     fn test_app_config_serialization_round_trip() {
         let config = AppConfig::default();
         let json = serde_json::to_string(&config).unwrap();
