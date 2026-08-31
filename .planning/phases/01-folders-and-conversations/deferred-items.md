@@ -218,3 +218,81 @@ its two answers as a small struct built by a tested function.
 **Size:** small for the argument-building half, large for anything that answers
 a real window.
 
+## Gmail mail that is archived with no label disappears from a conversation count
+
+**Found during:** 01-11, task 2, while implementing D-08's all-mail exclusion.
+
+D-08 says folders whose `holds_all_mail` server fact is true are excluded from a
+conversation's count, and that is what `conversations_in` does. It is right for
+the case it was chosen for: on Gmail every message is in All Mail as well as in
+its label, so counting both reports twice the size of every conversation.
+
+There is a case it is wrong for. A Gmail message that has been archived and
+carries no label is in All Mail and nowhere else. Excluding All Mail from the
+count excludes that message, and a conversation made only of such messages is
+counted as holding none, so it does not appear at all when somebody is standing
+in All Mail reading it.
+
+**Why it is not fixed here.** D-08 is a locked decision and it names the
+exclusion by that name. The fix is a different rule, not a different
+implementation of this one: count each message once, keyed on something that
+identifies the same message across folders. `messages.gmail_message_id` is
+exactly that and is already stored, and the `Message-ID` header is the general
+answer, but neither is present on every row. Choosing between them, and deciding
+what to do for a message that has neither, is a decision rather than a fix.
+
+**What it costs.** Archived Gmail mail with no label, read from All Mail, is not
+listed as a conversation. Mail that carries any label is unaffected, and so is
+every provider that is not Gmail, because the exclusion only applies where a
+server said a folder holds a copy of everything.
+
+**How it stays visible.** This entry, and
+`test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one`,
+which pins the half that does work: standing in All Mail lists the conversations
+whose messages also live in a label.
+
+**Size:** medium. One extra predicate in one query, once the rule is decided.
+
+## Sorting messages by Safety orders them by the alphabet, not by severity
+
+**Found during:** 01-11, task 3, writing the conversation's own Safety rule.
+
+`MessageColumn::Safety`'s message sort expression is `m.safety`, and safety is
+stored as the words "ordinary", "suspicious", "spam" and "phishing" so a stored
+mailbox can be read by somebody looking at it with a SQLite browser. In that
+alphabet the order is ordinary, phishing, spam, suspicious, so sorting the
+message list by Safety descending puts the mildest verdict at the top and
+phishing near the bottom.
+
+**Not caused by this plan.** The expression predates it and is untouched. The
+conversation rule beside it does rank by severity, because "the worst in the
+conversation" cannot be answered any other way, so the two now disagree about
+what "worse" means.
+
+**Why it is not fixed here.** It is a change to how the message list sorts,
+which is outside what this plan is about, and it would want its own test saying
+what somebody expects to hear when they press the Safety header.
+
+**Size:** small. The same `CASE` the conversation expression already uses.
+
+## The conversation row is built and tested but nothing draws it yet
+
+**Found during:** 01-11, task 3, at the end.
+
+`message_rows::conversation_cell_text` and
+`Sort::conversation_order_by_clause` are written, tested per column and proved
+to agree with each other, and no non-test path calls either. The data half is
+reached: `conversations_in` is called when a conversation is opened, so the
+count a person hears comes from it. What has no caller is the drawing of a
+collapsed conversation row.
+
+**Why it is not a defect.** 01-12 is the plan that renders the list, and this
+plan's own objective says so: "the data every row in plan 01-12 renders". It is
+recorded here rather than left implicit because compiling and passing tests is
+not done, and a reader of this phase should be able to see which half is which.
+
+**How it stays visible.** This entry, and 01-11-SUMMARY.md's Known Stubs
+section.
+
+**Size:** none here. It is 01-12's work.
+

@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 01-10-PLAN.md
-last_updated: "2026-08-30T23:55:00.000Z"
+stopped_at: Completed 01-11-PLAN.md
+last_updated: "2026-08-31T01:12:44.363Z"
 last_activity: 2026-08-30
-last_activity_desc: "01-10 done: a folder the server has stopped listing is marked, shown as such and never removed without asking. One modal question about every folder waiting, sharing its gate with the reminder alerts so neither opens over the other, and waiting while somebody is typing. An empty answer from a server is a failed check rather than a mass deletion. FOLDER-02 advanced"
-state_head: 463fc41231e94e136cee03cd4eb40d7934488ade
+last_activity_desc: "01-11 done: a conversation is named after its oldest message with the reply and forward markers off, in seventeen languages, and the compose box no longer grows a second marker onto a subject that has one. A conversation is counted across the whole account rather than the folder being read, with Gmail's All Mail left out so nothing doubles, and how far it reaches is the fourth of the five settings. Every column answers about the whole conversation from one rule that serves both the cell and the sort, and the Thread column says '5 messages, 2 unread' instead of a mail server identifier. THREAD-01 advanced; the collapsed list itself is 01-12"
+state_head: ca880eba5e809315717f34f7a0c76a0658aa18ca
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -115,6 +115,7 @@ Progress: [░░░░░░░░░░] 0% (7 of 13 plans)
 | Phase 01 P07 | 1h 31m | 3 tasks | 14 files |
 | Phase 01 P08 | 2h 5m | 3 tasks | 13 files |
 | Phase 01 P09 | one session | 3 tasks | 11 files |
+| Phase 01 P11 | 3h 5m | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,10 @@ ahead:
 - [Phase 01]: Emptying asks both functions that decide what deleting means, local and server, and carries all their answers across; a single AtTheServer variant was written first and would have destroyed an Inbox
 - [Phase 01]: The empty count and the empty walk both skip messages already soft-deleted, so running Empty twice is a no-op and an emptied Trash stops reading as full
 - [Phase 01]: A setting ships in one commit with its screen and its consumer; splitting them leaves the two settings guards red with no honest way to satisfy them
+- [Phase 01]: A conversation is named by its oldest message present, from mail_parser's RFC 5256 base subject, and the compose box asks the same module whether a subject already carries a marker
+- [Phase 01]: The Subject column's conversation sort calls a Rust function registered on the SQLite connection, because a chain of markers in seventeen languages has no SQL expression
+- [Phase 01]: conversations_in takes an order_by so the sort expression has a caller and the agreement between a cell and its sort is run rather than described
+- [Phase 01]: The all-mail exclusion applies only to the account-wide reach, because counting one folder cannot double anything
 
 ### Pending Todos
 
@@ -260,8 +265,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T23:55:00.000Z
-Stopped at: Completed 01-10-PLAN.md
+Last session: 2026-08-31T01:12:34.753Z
+Stopped at: Completed 01-11-PLAN.md
 Research found three things the discussion could not have known, and two of them
 needed Pratik's answer: `messages.thread_id` is a column nothing writes and
 nothing reads back, so D-08 had no key to span an account with, and the D-19
