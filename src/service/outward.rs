@@ -778,22 +778,68 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
 /// the three could arrive with nothing reading what it sent and nothing
 /// failing. Mail is the surface where that matters most.
 ///
-/// The number is the floor [`writes_in`] must find in that file, the same job
-/// the `>= 3` floor plays in [`test_every_provider_write_is_on_one_of_the_two_wire_lists`]:
-/// a reading that has gone blind reports a short answer instead of a true one,
-/// and the floor is what turns that into a failure rather than a quiet count.
+/// The number is what [`writes_in`] must find in that file, and each entry
+/// says whether that is a floor or the count itself. A reading that has gone
+/// blind reports a short answer instead of a true one, and the number is what
+/// turns that into a failure rather than a quiet count.
+///
+/// The two are not interchangeable, which this file learned the expensive way
+/// and [`Counted`] below records.
 #[cfg(test)]
-const MAIL_TRANSPORTS: [(&str, usize); 3] = [
-    // 11 since `delete_mailbox` arrived, 10 since `rename_mailbox` did. The
-    // floor is not decoration: while it said 8 with nine writes present, one
-    // write could lose its gate and the count still cleared it, which took the
-    // guard recorded for exactly that break down from three reddening tests to
-    // two. `scripts/guards.sh` is what noticed. A gated write added here raises
-    // this in the same commit.
-    ("src/service/protocols/imap.rs", 11),
-    ("src/service/protocols/smtp.rs", 2),
-    ("src/service/protocols/pop3.rs", 1),
+const MAIL_TRANSPORTS: [(&str, Counted); 3] = [
+    // 11 since `delete_mailbox` arrived, 10 since `rename_mailbox` did.
+    // Re-measured on 2026-08-31, when the read gate went into this file, and
+    // tightened from a floor to the count in the same edit: a read gate that
+    // had joined the write census by accident would have raised this, and a
+    // floor cannot tell being raised from being cleared.
+    ("src/service/protocols/imap.rs", Counted::Exactly(11)),
+    ("src/service/protocols/smtp.rs", Counted::AtLeast(2)),
+    ("src/service/protocols/pop3.rs", Counted::AtLeast(1)),
 ];
+
+/// Whether a census entry names the count or only the fewest it may be.
+///
+/// Written out rather than left as a bare number, because the difference is
+/// what one of these guards cost when it was got wrong. **A floor with a spare
+/// above it stops being load-bearing**: while the entry for `imap.rs` said 8
+/// with nine writes present, a write could lose its gate entirely and the
+/// count still cleared the floor, which took the guard recorded for exactly
+/// that break down from three reddening tests to two. Nothing failed.
+/// `scripts/guards.sh` is what noticed, three commits later.
+///
+/// So [`Counted::Exactly`] is the stronger answer and is what a file gets once
+/// somebody has counted it by hand. [`Counted::AtLeast`] is the honest answer
+/// for a file nobody has re-counted, and it says so rather than looking like a
+/// measurement.
+///
+/// Either way, a gated write added to one of these files changes the number in
+/// the same commit.
+#[cfg(test)]
+#[derive(Clone, Copy)]
+enum Counted {
+    /// Counted by hand: the file holds this many gated writes and no more.
+    Exactly(usize),
+    /// Not re-counted: at least this many, with the weakness above.
+    AtLeast(usize),
+}
+
+#[cfg(test)]
+impl Counted {
+    /// Whether a count found in a file is the one this entry allows.
+    const fn allows(self, found: usize) -> bool {
+        match self {
+            Self::Exactly(count) => found == count,
+            Self::AtLeast(floor) => found >= floor,
+        }
+    }
+
+    /// The number written down, for a failure somebody has to read.
+    const fn written_down(self) -> usize {
+        match self {
+            Self::Exactly(number) | Self::AtLeast(number) => number,
+        }
+    }
+}
 
 /// Every mail write whose command has been read off a socket by a test.
 ///
@@ -996,9 +1042,9 @@ const ONLY_A_TEST_BUILD_COMPILES_THIS: [(&str, &str, &str); 1] =
 #[cfg(test)]
 mod completeness {
     use super::{
-        ASKS_THE_GATE_AND_CHANGES_NOTHING, CLIENTS, GATED, MAIL_COMMAND_THAT_CHANGES_SOMETHING,
-        MAIL_MEASURED_ON_THE_WIRE, MAIL_TRANSPORTS, MEASURED_ON_THE_WIRE,
-        NAMES_A_WAY_OUT_AND_CANNOT_CONNECT, NOT_MEASURED_ON_THE_WIRE,
+        ASKS_THE_GATE_AND_CHANGES_NOTHING, CLIENTS, Counted, GATED,
+        MAIL_COMMAND_THAT_CHANGES_SOMETHING, MAIL_MEASURED_ON_THE_WIRE, MAIL_TRANSPORTS,
+        MEASURED_ON_THE_WIRE, NAMES_A_WAY_OUT_AND_CANNOT_CONNECT, NOT_MEASURED_ON_THE_WIRE,
         ONLY_A_TEST_BUILD_COMPILES_THIS, TALKS_BUT_ONLY_READS, THE_GATE,
     };
     use crate::common::what_ships::what_ships;
@@ -1931,6 +1977,101 @@ mod completeness {
         }
     }
 
+    /// Where the read gate is, and the text that finds it.
+    ///
+    /// Held here rather than written into the assertions, because the whole
+    /// question below is which strings are and are not the same as each other,
+    /// and an answer typed twice can differ from itself.
+    const THE_READ_GATE: (&str, &str) = ("src/service/protocols/imap.rs", "self.may_i_read(");
+
+    #[test]
+    fn test_the_read_gate_is_told_apart_from_the_write_census() {
+        // Both halves, because the two failure modes are opposite and both are
+        // silent.
+        //
+        // A read gate named so that its text contains a write marker joins the
+        // write census. `test_every_mailbox_write_is_on_the_mail_wire_list`
+        // then demands a wire measurement for a command that changes nothing,
+        // and the floor in `MAIL_TRANSPORTS` moves for a reason that has
+        // nothing to do with writes. That failure at least announces itself.
+        //
+        // A read gate named just clear of every marker is counted by nothing
+        // at all. Everything stays green, the floor is still satisfied by the
+        // writes alone, and nobody learns the file holds a gate no census can
+        // see. That is the dangerous one, and it is also the one that looks
+        // tidier, so it is the one somebody arrives at by trying to be neat.
+        //
+        // This test is the census that counts it. Without the second half
+        // below, naming the gate to avoid the write markers would produce a
+        // file with a gate nothing measures.
+        let (path, marker) = THE_READ_GATE;
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let production = the_production_half(&source);
+
+        assert!(
+            production.contains(marker),
+            "{path} no longer holds a read gate spelled {marker:?}, so either it was renamed \
+             and nothing here was told, or the gate is gone"
+        );
+
+        // Not swallowed by the write census: the read marker must not contain
+        // a write marker, or every method asking it is counted as a write.
+        for write in SENDS_A_MAIL_CHANGE {
+            assert!(
+                !marker.contains(write),
+                "the read gate {marker:?} contains the write marker {write:?}, so a command \
+                 that changes nothing is now on the list of writes whose command has to be \
+                 measured on the wire"
+            );
+            assert_ne!(marker, write);
+        }
+
+        // And the other direction, which is the one that would otherwise be
+        // silent: no write marker may contain the read marker either, or every
+        // read would be counted as a write by the same arithmetic read
+        // backwards.
+        for write in SENDS_A_MAIL_CHANGE {
+            assert!(
+                !write.contains(marker),
+                "the write marker {write:?} contains the read gate {marker:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_read_gate_does_not_move_the_count_of_gated_writes() {
+        // The read gate went into a file whose gated writes are counted, and
+        // the count is a floor other guards lean on. If adding it had moved
+        // the count, the record for any guard that reads this census would
+        // have gone stale in the same commit and nothing would have said so.
+        //
+        // Asserted as the number the file's entry in `MAIL_TRANSPORTS` names,
+        // which the test below now requires to be an equality rather than a
+        // floor. Here for the sake of saying out loud what the read gate must
+        // not do, in a test named for it, so the reason survives.
+        let (path, _) = THE_READ_GATE;
+        let counted = MAIL_TRANSPORTS
+            .iter()
+            .find(|(named, _)| *named == path)
+            .map(|(_, counted)| *counted)
+            .unwrap_or_else(|| panic!("{path} is not on the list of mail transports"));
+        assert!(
+            matches!(counted, Counted::Exactly(_)),
+            "the file holding the read gate is recorded as a floor rather than a count, so \
+             the read gate joining the write census would not fail anything"
+        );
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+
+        let writes = writes_in(the_production_half(&source), &SENDS_A_MAIL_CHANGE);
+
+        assert_eq!(
+            writes.len(),
+            counted.written_down(),
+            "the gated writes in {path} are {writes:?}, and the read gate must not be among \
+             them nor have displaced one"
+        );
+    }
+
     #[test]
     fn test_every_mailbox_write_is_on_the_mail_wire_list() {
         // The check the census never had. Four HTTP clients were covered and
@@ -1939,15 +2080,18 @@ mod completeness {
         // shipped its one write ungated for the whole life of this project
         // behind exactly that gap.
         let mut on_neither_list: Vec<String> = Vec::new();
-        for (path, floor) in MAIL_TRANSPORTS {
+        for (path, counted) in MAIL_TRANSPORTS {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
             let production = the_production_half(&source);
             let writes = writes_in(production, &SENDS_A_MAIL_CHANGE);
             assert!(
-                writes.len() >= floor,
-                "{path}: only {} writes ask the gate, so the way a write is recognised has \
-                 moved and this is looking at the wrong thing",
-                writes.len()
+                counted.allows(writes.len()),
+                "{path}: {} writes ask the gate and this file is recorded as having {}. \
+                 Either the way a write is recognised has moved and this is looking at the \
+                 wrong thing, or a write arrived or left and the number beside it was not \
+                 changed in the same commit. The writes found were {writes:?}",
+                writes.len(),
+                counted.written_down()
             );
             for write in writes {
                 let accounted_for = MAIL_MEASURED_ON_THE_WIRE

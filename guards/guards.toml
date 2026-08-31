@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 341 records have arrived since and have not been through it.
+# 344 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3453,11 +3453,18 @@ file = "src/service/protocols/pop3.rs"
 before = """        self.may_i("remove a message from the mail server")?;
         self.command("DELE", &[&id.to_string()]).await?;"""
 after = """        self.command("DELE", &[&id.to_string()]).await?;"""
+# Re-measured on 2026-08-31: five, not four. Plan 02-01 added a test asserting
+# that receiving a POP message is *not* gated, and an absence assertion is worth
+# nothing without a positive control, so that test reads this gate first to
+# prove its reading can see a gate at all. Removing this gate takes the control
+# out from under it. That is the intended behaviour of the control and it makes
+# this record one test longer.
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_pop_removal_is_refused_here_when_the_session_may_not_change_anything",
     "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
     "service::outward::completeness::test_nothing_sends_a_changing_command_without_asking_the_gate",
     "service::protocols::pop3::against_a_server_that_answers::test_nothing_is_said_to_the_server_with_the_gate_closed",
+    "service::protocols::pop3::tests::test_receiving_a_pop_message_is_not_gated_on_the_read_setting",
 ]
 
 # ── A clear-out the setting held back, reported as a failed mail check ──────
@@ -5830,9 +5837,16 @@ before = """    pub async fn copy_message(&mut self, uid: u32, into: &str) -> Re
         self.require_selected()?;"""
 after = """    pub async fn copy_message(&mut self, uid: u32, into: &str) -> Result<()> {
         self.require_selected()?;"""
+# Re-measured on 2026-08-31, when plan 02-01 tightened MAIL_TRANSPORTS' imap
+# entry from a floor of 11 to the count of 11 and added a second test that reads
+# that census. Four now, not three. The record did not go stale because this
+# guarded code changed; it went stale because a test was added elsewhere that
+# depends on the same census, which is the direction nothing prompts anybody to
+# check.
 red = [
     "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
     "service::outward::completeness::test_nothing_sends_a_changing_command_without_asking_the_gate",
+    "service::outward::completeness::test_the_read_gate_does_not_move_the_count_of_gated_writes",
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
 
@@ -9099,8 +9113,15 @@ after = """    pub async fn create_mailbox(&mut self, path: &str) -> Result<()> 
 # gated write requires, made the census notice this one too: nine gated writes
 # minus this one is eight, and eight no longer clears the floor. Written down
 # as it really is rather than as it first measured.
+#
+# Re-measured a third time on 2026-08-31, for a reason neither of the first two
+# would have predicted: plan 02-01 added a second test that reads the same
+# census, so the same break now reddens five. Nothing about this guarded code
+# changed. That is the staleness direction a run of the named tests alone cannot
+# see, and it is why `scripts/guards.sh` compares the two sets for equality.
 red = [
     "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::outward::completeness::test_the_read_gate_does_not_move_the_count_of_gated_writes",
     "service::protocols::imap::against_a_server_that_answers::test_creating_a_folder_with_the_gate_closed_says_nothing_to_the_server",
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
     "service::protocols::imap::against_a_server_that_answers::test_the_two_ways_of_being_refused_a_folder_can_be_told_apart",
@@ -9357,11 +9378,19 @@ file = "src/service/protocols/imap.rs"
 # spare write above the floor, the copy_message record lost one of its three
 # reddening tests and every run stayed green. So the floor rising with each new
 # gated write is not bookkeeping, it is this record's third test.
+#
+# Re-measured on 2026-08-31: four, not three. Plan 02-01 turned that floor into
+# an equality and added a second test reading the same census, so a lost gate is
+# now noticed twice over. The paragraph above argued that the floor rising with
+# each gated write is this record's third test; the equality is the stronger
+# form of the same argument, because a floor can only see a count fall and an
+# equality sees it move either way.
 before = '''        self.may_i("delete a folder on the server")?;
 '''
 after = ""
 red = [
     "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::outward::completeness::test_the_read_gate_does_not_move_the_count_of_gated_writes",
     "service::protocols::imap::against_a_server_that_answers::test_deleting_a_folder_with_the_gate_closed_says_nothing_to_the_server",
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
@@ -10142,4 +10171,68 @@ after = """                            read_the_tree_back(&folder_cache, &state,
 red = [
     "presentation::wx_app::moving_between_accounts_does_not_rebuild_the_tree::test_landing_on_a_row_asks_which_account_it_belongs_to",
     "presentation::wx_app::moving_between_accounts_does_not_rebuild_the_tree::test_landing_on_a_row_does_not_read_the_tree_back",
+]
+
+# ── The read dimension on Allowed, and the gate it reaches ──────────────────
+#
+# Three records from plan 02-01, each taken red by hand against the whole
+# library before it was written down, and each written from what really went
+# red rather than from what was expected. Two of the three reddened a test in
+# `application::mail_controller`, which is not a module anybody working on
+# `application::allowed` would have filtered for.
+
+[[guard]]
+name = "a body fetch asks whether this account may read"
+file = "src/service/protocols/imap.rs"
+before = """        self.may_i_read("read the text of a message")?;
+        self.require_selected()?;"""
+after = """        self.require_selected()?;"""
+red = [
+    "service::outward::completeness::test_the_read_gate_is_told_apart_from_the_write_census",
+    "service::protocols::imap::against_a_server_that_answers::test_a_session_not_allowed_to_read_says_so_before_it_says_no_folder_is_open",
+    "service::protocols::imap::against_a_server_that_answers::test_a_session_not_allowed_to_read_will_not_fetch_a_message",
+]
+
+# ── The constant whose name stopped matching its shape ──────────────────────
+#
+# `Allowed::NOTHING` holds `reading: true`, which reads like a mistake and is
+# the whole point. The first-run choice labelled "Read my mail, change nothing"
+# resolves to this constant, and so does `--read-only`. Flipping the field is a
+# one-character edit that compiles, and it would take mail away from the most
+# cautious person in the user base with nothing on screen having changed.
+
+[[guard]]
+name = "the constant that changes nothing still reads mail"
+file = "src/application/allowed.rs"
+before = """        personal_information: false,
+        reading: true,"""
+after = """        personal_information: false,
+        reading: false,"""
+red = [
+    "application::allowed::tests::test_combining_is_order_independent",
+    "application::allowed::tests::test_reading_is_narrowed_the_same_independent_way_as_the_two_writes",
+    "application::allowed::tests::test_the_choice_that_promises_reading_still_reads",
+    "application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first",
+    "presentation::command_line::tests::test_nothing_on_the_command_line_turns_reading_off",
+    "presentation::first_run::tests::test_the_choice_that_says_read_my_mail_reads_mail",
+]
+
+# ── The settings file every machine already has ────────────────────────────
+#
+# `Allowed` is serialised into `app_config.json` and there is one `from_str`
+# for the whole file, so a field that does not handle the absent case does not
+# only lose its own answer: it takes every other setting on that machine with
+# it. A bare `#[serde(default)]` compiles, parses, and answers false, which is
+# this field inverted.
+
+[[guard]]
+name = "a settings file written before reading was a setting still loads"
+file = "src/application/allowed.rs"
+before = """    #[serde(default = "default_reading")]
+    pub reading: bool,"""
+after = """    #[serde(default)]
+    pub reading: bool,"""
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first",
+    "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]

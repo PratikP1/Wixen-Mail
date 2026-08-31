@@ -337,6 +337,32 @@ impl Pop3Session {
     }
 
     /// One whole message, as it arrived.
+    ///
+    /// # Not gated on whether reading is allowed, and that is deliberate
+    ///
+    /// The mail side has a read gate: `ImapSession::fetch_body` asks whether
+    /// this account may fetch a message's text before it sends `UID FETCH`,
+    /// because on IMAP the headers arrive first and the text is fetched later,
+    /// so refusing the fetch leaves a message that is still listed and still
+    /// readable as far as it goes.
+    ///
+    /// The obvious thing to do here is the same, and it would be wrong.
+    /// **`RETR` is how a POP account receives a message at all.** There is no
+    /// earlier step that brought the headers: `application::pop_sync` stores
+    /// the body in the same breath as the message row, and
+    /// `data::message_cache::messages`'s `ONLY_COPY_IS_HERE` then excludes it
+    /// from eviction for as long as it exists. So a POP account never holds a
+    /// message with headers and no text, there is no later backfill to refuse,
+    /// and gating this would not stop a fetch of text for a message already
+    /// held. It would stop mail arriving.
+    ///
+    /// Somebody who turned reading off would find their POP accounts silently
+    /// empty, with a setting whose label talks about fetching the text of a
+    /// message they have not got. That is a worse failure than the one the
+    /// gate exists to prevent, and it is not the question the setting asks.
+    ///
+    /// `test_receiving_a_pop_message_is_not_gated_on_the_read_setting` holds
+    /// this to be true rather than leaving it as a paragraph.
     pub async fn retrieve(&mut self, id: u32) -> Result<Vec<u8>> {
         self.command("RETR", &[&id.to_string()]).await?;
         let lines = self.read_data().await?;
@@ -509,6 +535,64 @@ mod tests {
         });
 
         assert!(nowhere.is_err());
+    }
+
+    /// One method's body, read out of this file's own shipping half.
+    ///
+    /// Both halves of the file are not the same question: the tests below
+    /// build sessions and call these methods, so reading the whole file would
+    /// find a call in a test and report the method as gated.
+    fn the_body_of(method: &str) -> String {
+        let source = include_str!("pop3.rs");
+        let ships = source
+            .split_once("#[cfg(test)]")
+            .map_or("", |(before, _)| before);
+        let after = ships
+            .split_once(&format!("pub async fn {method}("))
+            .unwrap_or_else(|| panic!("{method} is not a method in this file any more"))
+            .1;
+        after
+            .split_once("\n    }")
+            .unwrap_or_else(|| panic!("{method} has no end"))
+            .0
+            .to_string()
+    }
+
+    #[test]
+    fn test_receiving_a_pop_message_is_not_gated_on_the_read_setting() {
+        // The mail side gates its body fetch on whether reading is allowed,
+        // and the obvious next step is to do the same here. It would stop mail
+        // arriving.
+        //
+        // On IMAP the headers arrive first and the text is fetched afterwards,
+        // so refusing that fetch leaves a message that is still listed. RETR
+        // is not that. It is how a POP account receives a message at all: the
+        // body is stored with the message row and is that message's only copy,
+        // so there is no later backfill to refuse and nothing to be missing.
+        // A person who turned the setting off would find their POP accounts
+        // silently empty.
+        //
+        // The positive control comes first, and it has to: an assertion that
+        // something is absent is satisfied for free by a reading that finds
+        // nothing at all, so this would pass against a broken reader, a
+        // renamed method, or an empty string.
+        let deleting = the_body_of("delete");
+        assert!(
+            deleting.contains("self.may_i("),
+            "the reading found nothing, so what follows proves nothing: {deleting}"
+        );
+
+        let receiving = the_body_of("retrieve");
+        assert!(
+            receiving.contains("RETR"),
+            "retrieve no longer sends RETR, so this is looking at the wrong method"
+        );
+        assert!(
+            !receiving.contains("may_i"),
+            "receiving a POP message now asks a gate. If that gate is the read setting, \
+             turning it off stops mail arriving rather than stopping a fetch of text for a \
+             message already held. The reason is written out above `retrieve`: {receiving}"
+        );
     }
 
     #[test]

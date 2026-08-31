@@ -6,6 +6,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **You can now stop Wixen Mail fetching the text of your messages from the
+  server.** Settings, Permissions, under "Message Text". It is on to begin
+  with, and leaving it on is what most people want.
+
+  Before, there was no way to say no to this. The settings there covered what
+  Wixen Mail may change at your provider, sending, deleting and syncing, and
+  reading was simply always allowed because reading cannot damage anything.
+
+  What turning it off stops is one thing: fetching the text of a message that
+  is not already stored on this machine. Mail already downloaded stays exactly
+  as readable as it was. New mail still arrives, with its sender, subject and
+  date. What you lose is opening a message whose text was never fetched, and
+  searching for words inside those messages, because the words are not here to
+  search.
+
+  It is worth having if you are on a metered or slow connection, or if you
+  would rather the text of your mail were not written to this machine at all.
+  The cached mail is not encrypted, so that second reason is a real one.
+
+  Your existing settings are not affected. A settings file written before this
+  existed reads as "on", the same as a new installation, and nothing else in it
+  changes.
+
+  POP accounts are not affected either, and cannot be. A POP account receives
+  the whole message in one step, so there is no separate fetch to decline;
+  refusing it would stop mail arriving rather than stop text being fetched for
+  mail you already have.
+
 ### Changed
 
 - **The sidebar now shows all your accounts at once, each under its own name.**
