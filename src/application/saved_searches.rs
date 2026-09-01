@@ -461,9 +461,8 @@ fn what_that_answer_looks_at(looking_in: WhereToSearch) -> &'static [&'static st
 /// restriction was written down, and the two halves have to arrive together
 /// or the one that is easier to forget is the one that gets forgotten.
 pub fn what_a_typed_search_asks(ran: &TheSearchThatWasRun) -> WhatASavedSearchWillAsk {
-    let _ = what_that_answer_looks_at(ran.looking_in);
     WhatASavedSearchWillAsk {
-        questions: WHAT_A_TYPED_SEARCH_LOOKS_AT
+        questions: what_that_answer_looks_at(ran.looking_in)
             .iter()
             .map(|part| Question {
                 field: (*part).to_string(),
@@ -473,7 +472,7 @@ pub fn what_a_typed_search_asks(ran: &TheSearchThatWasRun) -> WhatASavedSearchWi
             })
             .collect(),
         join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
-        folder: None,
+        folder: ran.the_folder_looked_in.clone(),
     }
 }
 
@@ -1630,9 +1629,13 @@ mod tests {
         // cannot come apart.
         let asked = what_a_typed_search_asks(&across_the_account("invoice"));
 
+        // The three named here rather than read out of the constant. Both
+        // sides reading it would move together when it changed, and this
+        // assertion is about the three a search saved before this plan holds,
+        // which no later edit may quietly redefine.
         assert_eq!(
             the_parts_asked_about(&asked),
-            WHAT_A_TYPED_SEARCH_LOOKS_AT.to_vec(),
+            vec!["subject", "from", "to"],
             "an unnarrowed search saved now asks something different from one \
              saved before this change"
         );
@@ -1653,7 +1656,7 @@ mod tests {
 
         assert_eq!(
             the_parts_asked_about(&asked),
-            WHAT_A_TYPED_SEARCH_LOOKS_AT.to_vec(),
+            vec!["subject", "from", "to"],
             "Current Folder was read as a field restriction"
         );
         assert_eq!(
