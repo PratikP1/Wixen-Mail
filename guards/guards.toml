@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 349 records have arrived since and have not been through it.
+# 350 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10403,4 +10403,44 @@ red = [
     "application::saved_searches::tests::test_from_only_saves_one_question_about_the_sender",
     "application::saved_searches::tests::test_subject_only_saves_one_question_about_the_subject",
     "data::message_cache::saved_searches::tests::test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed",
+]
+
+# ── A search that asks nothing, joined by "all" ─────────────────────────────
+#
+# A list of conditions that all have to match is true of every message when
+# the list is empty. So a saved search with no question in it, joined by All,
+# would take the whole mailbox, and the row somebody opened expecting a handful
+# of messages would hold everything they own.
+#
+# The guard is one line in `selects`, and it has been there since that function
+# was written. What had never been true until D-2-01 is that anybody could
+# reach the case: a search made from the search box always carries three
+# questions, and `Join::All` had never been written outside a unit test. The
+# rule editor makes both reachable at once, because somebody can delete every
+# condition in it.
+#
+# The break is the fall-through somebody would write if they took the line for
+# a needless check, and `Join::Any` is why it reads as safe: over an empty list
+# `any` is false, so the Any arm goes on taking nothing and only the All arm
+# floods. Half the behaviour looks right.
+#
+# Measured against the whole library, 2026-09-01: two tests, one at the
+# `selects` level that was already there and one at the `run_over` level added
+# by plan 02-06. The second is the one that matters, because `run_over` is the
+# one way to run a search and is what a rule editor's results would come
+# through.
+
+[[guard]]
+name = "a saved search that asks nothing takes nothing, whichever way it joins"
+file = "src/application/saved_searches.rs"
+before = """    pub fn selects(&self, message: &CachedMessage) -> bool {
+        if self.questions.is_empty() {
+            return false;
+        }
+        let mut answered = self"""
+after = """    pub fn selects(&self, message: &CachedMessage) -> bool {
+        let mut answered = self"""
+red = [
+    "application::saved_searches::tests::test_a_search_with_no_question_in_it_takes_nothing_rather_than_everything",
+    "application::saved_searches::tests::test_an_all_join_with_no_questions_takes_nothing_rather_than_everything",
 ]

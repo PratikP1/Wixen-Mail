@@ -2249,6 +2249,169 @@ mod tests {
 
     // ── What a condition on a field cannot find ─────────────────────────────
 
+    // ── The All join, through the one function that runs a search ───────────
+    //
+    // The matcher has honoured both arms since it was written, and both are
+    // exercised, but only through `selects`. Nothing outside a unit test has
+    // ever written `Join::All`: the one production site writes
+    // `WHAT_A_TYPED_SEARCH_JOINS_WITH`, which is `Join::Any`. D-2-01's rule
+    // editor makes the All arm reachable for the first time, so it is proved
+    // here where it will actually run, through `run_over`, which is the one
+    // way to run a search and the step that asks `what_it_cannot_read` first.
+
+    /// A message the search below can be run over, with a subject and a sender
+    /// that can be made to disagree.
+    fn a_message_from(sender: &str, subject: &str) -> CachedMessage {
+        CachedMessage {
+            from_addr: sender.to_string(),
+            subject: subject.to_string(),
+            ..a_message()
+        }
+    }
+
+    /// Which subjects a search took, so the assertion reads as the answer
+    /// somebody would see rather than as a count.
+    fn subjects_taken(ran: &Ran<'_>) -> Vec<String> {
+        match ran {
+            Ran::Took(taken) => taken.iter().map(|m| m.subject.clone()).collect(),
+            other => panic!("expected the search to run, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_an_all_join_takes_only_the_messages_answering_every_question() {
+        let mut search = a_search(
+            "Reports from Ann",
+            vec![
+                asking("from", "contains", "ann@"),
+                asking("subject", "contains", "report"),
+            ],
+        );
+        search.join = Join::All;
+
+        let mail = [
+            a_message_from("ann@example.com", "Quarterly report"),
+            a_message_from("ann@example.com", "Lunch"),
+            a_message_from("bob@example.com", "Quarterly report"),
+        ];
+
+        assert_eq!(
+            subjects_taken(&search.run_over(&mail)),
+            ["Quarterly report"]
+        );
+    }
+
+    #[test]
+    fn test_an_any_join_takes_the_messages_answering_either_question() {
+        // The same mail and the same two questions, so the difference between
+        // the arms is the only thing the two tests differ by.
+        let mut search = a_search(
+            "Reports or Ann",
+            vec![
+                asking("from", "contains", "ann@"),
+                asking("subject", "contains", "report"),
+            ],
+        );
+        search.join = Join::Any;
+
+        let mail = [
+            a_message_from("ann@example.com", "Quarterly report"),
+            a_message_from("ann@example.com", "Lunch"),
+            a_message_from("bob@example.com", "Quarterly report"),
+        ];
+
+        assert_eq!(
+            subjects_taken(&search.run_over(&mail)),
+            ["Quarterly report", "Lunch", "Quarterly report"]
+        );
+    }
+
+    #[test]
+    fn test_an_all_join_naming_a_field_this_build_cannot_read_says_it_could_not_run() {
+        // Asked before any message is looked at, and the All arm must not get
+        // there first. Answering "no" about every message would come back as
+        // an empty folder, which is a search that ran and found nothing, and
+        // somebody stops looking for mail that is there.
+        let mut search = a_search(
+            "From a later version",
+            vec![
+                asking("from", "contains", "ann@"),
+                asking("sender_display_name", "contains", "Ann"),
+            ],
+        );
+        search.join = Join::All;
+
+        let mail = [a_message_from("ann@example.com", "Quarterly report")];
+
+        match search.run_over(&mail) {
+            Ran::CouldNotRun(NotUnderstood::Field(field)) => {
+                assert_eq!(field, "sender_display_name");
+            }
+            other => panic!(
+                "a search naming a field this build cannot read came back as {other:?} rather \
+                 than saying it could not run"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_an_all_join_with_no_questions_takes_nothing_rather_than_everything() {
+        // The case D-2-01 makes reachable: somebody can delete every condition
+        // in the rule editor. A list of conditions that all have to match is
+        // true of every message when the list is empty, so the guard in
+        // `selects` is the only thing between an empty question list and a row
+        // somebody opened expecting a handful of messages holding the whole
+        // mailbox. It has never been exercised through `run_over` with this
+        // arm, which is exactly the combination that would flood.
+        let mut search = a_search("Asks nothing", Vec::new());
+        search.join = Join::All;
+
+        let mail = [
+            a_message_from("ann@example.com", "Quarterly report"),
+            a_message_from("bob@example.com", "Lunch"),
+        ];
+
+        // Through `subjects_taken`, which insists the search ran. An empty
+        // result and a search that never ran are different answers, and this
+        // is about the first.
+        assert!(subjects_taken(&search.run_over(&mail)).is_empty());
+    }
+
+    #[test]
+    fn test_an_all_join_about_message_text_answers_about_mail_whose_text_is_not_here() {
+        // A message whose body was never fetched or has since been evicted is
+        // still gathered by the scan, through a left join, and the matcher
+        // reads an absent field as an empty one. So a question about the text
+        // is answered rather than skipped, which is what makes "the message
+        // text is empty" a thing a saved search can find at all.
+        //
+        // This is the coverage D-2-13 keeps and discloses rather than closes:
+        // the same message is still findable from the search box by a word
+        // that was only in its text.
+        let mut search = a_search(
+            "Empty bodies from Ann",
+            vec![
+                asking("from", "contains", "ann@"),
+                asking("body_plain", "is_empty", ""),
+            ],
+        );
+        search.join = Join::All;
+
+        let mut with_text = a_message_from("ann@example.com", "Has its text here");
+        with_text.body_plain = Some("the quarterly report is attached".to_string());
+        let mail = [
+            a_message_from("ann@example.com", "Text is not here"),
+            with_text,
+        ];
+
+        assert_eq!(
+            subjects_taken(&search.run_over(&mail)),
+            ["Text is not here"],
+            "a message whose text is not on this computer was skipped rather than answered \
+             about"
+        );
+    }
+
     #[test]
     fn test_a_condition_about_thrown_away_mail_says_a_saved_search_never_looks_at_it() {
         let said = what_a_saved_search_cannot_find_with(THE_FIELD_A_SAVED_SEARCH_NEVER_SEES)
