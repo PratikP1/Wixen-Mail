@@ -441,8 +441,10 @@ pub const THAT_FOLDER_IS_ANOTHER_ACCOUNTS: &str = "That search ran in another ac
 /// saved under rather than whichever is open now, because those are the same
 /// answer almost always and not always.
 pub fn a_search_may_be_saved_under(ran: &TheSearchThatWasRun, account_id: &str) -> bool {
-    let _ = (ran, account_id);
-    true
+    match &ran.the_folder_looked_in {
+        None => true,
+        Some(folder) => folder.account == account_id,
+    }
 }
 
 /// How a typed search compares the words against the part it looks at.

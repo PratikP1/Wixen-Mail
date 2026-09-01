@@ -47,6 +47,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   sender and the recipients, which is what "All Folders" saves now, so they go
   on behaving exactly as they did.
 
+  One case is refused rather than saved. If you change which account is active
+  while a folder of another account is still open, and then save a search you
+  ran in that folder, Wixen Mail says so and keeps nothing. Folder names repeat
+  across accounts, so saving it would have given you a search that listed the
+  other account's mail.
+
 - **The window that asks you to name a search now says what the search asks.**
   It used to say one fixed sentence whatever you had chosen. It now reads out
   each part of a message the search looks at, and names the folder when the
