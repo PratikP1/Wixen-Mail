@@ -1,46 +1,92 @@
 ---
 phase: 02-search-that-says-what-it-covers
-verified: 2026-09-01T13:14:51Z
-status: gaps_found
-score: 5/6 must-haves verified
+verified: 2026-09-01T15:12:00Z
+status: human_needed
+score: 6/6 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "A search that can reach message text says, before it runs, how many messages in the account have body text stored and how many do not, so a short answer is never mistaken for a complete one."
-    status: partial
-    reason: >-
-      Delivered for the saved-search path only. The quick search box also reaches
-      message text (the FTS index declares a `body` column and `search_messages`
-      runs an unqualified MATCH for All Folders and Current Folder), and it also
-      misses messages whose body was never fetched, because
-      `index_message_for_search` writes no body for them and the snippet is
-      derived from the body too. On that path nothing is said before the search
-      runs and no fetch is offered. SEARCH-02's own cited evidence is about
-      exactly this path: "FTS covers subject and sender for everything and body
-      text only for bodies actually fetched, and the search UI must say so."
-    artifacts:
-      - path: "src/presentation/managers.rs"
-        issue: >-
-          `search_messages` (line 1792) reports only a match count. No call to
-          `how_much_message_text_is_stored_here`, no coverage sentence, no
-          `UIUpdate::WhatCouldBeFetched`.
-      - path: "src/data/message_cache/searching.rs"
-        issue: >-
-          `index_message_for_search` (line 282) indexes an absent body as
-          nothing, so a never-fetched message is silently unmatchable on a
-          body-only word with no disclosure anywhere.
-    missing:
-      - >-
-        A coverage sentence before a search-box run whose terms can reach message
-        text, worded for the box the way `what_a_saved_search_covers` is worded
-        for the saved search, with its own number (the FTS coverage, which is not
-        the saved search's number).
-      - >-
-        The fetch offer reachable from the box path, or a deliberate written
-        decision that it is not, since today the only door to
-        `fetch_the_missing_message_text` is running a saved search that reads
-        message text (recorded open as WINDOWS ledger entry 13).
+re_verification:
+  previous_status: gaps_found
+  previous_score: 5/6
+  previous_verified: 2026-09-01T13:14:51Z
+  previous_tree: 0cc5e84
+  this_tree: 93c59d7
+  closed_by: 02-09-PLAN.md
+  gaps_closed:
+    - >-
+      "A search that can reach message text says, before it runs, how many
+      messages in the account have body text stored and how many do not." The
+      search box now says it, with its own number, on the same status line and
+      the same announcement topic as the match count. SEARCH-02 is delivered.
+  gaps_remaining: []
+  regressions: []
+  carried_open:
+    - >-
+      The fetch offer is still reachable only from the saved-search path. That
+      was the second half of the previous report's `missing` list and 02-09 did
+      not touch it. It is recorded as WINDOWS ledger entry 13, kind `stub`,
+      open. It is not part of criterion 4's wording, so it does not fail a
+      criterion, but D-2-08's "SEARCH-02's two halves ship together" is not
+      honoured on the box path and no written decision says it need not be.
+warnings:
+  - item: "The backfill answers the coverage column with a looser test than the live writer uses"
+    where: "src/data/message_cache/mod.rs:record_whether_the_index_holds_each_messages_text"
+    detail: >-
+      `index_message_for_search` records the column from whether the indexed
+      body had words. The backfill records it from whether a `message_bodies`
+      row exists. `get_message_body` returns `None` for a row whose plain and
+      markup halves are both absent, which `save_message_body(id, None, None)`
+      creates for a message MIME parsing found no text part in. Such a row is
+      counted by the backfill as text the box can look inside and is not, so
+      for pre-migration rows the number can overstate. Bounded to rows written
+      before the migration, one-time, and corrected the next time that message
+      is reindexed. It is the same "a row exists" test 02-02's
+      `how_much_message_text_is_stored_here` already uses, so it is inherited
+      rather than new, but it means ledger 35, the changelog and the function's
+      own doc are not exactly right when they say the count is "short rather
+      than over": there is a second, smaller population it is over on.
+  - item: "The box's sentence is said with the result, not before the search"
+    where: "src/presentation/managers.rs:search_messages"
+    detail: >-
+      Criterion 4 says "before it runs". The count is worked out before the
+      search, but the sentence is sent bundled with the match count in one
+      `StatusUpdated`. The reason is recorded in the code and in 02-09's
+      decisions: two sends share the "status" topic and the announcement queue
+      keeps only the newest of a topic, so a separate earlier send would be
+      spoken over and one of the two things worth saying would be lost. The
+      criterion's purpose is served, its literal wording is not.
+  - item: "The box's sentence says 'this computer has the text of'"
+    where: "src/application/saved_searches.rs:a_coverage_sentence"
+    detail: >-
+      True of the saved search, whose number is stored bodies. For the box the
+      number is what the index holds, which includes messages whose text was
+      evicted, so for those the computer does not have the text and the index
+      has the words. The number is the right number for what the box can
+      search. The verb is inherited from the saved search's wording and is
+      loose on the box path.
+  - item: "Neither coverage number deduplicates Gmail rows"
+    where: "src/data/message_cache/searching.rs:how_much_message_text_the_index_holds"
+    detail: >-
+      `search_messages` groups on `COALESCE(m.gmail_msgid, m.id)`, so a message
+      carrying three labels is one result. Both coverage counts count rows.
+      Pre-existing shape, identical in 02-02's count, not introduced here.
 human_verification:
+  - test: "Type something into the search box that reaches message text, with NVDA running."
+    expected: >-
+      The match count and the coverage sentence are heard as one line, and the
+      sentence is worth hearing rather than flooding, including on a mailbox
+      whose text is entirely here and where it says nothing new.
+    why_human: >-
+      Audibility, length and whether this becomes noise on every search cannot
+      be judged without a screen reader. WINDOWS ledger 33.
+  - test: "Search the box for a word in no message at all."
+    expected: >-
+      The Nothing Found earcon and the coverage sentence are both heard, in an
+      order that makes sense.
+    why_human: >-
+      The two ride different topics at different priorities. That both survive
+      the announcement queue is reasoned from the topic rule and has never been
+      heard. WINDOWS ledger 34.
   - test: "Run a saved search that has a condition on the message text, with NVDA running."
     expected: >-
       The scope sentence and the coverage sentence are heard as one line before
@@ -80,22 +126,52 @@ human_verification:
 # Phase 2: Search that says what it covers — Verification Report
 
 **Phase Goal:** A search returns what the user asked for, and says plainly what it could not reach.
-**Verified:** 2026-09-01T13:14:51Z (against `main` at `0cc5e84`)
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-01T15:12:00Z (against `main` at `93c59d7`)
+**Status:** human_needed
+**Re-verification:** Yes — after 02-09 closed the gap the first pass found
 
 ## The short answer
 
-Five of the six success criteria are delivered, wired to live callers, and backed
-by tests that exercise behaviour rather than presence. The first half of the goal
-holds: a search now returns what the user asked for. The second half holds for
-one of the two searches in this program and not for the other. A saved search
-says plainly what it could not reach. The search box, which is the search most
-people use and which also reaches message text, says nothing.
+The gap is closed, and the number is the right number.
 
-That is criterion 4, and it is the one gap. It is not a stub and not a broken
-wire; it is a scope that stopped one path short of where the criterion and
-SEARCH-02's own evidence line put it.
+Type something into the search box now and the line that comes back carries how
+many matches there were and how much of that account's message text the box
+could look inside. It is said on the same `StatusUpdated` as the match count,
+so it is painted in the status bar and spoken on the status topic, and it is
+reached from Edit > Search and the toolbar button without going near a test.
+The number is the box's own: it counts what the search index holds text for, not
+what `message_bodies` holds, so a message whose body was fetched and later
+evicted is counted as text the box can look inside, which it is. SEARCH-02 is
+now delivered on both of the paths its own evidence line is about.
+
+Nothing regressed. The five criteria that passed the first time still pass, and
+the saved search's own sentence is unchanged word for word.
+
+Four warnings are recorded below. The one worth reading is that the migration
+that fills the new column in for existing rows asks a looser question than the
+code that writes it from now on, so the count can overstate for a small
+population, which is the opposite of the direction the changelog and the ledger
+say it errs in.
+
+## What the first pass found, and what closed it
+
+The first verification, at `0cc5e84` on 2026-09-01, scored 5 of 6. Criterion 4
+was half delivered: the saved search said what it covered, the search box read
+the same message text through the FTS `body` column and said nothing, so a
+body-only word missed silently on the path people reach for first.
+
+Plan 02-09 was written and executed against exactly that, in five commits from
+`6283821` to `93c59d7`, two of them RED and two GREEN. The table below is the
+first pass's `missing` list, checked item by item against the tree.
+
+| The first pass asked for | Now | Where |
+|---|---|---|
+| A coverage sentence before a search-box run whose terms can reach message text, worded for the box the way `what_a_saved_search_covers` is worded for the saved search, with its own number | Delivered | `what_the_search_box_covers` (`saved_searches.rs:741`), sent from `search_messages` (`managers.rs:1822`) |
+| The fetch offer reachable from the box path, or a deliberate written decision that it is not | Not delivered, and no decision written | `WhatCouldBeFetched` is still sent only from `wx_app.rs:6601` (`run_a_saved_search`) and `18277`. Recorded as ledger 13, open |
+
+The first item is the criterion. The second is not in criterion 4's wording and
+is carried forward rather than counted against the score. See "The half that did
+not close" below.
 
 ## Goal Achievement
 
@@ -103,176 +179,259 @@ SEARCH-02's own evidence line put it.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | A search saved with Subject Only or From Only reruns with that restriction | VERIFIED | `what_that_answer_looks_at` (`saved_searches.rs:499`) returns one field for SubjectOnly and SenderOnly and the three-element `WHAT_A_TYPED_SEARCH_LOOKS_AT` itself (not a copy) for the other two. The live chain runs Find dialog to `keep_the_search_that_ran` (`wx_app.rs:14556`) to `save_this_search` to `what_a_typed_search_asks` to `create_saved_search`. The folder half travels in the same value: `asks.folder` at `wx_app.rs:6859`, replacing the old hardcoded `folder: None`. Tests at `saved_searches.rs:1819`, `1842`, `1858`, `1882`. |
-| 2 | Opening a saved search says what it asks, in one sentence, whether or not the In box has a name for it | VERIFIED | `a_search_in_words` (`saved_searches.rs:601`) builds the sentence from the questions, one clause each, joined by the search's own word. There is no scope-name path and so no fallback case. Emitted by `run_a_saved_search` before the gather (`wx_app.rs:6593`) as one `StatusUpdated`, which `handle_update` both paints and announces. Tests at `2086`, `2093`, `2105`. Audibility is a human item. |
-| 3 | A rule editor writes into the same saved searches, reaching all eleven fields | VERIFIED | `the_words_for_every_field` (`wx_managers.rs:2619`) maps `A_FIELD_A_RULE_MAY_NAME`; all eleven have entries in `WHAT_EACH_FIELD_IS_CALLED`, so the `filter_map` drops none. Eleven match types likewise. One stored thing, one matcher: `Question::as_a_rule` is unchanged and is still the only conversion. One group in the tree: `saved_search_rows` is the only producer of a `SavedSearch` row. Write-back is `replace_saved_search`, one `unchecked_transaction`. |
-| 4 | A search that can reach message text says, before it runs, how much body text is stored | PARTIAL — see gap | Delivered for the saved search: `coverage_before` to `how_much_message_text_is_stored_here` (real SQL, `saved_searches.rs:428`) to `what_a_saved_search_covers`, said before `messages_a_saved_search_reads`. Not delivered for the search box, which reaches the same body column and says nothing. |
-| 5 | Fetching the missing text is built and gated, with a read dimension on `Allowed`, on by default | VERIFIED | `Allowed::reading` with a hand-written `Default`, `NOTHING` holding `reading: true`, and a named `default_reading` serde default. `fetch_body` asks `may_i_read` as its first line, before `require_selected`. `connect_imap` calls `allow_reading` from the account's answer. Settings checkbox reads and writes (`wx_settings.rs:1560` and `2146`). Bulk fetch reachable from a real button. |
-| 6 | Saved searches sit inside the account structure the way pinned folders do | VERIFIED | `saved_search_rows` (`folder_tree.rs:645`) builds heading, per-account branch, search, through the same `what_each_account_has` Favourites uses. Fed from every account, not the open one (`wx_app.rs:10101`). Row identity carries the account. A search runs against its own account through `whose_mail_a_saved_search_reads`, and `run_a_saved_search` no longer takes the held state at all. |
+| 1 | A search saved with Subject Only or From Only reruns with that restriction | VERIFIED (re-checked) | `what_that_answer_looks_at` (`saved_searches.rs:499`) and its one caller at `517` are untouched by 02-09. `git diff 0cc5e84..93c59d7` removes nothing from this path. |
+| 2 | Opening a saved search says what it asks, in one sentence, whether or not the In box has a name for it | VERIFIED (re-checked) | `a_search_in_words` and `what_a_search_says_as_it_opens` unchanged; still emitted by `run_a_saved_search` at `wx_app.rs:6592`. |
+| 3 | A rule editor writes into the same saved searches, reaching all eleven fields | VERIFIED (re-checked) | `wx_managers.rs` and `folder_tree.rs` are not in 02-09's diff at all. |
+| 4 | A search that can reach message text says, before it runs, how many messages in the account have body text stored and how many do not | VERIFIED | Both searches now say it. Saved search: `coverage_before` to `how_much_message_text_is_stored_here` to `what_a_saved_search_covers`, unchanged. Box: `search_messages` asks `reads_the_message_text()`, then `how_much_message_text_the_index_holds`, then `what_the_search_box_covers`, and sends the answer with the match count. Two literal deviations from the criterion's wording are recorded as warnings and neither defeats its purpose. |
+| 5 | Fetching the missing text is built and gated, with a read dimension on `Allowed`, on by default | VERIFIED (re-checked) | `allowed.rs`, `mail_sync.rs` and `wx_settings.rs` are not in 02-09's diff. |
+| 6 | Saved searches sit inside the account structure the way pinned folders do | VERIFIED (re-checked) | `folder_tree.rs` not in 02-09's diff; `whose_mail_a_saved_search_reads` still has its callers. |
 
-**Score:** 5/6 truths verified (0 present, behaviour-unverified)
+**Score:** 6/6 truths verified (0 present, behaviour-unverified)
 
-### Reachability re-checked against the tree, not against the summaries
+### Criterion 4, checked in detail, because it is the one that changed
 
-Guardrail 1 says nothing is done until a non-test path reaches it. Plan 02-06
-built a dialog nothing could open and 02-07 wired it, so every user-visible
-capability was traced by hand rather than read off a summary. All six chains
-hold.
+**Is it wired, and does a person reach it?** Yes. Followed in the tree, not read
+off the summary:
 
-| Capability | Chain, checked in the tree |
+| Step | Where |
 |---|---|
-| Save a narrowed search | Find dialog (`ID_SEARCH`, line 4631) to `keep_the_search_that_ran` to `ID_SAVE_SEARCH` to `save_this_search` to `what_a_typed_search_asks` to `create_saved_search` |
-| Edit a search's conditions | Message > Saved Searc&hes > Edit &Conditions (`ID_EDIT_SEARCH_CONDITIONS`, menu built 5854, attached 6127) and the saved-search row's context menu (`context_menu.rs:241`, focus produced at `wx_app.rs:3037`) to `edit_the_chosen_searchs_conditions` to `show_rule_manager_dialog` to `show_rule_edit` to `build_rule_edit_dialog`, then `replace_saved_search` |
-| Coverage sentence | folder-tree activate or Refresh to `run_a_saved_search` to `coverage_before` to `how_much_message_text_is_stored_here` to `StatusUpdated` to status bar plus `announce_topic` |
-| Fetch the missing text | `offer_button.on_click` (line 1762) to `start_the_missing_text_fetch` to `fetch_the_missing_message_text` to `fetch_over_a_mailbox`; the button is built at 921, named on both channels, added to a sizer, shown by the `WhatCouldBeFetched` arm |
-| The read gate | Settings Permissions tab checkbox to `AppConfig.allowed_changes.reading` to `allowed_for` to `session.allow_reading` to `may_i_read` in `fetch_body` |
-| Saved searches per account | `read_the_tree_back` to `every_saved_search` over all accounts to `folder_tree::rows` to `saved_search_rows` |
+| Edit > Search (Ctrl+F) and the toolbar Search button both raise `ID_SEARCH` | `wx_app.rs:5517`, `741` |
+| The handler shows the Find dialog and calls `search_whatever_is_showing` | `wx_app.rs:4602`, call at `4645`. Neither is a test. |
+| Its Mail arm calls `search_messages` | `managers.rs:1913` |
+| `search_messages` asks the count, builds the sentence, sends it with the match count as one `StatusUpdated` | `managers.rs:1822` to `1874` |
+| `handle_update`'s `StatusUpdated` arm paints it and calls `announce_topic(status, Priority::Low, "status")` | `wx_app.rs:15038` |
 
-WINDOWS ledger entries 23 and 24, both `kind: stub` and both marked fixed, were
-re-checked and are genuinely fixed: `show_rule_edit` and `replace_saved_search`
-each now have a caller that starts at a menu item.
+**Is the answer used, or computed and thrown away?** Used. The `covered` value
+is destructured into the status string in both branches: bundled with the count
+when there are matches, sent on its own when there are none. Three tests hold
+this by reading the status line a person would have been given rather than by
+reading the manager's source for a function name, which is the failure mode
+02-02's first guard had:
 
-### Criteria that were defective as criteria, reported separately from the gap
+- `test_a_search_from_the_box_says_how_much_of_the_mail_it_could_look_inside` (`managers.rs:3441`)
+- `test_a_search_from_the_box_that_found_nothing_still_says_what_it_could_look_inside` (`3484`)
+- `test_a_search_that_reads_no_message_text_is_not_given_a_coverage_figure` (`3533`)
 
-None of the six roadmap criteria is defective. The wrong premises the executors
-found were in plan acceptance criteria, not in the roadmap contract, and each is
-recorded in its summary. Two are worth carrying forward because they are the
-shape that repeats:
+**Is it the right number?** This is what the brief asked to be checked hardest,
+and it holds.
 
-- **Criterion 6's second clause was already true.** "Two accounts each holding a
-  search of the same name are never two identical rows" holds because
-  `saved_searches.id` is unique across the table, so the account was never needed
-  to tell them apart. 02-08 found this, rewrote the test to say what is really at
-  stake (a row's spelling must not lose either half of what the row is), and
-  recorded that the first version passed on arrival. The criterion's real
-  delivery is the tree placement, and that part is new and is verified above.
-- **02-03's plan required an equality that cannot hold.** The offer count and the
-  coverage subtraction differ for a message that has no server to ask. The offer
-  now counts the fetch list rather than a subtraction, which is the correct
-  answer, and a test builds the divergent case.
+The box's coverage is not the saved search's. `evict_bodies_over` deliberately
+does not reindex (D-2-13), so a message whose body was fetched and later evicted
+is gone from `message_bodies` and still in the index, findable by the box. Using
+02-02's number for the box would have understated what the box had just
+searched.
 
-I found no criterion satisfied only by a grep that cannot tell a use from a
-mention. Every criterion above was confirmed by following the call chain in the
-tree rather than by counting occurrences.
+`how_much_message_text_the_index_holds` (`searching.rs:600`) counts
+`messages.text_is_in_the_search_index`, written by `index_message_for_search`
+(`searching.rs:379`) from `body.as_deref().is_some_and(|text| !text.is_empty())`,
+which is the same value that goes into the index in the same statement pair. So
+the column records what the index holds, not what `message_bodies` holds, which
+is the property the sentence claims.
+
+The query agrees with `search_messages` on all three things it has to agree on:
+the account join through `folders`, `m.deleted = 0`, and the folder narrowing
+through the same `NO_FOLDER_IN_PARTICULAR` convention. A search of one folder is
+told about that folder.
+
+The divergence is proved by a test that asserts its own fixture before it trusts
+a number. `test_a_message_whose_text_was_evicted_is_still_text_the_box_can_look_inside`
+(`searching.rs:962`) evicts, then asserts the box still finds the evicted word
+(so the fixture can tell the two coverages apart), then asserts
+`how_much_message_text_is_stored_here` reports 0 with text and
+`how_much_message_text_the_index_holds` reports 1 of 2. If the fixture stops
+discriminating the test says so rather than passing quietly.
+
+The premise the brief flagged as unverifiable is handled honestly. `message_search`
+is declared `content=''` (`mod.rs:2170`), so its `body` column reads NULL however
+much is indexed and it cannot be counted. 02-09 measured that rather than
+reasoning about it, measured the one thing that can answer exactly
+(`fts5vocab`, 92 ms over 2,000 messages, about nine seconds at the scale this
+program targets), and recorded the fact where it is decided instead. The
+reasoning and both measurements are written on
+`record_whether_the_index_holds_each_messages_text`.
+
+**Two types, not one.** `TextTheIndexHolds` is separate from `TextStoredHere`,
+so handing one search's numbers to the other's sentence does not compile. That
+is the exact false claim the sentences exist to prevent, refused by the compiler
+rather than by a reader.
+
+**One sentence builder, two openings.** `a_coverage_sentence` takes a
+`WhichSearch` value rather than three `&str` arguments, so the three phrasings
+that differ cannot be handed over in the wrong order. The saved search's three
+cases are word for word what 02-02 shipped, checked against the diff.
+`test_one_place_builds_the_coverage_sentence` (`saved_searches.rs:1298`) now
+requires each opening once in `saved_searches.rs` and zero times in both
+`wx_app.rs` and `managers.rs`.
+
+### The half that did not close
+
+The first pass listed two missing things. The second, the fetch offer reachable
+from the box, is unchanged: `UIUpdate::WhatCouldBeFetched` is still sent only
+from `run_a_saved_search` and from the end of a fetch run. 02-09 did not touch
+it and wrote no decision saying the box does not need it.
+
+It stays out of the score because criterion 4 is about saying, not about
+offering, and the offering criterion (5) was and remains verified. But it should
+be said plainly that D-2-08's own words are "SEARCH-02's two halves ship
+together", and on the box path only one half ships. It is recorded as ledger
+entry 13, kind `stub`, open, and no later phase in the roadmap covers it, so it
+is not a deferral either. It is a known narrow reach with a documented reason
+and no closing decision.
+
+### Warnings
+
+Four, none of them a gap. Each is stated in full in the frontmatter; this is the
+one worth reading in the report.
+
+**The backfill asks a looser question than the live writer.**
+`index_message_for_search` records the column from whether the indexed body had
+words, and says so in its own comment: "what is recorded is whether there were
+words, not whether there was a row".
+`record_whether_the_index_holds_each_messages_text` fills existing rows in with
+`WHERE EXISTS (SELECT 1 FROM message_bodies ...)`, which is whether there was a
+row. Those are different questions for a message MIME parsing found no text
+part in: `save_message_body(id, None, None)` writes such a row,
+`get_message_body` returns `None` for it (`bodies.rs:375`), so the live writer
+records 0 and the backfill records 1.
+
+The population is small and bounded: rows written before the migration only, and
+any later reindex of that message corrects it. But the direction is the
+overstating one, and ledger 35, the changelog entry and the function's own doc
+all say the count is "short rather than over, and the set never grows". That
+sentence is right about the eviction population it was written for and does not
+account for this one. The same "a row exists" test is what 02-02's
+`how_much_message_text_is_stored_here` already uses, so it is inherited rather
+than introduced, which is why it is a warning and not a gap.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `src/application/allowed.rs` | Read dimension, on by default, exception written into the type | VERIFIED | Module doc, field doc, `default_reading`, hand-written `Default`, `NOTHING` with `reading: true` and the reason beside it |
-| `src/data/config.rs` | An older settings file still parses | VERIFIED | `test_a_settings_file_written_before_reading_was_a_setting_still_loads` (line 1026) removes the key rather than round-tripping it and asserts the other settings survive |
-| `src/application/saved_searches.rs` | Narrower question set, sentence builder, coverage sentence | VERIFIED | `what_that_answer_looks_at`, `a_search_in_words`, `what_a_saved_search_covers`, `what_a_saved_search_cannot_find_with` |
-| `src/application/mail_sync.rs` | Bulk fetch behind the gate | VERIFIED | `fetch_the_missing_message_text` and `fetch_over_a_mailbox`; gate checked before the list is read and before any connection |
-| `src/presentation/wx_managers.rs` | Condition manager and condition dialog over eleven fields | VERIFIED | `show_rule_manager_dialog`, `show_rule_edit`, `build_rule_edit_dialog`, `the_words_for_every_field` |
-| `src/presentation/folder_tree.rs` | Saved searches under account branches | VERIFIED | `saved_search_rows`, `WhichRow::SavedSearchesIn`, identity carries the account |
-| `src/presentation/managers.rs` | Coverage disclosure on the box path | MISSING | `search_messages` reports a count only |
+| `src/data/message_cache/searching.rs` | The count, the column name, the narrowing question, the type | VERIFIED | `THE_INDEX_HOLDS_THE_TEXT` (140), `TextTheIndexHolds` (152), `WhereToSearch::reads_the_message_text` (85, every answer spelled out, no wildcard), `how_much_message_text_the_index_holds` (600) |
+| `src/data/message_cache/mod.rs` | The migration and its reasoning | VERIFIED | `record_whether_the_index_holds_each_messages_text` (2793), called from the migration block at 2306; re-export at 20 |
+| `src/application/saved_searches.rs` | The box's sentence, built beside the saved search's | VERIFIED | `THE_BOX_READS_MESSAGE_TEXT` (651), `WhichSearch` (662), `what_the_search_box_covers` (741), `a_coverage_sentence` (753) |
+| `src/presentation/managers.rs` | The coverage disclosure on the box path | VERIFIED (was MISSING) | `search_messages` (1791) asks the count, builds the sentence, and sends it with the count in both the found and the empty branch |
+| `src/presentation/wx_app.rs` | Untouched by 02-09, the saved-search path intact | VERIFIED | `coverage_before` (6402) and its caller (6592) unchanged |
+| `guards/guards.toml` | Three new records, sweep numbers adding up | VERIFIED | `grep -c '^\[\[guard\]\]'` gives 547, which is 192 + 355 as the summary claims; each new record names a test that exists |
+| `docs/changelog.md` | The box's sentence, and which way the number is wrong, where a person meets it | VERIFIED | New entry states the number differs from the saved search's, why, and the pre-existing-database limitation |
 
 ### Key Link Verification
 
 | From | To | Via | Status |
 |---|---|---|---|
-| `wx_app.rs` offer button | `mail_sync::fetch_the_missing_message_text` | `start_the_missing_text_fetch` | WIRED |
-| `wx_app.rs` menu and context menu | `wx_managers::show_rule_manager_dialog` | `edit_the_chosen_searchs_conditions` | WIRED |
-| `wx_managers::show_rule_manager_dialog` | `wx_managers::show_rule_edit` | `run_manager_loop` closure | WIRED |
-| `edit_the_chosen_searchs_conditions` | `message_cache::replace_saved_search` | `the_search_to_write_back` | WIRED |
-| `run_a_saved_search` | `how_much_message_text_is_stored_here` | `coverage_before` | WIRED |
-| `wx_settings` checkbox | `Allowed::reading` | `AppConfig.allowed_changes`, read at `connect_imap` | WIRED |
-| `managers::search_messages` (the box) | any coverage count | nothing | NOT WIRED |
+| `wx_app.rs:4645` (`ID_SEARCH` handler) | `managers::search_whatever_is_showing` | Find dialog result | WIRED |
+| `search_whatever_is_showing` | `managers::search_messages` | `PimModule::Mail` arm | WIRED |
+| `managers::search_messages` | `how_much_message_text_the_index_holds` | `reads_the_message_text().then(...)` | WIRED (was NOT WIRED) |
+| `managers::search_messages` | `what_the_search_box_covers` | `.map(...)` on the count | WIRED |
+| `managers::search_messages` | the status bar and the status topic | one `UIUpdate::StatusUpdated` carrying both halves | WIRED |
+| `index_message_for_search` | `messages.text_is_in_the_search_index` | `UPDATE ... WHERE id = ?2 AND {column} IS NOT ?1` | WIRED |
+| `run_a_saved_search` | `how_much_message_text_is_stored_here` | `coverage_before` | WIRED (unchanged) |
+| `managers::search_messages` | `UIUpdate::WhatCouldBeFetched` | nothing | NOT WIRED — carried open, ledger 13, outside criterion 4 |
 
 ### Data-Flow Trace (Level 4)
 
 | Value shown | Source | Real data | Status |
 |---|---|---|---|
-| Coverage numbers | `SELECT COUNT(*), COUNT(b.message_id) ... LEFT JOIN message_bodies` | Yes | FLOWING |
-| Offer count | `messages_with_no_text_here`, a real query over the same join with `ONLY_COPY_IS_HERE` excluded | Yes | FLOWING |
-| Saved-search rows | `every_saved_search` over `SavedSearchesRead` per account | Yes | FLOWING |
-| Condition list in the editor | The stored `Question` list, written back whole | Yes | FLOWING |
-| Scope sentence | Built from the stored questions, not from a scope name | Yes | FLOWING |
+| The box's coverage numbers | `SELECT COUNT(*), COUNT(CASE WHEN m.text_is_in_the_search_index = 1 ...)` over `messages` joined to `folders`, narrowed the same way the search is | Yes | FLOWING |
+| The box's match count | `search_messages` result length | Yes | FLOWING |
+| The saved search's coverage numbers | `SELECT COUNT(*), COUNT(b.message_id) ... LEFT JOIN message_bodies` | Yes | FLOWING (unchanged) |
+| Offer count | `messages_with_no_text_here` | Yes | FLOWING (unchanged) |
+| Saved-search rows | `every_saved_search` per account | Yes | FLOWING (unchanged) |
 
 ### Behavioural Spot-Checks
 
-Skipped by instruction and by economy. `bash scripts/check.sh all` was run by the
-developer before this verification and passes: 5,974 library tests, every
-integration target, the release build. Re-running it, or compiling to run one
-named test, would duplicate a gate that has already answered and would tell this
-report nothing it does not already have from the source. Test existence was
-confirmed by enumeration instead, and the tests that carry each criterion are
-named in the truths table above.
+Not run here, by instruction and by economy. `bash scripts/check.sh all` was run
+by the developer on this tree at `93c59d7` and passes: 5,986 library tests,
+every integration target, the release build. Compiling to re-run one named test
+would duplicate a gate that has already answered.
+
+Test existence was confirmed by enumeration instead, and every test carrying
+criterion 4 is named above with its line. The three that hold the box's sentence
+are behavioural rather than source-reading: they run the search and assert on
+the status line a person would have received, so an implementation that computes
+the answer and discards it fails them however it discards it.
 
 No probe scripts exist in this repository (`scripts/` holds `check.sh`,
-`guards.sh` and build helpers only), so Step 7c does not apply.
+`guards.sh`, `red-commit.sh` and build helpers), so Step 7c does not apply.
+`scripts/guards.sh` was not run, per the brief.
 
 ### Anti-Patterns Found
 
-None. Every file this phase touched was scanned for `TBD`, `FIXME`, `XXX`,
-`TODO`, `HACK`, `PLACEHOLDER`, `todo!` and `unimplemented!`. There are no
-matches, so there is no unreferenced debt and completion stays auditable.
+None. Every file 02-09 modified was scanned for `TBD`, `FIXME`, `XXX`, `TODO`,
+`HACK`, `PLACEHOLDER`, `todo!`, `unimplemented!` and "not yet implemented".
+There are no matches, so there is no unreferenced debt and completion stays
+auditable.
+
+### Test Quality Audit
+
+| Check | Result |
+|---|---|
+| Disabled or skipped tests on the new work | None. No `#[ignore]` added by 02-09. |
+| Circular expected values | None. The coverage tests compare a status line against `what_the_search_box_covers` applied to a fixture whose numbers are asserted independently first. |
+| Assertion strength | Behavioural on the box path (run the search, read what was said), value-level on the counts. |
+| Green-on-arrival tests | Two, named in the summary rather than left to look like test-first, each with a recorded break that reddens it. |
+
+The self-report of two tests that could not go red, and of the one rule of the
+brief that was broken (a one-line Python substitution in `mod.rs`), is in
+02-09-SUMMARY.md and is accurate as far as this report can check it.
 
 ### Requirements Coverage
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| SEARCH-01 | SATISFIED | All four sub-criteria. The fourth, about an older search with no field restriction, disappears rather than being handled: `what_that_answer_looks_at` returns `WHAT_A_TYPED_SEARCH_LOOKS_AT` itself for an unnarrowed search, so there is no absent value for a reader to interpret. |
-| SEARCH-02 | PARTIAL | The fetch is built, gated, and reachable; the disclosure exists and is real. Both live on the saved-search path only. The requirement's own evidence line is about FTS coverage and says "the search UI must say so", and the search UI does not. Additionally the fetch has never met a live server, which is a human item rather than a gap. |
-| SEARCH-03 | SATISFIED | Same rule vocabulary as filters, one matcher, one store, one group in the tree. Opening a saved search re-runs it over the cache rather than replaying a snapshot. Nothing on the path touches a `may_i` gate, so the third sub-criterion holds by construction. |
+| SEARCH-01 | SATISFIED | Unchanged since the first pass. All four sub-criteria. |
+| SEARCH-02 | SATISFIED | **Now delivered.** The requirement's own cited evidence line is "FTS covers subject and sender for everything and body text only for bodies actually fetched, and the search UI must say so." The search UI now says so, with the number that describes the FTS coverage rather than the stored-body coverage. The fetch half is built, gated and reachable, though only from the saved-search path. The fetch has never met a live server, which is a human item. |
+| SEARCH-03 | SATISFIED | Unchanged since the first pass. |
 
-`REQUIREMENTS.md` marks all three complete and the coverage table says
-"Complete" for each. SEARCH-02 should be reopened, or the gap accepted with an
-override, before that line is true.
+**Does `REQUIREMENTS.md` state the truth about all three?** Yes, now. All three
+are marked `[x]` and the coverage table says "Complete" for each, and as of
+`93c59d7` that is true for all three. The first pass's instruction to reopen
+SEARCH-02 or accept an override is obsolete: the gap was closed rather than
+accepted, so no override is needed and none was added.
+
+One caveat, stated so it is not discovered later. SEARCH-02's second `[D]`
+bullet reads "says, before it runs, how much of the mailbox has body text
+stored, **and offers to fetch the rest**". The offering half is built and
+reachable, but not from the box. The requirement is satisfied in the sense that
+both halves exist and both are reachable by a person; it is not satisfied in the
+sense that both are reachable from the same place.
 
 ## What is not verifiable here and is not counted as passing
 
 Nothing in this phase has been drawn in a running build, heard under a screen
-reader, or run against a live mail account. The ledger stands at 30 open
-entries, 22 of them raised by this phase and almost all `unrun-verify`. In
-particular the coverage sentence and the scope sentence are emitted and
-announced but nobody has heard them, the condition manager's modal loop has
-never run, the saved-search account branches have never been drawn, and the bulk
-body fetch has never met an IMAP server. These are listed under Human
-Verification in the frontmatter. They are not gaps in the work and are not
-counted against the score. Screen reader testing is Pratik's and he decides
-when.
+reader, or run against a live mail account. The ledger stands at 33 open
+entries, 25 of them raised by this phase and almost all `unrun-verify`. 02-09
+added two more of exactly that kind: the box's coverage sentence has never been
+heard, and it is now appended to every search that reads message text including
+those where it says nothing new, which may be useful or may be flooding; and in
+the empty case the earcon and the sentence ride different topics at different
+priorities, and that both survive the announcement queue is reasoned from the
+topic rule rather than heard.
 
-## Gaps Summary
+These are listed under Human Verification in the frontmatter. They are not gaps
+in the work and are not counted against the score. Screen reader testing is
+Pratik's and he decides when.
 
-One gap, and it is a scope rather than a defect.
+## Summary
 
-The phase set out to make a search say plainly what it could not reach. It built
-the machinery for that honestly: a real count, a sentence worded for speech, a
-remedy beside the sentence, and a decision (D-2-13) that faced squarely the fact
-that this program has two searches which cover different amounts of the same
-mailbox. The decision's own conclusion was that naming the two coverages is more
-honest than collapsing them into one number.
+The phase goal holds on both of its halves and on both of this program's
+searches. A search returns what the user asked for, and both searches now say
+plainly what they could not reach, each with its own number, each naming which
+search it is about, because they genuinely cover different amounts of the same
+mailbox and one number would have been wrong about one of them.
 
-Only one of the two got named. The saved search says what it covers and offers
-the fix. The search box, which reaches the same body text through the FTS index
-and misses the same never-fetched messages, says nothing before it runs and
-offers nothing after. That is the failure the criterion was written to prevent,
-still live on the path a person uses first.
+The work that closed the gap did the harder thing rather than the cheaper one.
+The premise it was given turned out to be unbuildable, the obvious substitute
+would have overstated after an index rebuild, and both were measured rather than
+argued about. What shipped errs short for the population it cannot know about,
+says so in the changelog where a person could notice the discrepancy, and refuses
+at compile time to let one search's numbers be told about the other.
 
-The narrowness of the remedy is already recorded as ledger entry 13 and open;
-the narrowness of the disclosure is not recorded anywhere, which is why it is
-reported here rather than treated as accepted.
-
-**This may be intentional.** D-2-08 and D-2-13 scope the disclosure to the saved
-search without ever saying the box does not need one, and 02-02 chose the
-wording deliberately. If the intent was that the box's coverage is a separate
-piece of work, accept it explicitly rather than by silence, by adding to this
-file's frontmatter:
-
-```yaml
-overrides:
-  - must_have: "A search that can reach message text says, before it runs, how many messages in the account have body text stored and how many do not"
-    reason: "The disclosure ships for the saved search this phase. The search box's own coverage number is different from the saved search's and is scoped to its own work."
-    accepted_by: "Pratik"
-    accepted_at: "2026-09-01T00:00:00Z"
-```
-
-Accepting it should also mean correcting SEARCH-02's tick in `REQUIREMENTS.md`,
-because a requirement marked complete while its own cited evidence is unaddressed
-is the kind of document that costs somebody an afternoon later.
+Status is `human_needed` rather than `passed` because seven things need a
+running build, a screen reader or a live account, two of them new with this
+plan. There are no gaps.
 
 ---
 
-*Verified: 2026-09-01T13:14:51Z*
+*Verified: 2026-09-01T15:12:00Z*
 *Verifier: Claude (gsd-verifier)*
