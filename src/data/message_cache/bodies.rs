@@ -534,19 +534,24 @@ impl MessageCache {
     /// message whose text arrived has a row in `message_bodies` and is gone
     /// from this list, so the second run starts where the first stopped.
     pub fn messages_with_no_text_here(&self, account_id: &str) -> Result<Vec<MessageToFetch>> {
+        let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
         let mut stmt = self
             .conn
-            .prepare_cached(
+            .prepare_cached(&format!(
                 "SELECT m.id, f.path, m.uid
                  FROM messages m
-                 INNER JOIN folders f ON m.folder_id = f.id",
-            )
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 LEFT JOIN message_bodies b ON b.message_id = m.id
+                 WHERE f.account_id = ?1 AND m.deleted = 0
+                   AND b.message_id IS NULL
+                   AND NOT {only_copy_is_here}
+                 ORDER BY m.date DESC, m.uid DESC",
+            ))
             .map_err(|e| {
                 Error::Other(format!("Failed to prepare the missing text query: {}", e))
             })?;
 
-        let _ = account_id;
-        stmt.query_map([], |row| {
+        stmt.query_map(rusqlite::params![account_id], |row| {
             Ok(MessageToFetch {
                 message_id: row.get(0)?,
                 folder_path: row.get(1)?,
@@ -1341,7 +1346,22 @@ mod tests {
         // search runs, and the difference between them is what the offer to
         // fetch is about. Two queries describing one set, written separately,
         // is the shape that comes apart.
+        //
+        // The fixture carries a deleted message and a second account's message
+        // on purpose. Without them the equality holds against either query
+        // having lost either shared condition, because there would be nothing
+        // for those conditions to exclude: five ordinary messages in one
+        // account come out as five however wide the WHERE clause is. Both are
+        // what make this test able to see the disagreement it is about.
         let cache = body_test_cache();
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (id, account_id, name, path, folder_type)
+                 VALUES (2, 'a2', 'INBOX', 'INBOX', 'inbox')",
+                [],
+            )
+            .unwrap();
         for uid in 1..=5 {
             let row = cache.save_message(&cached(uid, "Ordinary mail")).unwrap();
             if uid <= 2 {
@@ -1350,6 +1370,17 @@ mod tests {
                     .unwrap();
             }
         }
+        let thrown_away = cache.save_message(&cached(6, "Thrown away")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET deleted = 1 WHERE id = ?1",
+                rusqlite::params![thrown_away],
+            )
+            .unwrap();
+        cache
+            .save_message(&in_folder(1, "Somebody else's", 2))
+            .unwrap();
 
         let coverage = cache.how_much_message_text_is_stored_here("a1").unwrap();
         let wanted = cache.messages_with_no_text_here("a1").unwrap();
