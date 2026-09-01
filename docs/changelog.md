@@ -156,6 +156,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   their text. That is why the new line says which search it is about instead
   of giving you one number for both.
 
+- **The search box now says the same thing, with its own number.** Search for
+  something and the line you get carries how many matches there were and how
+  much of your mail the box could look inside: "2 matches for quarterly. The
+  search box reads the text of your messages, and this computer has the text of
+  40 of the 300 messages in this account. The rest can only be matched on its
+  subject and who sent it."
+
+  A search that finds nothing gets the second half on its own, which is the
+  moment it is worth most: an empty result and a search that could only read a
+  tenth of your mail looked exactly the same before.
+
+  **The number is not the same number a saved search gives you, and that is
+  not a mistake.** The box can look inside text that has since been cleared
+  out, because the word index keeps what it learned. A saved search cannot. So
+  the box usually covers a little more of your mail, and each line says which
+  search it is about so two different numbers in one sitting read as two
+  answers rather than as a contradiction.
+
+  Searching by subject or by sender alone says nothing about message text,
+  because neither of those looks at it.
+
+  One limitation, since you may notice it. If you had mail in Wixen Mail before
+  this version and its text had already been cleared out to make room, the box
+  can still find those messages by a word in their text but counts them as
+  though it could not. There is no record of what the index learned before this
+  version, so the count is short rather than over, and it stays that way only
+  for those messages.
+
 - **You can now stop Wixen Mail fetching the text of your messages from the
   server.** Settings, Permissions, under "Message Text". It is on to begin
   with, and leaving it on is what most people want.

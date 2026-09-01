@@ -642,6 +642,66 @@ pub fn what_a_search_says_as_it_opens(search: &SavedSearch, covers: Option<Strin
 /// below finish it differently and all three start here.
 const READS_MESSAGE_TEXT: &str = "This saved search reads the text of your messages, and";
 
+/// The same opening for the other search, and the one place those words are
+/// written.
+///
+/// Separate words rather than a substitution into the line above, because the
+/// two are read aloud and "This search box" is not English. Counted by the same
+/// check, which requires each to appear once here and nowhere else.
+const THE_BOX_READS_MESSAGE_TEXT: &str = "The search box reads the text of your messages, and";
+
+/// Which of this program's two searches a coverage sentence is about.
+///
+/// A value rather than two `&str` arguments to the builder below. The two
+/// searches differ in three phrasings, and three adjacent strings handed over
+/// in the wrong order is a swap nothing would catch: every one of them would
+/// still be a sentence, and the wrong one is a claim about the wrong search,
+/// which is the exact failure the wording exists to prevent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhichSearch {
+    Saved,
+    TheBox,
+}
+
+impl WhichSearch {
+    /// How the sentence opens.
+    const fn opening(self) -> &'static str {
+        match self {
+            Self::Saved => READS_MESSAGE_TEXT,
+            Self::TheBox => THE_BOX_READS_MESSAGE_TEXT,
+        }
+    }
+
+    /// What is said when this account has no mail on this computer at all.
+    const fn nothing_to_look_at(self) -> &'static str {
+        match self {
+            Self::Saved => {
+                "There is no mail from this account on this computer yet, so this saved \
+                 search has nothing to look at."
+            }
+            Self::TheBox => {
+                "There is no mail from this account on this computer yet, so there is \
+                 nothing for the search box to look in."
+            }
+        }
+    }
+
+    /// What a message whose text is not here can still be matched on.
+    ///
+    /// It can be matched on something, and saying "cannot be searched" would
+    /// be a worse lie than the one this sentence is fixing. What that
+    /// something is differs: a saved search asks whatever conditions it was
+    /// given, while the box always asks the same three things and two of them
+    /// survive a message whose text is missing. The third is the first line,
+    /// which is stored with the text and absent for exactly these messages.
+    const fn what_is_left(self) -> &'static str {
+        match self {
+            Self::Saved => "can only be matched on what else this search asks about",
+            Self::TheBox => "can only be matched on its subject and who sent it",
+        }
+    }
+}
+
 /// What a saved search that reads message text can actually cover here.
 ///
 /// Said before the search runs, because a search that comes back with three
@@ -664,38 +724,7 @@ pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
         messages,
         with_text,
     } = coverage;
-    // "the 1 message" and "the 3 messages", so the sentence reads properly at
-    // one as well as at many. A mailbox of one is a real mailbox and hearing
-    // "1 messages" is how a program tells somebody it was not written for
-    // them.
-    let mail = match messages {
-        1 => "the 1 message".to_string(),
-        _ => format!("the {messages} messages"),
-    };
-    // Whether a message with no text here can still be matched at all. It can:
-    // a search asks several questions and only the ones about text lose their
-    // answer, so saying "cannot be searched" would be a worse lie than the one
-    // this sentence is fixing.
-    let rest = "can only be matched on what else this search asks about";
-
-    match (messages, with_text) {
-        // Nothing synced yet. "0 of 0 have their text here" is true, useless,
-        // and reads as a fault in the search rather than as an empty cache.
-        (0, _) => "There is no mail from this account on this computer yet, so this saved \
-                   search has nothing to look at."
-            .to_string(),
-        (total, here) if here >= total => {
-            format!("{READS_MESSAGE_TEXT} this computer has the text of {mail} in this account.")
-        }
-        (_, 0) => format!(
-            "{READS_MESSAGE_TEXT} this computer has the text of none of {mail} in this \
-             account, so a message {rest}."
-        ),
-        (_, here) => format!(
-            "{READS_MESSAGE_TEXT} this computer has the text of {here} of {mail} in this \
-             account. The rest {rest}."
-        ),
-    }
+    a_coverage_sentence(WhichSearch::Saved, messages, with_text)
 }
 
 /// What the search box can actually look inside here.
@@ -710,12 +739,47 @@ pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
 /// words of a message whose text was evicted, so it covers more of the same
 /// mailbox and saying otherwise would understate what it just searched.
 pub fn what_the_search_box_covers(coverage: TextTheIndexHolds) -> String {
-    // A stub, until the sentence is written: says the other search's sentence,
-    // which is exactly the false claim this function exists to avoid making.
-    what_a_saved_search_covers(TextStoredHere {
-        messages: coverage.messages,
-        with_text: coverage.with_text,
-    })
+    let TextTheIndexHolds {
+        messages,
+        with_text,
+    } = coverage;
+    a_coverage_sentence(WhichSearch::TheBox, messages, with_text)
+}
+
+/// The one sentence both searches are described by.
+///
+/// One builder so the two cannot drift into different shapes, two openings so
+/// neither claims to be the other. The numbers arrive here as bare integers,
+/// which is safe because the only two callers each destructure a type the
+/// other cannot be handed.
+fn a_coverage_sentence(which: WhichSearch, messages: i64, with_text: i64) -> String {
+    let opening = which.opening();
+    let rest = which.what_is_left();
+    // "the 1 message" and "the 3 messages", so the sentence reads properly at
+    // one as well as at many. A mailbox of one is a real mailbox and hearing
+    // "1 messages" is how a program tells somebody it was not written for
+    // them.
+    let mail = match messages {
+        1 => "the 1 message".to_string(),
+        _ => format!("the {messages} messages"),
+    };
+
+    match (messages, with_text) {
+        // Nothing synced yet. "0 of 0 have their text here" is true, useless,
+        // and reads as a fault in the search rather than as an empty cache.
+        (0, _) => which.nothing_to_look_at().to_string(),
+        (total, here) if here >= total => {
+            format!("{opening} this computer has the text of {mail} in this account.")
+        }
+        (_, 0) => format!(
+            "{opening} this computer has the text of none of {mail} in this \
+             account, so a message {rest}."
+        ),
+        (_, here) => format!(
+            "{opening} this computer has the text of {here} of {mail} in this \
+             account. The rest {rest}."
+        ),
+    }
 }
 
 /// What a saved search cannot find with a condition on this field, if there is
@@ -1236,20 +1300,27 @@ mod tests {
         // itself, and a check for the absence of words proves nothing on its
         // own: the same reader has to find them where they really are, or a
         // renamed constant would read as a clean window layer.
-        assert_eq!(
-            what_ships_in("src/application/saved_searches.rs")
-                .matches(READS_MESSAGE_TEXT)
-                .count(),
-            1,
-            "the words of the coverage sentence are not written once here"
-        );
-        assert_eq!(
-            what_ships_in("src/presentation/wx_app.rs")
-                .matches(READS_MESSAGE_TEXT)
-                .count(),
-            0,
-            "the window layer words the coverage sentence itself"
-        );
+        //
+        // Both openings, because there are now two searches to describe and
+        // the second is the one at risk. A sentence about the box, worded
+        // where the box is wired, is how the two would come to disagree while
+        // every test about either of them stayed green.
+        for opening in [READS_MESSAGE_TEXT, THE_BOX_READS_MESSAGE_TEXT] {
+            assert_eq!(
+                what_ships_in("src/application/saved_searches.rs")
+                    .matches(opening)
+                    .count(),
+                1,
+                "the words of a coverage sentence are not written once here: {opening}"
+            );
+            for elsewhere in ["src/presentation/wx_app.rs", "src/presentation/managers.rs"] {
+                assert_eq!(
+                    what_ships_in(elsewhere).matches(opening).count(),
+                    0,
+                    "{elsewhere} words a coverage sentence itself: {opening}"
+                );
+            }
+        }
     }
 
     fn a_message() -> CachedMessage {

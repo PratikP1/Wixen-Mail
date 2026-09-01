@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 352 records have arrived since and have not been through it.
+# 355 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10567,4 +10567,63 @@ after = """    let theirs = state.saved_searches.get(account)?;
 red = [
     "presentation::wx_app::tests::test_a_saved_search_runs_against_the_account_its_row_names_not_the_one_last_looked_at",
     "presentation::wx_app::tests::test_renaming_a_saved_search_is_checked_against_its_own_accounts_names",
+]
+
+# ── An upgraded database learning what its own search index holds ───────────
+#
+# The column arrives holding nought for every row somebody already had, and the
+# index cannot be asked to fill it in: `message_search` is contentless, so its
+# body column reads as NULL however much text is in it. The backfill reads
+# `message_bodies` instead. Without it, everybody upgrading with a fully
+# downloaded mailbox is told the search box can look inside none of it.
+#
+# Taken red by hand against the whole library on 2026-09-01: exactly one.
+[[guard]]
+name = "a database written before the coverage column is told what its index holds"
+file = "src/data/message_cache/mod.rs"
+before = """                    "UPDATE messages SET {column} = 1"""
+after = """                    "UPDATE messages SET {column} = 0"""
+red = [
+    "data::message_cache::searching::finding_things::test_a_database_written_before_this_column_is_told_what_its_index_holds",
+]
+
+# ── A narrowed search not paying for a coverage figure it cannot use ────────
+#
+# Subject Only and From Only each restrict the index to one column, so neither
+# can match on message text. Saying how much of it is here would be an answer
+# to a question nobody asked, on every narrowed search, and working it out
+# would be a count nobody needed.
+#
+# Taken red by hand against the whole library on 2026-09-01: exactly two. The
+# second is in the window layer rather than beside the value, which is the
+# shape the guard notes at the top of this file warn about: the filter somebody
+# would naturally pick for this subject reaches only one of them.
+[[guard]]
+name = "a search that reads no message text is not asked what message text is here"
+file = "src/data/message_cache/searching.rs"
+before = "            Self::SubjectOnly | Self::SenderOnly => false,"
+after = "            Self::SubjectOnly | Self::SenderOnly => true,"
+red = [
+    "data::message_cache::searching::finding_things::test_a_search_that_reads_no_message_text_is_not_asked_what_text_it_covers",
+    "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_not_given_a_coverage_figure",
+]
+
+# ── One place wording each of the two coverage sentences ────────────────────
+#
+# There are two searches here covering different amounts of one mailbox, and
+# the way they come to disagree is a sentence about one of them worded where
+# that one is wired. The break is a copy of the box's opening in the layer that
+# wires it, which is the most natural place for somebody to put it.
+#
+# Taken red by hand against the whole library on 2026-09-01: exactly one.
+[[guard]]
+name = "the layer that wires the search box does not word its coverage sentence itself"
+file = "src/presentation/managers.rs"
+before = """                        Some(covered) => format!("{count} {covered}"),"""
+after = """                        Some(covered) => format!(
+                            "{count} The search box reads the text of your messages, and \\
+                             {covered}"
+                        ),"""
+red = [
+    "application::saved_searches::tests::test_one_place_builds_the_coverage_sentence",
 ]

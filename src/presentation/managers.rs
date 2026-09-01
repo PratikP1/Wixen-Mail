@@ -1805,6 +1805,29 @@ pub fn search_messages(
         Ok(pair) => pair,
         Err(reason) => return send_refusal(tx, rt, reason),
     };
+
+    // How much of this account's text the box can look inside, worked out
+    // before the search so that a short answer arrives already explained.
+    //
+    // Only when the search can reach message text at all. Subject Only and
+    // From Only each read one column of the index, so how much message text is
+    // stored is an answer to a question nobody asked, and working it out would
+    // be a count nobody needed.
+    //
+    // A count that fails says nothing and lets the search run, which is the
+    // choice `run_a_saved_search` already made on the other path: refusing to
+    // search because the disclosure could not be worked out would be a worse
+    // answer than a search with no disclosure.
+    let covered = looking_in
+        .reads_the_message_text()
+        .then(|| cache.how_much_message_text_the_index_holds(&account, looking_in))
+        .transpose()
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not work out what the search box covers: {e}");
+            None
+        })
+        .map(crate::application::saved_searches::what_the_search_box_covers);
+
     match cache.search_messages(&account, typed, looking_in, LIMIT) {
         Ok(rows) => {
             let items: Vec<crate::presentation::ui_types::MessageItem> = rows
@@ -1821,19 +1844,34 @@ pub fn search_messages(
                     crate::presentation::accessibility::feedback::Event::NothingFound,
                     typed,
                 );
+                // Beside it rather than instead of it. The two ride different
+                // topics, so neither wipes the other, and this is the moment
+                // the sentence is worth most: an empty result and a search
+                // that could read a tenth of the mailbox look the same.
+                if let Some(covered) = &covered {
+                    send_status(tx, rt, covered);
+                }
             } else {
+                let count = if found == LIMIT {
+                    format!("First {} matches for {}", LIMIT, typed)
+                } else {
+                    format!(
+                        "{} match{} for {}",
+                        found,
+                        if found == 1 { "" } else { "es" },
+                        typed
+                    )
+                };
+                // One line rather than two sends. Both would ride the "status"
+                // topic, and the announcement queue keeps only the newest of a
+                // topic, so the first would be spoken over by the second and
+                // one of the two things worth saying would be lost.
                 send_status(
                     tx,
                     rt,
-                    &if found == LIMIT {
-                        format!("First {} matches for {}", LIMIT, typed)
-                    } else {
-                        format!(
-                            "{} match{} for {}",
-                            found,
-                            if found == 1 { "" } else { "es" },
-                            typed
-                        )
+                    &match &covered {
+                        Some(covered) => format!("{count} {covered}"),
+                        None => count,
                     },
                 );
             }
@@ -3460,12 +3498,15 @@ mod tests {
         let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
         let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
+        // A word in neither message. "aubergine" would not do: it is in the
+        // evicted body, which the index still holds, so the search would find
+        // something and this would be testing the other case.
         search_messages(
             &state,
             &cache,
             WhatWasAsked {
-                typed: "aubergine",
-                looking_in: WhereToSearch::SubjectOnly,
+                typed: "zucchini",
+                looking_in: WhereToSearch::EveryFolder,
             },
             &tx,
             &rt,
@@ -3474,7 +3515,7 @@ mod tests {
 
         assert_eq!(
             a11y.take_visual_feedback().as_deref(),
-            Some("Nothing found, aubergine"),
+            Some("Nothing found, zucchini"),
             "an empty search stopped reaching the earcon channel"
         );
         let said = what_the_status_line_said(&rt, &rx)
