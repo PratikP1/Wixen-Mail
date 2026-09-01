@@ -218,6 +218,7 @@ menu_ids!(
     ID_SAVE_SEARCH,
     ID_RENAME_SEARCH,
     ID_DELETE_SEARCH,
+    ID_EDIT_SEARCH_CONDITIONS,
 );
 
 // Sort menu IDs
@@ -3002,20 +3003,29 @@ impl WxMailApp {
                 use crate::application::context_menu::Focus;
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
-                wire_context_menu(&msg_list, Focus::Messages);
-                wire_context_menu(&folder_tree, Focus::MailFolders);
+                wire_context_menu(&msg_list, || Focus::Messages);
+                // The one control here holding two kinds of row. Which it is
+                // is read from what the cursor is on at the moment the key is
+                // pressed, because a saved search and a mailbox have different
+                // commands and two of a folder's do not work on a search.
+                wire_context_menu(&folder_tree, {
+                    let state = state.clone();
+                    move || match lock_state(&state).selected_folder {
+                        Some(folder_tree::WhichRow::SavedSearch(_)) => Focus::SavedSearch,
+                        _ => Focus::MailFolders,
+                    }
+                });
 
-                wire_context_menu(&pim_refs.contact_list, Focus::Items(ItemKind::Contact));
-                wire_context_menu(&pim_refs.cal_event_list, Focus::Items(ItemKind::Event));
-                wire_context_menu(&pim_refs.reminder_list, Focus::Items(ItemKind::Reminder));
-                wire_context_menu(&pim_refs.task_list, Focus::Items(ItemKind::Task));
-                wire_context_menu(&pim_refs.note_list, Focus::Items(ItemKind::Note));
+                wire_context_menu(&pim_refs.contact_list, || Focus::Items(ItemKind::Contact));
+                wire_context_menu(&pim_refs.cal_event_list, || Focus::Items(ItemKind::Event));
+                wire_context_menu(&pim_refs.reminder_list, || Focus::Items(ItemKind::Reminder));
+                wire_context_menu(&pim_refs.task_list, || Focus::Items(ItemKind::Task));
+                wire_context_menu(&pim_refs.note_list, || Focus::Items(ItemKind::Note));
 
-                wire_context_menu(
-                    &contacts_sb.tree,
-                    Focus::Containers(ContainerKind::ContactGroup),
-                );
-                wire_context_menu(&cal_sb.tree, Focus::Containers(ContainerKind::Calendar));
+                wire_context_menu(&contacts_sb.tree, || {
+                    Focus::Containers(ContainerKind::ContactGroup)
+                });
+                wire_context_menu(&cal_sb.tree, || Focus::Containers(ContainerKind::Calendar));
 
                 // Hiding and showing a calendar.
                 //
@@ -3082,8 +3092,12 @@ impl WxMailApp {
                         load_module_data(PimModule::Calendar, &calendar_cache, account, &ui_tx);
                     }
                 });
-                wire_context_menu(&tasks_sb.tree, Focus::Containers(ContainerKind::TaskList));
-                wire_context_menu(&notes_sb.tree, Focus::Containers(ContainerKind::NoteFolder));
+                wire_context_menu(&tasks_sb.tree, || {
+                    Focus::Containers(ContainerKind::TaskList)
+                });
+                wire_context_menu(&notes_sb.tree, || {
+                    Focus::Containers(ContainerKind::NoteFolder)
+                });
             }
 
             wire_read_aloud(&msg_list, &a11y, &space_cycle, "mail", {
@@ -4625,6 +4639,9 @@ impl WxMailApp {
                         _ if id == ID_SAVE_SEARCH => {
                             save_this_search(app, &message_cache, &frame, &a11y)
                         }
+                        _ if id == ID_EDIT_SEARCH_CONDITIONS => {
+                            edit_the_chosen_searchs_conditions(app, &message_cache, &frame, &a11y)
+                        }
                         _ if id == ID_RENAME_SEARCH => {
                             rename_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
@@ -5813,6 +5830,11 @@ impl WxMailApp {
         // messages a search listed stay where they really live.
         let saved_search_menu = Menu::builder()
             .append_item(
+                ID_EDIT_SEARCH_CONDITIONS,
+                "Edit &Conditions...",
+                "Change what the chosen saved search asks about a message",
+            )
+            .append_item(
                 ID_RENAME_SEARCH,
                 "&Rename...",
                 "Give the chosen saved search a different name",
@@ -6772,6 +6794,162 @@ fn save_this_search(
     let said = created(&name);
     send_status(tx, rt, &said);
     let _ = a11y.announce(&said, Priority::High);
+}
+
+/// The saved search whose conditions can be shown, or the sentence saying why
+/// they cannot.
+///
+/// A search a newer version wrote is a row somebody can land on, rename and
+/// remove, and its questions are words this build does not understand. Showing
+/// them would mean guessing at them, and writing the window's answer back
+/// would mean dropping whatever it could not read, which is the half a
+/// question list this phase exists to prevent. It is refused, in the wording
+/// the same row already gets when Enter is pressed on it, so the row behaves
+/// the same way whichever way somebody opens it.
+fn the_conditions_to_edit(chosen: ChosenSearch) -> ConditionsToEdit {
+    match chosen {
+        ChosenSearch::Readable(_) => {
+            ConditionsToEdit::Refused(crate::application::saved_searches::SAVED_BY_ANOTHER_VERSION)
+        }
+        ChosenSearch::SavedByAnotherVersion { id, name } => ConditionsToEdit::OfThisSearch(
+            Box::new(crate::application::saved_searches::SavedSearch {
+                id,
+                name,
+                join: crate::application::saved_searches::Join::Any,
+                questions: Vec::new(),
+                folder: None,
+            }),
+        ),
+    }
+}
+
+/// Whether the chosen saved search's conditions can be opened at all.
+#[derive(Debug)]
+enum ConditionsToEdit {
+    /// This search, whose questions this build understands.
+    OfThisSearch(Box<crate::application::saved_searches::SavedSearch>),
+    /// Not opened, and the sentence saying why.
+    Refused(&'static str),
+}
+
+/// What the condition editor's answer means for the store.
+#[derive(Debug)]
+enum WhatToWriteBack {
+    /// The window closed with nothing changed, so nothing is written at all:
+    /// opening a search's conditions and closing them again touches no row and
+    /// moves no date.
+    NothingChanged,
+    /// Not written, and the sentence saying why.
+    Refused(&'static str),
+    /// The whole search as it now is, for one pass through the replace.
+    ThisSearch(Box<crate::application::saved_searches::SavedSearch>),
+}
+
+/// The saved search to write back, given what the condition editor gave back.
+///
+/// A list somebody emptied and then left by a route that does not pass the
+/// Close button is refused here. The window refuses it on the way out and the
+/// store refuses it again, and the sentence is the window's own, so there is
+/// one wording rather than three.
+///
+/// Everything but the questions is carried over from the search as it was
+/// stored. A window that was never asked about the name, the join, the folder
+/// or the identifier must not be able to change any of them, and a whole
+/// `SavedSearch` built from scratch here is how one of them would go missing.
+fn the_search_to_write_back(
+    search: &crate::application::saved_searches::SavedSearch,
+    edited: Option<Vec<crate::application::saved_searches::Question>>,
+) -> WhatToWriteBack {
+    let Some(questions) = edited else {
+        return WhatToWriteBack::NothingChanged;
+    };
+    if let Some(needed) =
+        crate::presentation::wx_managers::what_a_condition_list_still_needs(&search.questions)
+    {
+        return WhatToWriteBack::Refused(needed);
+    }
+    WhatToWriteBack::ThisSearch(Box::new(crate::application::saved_searches::SavedSearch {
+        questions,
+        ..search.clone()
+    }))
+}
+
+/// Open the conditions of the chosen saved search, and write them back once.
+///
+/// D-2-01's second door. The search box goes on writing its three questions,
+/// and this writes any of the eleven fields the filter engine answers with any
+/// of the eleven ways it can match, into the same stored search.
+///
+/// One write, on the way out, from the working copy the window keeps. Writing
+/// per change would leave a search with half a question list if the window
+/// were closed part-way, which is the thing `replace_saved_search`'s one
+/// transaction exists to prevent, and writing per change would put the
+/// transaction outside the window it protects.
+fn edit_the_chosen_searchs_conditions(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles { state, tx, rt } = app;
+    let chosen = the_chosen_saved_search(&lock_state(state));
+    let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
+        return refuse_a_command(tx, WHICH_SAVED_SEARCH);
+    };
+    let search = match the_conditions_to_edit(chosen) {
+        ConditionsToEdit::OfThisSearch(search) => *search,
+        ConditionsToEdit::Refused(why) => return refuse_a_command(tx, why),
+    };
+
+    let edited = crate::presentation::wx_managers::show_rule_manager_dialog(
+        frame,
+        &search.name,
+        &search.questions,
+        a11y,
+    );
+    let asking_now = match the_search_to_write_back(&search, edited) {
+        WhatToWriteBack::NothingChanged => return,
+        WhatToWriteBack::ThisSearch(asking_now) => *asking_now,
+        WhatToWriteBack::Refused(why) => return refuse_a_command(tx, why),
+    };
+
+    match cache.replace_saved_search(&asking_now) {
+        // The count, not silence. Replacing a search that is not there is not
+        // an error in SQL, so a caller that took silence for success would say
+        // a search had been changed when nothing had happened.
+        Ok(false) => refuse_a_command(
+            tx,
+            &crate::application::pim_command::something_no_longer_there(
+                "saved search",
+                &asking_now.name,
+            ),
+        ),
+        Ok(true) => {
+            read_the_tree_back(&Some(cache.clone()), state, tx);
+            // Run it again, so what is on screen is what the search now asks.
+            // A change that is stored and not shown reads as a change that did
+            // not happen.
+            if lock_state(state).selected_folder
+                == Some(folder_tree::WhichRow::SavedSearch(asking_now.id.clone()))
+            {
+                run_a_saved_search(
+                    AppHandles { state, tx, rt },
+                    ChosenSearch::Readable(Box::new(asking_now.clone())),
+                );
+            }
+            let said = format!("{} now asks {}", asking_now.name, asking_now.in_words());
+            send_status(tx, rt, &said);
+            let _ = a11y.announce(&said, Priority::High);
+        }
+        Err(e) => {
+            tracing::error!("A saved search's conditions could not be written: {e}");
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                "Those conditions could not be saved: {e}"
+            )));
+        }
+    }
 }
 
 /// Give the chosen saved search a different name.
@@ -8902,9 +9080,19 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
 ///
 /// `skip` is called in every path so the control keeps its own use of every
 /// other key.
-fn wire_context_menu<W>(control: &W, focus: crate::application::context_menu::Focus)
+/// Give a control the menu key, and let it say where it is when the key is
+/// pressed.
+///
+/// `where_it_is` is asked at that moment rather than fixed at wiring time,
+/// because one control can hold more than one kind of row: the mail folder
+/// tree carries mailboxes and saved searches, which have different commands,
+/// and a menu that offered a folder's commands on a saved search offered two
+/// entries that could not work. Ten of the eleven controls answer with a
+/// constant.
+fn wire_context_menu<W, F>(control: &W, where_it_is: F)
 where
     W: WxWidget + WxEvtHandler + Copy + 'static,
+    F: Fn() -> crate::application::context_menu::Focus + 'static,
 {
     /// `WXK_WINDOWS_MENU`, the key between the right Windows key and Ctrl.
     ///
@@ -8923,7 +9111,7 @@ where
         if !asked {
             return;
         }
-        crate::presentation::wx_context_menu::show(&owner, focus);
+        crate::presentation::wx_context_menu::show(&owner, where_it_is());
     });
 }
 
@@ -25585,6 +25773,163 @@ mod what_a_saved_search_says_before_it_runs {
         assert!(
             command[reports..].contains("UIUpdate::"),
             "what the backfill did is worked out and never said to anybody"
+        );
+    }
+}
+
+#[cfg(test)]
+mod editing_the_conditions_of_a_saved_search {
+    use super::{
+        ChosenSearch, ConditionsToEdit, WhatToWriteBack, the_conditions_to_edit,
+        the_search_to_write_back,
+    };
+    use crate::application::saved_searches::{
+        Join, Question, SAVED_BY_ANOTHER_VERSION, SavedSearch,
+    };
+
+    fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
+        Question {
+            field: field.to_string(),
+            match_type: match_type.to_string(),
+            pattern: pattern.to_string(),
+            case_sensitive: false,
+        }
+    }
+
+    /// A stored search with one question, a name, a join and a folder, so a
+    /// write-back that dropped any of them would show.
+    fn a_stored_search() -> SavedSearch {
+        SavedSearch {
+            id: "search-1".to_string(),
+            name: "Invoices".to_string(),
+            join: Join::All,
+            questions: vec![asking("subject", "contains", "invoice")],
+            folder: Some("INBOX".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_nothing_is_written_when_the_window_closed_without_a_change() {
+        // Opening a search's conditions to read them and closing again must
+        // touch nothing. An unconditional write would move `updated_at` on
+        // every look, and a date that says a search changed when it did not is
+        // a date nobody can use.
+        let decided = the_search_to_write_back(&a_stored_search(), None);
+
+        assert!(
+            matches!(decided, WhatToWriteBack::NothingChanged),
+            "{decided:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_changed_condition_list_is_written_back_under_the_same_search() {
+        // Everything but the questions comes from the search as it was stored.
+        // The window was never asked about the name, the join, the folder or
+        // the identifier, so none of them may move; an identifier that moved
+        // would leave the tree row, and anything holding its path, pointing at
+        // a search that is not there.
+        let stored = a_stored_search();
+        let now = vec![
+            asking("body_plain", "contains", "overdue"),
+            asking("from", "contains", "billing"),
+        ];
+
+        let WhatToWriteBack::ThisSearch(writing) =
+            the_search_to_write_back(&stored, Some(now.clone()))
+        else {
+            panic!("a changed condition list was not written back");
+        };
+
+        assert_eq!(writing.questions, now);
+        assert_eq!(writing.id, stored.id);
+        assert_eq!(writing.name, stored.name);
+        assert_eq!(writing.join, stored.join);
+        assert_eq!(writing.folder, stored.folder);
+    }
+
+    #[test]
+    fn test_a_condition_list_somebody_emptied_is_refused_rather_than_written() {
+        // The Close button refuses this, and the close box and Escape do not
+        // go through the Close button. A search that asks nothing takes the
+        // whole mailbox when its questions are joined with Any and nothing at
+        // all when they are joined with All.
+        let decided = the_search_to_write_back(&a_stored_search(), Some(Vec::new()));
+
+        let WhatToWriteBack::Refused(why) = decided else {
+            panic!("a search asking nothing was written: {decided:?}");
+        };
+        assert!(why.to_lowercase().contains("condition"), "{why:?}");
+    }
+
+    #[test]
+    fn test_one_wording_refuses_an_empty_condition_list() {
+        // The window's own sentence, read here rather than written again. Two
+        // wordings for one refusal is two things to keep true, and somebody
+        // meeting one and then the other hears two different reasons for the
+        // same thing.
+        let WhatToWriteBack::Refused(why) =
+            the_search_to_write_back(&a_stored_search(), Some(Vec::new()))
+        else {
+            panic!("a search asking nothing was written");
+        };
+
+        assert_eq!(
+            Some(why),
+            crate::presentation::wx_managers::what_a_condition_list_still_needs(&[])
+        );
+    }
+
+    #[test]
+    fn test_a_readable_search_opens_on_the_questions_it_really_holds() {
+        let stored = a_stored_search();
+        let opened = the_conditions_to_edit(ChosenSearch::Readable(Box::new(stored.clone())));
+
+        let ConditionsToEdit::OfThisSearch(opening) = opened else {
+            panic!("a search this build can read was refused: {opened:?}");
+        };
+        assert_eq!(*opening, stored);
+    }
+
+    #[test]
+    fn test_a_search_a_newer_version_wrote_is_refused_rather_than_guessed_at() {
+        // Its questions are words this build does not understand. Showing them
+        // would mean guessing, and writing the window's answer back would drop
+        // whatever it could not read, which is the half a question list this
+        // phase exists to prevent. Refused in the wording the same row already
+        // gets when Enter is pressed on it, so it behaves the same way
+        // whichever way somebody opens it.
+        let opened = the_conditions_to_edit(ChosenSearch::SavedByAnotherVersion {
+            id: "search-2".to_string(),
+            name: "Written later".to_string(),
+        });
+
+        let ConditionsToEdit::Refused(why) = opened else {
+            panic!("a search this build cannot read was opened anyway: {opened:?}");
+        };
+        assert_eq!(why, SAVED_BY_ANOTHER_VERSION);
+    }
+
+    #[test]
+    fn test_the_condition_editor_is_opened_from_the_shipping_half_of_this_file() {
+        // Guardrail 1: a feature is done when a non-test path reaches it. The
+        // window and the replace were both built by plan 02-06 with no caller
+        // at all, and this is the check that says the caller is here and is
+        // not a test.
+        //
+        // What it cannot see: whether the command that reaches this line is
+        // one anybody can raise. `tests/wired.rs` is what asks that.
+        let ships = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string("src/presentation/wx_app.rs").expect("the main window"),
+        );
+
+        assert!(
+            ships.contains("wx_managers::show_rule_manager_dialog("),
+            "nothing outside the tests opens a saved search's conditions"
+        );
+        assert!(
+            ships.contains("cache.replace_saved_search("),
+            "nothing outside the tests writes a saved search's conditions back"
         );
     }
 }

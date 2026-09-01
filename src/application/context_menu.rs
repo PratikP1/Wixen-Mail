@@ -38,6 +38,17 @@ pub enum Focus {
     Messages,
     /// The tree of mail folders.
     MailFolders,
+    /// A saved search's own row in that tree.
+    ///
+    /// A separate place rather than a second list for the same one, because
+    /// the commands really are different: a saved search is not a folder, it
+    /// has no older messages to fetch and nothing to keep up to date, and it
+    /// has three commands of its own that no folder has. The menu bar already
+    /// models it this way, with a Saved Search menu beside This Folder.
+    ///
+    /// Which of the two the tree reports is decided when the menu key is
+    /// pressed, from the row the cursor is on.
+    SavedSearch,
     /// The list in one of the personal information modules.
     Items(ItemKind),
     /// The sidebar tree of one of them: calendars, task lists, folders.
@@ -46,9 +57,10 @@ pub enum Focus {
 
 impl Focus {
     /// Every place a menu can be raised, so tests cover the whole set.
-    pub const ALL: [Focus; 12] = [
+    pub const ALL: [Focus; 13] = [
         Focus::Messages,
         Focus::MailFolders,
+        Focus::SavedSearch,
         Focus::Items(ItemKind::Contact),
         Focus::Items(ItemKind::Event),
         Focus::Items(ItemKind::Reminder),
@@ -134,6 +146,25 @@ pub enum Action {
     CopyToFolder,
     /// Choose which of this account's folders are kept up to date.
     ChooseFolders,
+    /// Open the conditions of the chosen saved search.
+    ///
+    /// D-2-01's second door: one stored search, and a fuller editor beside the
+    /// search box. The only one of a saved search's four commands with no
+    /// other route from the tree, which is why it goes first on the menu.
+    EditSearchConditions,
+    /// Give the chosen saved search a different name.
+    ///
+    /// Apart from [`Action::RenameContainer`], which renames a contact group.
+    /// One id per thing renamed, because the handler behind each reads a
+    /// different part of the window.
+    RenameSavedSearch,
+    /// Take the chosen saved search away.
+    ///
+    /// Apart from [`Action::DeleteItem`] and [`Action::DeleteContainer`] for
+    /// the same reason, and worth keeping apart for a second one: this is the
+    /// only delete on this list that cannot reach any mail. The question goes
+    /// and the messages it listed stay where they really live.
+    DeleteSavedSearch,
 }
 
 /// One line on a context menu.
@@ -153,6 +184,7 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
     match focus {
         Focus::Messages => MESSAGES,
         Focus::MailFolders => MAIL_FOLDERS,
+        Focus::SavedSearch => SAVED_SEARCHES,
         Focus::Items(ItemKind::Contact) => CONTACTS,
         Focus::Items(ItemKind::Event) => EVENTS,
         Focus::Items(ItemKind::Reminder) => REMINDERS,
@@ -189,6 +221,30 @@ static MAIL_FOLDERS: &[Entry] = &[
     entry("&Refresh this folder", Action::RefreshFolder),
     entry("Get &older messages", Action::GetOlder),
     entry("&Folders to keep up to date", Action::ChooseFolders),
+    entry("Edit &conditions...", Action::EditSearchConditions),
+];
+
+/// A saved search's own row.
+///
+/// Editing its conditions first, because it is the only one of these with no
+/// other way to reach it from the tree: Enter runs the search, Delete removes
+/// it, and Rename sits on the menu bar. A context menu is how somebody finds
+/// out what can be done with the thing they are on, so the entry that has no
+/// other route is the one that most needs to be found.
+///
+/// Refreshing means running the search again. Results here are worked out when
+/// somebody asks rather than kept up to date behind them, so this is the way
+/// to ask whether the answer has changed since mail arrived.
+///
+/// Getting older messages and choosing folders to keep up to date are the two
+/// entries a folder has and this does not. Neither means anything on a saved
+/// search, and this list exists so that neither is offered.
+static SAVED_SEARCHES: &[Entry] = &[
+    entry("Edit &conditions...", Action::EditSearchConditions),
+    entry("&Run this search again", Action::RefreshFolder),
+    entry("Get &older messages", Action::GetOlder),
+    entry("Re&name...", Action::RenameSavedSearch),
+    entry("&Delete this search", Action::DeleteSavedSearch),
 ];
 
 static CONTACTS: &[Entry] = &[
@@ -320,6 +376,62 @@ mod tests {
             .collect();
 
         assert!(offered.contains(&Action::WriteToGroup), "{offered:?}");
+    }
+
+    /// Every action offered where `focus` is.
+    fn offered_for(focus: Focus) -> Vec<Action> {
+        entries_for(focus).iter().map(|e| e.action).collect()
+    }
+
+    #[test]
+    fn test_a_saved_search_row_offers_only_what_works_on_a_saved_search() {
+        // A saved search is not a folder. It has no older messages to fetch,
+        // because it has no server behind it, and nothing of its own to keep
+        // up to date. Both of those were on this row's menu while the tree
+        // reported one focus for every row in it, which is the fault this
+        // list exists to fix: a menu entry that does nothing is a stop
+        // somebody lands on, hears, and learns nothing from.
+        let offered = offered_for(Focus::SavedSearch);
+
+        assert!(
+            offered.contains(&Action::EditSearchConditions),
+            "{offered:?}"
+        );
+        assert!(offered.contains(&Action::RefreshFolder), "{offered:?}");
+        assert!(offered.contains(&Action::RenameSavedSearch), "{offered:?}");
+        assert!(offered.contains(&Action::DeleteSavedSearch), "{offered:?}");
+        assert!(!offered.contains(&Action::GetOlder), "{offered:?}");
+        assert!(!offered.contains(&Action::ChooseFolders), "{offered:?}");
+    }
+
+    #[test]
+    fn test_a_searchs_conditions_are_offered_on_its_own_row_and_nowhere_else() {
+        // Every other place a menu can be raised, including the folder tree's
+        // ordinary rows. An entry offering to edit the conditions of a folder
+        // is an entry that cannot work, and one on a message list is worse
+        // still, because there is no saved search anywhere near it.
+        for focus in Focus::ALL {
+            let offered = offered_for(focus).contains(&Action::EditSearchConditions);
+            assert_eq!(
+                offered,
+                focus == Focus::SavedSearch,
+                "{focus:?} offers to edit a saved search's conditions: {}",
+                offered
+            );
+        }
+    }
+
+    #[test]
+    fn test_renaming_and_deleting_a_search_are_not_the_container_commands() {
+        // One command id per thing renamed or removed. Reusing the container
+        // ones here would send a saved search's Rename into the handler that
+        // renames a contact group, which reads a different part of the window
+        // and would rename whatever it found there.
+        let offered = offered_for(Focus::SavedSearch);
+
+        assert!(!offered.contains(&Action::RenameContainer), "{offered:?}");
+        assert!(!offered.contains(&Action::DeleteContainer), "{offered:?}");
+        assert!(!offered.contains(&Action::DeleteItem), "{offered:?}");
     }
 
     #[test]

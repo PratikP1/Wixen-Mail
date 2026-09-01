@@ -36,8 +36,9 @@ pub const fn command_for(action: Action) -> Id {
         ID_CONTEXT_DELETE_ITEM, ID_CONTEXT_MOVE_ITEM, ID_CONTEXT_NEW_CONTAINER,
         ID_CONTEXT_NEW_ITEM, ID_CONTEXT_REMOVE_FROM_GROUP, ID_CONTEXT_RENAME_CONTAINER,
         ID_CONTEXT_SYNC_NOW, ID_CONTEXT_TOGGLE_COMPLETE, ID_CONTEXT_TOGGLE_PIN,
-        ID_CONTEXT_WRITE_TO_GROUP, ID_COPY_TO_FOLDER, ID_DELETE, ID_DELETE_OUTRIGHT, ID_FORWARD,
-        ID_GET_OLDER, ID_MARK_READ, ID_MOVE_TO_FOLDER, ID_REFRESH_FOLDER, ID_REPLY, ID_REPLY_ALL,
+        ID_CONTEXT_WRITE_TO_GROUP, ID_COPY_TO_FOLDER, ID_DELETE, ID_DELETE_OUTRIGHT,
+        ID_DELETE_SEARCH, ID_EDIT_SEARCH_CONDITIONS, ID_FORWARD, ID_GET_OLDER, ID_MARK_READ,
+        ID_MOVE_TO_FOLDER, ID_REFRESH_FOLDER, ID_RENAME_SEARCH, ID_REPLY, ID_REPLY_ALL,
         ID_TOGGLE_STAR,
     };
     match action {
@@ -55,6 +56,11 @@ pub const fn command_for(action: Action) -> Id {
         Action::MoveToFolder => ID_MOVE_TO_FOLDER,
         Action::CopyToFolder => ID_COPY_TO_FOLDER,
         Action::ChooseFolders => ID_CHOOSE_FOLDERS,
+        // The Saved Search menu's own three, so the menu bar and this row's
+        // menu run one piece of code each.
+        Action::EditSearchConditions => ID_EDIT_SEARCH_CONDITIONS,
+        Action::RenameSavedSearch => ID_RENAME_SEARCH,
+        Action::DeleteSavedSearch => ID_DELETE_SEARCH,
         // These have no menu bar entry, because what they act on is whatever
         // panel is open. Each handler reads the open module and acts on that.
         Action::NewItem => ID_CONTEXT_NEW_ITEM,

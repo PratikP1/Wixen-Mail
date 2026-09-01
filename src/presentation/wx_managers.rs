@@ -3008,7 +3008,12 @@ fn a_condition_in_words(question: &Question) -> String {
 /// and two refusals is deliberate rather than a duplicate: a window is where
 /// somebody can be told what is wrong while they can still fix it, and a store
 /// is where nothing gets past whatever forgot to ask.
-fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
+///
+/// Public because the Close button is not the only way out of a window. The
+/// caller reads this too, for a list somebody emptied and then left by the
+/// close box or Escape, so there is one wording of the refusal rather than a
+/// second one written where the write happens.
+pub fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
     questions.is_empty().then_some(
         "A saved search has to ask at least one thing about a message. Add a condition \
          before closing this window.",
