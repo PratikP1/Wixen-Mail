@@ -24647,3 +24647,55 @@ mod the_tree_holds_every_account {
         );
     }
 }
+
+#[cfg(test)]
+mod what_a_saved_search_says_before_it_runs {
+    /// This file with its own tests cut off.
+    ///
+    /// Cut by `what_ships`, never by a scan for the first `#[cfg(test)]`.
+    /// This file has test modules in the middle of it, so a reader that
+    /// stopped at the first one would be reading a third of the file and
+    /// would report a call as missing that is really there.
+    fn the_window_itself() -> String {
+        std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("this file to be readable")
+            .replace("\r\n", "\n")
+    }
+
+    /// The body of the one routine that runs a saved search.
+    ///
+    /// Cut at the closing brace in the first column, because the names below
+    /// appear again elsewhere in the file where they are defined rather than
+    /// called.
+    fn the_saved_search_path(source: &str) -> String {
+        let after = source
+            .split_once("fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {")
+            .expect("the one routine that runs a saved search")
+            .1;
+        let end = after.find("\n}\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_the_coverage_sentence_is_said_before_the_mail_is_gathered() {
+        // A number computed and never said is the defect this whole sentence
+        // exists to prevent, so the call has to be on the shipping path and
+        // not merely written. The ordering is the other half: a coverage
+        // figure said after the results is a footnote on an answer somebody
+        // has already read and acted on.
+        let path =
+            the_saved_search_path(&crate::common::what_ships::what_ships(&the_window_itself()));
+
+        let gathers = path
+            .find("messages_a_saved_search_reads")
+            .expect("the saved-search path to gather the mail it searches");
+        let says = path
+            .find("coverage_before")
+            .expect("the saved-search path to say what this search covers");
+
+        assert!(
+            says < gathers,
+            "the coverage sentence is said after the mail is gathered"
+        );
+    }
+}
