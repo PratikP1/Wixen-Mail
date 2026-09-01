@@ -221,7 +221,6 @@ static MAIL_FOLDERS: &[Entry] = &[
     entry("&Refresh this folder", Action::RefreshFolder),
     entry("Get &older messages", Action::GetOlder),
     entry("&Folders to keep up to date", Action::ChooseFolders),
-    entry("Edit &conditions...", Action::EditSearchConditions),
 ];
 
 /// A saved search's own row.
@@ -242,7 +241,6 @@ static MAIL_FOLDERS: &[Entry] = &[
 static SAVED_SEARCHES: &[Entry] = &[
     entry("Edit &conditions...", Action::EditSearchConditions),
     entry("&Run this search again", Action::RefreshFolder),
-    entry("Get &older messages", Action::GetOlder),
     entry("Re&name...", Action::RenameSavedSearch),
     entry("&Delete this search", Action::DeleteSavedSearch),
 ];

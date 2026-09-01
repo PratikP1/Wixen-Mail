@@ -6808,18 +6808,10 @@ fn save_this_search(
 /// the same way whichever way somebody opens it.
 fn the_conditions_to_edit(chosen: ChosenSearch) -> ConditionsToEdit {
     match chosen {
-        ChosenSearch::Readable(_) => {
+        ChosenSearch::Readable(search) => ConditionsToEdit::OfThisSearch(search),
+        ChosenSearch::SavedByAnotherVersion { .. } => {
             ConditionsToEdit::Refused(crate::application::saved_searches::SAVED_BY_ANOTHER_VERSION)
         }
-        ChosenSearch::SavedByAnotherVersion { id, name } => ConditionsToEdit::OfThisSearch(
-            Box::new(crate::application::saved_searches::SavedSearch {
-                id,
-                name,
-                join: crate::application::saved_searches::Join::Any,
-                questions: Vec::new(),
-                folder: None,
-            }),
-        ),
     }
 }
 
@@ -6864,7 +6856,7 @@ fn the_search_to_write_back(
         return WhatToWriteBack::NothingChanged;
     };
     if let Some(needed) =
-        crate::presentation::wx_managers::what_a_condition_list_still_needs(&search.questions)
+        crate::presentation::wx_managers::what_a_condition_list_still_needs(&questions)
     {
         return WhatToWriteBack::Refused(needed);
     }
