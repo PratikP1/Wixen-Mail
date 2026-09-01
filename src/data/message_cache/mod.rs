@@ -2809,6 +2809,30 @@ impl MessageCache {
     ///
     /// Reading the text costs more than asking whether a row is there, and it
     /// is paid once, by a database that is being migrated anyway.
+    ///
+    /// # A database that already has the column is left alone
+    ///
+    /// This runs once and never again: the column exists afterwards and the
+    /// check below returns. So a database filled in by the version that asked
+    /// only whether a row was there would keep its overstating rows until each
+    /// of those messages is next indexed, and nothing here corrects them.
+    ///
+    /// Deliberate, on two grounds. There is no database anywhere that this
+    /// applies to: the column, its backfill and the fix all arrived unreleased
+    /// and unpushed on the same day, so no build carrying the looser question
+    /// has ever been handed to anybody. And there is nowhere to record that a
+    /// correction has run, this schema having no migration marker and column
+    /// existence being the only thing it asks, so a correction would have to
+    /// run at every open for ever. It could not be cheap either: asking
+    /// whether a stored body holds text means reading the stored text, so
+    /// every start would read every cached body to correct a population that
+    /// does not exist.
+    ///
+    /// If one ever does, the correcting statement is
+    /// `UPDATE messages SET {column} = 0 WHERE {column} = 1 AND EXISTS
+    /// (SELECT 1 FROM message_bodies b WHERE b.message_id = messages.id AND
+    /// NOT ({holds_text}))`, which moves exactly the overstating rows to the
+    /// live writer's own answer and touches nothing else.
     fn record_whether_the_index_holds_each_messages_text(&self) -> Result<()> {
         let column = searching::THE_INDEX_HOLDS_THE_TEXT;
         if self
