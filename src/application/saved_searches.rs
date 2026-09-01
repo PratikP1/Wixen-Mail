@@ -406,17 +406,75 @@ impl TheSearchThatWasRun {
     }
 }
 
-/// The search somebody typed, written as a saved search's questions.
-pub fn what_a_typed_search_asks(text: &str) -> Vec<Question> {
-    WHAT_A_TYPED_SEARCH_LOOKS_AT
-        .iter()
-        .map(|part| Question {
-            field: (*part).to_string(),
-            match_type: "contains".to_string(),
-            pattern: text.to_string(),
-            case_sensitive: false,
-        })
-        .collect()
+/// How a typed search compares the words against the part it looks at.
+///
+/// Written down once and read by every answer the "In" list can give, so a
+/// narrowed search asks the same kind of question as an unnarrowed one and
+/// differs only in how many parts of a message it asks it about.
+const HOW_A_TYPED_SEARCH_COMPARES: &str = "contains";
+
+/// The whole of what a saved search will ask, from one answer.
+///
+/// The three halves of a scope together, because they describe one thing.
+/// D-2-14: the folder and the field restriction written by different code is
+/// the shape that comes apart, and every data-losing defect found in this
+/// codebase has had it. There is one producer, one value, and one write, so
+/// there is nowhere for a second answer to appear.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatASavedSearchWillAsk {
+    pub questions: Vec<Question>,
+    pub join: Join,
+    /// Which folder to look in, or `None` for everywhere in the account.
+    pub folder: Option<String>,
+}
+
+/// The parts of a message one answer from the "In" list asks about.
+///
+/// Two of the four answers narrow which part of a message is read and two
+/// narrow where to look, which is one control doing two jobs; that is what the
+/// box has always offered. So Current Folder asks about the same three parts
+/// All Folders does, and the folder it names is carried separately.
+///
+/// The three-part answer is [`WHAT_A_TYPED_SEARCH_LOOKS_AT`] itself rather
+/// than a copy, so a search saved by an older version and an unnarrowed one
+/// saved now are the same three questions and cannot be told apart. That is
+/// what makes SEARCH-01's fourth criterion, about a missing restriction
+/// reading as an unrestricted search, disappear rather than need answering:
+/// there is no absent value anywhere to interpret.
+///
+/// A match rather than a lookup, so a fifth answer added to the "In" list has
+/// to be sorted here deliberately instead of falling into a default.
+fn what_that_answer_looks_at(looking_in: WhereToSearch) -> &'static [&'static str] {
+    match looking_in {
+        WhereToSearch::SubjectOnly => &["subject"],
+        WhereToSearch::SenderOnly => &["from"],
+        WhereToSearch::EveryFolder | WhereToSearch::OneFolder(_) => &WHAT_A_TYPED_SEARCH_LOOKS_AT,
+    }
+}
+
+/// The search somebody typed, written as the whole of what a saved search asks.
+///
+/// Both halves of the scope out of one value, rather than the questions here
+/// and the folder worked out again at the call site. `wx_app.rs` hardcoded
+/// `folder: None` and argued that narrowing would be narrowing on something
+/// nobody wrote down; that stopped being true the moment the field
+/// restriction was written down, and the two halves have to arrive together
+/// or the one that is easier to forget is the one that gets forgotten.
+pub fn what_a_typed_search_asks(ran: &TheSearchThatWasRun) -> WhatASavedSearchWillAsk {
+    let _ = what_that_answer_looks_at(ran.looking_in);
+    WhatASavedSearchWillAsk {
+        questions: WHAT_A_TYPED_SEARCH_LOOKS_AT
+            .iter()
+            .map(|part| Question {
+                field: (*part).to_string(),
+                match_type: HOW_A_TYPED_SEARCH_COMPARES.to_string(),
+                pattern: ran.typed.clone(),
+                case_sensitive: false,
+            })
+            .collect(),
+        join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
+        folder: None,
+    }
 }
 
 /// What a search saved from the search box will ask, in words.
@@ -1469,13 +1527,13 @@ mod tests {
         //
         // Every question has to be one the engine can answer, or the search
         // would be saved and then refuse to run the moment it was opened.
-        let questions = what_a_typed_search_asks("invoice");
+        let asked = what_a_typed_search_asks(&across_the_account("invoice"));
         let saved = SavedSearch {
             id: "s1".to_string(),
             name: "Invoices".to_string(),
-            join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
-            questions,
-            folder: None,
+            join: asked.join,
+            questions: asked.questions,
+            folder: asked.folder,
         };
 
         assert_eq!(saved.what_it_cannot_read(), None);
@@ -1498,6 +1556,159 @@ mod tests {
         assert!(saved.selects(&from_ann));
         assert!(saved.selects(&about_it));
         assert!(!saved.selects(&neither));
+    }
+
+    // ── A saved search keeps the whole scope it was saved with ──────────
+    //
+    // The "In" list offered four answers and the saved search kept none of
+    // them: choosing From Only and saving gave back a search over the
+    // subject, the sender and the recipients. The field half is a narrower
+    // question set and the folder half is the folder, and both come out of
+    // one value in one call, because two things describing one scope written
+    // by different code is the shape that comes apart.
+
+    /// A search run with the "In" list left where it starts.
+    fn across_the_account(typed: &str) -> TheSearchThatWasRun {
+        TheSearchThatWasRun::new(typed.to_string(), WhereToSearch::EveryFolder, None)
+    }
+
+    /// The parts of a message a set of questions asks about, in order.
+    fn the_parts_asked_about(asked: &WhatASavedSearchWillAsk) -> Vec<&str> {
+        asked
+            .questions
+            .iter()
+            .map(|question| question.field.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn test_subject_only_saves_one_question_about_the_subject() {
+        let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::SubjectOnly,
+            None,
+        ));
+
+        assert_eq!(
+            the_parts_asked_about(&asked),
+            vec!["subject"],
+            "Subject Only was chosen and the saved search asks about the \
+             sender and the recipients too, so it comes back wider than the \
+             search that was run"
+        );
+        assert_eq!(asked.questions[0].pattern, "invoice");
+        assert!(!asked.questions[0].case_sensitive);
+        assert_eq!(
+            asked.questions[0].match_type, "contains",
+            "a narrowed search compares differently from an unnarrowed one"
+        );
+    }
+
+    #[test]
+    fn test_from_only_saves_one_question_about_the_sender() {
+        let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::SenderOnly,
+            None,
+        ));
+
+        assert_eq!(
+            the_parts_asked_about(&asked),
+            vec!["from"],
+            "From Only was chosen and the saved search asks about the subject \
+             and the recipients too"
+        );
+    }
+
+    #[test]
+    fn test_all_folders_saves_the_same_three_questions_it_always_has() {
+        // The backward-compatibility case, made to disappear rather than
+        // handled. A search saved by an older version holds these three
+        // questions and no folder, and one saved now with the list left where
+        // it starts holds exactly the same thing, so there is no absent value
+        // for a reader to interpret and the reader's answer and the writer's
+        // cannot come apart.
+        let asked = what_a_typed_search_asks(&across_the_account("invoice"));
+
+        assert_eq!(
+            the_parts_asked_about(&asked),
+            WHAT_A_TYPED_SEARCH_LOOKS_AT.to_vec(),
+            "an unnarrowed search saved now asks something different from one \
+             saved before this change"
+        );
+        assert_eq!(asked.folder, None);
+        assert_eq!(asked.join, Join::Any);
+    }
+
+    #[test]
+    fn test_current_folder_saves_the_three_questions_and_the_folder() {
+        // Current Folder narrows where to look, not which part of a message
+        // to read. All four answers come out of one control, which is what
+        // makes reading it as a field restriction the easy mistake.
+        let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::OneFolder(7),
+            Some("INBOX/Work".to_string()),
+        ));
+
+        assert_eq!(
+            the_parts_asked_about(&asked),
+            WHAT_A_TYPED_SEARCH_LOOKS_AT.to_vec(),
+            "Current Folder was read as a field restriction"
+        );
+        assert_eq!(
+            asked.folder,
+            Some("INBOX/Work".to_string()),
+            "Current Folder was chosen and the saved search looks everywhere, \
+             which is the half of the scope nothing wrote down"
+        );
+    }
+
+    #[test]
+    fn test_a_search_across_the_account_saves_no_folder_even_with_one_open() {
+        // Somebody standing in a folder who chooses All Folders asked for the
+        // account. Keeping the folder would pin the search to where they
+        // happened to be.
+        let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::EveryFolder,
+            Some("INBOX/Work".to_string()),
+        ));
+
+        assert_eq!(asked.folder, None);
+    }
+
+    #[test]
+    fn test_every_part_a_narrowed_search_names_is_one_the_engine_answers() {
+        // A narrowed answer names one part of a message by the same word the
+        // filter engine switches on. A word the engine has never met is
+        // answered no about every message, which is indistinguishable from a
+        // search that matched nothing, so the search would be saved and then
+        // silently find nothing for ever.
+        for looking_in in [
+            WhereToSearch::EveryFolder,
+            WhereToSearch::OneFolder(7),
+            WhereToSearch::SubjectOnly,
+            WhereToSearch::SenderOnly,
+        ] {
+            let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+                "invoice".to_string(),
+                looking_in,
+                Some("INBOX/Work".to_string()),
+            ));
+            let saved = SavedSearch {
+                id: "s1".to_string(),
+                name: "Invoices".to_string(),
+                join: asked.join,
+                questions: asked.questions,
+                folder: asked.folder,
+            };
+            assert_eq!(
+                saved.what_it_cannot_read(),
+                None,
+                "{looking_in:?} saves a question this build cannot answer"
+            );
+        }
     }
 
     #[test]

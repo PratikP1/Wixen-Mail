@@ -6684,8 +6684,7 @@ fn save_this_search(
     a11y: &Arc<Accessibility>,
 ) {
     use crate::application::saved_searches::{
-        SavedSearch, WHAT_A_TYPED_SEARCH_JOINS_WITH, a_typed_search_in_words, created,
-        what_a_typed_search_asks,
+        SavedSearch, a_typed_search_in_words, created, what_a_typed_search_asks,
     };
     use crate::presentation::accessibility::announcements::Priority;
 
@@ -6713,6 +6712,7 @@ fn save_this_search(
         return refuse_a_command(tx, "Choose an account first.");
     };
 
+    let asks = what_a_typed_search_asks(&ran);
     let note = a_typed_search_in_words(&ran.typed);
     let Some(name) = ask_for_a_search_name(
         frame,
@@ -6729,19 +6729,19 @@ fn save_this_search(
         return;
     };
 
+    // Both halves of the scope out of one value, into one literal, into the
+    // one call that writes both tables in one transaction. D-2-14: the folder
+    // and the field restriction written by different code is the shape that
+    // comes apart, and there is nowhere here for a second answer to appear.
+    // This used to hardcode no folder, and argued that narrowing would be
+    // narrowing on something nobody wrote down; that stopped being true the
+    // moment the "In" list's answer was kept.
     let search = SavedSearch {
         id: uuid::Uuid::new_v4().to_string(),
         name: name.clone(),
-        join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
-        questions: what_a_typed_search_asks(&ran.typed),
-        // Everywhere in this account, whatever the search box's "In" list was
-        // set to when the search ran. What is kept here is the typed words, not
-        // where they were looked for, so narrowing this would be narrowing on
-        // something nobody wrote down. The window that names the search says in
-        // a sentence that it asks about every message in the account, so
-        // somebody who has just searched one folder is told before they save
-        // it, rather than finding out when they open it.
-        folder: None,
+        join: asks.join,
+        questions: asks.questions,
+        folder: asks.folder,
     };
     if let Err(e) = cache.create_saved_search(&account_id, &search) {
         tracing::error!("A saved search could not be kept: {e}");
@@ -20965,6 +20965,58 @@ mod tests {
             None,
             "the In box did not name a folder, so keeping one narrows a \
              search nobody narrowed"
+        );
+    }
+
+    #[test]
+    fn test_the_folder_kept_is_the_one_that_was_on_screen_when_the_search_ran() {
+        // Save This Search is a separate command, pressed whenever somebody
+        // gets round to it. Working the folder out then, from whatever is on
+        // screen, attaches the search to a folder they have since arrowed to,
+        // and the search comes back showing mail from somewhere else.
+        let mut state = showing_a_folder("INBOX/Work");
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::OneFolder(7),
+        );
+
+        state.selected_folder = Some(folder_tree::WhichRow::Folder {
+            account: "first".to_string(),
+            path: "INBOX/Personal".to_string(),
+        });
+
+        assert_eq!(
+            state
+                .mail_search_that_was_run
+                .and_then(|kept| kept.the_folder_looked_in),
+            Some("INBOX/Work".to_string()),
+            "the folder followed the cursor, so saving now would name a \
+             folder the search never ran in"
+        );
+    }
+
+    #[test]
+    fn test_a_search_run_with_no_folder_on_screen_keeps_no_folder() {
+        // All Inboxes, a heading, or nothing selected at all. Current Folder
+        // is not offered then, and there is nothing to narrow by, so this has
+        // to come back with no folder rather than fail.
+        let mut state = WxUIState::default();
+
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::EveryFolder,
+        );
+
+        assert_eq!(
+            state
+                .mail_search_that_was_run
+                .expect("the search that just ran")
+                .the_folder_looked_in,
+            None
         );
     }
 

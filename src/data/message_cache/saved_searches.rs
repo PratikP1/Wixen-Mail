@@ -602,6 +602,97 @@ mod tests {
     }
 
     #[test]
+    fn test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed() {
+        // The whole of SEARCH-01, end to end through the tables. What the "In"
+        // list said becomes a narrower question set and a folder, both written
+        // by one call in one transaction, and both have to survive being read
+        // back or the search runs wider than it was saved.
+        //
+        // No column was added for either half. `saved_search_questions` has
+        // always stored an arbitrary set with positions, so a set of one is a
+        // shape these tables already hold.
+        use crate::application::saved_searches::{TheSearchThatWasRun, what_a_typed_search_asks};
+        use crate::data::message_cache::WhereToSearch;
+
+        let cache = a_cache("saved_search_narrowed_round_trip");
+        let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::OneFolder(7),
+            Some("INBOX/Work".to_string()),
+        ));
+        let narrowed = what_a_typed_search_asks(&TheSearchThatWasRun::new(
+            "invoice".to_string(),
+            WhereToSearch::SubjectOnly,
+            None,
+        ));
+        let in_one_folder = SavedSearch {
+            id: "search-folder".to_string(),
+            name: "Invoices in Work".to_string(),
+            join: asked.join,
+            questions: asked.questions,
+            folder: asked.folder,
+        };
+        let subject_alone = SavedSearch {
+            id: "search-subject".to_string(),
+            name: "Invoices by subject".to_string(),
+            join: narrowed.join,
+            questions: narrowed.questions,
+            folder: narrowed.folder,
+        };
+
+        cache
+            .create_saved_search("acc-1", &in_one_folder)
+            .expect("the folder-narrowed search to be stored");
+        cache
+            .create_saved_search("acc-1", &subject_alone)
+            .expect("the subject-only search to be stored");
+
+        // What came back, in its own words rather than compared against what
+        // went in. Comparing the two would put the writer on both sides of the
+        // assertion, and a writer that dropped half the scope would then agree
+        // with itself.
+        let read = cache
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        let parts_asked_about: Vec<Vec<String>> = read
+            .searches
+            .iter()
+            .map(|search| {
+                search
+                    .questions
+                    .iter()
+                    .map(|question| question.field.clone())
+                    .collect()
+            })
+            .collect();
+        let folders: Vec<Option<String>> = read
+            .searches
+            .iter()
+            .map(|search| search.folder.clone())
+            .collect();
+
+        assert_eq!(
+            parts_asked_about,
+            vec![
+                vec!["subject".to_string(), "from".to_string(), "to".to_string()],
+                vec!["subject".to_string()]
+            ],
+            "a search saved with the In box narrowed came back asking \
+             something else"
+        );
+        assert_eq!(
+            folders,
+            vec![Some("INBOX/Work".to_string()), None],
+            "the folder half of the scope did not survive being written and \
+             read back"
+        );
+        assert_eq!(
+            read.searches[1].questions[0].pattern, "invoice",
+            "the words came back as something else"
+        );
+    }
+
+    #[test]
     fn test_two_searches_in_one_account_may_not_be_named_the_same_however_it_is_written() {
         // A screen reader says "Work" and "work" the same way, so two rows
         // named like that are two rows nobody can tell apart, and the one
