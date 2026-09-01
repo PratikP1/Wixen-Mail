@@ -216,15 +216,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refusing it would stop mail arriving rather than stop text being fetched for
   mail you already have.
 
-- **When a saved search tells you some of your message text is missing, there
-  is now a button above the message list to go and fetch it.** It says how
-  many, as in "Fetch the text of 143 messages". It appears only while there is
-  something to fetch and goes away once there is not, and you reach it with
+- **When a search tells you some of your message text is missing, there is now
+  a button above the message list to go and fetch it.** It says how many, as in
+  "Fetch the text of 143 messages in this account". It appears only while there
+  is something to fetch and goes away once there is not, and you reach it with
   Tab. There is no new keyboard shortcut.
+
+  It appears after a saved search and after a search you type into the box,
+  which is the search most people reach for first.
 
   It is beside the line that told you the number on purpose. A number you are
   told and a remedy you have to go and find in a menu are two separate things
   to remember.
+
+  **The button's number and the line above it are different numbers, on
+  purpose.** The line says how much of the message text this search could look
+  inside, and it narrows to one folder if that is what you searched. The button
+  says how much text can still be fetched for the whole account, and it counts
+  only mail there is a server to ask for, so it leaves out anything collected
+  over POP or filed here by you. Read aloud, the button adds "That number is
+  what can be fetched, not what this search could read", so two numbers in one
+  sitting read as two answers rather than as one number contradicting itself.
 
   **This part is experimental and has never been run against a real account,
   and that is written on the screen beside the button rather than only here.**
@@ -252,6 +264,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Messages that have no server to ask are left alone, so nothing here tries to
   fetch mail collected over POP or a copy of a message you sent. For a POP
   account the button never appears at all.
+
+- **Fetching the missing message text is now on the File menu too.** File,
+  Fetch Missing Message Text (experimental), beside Check Mail. Alt+F then F.
+
+  The button above the message list only appears just after a search that can
+  read message text, so if you search by subject alone, or do not search at
+  all, you were never offered the fetch. The menu command is there whether or
+  not you have searched.
+
+  It does exactly what the button does, on the account you are looking at. The
+  "Message Text" setting governs it the same way: with that turned off it tells
+  you so in a sentence naming the setting, and nothing is asked of the server.
+  It says it is looking before it connects, then says how many messages it is
+  about to attempt, so choosing it is not silence while a server thinks about
+  it.
+
+  **The experimental warning is on the menu item itself and in the description
+  Windows shows for it**, because a menu has nowhere to put the line of text
+  that sits beside the button, and offering the fetch in more places means more
+  people meeting a path no mail provider has ever seen.
 
 ### Changed
 
