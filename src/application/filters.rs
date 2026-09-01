@@ -90,18 +90,27 @@ pub fn a_rule_may_name(field: &str) -> bool {
 /// the stored name is what a rule holds and what the reading switches on. A
 /// test below requires every name on that list to have words here, so a field
 /// added to one and not the other is caught rather than shown as a blank.
+/// `date` is the date the sender put on the message, which is the same column
+/// the message list calls Sent, so it is called that here rather than "Date":
+/// a list of fields with a bare "Date" in it invites the reading "the date
+/// this arrived", and the two differ by however long the mail took.
+///
+/// `read`, `starred` and `deleted` are answered as the word "true" or "false"
+/// by the reading below, so their words name the state rather than an action.
+/// "Flagged" for `starred` is the spelling the message list and the mail
+/// server both use, and the column name is the odd one out.
 pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 11] = [
-    ("subject", "a_field"),
-    ("from", "a_field"),
-    ("to", "a_field"),
-    ("cc", "a_field"),
-    ("date", "a_field"),
-    ("message_id", "a_field"),
-    ("body_plain", "a_field"),
-    ("body_html", "a_field"),
-    ("read", "a_field"),
-    ("starred", "a_field"),
-    ("deleted", "a_field"),
+    ("subject", "Subject"),
+    ("from", "From"),
+    ("to", "To"),
+    ("cc", "Cc"),
+    ("date", "Date sent"),
+    ("message_id", "Message identifier"),
+    ("body_plain", "Message text"),
+    ("body_html", "Formatted message text"),
+    ("read", "Read"),
+    ("starred", "Flagged"),
+    ("deleted", "Deleted"),
 ];
 
 /// The words for a stored field name, or nothing when it is not one of these.
@@ -113,14 +122,20 @@ pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 11] = [
 /// caller that gets `None` can decide for itself, and the dialog builds its
 /// list from [`A_FIELD_A_RULE_MAY_NAME`] anyway, so there is no later version
 /// to be kind to.
-pub fn the_words_for_a_field(_stored: &str) -> Option<&'static str> {
-    Some("a_field")
+pub fn the_words_for_a_field(stored: &str) -> Option<&'static str> {
+    WHAT_EACH_FIELD_IS_CALLED
+        .iter()
+        .find(|(name, _)| *name == stored)
+        .map(|(_, said)| *said)
 }
 
 /// The stored field name those words stand for, or nothing when no field is
 /// called that.
-pub fn the_field_those_words_name(_words: &str) -> Option<&'static str> {
-    Some("subject")
+pub fn the_field_those_words_name(words: &str) -> Option<&'static str> {
+    WHAT_EACH_FIELD_IS_CALLED
+        .iter()
+        .find(|(_, said)| *said == words)
+        .map(|(name, _)| *name)
 }
 
 /// Every way a rule may ask for the field and the pattern to be compared.
@@ -162,31 +177,58 @@ pub fn a_rule_may_match(match_type: &str) -> bool {
 /// Written as a verb phrase, because the dialog reads as a sentence across its
 /// three boxes: the field, then this, then what to compare against. So the
 /// words here begin where the field's words end.
+/// `is_true` and `is_false` are only ever asked of the three flags, which the
+/// reading answers as the word "true" or "false", so they are worded as the
+/// answer to a question about one: "Flagged is yes".
+///
+/// `regex` says "a text pattern" rather than "a regular expression", because
+/// the box it reads is called Pattern and the two names for one thing is how
+/// somebody comes to believe there are two.
 pub const WHAT_EACH_WAY_OF_MATCHING_IS_CALLED: [(&str, &str); 11] = [
-    ("contains", "a_way"),
-    ("not_contains", "a_way"),
-    ("equals", "a_way"),
-    ("not_equals", "a_way"),
-    ("starts_with", "a_way"),
-    ("ends_with", "a_way"),
-    ("is_empty", "a_way"),
-    ("is_not_empty", "a_way"),
-    ("is_true", "a_way"),
-    ("is_false", "a_way"),
-    ("regex", "a_way"),
+    ("contains", "contains"),
+    ("not_contains", "does not contain"),
+    ("equals", "is exactly"),
+    ("not_equals", "is not"),
+    ("starts_with", "starts with"),
+    ("ends_with", "ends with"),
+    ("is_empty", "is empty"),
+    ("is_not_empty", "is not empty"),
+    ("is_true", "is yes"),
+    ("is_false", "is no"),
+    ("regex", "matches a text pattern"),
 ];
 
 /// The words for a stored way of matching, or nothing when it is not one of
 /// these.
-pub fn the_words_for_a_way_of_matching(_stored: &str) -> Option<&'static str> {
-    Some("a_way")
+pub fn the_words_for_a_way_of_matching(stored: &str) -> Option<&'static str> {
+    WHAT_EACH_WAY_OF_MATCHING_IS_CALLED
+        .iter()
+        .find(|(name, _)| *name == stored)
+        .map(|(_, said)| *said)
 }
 
 /// The stored way of matching those words stand for, or nothing when no way is
 /// called that.
-pub fn the_way_of_matching_those_words_name(_words: &str) -> Option<&'static str> {
-    Some("contains")
+pub fn the_way_of_matching_those_words_name(words: &str) -> Option<&'static str> {
+    WHAT_EACH_WAY_OF_MATCHING_IS_CALLED
+        .iter()
+        .find(|(_, said)| *said == words)
+        .map(|(name, _)| *name)
 }
+
+/// The ways of matching that answer from the field alone.
+///
+/// Written down beside the list they are drawn from, the same way
+/// [`A_FIELD_HOLDING_THE_MESSAGE_TEXT`] sits beside the fields, and held to it
+/// in both directions by a test: everything here is a way a rule may match,
+/// and exactly four of the eleven are here.
+///
+/// Four rather than a floor. A twelfth way that reads no pattern has to be put
+/// on this list and the four in that test has to become five, which is a
+/// deliberate speed bump: the alternative is a new way silently keeping a
+/// Pattern box it never reads.
+pub const A_WAY_OF_MATCHING_THAT_READS_NO_PATTERN: [&str; 4] =
+    ["is_empty", "is_not_empty", "is_true", "is_false"];
 
 /// Whether this way of matching looks at the pattern at all.
 ///
@@ -200,8 +242,8 @@ pub fn the_way_of_matching_those_words_name(_words: &str) -> Option<&'static str
 /// dialog does not arrive with a second copy of the answer. Unknown ways get
 /// `false`, which keeps the box: a rule this build cannot evaluate is not one
 /// to hide a control for.
-pub fn a_way_of_matching_compares_against_nothing(_match_type: &str) -> bool {
-    true
+pub fn a_way_of_matching_compares_against_nothing(match_type: &str) -> bool {
+    A_WAY_OF_MATCHING_THAT_READS_NO_PATTERN.contains(&match_type)
 }
 
 /// The fields holding the message's own text rather than its headers.
@@ -1289,6 +1331,17 @@ mod the_fields_a_rule_may_name {
                 !a_way_of_matching_compares_against_nothing(reads_it),
                 "{reads_it} compares the field against the pattern and was called a way that \
                  does not, so its Pattern box would go"
+            );
+        }
+        // The direction neither of those can see: a name on the short list
+        // that is not on the long one. The count above is taken over the long
+        // list, so a misspelling here would leave it at four and say nothing,
+        // and the way it was really written down would keep its box.
+        for way in A_WAY_OF_MATCHING_THAT_READS_NO_PATTERN {
+            assert!(
+                a_rule_may_match(way),
+                "{way} is named as a way that reads no pattern and is not a way a rule may \
+                 match at all"
             );
         }
     }
