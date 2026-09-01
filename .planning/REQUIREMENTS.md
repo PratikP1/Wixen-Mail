@@ -177,7 +177,7 @@ write path added by this milestone passes through that gate.
 
 ### Search
 
-- [ ] **SEARCH-01**: A saved search keeps the whole scope it was saved with, not half of it.
+- [x] **SEARCH-01**: A saved search keeps the whole scope it was saved with, not half of it.
   - Evidence: rewritten 2026-08-29. The previous evidence said the scope selector is read by
     nothing, quoting a changelog line that has since been corrected as false, and cited two
     sites building the offered scopes where the second is a test. There is one builder,
@@ -964,7 +964,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Complete |
 | THREAD-02 | Phase 1 | Complete |
-| SEARCH-01 | Phase 2 | Pending |
+| SEARCH-01 | Phase 2 | Complete |
 | SEARCH-02 | Phase 2 | Complete |
 | SEARCH-03 | Phase 2 | Pending |
 | SCALE-01 | Phase 3 | Pending |
