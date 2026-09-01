@@ -1191,6 +1191,114 @@ mod finding_things {
         );
     }
 
+    /// What the column says about one message, read out of the table rather
+    /// than through a count, so a test can hold one writer's answer against
+    /// the other's message by message.
+    fn what_the_column_says(cache: &MessageCache, message_id: i64) -> i64 {
+        cache
+            .conn
+            .query_row(
+                &format!("SELECT {THE_INDEX_HOLDS_THE_TEXT} FROM messages WHERE id = ?1"),
+                rusqlite::params![message_id],
+                |row| row.get(0),
+            )
+            .expect("what the column says about a message")
+    }
+
+    #[test]
+    fn test_the_backfill_and_the_live_writer_agree_about_a_body_row_holding_no_text() {
+        // One column, two writers, and only one of them ever runs again.
+        // `index_message_for_search` records whether the text it put into the
+        // index had words in it, and says so in its own comment. The backfill
+        // fills the same column in for rows written before it existed.
+        //
+        // A message MIME parsing found no text part in, an invitation or two
+        // photographs and nothing else, is stored by
+        // `save_message_body(id, None, None)`: the row is there and holds
+        // neither half, `get_message_body` reads it as no body at all, and the
+        // live writer therefore records nought. A backfill asking only whether
+        // a row exists records one for the same message, which tells somebody
+        // the search box looked inside text it could not read.
+        let home = TempHome::named("coverage_column_backfill_empty_body", |dir| {
+            dir.to_path_buf()
+        });
+        let (ordinary, attachments_only, live) = {
+            let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
+            let folder = cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc".into(),
+                    name: "Inbox".into(),
+                    path: "INBOX".into(),
+                    folder_type: "Inbox".into(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            let ordinary = cache
+                .save_message(&message(folder, 1, "Opened once"))
+                .expect("a message");
+            cache
+                .save_message_body(ordinary, Some(&past_the_snippet("aubergine")), None)
+                .expect("a body");
+            let attachments_only = cache
+                .save_message(&message(folder, 2, "Two photographs"))
+                .expect("a second message");
+            cache
+                .save_message_body(attachments_only, None, None)
+                .expect("a body row holding neither half");
+
+            // The fixture proves itself before either answer is trusted. A
+            // fixture whose bodies all hold text cannot tell "a row is here"
+            // from "there are words in it", and would pass against both
+            // questions.
+            assert!(
+                cache
+                    .get_message_body(attachments_only)
+                    .expect("a read")
+                    .is_none(),
+                "the fixture stored a body that reads back, so there is nothing \
+                 here for the two writers to disagree about"
+            );
+            let live = [
+                what_the_column_says(&cache, ordinary),
+                what_the_column_says(&cache, attachments_only),
+            ];
+            assert_eq!(
+                live,
+                [1, 0],
+                "the live writer answered these two messages the same way, so \
+                 this fixture cannot tell a row from words in a row"
+            );
+
+            // Dropped to stand in for a database written before this column
+            // existed, which is the only kind the backfill ever runs on.
+            cache
+                .conn
+                .execute(
+                    &format!(
+                        "ALTER TABLE messages DROP COLUMN {}",
+                        THE_INDEX_HOLDS_THE_TEXT
+                    ),
+                    [],
+                )
+                .expect("a database without the column");
+            (ordinary, attachments_only, live)
+        };
+
+        let reopened = MessageCache::new(home.to_path_buf(), None).expect("the cache again");
+
+        assert_eq!(
+            [
+                what_the_column_says(&reopened, ordinary),
+                what_the_column_says(&reopened, attachments_only),
+            ],
+            live,
+            "the backfill and the live writer answered one column with two \
+             different questions, for [an ordinary message, one with no text part]"
+        );
+    }
+
     #[test]
     fn test_a_search_that_reads_no_message_text_is_not_asked_what_text_it_covers() {
         // Subject Only and From Only restrict the index to one column, so
