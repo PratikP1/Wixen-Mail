@@ -1881,6 +1881,11 @@ pub fn search_messages(
             let _ = tx.try_send(UIUpdate::ErrorOccurred(format!("Search failed: {}", e)));
         }
     }
+
+    // STUB. The real control flow, a wrong value: sent on every search
+    // whatever was asked and whatever is missing, so the tests beside this
+    // redden on the number and on the gate rather than on a missing name.
+    let _ = tx.try_send(UIUpdate::WhatCouldBeFetched(999));
 }
 
 /// Search whichever module is showing.
@@ -3565,6 +3570,359 @@ mod tests {
             !said.contains("text of your messages"),
             "a search of senders alone was told how much message text is \
              here: {said}"
+        );
+    }
+
+    /// What the window was offered, or nothing at all.
+    ///
+    /// The shape [`what_the_status_line_said`] uses, for the other update this
+    /// search sends. Nothing is a real answer here rather than a timeout to be
+    /// tidied away: a search that reads no message text must send no offer,
+    /// and this is how a test says so.
+    fn what_the_window_was_offered(
+        rt: &Runtime,
+        rx: &async_channel::Receiver<crate::presentation::ui_types::UIUpdate>,
+    ) -> Option<usize> {
+        rt.block_on(async {
+            loop {
+                let next = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+                match next {
+                    Ok(Ok(crate::presentation::ui_types::UIUpdate::WhatCouldBeFetched(count))) => {
+                        return Some(count);
+                    }
+                    Ok(Ok(_)) => continue,
+                    _ => return None,
+                }
+            }
+        })
+    }
+
+    /// A window looking at an account, which is what a fetch needs.
+    ///
+    /// The three tests above run with no account open, because a search does
+    /// not need one: it falls back to the reserved local id. A fetch does need
+    /// one, and the offer has to be counted for the account the button will
+    /// actually reach, so these tests say which account is open rather than
+    /// inheriting a fallback the fetch does not share.
+    fn a_window_looking_at(account_id: &str) -> Arc<StdMutex<WxUIState>> {
+        let state = WxUIState {
+            active_account_id: Some(account_id.to_string()),
+            ..WxUIState::default()
+        };
+        Arc::new(StdMutex::new(state))
+    }
+
+    /// An account with mail in two folders and the text of none of it here.
+    ///
+    /// Returns the folder a narrowed search will be pointed at, and how many
+    /// messages the whole account is missing text for. The two numbers differ
+    /// on purpose: a fixture where the folder holds everything the account
+    /// does cannot tell a folder-scoped count from an account-wide one, and
+    /// would pass whichever the code sent.
+    fn an_account_missing_text_in_two_folders(cache: &MessageCache) -> (i64, usize) {
+        use crate::data::message_cache::{CachedFolder, CachedMessage};
+
+        let folder = |path: &str| {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: LOCAL_ACCOUNT_ID.to_string(),
+                    name: path.to_string(),
+                    path: path.to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder to search in")
+        };
+        let inbox = folder("INBOX");
+        let archive = folder("Archive");
+        let message = |uid: u32, folder_id: i64, subject: &str| {
+            cache
+                .save_message(&CachedMessage {
+                    id: 0,
+                    uid,
+                    folder_id,
+                    message_id: format!("m{uid}@example.com"),
+                    subject: subject.to_string(),
+                    from_addr: "Hana <hana@example.com>".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-07-30".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("a message with no text stored")
+        };
+        message(1, inbox, "Quarterly figures");
+        message(2, archive, "Quarterly forecast");
+
+        let missing = cache
+            .messages_with_no_text_here(LOCAL_ACCOUNT_ID)
+            .expect("the list a fetch would walk")
+            .len();
+        assert_eq!(
+            missing, 2,
+            "the fixture does not hold the case it was built for"
+        );
+        let in_the_inbox = cache
+            .how_much_message_text_the_index_holds(
+                LOCAL_ACCOUNT_ID,
+                WhereToSearch::OneFolder(inbox),
+            )
+            .expect("what a search of one folder covers")
+            .messages;
+        assert_eq!(
+            in_the_inbox, 1,
+            "the folder holds as much as the account does, so this fixture \
+             cannot tell a folder-scoped offer from an account-wide one"
+        );
+        (inbox, missing)
+    }
+
+    #[test]
+    fn test_a_search_from_the_box_offers_the_fetch_the_saved_search_offers() {
+        // Ledger 13, and the whole of what it asks: the offer is reach, not a
+        // number. Somebody who never runs a saved search was never shown it,
+        // and the search box is the search people reach for first.
+        //
+        // The same update carrying the same account-wide count, so the button
+        // says exactly what pressing it attempts whichever search put it on
+        // the screen.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let held = cache.as_ref().expect("a cache");
+        an_account_the_box_can_only_half_look_inside(held);
+        // Asserted before the offer is trusted. Both messages have no row in
+        // message_bodies, one because it was evicted and one because its text
+        // was never fetched, and neither is mail with nowhere to ask.
+        let missing = held
+            .messages_with_no_text_here(LOCAL_ACCOUNT_ID)
+            .expect("the list a fetch would walk")
+            .len();
+        assert_eq!(
+            missing, 2,
+            "the fixture does not hold the case it was built for"
+        );
+
+        let state = a_window_looking_at(LOCAL_ACCOUNT_ID);
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            what_the_window_was_offered(&rt, &rx),
+            Some(missing),
+            "the search box offered a different number from the one a fetch \
+             would attempt, or offered nothing at all"
+        );
+    }
+
+    #[test]
+    fn test_the_offer_from_the_box_counts_the_whole_account_and_not_the_folder_searched() {
+        // The correction this work exists for. The coverage sentence narrows
+        // to the folder the In box named; the fetch behind the button does
+        // not, and cannot: it walks messages_with_no_text_here, which is the
+        // whole account. A label counted the narrow way would say "2" over a
+        // button that opens hundreds of requests across every folder.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let held = cache.as_ref().expect("a cache");
+        let (inbox, missing_in_the_account) = an_account_missing_text_in_two_folders(held);
+
+        let state = a_window_looking_at(LOCAL_ACCOUNT_ID);
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::OneFolder(inbox),
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            what_the_window_was_offered(&rt, &rx),
+            Some(missing_in_the_account),
+            "a search of one folder was offered a fetch counted over that \
+             folder, and the button walks the whole account"
+        );
+    }
+
+    #[test]
+    fn test_a_search_from_the_box_with_nothing_missing_takes_a_stale_offer_off() {
+        // Nought is sent rather than withheld, and that is the property that
+        // is easy to lose. The window takes the button off the screen when it
+        // is told nought, so a search run after the text has arrived is what
+        // clears yesterday's offer. Withholding the update would leave a
+        // button offering to fetch mail that is already here.
+        use crate::data::message_cache::{CachedFolder, CachedMessage};
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let held = cache.as_ref().expect("a cache");
+        let folder = held
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: LOCAL_ACCOUNT_ID.to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to search in");
+        let message = held
+            .save_message(&CachedMessage {
+                id: 0,
+                uid: 1,
+                folder_id: folder,
+                message_id: "m1@example.com".to_string(),
+                subject: "Quarterly figures".to_string(),
+                from_addr: "Hana <hana@example.com>".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-07-30".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+            })
+            .expect("a message");
+        held.save_message_body(message, Some("the text is here"), None)
+            .expect("its text");
+        assert!(
+            held.messages_with_no_text_here(LOCAL_ACCOUNT_ID)
+                .expect("the list a fetch would walk")
+                .is_empty(),
+            "the fixture does not hold the case it was built for"
+        );
+
+        let state = a_window_looking_at(LOCAL_ACCOUNT_ID);
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            what_the_window_was_offered(&rt, &rx),
+            Some(0),
+            "a search with nothing to fetch said nothing, so a button left \
+             over from an earlier search stays on the screen"
+        );
+    }
+
+    #[test]
+    fn test_a_search_that_reads_no_message_text_is_offered_no_fetch() {
+        // The same gate the coverage sentence is behind, for the same reason.
+        // Subject Only reads one column of the index, so the text that is not
+        // here cannot change what it answers, and an offer to go and fetch
+        // that text is a remedy for a limit this search does not have. Working
+        // it out would also be a query nobody needed.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        an_account_the_box_can_only_half_look_inside(cache.as_ref().expect("a cache"));
+
+        let state = a_window_looking_at(LOCAL_ACCOUNT_ID);
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::SubjectOnly,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            what_the_window_was_offered(&rt, &rx),
+            None,
+            "a search of subjects alone was offered a fetch of message text"
+        );
+    }
+
+    #[test]
+    fn test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from() {
+        // A search with no account open still runs: it falls back to the
+        // reserved local id, which is where an imported mailbox and a filed
+        // copy live. A fetch does not fall back. It reads the account being
+        // looked at and refuses when there is none, so an offer counted over
+        // the local id would be a button whose only answer is an apology.
+        //
+        // The label and the action have to name one account, and this is the
+        // one place where the search's answer and the fetch's answer differ.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        an_account_the_box_can_only_half_look_inside(cache.as_ref().expect("a cache"));
+
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        assert!(
+            lock_state(&state).active_account_id.is_none(),
+            "the fixture does not hold the case it was built for"
+        );
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            what_the_window_was_offered(&rt, &rx),
+            None,
+            "a fetch was offered for an account the button cannot reach"
         );
     }
 
