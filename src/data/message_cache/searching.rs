@@ -72,6 +72,24 @@ pub enum WhereToSearch {
 const NO_FOLDER_IN_PARTICULAR: i64 = 0;
 
 impl WhereToSearch {
+    /// Whether this search can reach the text of a message at all.
+    ///
+    /// Two of the four restrict the index to one column, so neither can match
+    /// on message text and neither raises the question of how much of it is
+    /// here. Asked before the coverage count, so a narrowed search does not
+    /// pay for an answer it has no use for.
+    ///
+    /// Every answer is spelled out and there is no wildcard, so a fifth thing
+    /// the `In` box could offer stops this file compiling rather than
+    /// inheriting whichever answer happened to be the catch-all.
+    pub const fn reads_the_message_text(self) -> bool {
+        match self {
+            Self::EveryFolder | Self::OneFolder(_) => true,
+            // Stub, until the count is written: says yes to everything.
+            Self::SubjectOnly | Self::SenderOnly => true,
+        }
+    }
+
     /// Which folder to narrow to, or [`NO_FOLDER_IN_PARTICULAR`].
     fn folder(self) -> i64 {
         match self {
@@ -111,6 +129,24 @@ impl WhereToSearch {
             }
         }
     }
+}
+
+/// How much of the mail a search box search looks at is mail it can read the
+/// text of.
+///
+/// **Deliberately not the same type as
+/// [`TextStoredHere`](super::saved_searches::TextStoredHere), which carries
+/// the same two numbers for a saved search.** The two searches in this program
+/// cover different amounts of the same mailbox, and a single type would let
+/// one be handed to the other's sentence with nothing to notice. That is the
+/// exact false claim the sentences exist to prevent, so the compiler is asked
+/// to refuse it rather than a reader asked to spot it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextTheIndexHolds {
+    /// Every message this search would look at.
+    pub messages: i64,
+    /// How many of those the index holds the text of.
+    pub with_text: i64,
 }
 
 /// Turn what somebody typed into an FTS5 query.
@@ -508,6 +544,35 @@ impl MessageCache {
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to read a search result: {}", e)))
     }
+
+    /// How much of the mail a search box search looks at it can read the text
+    /// of.
+    ///
+    /// Beside [`Self::search_messages`] because it describes that search and
+    /// nothing else, and it has to agree with it on three things: the account
+    /// join, the exclusion of mail marked deleted, and the folder narrowing.
+    /// Disagree on any of them and this is a true number about a set nobody
+    /// searched, which is a more convincing kind of wrong than saying nothing.
+    /// Change one and change both.
+    pub fn how_much_message_text_the_index_holds(
+        &self,
+        account_id: &str,
+        looking_in: WhereToSearch,
+    ) -> Result<TextTheIndexHolds> {
+        // A stub, until the count is written. The widest wrong answer rather
+        // than an empty one: every message on this computer, all of them
+        // covered, whoever they belong to and wherever they are. Nought would
+        // make every assertion about what is left out vacuously green.
+        let _ = (account_id, looking_in);
+        let messages = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Failed to count the mail to search: {}", e)))?;
+        Ok(TextTheIndexHolds {
+            messages,
+            with_text: messages,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -800,6 +865,233 @@ mod finding_things {
                 .len(),
             1,
             "reopening did not build the index (folder {folder})"
+        );
+    }
+
+    // ── How much text the box can look inside ───────────────────────────
+    //
+    // The number the search box discloses is not the number a saved search
+    // discloses, and these tests exist to keep them apart. A saved search
+    // reads `message_bodies`; the box reads the index, and eviction empties
+    // the first and deliberately leaves the second alone.
+    //
+    // Every fixture below that turns on that difference puts its distinguishing
+    // word **past the snippet**. The snippet is the first 200 characters of a
+    // body, it is written into the messages table, it is a column of the index,
+    // and it is never evicted. A test word inside it is findable whatever
+    // happened to the body, so such a fixture passes against any
+    // implementation at all.
+
+    /// A body long enough that anything after it is past the snippet.
+    fn past_the_snippet(word: &str) -> String {
+        format!("{}{word}", "filler ".repeat(80))
+    }
+
+    fn a_second_folder(cache: &MessageCache, account: &str, name: &str) -> i64 {
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: account.into(),
+                name: name.into(),
+                path: name.into(),
+                folder_type: "Archive".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("another folder")
+    }
+
+    #[test]
+    fn test_a_message_whose_text_was_evicted_is_still_text_the_box_can_look_inside() {
+        // The load-bearing one. `evict_bodies_over` deletes the row a saved
+        // search reads and does not reindex, so the box goes on finding that
+        // message by a word only in its text. Telling somebody the box can
+        // look inside none of their mail, when it can look inside this one,
+        // is the false claim this count exists to avoid.
+        let (cache, folder) = cache("box_counts_an_evicted_message");
+        let evicted = cache
+            .save_message(&message(folder, 1, "Kept"))
+            .expect("a message");
+        cache
+            .save_message_body(evicted, Some(&past_the_snippet("aubergine")), None)
+            .expect("a body");
+        cache
+            .save_message(&message(folder, 2, "Never opened"))
+            .expect("a second message");
+
+        cache.evict_bodies_over(0).expect("an eviction");
+
+        // The fixture proves itself before the numbers are trusted: the word
+        // really is past the snippet and the index really does still hold it.
+        assert_eq!(
+            cache
+                .search_messages("acc", "aubergine", WhereToSearch::EveryFolder, 50)
+                .expect("a search")
+                .len(),
+            1,
+            "the fixture cannot tell the two coverages apart: the box no longer \
+             finds the evicted message, so there is nothing here to disagree about"
+        );
+
+        let stored = cache
+            .how_much_message_text_is_stored_here("acc")
+            .expect("what a saved search covers");
+        assert_eq!(
+            stored.with_text, 0,
+            "the fixture did not evict, so the two counts cannot differ"
+        );
+
+        let indexed = cache
+            .how_much_message_text_the_index_holds("acc", WhereToSearch::EveryFolder)
+            .expect("what the box covers");
+        assert_eq!(
+            indexed,
+            super::TextTheIndexHolds {
+                messages: 2,
+                with_text: 1
+            },
+            "the box's coverage is not the saved search's, and this said it was"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_text_was_never_fetched_is_text_the_box_cannot_look_inside() {
+        // The other half, and the bigger number in practice. A message whose
+        // body has never been downloaded is indexed by its subject and sender
+        // and by nothing else, so a word from its text finds nothing and the
+        // search looks empty rather than narrow.
+        let (cache, folder) = cache("box_does_not_count_an_unfetched_message");
+        cache
+            .save_message(&message(folder, 1, "Never opened"))
+            .expect("a message");
+
+        let indexed = cache
+            .how_much_message_text_the_index_holds("acc", WhereToSearch::EveryFolder)
+            .expect("what the box covers");
+        assert_eq!(
+            indexed,
+            super::TextTheIndexHolds {
+                messages: 1,
+                with_text: 0
+            },
+            "a message nobody has opened was counted as text the box can read"
+        );
+    }
+
+    #[test]
+    fn test_one_accounts_box_coverage_is_not_inflated_by_another_accounts_mail() {
+        // The same agreement `how_much_message_text_is_stored_here` has to
+        // keep with the read it describes: the sentence is about the account
+        // being searched, and `search_messages` narrows by `f.account_id`.
+        // A number true of every account is a true number about a set nobody
+        // searched.
+        let (cache, folder) = cache("box_coverage_is_one_accounts");
+        cache
+            .save_message(&message(folder, 1, "Ours"))
+            .expect("a message");
+        let theirs = a_second_folder(&cache, "other", "Theirs");
+        let elsewhere = cache
+            .save_message(&message(theirs, 2, "Theirs"))
+            .expect("a message");
+        cache
+            .save_message_body(elsewhere, Some(&past_the_snippet("aubergine")), None)
+            .expect("a body");
+
+        let indexed = cache
+            .how_much_message_text_the_index_holds("acc", WhereToSearch::EveryFolder)
+            .expect("what the box covers");
+        assert_eq!(
+            indexed,
+            super::TextTheIndexHolds {
+                messages: 1,
+                with_text: 0
+            },
+            "another account's mail was counted into this account's coverage"
+        );
+    }
+
+    #[test]
+    fn test_mail_marked_deleted_is_counted_by_neither_half_of_the_box_coverage() {
+        // `search_messages` excludes `m.deleted = 0`, so mail marked deleted
+        // is not mail the box searches. Counting it would say the box covers
+        // less of the account than it does, and counting its text would say it
+        // covers text nobody can reach.
+        let (cache, folder) = cache("box_coverage_skips_deleted");
+        cache
+            .save_message(&message(folder, 1, "Here"))
+            .expect("a message");
+        let mut binned = message(folder, 2, "Thrown away");
+        binned.deleted = true;
+        let binned = cache.save_message(&binned).expect("a deleted message");
+        cache
+            .save_message_body(binned, Some(&past_the_snippet("aubergine")), None)
+            .expect("a body");
+
+        let indexed = cache
+            .how_much_message_text_the_index_holds("acc", WhereToSearch::EveryFolder)
+            .expect("what the box covers");
+        assert_eq!(
+            indexed,
+            super::TextTheIndexHolds {
+                messages: 1,
+                with_text: 0
+            },
+            "mail marked deleted was counted as mail the box searches"
+        );
+    }
+
+    #[test]
+    fn test_a_search_of_one_folder_is_told_about_that_folder_and_not_the_account() {
+        // Current Folder narrows what the box searches, so it narrows what the
+        // box covers. Answering with the whole account's numbers would be the
+        // same defect the `In` box had before it was read at all: a true
+        // sentence about mail nobody asked about.
+        let (cache, inbox) = cache("box_coverage_narrows_to_a_folder");
+        let archive = a_second_folder(&cache, "acc", "Archive");
+        cache
+            .save_message(&message(inbox, 1, "In the inbox"))
+            .expect("a message");
+        let filed = cache
+            .save_message(&message(archive, 2, "Filed"))
+            .expect("a message");
+        cache
+            .save_message_body(filed, Some(&past_the_snippet("aubergine")), None)
+            .expect("a body");
+
+        let indexed = cache
+            .how_much_message_text_the_index_holds("acc", WhereToSearch::OneFolder(inbox))
+            .expect("what the box covers");
+        assert_eq!(
+            indexed,
+            super::TextTheIndexHolds {
+                messages: 1,
+                with_text: 0
+            },
+            "a search of one folder was told about the whole account"
+        );
+    }
+
+    #[test]
+    fn test_a_search_that_reads_no_message_text_is_not_asked_what_text_it_covers() {
+        // Subject Only and From Only restrict the index to one column, so
+        // neither can reach message text and neither raises the question. A
+        // coverage figure said over one of those would be an answer to a
+        // question nobody asked, and it would cost a count to say it.
+        assert!(
+            WhereToSearch::EveryFolder.reads_the_message_text(),
+            "All Folders reads the message text and said it does not"
+        );
+        assert!(
+            WhereToSearch::OneFolder(1).reads_the_message_text(),
+            "Current Folder reads the message text and said it does not"
+        );
+        assert!(
+            !WhereToSearch::SubjectOnly.reads_the_message_text(),
+            "Subject Only reads only the subject and said it reads message text"
+        );
+        assert!(
+            !WhereToSearch::SenderOnly.reads_the_message_text(),
+            "From Only reads only the sender and said it reads message text"
         );
     }
 }
