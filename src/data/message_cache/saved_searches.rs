@@ -611,14 +611,19 @@ mod tests {
         // No column was added for either half. `saved_search_questions` has
         // always stored an arbitrary set with positions, so a set of one is a
         // shape these tables already hold.
-        use crate::application::saved_searches::{TheSearchThatWasRun, what_a_typed_search_asks};
+        use crate::application::saved_searches::{
+            TheFolderSearched, TheSearchThatWasRun, what_a_typed_search_asks,
+        };
         use crate::data::message_cache::WhereToSearch;
 
         let cache = a_cache("saved_search_narrowed_round_trip");
         let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
             "invoice".to_string(),
             WhereToSearch::OneFolder(7),
-            Some("INBOX/Work".to_string()),
+            Some(TheFolderSearched {
+                account: "acc-1".to_string(),
+                path: "INBOX/Work".to_string(),
+            }),
         ));
         let narrowed = what_a_typed_search_asks(&TheSearchThatWasRun::new(
             "invoice".to_string(),

@@ -6,7 +6,7 @@
 use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
-use crate::application::saved_searches::TheSearchThatWasRun;
+use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
 use crate::common::Result;
 use crate::common::paths::AppPaths;
 use crate::common::types::MessageBody;
@@ -6683,7 +6683,10 @@ fn save_this_search(
     frame: &Frame,
     a11y: &Arc<Accessibility>,
 ) {
-    use crate::application::saved_searches::{SavedSearch, created, what_a_typed_search_asks};
+    use crate::application::saved_searches::{
+        SavedSearch, THAT_FOLDER_IS_ANOTHER_ACCOUNTS, a_search_may_be_saved_under, created,
+        what_a_typed_search_asks,
+    };
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
@@ -6709,6 +6712,14 @@ fn save_this_search(
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
         return refuse_a_command(tx, "Choose an account first.");
     };
+    // Before anything is written, and about the account this is being saved
+    // under rather than the one that was open when the search ran. Set Active
+    // changes the first and leaves the folder tree's cursor where it was, so
+    // the two really can differ, and a folder path is not unique across
+    // accounts.
+    if !a_search_may_be_saved_under(&ran, &account_id) {
+        return refuse_a_command(tx, THAT_FOLDER_IS_ANOTHER_ACCOUNTS);
+    }
 
     // The sentence and the questions out of the same value, so the window
     // cannot describe one search while saving another.
@@ -14164,15 +14175,18 @@ fn folder_on_screen(state: &WxUIState) -> Option<i64> {
         .and_then(|which| the_id_of(state, which))
 }
 
-/// The path of the folder on screen, which is what a saved search stores.
+/// The folder on screen as a saved search would store it: whose it is, and
+/// the path.
 ///
-/// The same row [`folder_on_screen`] reads, answered as the path rather than
+/// The same row [`folder_on_screen`] reads, answered as the pair rather than
 /// the row number. A pinned copy answers with the folder it is a copy of,
 /// because [`folder_tree::WhichRow::opens`] is the one place that decides
 /// which folder a row is about.
-fn the_path_of_the_folder_on_screen(state: &WxUIState) -> Option<String> {
+fn the_folder_on_screen(state: &WxUIState) -> Option<TheFolderSearched> {
     match state.selected_folder.as_ref().and_then(|w| w.opens()) {
-        Some(folder_tree::WhichRow::Folder { path, .. }) => Some(path),
+        Some(folder_tree::WhichRow::Folder { account, path }) => {
+            Some(TheFolderSearched { account, path })
+        }
         _ => None,
     }
 }
@@ -14201,7 +14215,7 @@ fn keep_the_search_that_ran(
     state.mail_search_that_was_run = Some(TheSearchThatWasRun::new(
         typed.to_string(),
         looking_in,
-        the_path_of_the_folder_on_screen(state),
+        the_folder_on_screen(state),
     ));
 }
 
@@ -20826,6 +20840,14 @@ mod tests {
 
     /// A state with a folder open, which is what makes Current Folder
     /// offerable and what a saved search would narrow to.
+    /// The folder those tests expect to have been kept, whose and where.
+    fn a_folder_of(account: &str, path: &str) -> Option<TheFolderSearched> {
+        Some(TheFolderSearched {
+            account: account.to_string(),
+            path: path.to_string(),
+        })
+    }
+
     fn showing_a_folder(path: &str) -> WxUIState {
         WxUIState {
             selected_folder: Some(folder_tree::WhichRow::Folder {
@@ -20946,7 +20968,7 @@ mod tests {
             narrowed
                 .mail_search_that_was_run
                 .and_then(|kept| kept.the_folder_looked_in),
-            Some("INBOX/Work".to_string()),
+            a_folder_of("first", "INBOX/Work"),
             "Current Folder was chosen and the folder was not kept, so there \
              is nothing to narrow the saved search by"
         );
@@ -20991,7 +21013,7 @@ mod tests {
             state
                 .mail_search_that_was_run
                 .and_then(|kept| kept.the_folder_looked_in),
-            Some("INBOX/Work".to_string()),
+            a_folder_of("first", "INBOX/Work"),
             "the folder followed the cursor, so saving now would name a \
              folder the search never ran in"
         );

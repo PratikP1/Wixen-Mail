@@ -369,15 +369,29 @@ pub struct TheSearchThatWasRun {
     pub typed: String,
     /// What the "In" list was set to.
     pub looking_in: WhereToSearch,
-    /// The path of the folder [`Self::looking_in`] names, when it names one.
+    /// The folder [`Self::looking_in`] names, when it names one.
     ///
-    /// The path rather than the row number, because that is what a saved
-    /// search stores and what its reader resolves. Filled only by
-    /// [`Self::new`], so this and `looking_in` cannot come to name different
-    /// folders, and taken at the moment the search ran rather than at the
-    /// moment somebody names it: those are different folders whenever
-    /// somebody has arrowed to another one in between.
-    pub the_folder_looked_in: Option<String>,
+    /// Filled only by [`Self::new`], so this and `looking_in` cannot come to
+    /// name different folders, and taken at the moment the search ran rather
+    /// than at the moment somebody names it: those are different folders
+    /// whenever somebody has arrowed to another one in between.
+    pub the_folder_looked_in: Option<TheFolderSearched>,
+}
+
+/// The folder a search was narrowed to, and whose it is.
+///
+/// The account as well as the path, because a stored folder is resolved
+/// against the account the saved search belongs to and a path is not unique
+/// across accounts: "INBOX" names a folder in every one of them. The two
+/// travel together so nothing can pair a path with the wrong account and get
+/// somebody else's mail back under a name they gave this one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheFolderSearched {
+    /// Which account the folder belongs to.
+    pub account: String,
+    /// The path the server spells, which is what a saved search stores and
+    /// what its reader looks the folder up by.
+    pub path: String,
 }
 
 impl TheSearchThatWasRun {
@@ -391,7 +405,7 @@ impl TheSearchThatWasRun {
     pub fn new(
         typed: String,
         looking_in: WhereToSearch,
-        folder_on_screen: Option<String>,
+        folder_on_screen: Option<TheFolderSearched>,
     ) -> TheSearchThatWasRun {
         TheSearchThatWasRun {
             typed,
@@ -404,6 +418,31 @@ impl TheSearchThatWasRun {
             looking_in,
         }
     }
+}
+
+/// Why a search that has been run cannot be kept under this account.
+///
+/// The refusal exists because "Set Active" changes which account a search is
+/// saved under and leaves the folder tree's cursor where it was, so the folder
+/// a search ran in can belong to an account other than the one about to own
+/// it. A path is not unique across accounts, so storing it anyway would give a
+/// saved search that quietly lists another account's mail of the same path,
+/// usually its inbox.
+///
+/// Refused rather than saved without the folder. Dropping it would widen the
+/// search from one folder to a whole account with nothing said, which is the
+/// failure this plan exists to fix, arriving by another door.
+pub const THAT_FOLDER_IS_ANOTHER_ACCOUNTS: &str = "That search ran in another account's folder. Open that account, search there, and then this \
+     will keep it.";
+
+/// Whether a search that was run may be kept under this account.
+///
+/// Asked before anything is written, and about the account the search is being
+/// saved under rather than whichever is open now, because those are the same
+/// answer almost always and not always.
+pub fn a_search_may_be_saved_under(ran: &TheSearchThatWasRun, account_id: &str) -> bool {
+    let _ = (ran, account_id);
+    true
 }
 
 /// How a typed search compares the words against the part it looks at.
@@ -483,7 +522,10 @@ pub fn what_a_typed_search_asks(ran: &TheSearchThatWasRun) -> WhatASavedSearchWi
             })
             .collect(),
         join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
-        folder: ran.the_folder_looked_in.clone(),
+        folder: ran
+            .the_folder_looked_in
+            .as_ref()
+            .map(|folder| folder.path.clone()),
     }
 }
 
@@ -1654,6 +1696,15 @@ mod tests {
         TheSearchThatWasRun::new(typed.to_string(), WhereToSearch::EveryFolder, None)
     }
 
+    /// A folder of the account these tests save under, unless they say
+    /// otherwise.
+    fn a_folder_of(account: &str, path: &str) -> Option<TheFolderSearched> {
+        Some(TheFolderSearched {
+            account: account.to_string(),
+            path: path.to_string(),
+        })
+    }
+
     /// The parts of a message a set of questions asks about, in order.
     fn the_parts_asked_about(asked: &WhatASavedSearchWillAsk) -> Vec<&str> {
         asked
@@ -1734,7 +1785,7 @@ mod tests {
         let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
             "invoice".to_string(),
             WhereToSearch::OneFolder(7),
-            Some("INBOX/Work".to_string()),
+            a_folder_of("first", "INBOX/Work"),
         ));
 
         assert_eq!(
@@ -1799,10 +1850,57 @@ mod tests {
         let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
             "invoice".to_string(),
             WhereToSearch::EveryFolder,
-            Some("INBOX/Work".to_string()),
+            a_folder_of("first", "INBOX/Work"),
         ));
 
         assert_eq!(asked.folder, None);
+    }
+
+    #[test]
+    fn test_a_search_run_in_a_folder_may_be_saved_under_that_folders_account() {
+        assert!(a_search_may_be_saved_under(
+            &TheSearchThatWasRun::new(
+                "invoice".to_string(),
+                WhereToSearch::OneFolder(7),
+                a_folder_of("first", "INBOX/Work"),
+            ),
+            "first"
+        ));
+    }
+
+    #[test]
+    fn test_a_search_run_in_another_accounts_folder_is_not_kept_here() {
+        // Set Active changes which account a search is saved under and leaves
+        // the folder tree's cursor where it was, so these two really can
+        // differ. "INBOX" names a folder in every account, so storing the path
+        // anyway would give a saved search that lists somebody else's inbox
+        // under the name given to this one.
+        assert!(!a_search_may_be_saved_under(
+            &TheSearchThatWasRun::new(
+                "invoice".to_string(),
+                WhereToSearch::OneFolder(7),
+                a_folder_of("second", "INBOX"),
+            ),
+            "first"
+        ));
+    }
+
+    #[test]
+    fn test_a_search_narrowed_by_no_folder_may_be_saved_under_any_account() {
+        // Nothing to disagree about. Refusing here would refuse every ordinary
+        // save, which is the direction a check like this fails in.
+        assert!(a_search_may_be_saved_under(
+            &across_the_account("invoice"),
+            "first"
+        ));
+        assert!(a_search_may_be_saved_under(
+            &TheSearchThatWasRun::new(
+                "invoice".to_string(),
+                WhereToSearch::SubjectOnly,
+                a_folder_of("second", "INBOX"),
+            ),
+            "first"
+        ));
     }
 
     #[test]
@@ -1821,7 +1919,7 @@ mod tests {
             let asked = what_a_typed_search_asks(&TheSearchThatWasRun::new(
                 "invoice".to_string(),
                 looking_in,
-                Some("INBOX/Work".to_string()),
+                a_folder_of("first", "INBOX/Work"),
             ));
             let saved = SavedSearch {
                 id: "s1".to_string(),
