@@ -9,6 +9,11 @@
 //! something first is said above the ordinary run of outcomes, because it is
 //! the answer to the key just pressed.
 
+use crate::application::filters::{
+    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, a_way_of_matching_compares_against_nothing,
+    the_field_those_words_name, the_way_of_matching_those_words_name, the_words_for_a_field,
+    the_words_for_a_way_of_matching,
+};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -2499,6 +2504,24 @@ fn stored_action(shown: &str) -> String {
         .map_or_else(|| shown.to_string(), |(name, _)| (*name).to_string())
 }
 
+/// Whether the Pattern box has anything to ask for, given the words showing in
+/// the Match Type list.
+///
+/// Asked of the words rather than of a stored name because the list is the
+/// only thing that knows what has been picked, and answered by
+/// [`a_way_of_matching_compares_against_nothing`] rather than by a comparison
+/// written here. Four ways of matching read no pattern, and a second copy of
+/// which four is how the two come to disagree; the rule editor plan 02-05 adds
+/// would have been the third place to hold that list.
+///
+/// Words nothing is called keep the box. Either nothing has been chosen yet,
+/// or the rule was written by a later version, and hiding a control over a
+/// question this build could not answer is the worse of the two mistakes.
+fn the_pattern_box_asks_for_something(match_words: &str) -> bool {
+    the_way_of_matching_those_words_name(match_words)
+        .is_none_or(|stored| !a_way_of_matching_compares_against_nothing(stored))
+}
+
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     list.delete_all_items();
     for (i, r) in rules.iter().enumerate() {
@@ -2566,9 +2589,16 @@ pub fn build_filter_edit_dialog(
     let field_label = StaticText::builder(&dlg)
         .with_label("Match &Field:")
         .build();
-    let field_choices: Vec<String> = ["subject", "from", "to", "cc", "body_plain", "date"]
+    // Built from the engine's own list, the same way the Action list below is
+    // built from `RULE_ACTIONS`. It used to hold six names of its own, five of
+    // them column names, while the engine answered questions about eleven
+    // fields: a rule about the message text, about the date, or about any of
+    // the three flags could not be written here at all, and the six that could
+    // were offered as `body_plain` and the rest.
+    let field_choices: Vec<String> = A_FIELD_A_RULE_MAY_NAME
         .iter()
-        .map(|s| s.to_string())
+        .filter_map(|field| the_words_for_a_field(field))
+        .map(str::to_string)
         .collect();
     let field_choice = Choice::builder(&dlg).with_choices(field_choices).build();
     set_accessible_name(&field_choice, "Match field");
@@ -2581,17 +2611,11 @@ pub fn build_filter_edit_dialog(
     fields.add(&field_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let match_label = StaticText::builder(&dlg).with_label("Match &Type:").build();
-    let match_choices: Vec<String> = [
-        "contains",
-        "not_contains",
-        "equals",
-        "starts_with",
-        "ends_with",
-        "regex",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let match_choices: Vec<String> = A_WAY_A_RULE_MAY_MATCH
+        .iter()
+        .filter_map(|way| the_words_for_a_way_of_matching(way))
+        .map(str::to_string)
+        .collect();
     let match_choice = Choice::builder(&dlg).with_choices(match_choices).build();
     set_accessible_name(&match_choice, "Match type");
     fields.add(
@@ -2653,14 +2677,39 @@ pub fn build_filter_edit_dialog(
 
     if let Some(r) = existing {
         name_f.set_value(&r.name);
-        select_choice_by_string(&field_choice, &r.field);
-        select_choice_by_string(&match_choice, &r.match_type);
+        // The words, because the words are what the list holds now. Selecting
+        // by the stored name silently selected nothing for five of the eleven
+        // fields, and pressing OK on a rule that opened that way rewrote its
+        // field to the empty string.
+        if let Some(said) = the_words_for_a_field(&r.field) {
+            select_choice_by_string(&field_choice, said);
+        }
+        if let Some(said) = the_words_for_a_way_of_matching(&r.match_type) {
+            select_choice_by_string(&match_choice, said);
+        }
         pattern_f.set_value(&r.pattern);
         cs_check.set_value(r.case_sensitive);
         select_choice_by_string(&action_choice, shown_action(&r.action_type));
         action_value_f.set_value(&r.action_value);
         en_check.set_value(r.enabled);
     }
+
+    // The Pattern box only asks when there is something to compare against.
+    //
+    // Disabled rather than taken out of the sizer. Removing it would rebuild
+    // the layout under somebody's hands, and the tab order has to stay put
+    // while a screen reader is on a control two rows above.
+    let asks_now =
+        the_pattern_box_asks_for_something(&get_choice_string(&match_choice).unwrap_or_default());
+    pattern_f.enable(asks_now);
+    match_choice.on_selection_changed({
+        let box_to_ask_with = pattern_f;
+        move |event| {
+            box_to_ask_with.enable(the_pattern_box_asks_for_something(
+                &event.get_string().unwrap_or_default(),
+            ));
+        }
+    });
 
     ok.on_click({
         let d = dlg;
@@ -2733,13 +2782,21 @@ fn show_filter_edit(
     // thing and says so where it fixed it.
     let answered = dlg.show_modal();
     let chosen = if answered == ID_OK {
+        // The lists offer words and a rule stores names, so both come back
+        // through the same pair of conversions the dialog built them with.
+        let match_words = get_choice_string(&match_choice).unwrap_or_default();
         Some(FilterRule {
             id: existing
                 .map(|r| r.id.clone())
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: name_f.get_value(),
-            field: get_choice_string(&field_choice).unwrap_or_default(),
-            match_type: get_choice_string(&match_choice).unwrap_or_default(),
+            field: get_choice_string(&field_choice)
+                .and_then(|said| the_field_those_words_name(&said))
+                .unwrap_or_default()
+                .to_string(),
+            match_type: the_way_of_matching_those_words_name(&match_words)
+                .unwrap_or_default()
+                .to_string(),
             pattern: pattern_f.get_value(),
             case_sensitive: cs_check.get_value(),
             action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
