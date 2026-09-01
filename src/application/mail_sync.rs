@@ -1406,26 +1406,83 @@ const AT_MOST_THIS_MANY_PROGRESS_LINES: usize = 10;
 /// and the report are two sentences either side of a few seconds, and a
 /// progress line between them would be noise.
 pub(crate) fn says_where_it_is(done: usize, total: usize) -> bool {
-    let _ = (done, total, AT_MOST_THIS_MANY_PROGRESS_LINES);
-    true
+    // Rounded up, so the step is never nought and the run never says anything
+    // after every single message. A step of one means the whole run is shorter
+    // than the number of lines it would be allowed, and then it says nothing
+    // at all rather than one line per message.
+    let step = total.div_ceil(AT_MOST_THIS_MANY_PROGRESS_LINES);
+    step > 1 && done < total && done.is_multiple_of(step)
 }
 
 /// The line said before the first message is asked for.
+///
+/// Both numbers written out whole rather than assembled from a stem and an
+/// "s", the same as every other counted sentence in this program: three words
+/// have to agree, and a sentence built from fragments reads like one.
 pub fn about_to_fetch(count: usize) -> String {
-    let _ = count;
-    String::new()
+    match count {
+        1 => "Fetching the text of 1 message that is not stored on this computer.".to_string(),
+        many => {
+            format!("Fetching the text of {many} messages that are not stored on this computer.")
+        }
+    }
 }
 
 /// The line said part-way through a long run.
+///
+/// Said at most nine times whatever the size of the run. See
+/// [`says_where_it_is`], which decides when, and guardrail 5, which is why.
 pub fn how_far_the_fetch_has_got(done: usize, total: usize) -> String {
-    let _ = (done, total);
-    String::new()
+    format!("Fetched {done} of {total} so far.")
+}
+
+/// What a run with nothing to do says.
+///
+/// Its own sentence rather than a report of nought fetched. "There is nothing
+/// to do" and "it tried and got none" are different pieces of news, and the
+/// second reads as a fault in the fetch.
+pub const NOTHING_TO_FETCH: &str = "Every message in this account already has its text on this computer, so there is \
+     nothing to fetch.";
+
+/// How many messages arrived, as a clause.
+fn arrived(count: usize) -> String {
+    match count {
+        0 => "No message text arrived".to_string(),
+        1 => "The text of 1 message arrived".to_string(),
+        many => format!("The text of {many} messages arrived"),
+    }
+}
+
+/// How many did not, as a clause.
+///
+/// Said even when it is none, because a run that gives only its successes
+/// reads as complete, and a person cannot tell a run that fetched twelve of
+/// twelve from one that fetched twelve of two hundred.
+fn did_not_arrive(count: usize) -> String {
+    match count {
+        0 => "nothing failed".to_string(),
+        1 => "1 message could not be fetched".to_string(),
+        many => format!("{many} messages could not be fetched"),
+    }
 }
 
 /// What a finished backfill is told to somebody, in one sentence.
 pub fn what_the_fetch_did(outcome: &Backfill) -> String {
-    let _ = outcome;
-    String::new()
+    match outcome {
+        Backfill::NotAllowed(why) => why.clone(),
+        Backfill::NothingToFetch => NOTHING_TO_FETCH.to_string(),
+        Backfill::Ran(done) => {
+            let stopped = match &done.ended {
+                Ending::WentThroughTheWholeList => String::new(),
+                Ending::ReadingWasTurnedOff(why) => format!(" {why}"),
+            };
+            format!(
+                "{}, and {}.{stopped}",
+                arrived(done.fetched),
+                did_not_arrive(done.could_not)
+            )
+        }
+    }
 }
 
 /// Fetch the text of every message in one account that has none stored here.
@@ -1457,21 +1514,101 @@ pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
     allowed: crate::application::allowed::Allowed,
     say: &dyn Fn(&str),
 ) -> Result<Backfill> {
-    let _ = allowed;
-    let wanted = cache.messages_with_no_text_here(account_id)?;
-    for (done, message) in wanted.iter().enumerate() {
-        let _ = server
-            .fetch_message_body(&message.folder_path, message.uid)
-            .await;
-        if says_where_it_is(done + 1, wanted.len()) {
-            say(&how_far_the_fetch_has_got(done + 1, wanted.len()));
-        }
+    // Before the list is read and before anything is asked of a server. The
+    // gate itself is `fetch_body`'s first line and would refuse every message
+    // on its own, but it would do so after a connection had been opened, and
+    // once per message. Somebody who has turned reading off should be told at
+    // once, in a sentence naming the setting, which is D-2-06.
+    if !allowed.reading {
+        let refusal = crate::service::outward::read_refusal(FETCHING_THE_MISSING_TEXT);
+        say(&refusal);
+        return Ok(Backfill::NotAllowed(refusal));
     }
-    Ok(Backfill::Ran(Backfilled {
+
+    let wanted = cache.messages_with_no_text_here(account_id)?;
+    if wanted.is_empty() {
+        say(NOTHING_TO_FETCH);
+        return Ok(Backfill::NothingToFetch);
+    }
+
+    // Before the first request, because the number is the whole point: the
+    // coverage sentence said how much text is missing a moment ago, and a
+    // fetch that then runs silently for an unknown length of time is the one
+    // somebody stops half way through.
+    let total = wanted.len();
+    say(&about_to_fetch(total));
+
+    let mut done = Backfilled {
         fetched: 0,
         could_not: 0,
         ended: Ending::WentThroughTheWholeList,
-    }))
+    };
+    for (attempted, message) in wanted.iter().enumerate() {
+        match fetch_and_store_one(server, cache, message).await {
+            Ok(()) => done.fetched += 1,
+            // Told apart from an ordinary failure by the one function that
+            // answers that question. Somebody turning reading off while this
+            // runs is not hundreds of messages that would not arrive: going on
+            // would ask the server for every one of them, be refused each
+            // time, and report a folder full of failures for one setting.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                done.ended = Ending::ReadingWasTurnedOff(crate::service::outward::read_refusal(
+                    FETCHING_THE_MISSING_TEXT,
+                ));
+                break;
+            }
+            Err(e) => {
+                // The uid and the reason, and nothing that came back. This is
+                // the one routine in the program holding hundreds of message
+                // bodies in a row, so a log line built from the payload would
+                // put somebody's mail on the disk in plain text outside the
+                // cache. Every error in this path is worded by us for the same
+                // reason.
+                tracing::warn!("Could not fetch the text of message {}: {e}", message.uid);
+                done.could_not += 1;
+            }
+        }
+        if says_where_it_is(attempted + 1, total) {
+            say(&how_far_the_fetch_has_got(attempted + 1, total));
+        }
+    }
+
+    let outcome = Backfill::Ran(done);
+    say(&what_the_fetch_did(&outcome));
+    Ok(outcome)
+}
+
+/// Fetch one message, read it, and store its text.
+///
+/// The same three steps the single message download in the window already
+/// does, in the same order and through the same functions, rather than a
+/// second parse and a second store. The signed original is kept for the reason
+/// that path gives: a signature is arithmetic over exactly the bytes that
+/// arrived, and nothing the parse produces can be turned back into them, so a
+/// message reopened from the cache could never be checked again. Ordinary mail
+/// writes nothing there and the call decides that for itself.
+///
+/// A failure to keep those bytes costs a verdict rather than a message, so it
+/// is logged and the message still counts as fetched. Anything earlier is a
+/// real failure and is handed back to be counted.
+async fn fetch_and_store_one<M: Mailbox>(
+    server: &M,
+    cache: &MessageCache,
+    message: &crate::data::message_cache::bodies::MessageToFetch,
+) -> Result<()> {
+    let raw = server
+        .fetch_message_body(&message.folder_path, message.uid)
+        .await?;
+    let parsed = crate::service::mime::parse(&raw)?;
+    cache.save_message_body(
+        message.message_id,
+        parsed.body_plain.as_deref(),
+        parsed.body_html.as_deref(),
+    )?;
+    if let Err(e) = cache.keep_signed_original(message.message_id, &raw) {
+        tracing::warn!("Could not keep the form a signed message arrived in: {e}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -336,7 +336,12 @@ pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has 
 /// It says what could go wrong and what it costs, rather than only that the
 /// feature is new: "experimental" on its own tells somebody to be careful and
 /// not what to be careful of.
-pub const FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL: &str = "";
+pub const FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL: &str = "Fetching text in bulk is experimental \
+     and has never been run against a real account. Asking your provider for hundreds of whole \
+     messages one after another is something they are entitled to refuse, to slow down, or to \
+     disconnect you for, and nothing here can find out which yours will do. Nothing is changed \
+     at the server and nothing is sent, so the worst that happens is that it stops part way and \
+     says so. You can start it again.";
 
 /// Everything that has an opinion about what may be changed.
 ///
