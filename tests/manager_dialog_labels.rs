@@ -43,7 +43,13 @@ use wixen_mail::application::filters::{
     A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, a_way_of_matching_compares_against_nothing,
     the_words_for_a_field, the_words_for_a_way_of_matching,
 };
-use wixen_mail::presentation::wx_managers::{FilterRule, build_filter_edit_dialog, make_shell};
+use wixen_mail::application::saved_searches::{
+    Question, THE_FIELD_A_SAVED_SEARCH_NEVER_SEES, what_a_saved_search_cannot_find_with,
+};
+use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::wx_managers::{
+    FilterRule, build_filter_edit_dialog, build_rule_edit_dialog, make_shell,
+};
 use wxdragon::prelude::*;
 
 /// One check that failed: what it was about, and what was wrong with it.
@@ -252,6 +258,218 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
                     ));
                 }
                 opened.dialog.destroy();
+            }
+
+            // ── The condition editor offers what the filter editor does ─────
+            //
+            // Compared against the other dialog rather than against a written
+            // list, because the claim is that there is one vocabulary and not
+            // that either dialog matches something typed out here. The filter
+            // dialog's own two lists are pinned against the engine's constants
+            // above, so this makes the pair transitive.
+            //
+            // Both non-empty as well as equal: two dialogs offering nothing
+            // are equal, and a check that only asked whether they matched
+            // would pass over exactly that.
+            let a11y = Arc::new(Accessibility::new().expect("an accessibility layer"));
+            let fresh_rule = build_rule_edit_dialog(&parent, None, &a11y, None);
+            let fresh_filter = build_filter_edit_dialog(&parent, None, None);
+
+            for (what, in_the_condition, in_the_filter) in [
+                (
+                    "the Match Field list",
+                    offered(&fresh_rule.field_choice),
+                    offered(&fresh_filter.field_choice),
+                ),
+                (
+                    "the Match Type list",
+                    offered(&fresh_rule.match_choice),
+                    offered(&fresh_filter.match_choice),
+                ),
+            ] {
+                if in_the_condition.is_empty() {
+                    wrong.push((
+                        format!("{what} in the condition editor"),
+                        "offers nothing at all, so comparing it against the filter editor \
+                         would prove nothing"
+                            .to_string(),
+                    ));
+                }
+                if in_the_condition != in_the_filter {
+                    wrong.push((
+                        what.to_string(),
+                        format!(
+                            "the condition editor offers {in_the_condition:?} and the filter \
+                             editor offers {in_the_filter:?}, so one of them holds a list of \
+                             its own"
+                        ),
+                    ));
+                }
+            }
+            fresh_filter.dialog.destroy();
+
+            // ── A new condition opens on something, not on nothing ──────────
+            //
+            // A `Choice` with no selection reads out as an unfilled combo box,
+            // and OK on one stores the empty string as the field.
+            for (what, chosen) in [
+                (
+                    "the Match Field list",
+                    fresh_rule.field_choice.get_string_selection(),
+                ),
+                (
+                    "the Match Type list",
+                    fresh_rule.match_choice.get_string_selection(),
+                ),
+            ] {
+                if chosen.as_deref().unwrap_or_default().is_empty() {
+                    wrong.push((
+                        format!("{what} in a new condition"),
+                        "opens with nothing selected, so it reads out as an unfilled combo \
+                         box and OK would store the empty string"
+                            .to_string(),
+                    ));
+                }
+            }
+            if !fresh_rule.pattern_f.get_value().is_empty() {
+                wrong.push((
+                    "the Pattern box in a new condition".to_string(),
+                    format!(
+                        "opens holding {:?} rather than empty",
+                        fresh_rule.pattern_f.get_value()
+                    ),
+                ));
+            }
+
+            // ── Every control the condition editor builds carries a name ────
+            for (what, choice) in [
+                ("the Match Field list", &fresh_rule.field_choice),
+                ("the Match Type list", &fresh_rule.match_choice),
+            ] {
+                if choice.get_accessible().is_none() {
+                    wrong.push((
+                        format!("{what} in the condition editor"),
+                        "carries no accessible object, and a Choice has no text of its own \
+                         here, so NVDA reads an unnamed combo box"
+                            .to_string(),
+                    ));
+                }
+            }
+            if fresh_rule
+                .cs_check
+                .get_label()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+            {
+                wrong.push((
+                    "the Case Sensitive tick in the condition editor".to_string(),
+                    "carries no label on the control, so UI Automation has no name for it \
+                     and Narrator reads an unnamed check box"
+                        .to_string(),
+                ));
+            }
+            fresh_rule.dialog.destroy();
+
+            // ── Opening on a stored condition selects all four of it ────────
+            let stored_question = Question {
+                field: "body_html".to_string(),
+                match_type: "ends_with".to_string(),
+                pattern: "unsubscribe".to_string(),
+                case_sensitive: true,
+            };
+            let opened = build_rule_edit_dialog(&parent, Some(&stored_question), &a11y, None);
+            for (what, chosen, wanted) in [
+                (
+                    "the Match Field list",
+                    opened.field_choice.get_string_selection(),
+                    the_words_for_a_field(&stored_question.field),
+                ),
+                (
+                    "the Match Type list",
+                    opened.match_choice.get_string_selection(),
+                    the_words_for_a_way_of_matching(&stored_question.match_type),
+                ),
+            ] {
+                if chosen.as_deref() != wanted {
+                    wrong.push((
+                        format!("{what} opened on a stored condition"),
+                        format!(
+                            "selected {chosen:?} rather than {wanted:?}, so pressing OK \
+                             rewrites the condition to ask something else"
+                        ),
+                    ));
+                }
+            }
+            if opened.pattern_f.get_value() != stored_question.pattern {
+                wrong.push((
+                    "the Pattern box opened on a stored condition".to_string(),
+                    format!(
+                        "holds {:?} rather than {:?}",
+                        opened.pattern_f.get_value(),
+                        stored_question.pattern
+                    ),
+                ));
+            }
+            if !opened.cs_check.is_checked() {
+                wrong.push((
+                    "the Case Sensitive tick opened on a stored condition".to_string(),
+                    "is clear, so a condition that matched case would stop doing so the \
+                     first time somebody opened it"
+                        .to_string(),
+                ));
+            }
+            opened.dialog.destroy();
+
+            // ── What a saved search cannot find, said where it is chosen ────
+            //
+            // Three fields, because there are two disclosures and they are not
+            // the same one (D-2-13), and because a check that only looked for
+            // a sentence on one field could be answered by a dialog that says
+            // the same thing about all eleven.
+            for (field, expected) in [
+                (THE_FIELD_A_SAVED_SEARCH_NEVER_SEES, true),
+                ("body_plain", true),
+                ("subject", false),
+            ] {
+                let on = build_rule_edit_dialog(
+                    &parent,
+                    Some(&Question {
+                        field: field.to_string(),
+                        match_type: "contains".to_string(),
+                        pattern: "invoice".to_string(),
+                        case_sensitive: false,
+                    }),
+                    &a11y,
+                    None,
+                );
+                let said = on.what_it_can_find.get_label();
+                match (expected, said.trim().is_empty()) {
+                    (true, true) => wrong.push((
+                        format!("a condition about {field}"),
+                        "opens saying nothing, so a condition that can only ever find \
+                         nothing is offered in silence"
+                            .to_string(),
+                    )),
+                    (false, false) => wrong.push((
+                        format!("a condition about {field}"),
+                        format!(
+                            "opens saying {said:?}, and a saved search searches this field \
+                             in full"
+                        ),
+                    )),
+                    _ => {}
+                }
+                if expected && Some(said.as_str()) != what_a_saved_search_cannot_find_with(field) {
+                    wrong.push((
+                        format!("a condition about {field}"),
+                        format!(
+                            "shows {said:?}, which is not the sentence the application layer \
+                             gives for it, so the window has a second wording of its own"
+                        ),
+                    ));
+                }
+                on.dialog.destroy();
             }
 
             // ── The manager shell's own list ────────────────────────────────
