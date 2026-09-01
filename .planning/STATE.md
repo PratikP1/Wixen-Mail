@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02-07-PLAN.md on branch gsd/plan-02-07, not merged
-last_updated: "2026-09-01T10:47:54.559Z"
-last_activity: "2026-09-01, 02-07 done: the second door is open. A saved search's conditions are edited from its own row in the folder tree and from the Saved Searches menu, and written back in one transaction on the way out. Both of 02-06's stub entries in WINDOWS.md are closed. Nothing has been opened in a running build, which is recorded rather than claimed"
-state_head: 27d66c70668a0ec07c84ae00885226e324d76ce9
+stopped_at: Completed 02-08-PLAN.md on branch gsd/plan-02-08, not merged. Phase 02 executed, unverified
+last_updated: "2026-09-01T12:54:50.138Z"
+last_activity: "2026-09-01, 02-08 done and phase 02 executed: saved searches sit under the account they belong to, and opening one runs it against that account rather than against whichever account was last looked at. The tree change was the smaller half; the run reading held state was the defect 01-14 closed for folders and this closes for searches. run_a_saved_search is no longer handed the held state at all. Nothing has been drawn in a running build, and WINDOWS.md stands at 30 open"
+state_head: 3f61e91c00282f4101ee15d50b9a2aac52d54f43
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 02 (Search that says what it covers) — EXECUTING, 7 of 8 plans done (02-07 is on branch gsd/plan-02-07 and not merged).
+Phase: 02 (Search that says what it covers) — EXECUTED, 8 of 8 plans done, awaiting verification. 02-07 is on branch gsd/plan-02-07 and 02-08 on branch gsd/plan-02-08, neither merged.
 Corrected on 2026-09-01: this header and the frontmatter both said phase 01
 while five phase 02 plans had shipped, which is what made
 `gsd-tools query state.advance-plan` fail and tagged new decisions `[Phase 01]`.
@@ -84,7 +84,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-01, 02-07 done: the second door is open. A saved search's conditions are edited from its own row in the folder tree and from the Saved Searches menu, and written back in one transaction on the way out. Both of 02-06's stub entries in WINDOWS.md are closed. Nothing has been opened in a running build, which is recorded rather than claimed
+Last activity: 2026-09-01, 02-08 done and phase 02 executed. Saved searches sit under the account they belong to, and opening one runs it against that account rather than against whichever account was last looked at. The tree change was the smaller half of it: moving the rows under account branches without changing the run would have made a latent defect reachable, the same one 01-14 closed for folders. `run_a_saved_search` is no longer handed the held state at all, so the wrong answer is out of scope rather than merely unread. Nothing has been drawn in a running build.
 
 Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
@@ -92,12 +92,11 @@ different things about the same work all through this phase; the plan count read
 7 while 11 were done, which is how long a number nothing recomputes can sit here
 being wrong.
 
-The suite is 5,958 unit as of `bash scripts/check.sh all` on 2026-09-01, with
-one ignored and every other target green in the same run. 02-07 added 30 of
-those, across `presentation::manager_words`, `presentation::wx_managers`,
-`presentation::folder_tree`, `presentation::wx_app` and
-`application::context_menu`, plus four checks inside the two window-building
-integration targets.
+The suite is 5,974 unit as of `cargo test --lib` on 2026-09-01, with one ignored
+and every integration target green in the same session. 02-07 added 30 of those
+and 02-08 added 16, across `presentation::folder_tree` and
+`presentation::wx_app`. The release build has not been run on the 02-08 branch:
+`scripts/check.sh all` is the merge gate and it is Pratik's.
 
 The counter above could not be advanced by `gsd-tools query state.advance-plan`
 on 2026-09-01: it looks for "Current Plan" and "Total Plans in Phase" lines this
@@ -249,6 +248,8 @@ ahead:
 - [Phase 02]: 02-07: a saved search's row reports its own focus on the menu key, rather than an entry being filtered out of the folder list. Nothing in the codebase decided menu entries per row.
 - [Phase 02]: 02-07: a search a newer version wrote keeps the Edit conditions entry and is refused with a sentence, in the wording Enter on the same row already gives.
 - [Phase 02]: 02-07: every change to a condition list says how many are left, on the end of the one sentence. Only a condition list counts out loud, decided from the kind rather than passed in.
+- [Phase 02]: A saved-search command takes its account from the row under the cursor, never from active_account_id, and run_a_saved_search is not handed the held state at all. A signature that cannot see the wrong answer is a guarantee; a check that the body does not read it is a reading somebody has to trust.
+- [Phase 02]: Every group that mirrors the account structure is ordered by one function, favourites::what_each_account_has. Two groupings of the same accounts is the shape that comes apart, and the test compares the two groups' orders rather than restating either.
 
 ### Pending Todos
 
@@ -330,8 +331,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T10:47:54.524Z
-Stopped at: Completed 02-07-PLAN.md on branch gsd/plan-02-07, not merged
+Last session: 2026-09-01T12:54:50.099Z
+Stopped at: Completed 02-08-PLAN.md on branch gsd/plan-02-08, not merged. Phase 02 executed, unverified
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.

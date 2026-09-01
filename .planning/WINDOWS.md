@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 26
+open_count: 30
 waived_count: 0
 fixed_count: 2
-total_count: 28
-last_updated: 2026-09-01T10:38:36.983Z
+total_count: 32
+last_updated: 2026-09-01T12:51:10.257Z
 ---
 
 # Broken Windows Ledger
@@ -43,6 +43,10 @@ last_updated: 2026-09-01T10:38:36.983Z
 | 26 | 02 | unrun-verify | src/presentation/manager_words.rs |  | Whether a tally on the end of every condition change reads well by ear, or is a clause somebody stops hearing. Only a condition list counts out loud, and whether that is the right set is a judgement a screen reader settles | open |  | 2026-09-01T10:38:36.133Z |  |
 | 27 | 02 | unrun-verify | src/application/context_menu.rs |  | Whether the saved-search context menu reads correctly with a screen reader, and whether Edit conditions first is the right order by ear rather than Run this search again | open |  | 2026-09-01T10:38:36.557Z |  |
 | 28 | 02 | deviation | tests/manager_dialog_labels.rs |  | wxdragon 0.9.17's ListCtrl::get_item_text loses the last character of every cell and returns a NUL in its place, so the window check reads a cell through a helper that allows for it. Upstream defect, not reported yet | open |  | 2026-09-01T10:38:36.983Z |  |
+| 29 | 02 | unrun-verify | src/presentation/folder_tree.rs |  | The saved-search account branches have never been drawn in a running build. Whether a search now three levels deep reads well by ear, and whether the branch and the account's own branch are distinguishable when both say the account's name, is unverified | open |  | 2026-09-01T12:51:08.946Z |  |
+| 30 | 02 | unrun-verify | src/presentation/wx_app.rs |  | Landing on a saved search now sets the working account. Whether that is heard, and whether somebody notices they have moved accounts by arrowing onto a search, is unverified by ear | open |  | 2026-09-01T12:51:09.391Z |  |
+| 31 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The refusal for a saved search whose account has gone needs two accounts and one of them removed while a row for its search is still on screen. Never reached in a running build and unverified by ear | open |  | 2026-09-01T12:51:09.821Z |  |
+| 32 | 02 | unrun-verify | src/presentation/wx_app.rs |  | A saved search has never been run against a real account under two accounts. That opening one under account B while account A is current returns B's mail is proved by tests over the decision and by the cache read that narrows on the account, not by a live run | open |  | 2026-09-01T12:51:10.257Z |  |
 
 ````json
 [
@@ -380,6 +384,54 @@ last_updated: 2026-09-01T10:38:36.983Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T10:38:36.983Z",
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/folder_tree.rs",
+    "line": null,
+    "description": "The saved-search account branches have never been drawn in a running build. Whether a search now three levels deep reads well by ear, and whether the branch and the account's own branch are distinguishable when both say the account's name, is unverified",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T12:51:08.946Z",
+    "resolved_at": null
+  },
+  {
+    "id": 30,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Landing on a saved search now sets the working account. Whether that is heard, and whether somebody notices they have moved accounts by arrowing onto a search, is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T12:51:09.391Z",
+    "resolved_at": null
+  },
+  {
+    "id": 31,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The refusal for a saved search whose account has gone needs two accounts and one of them removed while a row for its search is still on screen. Never reached in a running build and unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T12:51:09.821Z",
+    "resolved_at": null
+  },
+  {
+    "id": 32,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "A saved search has never been run against a real account under two accounts. That opening one under account B while account A is current returns B's mail is proved by tests over the decision and by the cache read that narrows on the account, not by a live run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T12:51:10.257Z",
     "resolved_at": null
   }
 ]

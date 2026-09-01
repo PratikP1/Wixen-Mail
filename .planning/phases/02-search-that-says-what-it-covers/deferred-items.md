@@ -90,3 +90,23 @@ about fifty minutes.
   version. The fix is a refusal or a passthrough rather than a silent
   rewrite, and it is a decision about what a dialog owes a value it cannot
   show.
+
+## From 02-08
+
+- **Every branch row in the folder tree still reports a folder's context
+  menu.** `wire_context_menu(&folder_tree, ...)` answers `Focus::SavedSearch`
+  for a saved search's own row and `Focus::MailFolders` for everything else,
+  so the new saved-search account branch offers "Get older messages" and
+  "Folders to keep up to date" on a row that is not a folder. That is not new
+  and it is not this plan's: the Favourites branch, the Labels heading and the
+  "On this computer" group have all done the same since 01-14 and D-29, and
+  02-07 gave only the saved-search row its own focus. Fixing it means deciding
+  what a branch row's menu should hold, which is a decision rather than a fix.
+
+- **Two accounts given the same name are still one row to
+  `where_a_row_sits`.** A saved-search branch reads out as the account's name,
+  so under the Saved Searches heading two accounts called "Work" are two rows
+  whose label chains are identical and the pairing picks the first. The same
+  has been true of the account branches themselves since 01-14 and the comment
+  on `where_a_row_sits` says so; the new group inherits it rather than adding
+  it.

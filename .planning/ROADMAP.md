@@ -132,7 +132,7 @@ Plans:
   5. Fetching the missing text is built and gated. Since it is a read and every `may_i` call gates a write, `application::allowed` gains a read dimension, on by default, which is a stated exception to that type's rule that `Default` is the safe end.
   6. Saved searches sit inside the account structure the way pinned folders do, so two accounts each holding a search of the same name are never two identical rows.
 
-**Plans**: 7/8 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
+**Plans**: 8/8 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
 
 Plans:
 
@@ -166,7 +166,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [ ] 02-08-PLAN.md — Saved searches inside the account structure, and a search that runs against its own account (D-2-05)
+- [x] 02-08-PLAN.md — Saved searches inside the account structure, and a search that runs against its own account (D-2-05)
 
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-31 after the phase discussion, from four to six. The original criterion 4 assumed a smart folder was a separate object from a saved search; `Question::as_a_rule` converts a saved-search question into a `FilterRule` to evaluate it, so they are one vocabulary and the gap is only reach. `.planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md` is the authority on the detail. The largest thing here is not search: widening `Allowed` to cover reads touches a model three places must agree on, and if it ripples further it is a candidate for its own phase rather than something to absorb quietly.
@@ -305,7 +305,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Folders and conversations | 13/13 | Complete | 2026-08-31 |
-| 2. Search that says what it covers | 7/8 | In Progress|  |
+| 2. Search that says what it covers | 8/8 | In Progress|  |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
