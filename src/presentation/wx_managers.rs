@@ -2581,7 +2581,7 @@ fn the_words_for_every_way_of_matching() -> Vec<String> {
 ///
 /// A subject that contains a word: that is what the search box asks, so it is
 /// the condition a rule editor is most often opened to write.
-const WHAT_A_NEW_CONDITION_ASKS_FIRST: (&str, &str) = ("subject_line", "contains");
+const WHAT_A_NEW_CONDITION_ASKS_FIRST: (&str, &str) = ("subject", "contains");
 
 /// What a condition still needs before it can be saved, if anything.
 ///
@@ -2597,8 +2597,7 @@ const WHAT_A_NEW_CONDITION_ASKS_FIRST: (&str, &str) = ("subject_line", "contains
 /// quite happily. Refusing that would be asking somebody to fill in the box
 /// the dialog has just switched off, which is a trap rather than a refusal.
 fn what_a_condition_still_needs(match_words: &str, typed: &str) -> Option<&'static str> {
-    let _ = match_words;
-    if typed.trim().is_empty() {
+    if the_pattern_box_asks_for_something(match_words) && typed.trim().is_empty() {
         Some("Something to compare against is needed before this can be saved.")
     } else {
         None
