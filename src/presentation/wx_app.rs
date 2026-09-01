@@ -6,6 +6,7 @@
 use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
+use crate::application::saved_searches::TheSearchThatWasRun;
 use crate::common::Result;
 use crate::common::paths::AppPaths;
 use crate::common::types::MessageBody;
@@ -362,13 +363,19 @@ pub struct WxUIState {
     /// Both lists, because a search this build cannot read is still a row in
     /// somebody's tree and still has to answer when it is opened.
     pub saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead,
-    /// What was last typed into the search box while Mail was showing.
+    /// The search last run from the search box while Mail was showing.
     ///
     /// What Save This Search saves. Kept because the box is a modal dialog
     /// that is gone by the time anybody decides the answer was worth keeping,
     /// and asking somebody to type the question twice is the work this whole
     /// feature exists to remove.
-    pub last_mail_search: Option<String>,
+    ///
+    /// The words and the "In" list's answer together, in one value, because
+    /// that is the whole of what was asked. It held the words alone, so
+    /// choosing Subject Only, From Only or Current Folder and then saving gave
+    /// back a search across the whole account: the second half was read by the
+    /// search that ran and then dropped on the floor.
+    pub mail_search_that_was_run: Option<crate::application::saved_searches::TheSearchThatWasRun>,
     /// The calendars, kept so the sidebar can say which one was landed on.
     ///
     /// The tree holds text and nothing else, so the handler that hides or
@@ -426,7 +433,7 @@ impl Default for WxUIState {
             labels: Vec::new(),
             saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead::default(
             ),
-            last_mail_search: None,
+            mail_search_that_was_run: None,
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
@@ -4586,12 +4593,18 @@ impl WxMailApp {
                             };
                             if let Some((q, looking_in)) = show_search_dialog(&frame, &offers) {
                                 // Kept so Save This Search has something to
-                                // save. Mail only: the other modules search
-                                // their own items, and a saved search is a
-                                // question about messages.
-                                if showing == PimModule::Mail {
-                                    lock_state(&state).last_mail_search = Some(q.clone());
-                                }
+                                // save: the words and the "In" list's answer
+                                // together, which is the whole of what was
+                                // asked. Mail only, and that is decided in
+                                // there rather than here, so there is one
+                                // place holding the rule and one place
+                                // writing the value.
+                                keep_the_search_that_ran(
+                                    &mut lock_state(&state),
+                                    showing,
+                                    &q,
+                                    looking_in,
+                                );
                                 managers::search_whatever_is_showing(
                                     showing,
                                     &state,
@@ -6677,11 +6690,14 @@ fn save_this_search(
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
-    let (typed, already_used) = {
+    let (ran, already_used) = {
         let held = lock_state(state);
-        (held.last_mail_search.clone(), names_already_used(&held))
+        (
+            held.mail_search_that_was_run.clone(),
+            names_already_used(&held),
+        )
     };
-    let Some(typed) = typed.filter(|typed| !typed.trim().is_empty()) else {
+    let Some(ran) = ran.filter(|ran| !ran.typed.trim().is_empty()) else {
         // Refused out loud rather than on the status bar alone. From the
         // keyboard, a command that writes into a bar at the bottom of the
         // window is indistinguishable from one that was never wired up.
@@ -6697,7 +6713,7 @@ fn save_this_search(
         return refuse_a_command(tx, "Choose an account first.");
     };
 
-    let note = a_typed_search_in_words(&typed);
+    let note = a_typed_search_in_words(&ran.typed);
     let Some(name) = ask_for_a_search_name(
         frame,
         a11y,
@@ -6705,7 +6721,7 @@ fn save_this_search(
             window: "Save This Search",
             label: "&Name for this search:",
             note: Some(&note),
-            filled_in: &typed,
+            filled_in: &ran.typed,
             button: "&Save",
         },
         &already_used,
@@ -6717,7 +6733,7 @@ fn save_this_search(
         id: uuid::Uuid::new_v4().to_string(),
         name: name.clone(),
         join: WHAT_A_TYPED_SEARCH_JOINS_WITH,
-        questions: what_a_typed_search_asks(&typed),
+        questions: what_a_typed_search_asks(&ran.typed),
         // Everywhere in this account, whatever the search box's "In" list was
         // set to when the search ran. What is kept here is the typed words, not
         // where they were looked for, so narrowing this would be narrowing on
@@ -14148,6 +14164,46 @@ fn folder_on_screen(state: &WxUIState) -> Option<i64> {
         .and_then(|which| the_id_of(state, which))
 }
 
+/// The path of the folder on screen, which is what a saved search stores.
+///
+/// The same row [`folder_on_screen`] reads, answered as the path rather than
+/// the row number. A pinned copy answers with the folder it is a copy of,
+/// because [`folder_tree::WhichRow::opens`] is the one place that decides
+/// which folder a row is about.
+fn the_path_of_the_folder_on_screen(state: &WxUIState) -> Option<String> {
+    match state.selected_folder.as_ref().and_then(|w| w.opens()) {
+        Some(folder_tree::WhichRow::Folder { path, .. }) => Some(path),
+        _ => None,
+    }
+}
+
+/// Keep the search that has just run, so Save This Search has it to save.
+///
+/// The one place this is written. Both halves of what was asked go in
+/// together, from one value, because a state where the words came from one
+/// search and the scope from another is exactly the disagreement that put a
+/// search across the whole account under the name somebody gave a search of
+/// one folder.
+///
+/// Mail only. The other modules search their own items and a saved search is a
+/// question about messages, so searching contacts leaves what mail last asked
+/// alone rather than overwriting it with a question no saved search could
+/// hold.
+fn keep_the_search_that_ran(
+    state: &mut WxUIState,
+    showing: PimModule,
+    typed: &str,
+    looking_in: WhereToSearch,
+) {
+    let _ = showing;
+    let _ = looking_in;
+    state.mail_search_that_was_run = Some(TheSearchThatWasRun::new(
+        typed.to_string(),
+        WhereToSearch::EveryFolder,
+        the_path_of_the_folder_on_screen(state),
+    ));
+}
+
 /// What a conversation is called and how big it is, in one sentence.
 ///
 /// One string rather than two, because the conversation dialog reads it twice:
@@ -20756,6 +20812,159 @@ mod tests {
         let mut recovered = lock_state(&state);
         recovered.status_message = "still alive".to_string();
         assert_eq!(recovered.status_message, "still alive");
+    }
+
+    // ── What the search box was asked survives the box closing ──────────
+    //
+    // The "In" list offered four answers, the search that ran read all four,
+    // and only the typed words were kept. So choosing From Only and saving
+    // gave back a search over the subject, the sender and the recipients:
+    // half of what somebody asked for, under the name they gave the whole of
+    // it. These are about the state, not about what gets stored; the stored
+    // half is the next task's.
+
+    /// A state with a folder open, which is what makes Current Folder
+    /// offerable and what a saved search would narrow to.
+    fn showing_a_folder(path: &str) -> WxUIState {
+        WxUIState {
+            selected_folder: Some(folder_tree::WhichRow::Folder {
+                account: "first".to_string(),
+                path: path.to_string(),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_the_search_that_ran_keeps_what_the_in_box_said_beside_what_was_typed() {
+        let mut state = WxUIState::default();
+
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::SenderOnly,
+        );
+
+        let kept = state
+            .mail_search_that_was_run
+            .expect("the search that just ran");
+        assert_eq!(kept.typed, "invoice");
+        assert_eq!(
+            kept.looking_in,
+            WhereToSearch::SenderOnly,
+            "the In box said From Only and the answer was dropped, which is \
+             the whole defect: what gets saved is then a wider search than \
+             the one that ran"
+        );
+    }
+
+    #[test]
+    fn test_a_second_search_replaces_the_words_and_the_scope_together() {
+        // The state that must not exist: words from one search and a scope
+        // from another. Saving that gives a search nobody ever ran.
+        let mut state = WxUIState::default();
+
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::SubjectOnly,
+        );
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "receipt",
+            WhereToSearch::SenderOnly,
+        );
+
+        let kept = state
+            .mail_search_that_was_run
+            .expect("the second search that ran");
+        assert_eq!(
+            (kept.typed.as_str(), kept.looking_in),
+            ("receipt", WhereToSearch::SenderOnly),
+            "one half of the second search is showing beside the other half \
+             of the first"
+        );
+    }
+
+    #[test]
+    fn test_a_search_in_another_module_leaves_what_mail_asked_alone() {
+        // A saved search is a question about messages, so a search of the
+        // contacts list has nothing a saved search could hold. Overwriting
+        // here would either lose the mail search or offer to save a question
+        // about contacts as one about mail.
+        let mut state = WxUIState::default();
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::SubjectOnly,
+        );
+
+        keep_the_search_that_ran(
+            &mut state,
+            PimModule::Contacts,
+            "ann",
+            WhereToSearch::EveryFolder,
+        );
+
+        let kept = state
+            .mail_search_that_was_run
+            .expect("the mail search, still there");
+        assert_eq!(
+            (kept.typed.as_str(), kept.looking_in),
+            ("invoice", WhereToSearch::SubjectOnly),
+            "searching another module wrote over what mail last asked"
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_kept_before_any_search_has_been_run() {
+        // Nothing for both, rather than an empty string and a default scope.
+        // Save This Search refuses on this, and a default scope would make
+        // that refusal read as a real answer.
+        assert_eq!(WxUIState::default().mail_search_that_was_run, None);
+    }
+
+    #[test]
+    fn test_the_folder_is_kept_only_when_the_in_box_named_it() {
+        // All Folders chosen while a folder happens to be open is a search
+        // across the account. Keeping the folder anyway would pin the saved
+        // search to wherever somebody was standing, which nobody asked for
+        // and nothing on screen said.
+        let mut narrowed = showing_a_folder("INBOX/Work");
+        keep_the_search_that_ran(
+            &mut narrowed,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::OneFolder(7),
+        );
+        assert_eq!(
+            narrowed
+                .mail_search_that_was_run
+                .and_then(|kept| kept.the_folder_looked_in),
+            Some("INBOX/Work".to_string()),
+            "Current Folder was chosen and the folder was not kept, so there \
+             is nothing to narrow the saved search by"
+        );
+
+        let mut everywhere = showing_a_folder("INBOX/Work");
+        keep_the_search_that_ran(
+            &mut everywhere,
+            PimModule::Mail,
+            "invoice",
+            WhereToSearch::SubjectOnly,
+        );
+        assert_eq!(
+            everywhere
+                .mail_search_that_was_run
+                .and_then(|kept| kept.the_folder_looked_in),
+            None,
+            "the In box did not name a folder, so keeping one narrows a \
+             search nobody narrowed"
+        );
     }
 
     // ── Module data actually reaches the panels ─────────────────────────

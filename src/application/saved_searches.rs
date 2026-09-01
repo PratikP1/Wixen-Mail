@@ -89,6 +89,7 @@
 
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule};
 use crate::data::message_cache::CachedMessage;
+use crate::data::message_cache::WhereToSearch;
 use crate::data::message_cache::saved_searches::TextStoredHere;
 
 /// One thing a saved search asks about a message.
@@ -346,6 +347,64 @@ pub const WHAT_A_TYPED_SEARCH_LOOKS_AT: [&str; 3] = ["subject", "from", "to"];
 /// not for a message whose subject and sender and recipients all carry it,
 /// which is almost nothing.
 pub const WHAT_A_TYPED_SEARCH_JOINS_WITH: Join = Join::Any;
+
+/// A search that was run from the search box, kept whole.
+///
+/// The words and the answer the "In" list gave, in one value, because they
+/// describe one act. Two fields side by side is the shape where one gets
+/// written and the other does not, and the compiler cannot see it; one value
+/// means every reader is enumerated. `01-05` made
+/// `WxUIState::selected_folder` a row identity rather than a display string
+/// for the same reason.
+///
+/// It is kept at all because the search box is a modal dialog that is gone by
+/// the time anybody decides the answer was worth keeping, and asking somebody
+/// to type the question twice is the work saving a search exists to remove.
+/// That was always true of the words. It is now true of the scope as well,
+/// which is the whole reason the scope has to be kept rather than worked out
+/// again from whatever is on screen later.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TheSearchThatWasRun {
+    /// The words typed into the box.
+    pub typed: String,
+    /// What the "In" list was set to.
+    pub looking_in: WhereToSearch,
+    /// The path of the folder [`Self::looking_in`] names, when it names one.
+    ///
+    /// The path rather than the row number, because that is what a saved
+    /// search stores and what its reader resolves. Filled only by
+    /// [`Self::new`], so this and `looking_in` cannot come to name different
+    /// folders, and taken at the moment the search ran rather than at the
+    /// moment somebody names it: those are different folders whenever
+    /// somebody has arrowed to another one in between.
+    pub the_folder_looked_in: Option<String>,
+}
+
+impl TheSearchThatWasRun {
+    /// What was asked, with the folder kept only when the "In" list named one.
+    ///
+    /// `folder_on_screen` is the folder that was open when the search ran. It
+    /// is dropped for the three answers that do not narrow to one folder, so
+    /// "All Folders" chosen while a folder happens to be open saves a search
+    /// across the account rather than one silently pinned to wherever somebody
+    /// was standing.
+    pub fn new(
+        typed: String,
+        looking_in: WhereToSearch,
+        folder_on_screen: Option<String>,
+    ) -> TheSearchThatWasRun {
+        TheSearchThatWasRun {
+            typed,
+            the_folder_looked_in: match looking_in {
+                WhereToSearch::OneFolder(_) => folder_on_screen,
+                WhereToSearch::EveryFolder
+                | WhereToSearch::SubjectOnly
+                | WhereToSearch::SenderOnly => None,
+            },
+            looking_in,
+        }
+    }
+}
 
 /// The search somebody typed, written as a saved search's questions.
 pub fn what_a_typed_search_asks(text: &str) -> Vec<Question> {
