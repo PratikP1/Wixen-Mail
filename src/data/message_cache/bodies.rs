@@ -409,6 +409,30 @@ impl MessageCache {
     /// number. This one takes it as an argument so the tests can name a small
     /// budget rather than having to build half a gigabyte of message bodies to
     /// watch an eviction happen.
+    ///
+    /// # It does not reindex, and that is deliberate
+    ///
+    /// The obvious tidy-up here is to call `index_message_for_search` after
+    /// each delete, so the search index forgets what this table has forgotten
+    /// and the two agree again. Do not. It takes a working search away.
+    ///
+    /// What happens without it: the index keeps the words of an evicted
+    /// message, so the search box still finds that message by a word that was
+    /// only in its text, while a saved search, which reads this table, no
+    /// longer can. The two searches cover different amounts of the same
+    /// mailbox. That is real and it is disclosed rather than hidden: the
+    /// sentence said before a saved search runs names which search it is
+    /// about, and `application::saved_searches::what_a_saved_search_covers`
+    /// carries the same reasoning from the other side.
+    ///
+    /// What happens with it: a message becomes unfindable at the moment its
+    /// text is evicted, rather than merely unsearchable by that text. From
+    /// where somebody is standing that is not a fix, it is mail disappearing
+    /// out of their search results because the cache filled up.
+    ///
+    /// `test_an_evicted_message_stays_findable_by_a_word_from_its_text` holds
+    /// this to it. Adding the call reddens that test and nothing else in the
+    /// library, measured 2026-08-31.
     pub fn evict_bodies_over(&self, budget_bytes: i64) -> Result<i64> {
         let mut total = self.cached_body_bytes()?;
         if total <= budget_bytes {
@@ -1047,6 +1071,84 @@ mod tests {
         cache.save_message_body(id, Some("tiny"), None).unwrap();
         assert_eq!(cache.evict_bodies_over(1_000_000).unwrap(), 0);
         assert!(cache.get_message_body(id).unwrap().is_some());
+    }
+
+    /// How many messages the search box finds for one word.
+    fn found_by_the_search_box(cache: &MessageCache, word: &str) -> usize {
+        cache
+            .search_messages(
+                "a1",
+                word,
+                crate::data::message_cache::WhereToSearch::EveryFolder,
+                10,
+            )
+            .expect("the search to run")
+            .len()
+    }
+
+    #[test]
+    fn test_an_evicted_message_stays_findable_by_a_word_from_its_text() {
+        // The claim the doc on `evict_bodies_over` makes, under test rather
+        // than left as prose. Eviction deletes the stored text and leaves the
+        // word index alone, so the search box goes on finding this message by
+        // a word the cache no longer holds while a saved search, which reads
+        // the stored text, no longer can. Two searches, two coverages, which
+        // is why the sentence said before a saved search names which one it is
+        // about.
+        //
+        // The word sits past the snippet on purpose. A snippet is the first
+        // 200 characters, it is kept with the message and is never evicted,
+        // and it is in the index too, so a word inside it would be found
+        // whether or not eviction reindexed and this test would pass against
+        // the very change it exists to notice.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        let filler = "The quarterly figures are attached. ".repeat(10);
+        cache
+            .save_message_body(id, Some(&format!("{filler} aardvark")), None)
+            .unwrap();
+        assert_eq!(
+            found_by_the_search_box(&cache, "aardvark"),
+            1,
+            "the word was never in the index, so this test would prove nothing"
+        );
+
+        assert!(
+            cache.evict_bodies_over(0).unwrap() > 0,
+            "nothing was evicted"
+        );
+        assert!(
+            cache.get_message_body(id).unwrap().is_none(),
+            "the text was not evicted, so this test would prove nothing"
+        );
+
+        assert_eq!(
+            found_by_the_search_box(&cache, "aardvark"),
+            1,
+            "evicting a message's text took it out of the search box as well, \
+             which makes it unfindable rather than merely unsearchable by its \
+             text"
+        );
+        assert_eq!(
+            found_by_the_search_box(&cache, "quarterly"),
+            1,
+            "the search box stopped working altogether, so the assertion above \
+             says nothing about the index keeping what it had"
+        );
+        assert_eq!(
+            cache
+                .messages_a_saved_search_reads(
+                    "a1",
+                    None,
+                    crate::data::message_cache::saved_searches::TheMessageText::Read,
+                )
+                .expect("the mail a saved search reads")[0]
+                .body_plain,
+            None,
+            "a saved search still reads this message's text, so the two \
+             searches have not come apart and the sentence about coverage is \
+             describing something that does not happen"
+        );
     }
 
     #[test]
