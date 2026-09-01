@@ -1231,7 +1231,7 @@ mod finding_things {
         let home = TempHome::named("coverage_column_backfill_empty_body", |dir| {
             dir.to_path_buf()
         });
-        let (ordinary, attachments_only, live) = {
+        let (ordinary, attachments_only, short, live) = {
             let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
             let folder = cache
                 .save_folder(&CachedFolder {
@@ -1256,6 +1256,19 @@ mod finding_things {
             cache
                 .save_message_body(attachments_only, None, None)
                 .expect("a body row holding neither half");
+            // Message text is stored two ways and the condition has to read
+            // both. A body this short is kept as text, because packing it
+            // would make it longer; the one above is long enough to be worth
+            // packing and is kept packed. A condition that read only the
+            // packed columns would count this one as no text at all, which is
+            // how a filter rule matching on message text stopped matching
+            // once before.
+            let short = cache
+                .save_message(&message(folder, 3, "Short"))
+                .expect("a third message");
+            cache
+                .save_message_body(short, Some("Yes."), None)
+                .expect("a body too short to be worth packing");
 
             // The fixture proves itself before either answer is trusted. A
             // fixture whose bodies all hold text cannot tell "a row is here"
@@ -1272,12 +1285,13 @@ mod finding_things {
             let live = [
                 what_the_column_says(&cache, ordinary),
                 what_the_column_says(&cache, attachments_only),
+                what_the_column_says(&cache, short),
             ];
             assert_eq!(
                 live,
-                [1, 0],
-                "the live writer answered these two messages the same way, so \
-                 this fixture cannot tell a row from words in a row"
+                [1, 0, 1],
+                "the live writer answered these messages the same way, so this \
+                 fixture cannot tell a row from words in a row"
             );
 
             // Dropped to stand in for a database written before this column
@@ -1292,7 +1306,7 @@ mod finding_things {
                     [],
                 )
                 .expect("a database without the column");
-            (ordinary, attachments_only, live)
+            (ordinary, attachments_only, short, live)
         };
 
         let reopened = MessageCache::new(home.to_path_buf(), None).expect("the cache again");
@@ -1301,10 +1315,12 @@ mod finding_things {
             [
                 what_the_column_says(&reopened, ordinary),
                 what_the_column_says(&reopened, attachments_only),
+                what_the_column_says(&reopened, short),
             ],
             live,
             "the backfill and the live writer answered one column with two \
-             different questions, for [an ordinary message, one with no text part]"
+             different questions, for [a packed body, no text part at all, a \
+             body kept as text]"
         );
     }
 
