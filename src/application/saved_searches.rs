@@ -698,6 +698,48 @@ pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
     }
 }
 
+/// What a saved search cannot find with a condition on this field, if there is
+/// anything to say.
+///
+/// `None` for most of the eleven, which is the ordinary case: a condition
+/// about the subject or the sender searches exactly what somebody would
+/// expect. Three fields do not, and each is a different fact, said at the
+/// moment somebody chooses it rather than left for them to work out from an
+/// empty result list.
+///
+/// **Two sentences rather than one, and that is the whole point of it.**
+/// D-2-13 records the decision and the objection to it: there really are two
+/// searches in this program and they cover different amounts of the same
+/// mailbox, so a single sentence covering "what a search misses" would be
+/// wrong about one of them whichever way it was written. Collapsing them is
+/// the defect. [`what_a_saved_search_covers`] carries the same reasoning for
+/// the search as a whole, and the doc on `evict_bodies_over` carries it from
+/// the eviction side.
+///
+/// The thrown-away-mail field is offered rather than left out, because D-2-01
+/// says the rule editor writes any of the eleven and that is locked.
+/// `02-RESEARCH.md`'s third open question recommended leaving it out; a
+/// decision beats a recommendation, and the way to satisfy both is to offer it
+/// and say what it does. What makes it worth saying is
+/// `crate::data::message_cache::saved_searches::scan_query`, which excludes
+/// mail marked deleted from every saved search by design, for the reason its
+/// own doc gives: turning it up would make a saved search the one place in the
+/// program that shows somebody the mail they have thrown away.
+pub fn what_a_saved_search_cannot_find_with(field: &str) -> Option<&'static str> {
+    let _ = field;
+    Some("A saved search may not find everything.")
+}
+
+/// The field a saved search's own scan has already decided the answer to.
+///
+/// Written down here rather than spelled in the sentence above, so the one
+/// place that knows this field is special is the one place a reader looking
+/// for it lands. The exclusion itself lives in
+/// `crate::data::message_cache::saved_searches::scan_query`, which is where it
+/// has to be: a search is narrowed by the read that gathers its messages, not
+/// by the test each message is put to.
+pub const THE_FIELD_A_SAVED_SEARCH_NEVER_SEES: &str = "deleted";
+
 /// How many of a search's results the message list is filled with.
 ///
 /// The same bound every other listing here carries, and for the same reason: a
@@ -2187,5 +2229,85 @@ mod tests {
             "the folder was answered here, so the query that narrows it would \
              be applying it twice or not at all"
         );
+    }
+
+    // ── What a condition on a field cannot find ─────────────────────────────
+
+    #[test]
+    fn test_a_condition_about_thrown_away_mail_says_a_saved_search_never_looks_at_it() {
+        let said = what_a_saved_search_cannot_find_with(THE_FIELD_A_SAVED_SEARCH_NEVER_SEES)
+            .expect("the field a saved search never sees to carry a sentence");
+        assert!(
+            said.contains("thrown away"),
+            "the sentence about mail that has been thrown away does not mention it: {said:?}"
+        );
+        assert!(
+            !said.contains("search box"),
+            "the sentence about thrown-away mail is talking about the search box, which is \
+             the other coverage: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_condition_about_message_text_says_which_search_covers_less() {
+        // Both fields that hold the text, because the coverage gap belongs to
+        // the table they are read from and not to one of them.
+        for field in crate::application::filters::A_FIELD_HOLDING_THE_MESSAGE_TEXT {
+            let said = what_a_saved_search_cannot_find_with(field)
+                .unwrap_or_else(|| panic!("{field} to carry a sentence"));
+            assert!(
+                said.contains("search box"),
+                "the sentence for {field} does not name the other search, so it leaves \
+                 somebody thinking one number covers both: {said:?}"
+            );
+            assert!(
+                !said.contains("thrown away"),
+                "the sentence for {field} is talking about thrown-away mail: {said:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_two_things_a_saved_search_misses_are_not_said_in_one_sentence() {
+        // D-2-13 in one assertion. Evicting a message's text takes it away
+        // from this search and deliberately leaves it findable from the search
+        // box; mail that has been thrown away is not searched by either. Two
+        // different facts, and one sentence covering both would be wrong about
+        // one of them whichever way it was written.
+        assert_ne!(
+            what_a_saved_search_cannot_find_with("body_plain"),
+            what_a_saved_search_cannot_find_with(THE_FIELD_A_SAVED_SEARCH_NEVER_SEES),
+            "the two coverages have been collapsed into one sentence"
+        );
+    }
+
+    #[test]
+    fn test_no_other_field_a_rule_may_name_carries_a_sentence() {
+        // The absence half, and it is only worth anything because the three
+        // presences above are asserted first: a lookup that answered nothing
+        // for everything would pass this on its own.
+        use crate::application::filters::{A_FIELD_A_RULE_MAY_NAME, a_rule_reads_the_message_text};
+
+        let quiet: Vec<&str> = A_FIELD_A_RULE_MAY_NAME
+            .iter()
+            .copied()
+            .filter(|field| {
+                !a_rule_reads_the_message_text(field)
+                    && *field != THE_FIELD_A_SAVED_SEARCH_NEVER_SEES
+            })
+            .collect();
+        assert_eq!(
+            quiet.len(),
+            8,
+            "the fields with nothing to disclose changed in number, so this list wants \
+             reading again rather than the count moving"
+        );
+        for field in quiet {
+            assert_eq!(
+                what_a_saved_search_cannot_find_with(field),
+                None,
+                "{field} carries a warning, and a saved search searches it in full"
+            );
+        }
     }
 }
