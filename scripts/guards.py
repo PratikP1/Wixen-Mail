@@ -308,6 +308,24 @@ def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
         capture_output=True,
         text=True,
     )
+    # Both halves can come back as None, which is not what the documentation
+    # for `capture_output` says and was seen anyway: a sweep of 208 records
+    # died on its 122nd with `NoneType + str` after about an hour of work.
+    # Whatever causes it is not diagnosed, so it is reported rather than
+    # smoothed into an empty string, for the same reason `scripts/mutants.sh`
+    # refuses a run whose compiler never started: a run that captured nothing
+    # learned nothing, and must not be told apart from a clean result only by
+    # whoever happens to read the log.
+    if finished.stdout is None or finished.stderr is None:
+        raise Wrong(
+            "cargo ran and this captured none of its output, so nothing can be "
+            "read from it. stdout is "
+            f"{'missing' if finished.stdout is None else 'present'} and stderr "
+            f"is {'missing' if finished.stderr is None else 'present'}, and "
+            f"cargo exited {finished.returncode}.\nThis guard was not measured. "
+            "Run it again on its own before believing anything about it."
+        )
+
     said = finished.stdout + finished.stderr
     verdicts = {name: verdict for name, verdict in VERDICT.findall(said)}
     if not verdicts:
@@ -507,6 +525,21 @@ def main() -> int:
                 measured = measure(guard, scratch)
             except Wrong as wrong:
                 print(f"   {wrong}\n")
+                slipped.append(guard.name)
+                continue
+            except Exception as broke:
+                # One record must not take the run down with it. A sweep of 208
+                # records is hours of building and running, and losing all of it
+                # to an unexpected failure on one is how a check nobody can
+                # afford to finish becomes a check nobody runs.
+                #
+                # Counted as slipped rather than passed, because a record that
+                # could not be measured is not a record that holds. The file is
+                # already restored: `measure` puts it back in a `finally`.
+                #
+                # KeyboardInterrupt and SystemExit are not `Exception`, so an
+                # interrupt still stops the run and still restores the tree.
+                print(f"   this record could not be measured: {broke!r}\n")
                 slipped.append(guard.name)
                 continue
             say_what_it_found(guard, measured)
