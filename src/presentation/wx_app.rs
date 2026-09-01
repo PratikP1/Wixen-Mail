@@ -6683,9 +6683,7 @@ fn save_this_search(
     frame: &Frame,
     a11y: &Arc<Accessibility>,
 ) {
-    use crate::application::saved_searches::{
-        SavedSearch, a_typed_search_in_words, created, what_a_typed_search_asks,
-    };
+    use crate::application::saved_searches::{SavedSearch, created, what_a_typed_search_asks};
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
@@ -6712,8 +6710,10 @@ fn save_this_search(
         return refuse_a_command(tx, "Choose an account first.");
     };
 
+    // The sentence and the questions out of the same value, so the window
+    // cannot describe one search while saving another.
     let asks = what_a_typed_search_asks(&ran);
-    let note = a_typed_search_in_words(&ran.typed);
+    let note = asks.in_words();
     let Some(name) = ask_for_a_search_name(
         frame,
         a11y,

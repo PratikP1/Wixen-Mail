@@ -428,6 +428,17 @@ pub struct WhatASavedSearchWillAsk {
     pub folder: Option<String>,
 }
 
+impl WhatASavedSearchWillAsk {
+    /// This, in words, said while somebody is naming the search.
+    ///
+    /// Here rather than at the call site so the three halves reach the
+    /// sentence from the one value that holds them, and a window cannot
+    /// describe one set of questions while saving another.
+    pub fn in_words(&self) -> String {
+        a_search_in_words(&self.questions, self.join, self.folder.as_deref())
+    }
+}
+
 /// The parts of a message one answer from the "In" list asks about.
 ///
 /// Two of the four answers narrow which part of a message is read and two
@@ -476,17 +487,86 @@ pub fn what_a_typed_search_asks(ran: &TheSearchThatWasRun) -> WhatASavedSearchWi
     }
 }
 
-/// What a search saved from the search box will ask, in words.
+/// What is said about a question this build cannot put into words.
 ///
-/// Said while somebody is naming it rather than after. A saved search asks a
-/// narrower question than the box it came from: the box reads the first line
-/// of a message as well, and this does not, so a search saved from it can come
-/// back with fewer messages than the search that was just run. Being told that
-/// while naming it is the difference between a known limit and a bug report.
-pub fn a_typed_search_in_words(text: &str) -> String {
+/// A field or a way of matching written by a newer version reaches here, and
+/// the house answer to a stored word nothing understands is to say so rather
+/// than to guess or to read the machine name out. [`Join::read`] and
+/// `put_back_together` answer the same way for the same reason.
+const A_QUESTION_THIS_VERSION_CANNOT_READ: &str = "a question this version cannot read";
+
+/// One question in the words a person would say.
+///
+/// The words come from the pairs beside the filter engine's own constants, so
+/// there is one vocabulary rather than a second list here. A way of matching
+/// that compares against nothing gets no pattern read out: those four answer
+/// from the field alone, and whatever is stored in the pattern is not part of
+/// the question. Reading it out would announce an empty pair of quotes, or
+/// worse, some text left over from a Pattern box that never applied.
+fn one_question_in_words(question: &Question) -> String {
+    use crate::application::filters::{
+        a_way_of_matching_compares_against_nothing, the_words_for_a_field,
+        the_words_for_a_way_of_matching,
+    };
+
+    let _ = (
+        the_words_for_a_field(&question.field),
+        the_words_for_a_way_of_matching(&question.match_type),
+        a_way_of_matching_compares_against_nothing(&question.match_type),
+        A_QUESTION_THIS_VERSION_CANNOT_READ,
+    );
     format!(
-        "This saved search looks for {text} in the subject, the sender and the \
-         recipients of every message in this account."
+        "{} {} \"{}\"",
+        question.field, question.match_type, question.pattern
+    )
+}
+
+/// Several clauses read out as one list, joined by the word the search uses.
+///
+/// The joining word is the search's own, because "or" said about a search that
+/// wants every question answered describes a different search. A list of two
+/// takes no comma, which is how it would be spoken.
+fn one_after_another(clauses: &[String], join: Join) -> String {
+    let word = match join {
+        Join::All => "and",
+        Join::Any => "or",
+    };
+    match clauses {
+        [] => String::new(),
+        [only] => only.clone(),
+        [first, second] => format!("{first} {word} {second}"),
+        [rest @ .., last] => format!("{}, {word} {last}", rest.join(", ")),
+    }
+}
+
+/// What a saved search asks, in words, for any set of questions.
+///
+/// Said while somebody is naming a search rather than after. A search saved
+/// from the box asks a narrower question than the box did: the box reads the
+/// first line of a message as well, and this does not, so a search saved from
+/// it can come back with fewer messages than the search that was just run.
+/// Being told that while naming it is the difference between a known limit and
+/// a bug report.
+///
+/// Built from the questions rather than from the name of the answer the "In"
+/// list gave (D-2-04). The rule editor makes sets that list has no name for, so
+/// a path built around scope names would need a fallback for them anyway, and a
+/// search edited until it no longer matched a named scope would silently change
+/// how it describes itself. Building from the questions removes the case
+/// instead of handling it.
+pub fn a_search_in_words(questions: &[Question], join: Join, folder: Option<&str>) -> String {
+    let _ = folder;
+    let where_it_looks = "in this account".to_string();
+    let clauses: Vec<String> = questions.iter().map(one_question_in_words).collect();
+    if clauses.is_empty() {
+        return format!(
+            "This saved search asks nothing about a message, so it finds every message \
+             {where_it_looks}."
+        );
+    }
+    format!(
+        "This saved search looks {where_it_looks} for messages where {}.",
+        one_after_another(&clauses, join)
     )
 }
 
@@ -1714,6 +1794,24 @@ mod tests {
         }
     }
 
+    // ── One sentence for any question set, named or not ─────────────────
+    //
+    // D-2-04. The sentence says what a search asks rather than which of the
+    // "In" list's four answers made it, because the rule editor makes sets
+    // that list has no name for. A sentence built around scope names would
+    // need a fallback for those anyway, and a search edited until it no
+    // longer matched a named scope would silently change how it describes
+    // itself.
+
+    fn asking_about(field: &str, match_type: &str, pattern: &str) -> Question {
+        Question {
+            field: field.to_string(),
+            match_type: match_type.to_string(),
+            pattern: pattern.to_string(),
+            case_sensitive: false,
+        }
+    }
+
     #[test]
     fn test_saving_a_typed_search_says_what_it_will_ask_before_it_is_kept() {
         // A saved search asks a narrower question than the box it came from:
@@ -1721,9 +1819,126 @@ mod tests {
         // Somebody is told what they are keeping while they are naming it,
         // rather than finding out when the counts do not match.
         assert_eq!(
-            a_typed_search_in_words("invoice"),
-            "This saved search looks for invoice in the subject, the sender and the \
-             recipients of every message in this account."
+            what_a_typed_search_asks(&across_the_account("invoice")).in_words(),
+            "This saved search looks in this account for messages where Subject contains \
+             \"invoice\", From contains \"invoice\", or To contains \"invoice\"."
+        );
+    }
+
+    #[test]
+    fn test_a_search_about_the_subject_alone_says_the_subject_and_nothing_else() {
+        assert_eq!(
+            a_search_in_words(
+                &[asking_about("subject", "contains", "invoice")],
+                Join::Any,
+                None
+            ),
+            "This saved search looks in this account for messages where Subject contains \
+             \"invoice\"."
+        );
+    }
+
+    #[test]
+    fn test_a_question_set_the_in_box_has_no_name_for_names_every_part_it_asks_about() {
+        // The message text and the sender. The "In" list cannot make this and
+        // the rule editor can, so a sentence that named scopes would fall back
+        // to fixed wording here and say nothing true about the search.
+        assert_eq!(
+            a_search_in_words(
+                &[
+                    asking_about("body_plain", "contains", "invoice"),
+                    asking_about("from", "contains", "ann@"),
+                ],
+                Join::All,
+                None
+            ),
+            "This saved search looks in this account for messages where Message text contains \
+             \"invoice\" and From contains \"ann@\".",
+            "the sentence fell back to fixed wording, or read the join out as \
+             the wrong word"
+        );
+    }
+
+    #[test]
+    fn test_a_search_narrowed_to_a_folder_says_which_folder() {
+        assert_eq!(
+            a_search_in_words(
+                &[asking_about("subject", "contains", "invoice")],
+                Join::Any,
+                Some("INBOX/Work")
+            ),
+            "This saved search looks in INBOX/Work for messages where Subject contains \
+             \"invoice\"."
+        );
+    }
+
+    #[test]
+    fn test_a_way_of_matching_that_compares_against_nothing_reads_out_no_pattern() {
+        // Four of the eleven answer from the field alone. Whatever is stored
+        // in the pattern beside one of them is not part of the question, so
+        // reading it out announces an empty pair of quotes or some text left
+        // over from a Pattern box that never applied.
+        let said = a_search_in_words(
+            &[
+                asking_about("read", "is_false", ""),
+                asking_about("subject", "is_not_empty", "left over"),
+            ],
+            Join::All,
+            None,
+        );
+
+        assert_eq!(
+            said,
+            "This saved search looks in this account for messages where Read is no and Subject \
+             is not empty."
+        );
+        assert!(
+            !said.contains("\"\""),
+            "an empty pattern was read out: {said}"
+        );
+        assert!(
+            !said.contains("left over"),
+            "a pattern nothing compares against was read out: {said}"
+        );
+    }
+
+    #[test]
+    fn test_no_sentence_the_builder_makes_reads_out_a_stored_name() {
+        // Every field and every way of matching the engine knows, one at a
+        // time. A stored name is a machine name, and one read out to somebody
+        // is the second vocabulary this module exists to not have.
+        use crate::application::filters::{A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH};
+
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            for way in A_WAY_A_RULE_MAY_MATCH {
+                let said =
+                    a_search_in_words(&[asking_about(field, way, "invoice")], Join::Any, None);
+                assert!(
+                    !said.contains('_'),
+                    "{field} matched by {way} reads out a stored name: {said}"
+                );
+                assert!(
+                    !said.contains(A_QUESTION_THIS_VERSION_CANNOT_READ),
+                    "{field} matched by {way} has no words, so the sentence \
+                     gives up on a question this build can answer"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_question_this_build_cannot_read_says_so_rather_than_guessing() {
+        // A search written by a newer version. Reading the stored word out
+        // would show a machine name, and leaving the clause out would describe
+        // a narrower search than the one that will run.
+        assert_eq!(
+            a_search_in_words(
+                &[asking_about("attachment_count", "is_more_than", "2")],
+                Join::Any,
+                None
+            ),
+            "This saved search looks in this account for messages where a question this \
+             version cannot read."
         );
     }
 
