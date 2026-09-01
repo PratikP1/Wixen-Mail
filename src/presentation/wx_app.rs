@@ -6779,16 +6779,23 @@ fn save_this_search(
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
-    // The names to check against are the account this is being saved under, so
-    // they are read once that account is known and not before. A new search is
-    // saved under the account being worked in, which is the one place the held
-    // account is the right answer rather than a stale one.
-    let (ran, already_used) = {
+    // The account, the search that was run and the names already taken, read
+    // together under one lock. The account is the held one here and that is
+    // right: a new search is saved under the account somebody is working in,
+    // which is the one question the held account is the answer to. The names
+    // are checked against that same account, because a name is unique inside
+    // an account and reading the two apart is how they come to differ.
+    let (ran, saving_under, already_used) = {
         let held = lock_state(state);
-        let saving_under = held.active_account_id.clone().unwrap_or_default();
+        let saving_under = held.active_account_id.clone();
+        let already_used = saving_under
+            .as_deref()
+            .map(|under| names_already_used(&held, under))
+            .unwrap_or_default();
         (
             held.mail_search_that_was_run.clone(),
-            names_already_used(&held, &saving_under),
+            saving_under,
+            already_used,
         )
     };
     let Some(ran) = ran.filter(|ran| !ran.typed.trim().is_empty()) else {
@@ -6803,7 +6810,7 @@ fn save_this_search(
     let Some(cache) = cache.as_ref() else {
         return refuse_a_command(tx, "There is no mail on this computer to search.");
     };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+    let Some(account_id) = saving_under else {
         return refuse_a_command(tx, "Choose an account first.");
     };
     // Before anything is written, and about the account this is being saved
@@ -10301,9 +10308,9 @@ fn whose_mail_a_saved_search_reads<'a>(
     accounts_here: &[String],
 ) -> WhoseMail<'a> {
     if accounts_here.iter().any(|here| here == the_rows_account) {
-        WhoseMail::Refused(crate::application::saved_searches::THAT_ACCOUNT_IS_NOT_HERE)
-    } else {
         WhoseMail::ThisAccount(the_rows_account)
+    } else {
+        WhoseMail::Refused(crate::application::saved_searches::THAT_ACCOUNT_IS_NOT_HERE)
     }
 }
 
@@ -10313,8 +10320,7 @@ fn whose_mail_a_saved_search_reads<'a>(
 /// was last looked at, and without its own name: somebody may be fixing the
 /// case of it, or its spacing.
 fn names_a_rename_may_not_use(state: &WxUIState, chosen: &ChosenSearch) -> Vec<String> {
-    let looked_at = state.active_account_id.clone().unwrap_or_default();
-    names_already_used(state, &looked_at)
+    names_already_used(state, chosen.account())
         .into_iter()
         .filter(|held| held != chosen.name())
         .collect()
@@ -10333,13 +10339,12 @@ fn the_search_a_row_names(state: &WxUIState, row: &folder_tree::WhichRow) -> Opt
         return None;
     };
     let theirs = state.saved_searches.get(account)?;
-    let whose = state.active_account_id.clone().unwrap_or_default();
     theirs
         .searches
         .iter()
         .find(|search| &search.id == id)
         .map(|search| ChosenSearch::Readable {
-            account: whose.clone(),
+            account: account.clone(),
             search: Box::new(search.clone()),
         })
         .or_else(|| {
@@ -10348,7 +10353,7 @@ fn the_search_a_row_names(state: &WxUIState, row: &folder_tree::WhichRow) -> Opt
                 .iter()
                 .find(|search| &search.id == id)
                 .map(|search| ChosenSearch::SavedByAnotherVersion {
-                    account: whose.clone(),
+                    account: account.clone(),
                     id: search.id.clone(),
                     name: search.name.clone(),
                 })

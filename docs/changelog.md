@@ -44,6 +44,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   keep up to date, which is not something a search has. It now offers editing
   its conditions, running it again, renaming it and deleting it.
 
+- **Saved searches now sit under the account they belong to.** Saved Searches
+  in the folder tree holds a branch for each account that has one, in the same
+  order your accounts appear everywhere else in the tree, with that account's
+  searches under it. An account with no saved searches gets no branch, and if
+  none of your accounts has one there is no Saved Searches heading at all.
+
+  Two accounts can now have a search of the same name and they are two rows you
+  can tell apart, because the branch above each one says whose it is. Landing
+  on a saved search also says which account you are working in, the way landing
+  on a folder does.
+
 - **Every manager window's list now says what it holds.** The Filter, Tag and
   Signature managers all called their list "Items", which is what a screen
   reader read out on landing in any of them.
@@ -71,6 +82,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   comes back.
 
 ### Fixed
+
+- **Opening a saved search now runs it against its own account.** It used to
+  run against whichever account you were last looking at. Set Active in the
+  account manager changes that account and leaves the folder tree's cursor
+  where it was, so the two could differ: a search belonging to one account,
+  opened while another was current, listed the other account's mail under a
+  name you had given to this one, or came back empty in a way that looked
+  exactly like a search that had found nothing.
+
+  The account now comes from the row itself, for running a search, for renaming
+  one and for removing one. A search whose account is no longer on this
+  computer says so in its own words rather than running somewhere else or
+  quietly finding nothing.
 
 - **Saving a search now keeps what you chose in the "In" list.** Choose "From
   Only", search, and save it, and you used to get back a search across the
