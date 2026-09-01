@@ -6287,6 +6287,28 @@ fn coverage_before(
     }
 }
 
+/// What the offer above the message list says, or nothing at all.
+///
+/// Pure and out here rather than a branch inside the window, because the rule
+/// it carries is one a test can hold and a window is not: wxWidgets supports
+/// one application per process, which is a hard ceiling on how much can be
+/// proved by building one. So the decision comes out here and the window does
+/// as it is told.
+///
+/// `count` is the length of the list the fetch will walk, not the difference
+/// between the two numbers the coverage sentence gives. Those come apart where
+/// a message has no text and no server to ask, and a subtraction would then
+/// offer to fetch something nothing can fetch. See
+/// `MessageCache::messages_with_no_text_here`, which explains the two sets.
+///
+/// Nought is no offer at all rather than an offer saying nought. An offer to
+/// fetch no messages beside a sentence saying everything is already here reads
+/// as a fault in one of the two.
+pub fn the_offer_to_fetch(count: usize) -> Option<String> {
+    let _ = count;
+    Some(String::new())
+}
+
 fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
     use crate::application::saved_searches::{
         Found, MOST_RESULTS_SHOWN, NO_MAIL_HERE_YET, Ran, SAVED_BY_ANOTHER_VERSION,
@@ -24693,7 +24715,7 @@ mod the_tree_holds_every_account {
 
 #[cfg(test)]
 mod what_a_saved_search_says_before_it_runs {
-    use super::coverage_before;
+    use super::{coverage_before, the_offer_to_fetch};
     use crate::application::saved_searches::{Join, Question, SavedSearch};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage, MessageCache};
@@ -24846,6 +24868,114 @@ mod what_a_saved_search_says_before_it_runs {
         assert!(
             path[asks..gathers].contains("UIUpdate::StatusUpdated"),
             "what this search covers is worked out and never said to anybody"
+        );
+    }
+
+    /// The arm that puts the offer to fetch missing text on or off the screen.
+    fn the_offer_arm(source: &str) -> String {
+        let after = source
+            .split_once("UIUpdate::WhatCouldBeFetched(count) => {")
+            .expect("the window to handle what could be fetched")
+            .1;
+        let end = after.find("\n        }\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    /// The body of the routine that carries out the offer.
+    fn the_fetch_command(source: &str) -> String {
+        let after = source
+            .split_once("fn start_the_missing_text_fetch(")
+            .expect("the routine that carries out the offer")
+            .1;
+        let end = after.find("\n}\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_no_offer_is_made_when_there_is_nothing_to_fetch() {
+        // The two coverage numbers being equal is the ordinary case, and an
+        // offer to fetch nought messages beside a sentence saying everything
+        // is here reads as a fault in one of the two.
+        assert_eq!(
+            the_offer_to_fetch(0),
+            None,
+            "an offer appeared when there was nothing to fetch"
+        );
+        let one = the_offer_to_fetch(1).expect("an offer for one message");
+        assert!(one.contains('1'), "the offer does not say how many: {one}");
+        let several = the_offer_to_fetch(12).expect("an offer for twelve messages");
+        assert!(
+            several.contains("12"),
+            "the offer does not say how many: {several}"
+        );
+        assert_ne!(
+            one, several,
+            "one message and twelve are offered in the same words"
+        );
+    }
+
+    #[test]
+    fn test_the_saved_search_path_works_out_what_could_be_fetched_and_says_so() {
+        // Beside the coverage sentence and on the same path, because a number
+        // somebody is told and a remedy they have to go and find in a menu are
+        // two things. The point of D-2-08 is that a short answer is legible as
+        // narrow coverage at the moment it is short.
+        let path =
+            the_saved_search_path(&crate::common::what_ships::what_ships(&the_window_itself()));
+
+        let asks = path
+            .find("what_could_be_fetched")
+            .expect("the saved-search path to work out what could be fetched");
+        assert!(
+            path[asks..].contains("UIUpdate::WhatCouldBeFetched"),
+            "what could be fetched is worked out and never reaches the window"
+        );
+    }
+
+    #[test]
+    fn test_the_offer_and_its_warning_are_put_on_the_screen_by_the_answer() {
+        // The offer appears because there is something to fetch and goes away
+        // because there is not, and the experimental sentence is beside it
+        // where somebody reads it before choosing, rather than in a changelog.
+        let shipping = crate::common::what_ships::what_ships(&the_window_itself());
+        let arm = the_offer_arm(&shipping);
+
+        assert!(
+            arm.contains("the_offer_to_fetch"),
+            "the offer is shown without asking whether there is anything to fetch"
+        );
+        assert!(
+            arm.contains(".show("),
+            "the offer is never put on or taken off the screen"
+        );
+        assert!(
+            shipping.contains("FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL"),
+            "the experimental sentence is not on screen anywhere"
+        );
+    }
+
+    #[test]
+    fn test_choosing_the_offer_starts_the_backfill_and_says_what_it_did() {
+        // Both halves. A command that reaches the backfill and throws its
+        // report away is the defect this file has already had once: a number
+        // worked out and never said. So the report has to reach a window
+        // update after the call, not merely be computed.
+        let command =
+            the_fetch_command(&crate::common::what_ships::what_ships(&the_window_itself()));
+
+        let starts = command
+            .find("fetch_the_missing_message_text")
+            .expect("the offer to start the backfill");
+        let reports = command
+            .find("what_the_fetch_did")
+            .expect("the offer to say what the backfill did");
+        assert!(
+            starts < reports,
+            "the report is worked out before the run it is about"
+        );
+        assert!(
+            command[reports..].contains("UIUpdate::"),
+            "what the backfill did is worked out and never said to anybody"
         );
     }
 }
