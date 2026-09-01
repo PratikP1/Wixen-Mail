@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 24
+open_count: 26
 waived_count: 0
-fixed_count: 0
-total_count: 24
-last_updated: 2026-09-01T08:59:53.265Z
+fixed_count: 2
+total_count: 28
+last_updated: 2026-09-01T10:38:36.983Z
 ---
 
 # Broken Windows Ledger
@@ -37,8 +37,12 @@ last_updated: 2026-09-01T08:59:53.265Z
 | 20 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog says what a saved search cannot find with the chosen field, on a line of text under the controls and through the announcement queue. Whether it is heard when the field list changes, and whether a sentence that long is useful there rather than in the way, is unverified by ear | open |  | 2026-09-01T08:59:42.387Z |  |
 | 21 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified | open |  | 2026-09-01T08:59:51.835Z |  |
 | 22 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog refuses an empty pattern through a message box and puts focus back on the Pattern box. Whether the refusal is heard and whether focus lands where somebody expects is unverified by ear | open |  | 2026-09-01T08:59:52.282Z |  |
-| 23 | 02 | stub | src/presentation/wx_managers.rs |  | build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does | open |  | 2026-09-01T08:59:52.753Z |  |
-| 24 | 02 | stub | src/data/message_cache/saved_searches.rs |  | replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it | open |  | 2026-09-01T08:59:53.265Z |  |
+| 23 | 02 | stub | src/presentation/wx_managers.rs |  | build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does | fixed |  | 2026-09-01T08:59:52.753Z | 2026-09-01T10:38:15.106Z |
+| 24 | 02 | stub | src/data/message_cache/saved_searches.rs |  | replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it | fixed |  | 2026-09-01T08:59:53.265Z | 2026-09-01T10:38:15.561Z |
+| 25 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The condition manager has never been opened in a running build. The path to it is traced and every part is tested, but nothing has run the modal loop: no window has been shown, no Add pressed, no Close refused | open |  | 2026-09-01T10:38:35.678Z |  |
+| 26 | 02 | unrun-verify | src/presentation/manager_words.rs |  | Whether a tally on the end of every condition change reads well by ear, or is a clause somebody stops hearing. Only a condition list counts out loud, and whether that is the right set is a judgement a screen reader settles | open |  | 2026-09-01T10:38:36.133Z |  |
+| 27 | 02 | unrun-verify | src/application/context_menu.rs |  | Whether the saved-search context menu reads correctly with a screen reader, and whether Edit conditions first is the right order by ear rather than Run this search again | open |  | 2026-09-01T10:38:36.557Z |  |
+| 28 | 02 | deviation | tests/manager_dialog_labels.rs |  | wxdragon 0.9.17's ListCtrl::get_item_text loses the last character of every cell and returns a NUL in its place, so the window check reads a cell through a helper that allows for it. Upstream defect, not reported yet | open |  | 2026-09-01T10:38:36.983Z |  |
 
 ````json
 [
@@ -313,10 +317,10 @@ last_updated: 2026-09-01T08:59:53.265Z
     "file": "src/presentation/wx_managers.rs",
     "line": null,
     "description": "build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-01T08:59:52.753Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-01T10:38:15.106Z"
   },
   {
     "id": 24,
@@ -325,9 +329,57 @@ last_updated: 2026-09-01T08:59:53.265Z
     "file": "src/data/message_cache/saved_searches.rs",
     "line": null,
     "description": "replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-01T08:59:53.265Z",
+    "resolved_at": "2026-09-01T10:38:15.561Z"
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The condition manager has never been opened in a running build. The path to it is traced and every part is tested, but nothing has run the modal loop: no window has been shown, no Add pressed, no Close refused",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T10:38:35.678Z",
+    "resolved_at": null
+  },
+  {
+    "id": 26,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/manager_words.rs",
+    "line": null,
+    "description": "Whether a tally on the end of every condition change reads well by ear, or is a clause somebody stops hearing. Only a condition list counts out loud, and whether that is the right set is a judgement a screen reader settles",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T10:38:36.133Z",
+    "resolved_at": null
+  },
+  {
+    "id": 27,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/application/context_menu.rs",
+    "line": null,
+    "description": "Whether the saved-search context menu reads correctly with a screen reader, and whether Edit conditions first is the right order by ear rather than Run this search again",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T10:38:36.557Z",
+    "resolved_at": null
+  },
+  {
+    "id": 28,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "tests/manager_dialog_labels.rs",
+    "line": null,
+    "description": "wxdragon 0.9.17's ListCtrl::get_item_text loses the last character of every cell and returns a NUL in its place, so the window check reads a cell through a helper that allows for it. Upstream defect, not reported yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T10:38:36.983Z",
     "resolved_at": null
   }
 ]

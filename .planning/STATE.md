@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-09-01T09:03:58.258Z"
-last_activity: 2026-09-01
-last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
-state_head: a3cd8d82f0d3388de0268bf4ad2e957a9a679ef4
+stopped_at: Completed 02-07-PLAN.md on branch gsd/plan-02-07, not merged
+last_updated: "2026-09-01T10:47:54.559Z"
+last_activity: "2026-09-01, 02-07 done: the second door is open. A saved search's conditions are edited from its own row in the folder tree and from the Saved Searches menu, and written back in one transaction on the way out. Both of 02-06's stub entries in WINDOWS.md are closed. Nothing has been opened in a running build, which is recorded rather than claimed"
+state_head: 27d66c70668a0ec07c84ae00885226e324d76ce9
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 22
   completed_plans: 21
   percent: 0
+last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 02 (Search that says what it covers) — EXECUTING, 6 of 8 plans merged.
+Phase: 02 (Search that says what it covers) — EXECUTING, 7 of 8 plans done (02-07 is on branch gsd/plan-02-07 and not merged).
 Corrected on 2026-09-01: this header and the frontmatter both said phase 01
 while five phase 02 plans had shipped, which is what made
 `gsd-tools query state.advance-plan` fail and tagged new decisions `[Phase 01]`.
@@ -84,7 +84,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-01, 02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing opens either of them yet. That is 02-07's job and both are recorded as stubs
+Last activity: 2026-09-01, 02-07 done: the second door is open. A saved search's conditions are edited from its own row in the folder tree and from the Saved Searches menu, and written back in one transaction on the way out. Both of 02-06's stub entries in WINDOWS.md are closed. Nothing has been opened in a running build, which is recorded rather than claimed
 
 Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
@@ -92,10 +92,12 @@ different things about the same work all through this phase; the plan count read
 7 while 11 were done, which is how long a number nothing recomputes can sit here
 being wrong.
 
-The suite is 5,884 unit as of `cargo test --all-targets` on 2026-09-01, with one
-ignored and every other target green in the same run. 02-04 added nine, six in
-`application::filters` and three in `presentation::wx_managers`, and one
-integration target, `tests/manager_dialog_labels.rs`, holding a single test.
+The suite is 5,958 unit as of `bash scripts/check.sh all` on 2026-09-01, with
+one ignored and every other target green in the same run. 02-07 added 30 of
+those, across `presentation::manager_words`, `presentation::wx_managers`,
+`presentation::folder_tree`, `presentation::wx_app` and
+`application::context_menu`, plus four checks inside the two window-building
+integration targets.
 
 The counter above could not be advanced by `gsd-tools query state.advance-plan`
 on 2026-09-01: it looks for "Current Plan" and "Total Plans in Phase" lines this
@@ -153,6 +155,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P04 | one session | 3 tasks | 7 files |
 | Phase 02 P05 | one session | 3 tasks | 6 files |
 | Phase 02 P06 | one session | 3 tasks | 5 files |
+| Phase 02 P07 | one session | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -243,6 +246,9 @@ ahead:
 - [Phase 01]: A saved search's whole description is written back in one transaction, with the questions written first and the row stamped last, so the one failure a person can cause lands inside the window the transaction protects rather than outside it
 - [Phase 01]: The two things a saved search misses stay two sentences, with a test asserting they differ: mail thrown away is never gathered, and evicted message text stays findable from the search box and not here (D-2-13)
 - [Phase 01]: No changelog entry for 02-06, because nothing it builds is reachable; the entry belongs to 02-07, which opens the dialog and calls the replace
+- [Phase 02]: 02-07: a saved search's row reports its own focus on the menu key, rather than an entry being filtered out of the folder list. Nothing in the codebase decided menu entries per row.
+- [Phase 02]: 02-07: a search a newer version wrote keeps the Edit conditions entry and is refused with a sentence, in the wording Enter on the same row already gives.
+- [Phase 02]: 02-07: every change to a condition list says how many are left, on the end of the one sentence. Only a condition list counts out loud, decided from the kind rather than passed in.
 
 ### Pending Todos
 
@@ -324,8 +330,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T09:03:56.442Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-09-01T10:47:54.524Z
+Stopped at: Completed 02-07-PLAN.md on branch gsd/plan-02-07, not merged
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.

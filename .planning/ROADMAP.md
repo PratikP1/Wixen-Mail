@@ -132,7 +132,7 @@ Plans:
   5. Fetching the missing text is built and gated. Since it is a read and every `may_i` call gates a write, `application::allowed` gains a read dimension, on by default, which is a stated exception to that type's rule that `Default` is the safe end.
   6. Saved searches sit inside the account structure the way pinned folders do, so two accounts each holding a search of the same name are never two identical rows.
 
-**Plans**: 6/8 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
+**Plans**: 7/8 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
 
 Plans:
 
@@ -162,7 +162,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 02-07-PLAN.md — The rule editor: a manager over one search's conditions, reached from the tree, one group however a search was made (D-2-01, D-2-02)
+- [x] 02-07-PLAN.md — The rule editor: a manager over one search's conditions, reached from the tree, one group however a search was made (D-2-01, D-2-02)
 
 **Wave 8** *(blocked on Wave 7)*
 
@@ -305,7 +305,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Folders and conversations | 13/13 | Complete | 2026-08-31 |
-| 2. Search that says what it covers | 6/8 | In Progress|  |
+| 2. Search that says what it covers | 7/8 | In Progress|  |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
 | 5. The other five modules keep up | 0/TBD | Not started | - |

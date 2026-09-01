@@ -227,7 +227,7 @@ write path added by this milestone passes through that gate.
   - [D] A saved search of that kind reruns without silently narrowing as more bodies are
     evicted.
 
-- [ ] **SEARCH-03**: Smart folders defined by a rule.
+- [x] **SEARCH-03**: Smart folders defined by a rule.
   - Evidence: saved searches are built (`src/application/saved_searches.rs`) and appear in the
     folder tree. Filters with regex and rule actions are built
     (`src/application/filters.rs`). Nothing joins the two into a folder that updates itself.
@@ -966,7 +966,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | THREAD-02 | Phase 1 | Complete |
 | SEARCH-01 | Phase 2 | Complete |
 | SEARCH-02 | Phase 2 | Complete |
-| SEARCH-03 | Phase 2 | Pending |
+| SEARCH-03 | Phase 2 | Complete |
 | SCALE-01 | Phase 3 | Pending |
 | SCALE-02 | Phase 3 | Pending |
 | SCALE-03 | Phase 3 | Pending |
