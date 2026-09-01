@@ -137,6 +137,15 @@ impl WhereToSearch {
 /// reads it. A column name spelled three times is three places able to come
 /// to differ, and two of the three are inside format strings where the
 /// compiler would not see it happen.
+///
+/// Two of those three write it, and they have to ask one question.
+/// [`MessageCache::index_message_for_search`] is the live one: it records
+/// whether the text it has just put into the index had anything in it. The
+/// migration cannot ask the index and will not run the live writer over every
+/// message, so it asks the stored body instead, through
+/// [`super::bodies::THE_STORED_BODY_HOLDS_TEXT`]. That condition sits with the
+/// storage, because the storage is what decides which of its columns hold text,
+/// and it carries the reasoning for where the two can still come apart.
 pub(super) const THE_INDEX_HOLDS_THE_TEXT: &str = "text_is_in_the_search_index";
 
 /// How much of the mail a search box search looks at is mail it can read the

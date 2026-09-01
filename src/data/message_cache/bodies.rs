@@ -119,6 +119,43 @@ pub(super) fn body_text(text: Option<String>, packed: Option<Vec<u8>>) -> Option
     }
 }
 
+/// A stored body with text in it, as a condition inside a query.
+///
+/// Here rather than beside the one query that asks it, because this module is
+/// what knows how the four columns are written, and a reader elsewhere that
+/// takes them directly comes apart the first time that changes. That has
+/// happened: a reader that took the text columns and not the packed ones went
+/// silently empty for every body worth packing, and a filter rule matching on
+/// what a message said stopped matching.
+///
+/// The question is [`MessageCache::index_message_for_search`]'s. It decides the
+/// same thing in Rust, over the body it is about to index: the plain half when
+/// there is one, the markup with its tags taken out when there is not, and it
+/// records in `text_is_in_the_search_index` whether that came out with anything
+/// in it. The migration that fills that column in for rows written before it
+/// existed cannot ask the index and will not run the live writer over every
+/// message, so it asks this. The two answer one column and have to agree. They
+/// did not: a row on its own used to be enough here, and a message MIME parsing
+/// found no text part in has a row holding neither half, which
+/// [`MessageCache::get_message_body`] reads as no body at all.
+///
+/// Written against a `message_bodies` row aliased `b`. The plain half wins even
+/// when it is empty, because the plain half is what goes into the index: a
+/// message whose plain part is empty is not searchable by the words in its
+/// markup, however many there are. A packed half is text by definition, since
+/// packing is kept only where it came out smaller than the text it packed,
+/// which cannot happen for nothing.
+///
+/// Two things it cannot look inside, and counts as text: a packed half that no
+/// longer unpacks, which [`unpacked`] discards as damaged, and markup that is
+/// one unterminated tag, which [`strip_markup`] reduces to nothing. Each is
+/// corrected the next time that message is indexed.
+pub(super) const THE_STORED_BODY_HOLDS_TEXT: &str = "
+    (b.body_plain_packed IS NOT NULL OR COALESCE(length(b.body_plain), 0) > 0)
+    OR (b.body_plain IS NULL AND b.body_plain_packed IS NULL
+        AND (b.body_html_packed IS NOT NULL OR COALESCE(length(b.body_html), 0) > 0))
+";
+
 /// One piece of message text, in whichever form is smaller.
 ///
 /// Deflate writes a header and a checksum, so packing something very short

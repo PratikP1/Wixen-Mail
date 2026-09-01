@@ -181,8 +181,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   this version and its text had already been cleared out to make room, the box
   can still find those messages by a word in their text but counts them as
   though it could not. There is no record of what the index learned before this
-  version, so the count is short rather than over, and it stays that way only
-  for those messages.
+  version, so for those messages the count is short rather than over, and it
+  stays that way only for them. Every other message is counted by whether its
+  stored text has anything in it, which is what the box can look inside, and
+  not by whether anything was stored for it at all: mail that arrived as an
+  invitation or a photograph and no text is counted as text the box cannot
+  read, because that is what it is.
 
 - **You can now stop Wixen Mail fetching the text of your messages from the
   server.** Settings, Permissions, under "Message Text". It is on to begin

@@ -2783,13 +2783,32 @@ impl MessageCache {
     ///
     /// The rows that already exist have no such record and the index cannot be
     /// asked, so they are filled in from `message_bodies`, which is a message
-    /// whose text is here now and was therefore indexed with it. That is exact
-    /// for every database where the index is also being built for the first
-    /// time, because that build reads the same table. It is short by the
-    /// messages whose text was evicted before this column existed: those stay
-    /// findable by their text and are counted as though they were not. Short
-    /// rather than over, which is the direction to be wrong in, and the set
-    /// never grows after this runs.
+    /// whose text is here now and was therefore indexed with it. Asked of the
+    /// text in the row and not of the row, by
+    /// [`bodies::THE_STORED_BODY_HOLDS_TEXT`], which is the question the
+    /// writer above asks, spelled in SQL and kept beside it. A row on its own
+    /// is not that question: a message MIME parsing found no text part in, an
+    /// invitation or two photographs and nothing else, has a row holding
+    /// neither half, [`Self::get_message_body`] reads it as no body at all,
+    /// and the live writer records nought for it. Filling those in from the
+    /// row's existence recorded one, which told somebody the search box had
+    /// looked inside text it cannot read.
+    ///
+    /// That is exact for every database where the index is also being built
+    /// for the first time, because that build reads the same table. It is
+    /// short by the messages whose text was evicted before this column
+    /// existed: those stay findable by their text and are counted as though
+    /// they were not. Short rather than over, which is the direction to be
+    /// wrong in, and the set never grows after this runs.
+    ///
+    /// Two narrower ways it can still be over, both of them things SQL cannot
+    /// look inside: a packed half that no longer unpacks, which the reader
+    /// discards as damaged, and markup that is one unterminated tag, which
+    /// strips to nothing. Each is corrected the next time that message is
+    /// indexed.
+    ///
+    /// Reading the text costs more than asking whether a row is there, and it
+    /// is paid once, by a database that is being migrated anyway.
     fn record_whether_the_index_holds_each_messages_text(&self) -> Result<()> {
         let column = searching::THE_INDEX_HOLDS_THE_TEXT;
         if self
@@ -2800,12 +2819,14 @@ impl MessageCache {
             return Ok(());
         }
         self.ensure_column_exists("messages", column, "INTEGER NOT NULL DEFAULT 0")?;
+        let holds_text = bodies::THE_STORED_BODY_HOLDS_TEXT;
         self.conn
             .execute(
                 &format!(
                     "UPDATE messages SET {column} = 1
                      WHERE EXISTS (SELECT 1 FROM message_bodies b
-                                   WHERE b.message_id = messages.id)"
+                                   WHERE b.message_id = messages.id
+                                     AND ({holds_text}))"
                 ),
                 [],
             )
