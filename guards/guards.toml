@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 355 records have arrived since and have not been through it.
+# 356 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10604,6 +10604,14 @@ red = [
 # second is in the window layer rather than beside the value, which is the
 # shape the guard notes at the top of this file warn about: the filter somebody
 # would naturally pick for this subject reaches only one of them.
+#
+# **Measured again on 2026-09-01 and it had already fallen behind, within the
+# day it was written.** The same answer now gates the offer to fetch as well as
+# the coverage sentence, so the work that added the offer added a third test
+# reaching this rule, and the record said two. Nothing failed while it was
+# wrong, which is the whole reason this file exists: a record shorter than the
+# truth is a guard weaker than it claims and nothing announces it. Taken red by
+# hand against the whole library: exactly three.
 [[guard]]
 name = "a search that reads no message text is not asked what message text is here"
 file = "src/data/message_cache/searching.rs"
@@ -10612,6 +10620,7 @@ after = "            Self::SubjectOnly | Self::SenderOnly => true,"
 red = [
     "data::message_cache::searching::finding_things::test_a_search_that_reads_no_message_text_is_not_asked_what_text_it_covers",
     "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_not_given_a_coverage_figure",
+    "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_offered_no_fetch",
 ]
 
 # ── One place wording each of the two coverage sentences ────────────────────
@@ -10632,4 +10641,26 @@ after = """                        Some(covered) => format!(
                         ),"""
 red = [
     "application::saved_searches::tests::test_one_place_builds_the_coverage_sentence",
+]
+
+# ── The fetch saying something the moment it is chosen ──────────────────────
+#
+# The run itself says nothing until it has a connection, and a mail server
+# takes as long as it takes. From the button that gap was covered by the label
+# somebody had just pressed and could still see. From the File menu it is a
+# command chosen and then silence, which is how somebody chooses it twice and
+# starts a second run.
+#
+# The break is the one that keeps the call and throws the words away, because
+# an ordering check on its own is satisfied by saying nothing at all.
+#
+# Taken red by hand against the whole library on 2026-09-01: exactly one.
+[[guard]]
+name = "the fetch says what it is doing before it opens a connection"
+file = "src/presentation/wx_app.rs"
+before = """const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \\
+     computer.";"""
+after = """const STARTING_THE_MISSING_TEXT_FETCH: &str = "";"""
+red = [
+    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_fetch_says_it_has_started_before_it_opens_a_connection",
 ]

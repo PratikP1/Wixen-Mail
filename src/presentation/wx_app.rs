@@ -26415,6 +26415,19 @@ mod what_a_saved_search_says_before_it_runs {
             "nothing is said until the work has started, so choosing this from \
              a menu is silence for as long as a server takes"
         );
+        // Ordering alone would be satisfied by saying nothing at all, and an
+        // empty status line is exactly the silence this is about. So the line
+        // is named and the words are read.
+        assert!(
+            command[says..works].contains("STARTING_THE_MISSING_TEXT_FETCH"),
+            "something other than the opening line is sent first, so what is \
+             said the moment this is chosen is not what this test read"
+        );
+        assert!(
+            super::STARTING_THE_MISSING_TEXT_FETCH.contains("message text"),
+            "the opening line does not say what is being looked for: {}",
+            super::STARTING_THE_MISSING_TEXT_FETCH
+        );
     }
 }
 
