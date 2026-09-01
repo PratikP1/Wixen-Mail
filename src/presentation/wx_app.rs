@@ -24829,13 +24829,23 @@ mod what_a_saved_search_says_before_it_runs {
         let gathers = path
             .find("messages_a_saved_search_reads")
             .expect("the saved-search path to gather the mail it searches");
-        let says = path
+        let asks = path
             .find("coverage_before")
-            .expect("the saved-search path to say what this search covers");
+            .expect("the saved-search path to ask what this search covers");
 
         assert!(
-            says < gathers,
-            "the coverage sentence is said after the mail is gathered"
+            asks < gathers,
+            "what this search covers is worked out after the mail is gathered"
+        );
+        // Asking is not saying, and the difference is the whole defect. The
+        // first version of this test looked only for the call, and replacing
+        // the two lines that say the answer with one that throws it away left
+        // it green: a number computed and never said, which is precisely what
+        // it was written to notice. Found by taking the break by hand rather
+        // than by reading the test.
+        assert!(
+            path[asks..gathers].contains("UIUpdate::StatusUpdated"),
+            "what this search covers is worked out and never said to anybody"
         );
     }
 }

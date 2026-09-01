@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 344 records have arrived since and have not been through it.
+# 346 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10235,4 +10235,42 @@ after = """    #[serde(default)]
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first",
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
+]
+
+# ── What a saved search covers, said rather than only worked out ───────────
+#
+# The break is not deleting the call. It is keeping the call and throwing the
+# answer away, which is the defect the sentence exists to prevent and is what
+# an earlier version of the test could not see: it looked for the call and
+# went on passing while the number was computed and never said. The break
+# below is the one that found that.
+
+[[guard]]
+name = "what a saved search covers is said, not merely worked out"
+file = "src/presentation/wx_app.rs"
+before = """        if let Some(covers) = coverage_before(&cache, &account_id, &search) {
+            say(UIUpdate::StatusUpdated(covers));
+        }"""
+after = """        let _ = coverage_before(&cache, &account_id, &search);"""
+red = [
+    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_coverage_sentence_is_said_before_the_mail_is_gathered",
+]
+
+# ── Eviction leaves the search index alone, on purpose ─────────────────────
+#
+# The tidy-up this stops is a one-line call that looks like a bug fix: make
+# the index forget what the body table forgot, so the two agree. It takes a
+# working search away. A message would become unfindable at the moment its
+# text is evicted rather than merely unsearchable by that text.
+
+[[guard]]
+name = "evicting a message's text leaves it findable by the search box"
+file = "src/data/message_cache/bodies.rs"
+before = """                .map_err(|e| Error::Other(format!("Failed to evict message body: {}", e)))?;
+            total -= bytes;"""
+after = """                .map_err(|e| Error::Other(format!("Failed to evict message body: {}", e)))?;
+            self.index_message_for_search(message_id)?;
+            total -= bytes;"""
+red = [
+    "data::message_cache::bodies::tests::test_an_evicted_message_stays_findable_by_a_word_from_its_text",
 ]
