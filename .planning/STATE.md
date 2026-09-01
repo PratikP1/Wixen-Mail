@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
-current_phase: 01
-current_phase_name: Folders and conversations
+current_phase: 02
+current_phase_name: Search that says what it covers
 status: executing
 stopped_at: Completed 02-06-PLAN.md
 last_updated: "2026-09-01T09:03:58.258Z"
 last_activity: 2026-09-01
-last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
+last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 state_head: a3cd8d82f0d3388de0268bf4ad2e957a9a679ef4
 progress:
   total_phases: 9
@@ -23,9 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-29)
 
 **Core value:** Making correspondence and personal information legible to people who cannot see it.
-**Current focus:** Phase 01 — Folders and conversations
+**Current focus:** Phase 02 — Search that says what it covers
 
 ## Current Position
+
+Phase: 02 (Search that says what it covers) — EXECUTING, 6 of 8 plans merged.
+Corrected on 2026-09-01: this header and the frontmatter both said phase 01
+while five phase 02 plans had shipped, which is what made
+`gsd-tools query state.advance-plan` fail and tagged new decisions `[Phase 01]`.
+Phase 01 is complete and awaiting re-verification, recorded below; that is what
+`current_phase` was being used to remember, and it is not what the field means.
 
 Phase: 01 (Folders and conversations) — EXECUTED, awaiting re-verification
 Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
@@ -77,7 +84,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-01 — 02-04 done: the filter rule window offers all eleven fields and all eleven ways of matching instead of six of each, in words rather than the names they are stored under, and a way of matching with nothing to compare against no longer shows a Pattern box asking for something
+Last activity: 2026-09-01, 02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing opens either of them yet. That is 02-07's job and both are recorded as stubs
 
 Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
