@@ -89,6 +89,7 @@
 
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule};
 use crate::data::message_cache::CachedMessage;
+use crate::data::message_cache::saved_searches::TextStoredHere;
 
 /// One thing a saved search asks about a message.
 ///
@@ -371,6 +372,35 @@ pub fn a_typed_search_in_words(text: &str) -> String {
         "This saved search looks for {text} in the subject, the sender and the \
          recipients of every message in this account."
     )
+}
+
+/// How the coverage sentence opens, and the one place those words are written.
+///
+/// A constant so a check can count the places that build this sentence, which
+/// is what stops a second one appearing in the window layer. The three cases
+/// below finish it differently and all three start here.
+const READS_MESSAGE_TEXT: &str = "This saved search reads the text of your messages, and";
+
+/// What a saved search that reads message text can actually cover here.
+///
+/// Said before the search runs, because a search that comes back with three
+/// results when the answer is thirty reads as an answer rather than as a
+/// fraction of one, and nothing in the result says which it was.
+///
+/// **It says which search it is about, and that is the point of it rather
+/// than a nicety.** There are two searches in this program and they cover
+/// different amounts of the same mailbox. Evicting a message's text deletes
+/// what this search reads and deliberately leaves the search index alone, so
+/// the box at the top goes on finding that message by a word that is only in
+/// its text, while this search no longer can. One number covering "the search"
+/// would therefore be wrong about one of them whichever way it was computed,
+/// and it would be wrong in the confident direction. Collapsing this into one
+/// number is the failure this sentence exists to prevent, wearing a different
+/// coat. See the doc on the eviction loop in `data::message_cache::bodies`,
+/// which records the same decision from the other side.
+pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
+    let _ = (coverage, READS_MESSAGE_TEXT);
+    String::new()
 }
 
 /// How many of a search's results the message list is filled with.
@@ -661,6 +691,125 @@ impl SavedSearch {
 mod tests {
     use super::*;
     use crate::data::message_cache::CachedMessage;
+
+    /// The coverage sentence for an account of `messages` with `with_text` of
+    /// them holding their text here.
+    fn covering(messages: i64, with_text: i64) -> String {
+        what_a_saved_search_covers(TextStoredHere {
+            messages,
+            with_text,
+        })
+    }
+
+    /// The shipping half of one file, tests cut off.
+    ///
+    /// Cut, because the check below looks for the very words it would
+    /// otherwise find in itself, which is a check that measures nothing.
+    fn what_ships_in(path: &str) -> String {
+        std::fs::read_to_string(path)
+            .map(|text| crate::common::what_ships::what_ships(&text))
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn test_the_coverage_sentence_gives_both_numbers() {
+        // Both, because they are two facts and neither implies the other. A
+        // sentence with only the covered number cannot be told from a complete
+        // one, and a sentence with only the total says nothing about coverage.
+        let said = covering(30, 12);
+
+        assert!(
+            said.contains("12"),
+            "the sentence dropped how much text is here: {said}"
+        );
+        assert!(
+            said.contains("30"),
+            "the sentence dropped how much mail there is: {said}"
+        );
+    }
+
+    #[test]
+    fn test_the_coverage_sentence_says_which_search_it_is_about() {
+        // The whole reason this sentence is worded rather than being a pair of
+        // numbers. Two searches here cover different amounts of the same
+        // mailbox, so a coverage claim that does not name its subject is read
+        // as being about the box at the top, which it is not about.
+        for (messages, with_text) in [(30, 12), (30, 30), (30, 0)] {
+            let said = covering(messages, with_text);
+            assert!(
+                said.contains("saved search"),
+                "a coverage sentence that does not say which search it is \
+                 about: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_account_whose_text_is_all_here_is_told_so_plainly() {
+        // "0 do not have their text here" is arithmetic somebody has to do in
+        // their head to learn there is nothing wrong. It also reads as a
+        // warning, which is exactly the wrong shape for the good case.
+        let all_here = covering(30, 30);
+
+        assert_ne!(all_here, covering(30, 12));
+        assert_ne!(all_here, covering(30, 0));
+        assert!(
+            !all_here.contains(" 0 "),
+            "the everything-is-here case counted what is missing: {all_here}"
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_text_here_does_not_read_as_an_empty_mailbox() {
+        // Mail that is here with its text elsewhere and no mail at all are
+        // different situations and somebody does different things about each.
+        // The count of messages is what tells them apart, so it stays in.
+        let none_here = covering(30, 0);
+
+        assert!(
+            none_here.contains("30"),
+            "a search over 30 messages was described as having nothing: \
+             {none_here}"
+        );
+        assert_ne!(none_here, covering(30, 30));
+    }
+
+    #[test]
+    fn test_an_account_with_no_mail_here_is_not_given_a_coverage_figure() {
+        // Nothing has been synced yet. "0 of 0 messages have their text here"
+        // is true, useless, and reads as a fault in the search rather than as
+        // an empty cache.
+        let nothing_yet = covering(0, 0);
+
+        assert!(
+            !nothing_yet.contains('0'),
+            "an account with no mail here was given a coverage figure: \
+             {nothing_yet}"
+        );
+        assert_ne!(nothing_yet, covering(30, 0));
+    }
+
+    #[test]
+    fn test_one_place_builds_the_coverage_sentence() {
+        // Both directions in one fixture. The window layer must not word this
+        // itself, and a check for the absence of words proves nothing on its
+        // own: the same reader has to find them where they really are, or a
+        // renamed constant would read as a clean window layer.
+        assert_eq!(
+            what_ships_in("src/application/saved_searches.rs")
+                .matches(READS_MESSAGE_TEXT)
+                .count(),
+            1,
+            "the words of the coverage sentence are not written once here"
+        );
+        assert_eq!(
+            what_ships_in("src/presentation/wx_app.rs")
+                .matches(READS_MESSAGE_TEXT)
+                .count(),
+            0,
+            "the window layer words the coverage sentence itself"
+        );
+    }
 
     fn a_message() -> CachedMessage {
         CachedMessage {
