@@ -1751,6 +1751,47 @@ mod tests {
     }
 
     #[test]
+    fn test_a_search_saved_before_this_change_is_the_same_search_and_still_runs() {
+        // The fixture is written out as an older version wrote it, rather than
+        // taken from the writer, because the claim is about two writers
+        // agreeing and one of them is no longer in the tree. Taking it from
+        // the writer would put it on both sides of the assertion.
+        //
+        // This is what makes SEARCH-01's fourth criterion, about a missing
+        // restriction reading as an unrestricted search, disappear rather than
+        // need answering. There is no absent value: the old shape and the new
+        // unnarrowed one are the same rows.
+        let as_an_older_version_wrote_it = SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: Join::Any,
+            questions: vec![
+                asking_about("subject", "contains", "invoice"),
+                asking_about("from", "contains", "invoice"),
+                asking_about("to", "contains", "invoice"),
+            ],
+            folder: None,
+        };
+
+        let asked = what_a_typed_search_asks(&across_the_account("invoice"));
+        assert_eq!(asked.questions, as_an_older_version_wrote_it.questions);
+        assert_eq!(asked.join, as_an_older_version_wrote_it.join);
+        assert_eq!(asked.folder, as_an_older_version_wrote_it.folder);
+
+        // And it still runs, rather than merely still being stored.
+        let mut about_it = a_message();
+        about_it.subject = "Your invoice".to_string();
+        let mut neither = a_message();
+        neither.subject = "Lunch".to_string();
+        neither.from_addr = "bob@example.com".to_string();
+        neither.to_addr = "me@example.com".to_string();
+
+        assert_eq!(as_an_older_version_wrote_it.what_it_cannot_read(), None);
+        assert!(as_an_older_version_wrote_it.selects(&about_it));
+        assert!(!as_an_older_version_wrote_it.selects(&neither));
+    }
+
+    #[test]
     fn test_a_search_across_the_account_saves_no_folder_even_with_one_open() {
         // Somebody standing in a folder who chooses All Folders asked for the
         // account. Keeping the folder would pin the search to where they
