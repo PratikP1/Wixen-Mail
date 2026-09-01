@@ -638,7 +638,7 @@ pub fn delete_selected(
         said_and_shown(
             status,
             a11y,
-            &manager_words::deleted(manager_words::ACCOUNT, &name),
+            &manager_words::deleted(manager_words::ACCOUNT, &name, state.working.len()),
             Priority::Normal,
         );
     } else {

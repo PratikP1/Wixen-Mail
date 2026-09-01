@@ -109,7 +109,7 @@ fn check_delete_selected_removes_the_selected_row(
     into: &mut Vec<Outcome>,
 ) {
     let (_dialog, _sizer, list, status) =
-        wx_managers::make_shell(frame, "Tag Manager", 450, 400, None);
+        wx_managers::make_shell(frame, "Tag Manager", "Tags", 450, 400, None);
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
 
     let tags = vec![a_tag("Blue"), a_tag("Green")];
@@ -168,7 +168,7 @@ fn check_delete_selected_with_nothing_selected_changes_nothing(
     into: &mut Vec<Outcome>,
 ) {
     let (_dialog, _sizer, list, status) =
-        wx_managers::make_shell(frame, "Tag Manager", 450, 400, None);
+        wx_managers::make_shell(frame, "Tag Manager", "Tags", 450, 400, None);
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
 
     let tags = vec![a_tag("Blue")];

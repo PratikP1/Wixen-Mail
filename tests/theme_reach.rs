@@ -1036,7 +1036,7 @@ fn check_compose(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRes
 /// before it.
 fn check_managers_shell(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let (dialog, _sizer, list, _status) =
-        wx_managers::make_shell(parent, "Filter Manager", 650, 450, Some(palette));
+        wx_managers::make_shell(parent, "Filter Manager", "Filters", 650, 450, Some(palette));
     list.insert_column(0, "Name", ListColumnFormat::Left, 130);
     list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
     list.insert_column(2, "Action", ListColumnFormat::Left, 150);

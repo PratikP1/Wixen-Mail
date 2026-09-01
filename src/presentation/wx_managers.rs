@@ -179,7 +179,7 @@ pub fn delete_selected<T: Clone>(
         said_and_shown(
             status_text,
             a11y,
-            &manager_words::deleted(kind, &name),
+            &manager_words::deleted(kind, &name, left),
             Priority::Normal,
         );
     } else {
@@ -190,6 +190,16 @@ pub fn delete_selected<T: Clone>(
             Priority::High,
         );
     }
+}
+
+/// What a list of these still needs before its window can close: nothing.
+///
+/// A filter list, a tag list or a signature list with nothing in it is a list
+/// somebody emptied on purpose, and there is no reason to hold the window open
+/// over it. Named rather than written as `|_| None` at three call sites, so
+/// the decision reads as a decision that was made.
+fn nothing_stops_this_closing<T>(_rows: &[T]) -> Option<&'static str> {
+    None
 }
 
 /// Run the standard Add/Edit/Delete modal loop shared by all manager dialogs.
@@ -205,15 +215,28 @@ pub fn delete_selected<T: Clone>(
 /// all; see [`delete_selected`]. Add and Edit still do, because each opens
 /// a nested dialog of its own and genuinely needs `end_modal` to get there.
 ///
+/// `open_one` is the sub-dialog both Add and Edit reach, with `None` for a new
+/// row and the row itself for an existing one. One function rather than two,
+/// because every window on this loop passed the same call twice with only that
+/// argument differing, and two closures over one dialog is how the two come to
+/// open it differently.
+///
+/// `what_it_still_needs` is asked on the way out, and a sentence back from it
+/// refuses the Close and keeps the window open. Four of the five windows on
+/// this loop answer `None` to everything, because a filter list or a tag list
+/// with nothing in it is a list somebody emptied on purpose. A condition list
+/// is not: a saved search that asks nothing about a message is refused by the
+/// store as well, and a window is where somebody can be told why.
+///
 /// Returns `true` if any changes were made.
 fn run_manager_loop<T: Clone + 'static>(
     chrome: ManagerChrome<'_>,
     kind: &str,
     working: &mut Vec<T>,
     populate: impl Fn(&ListCtrl, &[T]) + Copy + 'static,
-    add_fn: impl Fn(&Dialog) -> Option<T>,
-    edit_fn: impl Fn(&Dialog, &T) -> Option<T>,
+    open_one: impl Fn(&Dialog, Option<&T>) -> Option<T>,
     name_fn: impl Fn(&T) -> String + Copy + 'static,
+    what_it_still_needs: impl Fn(&[T]) -> Option<&'static str> + 'static,
 ) -> bool {
     let ManagerChrome {
         dialog,
@@ -286,7 +309,17 @@ fn run_manager_loop<T: Clone + 'static>(
     });
     close_btn.on_click({
         let d = *dialog;
-        move |_| {
+        let state = state.clone();
+        move |event| {
+            // Consuming the click is what makes a refusal stick, the same way
+            // the condition editor's empty-pattern refusal does. Called in
+            // both branches, because a Close that ends the modal itself does
+            // not want the default handler closing it a second time.
+            event.event.skip(false);
+            if let Some(needed) = what_it_still_needs(&state.borrow().working) {
+                a_sub_dialog_needs(&d, "Not closed", needed);
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -296,17 +329,18 @@ fn run_manager_loop<T: Clone + 'static>(
     loop {
         match dialog.show_modal() {
             r if r == ID_MGR_ADD => {
-                if let Some(item) = add_fn(dialog) {
+                if let Some(item) = open_one(dialog, None) {
                     let name = name_fn(&item);
                     let mut s = state.borrow_mut();
                     s.working.push(item);
                     s.changed = true;
                     drop(s);
+                    let left = state.borrow().working.len();
                     populate(list, &state.borrow().working);
                     said_and_shown(
                         status_text,
                         &a11y,
-                        &manager_words::added(kind, &name),
+                        &manager_words::added(kind, &name, left),
                         Priority::Normal,
                     );
                 }
@@ -314,17 +348,18 @@ fn run_manager_loop<T: Clone + 'static>(
             r if r == ID_MGR_EDIT => {
                 if let Some(idx) = get_selected(list) {
                     let current = state.borrow().working[idx].clone();
-                    if let Some(edited) = edit_fn(dialog, &current) {
+                    if let Some(edited) = open_one(dialog, Some(&current)) {
                         let name = name_fn(&edited);
                         let mut s = state.borrow_mut();
                         s.working[idx] = edited;
                         s.changed = true;
                         drop(s);
+                        let left = state.borrow().working.len();
                         populate(list, &state.borrow().working);
                         said_and_shown(
                             status_text,
                             &a11y,
-                            &manager_words::updated(kind, &name),
+                            &manager_words::updated(kind, &name, left),
                             Priority::Normal,
                         );
                     }
@@ -360,9 +395,18 @@ fn run_manager_loop<T: Clone + 'static>(
 /// round follows throughout for a `StaticText` that is not one. `None` means
 /// high contrast is on, or the system is set up in a way this application
 /// should not paint over, so nothing is set here and Windows decides.
+///
+/// `holds` is what the list is called when it is read out. It used to be
+/// `"Items"` for every manager window, which is the generic word rather than
+/// an answer: somebody landing on the list heard the same thing whether it was
+/// holding filters, tags, signatures or the conditions of a saved search. The
+/// count and the position in the set come from Windows' own provider for a
+/// native list in report mode, on both channels, so this is the one thing
+/// about the list this code has to say.
 pub fn make_shell(
     parent: &Frame,
     title: &str,
+    holds: &str,
     w: i32,
     h: i32,
     palette: Option<theme::Palette>,
@@ -375,7 +419,7 @@ pub fn make_shell(
     let list = ListCtrl::builder(&dialog)
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
-    set_accessible_name(&list, "Items");
+    set_accessible_name(&list, holds);
     let status = StaticText::builder(&dialog).with_label(" ").build();
 
     if let Some(palette) = palette {
@@ -954,7 +998,7 @@ pub fn delete_selected_contact(
         said_and_shown(
             status,
             a11y,
-            &manager_words::deleted(manager_words::CONTACT, &name),
+            &manager_words::deleted(manager_words::CONTACT, &name, showing),
             Priority::Normal,
         );
     } else {
@@ -1000,10 +1044,11 @@ pub fn show_contact_manager_dialog(
                     let query = search_f.get_value();
                     let w = working.borrow();
                     populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
+                    let showing = index_map.borrow().len();
                     said_and_shown(
                         &status,
                         a11y,
-                        &manager_words::added(manager_words::CONTACT, &name),
+                        &manager_words::added(manager_words::CONTACT, &name, showing),
                         Priority::Normal,
                     );
                 }
@@ -1026,10 +1071,11 @@ pub fn show_contact_manager_dialog(
                         let query = search_f.get_value();
                         let w = working.borrow();
                         populate_contacts_filtered(&list, &w, &query, &mut index_map.borrow_mut());
+                        let showing = index_map.borrow().len();
                         said_and_shown(
                             &status,
                             a11y,
-                            &manager_words::updated(manager_words::CONTACT, &name),
+                            &manager_words::updated(manager_words::CONTACT, &name, showing),
                             Priority::Normal,
                         );
                     }
@@ -1777,7 +1823,7 @@ fn remove_from_a_contact_list<T: Clone>(
     said_and_shown(
         problem_line,
         a11y,
-        &manager_words::deleted(what, &name),
+        &manager_words::deleted(what, &name, left),
         Priority::Normal,
     );
 }
@@ -1839,8 +1885,13 @@ fn refresh_custom_list(list: &ListCtrl, items: &[CustomFieldItem]) {
 /// caller discover the empty field, which then returned nothing at all, so
 /// filling in a custom field's value and leaving its label blank destroyed
 /// both with no word said.
-fn a_sub_dialog_needs(parent: &Dialog, said: &str) {
-    let box_ = MessageDialog::builder(parent, said, "Not added")
+///
+/// `titled` is the caption, because a refusal is not always a refusal to add:
+/// a manager window refuses to close, and a box captioned "Not added" over
+/// that sentence is a caption a screen reader reads out before the sentence
+/// and which contradicts it.
+fn a_sub_dialog_needs(parent: &Dialog, titled: &str, said: &str) {
+    let box_ = MessageDialog::builder(parent, said, titled)
         .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
         .build();
     box_.show_modal();
@@ -1899,7 +1950,11 @@ pub fn build_email_sub_dialog(
             // `wx_item_form.rs`'s module doc comment.
             event.event.skip(false);
             if addr_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "An email address is needed before this can be added.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not added",
+                    "An email address is needed before this can be added.",
+                );
                 addr_f.set_focus();
                 return;
             }
@@ -2019,7 +2074,11 @@ pub fn build_phone_sub_dialog(
             // `wx_item_form.rs`'s module doc comment.
             event.event.skip(false);
             if num_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "A phone number is needed before this can be added.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not added",
+                    "A phone number is needed before this can be added.",
+                );
                 num_f.set_focus();
                 return;
             }
@@ -2214,7 +2273,11 @@ pub fn build_address_sub_dialog(
             // apply after this window had already closed, throwing away the
             // state, postcode and country somebody had filled in with it.
             if street_f.get_value().trim().is_empty() && city_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "A street or a town is needed before this can be added.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not added",
+                    "A street or a town is needed before this can be added.",
+                );
                 street_f.set_focus();
                 return;
             }
@@ -2348,6 +2411,7 @@ pub fn build_custom_field_sub_dialog(
             if label_f.get_value().trim().is_empty() {
                 a_sub_dialog_needs(
                     &d,
+                    "Not added",
                     "A name for the field is needed before this can be added.",
                 );
                 label_f.set_focus();
@@ -2436,7 +2500,8 @@ pub fn show_filter_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) = make_shell(parent, "Filter Manager", 650, 450, palette);
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Filter Manager", "Filters", 650, 450, palette);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 130);
     list.insert_column(1, "Condition", ListColumnFormat::Left, 220);
@@ -2456,9 +2521,9 @@ pub fn show_filter_manager_dialog(
         manager_words::FILTER,
         &mut working,
         populate_filters,
-        |d| show_filter_edit(d, None, palette),
-        |d, r| show_filter_edit(d, Some(r), palette),
+        |d, existing| show_filter_edit(d, existing, palette),
         |r| r.name.clone(),
+        nothing_stops_this_closing,
     );
 
     if changed {
@@ -2809,7 +2874,11 @@ pub fn build_rule_edit_dialog(
             let match_words = get_choice_string(&match_choice).unwrap_or_default();
             if let Some(needed) = what_a_condition_still_needs(&match_words, &pattern_f.get_value())
             {
-                a_sub_dialog_needs(&d, needed);
+                // "Not saved" rather than "Not added": this dialog is opened
+                // on a stored condition as well as on a new one, and a
+                // caption a screen reader reads out before the sentence must
+                // not contradict it.
+                a_sub_dialog_needs(&d, "Not saved", needed);
                 pattern_f.set_focus();
                 return;
             }
@@ -2841,9 +2910,8 @@ pub fn build_rule_edit_dialog(
 /// Open the Add/Edit Condition dialog and give back the condition, if one was
 /// saved.
 ///
-/// Nothing opens this yet. Plan 02-07 builds the rule editor that does, and
-/// until then this dialog is built and tested and unreachable from the running
-/// program, which is said here rather than left for somebody to discover.
+/// Opened from [`show_rule_manager_dialog`], for Add and for Edit alike, which
+/// is what makes it the second dialog of two rather than a window of its own.
 pub fn show_rule_edit(
     parent: &Dialog,
     existing: Option<&Question>,
@@ -2882,6 +2950,139 @@ pub fn show_rule_edit(
     };
     dlg.destroy();
     chosen
+}
+
+/// One condition as the three things its row says: what it looks at, how it
+/// compares, and what it compares against.
+///
+/// In words at every position, from the same two builders both rule dialogs
+/// offer their lists from, so a row and the list somebody chose it from cannot
+/// come to say different things. A stored name this build has no words for is
+/// shown as it is stored rather than blanked: a condition written by a later
+/// version is then still a row somebody can see, and remove.
+///
+/// Case sensitivity goes on the end of the third part rather than into a
+/// fourth column, and only when it is on. Two conditions that differ only in
+/// it would otherwise be two rows nobody could tell apart, which is the fault
+/// this codebase keeps finding in lists; a column carrying "no" on almost
+/// every row is the other way to get it wrong.
+fn what_a_condition_row_says(question: &Question) -> [String; 3] {
+    [
+        question.field.clone(),
+        question.match_type.clone(),
+        question.pattern.clone(),
+    ]
+}
+
+/// One condition as a sentence, for the line that says what just changed.
+///
+/// The same three parts the row shows, joined, so the sentence and the row
+/// name one thing the same way. Empty parts are dropped: a way of matching
+/// that compares against nothing has no pattern, and "Read is yes ''" is a
+/// pair of quotation marks read out for no reason.
+fn a_condition_in_words(question: &Question) -> String {
+    what_a_condition_row_says(question)
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What a saved search's condition list still needs before its window can
+/// close, if anything.
+///
+/// At least one condition. A search that asks nothing takes the whole mailbox
+/// when its questions are joined with Any and nothing at all when they are
+/// joined with All, and neither is a search anybody wrote.
+///
+/// The store refuses the same thing (`MessageCache::replace_saved_search`),
+/// and two refusals is deliberate rather than a duplicate: a window is where
+/// somebody can be told what is wrong while they can still fix it, and a store
+/// is where nothing gets past whatever forgot to ask.
+fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
+    let _ = questions;
+    None
+}
+
+/// The rows of a saved search's condition list, repainted from the working
+/// copy.
+///
+/// Begins by emptying the control, the way `populate_filters` does: this runs
+/// after every add, edit and delete, and appending to what is already there
+/// would leave the removed row on screen.
+fn populate_questions(list: &ListCtrl, questions: &[Question]) {
+    list.delete_all_items();
+    for (i, question) in questions.iter().enumerate() {
+        let idx = i as i64;
+        let [looks_at, compares, against] = what_a_condition_row_says(question);
+        list.insert_item(idx, &looks_at, None);
+        list.set_item_text_by_column(idx, 1, &compares);
+        list.set_item_text_by_column(idx, 2, &against);
+    }
+}
+
+/// Open the conditions of one saved search, and give back the new list if any
+/// of it changed.
+///
+/// The second door D-2-01 describes. The search box keeps writing its three
+/// questions; this writes any of the eleven fields the filter engine answers,
+/// with any of the eleven ways it can match. Both land in the same stored
+/// search and both run through `Question::as_a_rule`, so there is one matcher
+/// and one storage underneath the two doors.
+///
+/// `None` means nothing was changed, which is not the same as an empty list:
+/// the caller writes only when something came back, so opening this window and
+/// closing it again touches nothing at all.
+///
+/// On [`run_manager_loop`], which is the only shape here where the number of
+/// rows and the position in the set reach both accessibility channels from
+/// Windows' own provider for a native list. A hand-rolled stack of rows would
+/// have to say the count with `set_accessible_name`, which writes to MSAA
+/// only, and its tab order would change as conditions came and went.
+///
+/// Two dialogs deep at most: this window, and the condition editor it opens.
+/// The same depth the filter manager already reaches.
+pub fn show_rule_manager_dialog(
+    parent: &Frame,
+    search_named: &str,
+    questions: &[Question],
+    a11y: &Arc<Accessibility>,
+) -> Option<Vec<Question>> {
+    // Read once and reused for this shell and every condition dialog it opens,
+    // rather than a second, independent disk read per dialog.
+    let palette = theme::current_from_stored_config();
+    let (dialog, sizer, list, status) = make_shell(
+        parent,
+        &format!("Conditions for {search_named}"),
+        "Conditions",
+        620,
+        420,
+        palette,
+    );
+
+    list.insert_column(0, "Looks at", ListColumnFormat::Left, 170);
+    list.insert_column(1, "How", ListColumnFormat::Left, 190);
+    list.insert_column(2, "What", ListColumnFormat::Left, 220);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let mut working = questions.to_vec();
+    let changed = run_manager_loop(
+        ManagerChrome {
+            dialog: &dialog,
+            main_sizer: &sizer,
+            list: &list,
+            status_text: &status,
+            a11y: a11y.clone(),
+        },
+        manager_words::CONDITION,
+        &mut working,
+        populate_questions,
+        |d, existing| show_rule_edit(d, existing, a11y, palette),
+        a_condition_in_words,
+        what_a_condition_list_still_needs,
+    );
+
+    changed.then_some(working)
 }
 
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
@@ -3077,7 +3278,11 @@ pub fn build_filter_edit_dialog(
             // manager's own sentence reads "Added the rule: " and stops.
             event.event.skip(false);
             if name_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not saved",
+                    "A name is needed before this can be saved.",
+                );
                 name_f.set_focus();
                 return;
             }
@@ -3206,7 +3411,8 @@ pub fn show_tag_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) = make_shell(parent, "Tag Manager", 450, 400, palette);
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Tag Manager", "Tags", 450, 400, palette);
 
     list.insert_column(0, "Tag", ListColumnFormat::Left, 200);
     list.insert_column(1, "Color", ListColumnFormat::Left, 100);
@@ -3224,9 +3430,9 @@ pub fn show_tag_manager_dialog(
         manager_words::TAG,
         &mut working,
         populate_tags,
-        |d| show_tag_edit(d, None, palette),
-        |d, t| show_tag_edit(d, Some(t), palette),
+        |d, existing| show_tag_edit(d, existing, palette),
         |t| t.name.clone(),
+        nothing_stops_this_closing,
     );
 
     if changed {
@@ -3329,7 +3535,11 @@ pub fn build_tag_edit_dialog(
             // manager's own sentence reads "Added the tag: " and stops.
             event.event.skip(false);
             if name_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not saved",
+                    "A name is needed before this can be saved.",
+                );
                 name_f.set_focus();
                 return;
             }
@@ -3417,7 +3627,8 @@ pub fn show_signature_manager_dialog(
     // `theme::current_from_stored_config`'s own doc comment for why that
     // matters).
     let palette = theme::current_from_stored_config();
-    let (dialog, sizer, list, status) = make_shell(parent, "Signature Manager", 550, 450, palette);
+    let (dialog, sizer, list, status) =
+        make_shell(parent, "Signature Manager", "Signatures", 550, 450, palette);
 
     list.insert_column(0, "Name", ListColumnFormat::Left, 200);
     list.insert_column(1, "Default", ListColumnFormat::Centre, 80);
@@ -3436,9 +3647,9 @@ pub fn show_signature_manager_dialog(
         manager_words::SIGNATURE,
         &mut working,
         populate_sigs,
-        |d| show_sig_edit(d, None, palette),
-        |d, s| show_sig_edit(d, Some(s), palette),
+        |d, existing| show_sig_edit(d, existing, palette),
         |s| s.name.clone(),
+        nothing_stops_this_closing,
     );
 
     if changed {
@@ -3573,7 +3784,11 @@ pub fn build_sig_edit_dialog(
             // manager's own sentence reads "Added the signature: " and stops.
             event.event.skip(false);
             if name_f.get_value().trim().is_empty() {
-                a_sub_dialog_needs(&d, "A name is needed before this can be saved.");
+                a_sub_dialog_needs(
+                    &d,
+                    "Not saved",
+                    "A name is needed before this can be saved.",
+                );
                 name_f.set_focus();
                 return;
             }
@@ -4582,5 +4797,146 @@ mod where_the_row_cursor_lands_after_a_delete {
     #[test]
     fn test_removing_the_only_row_leaves_nothing_to_land_on() {
         assert_eq!(the_row_to_select_after_removing(0, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod what_a_saved_searchs_condition_list_says_and_refuses {
+    use super::*;
+
+    fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
+        Question {
+            field: field.to_string(),
+            match_type: match_type.to_string(),
+            pattern: pattern.to_string(),
+            case_sensitive: false,
+        }
+    }
+
+    #[test]
+    fn test_a_condition_row_names_its_field_and_its_comparison_in_words() {
+        // Against the words the two lists in the editor offer rather than
+        // against a string written out here, so the row and the list somebody
+        // chose from are pinned to one source. Those lists are already pinned
+        // to the engine's constants in both directions, which makes this
+        // transitive.
+        let [looks_at, compares, against] =
+            what_a_condition_row_says(&asking("body_plain", "contains", "invoice"));
+
+        assert_eq!(
+            looks_at,
+            the_words_for_a_field("body_plain").expect("the message text has words")
+        );
+        assert_eq!(
+            compares,
+            the_words_for_a_way_of_matching("contains").expect("contains has words")
+        );
+        assert_eq!(against, "invoice");
+    }
+
+    #[test]
+    fn test_every_field_and_every_comparison_reaches_a_row_in_its_own_words() {
+        // Every arm both ways, because this reads a stored string and
+        // `CLAUDE.md` records what happens to the families nobody thought to
+        // test: four fields and six ways of matching had no test at all here
+        // once, and mutation testing is what found them.
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            let [looks_at, _, _] = what_a_condition_row_says(&asking(field, "contains", "x"));
+            assert_eq!(
+                looks_at,
+                the_words_for_a_field(field).expect("every field a rule may name has words"),
+                "the row for {field:?} read out its stored name"
+            );
+        }
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            let [_, compares, _] = what_a_condition_row_says(&asking("subject", way, "x"));
+            assert_eq!(
+                compares,
+                the_words_for_a_way_of_matching(way).expect("every way of matching has words"),
+                "the row for {way:?} read out its stored name"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_condition_this_build_has_no_words_for_is_still_a_row() {
+        // A search written by a later version. Blanking what this build cannot
+        // name would leave a row somebody cannot tell from the one above it,
+        // and the one thing they can still do with it is take it out.
+        let [looks_at, compares, against] =
+            what_a_condition_row_says(&asking("sender_reputation", "sounds_like", "invoice"));
+
+        assert_eq!(looks_at, "sender_reputation");
+        assert_eq!(compares, "sounds_like");
+        assert_eq!(against, "invoice");
+    }
+
+    #[test]
+    fn test_case_sensitivity_is_on_the_row_when_it_is_on() {
+        // Two conditions differing only in this would otherwise be two rows
+        // nobody could tell apart.
+        let mut fussy = asking("subject", "contains", "Invoice");
+        fussy.case_sensitive = true;
+        let [_, _, against] = what_a_condition_row_says(&fussy);
+
+        assert!(
+            against.to_lowercase().contains("case"),
+            "a case sensitive condition read out exactly like one that is not: {against:?}"
+        );
+    }
+
+    #[test]
+    fn test_case_sensitivity_is_left_off_the_row_when_it_is_off() {
+        // The ordinary case. A column or a clause carrying "no" on almost
+        // every row is the other way to make a list unreadable.
+        let [_, _, against] = what_a_condition_row_says(&asking("subject", "contains", "Invoice"));
+
+        assert_eq!(against, "Invoice");
+    }
+
+    #[test]
+    fn test_a_condition_with_nothing_to_compare_against_reads_without_a_gap() {
+        // Four of the eleven ways of matching read no pattern at all, so the
+        // third part is empty and joining it in leaves a sentence that trails
+        // off. The row itself keeps the empty cell; the sentence does not.
+        let said = a_condition_in_words(&asking("read", "is_true", ""));
+
+        assert_eq!(said, said.trim(), "{said:?}");
+        assert!(!said.contains("  "), "{said:?}");
+        assert!(said.contains("Read"), "{said:?}");
+    }
+
+    #[test]
+    fn test_a_saved_search_with_no_conditions_left_cannot_be_closed() {
+        // The whole reason this window counts out loud. A search that asks
+        // nothing takes the whole mailbox when its questions are joined with
+        // Any and nothing at all when they are joined with All, and neither is
+        // a search anybody wrote.
+        let needed = what_a_condition_list_still_needs(&[]);
+
+        assert!(
+            needed.is_some(),
+            "a saved search asking nothing at all was allowed out of the window"
+        );
+        assert!(
+            needed.is_some_and(|said| said.to_lowercase().contains("condition")),
+            "the refusal does not say what is missing: {needed:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_saved_search_with_a_condition_closes() {
+        assert_eq!(
+            what_a_condition_list_still_needs(&[asking("subject", "contains", "invoice")]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_nothing_holds_the_other_manager_windows_open() {
+        // A filter list or a tag list somebody emptied on purpose is a list
+        // somebody emptied on purpose. Only a condition list has a floor.
+        let no_filters: [FilterRule; 0] = [];
+        assert_eq!(nothing_stops_this_closing(&no_filters), None);
     }
 }

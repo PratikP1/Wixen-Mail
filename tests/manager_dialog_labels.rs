@@ -474,7 +474,7 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
 
             // ── The manager shell's own list ────────────────────────────────
             let (shell, _sizer, list, _status) =
-                make_shell(&frame, "Filter Manager", 450, 400, None);
+                make_shell(&frame, "Filter Manager", "Filters", 450, 400, None);
             if list.get_accessible().is_none() {
                 wrong.push((
                     "the manager window's list of rules".to_string(),
