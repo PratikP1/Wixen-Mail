@@ -160,8 +160,116 @@ impl MessageCache {
     /// [`Self::delete_saved_search`]: nothing is created, and a caller that
     /// took silence for success would tell somebody their edit was saved over
     /// a row that is not there.
+    ///
+    /// # All of it or none of it
+    ///
+    /// One transaction, for the reason [`Self::create_saved_search`] gives:
+    /// half a question list is a different question under the same name. A
+    /// replace is the worse half of that, because it starts by taking the old
+    /// list away, so a failure in the middle would leave a search asking less
+    /// than it did before anybody touched it.
+    ///
+    /// The questions are rewritten and then the row is stamped, in that order.
+    /// The row carries `updated_at`, which is the claim that this search is
+    /// now what it says it is, and a claim made before the thing it describes
+    /// has been written is a claim that is briefly false. It also puts the one
+    /// failure a person can actually cause, a name another search in this
+    /// account already holds, after the destructive step rather than before
+    /// it. Stamping the row first would move that failure out of the window
+    /// the transaction covers, which does not make the window safe, it makes
+    /// it unmeasurable:
+    /// `test_a_replace_that_fails_part_way_leaves_the_old_questions_intact`
+    /// would then pass against two loose statements.
+    ///
+    /// The row is updated rather than deleted and written again. The questions
+    /// cascade from it, so deleting it would take them with it and hand a
+    /// wholly new row to anything holding a path to the old one.
+    ///
+    /// An empty question list is refused here as well as in the dialog that
+    /// offers one. `crate::application::saved_searches::SavedSearch::selects`
+    /// records why: a list of conditions that all have to match is true of
+    /// every message when the list is empty. Two refusals rather than one is
+    /// deliberate. A dialog is a place somebody can be told what is wrong; a
+    /// store is a place nothing gets past.
     pub fn replace_saved_search(&self, search: &SavedSearch) -> Result<bool> {
-        let _ = search;
+        if search.questions.is_empty() {
+            return Err(Error::Other(
+                "Failed to save the search: a saved search has to ask at least one thing about \
+                 a message, and this one asks nothing."
+                    .to_string(),
+            ));
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let saving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to save the search: {}", e)))?;
+
+        let there: i64 = saving
+            .query_row(
+                "SELECT COUNT(*) FROM saved_searches WHERE id = ?1",
+                params![&search.id],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to look up the search: {}", e)))?;
+        if there == 0 {
+            return Ok(false);
+        }
+
+        saving
+            .execute(
+                "DELETE FROM saved_search_questions WHERE search_id = ?1",
+                params![&search.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear what the search asked: {}", e)))?;
+
+        for (position, question) in search.questions.iter().enumerate() {
+            saving
+                .execute(
+                    "INSERT INTO saved_search_questions
+                     (search_id, position, field, match_type, pattern, case_sensitive)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        &search.id,
+                        position as i64,
+                        &question.field,
+                        &question.match_type,
+                        &question.pattern,
+                        &question.case_sensitive,
+                    ],
+                )
+                .map_err(|e| Error::Other(format!("Failed to save what the search asks: {}", e)))?;
+        }
+
+        // The name goes with the rest. This takes a whole `SavedSearch` and
+        // writing back all of it but one field would be a caller's edit
+        // dropped in silence, which is the fault this whole method exists to
+        // stop wearing a smaller coat. `rename_saved_search` stays for the
+        // tree's own Rename command, which has no question list to hand over.
+        //
+        // `created_at` is left alone: the folder tree lists these oldest
+        // first, and a search that jumped to the bottom of the list every time
+        // it was edited is a row somebody knows by position and can no longer
+        // find.
+        saving
+            .execute(
+                "UPDATE saved_searches
+                 SET name = ?1, all_or_any = ?2, folder = ?3, updated_at = ?4
+                 WHERE id = ?5",
+                params![
+                    &search.name,
+                    search.join.written_down(),
+                    &search.folder,
+                    &now,
+                    &search.id,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save the search: {}", e)))?;
+
+        saving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to save the search: {}", e)))?;
         Ok(true)
     }
 
