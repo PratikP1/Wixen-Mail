@@ -196,17 +196,31 @@ if [ "$mode" = "affected" ]; then
     exit 0
 fi
 
-# How many threads the suite runs on, which is a measurement rather than a
-# preference. Measured 2026-08-31 on 24 logical cores, running the 5,837-test
-# library suite: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s,
-# and the harness default of one per core 196s. The suite is contended rather
-# than compute-bound, so the default is the worst of the five and more than
-# twice the cost of the best. What contends was not diagnosed.
+# The thread count is deliberately not set here, and that is a result rather
+# than an omission.
 #
-# Overridable because that curve belongs to this machine. On a two-core CI
-# runner the default is already below the turning point, and forcing four there
-# would be worse, so CI does not set it.
-threads="${WIXEN_TEST_THREADS:-4}"
+# Run on its own, the library suite is much faster on four threads than on the
+# harness default of one per core. Measured 2026-08-31 on 24 logical cores over
+# 5,837 tests: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s,
+# default 196s. It is contended rather than compute-bound. `scripts/guards.py`
+# takes that setting and keeps it, because it runs `--lib` on its own and the
+# measurement is about exactly that.
+#
+# It does not carry to this gate, which runs `--all-targets`. Measured here, on
+# the same machine on the same day with nothing else running:
+#
+#                        library test term    whole gate
+#     default (24)              197.00s          335s
+#     four threads              111.55s          353s
+#
+# The test term drops 86 seconds twice over and the total does not move. About
+# 104 seconds appears somewhere else and was not accounted for; the two totals
+# may simply be inside this machine's run-to-run spread. Either way there is no
+# measured gain here, so nothing is set, because a number written down without a
+# result behind it is the thing this file keeps warning about.
+#
+# Worth picking up again: the gate is compilation more than testing, and
+# `target/debug` was 269GB when this was measured.
 
 echo "== tests =="
 # --no-fail-fast because without it cargo stops at the first target that fails,
@@ -215,7 +229,7 @@ echo "== tests =="
 # started. That is how a broken guard record once reached main while this gate
 # looked like it had checked it. The run still fails; it just says everything
 # that is wrong rather than the first thing.
-cargo test --all-targets --no-fail-fast -- --test-threads="$threads"
+cargo test --all-targets --no-fail-fast
 
 echo "== release build =="
 cargo build --release

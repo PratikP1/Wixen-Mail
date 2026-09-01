@@ -310,6 +310,16 @@ a test in it, so there is no clever selection that makes this quick. The whole
 sweep is 536 records and about 15 hours, which is an overnight job rather than an
 impossible one since the thread setting halved it.
 
+That setting is `WIXEN_TEST_THREADS`, it defaults to 4, and it applies to the
+guard runs only. Measured on 24 logical cores over the 5,837-test library run on
+its own: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, and the
+harness default of one per core 196s. The suite is contended rather than
+compute-bound. **It does not carry to `scripts/check.sh`**, which runs
+`--all-targets`: there the test term falls from 197s to 111s and the whole gate
+does not move, 335s against 353s, so the gate does not set it. Reading the
+isolated figure as though it applied everywhere was the mistake, and timing the
+gate rather than assuming is what caught it.
+
 Running the records in parallel across git worktrees was measured and rejected:
 two concurrent suites take 131s each against 88s alone, so the contention is on
 something shared rather than on the processor and crosses process boundaries.
