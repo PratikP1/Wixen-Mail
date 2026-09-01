@@ -24,9 +24,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::filters::{the_words_for_a_field, the_words_for_a_way_of_matching};
+use wixen_mail::application::saved_searches::Question;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_managers::{
     self, ContactEntry, ManagerState, TagEntry, delete_selected, delete_selected_contact,
+    populate_questions,
 };
 use wxdragon::prelude::*;
 
@@ -60,6 +63,16 @@ fn populate_tag_rows(list: &ListCtrl, tags: &[TagEntry]) {
     list.delete_all_items();
     for (i, t) in tags.iter().enumerate() {
         list.insert_item(i as i64, &t.name, None);
+    }
+}
+
+/// One condition of a saved search.
+fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
+    Question {
+        field: field.to_string(),
+        match_type: match_type.to_string(),
+        pattern: pattern.to_string(),
+        case_sensitive: false,
     }
 }
 
@@ -156,6 +169,85 @@ fn check_delete_selected_removes_the_selected_row(
         "delete_selected says which row it deleted",
         status.get_label() == "Deleted the tag: Blue",
         format!("line of text after delete: {:?}", status.get_label()),
+    );
+}
+
+/// `delete_selected` over a saved search's conditions: the sentence carries
+/// the change and how many conditions are left, in one announcement.
+///
+/// The pure builder is tested in the library. This is the wired half, and it
+/// is the half that would have gone wrong: the count is computed inside
+/// `delete_selected` for the row cursor, and handing the sentence builder the
+/// wrong number, or the old length, is invisible to any test that reads only
+/// `manager_words`.
+fn check_a_condition_going_says_how_many_are_left(
+    frame: &Frame,
+    a11y: &Accessibility,
+    into: &mut Vec<Outcome>,
+) {
+    let (_dialog, _sizer, list, status) = wx_managers::make_shell(
+        frame,
+        "Conditions for Invoices",
+        "Conditions",
+        620,
+        420,
+        None,
+    );
+    list.insert_column(0, "Looks at", ListColumnFormat::Left, 170);
+    list.insert_column(1, "How", ListColumnFormat::Left, 190);
+    list.insert_column(2, "What", ListColumnFormat::Left, 220);
+
+    let questions = vec![
+        asking("subject", "contains", "invoice"),
+        asking("from", "contains", "billing"),
+        asking("read", "is_true", ""),
+    ];
+    populate_questions(&list, &questions);
+    select_row(&list, 0);
+
+    let state = Rc::new(RefCell::new(ManagerState {
+        working: questions,
+        changed: false,
+    }));
+
+    delete_selected(
+        &state,
+        &list,
+        &status,
+        a11y,
+        // The word `manager_words::CONDITION` holds, spelled here because
+        // that constant is crate-private. The same thing `check_delete_...`
+        // above does with "tag".
+        "condition",
+        populate_questions,
+        |q: &Question| {
+            format!(
+                "{} {} {}",
+                the_words_for_a_field(&q.field).unwrap_or(&q.field),
+                the_words_for_a_way_of_matching(&q.match_type).unwrap_or(&q.match_type),
+                q.pattern
+            )
+        },
+    );
+
+    let said = status.get_label();
+    record(
+        into,
+        "removing a condition says how many are left",
+        said.contains('2'),
+        format!("line of text after the delete: {said:?}"),
+    );
+    record(
+        into,
+        "removing a condition says it in one sentence, not two",
+        said.starts_with("Deleted the condition: "),
+        format!("line of text after the delete: {said:?}"),
+    );
+    record(
+        into,
+        "the condition list repaints to match",
+        list.get_item_count() == 2,
+        format!("list row count after delete: {}", list.get_item_count()),
     );
 }
 
@@ -331,6 +423,7 @@ fn test_delete_removes_the_right_row_against_real_widgets() {
                 &a11y,
                 &mut outcomes,
             );
+            check_a_condition_going_says_how_many_are_left(&frame, &a11y, &mut outcomes);
             check_delete_selected_contact_removes_the_selected_row(&frame, &a11y, &mut outcomes);
             check_delete_selected_contact_with_nothing_selected_changes_nothing(
                 &frame,

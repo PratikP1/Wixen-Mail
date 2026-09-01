@@ -70,15 +70,13 @@ fn and_how_many_now(kind: &str, left: usize) -> String {
 /// What to say when something of this kind was added, and how many there are
 /// now.
 pub(crate) fn added(kind: &str, name: &str, left: usize) -> String {
-    let _ = left;
-    format!("Added the {kind}: {name}")
+    format!("Added the {kind}: {name}{}", and_how_many_now(kind, left))
 }
 
 /// What to say when something of this kind was updated, and how many there are
 /// now.
 pub(crate) fn updated(kind: &str, name: &str, left: usize) -> String {
-    let _ = left;
-    format!("Updated the {kind}: {name}")
+    format!("Updated the {kind}: {name}{}", and_how_many_now(kind, left))
 }
 
 /// What to say when something of this kind was deleted.

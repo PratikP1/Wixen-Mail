@@ -2967,10 +2967,19 @@ pub fn show_rule_edit(
 /// this codebase keeps finding in lists; a column carrying "no" on almost
 /// every row is the other way to get it wrong.
 fn what_a_condition_row_says(question: &Question) -> [String; 3] {
+    let in_words = |stored: &str, said: Option<&'static str>| said.unwrap_or(stored).to_string();
+    let against = match (question.pattern.as_str(), question.case_sensitive) {
+        ("", _) => String::new(),
+        (pattern, false) => pattern.to_string(),
+        (pattern, true) => format!("{pattern} (case sensitive)"),
+    };
     [
-        question.field.clone(),
-        question.match_type.clone(),
-        question.pattern.clone(),
+        in_words(&question.field, the_words_for_a_field(&question.field)),
+        in_words(
+            &question.match_type,
+            the_words_for_a_way_of_matching(&question.match_type),
+        ),
+        against,
     ]
 }
 
@@ -3000,8 +3009,10 @@ fn a_condition_in_words(question: &Question) -> String {
 /// somebody can be told what is wrong while they can still fix it, and a store
 /// is where nothing gets past whatever forgot to ask.
 fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static str> {
-    let _ = questions;
-    None
+    questions.is_empty().then_some(
+        "A saved search has to ask at least one thing about a message. Add a condition \
+         before closing this window.",
+    )
 }
 
 /// The rows of a saved search's condition list, repainted from the working
@@ -3010,7 +3021,12 @@ fn what_a_condition_list_still_needs(questions: &[Question]) -> Option<&'static 
 /// Begins by emptying the control, the way `populate_filters` does: this runs
 /// after every add, edit and delete, and appending to what is already there
 /// would leave the removed row on screen.
-fn populate_questions(list: &ListCtrl, questions: &[Question]) {
+///
+/// Public for the same reason [`make_shell`] and [`delete_selected`] are: the
+/// checks that need a real list live in `tests/`, because a process may build
+/// one wxWidgets application and the library test binary has spent that budget
+/// elsewhere.
+pub fn populate_questions(list: &ListCtrl, questions: &[Question]) {
     list.delete_all_items();
     for (i, question) in questions.iter().enumerate() {
         let idx = i as i64;

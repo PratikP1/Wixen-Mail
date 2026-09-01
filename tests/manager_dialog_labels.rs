@@ -48,7 +48,7 @@ use wixen_mail::application::saved_searches::{
 };
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_managers::{
-    FilterRule, build_filter_edit_dialog, build_rule_edit_dialog, make_shell,
+    FilterRule, build_filter_edit_dialog, build_rule_edit_dialog, make_shell, populate_questions,
 };
 use wxdragon::prelude::*;
 
@@ -67,6 +67,35 @@ fn stored(field: &str, match_type: &str, pattern: &str) -> FilterRule {
         action_type: "mark_as_read".to_string(),
         action_value: String::new(),
         enabled: true,
+    }
+}
+
+/// Whether a list cell holds `expected`, allowing for a defect in
+/// `wxdragon 0.9.17` that this test cannot fix and must not hide.
+///
+/// `ListCtrl::get_item_text` asks wxWidgets how long the text is, which
+/// answers with the room a NUL-terminated copy needs, and then allocates a
+/// buffer of exactly that many bytes and calls the result that many characters
+/// long. So the last character of every non-empty cell is lost and a NUL takes
+/// its place: "Message text" comes back as "Message tex\0". Measured against
+/// `wxdragon-0.9.17/src/widgets/list_ctrl.rs:429`.
+///
+/// This still discriminates: a cell holding the stored name `body_plain` is
+/// not a prefix of `Message text`, which is the fault the check is about. What
+/// it cannot see is a cell whose last character is wrong, and that is the
+/// upstream defect's cost rather than a decision taken here.
+fn a_cell_holding(cell: &str, expected: &str) -> bool {
+    let read_back = cell.trim_end_matches('\0');
+    !expected.is_empty() && expected.starts_with(read_back) && read_back.len() + 1 == expected.len()
+}
+
+/// One condition of a saved search.
+fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
+    Question {
+        field: field.to_string(),
+        match_type: match_type.to_string(),
+        pattern: pattern.to_string(),
+        case_sensitive: false,
     }
 }
 
@@ -482,6 +511,77 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
                 ));
             }
             shell.destroy();
+
+            // ── The condition manager's own list ────────────────────────────
+            //
+            // A saved search's conditions, in the window plan 02-07 opens from
+            // the folder tree. The shell is built here rather than through
+            // `show_rule_manager_dialog`, which runs a modal loop and cannot
+            // return until somebody closes it; what this can still settle is
+            // that the list is named for what it holds, that it carries an
+            // accessible object, and that one condition makes one row with all
+            // three of its parts in words.
+            let (conditions_shell, _sizer, conditions, _status) = make_shell(
+                &frame,
+                "Conditions for Invoices",
+                "Conditions",
+                620,
+                420,
+                None,
+            );
+            conditions.insert_column(0, "Looks at", ListColumnFormat::Left, 170);
+            conditions.insert_column(1, "How", ListColumnFormat::Left, 190);
+            conditions.insert_column(2, "What", ListColumnFormat::Left, 220);
+            populate_questions(
+                &conditions,
+                &[
+                    asking("subject", "contains", "invoice"),
+                    asking("body_plain", "contains", "overdue"),
+                    asking("read", "is_true", ""),
+                ],
+            );
+
+            if conditions.get_accessible().is_none() {
+                wrong.push((
+                    "the condition manager's list".to_string(),
+                    "carries no accessible object".to_string(),
+                ));
+            }
+            if conditions.get_item_count() != 3 {
+                wrong.push((
+                    "the condition manager's list".to_string(),
+                    format!(
+                        "painted {} rows for three conditions",
+                        conditions.get_item_count()
+                    ),
+                ));
+            }
+            // The words, not the stored names. A row reading "body_plain
+            // contains overdue" is the machine name spoken to somebody
+            // choosing between rows, which is the fault plan 02-04 found in
+            // the filter editor's own lists.
+            let second_row = conditions.get_item_text(1, 0);
+            let message_text = the_words_for_a_field("body_plain").unwrap_or_default();
+            if !a_cell_holding(&second_row, message_text) {
+                wrong.push((
+                    "a condition row about the message text".to_string(),
+                    format!(
+                        "reads {second_row:?} rather than {message_text:?}, the words the \
+                         editor's own list offers"
+                    ),
+                ));
+            }
+            // Four of the eleven ways of matching read no pattern, and the
+            // third column is then empty rather than carrying two quotation
+            // marks with nothing between them.
+            let third_row_pattern = conditions.get_item_text(2, 2);
+            if !third_row_pattern.is_empty() {
+                wrong.push((
+                    "a condition that compares against nothing".to_string(),
+                    format!("still shows {third_row_pattern:?} in the What column"),
+                ));
+            }
+            conditions_shell.destroy();
 
             drop(wrong);
             wxdragon::call_after(Box::new(move || {

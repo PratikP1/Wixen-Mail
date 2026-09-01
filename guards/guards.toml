@@ -3918,10 +3918,14 @@ file = "src/presentation/wx_managers.rs"
 before = """        said_and_shown(
             status_text,
             a11y,
-            &manager_words::deleted(kind, &name),
+            &manager_words::deleted(kind, &name, left),
             Priority::Normal,
         );"""
-after = """        status_text.set_label(&manager_words::deleted(kind, &name));"""
+after = """        status_text.set_label(&manager_words::deleted(kind, &name, left));"""
+# Re-measured by hand on 2026-09-01 against the whole 5,942-test library, after
+# `deleted` gained the count that goes on the end of a condition list's
+# sentence and the old break stopped naming a place in the tree. Still exactly
+# one, unchanged.
 red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
@@ -6126,16 +6130,24 @@ red = [
 [[guard]]
 name = "a manager window's delete sentence names its kind and does not collide with mail"
 file = "src/presentation/manager_words.rs"
-before = """pub(crate) fn deleted(kind: &str, name: &str) -> String {
-    format!("Deleted the {kind}: {name}")
+before = """pub(crate) fn deleted(kind: &str, name: &str, left: usize) -> String {
+    format!("Deleted the {kind}: {name}{}", and_how_many_now(kind, left))
 }"""
-after = """pub(crate) fn deleted(kind: &str, name: &str) -> String {
-    let _ = kind;
-    format!("Deleted: {name}")
+after = """pub(crate) fn deleted(kind: &str, name: &str, left: usize) -> String {
+    format!("Deleted: {name}{}", and_how_many_now(kind, left))
 }"""
+# Re-measured by hand on 2026-09-01 against the whole 5,942-test library, after
+# `deleted` gained the count a condition list says with every change. The red
+# set grew from two to four, and the two new ones are tests this same change
+# added: the sentence a condition list says is built from the kind as well, so
+# dropping the kind takes the tally with it. That is the staleness `CLAUDE.md`
+# says never announces itself, caught here only because the break stopped
+# naming a place in the tree and forced a re-measurement.
 red = [
+    "presentation::manager_words::tests::test_a_condition_change_is_one_sentence_and_not_two",
     "presentation::manager_words::tests::test_every_manager_sentence_names_the_kind_of_thing_it_happened_to",
     "presentation::manager_words::tests::test_no_manager_window_says_what_the_mail_path_says_when_a_message_is_gone",
+    "presentation::manager_words::tests::test_only_a_condition_list_counts_out_loud",
 ]
 
 # ── The app password hint attached to the password box's description ───────
