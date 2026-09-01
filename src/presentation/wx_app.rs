@@ -4202,6 +4202,10 @@ impl WxMailApp {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
                             spawn_mail_sync(app, None);
                         }
+                        // STUB. An arm that is reached and does nothing, which
+                        // is the shape of the defect this file has had before:
+                        // a command on a menu wired to nothing at all.
+                        _ if id == ID_FETCH_MISSING_TEXT => {}
                         // Ctrl+N: the primary action for wherever you are.
                         // A key whose meaning depends on focus is normally a
                         // bad idea for somebody who cannot see what has focus,
@@ -5439,6 +5443,12 @@ impl WxMailApp {
             .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
             .append_separator()
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
+            // STUB. On the menu, named, and saying nothing about what it is.
+            .append_item(
+                ID_FETCH_MISSING_TEXT,
+                "&Fetch Missing Message Text",
+                "Fetch the message text that is not on this computer",
+            )
             .append_separator()
             // Drafts were saved and then unreachable, which is worse than not
             // saving them because it looks like it worked. That was fixed by
@@ -26265,6 +26275,97 @@ mod what_a_saved_search_says_before_it_runs {
         assert!(
             command[reports..].contains("UIUpdate::"),
             "what the backfill did is worked out and never said to anybody"
+        );
+    }
+
+    /// The source with every space taken out, so a call can be found whatever
+    /// way rustfmt has chosen to wrap it.
+    fn without_whitespace(source: &str) -> String {
+        source.chars().filter(|c| !c.is_whitespace()).collect()
+    }
+
+    #[test]
+    fn test_the_fetch_is_on_the_menu_bar_and_the_menu_reaches_the_command() {
+        // Ledger 13, the half a button cannot close. The offer appears only
+        // while a search that reads message text has just been run, so
+        // somebody who searches by subject, or never searches, is never shown
+        // it at all. A menu is how somebody finds out a command exists.
+        //
+        // Both halves are checked here because the first without the second is
+        // this file's own recorded defect: a command on a menu, an arm that
+        // catches its id, and nothing behind it.
+        let shipping = crate::common::what_ships::what_ships(&the_window_itself());
+        let squashed = without_whitespace(&shipping);
+
+        assert!(
+            squashed.contains("append_item(ID_FETCH_MISSING_TEXT,"),
+            "the fetch is on no menu, so it is reachable only from a button \
+             that appears after one kind of search"
+        );
+
+        let at = squashed
+            .find("_ifid==ID_FETCH_MISSING_TEXT=>")
+            .expect("a menu arm for the fetch");
+        // As far as the next arm, so a call sitting in the one below cannot
+        // answer for this one.
+        let arm = &squashed[at..];
+        let ends = arm[1..].find("_ifid==").map_or(arm.len(), |next| next + 1);
+        assert!(
+            arm[..ends].contains("start_the_missing_text_fetch("),
+            "the menu item is caught by an arm that does not start the fetch"
+        );
+    }
+
+    #[test]
+    fn test_the_menu_says_the_fetch_is_experimental_before_it_is_chosen() {
+        // The warning lives beside the button as a line of static text, and a
+        // menu has nowhere to put one. Widening where the fetch is offered
+        // widens who meets a path no provider has ever seen, so the new door
+        // has to carry the same warning the old one does.
+        //
+        // On the label as well as in the help line. The help line is what
+        // Windows puts in the status bar and hands to a screen reader as the
+        // item's description, and the label is what is read whatever anybody's
+        // settings say.
+        let shipping = crate::common::what_ships::what_ships(&the_window_itself());
+        let squashed = without_whitespace(&shipping);
+
+        let at = squashed
+            .find("append_item(ID_FETCH_MISSING_TEXT,")
+            .expect("the fetch on a menu");
+        let item = &squashed[at..squashed.len().min(at + 400)];
+        assert!(
+            item.contains("(experimental)"),
+            "the menu item does not say it is experimental, so somebody \
+             choosing it from the menu is never told: {item}"
+        );
+        assert!(
+            item.contains("FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL"),
+            "the menu item's description does not carry the sentence saying \
+             what could go wrong: {item}"
+        );
+    }
+
+    #[test]
+    fn test_the_fetch_says_it_has_started_before_it_opens_a_connection() {
+        // From the button this was covered by the label somebody had just
+        // pressed. From a menu it is a command chosen and then silence, for as
+        // long as a mail server takes to answer, and the first thing the run
+        // itself says comes after the connection is open. Silence after a
+        // command is how somebody chooses it twice and starts a second run.
+        let command =
+            the_fetch_command(&crate::common::what_ships::what_ships(&the_window_itself()));
+
+        let says = command
+            .find("send_status")
+            .expect("the fetch to say something the moment it is chosen");
+        let works = command
+            .find("spawn_blocking")
+            .expect("the fetch to do its work off the window thread");
+        assert!(
+            says < works,
+            "nothing is said until the work has started, so choosing this from \
+             a menu is silence for as long as a server takes"
         );
     }
 }
