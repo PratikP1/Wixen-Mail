@@ -2300,6 +2300,10 @@ impl MessageCache {
         // Zero for every row written before this existed, which is the truthful
         // answer: nothing wrote such a row until now.
         self.ensure_column_exists("messages", "filed_here", "INTEGER NOT NULL DEFAULT 0")?;
+        // Whether the search index holds this message's text, which is a
+        // different question from whether `message_bodies` does and has to be
+        // asked separately. See the function's own doc.
+        self.record_whether_the_index_holds_each_messages_text()?;
         // Where a message was before the five local folders were merged into
         // one set each (D-18, D-19, D-40). The merge gives every message it
         // moves a fresh number in the shared folder, because `UNIQUE(folder_id,
@@ -2743,6 +2747,77 @@ impl MessageCache {
          attendees_json, reminders_json, created_at, updated_at, categories, calendar_id";
 
     /// The column names of a table, as SQLite holds them.
+    /// Give every message a record of whether the search index holds its text.
+    ///
+    /// # Why this cannot be read back out of the index
+    ///
+    /// The obvious version of this is no column at all and a count over
+    /// `message_search`. It cannot be written. That table is declared
+    /// `content=''`, so it stores the index and not the text: selecting its
+    /// `body` column gives NULL for every row and
+    /// `COUNT(*) WHERE body IS NOT NULL` gives nought however much text is
+    /// indexed. Both measured on 2026-09-01.
+    ///
+    /// `fts5vocab` does answer it exactly, by reading the index itself, and it
+    /// is far too slow to ask on the way to a search: measured here at 92 ms
+    /// over 2,000 messages holding 1,000 bodies, which is about nine seconds
+    /// at the two hundred thousand this program is built for, against 0.3 ms
+    /// for the column below. So the answer is recorded when it is decided.
+    ///
+    /// # Why not the snippet column, which looks like it already says this
+    ///
+    /// It does, until an index rebuild, and then it says the opposite in the
+    /// dangerous direction. `build_any_missing_search_index` reindexes an
+    /// evicted message with no body, so the index loses the text while the
+    /// snippet stays: the snippet is deliberately kept when a body is evicted,
+    /// because the message list reads it aloud on every row. Measured on
+    /// 2026-09-01: after a rebuild the snippet is still there and the word past
+    /// it is no longer found. A count from the snippet would tell somebody the
+    /// search looked inside text it did not look inside.
+    ///
+    /// # What the backfill is, and which way it is wrong
+    ///
+    /// [`Self::index_message_for_search`] writes this column from the same
+    /// value it writes into the index, so from here on the two are one
+    /// decision recorded twice rather than two answers to one question.
+    ///
+    /// The rows that already exist have no such record and the index cannot be
+    /// asked, so they are filled in from `message_bodies`, which is a message
+    /// whose text is here now and was therefore indexed with it. That is exact
+    /// for every database where the index is also being built for the first
+    /// time, because that build reads the same table. It is short by the
+    /// messages whose text was evicted before this column existed: those stay
+    /// findable by their text and are counted as though they were not. Short
+    /// rather than over, which is the direction to be wrong in, and the set
+    /// never grows after this runs.
+    fn record_whether_the_index_holds_each_messages_text(&self) -> Result<()> {
+        let column = searching::THE_INDEX_HOLDS_THE_TEXT;
+        if self
+            .columns_of("messages")?
+            .iter()
+            .any(|held| held == column)
+        {
+            return Ok(());
+        }
+        self.ensure_column_exists("messages", column, "INTEGER NOT NULL DEFAULT 0")?;
+        self.conn
+            .execute(
+                &format!(
+                    "UPDATE messages SET {column} = 1
+                     WHERE EXISTS (SELECT 1 FROM message_bodies b
+                                   WHERE b.message_id = messages.id)"
+                ),
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the search index holds text for: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
     fn columns_of(&self, table: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn

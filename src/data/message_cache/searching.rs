@@ -85,8 +85,7 @@ impl WhereToSearch {
     pub const fn reads_the_message_text(self) -> bool {
         match self {
             Self::EveryFolder | Self::OneFolder(_) => true,
-            // Stub, until the count is written: says yes to everything.
-            Self::SubjectOnly | Self::SenderOnly => true,
+            Self::SubjectOnly | Self::SenderOnly => false,
         }
     }
 
@@ -130,6 +129,15 @@ impl WhereToSearch {
         }
     }
 }
+
+/// The column recording whether the index holds a message's text.
+///
+/// Named once and read from here by all three places that touch it: the
+/// migration that adds it, the indexing that writes it, and the count that
+/// reads it. A column name spelled three times is three places able to come
+/// to differ, and two of the three are inside format strings where the
+/// compiler would not see it happen.
+pub(super) const THE_INDEX_HOLDS_THE_TEXT: &str = "text_is_in_the_search_index";
 
 /// How much of the mail a search box search looks at is mail it can read the
 /// text of.
@@ -357,6 +365,41 @@ impl MessageCache {
                 rusqlite::params![message_id, subject, from_addr, snippet, body],
             )
             .map_err(|e| Error::Other(format!("Failed to add to the search index: {}", e)))?;
+
+        // Recorded here, from the same value that has just gone into the
+        // index, because this is the one place that decides what text the
+        // index holds. Anywhere else and it would be a second answer to one
+        // question, free to drift; here it is one decision written down twice
+        // in the same breath.
+        //
+        // Read back by `how_much_message_text_the_index_holds`, which cannot
+        // ask the index itself: it is contentless, so its `body` column reads
+        // as NULL however much is in it. The whole reasoning is on
+        // `MessageCache::record_whether_the_index_holds_each_messages_text`.
+        //
+        // A body row holding neither plain text nor markup indexes as an empty
+        // string and is no more searchable than no body at all, so what is
+        // recorded is whether there were words, not whether there was a row.
+        //
+        // The `IS NOT` is what keeps this off the sync's back: every message a
+        // sync writes comes through here, and for almost all of them the
+        // answer has not changed, so this is a lookup by primary key that
+        // writes nothing.
+        let column = THE_INDEX_HOLDS_THE_TEXT;
+        self.conn
+            .execute(
+                &format!("UPDATE messages SET {column} = ?1 WHERE id = ?2 AND {column} IS NOT ?1"),
+                rusqlite::params![
+                    body.as_deref().is_some_and(|text| !text.is_empty()),
+                    message_id
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the search index now holds: {}",
+                    e
+                ))
+            })?;
         Ok(())
     }
 
@@ -559,26 +602,40 @@ impl MessageCache {
         account_id: &str,
         looking_in: WhereToSearch,
     ) -> Result<TextTheIndexHolds> {
-        // A stub, until the count is written. The widest wrong answer rather
-        // than an empty one: every message on this computer, all of them
-        // covered, whoever they belong to and wherever they are. Nought would
-        // make every assertion about what is left out vacuously green.
-        let _ = (account_id, looking_in);
-        let messages = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
-            .map_err(|e| Error::Other(format!("Failed to count the mail to search: {}", e)))?;
-        Ok(TextTheIndexHolds {
-            messages,
-            with_text: messages,
-        })
+        // Not a count over `message_search`. That table is contentless, so its
+        // `body` column reads as NULL however much text is indexed, and the
+        // one way to ask it directly is far too slow to ask on the way to a
+        // search. `MessageCache::record_whether_the_index_holds_each_messages_text`
+        // holds both measurements and the reasoning.
+        let column = THE_INDEX_HOLDS_THE_TEXT;
+        self.conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*), COUNT(CASE WHEN m.{column} = 1 THEN 1 END)
+                     FROM messages m
+                     INNER JOIN folders f ON m.folder_id = f.id
+                     WHERE f.account_id = ?1 AND m.deleted = 0
+                       -- Nought names no folder, exactly as it does in the
+                       -- search this describes, so the three answers that do
+                       -- not narrow to one folder fall through here.
+                       AND (?2 = {NO_FOLDER_IN_PARTICULAR} OR m.folder_id = ?2)"
+                ),
+                rusqlite::params![account_id, looking_in.folder()],
+                |row| {
+                    Ok(TextTheIndexHolds {
+                        messages: row.get(0)?,
+                        with_text: row.get(1)?,
+                    })
+                },
+            )
+            .map_err(|e| Error::Other(format!("Failed to count the mail to search: {}", e)))
     }
 }
 
 #[cfg(test)]
 mod finding_things {
     use super::super::{CachedFolder, CachedMessage, MessageCache};
-    use super::WhereToSearch;
+    use super::{THE_INDEX_HOLDS_THE_TEXT, WhereToSearch};
     use crate::common::temp_home::TempHome;
 
     fn cache(name: &str) -> (TempHome<MessageCache>, i64) {
@@ -1068,6 +1125,69 @@ mod finding_things {
                 with_text: 0
             },
             "a search of one folder was told about the whole account"
+        );
+    }
+
+    #[test]
+    fn test_a_database_written_before_this_column_is_told_what_its_index_holds() {
+        // Everybody upgrading has one of these, and the column arrives holding
+        // nought for every row they own. Left at that, somebody with a fully
+        // downloaded mailbox would be told the search box can look inside none
+        // of it, which is both false and the opposite of what this sentence is
+        // for.
+        //
+        // A characterisation test: the backfill was written before it, so it
+        // was green on arrival. Taken red by hand instead, by removing the
+        // UPDATE from `record_whether_the_index_holds_each_messages_text`, and
+        // recorded in `guards/guards.toml`.
+        let home = TempHome::named("coverage_column_backfill", |dir| dir.to_path_buf());
+        {
+            let cache = MessageCache::new(home.to_path_buf(), None).expect("a cache");
+            let folder = cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: "acc".into(),
+                    name: "Inbox".into(),
+                    path: "INBOX".into(),
+                    folder_type: "Inbox".into(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            let opened = cache
+                .save_message(&message(folder, 1, "Opened once"))
+                .expect("a message");
+            cache
+                .save_message_body(opened, Some(&past_the_snippet("aubergine")), None)
+                .expect("a body");
+            cache
+                .save_message(&message(folder, 2, "Never opened"))
+                .expect("a second message");
+            // Dropped to stand in for a database written before this column
+            // existed, which is what everybody upgrading actually has.
+            cache
+                .conn
+                .execute(
+                    &format!(
+                        "ALTER TABLE messages DROP COLUMN {}",
+                        THE_INDEX_HOLDS_THE_TEXT
+                    ),
+                    [],
+                )
+                .expect("a database without the column");
+        }
+
+        let reopened = MessageCache::new(home.to_path_buf(), None).expect("the cache again");
+
+        assert_eq!(
+            reopened
+                .how_much_message_text_the_index_holds("acc", WhereToSearch::EveryFolder)
+                .expect("what the box covers"),
+            super::TextTheIndexHolds {
+                messages: 2,
+                with_text: 1
+            },
+            "an upgraded database was told the search box can look inside none of its mail"
         );
     }
 
