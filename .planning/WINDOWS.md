@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 24
 waived_count: 0
 fixed_count: 0
-total_count: 19
-last_updated: 2026-09-01T07:00:03.177Z
+total_count: 24
+last_updated: 2026-09-01T08:59:53.265Z
 ---
 
 # Broken Windows Ledger
@@ -34,6 +34,11 @@ last_updated: 2026-09-01T07:00:03.177Z
 | 17 | 02 | unrun-verify | src/application/saved_searches.rs |  | The Save This Search window now reads out one clause per question, so a three-question search says a longer sentence than the one fixed sentence it replaced. Whether that is clearer or merely longer when heard is unverified by ear | open |  | 2026-09-01T06:59:55.094Z |  |
 | 18 | 02 | unrun-verify | src/presentation/wx_app.rs |  | Saving a search whose folder belongs to another account is refused out loud through refuse_a_command. Reaching that state needs two accounts and Set Active, so whether the refusal is heard and understood is unverified | open |  | 2026-09-01T07:00:02.733Z |  |
 | 19 | 02 | unrun-verify | src/presentation/wx_app.rs |  | A saved search narrowed to a folder has never been run against a real account. Whether the stored path resolves through get_folder for a real IMAP mailbox, rather than refusing with THAT_FOLDER_IS_NOT_HERE, is unverified against a live server | open |  | 2026-09-01T07:00:03.177Z |  |
+| 20 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog says what a saved search cannot find with the chosen field, on a line of text under the controls and through the announcement queue. Whether it is heard when the field list changes, and whether a sentence that long is useful there rather than in the way, is unverified by ear | open |  | 2026-09-01T08:59:42.387Z |  |
+| 21 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified | open |  | 2026-09-01T08:59:51.835Z |  |
+| 22 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog refuses an empty pattern through a message box and puts focus back on the Pattern box. Whether the refusal is heard and whether focus lands where somebody expects is unverified by ear | open |  | 2026-09-01T08:59:52.282Z |  |
+| 23 | 02 | stub | src/presentation/wx_managers.rs |  | build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does | open |  | 2026-09-01T08:59:52.753Z |  |
+| 24 | 02 | stub | src/data/message_cache/saved_searches.rs |  | replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it | open |  | 2026-09-01T08:59:53.265Z |  |
 
 ````json
 [
@@ -263,6 +268,66 @@ last_updated: 2026-09-01T07:00:03.177Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T07:00:03.177Z",
+    "resolved_at": null
+  },
+  {
+    "id": 20,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The Add/Edit Condition dialog says what a saved search cannot find with the chosen field, on a line of text under the controls and through the announcement queue. Whether it is heard when the field list changes, and whether a sentence that long is useful there rather than in the way, is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T08:59:42.387Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T08:59:51.835Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The Add/Edit Condition dialog refuses an empty pattern through a message box and puts focus back on the Pattern box. Whether the refusal is heard and whether focus lands where somebody expects is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T08:59:52.282Z",
+    "resolved_at": null
+  },
+  {
+    "id": 23,
+    "kind": "stub",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T08:59:52.753Z",
+    "resolved_at": null
+  },
+  {
+    "id": 24,
+    "kind": "stub",
+    "phase": "02",
+    "file": "src/data/message_cache/saved_searches.rs",
+    "line": null,
+    "description": "replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T08:59:53.265Z",
     "resolved_at": null
   }
 ]

@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-09-01T07:02:06.122Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-09-01T09:03:58.258Z"
 last_activity: 2026-09-01
 last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
-state_head: bc64686d33d6ff514a4bfdd3f78034d784689293
+state_head: a3cd8d82f0d3388de0268bf4ad2e957a9a679ef4
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 21
   percent: 0
 ---
 
@@ -145,6 +145,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P03 | one session | 3 tasks | 7 files |
 | Phase 02 P04 | one session | 3 tasks | 7 files |
 | Phase 02 P05 | one session | 3 tasks | 6 files |
+| Phase 02 P06 | one session | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -232,6 +233,9 @@ ahead:
 - [Phase 01]: 02-03: a read-gate refusal stops a backfill and an ordinary failure does not, told apart by service::outward::was_refused_by_the_gate
 - [Phase 01]: SEARCH-01 is met by keeping the In box's answer beside the typed words and writing both halves of the scope in one call: D-2-03's narrower question set and D-2-14's folder, with no schema change
 - [Phase 01]: A folder stored on a saved search carries the account it belongs to, and saving one whose account disagrees with the search's is refused rather than saved without the folder, because Set Active can change one and leave the other
+- [Phase 01]: A saved search's whole description is written back in one transaction, with the questions written first and the row stamped last, so the one failure a person can cause lands inside the window the transaction protects rather than outside it
+- [Phase 01]: The two things a saved search misses stay two sentences, with a test asserting they differ: mail thrown away is never gathered, and evicted message text stays findable from the search box and not here (D-2-13)
+- [Phase 01]: No changelog entry for 02-06, because nothing it builds is reachable; the entry belongs to 02-07, which opens the dialog and calls the replace
 
 ### Pending Todos
 
@@ -313,8 +317,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T07:01:57.847Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-09-01T09:03:56.442Z
+Stopped at: Completed 02-06-PLAN.md
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
