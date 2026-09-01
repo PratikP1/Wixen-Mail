@@ -2522,6 +2522,12 @@ fn the_pattern_box_asks_for_something(match_words: &str) -> bool {
         .is_none_or(|stored| !a_way_of_matching_compares_against_nothing(stored))
 }
 
+/// What a rule stores as its pattern, given how it matches and what is in the
+/// box.
+fn the_pattern_to_store(_match_words: &str, typed: &str) -> String {
+    typed.to_string()
+}
+
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     list.delete_all_items();
     for (i, r) in rules.iter().enumerate() {
@@ -2797,7 +2803,7 @@ fn show_filter_edit(
             match_type: the_way_of_matching_those_words_name(&match_words)
                 .unwrap_or_default()
                 .to_string(),
-            pattern: pattern_f.get_value(),
+            pattern: the_pattern_to_store(&match_words, &pattern_f.get_value()),
             case_sensitive: cs_check.get_value(),
             action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
             action_value: action_value_f.get_value(),
@@ -4084,6 +4090,57 @@ mod tests {
             assert!(!region.is_empty(), "Empty region for {}", country);
             assert!(!code.is_empty(), "Empty code for {}", country);
         }
+    }
+}
+
+#[cfg(test)]
+mod what_a_rule_stores_for_a_pattern_nothing_compares {
+    use super::*;
+
+    /// The words for a way of matching, so the tests read as the dialog does.
+    fn said(stored: &str) -> &'static str {
+        the_words_for_a_way_of_matching(stored).expect("every way of matching has words")
+    }
+
+    #[test]
+    fn test_a_way_of_matching_that_reads_no_pattern_stores_none() {
+        // The box is disabled for these four, and a disabled box still holds
+        // whatever was typed before the Match Type was changed. Storing that
+        // leaves a rule carrying a pattern nothing ever compares against, and
+        // anything that describes the rule in words reads it out as though it
+        // meant something.
+        for way in ["is_empty", "is_not_empty", "is_true", "is_false"] {
+            assert_eq!(
+                the_pattern_to_store(said(way), "invoice"),
+                "",
+                "a rule matching by {way} kept a pattern it never reads"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_way_of_matching_that_reads_the_pattern_stores_what_was_typed() {
+        for way in ["contains", "not_contains", "equals", "regex"] {
+            assert_eq!(
+                the_pattern_to_store(said(way), "invoice"),
+                "invoice",
+                "a rule matching by {way} lost the pattern it compares against"
+            );
+        }
+    }
+
+    #[test]
+    fn test_words_nothing_is_called_keep_what_was_typed() {
+        // Nothing chosen yet, or a rule written by a later version. Emptying
+        // the pattern on a question this build could not answer would throw
+        // away a rule's contents on the way through a dialog that only opened
+        // to change its name.
+        assert_eq!(the_pattern_to_store("", "invoice"), "invoice");
+        assert_eq!(
+            the_pattern_to_store("sounds like", "invoice"),
+            "invoice",
+            "a way of matching this build has never heard of had its pattern emptied"
+        );
     }
 }
 
