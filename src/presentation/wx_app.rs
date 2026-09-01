@@ -6273,8 +6273,18 @@ fn coverage_before(
     account_id: &str,
     search: &crate::application::saved_searches::SavedSearch,
 ) -> Option<String> {
-    let _ = (cache, account_id, search);
-    Some(String::new())
+    if !search.reads_the_message_text() {
+        return None;
+    }
+    match cache.how_much_message_text_is_stored_here(account_id) {
+        Ok(coverage) => {
+            Some(crate::application::saved_searches::what_a_saved_search_covers(coverage))
+        }
+        Err(e) => {
+            tracing::error!("What a saved search covers could not be counted: {e}");
+            None
+        }
+    }
 }
 
 fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {

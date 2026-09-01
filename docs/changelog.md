@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A saved search that looks inside your messages now tells you how much of
+  that text is actually on this computer, before it runs.** You see a line
+  like "This saved search reads the text of your messages, and this computer
+  has the text of 40 of the 300 messages in this account."
+
+  Wixen Mail stores the text of a message when you open it, and clears out the
+  oldest text when the store gets large. So a search for a word inside your
+  mail has always covered part of your mailbox rather than all of it, and the
+  results looked the same either way. Nine results could mean nine matches or
+  nine matches out of a hundred you could not see. Now you are told which
+  before you read the answer.
+
+  The awkward part, said rather than hidden: **there are two searches here and
+  they do not cover the same amount of your mail.** The search box at the top
+  looks in a word index that keeps what it has learned, so it can still find a
+  message by a word in text that has since been cleared out. A saved search
+  reads the stored text itself, so it cannot. Clearing out old text
+  deliberately leaves the word index alone, because taking those messages out
+  of the index would make them unfindable rather than merely unsearchable by
+  their text. That is why the new line says which search it is about instead
+  of giving you one number for both.
+
 - **You can now stop Wixen Mail fetching the text of your messages from the
   server.** Settings, Permissions, under "Message Text". It is on to begin
   with, and leaving it on is what most people want.
