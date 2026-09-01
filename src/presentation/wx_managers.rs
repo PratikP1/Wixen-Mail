@@ -14,6 +14,7 @@ use crate::application::filters::{
     the_field_those_words_name, the_way_of_matching_those_words_name, the_words_for_a_field,
     the_words_for_a_way_of_matching,
 };
+use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
@@ -2542,6 +2543,348 @@ fn the_pattern_to_store(match_words: &str, typed: &str) -> String {
     }
 }
 
+/// Every field a rule may name, in the words somebody hears, ready for a
+/// `Choice`.
+///
+/// One builder read by both rule dialogs rather than the same four lines
+/// written twice. That is the answer `RULE_ACTIONS` already gives for actions,
+/// and the reason is the one `WHAT_EACH_FIELD_IS_CALLED`'s own doc gives: a
+/// second copy of a list is how two lists come to disagree. A second reader of
+/// one source is a different thing from a second source.
+fn the_words_for_every_field() -> Vec<String> {
+    A_FIELD_A_RULE_MAY_NAME
+        .iter()
+        .filter_map(|field| the_words_for_a_field(field))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Every way a rule may match, in the words somebody hears, ready for a
+/// `Choice`.
+fn the_words_for_every_way_of_matching() -> Vec<String> {
+    A_WAY_A_RULE_MAY_MATCH
+        .iter()
+        .filter_map(|way| the_words_for_a_way_of_matching(way))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The field and the way of matching a brand new condition opens on.
+///
+/// Written down rather than left to whichever entry the constants happen to
+/// list first. A `Choice` with nothing selected reads out as an unfilled combo
+/// box, and pressing OK on one would store the empty string as the field, so a
+/// new condition has to open on something. Which something is a decision about
+/// what somebody is most likely about to write, and reordering
+/// [`A_FIELD_A_RULE_MAY_NAME`] for an unrelated reason should not silently
+/// change it.
+///
+/// A subject that contains a word: that is what the search box asks, so it is
+/// the condition a rule editor is most often opened to write.
+const WHAT_A_NEW_CONDITION_ASKS_FIRST: (&str, &str) = ("subject_line", "contains");
+
+/// What a condition still needs before it can be saved, if anything.
+///
+/// Only the pattern. The two lists cannot be left unanswered, because the
+/// dialog opens on [`WHAT_A_NEW_CONDITION_ASKS_FIRST`].
+///
+/// Asked of the words showing in the Match Type list, the same way
+/// [`the_pattern_to_store`] is, and answered through
+/// [`the_pattern_box_asks_for_something`] rather than by a second comparison
+/// written here.
+///
+/// A way of matching that compares against nothing saves with an empty pattern
+/// quite happily. Refusing that would be asking somebody to fill in the box
+/// the dialog has just switched off, which is a trap rather than a refusal.
+fn what_a_condition_still_needs(match_words: &str, typed: &str) -> Option<&'static str> {
+    let _ = match_words;
+    if typed.trim().is_empty() {
+        Some("Something to compare against is needed before this can be saved.")
+    } else {
+        None
+    }
+}
+
+/// Say what a saved search cannot find with the field now showing, or clear
+/// the line.
+///
+/// Shown and said, through the one call that does both, for the reason
+/// [`crate::presentation::status_line`] gives: a line of text under a window
+/// raises no notification and is not somewhere anybody navigating by ear goes,
+/// so a sentence only written there is a sentence nobody gets. This one is the
+/// whole point of offering the field at all, so it is the last one to leave
+/// unsaid.
+///
+/// At the ordinary level rather than above it. It is not a refusal, it is what
+/// the choice just made means.
+fn say_what_this_field_cannot_find(line: &StaticText, a11y: &Accessibility, field_words: &str) {
+    let cannot = the_field_those_words_name(field_words)
+        .and_then(crate::application::saved_searches::what_a_saved_search_cannot_find_with);
+    match cannot {
+        Some(said) => said_and_shown(line, a11y, said, Priority::Normal),
+        // Cleared rather than said. There is nothing to disclose about this
+        // field, and announcing an empty string would be a sound with no
+        // sentence in it every time somebody arrowed through the list.
+        None => line.set_label(""),
+    }
+}
+
+/// What `show_rule_edit` still needs after construction: the dialog to run
+/// `.show_modal()` on, every control to read back once OK is pressed, and the
+/// line that says what the chosen field can find.
+pub struct RuleEditWidgets {
+    pub dialog: Dialog,
+    pub field_choice: Choice,
+    pub match_choice: Choice,
+    pub pattern_f: TextCtrl,
+    pub cs_check: CheckBox,
+    pub what_it_can_find: StaticText,
+}
+
+/// Build the Add/Edit Condition dialog without showing it.
+///
+/// One condition of a saved search: which part of a message to look at, how to
+/// compare it, and what to compare it against. D-2-01 makes a smart folder a
+/// saved search with a fuller editor rather than a second object, so this
+/// writes a [`Question`] and nothing else. A `Question` becomes a `FilterRule`
+/// through `Question::as_a_rule`, which is the one matcher, so there is no
+/// second way here to describe a condition.
+///
+/// Split from [`show_rule_edit`] the way every dialog in this file is split: a
+/// test can build the real dialog and read back the real value a live control
+/// holds, and never call `.show_modal()` at all.
+///
+/// Both lists come from the engine's own constants through
+/// [`the_words_for_every_field`] and [`the_words_for_every_way_of_matching`],
+/// which the filter editor reads too. All eleven fields are offered, including
+/// the one a saved search never sees, because D-2-01 says the editor writes
+/// any of the eleven. What that field does is said out loud instead of the
+/// field being quietly left out.
+pub fn build_rule_edit_dialog(
+    parent: &Dialog,
+    existing: Option<&Question>,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> RuleEditWidgets {
+    let title = if existing.is_some() {
+        "Edit Condition"
+    } else {
+        "Add Condition"
+    };
+    let dlg = Dialog::builder(parent, title).with_size(520, 320).build();
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+    let fields = FlexGridSizer::builder(0, 2)
+        .with_vgap(4)
+        .with_hgap(8)
+        .build();
+    fields.add_growable_col(1, 1);
+
+    // Accelerators: F(Field), T(Type), P(Pattern), C(Case), all first letters
+    // and the same four the filter editor uses for the same four controls.
+    let field_label = StaticText::builder(&dlg)
+        .with_label("Match &Field:")
+        .build();
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
+    set_accessible_name(&field_choice, "Match field");
+    fields.add(
+        &field_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&field_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let match_label = StaticText::builder(&dlg).with_label("Match &Type:").build();
+    let match_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_way_of_matching())
+        .build();
+    set_accessible_name(&match_choice, "Match type");
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_label = StaticText::builder(&dlg).with_label("").build();
+    let cs_check = CheckBox::builder(&dlg)
+        .with_label("&Case Sensitive")
+        .build();
+    fields.add(&cs_label, 0, SizerFlag::All, 4);
+    fields.add(&cs_check, 0, SizerFlag::All, 4);
+
+    sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // Beside the control rather than in a tooltip. A tooltip is reached by
+    // hovering, which is not how anybody this is written for is working, and
+    // it is not read out when the value under it changes.
+    let what_it_can_find = StaticText::builder(&dlg).with_label("").build();
+    sizer.add(
+        &what_it_can_find,
+        0,
+        SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+        8,
+    );
+
+    let btn_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&dlg)
+        .with_label("OK")
+        .with_id(ID_OK)
+        .build();
+    let cancel = Button::builder(&dlg)
+        .with_label("Cancel")
+        .with_id(ID_CANCEL)
+        .build();
+    btn_row.add_spacer(0);
+    btn_row.add(&ok, 0, SizerFlag::All, 4);
+    btn_row.add(&cancel, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&btn_row, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+    dlg.set_sizer(sizer, true);
+
+    match existing {
+        Some(question) => {
+            // The words, because the words are what the lists hold. Selecting
+            // by the stored name selects nothing, and pressing OK on a
+            // condition that opened that way rewrites its field to the empty
+            // string. That happened for five of the eleven fields in the
+            // filter editor before plan 02-04.
+            if let Some(said) = the_words_for_a_field(&question.field) {
+                select_choice_by_string(&field_choice, said);
+            }
+            if let Some(said) = the_words_for_a_way_of_matching(&question.match_type) {
+                select_choice_by_string(&match_choice, said);
+            }
+            pattern_f.set_value(&question.pattern);
+            cs_check.set_value(question.case_sensitive);
+        }
+        None => {
+            let (field, way) = WHAT_A_NEW_CONDITION_ASKS_FIRST;
+            if let Some(said) = the_words_for_a_field(field) {
+                select_choice_by_string(&field_choice, said);
+            }
+            if let Some(said) = the_words_for_a_way_of_matching(way) {
+                select_choice_by_string(&match_choice, said);
+            }
+        }
+    }
+
+    say_what_this_field_cannot_find(
+        &what_it_can_find,
+        a11y,
+        &get_choice_string(&field_choice).unwrap_or_default(),
+    );
+    field_choice.on_selection_changed({
+        let line = what_it_can_find;
+        let a11y = Arc::clone(a11y);
+        move |event| {
+            say_what_this_field_cannot_find(&line, &a11y, &event.get_string().unwrap_or_default());
+        }
+    });
+
+    // The Pattern box only asks when there is something to compare against.
+    // Disabled rather than taken out of the sizer, so the tab order does not
+    // move under somebody working by ear.
+    pattern_f.enable(the_pattern_box_asks_for_something(
+        &get_choice_string(&match_choice).unwrap_or_default(),
+    ));
+    match_choice.on_selection_changed({
+        let box_to_ask_with = pattern_f;
+        move |event| {
+            box_to_ask_with.enable(the_pattern_box_asks_for_something(
+                &event.get_string().unwrap_or_default(),
+            ));
+        }
+    });
+
+    ok.on_click({
+        let d = dlg;
+        move |event| {
+            // Consuming the click is what makes the refusal stick, the same
+            // way the filter editor's missing-name refusal does.
+            event.event.skip(false);
+            let match_words = get_choice_string(&match_choice).unwrap_or_default();
+            if let Some(needed) = what_a_condition_still_needs(&match_words, &pattern_f.get_value())
+            {
+                a_sub_dialog_needs(&d, needed);
+                pattern_f.set_focus();
+                return;
+            }
+            d.end_modal(ID_OK);
+        }
+    });
+    cancel.on_click({
+        let d = dlg;
+        move |_| {
+            d.end_modal(ID_CANCEL);
+        }
+    });
+
+    if let Some(palette) = palette {
+        theme::paint(&dlg, palette.main_surface());
+        theme::paint(&pattern_f, palette.main_surface());
+    }
+
+    RuleEditWidgets {
+        dialog: dlg,
+        field_choice,
+        match_choice,
+        pattern_f,
+        cs_check,
+        what_it_can_find,
+    }
+}
+
+/// Open the Add/Edit Condition dialog and give back the condition, if one was
+/// saved.
+///
+/// Nothing opens this yet. Plan 02-07 builds the rule editor that does, and
+/// until then this dialog is built and tested and unreachable from the running
+/// program, which is said here rather than left for somebody to discover.
+pub fn show_rule_edit(
+    parent: &Dialog,
+    existing: Option<&Question>,
+    a11y: &Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+) -> Option<Question> {
+    let RuleEditWidgets {
+        dialog: dlg,
+        field_choice,
+        match_choice,
+        pattern_f,
+        cs_check,
+        what_it_can_find: _,
+    } = build_rule_edit_dialog(parent, existing, a11y, palette);
+
+    // Read first, then destroy: the controls belong to the dialog, and
+    // wxWidgets does not free one when the Rust value goes.
+    let answered = dlg.show_modal();
+    let chosen = if answered == ID_OK {
+        // The lists offer words and a question stores names, so both come back
+        // through the same pair of conversions the dialog built them with.
+        let match_words = get_choice_string(&match_choice).unwrap_or_default();
+        Some(Question {
+            field: get_choice_string(&field_choice)
+                .and_then(|said| the_field_those_words_name(&said))
+                .unwrap_or_default()
+                .to_string(),
+            match_type: the_way_of_matching_those_words_name(&match_words)
+                .unwrap_or_default()
+                .to_string(),
+            pattern: the_pattern_to_store(&match_words, &pattern_f.get_value()),
+            case_sensitive: cs_check.get_value(),
+        })
+    } else {
+        None
+    };
+    dlg.destroy();
+    chosen
+}
+
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
     list.delete_all_items();
     for (i, r) in rules.iter().enumerate() {
@@ -2615,12 +2958,11 @@ pub fn build_filter_edit_dialog(
     // fields: a rule about the message text, about the date, or about any of
     // the three flags could not be written here at all, and the six that could
     // were offered as `body_plain` and the rest.
-    let field_choices: Vec<String> = A_FIELD_A_RULE_MAY_NAME
-        .iter()
-        .filter_map(|field| the_words_for_a_field(field))
-        .map(str::to_string)
-        .collect();
-    let field_choice = Choice::builder(&dlg).with_choices(field_choices).build();
+    //
+    // Through the shared builder, which the condition editor reads too.
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
     set_accessible_name(&field_choice, "Match field");
     fields.add(
         &field_label,
@@ -2631,12 +2973,9 @@ pub fn build_filter_edit_dialog(
     fields.add(&field_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
     let match_label = StaticText::builder(&dlg).with_label("Match &Type:").build();
-    let match_choices: Vec<String> = A_WAY_A_RULE_MAY_MATCH
-        .iter()
-        .filter_map(|way| the_words_for_a_way_of_matching(way))
-        .map(str::to_string)
-        .collect();
-    let match_choice = Choice::builder(&dlg).with_choices(match_choices).build();
+    let match_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_way_of_matching())
+        .build();
     set_accessible_name(&match_choice, "Match type");
     fields.add(
         &match_label,
@@ -4154,6 +4493,68 @@ mod what_a_rule_stores_for_a_pattern_nothing_compares {
             the_pattern_to_store("sounds like", "invoice"),
             "invoice",
             "a way of matching this build has never heard of had its pattern emptied"
+        );
+    }
+}
+
+#[cfg(test)]
+mod what_the_condition_editor_refuses_and_what_it_opens_on {
+    use super::*;
+
+    /// The words for a way of matching, so the tests read as the dialog does.
+    fn said(stored: &str) -> &'static str {
+        the_words_for_a_way_of_matching(stored).expect("every way of matching has words")
+    }
+
+    #[test]
+    fn test_a_condition_is_refused_only_where_the_pattern_would_be_compared() {
+        // Every one of the eleven, both ways round, because this switches on a
+        // string and the families with no test are the ones mutation testing
+        // has found here before.
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            let refused = what_a_condition_still_needs(said(way), "").is_some();
+            if a_way_of_matching_compares_against_nothing(way) {
+                assert!(
+                    !refused,
+                    "a condition matching by {way} was refused for an empty pattern, and the \
+                     box it is being asked to fill in is switched off"
+                );
+            } else {
+                assert!(
+                    refused,
+                    "a condition matching by {way} saved with nothing to compare against, so \
+                     it would match every message or none"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_condition_with_something_typed_in_is_never_refused() {
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            assert_eq!(
+                what_a_condition_still_needs(said(way), "invoice"),
+                None,
+                "a condition matching by {way} was refused with a pattern typed into it"
+            );
+        }
+        // Nothing chosen yet, or a way of matching written by a later version.
+        assert_eq!(what_a_condition_still_needs("", "invoice"), None);
+    }
+
+    #[test]
+    fn test_a_new_condition_opens_on_a_field_and_a_way_of_matching_that_really_exist() {
+        // A default naming something the lists do not offer selects nothing,
+        // which is the accident this constant exists to stop: the dialog opens
+        // with an unfilled combo box and OK stores the empty string.
+        let (field, way) = WHAT_A_NEW_CONDITION_ASKS_FIRST;
+        assert!(
+            the_words_for_a_field(field).is_some(),
+            "a new condition opens on {field:?}, and no field is called that"
+        );
+        assert!(
+            the_words_for_a_way_of_matching(way).is_some(),
+            "a new condition opens on {way:?}, and no way of matching is called that"
         );
     }
 }

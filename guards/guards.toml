@@ -10341,20 +10341,35 @@ red = [
 #
 # It runs against its own suite rather than the library, because it builds the
 # real dialogs and wxWidgets allows one application per process.
+#
+# Re-measured 2026-09-01. Plan 02-06 added a second dialog offering the same
+# eleven fields and pulled the four lines this record used to name out into
+# `the_words_for_every_field`, which both dialogs now read. So the break moved
+# from one dialog's own construction to the shared builder, and it now takes
+# both dialogs down at once rather than one.
+#
+# Still one test named, and that is not the red set shrinking: every check that
+# builds a window lives in the one `#[test]` that file is allowed, so a break
+# reaching two dialogs reddens the same single function. Measured by hand
+# again after the move rather than assumed from the old measurement.
 
 [[guard]]
 name = "the filter dialog offers what the engine answers rather than a list of its own"
 file = "src/presentation/wx_managers.rs"
 suite = "manager_dialog_labels"
-before = """    let field_choices: Vec<String> = A_FIELD_A_RULE_MAY_NAME
+before = """fn the_words_for_every_field() -> Vec<String> {
+    A_FIELD_A_RULE_MAY_NAME
         .iter()
         .filter_map(|field| the_words_for_a_field(field))
         .map(str::to_string)
-        .collect();"""
-after = """    let field_choices: Vec<String> = ["Subject", "From", "To", "Cc"]
+        .collect()
+}"""
+after = """fn the_words_for_every_field() -> Vec<String> {
+    ["Subject", "From", "To", "Cc"]
         .iter()
         .map(|s| (*s).to_string())
-        .collect();"""
+        .collect()
+}"""
 red = [
     "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
 ]
