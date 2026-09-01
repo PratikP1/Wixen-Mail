@@ -10577,7 +10577,12 @@ red = [
 # `message_bodies` instead. Without it, everybody upgrading with a fully
 # downloaded mailbox is told the search box can look inside none of it.
 #
-# Taken red by hand against the whole library on 2026-09-01: exactly one.
+# Taken red by hand against the whole library on 2026-09-01: exactly two. It
+# was one until the same day, when the fix for the backfill asking a looser
+# question than the live writer added a test that holds the two answers against
+# each other. That test asserts an ordinary message reads as text the box can
+# look inside, so a backfill that fills nothing in reddens it too. Re-measured
+# rather than reasoned about, which is what found the second name.
 [[guard]]
 name = "a database written before the coverage column is told what its index holds"
 file = "src/data/message_cache/mod.rs"
@@ -10585,6 +10590,7 @@ before = """                    "UPDATE messages SET {column} = 1"""
 after = """                    "UPDATE messages SET {column} = 0"""
 red = [
     "data::message_cache::searching::finding_things::test_a_database_written_before_this_column_is_told_what_its_index_holds",
+    "data::message_cache::searching::finding_things::test_the_backfill_and_the_live_writer_agree_about_a_body_row_holding_no_text",
 ]
 
 # ── A narrowed search not paying for a coverage figure it cannot use ────────
