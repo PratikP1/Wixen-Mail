@@ -25,6 +25,23 @@ use super::MessageCache;
 use crate::common::{Error, Result};
 use rusqlite::OptionalExtension;
 
+/// One message a fetch would have to ask a server for.
+///
+/// The three things asking takes and nothing else. The row id is what the
+/// answer is stored against; the folder path and the uid are exactly the
+/// arguments of `application::mail_controller::fetch_message_body`, so a
+/// caller walking a list of these never has to go back to the database to
+/// work out how to ask for the next one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageToFetch {
+    /// The row the fetched text is stored against.
+    pub message_id: i64,
+    /// The folder to open at the server before asking.
+    pub folder_path: String,
+    /// The server's own number for this message inside that folder.
+    pub uid: u32,
+}
+
 /// A stored message body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageBody {
@@ -471,6 +488,74 @@ impl MessageCache {
             freed += bytes;
         }
         Ok(freed)
+    }
+
+    /// The messages in one account whose text is not on this computer.
+    ///
+    /// One row per message a fetch would have to ask a server for, carrying
+    /// the two things asking takes: the folder it is in and its uid. Those are
+    /// exactly the arguments of `mail_controller::fetch_message_body`, so a
+    /// caller walks this list and needs no second query per message.
+    ///
+    /// # It has to agree with `how_much_message_text_is_stored_here`
+    ///
+    /// That count is what somebody is told before a saved search runs: how
+    /// many messages are in the account and how many of those have their text
+    /// here. This list is what the offer to fetch the rest will actually
+    /// attempt. Two functions describing one set, written separately, is the
+    /// shape that comes apart, so the agreement is asserted by
+    /// `test_the_list_is_as_long_as_the_coverage_sentence_says_it_is` rather
+    /// than described here and hoped for. The account join and the exclusion
+    /// of deleted mail are shared with `scan_query`, which is the third
+    /// description of the same set. Change one, change all three.
+    ///
+    /// # Where the two deliberately differ, and why the offer counts this list
+    ///
+    /// The count above says "no text stored". This list says "no text stored
+    /// **and** somewhere to ask for it", which is a smaller set: mail
+    /// collected over POP and a copy of a sent message filed here have no
+    /// server holding another copy, so listing one produces a request that can
+    /// only fail. `super::messages::ONLY_COPY_IS_HERE` names them, and the
+    /// eviction query above excludes them for the mirror-image reason.
+    ///
+    /// Normally the two sets are the same, because everything that files one
+    /// of those messages stores its text in the same breath. They come apart
+    /// only where that store failed and was logged rather than being fatal,
+    /// which `application::importing_messages` does on purpose. So the offer
+    /// says how long **this list** is rather than subtracting the two counts:
+    /// the number somebody is told the fetch will attempt is then the number
+    /// it attempts, in the rare case as well as the ordinary one.
+    ///
+    /// # Newest first, which is also what makes a restart cheap
+    ///
+    /// The order every other listing here uses, so a run that is stopped and
+    /// started again does not present the mailbox in an order nothing else
+    /// does. It also makes a part-finished run resume rather than repeat: a
+    /// message whose text arrived has a row in `message_bodies` and is gone
+    /// from this list, so the second run starts where the first stopped.
+    pub fn messages_with_no_text_here(&self, account_id: &str) -> Result<Vec<MessageToFetch>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT m.id, f.path, m.uid
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id",
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to prepare the missing text query: {}", e))
+            })?;
+
+        let _ = account_id;
+        stmt.query_map([], |row| {
+            Ok(MessageToFetch {
+                message_id: row.get(0)?,
+                folder_path: row.get(1)?,
+                uid: row.get(2)?,
+            })
+        })
+        .map_err(|e| Error::Other(format!("Failed to list the mail with no text: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to read a row of mail with no text: {}", e)))
     }
 
     /// Move any bodies still stored inline in `messages` into this table.
@@ -1061,6 +1146,261 @@ mod tests {
         assert!(
             cache.get_message_body(kept_here).unwrap().is_some(),
             "the only copy of a sent message was evicted"
+        );
+    }
+
+    /// The same message `cached` builds, in a folder named by number.
+    ///
+    /// Only the two-account test needs this, and it needs it because the
+    /// narrowing it is about is a join through `folders`: a second account
+    /// with no folder of its own cannot hold a message, so there is nothing
+    /// for the account condition to exclude and the test would pass against a
+    /// query that had no account condition at all.
+    fn in_folder(uid: u32, subject: &str, folder_id: i64) -> CachedMessage {
+        CachedMessage {
+            folder_id,
+            ..cached(uid, subject)
+        }
+    }
+
+    /// A message whose text is stored, and one whose text is not.
+    fn with_and_without_text(cache: &MessageCache) -> (i64, i64) {
+        let stored = cache.save_message(&cached(1, "Read once")).expect("stored");
+        cache
+            .save_message_body(stored, Some("the text of it"), None)
+            .expect("body");
+        let missing = cache
+            .save_message(&cached(2, "Never opened"))
+            .expect("missing");
+        (stored, missing)
+    }
+
+    fn listed(cache: &MessageCache, account_id: &str) -> Vec<i64> {
+        cache
+            .messages_with_no_text_here(account_id)
+            .expect("the messages with no text here")
+            .into_iter()
+            .map(|message| message.message_id)
+            .collect()
+    }
+
+    #[test]
+    fn test_only_a_message_with_no_stored_text_is_listed() {
+        let cache = body_test_cache();
+        let (_stored, missing) = with_and_without_text(&cache);
+        let also_stored = cache.save_message(&cached(3, "Read too")).unwrap();
+        cache
+            .save_message_body(also_stored, Some("and the text of that"), None)
+            .unwrap();
+
+        assert_eq!(
+            listed(&cache, "a1"),
+            vec![missing],
+            "the list is not the one message whose text is missing"
+        );
+    }
+
+    #[test]
+    fn test_a_listed_message_carries_the_folder_and_uid_a_fetch_needs() {
+        // Those two are the arguments of `fetch_message_body`. A row without
+        // them is a list a caller has to go back to the database for, once per
+        // message, which is the second query this exists to avoid.
+        let cache = body_test_cache();
+        let stored = cache.save_message(&cached(1, "Read once")).unwrap();
+        cache
+            .save_message_body(stored, Some("the text"), None)
+            .unwrap();
+        cache.save_message(&cached(7, "Never opened")).unwrap();
+
+        let wanted = cache.messages_with_no_text_here("a1").unwrap();
+
+        assert_eq!(wanted.len(), 1, "the list is not the one missing message");
+        assert_eq!(
+            wanted[0].folder_path, "INBOX",
+            "the row does not say which folder to open"
+        );
+        assert_eq!(
+            wanted[0].uid, 7,
+            "the row does not say which message to ask for"
+        );
+    }
+
+    #[test]
+    fn test_a_message_marked_deleted_is_never_listed() {
+        // The same condition the saved-search scan and the coverage count
+        // both carry. Deleted mail is not mail either of them looks at, so
+        // fetching text for it would be work nothing can ever use.
+        let cache = body_test_cache();
+        let kept = cache.save_message(&cached(1, "Still here")).unwrap();
+        let gone = cache.save_message(&cached(2, "Thrown away")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET deleted = 1 WHERE id = ?1",
+                rusqlite::params![gone],
+            )
+            .unwrap();
+
+        assert_eq!(
+            listed(&cache, "a1"),
+            vec![kept],
+            "deleted mail was offered for fetching, or live mail was not"
+        );
+    }
+
+    #[test]
+    fn test_another_accounts_missing_text_is_not_listed_for_this_one() {
+        let cache = body_test_cache();
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (id, account_id, name, path, folder_type)
+                 VALUES (2, 'a2', 'INBOX', 'INBOX', 'inbox')",
+                [],
+            )
+            .unwrap();
+        let ours = cache.save_message(&cached(1, "Ours")).unwrap();
+        let theirs = cache
+            .save_message(&in_folder(1, "Somebody else's", 2))
+            .unwrap();
+
+        assert_eq!(
+            listed(&cache, "a1"),
+            vec![ours],
+            "the list crossed accounts"
+        );
+        assert_eq!(
+            listed(&cache, "a2"),
+            vec![theirs],
+            "the list crossed accounts the other way"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_only_copy_is_here_is_never_listed() {
+        // Mail collected over POP and a copy of a sent message filed here have
+        // no server holding another copy. Listing one produces a request that
+        // can only fail, and for a POP account it would be every message.
+        let cache = body_test_cache();
+        let from_a_server = cache.save_message(&cached(1, "From the server")).unwrap();
+        let over_pop = cache
+            .save_message(&cached(2, "Collected over POP"))
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET pop_uidl = 'uidl-2' WHERE id = ?1",
+                rusqlite::params![over_pop],
+            )
+            .unwrap();
+        let sent_from_here = cache.save_message(&cached(3, "Sent from here")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET filed_here = 1 WHERE id = ?1",
+                rusqlite::params![sent_from_here],
+            )
+            .unwrap();
+
+        assert_eq!(
+            listed(&cache, "a1"),
+            vec![from_a_server],
+            "a message with nowhere to ask was offered for fetching"
+        );
+    }
+
+    #[test]
+    fn test_a_pop_account_has_nothing_to_fetch() {
+        // Not incidental, and worth its own test because the offer is built on
+        // it: every POP message carries a uidl, so this list is empty for a
+        // POP account however much mail it holds, and the offer never appears
+        // beside a search over one.
+        let cache = body_test_cache();
+        for uid in 1..=3 {
+            let row = cache
+                .save_message(&cached(uid, "Collected over POP"))
+                .unwrap();
+            cache
+                .conn
+                .execute(
+                    "UPDATE messages SET pop_uidl = ?2 WHERE id = ?1",
+                    rusqlite::params![row, format!("uidl-{uid}")],
+                )
+                .unwrap();
+        }
+
+        assert!(
+            listed(&cache, "a1").is_empty(),
+            "a POP account was offered a fetch it has no server for"
+        );
+    }
+
+    #[test]
+    fn test_the_list_is_as_long_as_the_coverage_sentence_says_it_is() {
+        // The load-bearing one. Somebody is told two numbers before a saved
+        // search runs, and the difference between them is what the offer to
+        // fetch is about. Two queries describing one set, written separately,
+        // is the shape that comes apart.
+        let cache = body_test_cache();
+        for uid in 1..=5 {
+            let row = cache.save_message(&cached(uid, "Ordinary mail")).unwrap();
+            if uid <= 2 {
+                cache
+                    .save_message_body(row, Some("the text of it"), None)
+                    .unwrap();
+            }
+        }
+
+        let coverage = cache.how_much_message_text_is_stored_here("a1").unwrap();
+        let wanted = cache.messages_with_no_text_here("a1").unwrap();
+
+        // Asserted before the equality, because an equality between two zeros
+        // holds against a query that answers nothing and a count that counts
+        // nothing, and would read as agreement.
+        assert_eq!(
+            coverage.messages, 5,
+            "the fixture is not the one this test needs"
+        );
+        assert_eq!(
+            coverage.with_text, 2,
+            "the fixture is not the one this test needs"
+        );
+        assert_eq!(
+            wanted.len() as i64,
+            coverage.messages - coverage.with_text,
+            "the offer would attempt a different number from the one somebody was told"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nowhere_to_ask_is_missing_text_and_still_not_offered() {
+        // Where the two deliberately part company, held to it rather than left
+        // for somebody to find. A filed message whose text failed to store is
+        // counted as missing, because it is: no search can reach its words.
+        // It is not offered, because there is no server to ask. The offer
+        // therefore counts this list rather than subtracting the two numbers.
+        let cache = body_test_cache();
+        let from_a_server = cache.save_message(&cached(1, "From the server")).unwrap();
+        let filed_without_text = cache.save_message(&cached(2, "Filed here")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET filed_here = 1 WHERE id = ?1",
+                rusqlite::params![filed_without_text],
+            )
+            .unwrap();
+
+        let coverage = cache.how_much_message_text_is_stored_here("a1").unwrap();
+
+        assert_eq!(
+            coverage.messages - coverage.with_text,
+            2,
+            "the count stopped counting mail whose text is really missing"
+        );
+        assert_eq!(
+            listed(&cache, "a1"),
+            vec![from_a_server],
+            "the offer would attempt a message with no server to ask"
         );
     }
 
