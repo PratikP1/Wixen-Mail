@@ -164,9 +164,21 @@ impl WhichRow {
             WhichRow::OnThisComputer => "on-this-computer".to_string(),
             WhichRow::Labels => "labels".to_string(),
             WhichRow::Label(id) => format!("label{APART}{id}"),
+            // Unchanged, and it has to be: this one is already written to
+            // `tree_state` on somebody's computer, so a tree they collapsed
+            // before the group grew account branches opens the same way after.
             WhichRow::SavedSearches => "saved-searches".to_string(),
-            WhichRow::SavedSearchesIn(_) => "saved-searches".to_string(),
-            WhichRow::SavedSearch { id, .. } => format!("saved-search{APART}{id}"),
+            WhichRow::SavedSearchesIn(id) => format!("saved-searches-in{APART}{id}"),
+            // The account's length in front of it for the reason the folder
+            // above gives. The identifier alone is unique across the table, so
+            // nothing here is separating two searches that would otherwise
+            // collide; what it does is keep the spelling from losing half of
+            // what the row is. The tree treats the spelling as the whole of
+            // the row, and a part that is not in it is a part nothing can get
+            // back.
+            WhichRow::SavedSearch { account, id } => {
+                format!("saved-search{APART}{}{APART}{account}{id}", account.len())
+            }
         }
     }
 
@@ -687,20 +699,31 @@ pub fn what_the_gesture_moves(row: Option<&WhichRow>) -> WhatMoves {
 /// them names a different account to change it to.
 pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
     let named = match row {
-        WhichRow::Account(id) | WhichRow::PinnedIn(id) => id,
+        WhichRow::Account(id) | WhichRow::PinnedIn(id) | WhichRow::SavedSearchesIn(id) => id,
         // A pin is a copy that sits at the top of the tree rather than inside
         // its account's branch (D-30), so the rows above it say nothing about
         // whose it is and only the identity can answer.
-        WhichRow::Folder { account, .. } | WhichRow::Pinned { account, .. } => account,
-        // All Inboxes is every account at once, and a heading is not mail.
+        //
+        // A saved search is here for the opposite reason, and it is the whole
+        // of D-2-05: since the group grew account branches, a search does sit
+        // under its own account, and every command that runs, renames or
+        // removes one has to take the account from this row rather than from
+        // whichever account was last looked at. That is the defect 01-14 closed
+        // for folders, and moving these rows without answering here would have
+        // reopened it: a search under one branch listing another account's mail
+        // under a name from this one.
+        WhichRow::Folder { account, .. }
+        | WhichRow::Pinned { account, .. }
+        | WhichRow::SavedSearch { account, .. } => account,
+        // All Inboxes is every account at once, and a heading is not mail. The
+        // saved-search heading stays here although the rows under it have left:
+        // it is the whole group, and the group is every account's.
         WhichRow::AllInboxes
         | WhichRow::Favourites
         | WhichRow::OnThisComputer
         | WhichRow::Labels
         | WhichRow::Label(_)
-        | WhichRow::SavedSearches
-        | WhichRow::SavedSearchesIn(_)
-        | WhichRow::SavedSearch { .. } => return None,
+        | WhichRow::SavedSearches => return None,
     };
     // The reserved owner is not an account. Answering with it would make the
     // next command act against a thing no account row names, so landing on the
