@@ -6435,21 +6435,41 @@ fn coverage_before(
 /// Nought is no offer at all rather than an offer saying nought. An offer to
 /// fetch no messages beside a sentence saying everything is already here reads
 /// as a fault in one of the two.
+/// **It names the account, and that is not a flourish.** The button walks the
+/// whole account whichever search put it on the screen, including a search of
+/// one folder. Said without the scope, the number reads as being about
+/// whatever was just searched, and the coverage sentence beside it carries a
+/// different number about a different set. Two numbers on the screen with
+/// nothing saying which is which read as one number contradicting itself.
 pub fn the_offer_to_fetch(count: usize) -> Option<String> {
     match count {
         0 => None,
-        1 => Some("Fetch the text of 1 message".to_string()),
-        many => Some(format!("Fetch the text of {many} messages")),
+        1 => Some("Fetch the text of 1 message in this account".to_string()),
+        many => Some(format!("Fetch the text of {many} messages in this account")),
     }
 }
 
 /// The offer as it is spoken, rather than as it is printed on the button.
 ///
-/// STUB. The words the arm below has always used, lifted out so a test can
-/// read them. They are the wrong words now that the offer is made from the
-/// search box as well, and the tests beside this say why.
+/// Three things, and the third is why this is a function rather than a format
+/// string in the window: what the button does, where it is, and **which
+/// question its number answers**. A button has room for the first two and the
+/// spoken line has room for all three.
+///
+/// The third one exists because two numbers now arrive on one search. The
+/// coverage sentence says how much of the message text this search could look
+/// inside; this says how much can still be fetched. Those are different sets
+/// and they show different numbers: text that was evicted is still in the
+/// index, so the search can read it and it is still worth fetching, while mail
+/// with no server to ask can be missing and unfetchable. Somebody told both
+/// without being told which is which has been handed a contradiction, and
+/// D-2-13 already settled how this project answers that: where there are
+/// genuinely two coverages, naming them is more honest than collapsing them.
 pub fn how_the_offer_is_announced(offer: &str) -> String {
-    format!("{offer}. The button is above the message list.")
+    format!(
+        "{offer}. That number is what can be fetched, not what this search \
+         could read. The button is above the message list."
+    )
 }
 
 /// How many messages the offer beside this saved search would attempt.
