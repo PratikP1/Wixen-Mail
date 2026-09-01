@@ -8,6 +8,46 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A saved search can now ask anything a filter rule can ask.** Press the menu
+  key on a saved search in the folder tree and choose "Edit conditions", or use
+  Saved Search > Edit Conditions on the menu bar.
+
+  A search you typed into the search box asks about the subject, the sender and
+  the recipients. In this window you can add conditions about the text of a
+  message, its formatted version, the date it was sent, the message
+  identifier, the carbon copy line, and whether it is read, flagged or deleted.
+  Each condition says what to look at, how to compare it, and what to compare
+  it against, all in words. Case sensitivity is shown on the row when it is on.
+
+  You can add, change and remove conditions. Every change says what happened
+  and how many conditions are left, in one go. A search has to ask at least one
+  thing about a message, so removing the last condition is refused rather than
+  saved.
+
+  Nothing is written until you close the window, and closing it without
+  changing anything writes nothing at all. Your changes go into the search you
+  opened, under the same name, so the row in the tree stays where it is and
+  anything pointing at it still works.
+
+  **There is one kind of saved search and one place it lives.** A search you
+  typed into the box and a search you built here are the same thing, stored the
+  same way and answered by the same code, and both sit under Saved Searches in
+  the folder tree. Opening one in this window does not move it.
+
+  A search saved by a newer version of Wixen Mail is refused rather than
+  opened, and says so. Its conditions are written in words this version does
+  not understand, and showing them would mean guessing at them.
+
+- **The menu key on a saved search now offers what works on a saved search.**
+  It used to offer a folder's commands, including fetching older messages,
+  which a saved search has no server to fetch from, and choosing folders to
+  keep up to date, which is not something a search has. It now offers editing
+  its conditions, running it again, renaming it and deleting it.
+
+- **Every manager window's list now says what it holds.** The Filter, Tag and
+  Signature managers all called their list "Items", which is what a screen
+  reader read out on landing in any of them.
+
 - **Filter rules can now ask about the whole message, in plain words.** The Add
   and Edit Filter Rule window used to offer six things to match on and six ways
   to match them. It now offers everything Wixen Mail can actually answer.

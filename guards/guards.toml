@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 350 records have arrived since and have not been through it.
+# 351 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10455,4 +10455,77 @@ after = """    pub fn selects(&self, message: &CachedMessage) -> bool {
 red = [
     "application::saved_searches::tests::test_a_search_with_no_question_in_it_takes_nothing_rather_than_everything",
     "application::saved_searches::tests::test_an_all_join_with_no_questions_takes_nothing_rather_than_everything",
+]
+
+# ── One group in the tree, however a saved search was made ──────────────────
+#
+# D-2-02. A saved search has two doors: the search box, which writes three
+# questions about the subject, the sender and the recipients, and the rule
+# editor plan 02-07 opens, which writes any of the eleven fields the filter
+# engine answers. Everything stored appears under one heading.
+#
+# The alternative was checked rather than assumed, and it is not merely
+# different, it is worse. Because the two doors edit one object, a typed search
+# opened in the rule editor and given a condition about the message text would
+# have to move groups, or stay in a group that no longer describes it.
+# Grouping by which door made a thing breaks the moment the other door can edit
+# it.
+#
+# The break is that second group: the searches split in two, each half under a
+# heading of its own. It is the wrong fix somebody reaches for the next time a
+# door is added, which is what makes it the right break to record. Nothing in
+# the stored search or in the tree row says which door made it, and two tests
+# hold both shapes to that by naming every field with no `..`, so a field
+# added to carry it would stop the file compiling before it ever reached here.
+#
+# Measured against the whole 5,958-test library, 2026-09-01: four. Two are
+# about saved searches and two are not, and neither of those two is a test
+# anybody working on this feature would have filtered for.
+
+[[guard]]
+name = "one heading holds every saved search, however it was made"
+file = "src/presentation/folder_tree.rs"
+before = """    if !searches.is_empty() {
+        out.push(plain_row(
+            WhichRow::SavedSearches,
+            crate::application::saved_searches::THE_HEADING.to_string(),
+            0,
+            true,
+        ));
+        out.extend(searches.iter().map(|search| {
+            plain_row(
+                WhichRow::SavedSearch(search.id.clone()),
+                crate::application::saved_searches::a_row_for(&search.name),
+                1,
+                false,
+            )
+        }));
+    }"""
+after = """    if !searches.is_empty() {
+        let (typed, built) = searches.split_at(searches.len() / 2);
+        for (heading, group) in [
+            (crate::application::saved_searches::THE_HEADING, typed),
+            ("Smart Folders", built),
+        ] {
+            out.push(plain_row(
+                WhichRow::SavedSearches,
+                heading.to_string(),
+                0,
+                true,
+            ));
+            out.extend(group.iter().map(|search| {
+                plain_row(
+                    WhichRow::SavedSearch(search.id.clone()),
+                    crate::application::saved_searches::a_row_for(&search.name),
+                    2,
+                    false,
+                )
+            }));
+        }
+    }"""
+red = [
+    "presentation::folder_tree::tests::test_a_search_whose_questions_have_no_name_is_announced_like_any_other",
+    "presentation::folder_tree::tests::test_no_two_rows_of_one_tree_share_an_identity",
+    "presentation::folder_tree::tests::test_one_heading_holds_every_saved_search_however_it_was_made",
+    "presentation::folder_tree::tests::test_the_top_level_reads_in_the_order_somebody_meets_it",
 ]

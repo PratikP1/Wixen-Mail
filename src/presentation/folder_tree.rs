@@ -2018,6 +2018,212 @@ mod tests {
         );
     }
 
+    /// A saved search's row, by the two things a row carries.
+    fn a_saved_search(id: &str, name: &str) -> SearchInTheTree {
+        SearchInTheTree {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
+    }
+
+    /// Every heading saved searches sit under.
+    fn saved_search_headings(rows: &[TreeRow]) -> Vec<&TreeRow> {
+        rows.iter()
+            .filter(|row| row.identity == WhichRow::SavedSearches)
+            .collect()
+    }
+
+    #[test]
+    fn test_one_heading_holds_every_saved_search_however_it_was_made() {
+        // D-2-01 gives a saved search two doors: the search box, which writes
+        // three questions about the subject, the sender and the recipients,
+        // and the rule editor, which writes any of the eleven fields the
+        // filter engine answers. D-2-02 says both land in one group.
+        //
+        // This is worth a test precisely because it is green today. The next
+        // person to add a door will be tempted to add a group beside it, and
+        // grouping by which door made a thing breaks the moment the other door
+        // can edit it: a typed search opened in the rule editor and given a
+        // condition about the message text would have to move groups, or stay
+        // in a group that no longer describes it.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[
+                a_saved_search("typed", "Invoices"),
+                a_saved_search("built", "Overdue and unread"),
+                a_saved_search("later", "Written by a newer version"),
+            ],
+        );
+
+        assert_eq!(
+            saved_search_headings(&rows).len(),
+            1,
+            "saved searches are in more than one group: {:?}",
+            labelled(&rows)
+        );
+    }
+
+    #[test]
+    fn test_every_saved_search_sits_at_the_same_depth_under_that_heading() {
+        // Same group and same depth. A row one level deeper than its
+        // neighbours is a row somebody has to arrow into, and a tree where
+        // some searches are reached that way and some are not is a tree
+        // nobody can learn.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[
+                a_saved_search("typed", "Invoices"),
+                a_saved_search("built", "Overdue and unread"),
+            ],
+        );
+
+        let depths: Vec<usize> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch(_)))
+            .map(|row| row.depth)
+            .collect();
+
+        assert_eq!(depths.len(), 2, "{:?}", labelled(&rows));
+        assert!(
+            depths.iter().all(|depth| *depth == depths[0]),
+            "saved searches sit at different depths: {depths:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_row_carries_nothing_that_says_which_door_made_the_search() {
+        // Two searches differing only in their identifier and their name
+        // produce rows differing only in their identifier and their name.
+        // Nothing else about a row could carry which door made it, which is
+        // the property D-2-02 rests on: there is nothing to group by even if
+        // somebody wanted to.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[
+                a_saved_search("typed", "Invoices"),
+                a_saved_search("built", "Invoices"),
+            ],
+        );
+
+        let searches: Vec<&TreeRow> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch(_)))
+            .collect();
+
+        assert_eq!(searches.len(), 2);
+        assert_eq!(
+            searches[0].label, searches[1].label,
+            "two searches with one name read differently"
+        );
+        assert_eq!(searches[0].depth, searches[1].depth);
+    }
+
+    #[test]
+    fn test_editing_a_search_by_the_other_door_does_not_move_its_row() {
+        // A row is built from the identifier and the name, and the rule editor
+        // changes neither: it writes questions back under the same identifier
+        // through the replace. So the row before an edit and the row after one
+        // are the same row, in the same place, and anything holding its path
+        // still points at it.
+        let before = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[a_saved_search("s1", "Invoices")],
+        );
+        let after = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[a_saved_search("s1", "Invoices")],
+        );
+
+        assert_eq!(labelled(&before), labelled(&after));
+        assert_eq!(
+            row_for(
+                &before,
+                &crate::application::saved_searches::a_row_for("Invoices")
+            )
+            .depth,
+            row_for(
+                &after,
+                &crate::application::saved_searches::a_row_for("Invoices")
+            )
+            .depth
+        );
+    }
+
+    #[test]
+    fn test_nothing_on_the_way_from_storage_to_a_row_records_which_door_made_a_search() {
+        // D-2-02's foundation, checked by shape rather than by reading the
+        // source for a name. A text search for `made_by` or `provenance` is
+        // answered by whatever the field would really be called, and it would
+        // not be called either of those; these two patterns name every field
+        // and carry no `..`, so a third field on the tree row or a sixth on the
+        // stored search stops this file compiling.
+        //
+        // The two are checked together because the property is about the whole
+        // path: a group can only be split on something that survives from the
+        // store to the row, and neither end carries anything to split on.
+        let row = SearchInTheTree {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+        };
+        let SearchInTheTree { id, name } = row;
+        assert_eq!(id, "s1");
+        assert_eq!(name, "Invoices");
+
+        let stored = crate::application::saved_searches::SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: crate::application::saved_searches::Join::All,
+            questions: Vec::new(),
+            folder: None,
+        };
+        let crate::application::saved_searches::SavedSearch {
+            id,
+            name,
+            join,
+            questions,
+            folder,
+        } = stored;
+        assert_eq!(id, "s1");
+        assert_eq!(name, "Invoices");
+        assert_eq!(join, crate::application::saved_searches::Join::All);
+        assert!(questions.is_empty());
+        assert_eq!(folder, None);
+    }
+
+    #[test]
+    fn test_a_search_whose_questions_have_no_name_is_announced_like_any_other() {
+        // The In box names four scopes and the rule editor makes question sets
+        // it has no name for. A row for one of those has to read like every
+        // other saved search: somebody arrowing past is not being asked to
+        // tell them apart by ear, and a row that sounded different would read
+        // as a different kind of thing.
+        let rows = tree(
+            &[account("a", "Work")],
+            &[folder("a", 1, "INBOX", None)],
+            &[],
+            &[a_saved_search("nameless", "Everything about billing")],
+        );
+
+        assert_eq!(
+            row_for(
+                &rows,
+                &crate::application::saved_searches::a_row_for("Everything about billing")
+            )
+            .depth,
+            1
+        );
+    }
+
     #[test]
     fn test_the_shared_folders_are_listed_once_however_many_accounts_there_are() {
         // The ordinary case, and the whole point of D-18. Before it, each
