@@ -478,15 +478,28 @@ pub enum UIUpdate {
     /// Sent before the folders, because the mail sidebar draws both in one
     /// pass and needs them in hand when it does.
     LabelsLoaded(Vec<(String, String)>),
-    /// The saved searches an account has, and the ones this build cannot read.
+    /// Every account's saved searches, and the ones this build cannot read,
+    /// kept apart by the account they belong to.
     ///
     /// Sent before the folders, for the same reason the labels are: the mail
     /// sidebar draws folders, labels and saved searches in one pass and needs
     /// all three in hand when it does.
     ///
+    /// By account rather than in one list, because whose a search is decides
+    /// which account it runs against (D-2-05), and because a name is unique
+    /// inside an account and not across them: one list would make a new name
+    /// refused for clashing with a search belonging to somebody else's mail.
+    ///
     /// Boxed because it carries every search's questions and every other
     /// variant would otherwise be sized to fit this one.
-    SavedSearchesLoaded(Box<crate::data::message_cache::saved_searches::SavedSearchesRead>),
+    SavedSearchesLoaded(
+        Box<
+            std::collections::HashMap<
+                String,
+                crate::data::message_cache::saved_searches::SavedSearchesRead,
+            >,
+        >,
+    ),
     /// What a saved search came to.
     ///
     /// The rows and the sentence together rather than as two updates. A list

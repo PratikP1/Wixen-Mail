@@ -357,13 +357,23 @@ pub struct WxUIState {
     /// calendars are: the mail sidebar holds text and the handler has to work
     /// back from a row to the label it names.
     pub labels: Vec<(String, String)>,
-    /// The saved searches, kept for the reason the labels are: the mail
-    /// sidebar holds text and nothing else, so the handler that runs, renames
-    /// or removes one has to work back from a row to the search it names.
+    /// Every account's saved searches, kept for the reason the labels are: the
+    /// mail sidebar holds text and nothing else, so the handler that runs,
+    /// renames or removes one has to work back from a row to the search it
+    /// names.
     ///
-    /// Both lists, because a search this build cannot read is still a row in
-    /// somebody's tree and still has to answer when it is opened.
-    pub saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead,
+    /// Both lists per account, because a search this build cannot read is
+    /// still a row in somebody's tree and still has to answer when it is
+    /// opened.
+    ///
+    /// Keyed on the account since D-2-05, because the tree now draws every
+    /// account's searches at once and whose a search is decides which account
+    /// it runs against. Flattened into one list, a row under one branch could
+    /// be answered by a search belonging to another.
+    pub saved_searches: std::collections::HashMap<
+        String,
+        crate::data::message_cache::saved_searches::SavedSearchesRead,
+    >,
     /// The search last run from the search box while Mail was showing.
     ///
     /// What Save This Search saves. Kept because the box is a modal dialog
@@ -432,8 +442,7 @@ impl Default for WxUIState {
             tasks: Vec::new(),
             events: Vec::new(),
             labels: Vec::new(),
-            saved_searches: crate::data::message_cache::saved_searches::SavedSearchesRead::default(
-            ),
+            saved_searches: std::collections::HashMap::new(),
             mail_search_that_was_run: None,
             calendars: Vec::new(),
             selected_note_id: None,
@@ -2449,11 +2458,12 @@ impl WxMailApp {
                     // Asked of the row rather than of the control, because a
                     // branch whose every child is filtered out has nothing
                     // under it on screen and is still a branch.
-                    let branch = which_row(&state, &folder_tree, &item).is_some_and(|which| {
+                    let which = which_row(&state, &folder_tree, &item);
+                    let branch = which.as_ref().is_some_and(|which| {
                         lock_state(&state)
                             .tree_rows
                             .iter()
-                            .any(|row| row.identity == which && row.expandable)
+                            .any(|row| &row.identity == which && row.expandable)
                     });
                     if branch {
                         folder_tree.toggle(&item);
@@ -2471,7 +2481,13 @@ impl WxMailApp {
                         );
                         return;
                     }
-                    let chosen = the_search_a_row_names(&lock_state(&state), &name);
+                    // Asked of the row under the cursor, not of what it says.
+                    // Two accounts each holding a search of one name are two
+                    // rows reading exactly the same, and the words could only
+                    // answer with whichever came first.
+                    let chosen = which
+                        .as_ref()
+                        .and_then(|which| the_search_a_row_names(&lock_state(&state), which));
                     if let Some(chosen) = chosen {
                         run_a_saved_search(
                             AppHandles {
@@ -2583,7 +2599,8 @@ impl WxMailApp {
                             // it, which is what Enter does everywhere else in a
                             // tree.
                             WhichRow::SavedSearch { .. } => {
-                                let chosen = the_search_a_row_names(&lock_state(&state), &name);
+                                let chosen =
+                                    the_search_a_row_names(&lock_state(&state), &which);
                                 let arrived = {
                                     let mut s = lock_state(&state);
                                     let arrived = s.selected_folder.as_ref() != Some(&which);
@@ -6641,21 +6658,28 @@ fn read_the_tree_back(
     }
 }
 
-/// The names of this account's saved searches, whether this build can read
-/// them or not.
+/// The names one account's saved searches already use, whether this build can
+/// read them or not.
 ///
 /// What a new name is checked against. The table refuses two searches with the
 /// same name whichever wrote them, so a check that only looked at the readable
 /// ones would accept a name and then fail on the write.
-fn names_already_used(state: &WxUIState) -> Vec<String> {
-    state
-        .saved_searches
+///
+/// One account's, and the account is asked for rather than taken from whichever
+/// one is open. The table's rule is per account, so a check across everybody
+/// would refuse a name because somebody else's mail already used it, and a
+/// check against the open account would be the wrong list the moment a search
+/// belonging to another one is being renamed.
+fn names_already_used(state: &WxUIState, account: &str) -> Vec<String> {
+    let Some(theirs) = state.saved_searches.get(account) else {
+        return Vec::new();
+    };
+    theirs
         .searches
         .iter()
         .map(|search| search.name.clone())
         .chain(
-            state
-                .saved_searches
+            theirs
                 .saved_by_another_version
                 .iter()
                 .map(|search| search.name.clone()),
@@ -6719,11 +6743,16 @@ fn save_this_search(
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
+    // The names to check against are the account this is being saved under, so
+    // they are read once that account is known and not before. A new search is
+    // saved under the account being worked in, which is the one place the held
+    // account is the right answer rather than a stale one.
     let (ran, already_used) = {
         let held = lock_state(state);
+        let saving_under = held.active_account_id.clone().unwrap_or_default();
         (
             held.mail_search_that_was_run.clone(),
-            names_already_used(&held),
+            names_already_used(&held, &saving_under),
         )
     };
     let Some(ran) = ran.filter(|ran| !ran.typed.trim().is_empty()) else {
@@ -6962,7 +6991,11 @@ fn rename_the_chosen_search(
     let AppHandles { state, tx, rt } = app;
     let (chosen, already_used) = {
         let held = lock_state(state);
-        (the_chosen_saved_search(&held), names_already_used(&held))
+        let looked_at = held.active_account_id.clone().unwrap_or_default();
+        (
+            the_chosen_saved_search(&held),
+            names_already_used(&held, &looked_at),
+        )
     };
     let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
         return refuse_a_command(tx, WHICH_SAVED_SEARCH);
@@ -9917,17 +9950,33 @@ fn folder_tree_updates(
         tracing::warn!("The labels could not be read: {e}");
         Vec::new()
     });
-    // The saved searches, on the same terms as the labels and for the same
-    // reason: a tree with no Saved Searches branch is what an account with no
-    // saved searches shows anyway, and refusing the whole folder list because
-    // one query failed would take somebody's mail off the screen. The failure
-    // is logged rather than swallowed silently.
-    let saved = cache
-        .get_saved_searches_for_account(account_id)
-        .unwrap_or_else(|e| {
-            tracing::warn!("The saved searches could not be read: {e}");
-            crate::data::message_cache::saved_searches::SavedSearchesRead::default()
-        });
+    // The saved searches, per account since D-2-05, because the group now
+    // holds a branch per account and a search has to land under the one it
+    // belongs to. That is one more read per account across the eleven places
+    // that redraw this tree, some of them on a timer, and it is the same cost
+    // 01-14 paid to draw every account's folders. Stated rather than hidden.
+    //
+    // On the same terms as the labels and for the same reason: a tree with no
+    // Saved Searches branch is what an account with no saved searches shows
+    // anyway, and refusing the whole folder list because one query failed would
+    // take somebody's mail off the screen. The failure is logged rather than
+    // swallowed silently, and it costs that account its branch rather than
+    // everybody's.
+    let mut saved: std::collections::HashMap<
+        String,
+        crate::data::message_cache::saved_searches::SavedSearchesRead,
+    > = std::collections::HashMap::new();
+    for account in &accounts {
+        match cache.get_saved_searches_for_account(&account.id) {
+            Ok(theirs) => {
+                saved.insert(account.id.clone(), theirs);
+            }
+            Err(e) => tracing::warn!(
+                "{}'s saved searches could not be read, so it has no branch: {e}",
+                account.id
+            ),
+        }
+    }
     // The parents each account's folders were given at sync, which is what
     // nests the tree, and which of them the server's last list left out (D-27).
     // One read of each per account rather than per folder, and read rather than
@@ -9999,7 +10048,19 @@ fn folder_tree_updates(
                 name: tag.name.clone(),
             })
             .collect::<Vec<_>>(),
-        &every_saved_search(account_id, &saved),
+        // Flat and in the accounts' own order, because `folder_tree::rows` is
+        // what arranges them into branches and it must be the only thing that
+        // does. Within one account the readable ones come first, which is
+        // `every_saved_search`'s rule and now applies inside a branch.
+        &accounts
+            .iter()
+            .filter_map(|account| {
+                saved
+                    .get(&account.id)
+                    .map(|theirs| every_saved_search(&account.id, theirs))
+            })
+            .collect::<Vec<_>>()
+            .concat(),
         // How a row that holds rows says what is unread, D-24. Read here at
         // the point of use, which is what every other setting this file reads
         // does, rather than threaded through seven callers that have no
@@ -10158,24 +10219,27 @@ impl ChosenSearch {
 
 /// The saved search a row in the folder tree names, if it names one.
 ///
-/// Matched on the one spelling of a saved-search row, the way a label row is,
-/// because this tree holds text and nothing else and the row's own words are
-/// all the handler has to work back from.
-fn the_search_a_row_names(state: &WxUIState, row: &str) -> Option<ChosenSearch> {
-    use crate::application::saved_searches::a_row_for;
-
-    state
-        .saved_searches
+/// Asked of the row's identity, which carries the account and the identifier
+/// since D-2-05. It used to be asked of the row's words, and that stopped
+/// working the moment the tree drew every account at once: two accounts each
+/// holding a search called Invoices are two rows reading exactly the same, and
+/// a lookup by what a row says would have answered both with whichever came
+/// first. The identity is what the row is; the words are what it reads as.
+fn the_search_a_row_names(state: &WxUIState, row: &folder_tree::WhichRow) -> Option<ChosenSearch> {
+    let folder_tree::WhichRow::SavedSearch { account, id } = row else {
+        return None;
+    };
+    let theirs = state.saved_searches.get(account)?;
+    theirs
         .searches
         .iter()
-        .find(|search| a_row_for(&search.name) == row)
+        .find(|search| &search.id == id)
         .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
         .or_else(|| {
-            state
-                .saved_searches
+            theirs
                 .saved_by_another_version
                 .iter()
-                .find(|search| a_row_for(&search.name) == row)
+                .find(|search| &search.id == id)
                 .map(|search| ChosenSearch::SavedByAnotherVersion {
                     id: search.id.clone(),
                     name: search.name.clone(),
@@ -10186,35 +10250,12 @@ fn the_search_a_row_names(state: &WxUIState, row: &str) -> Option<ChosenSearch> 
 /// The saved search whose row is chosen right now, if one is.
 ///
 /// Asked by every command that acts on a saved search, and by everything that
-/// would otherwise treat what is chosen as a mailbox. `selected_folder` holds
-/// the row's path while a saved search is chosen, and that path opens with a
-/// character no mailbox name can carry, which is what
-/// [`crate::application::saved_searches::is_a_saved_search`] reads.
+/// would otherwise treat what is chosen as a mailbox. One lookup with two ways
+/// in rather than two lookups: what is chosen and what the cursor is on are the
+/// same question asked of two rows, and answering it twice is how the two come
+/// to disagree.
 fn the_chosen_saved_search(state: &WxUIState) -> Option<ChosenSearch> {
-    // A match on what the row is, rather than a question about how its path
-    // is spelled. The identity says outright that this row is a saved search
-    // and which one, so nothing has to recognise a prefix to find out.
-    let folder_tree::WhichRow::SavedSearch { id: chosen, .. } = state.selected_folder.as_ref()?
-    else {
-        return None;
-    };
-    state
-        .saved_searches
-        .searches
-        .iter()
-        .find(|search| &search.id == chosen)
-        .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
-        .or_else(|| {
-            state
-                .saved_searches
-                .saved_by_another_version
-                .iter()
-                .find(|search| &search.id == chosen)
-                .map(|search| ChosenSearch::SavedByAnotherVersion {
-                    id: search.id.clone(),
-                    name: search.name.clone(),
-                })
-        })
+    the_search_a_row_names(state, state.selected_folder.as_ref()?)
 }
 
 // ── What the status line says a module holds ────────────────────────────────
@@ -20663,34 +20704,52 @@ mod tests {
         assert_eq!(messages[0].thread_id, None);
     }
 
-    /// A state holding two saved searches: one this build can read and one a
-    /// newer version wrote.
-    fn state_with_saved_searches() -> super::WxUIState {
+    /// One saved search this build can read.
+    fn a_readable_search(id: &str, name: &str) -> crate::application::saved_searches::SavedSearch {
         use crate::application::saved_searches::{Join, Question, SavedSearch};
+
+        SavedSearch {
+            id: id.to_string(),
+            name: name.to_string(),
+            join: Join::All,
+            questions: vec![Question {
+                field: "from".to_string(),
+                match_type: "contains".to_string(),
+                pattern: "ann@".to_string(),
+                case_sensitive: false,
+            }],
+            folder: None,
+        }
+    }
+
+    /// A state holding one account's two saved searches: one this build can
+    /// read and one a newer version wrote.
+    fn state_with_saved_searches() -> super::WxUIState {
         use crate::data::message_cache::saved_searches::{
             SavedSearchesRead, SearchSavedByAnotherVersion,
         };
 
         super::WxUIState {
-            saved_searches: SavedSearchesRead {
-                searches: vec![SavedSearch {
-                    id: "s1".to_string(),
-                    name: "Unread from Ann".to_string(),
-                    join: Join::All,
-                    questions: vec![Question {
-                        field: "from".to_string(),
-                        match_type: "contains".to_string(),
-                        pattern: "ann@".to_string(),
-                        case_sensitive: false,
+            saved_searches: std::collections::HashMap::from([(
+                "acc".to_string(),
+                SavedSearchesRead {
+                    searches: vec![a_readable_search("s1", "Unread from Ann")],
+                    saved_by_another_version: vec![SearchSavedByAnotherVersion {
+                        id: "s2".to_string(),
+                        name: "Invoices".to_string(),
                     }],
-                    folder: None,
-                }],
-                saved_by_another_version: vec![SearchSavedByAnotherVersion {
-                    id: "s2".to_string(),
-                    name: "Invoices".to_string(),
-                }],
-            },
+                },
+            )]),
+            active_account_id: Some("acc".to_string()),
             ..super::WxUIState::default()
+        }
+    }
+
+    /// The row a saved search with this identifier has in `acc`'s branch.
+    fn a_search_row(id: &str) -> crate::presentation::folder_tree::WhichRow {
+        crate::presentation::folder_tree::WhichRow::SavedSearch {
+            account: "acc".to_string(),
+            id: id.to_string(),
         }
     }
 
@@ -20699,38 +20758,55 @@ mod tests {
         // A search written by a newer version is still a row in somebody's
         // tree. Leaving it out would take it off the tree with nothing said,
         // and somebody would go looking for a search that is still there.
+        let state = state_with_saved_searches();
+        let rows = super::every_saved_search("acc", &state.saved_searches["acc"]);
         assert_eq!(
-            super::every_saved_search("acc", &state_with_saved_searches().saved_searches)
-                .iter()
+            rows.iter()
                 .map(|search| search.name.clone())
                 .collect::<Vec<_>>(),
             ["Unread from Ann", "Invoices"]
         );
+        // And every row carries the account it was read for, which is the
+        // branch it goes under and what a command asks for whose it is.
+        assert!(rows.iter().all(|search| search.account == "acc"));
     }
 
     #[test]
-    fn test_a_saved_search_row_is_resolved_by_the_words_the_tree_shows() {
-        // This tree holds text and nothing else, so the row's own words are
-        // all the handler has to work back from. A row nothing resolves is a
-        // row that does nothing when Enter is pressed on it.
+    fn test_a_saved_search_row_is_resolved_by_the_identity_beside_it() {
+        // By the identity and not by the row's words, which is what 02-08
+        // changed and why: two accounts each holding a search called Invoices
+        // are two rows reading exactly the same, and a lookup by the words
+        // could only ever answer with whichever came first.
         let state = state_with_saved_searches();
 
         assert_eq!(
-            super::the_search_a_row_names(&state, "Unread from Ann, saved search")
+            super::the_search_a_row_names(&state, &a_search_row("s1"))
                 .map(|chosen| chosen.id().to_string()),
             Some("s1".to_string())
         );
         assert_eq!(
-            super::the_search_a_row_names(&state, "Invoices, saved search")
+            super::the_search_a_row_names(&state, &a_search_row("s2"))
                 .map(|chosen| chosen.id().to_string()),
             Some("s2".to_string()),
             "a search a newer version wrote could not be opened at all"
         );
         // A folder row, and the heading the searches sit under, are neither.
-        assert!(super::the_search_a_row_names(&state, "Inbox, 3 unread").is_none());
         assert!(
-            super::the_search_a_row_names(&state, crate::application::saved_searches::THE_HEADING)
-                .is_none()
+            super::the_search_a_row_names(
+                &state,
+                &crate::presentation::folder_tree::WhichRow::Folder {
+                    account: "acc".to_string(),
+                    path: "INBOX".to_string(),
+                }
+            )
+            .is_none()
+        );
+        assert!(
+            super::the_search_a_row_names(
+                &state,
+                &crate::presentation::folder_tree::WhichRow::SavedSearches
+            )
+            .is_none()
         );
     }
 
@@ -20766,7 +20842,9 @@ mod tests {
         // Renaming does not lose the row. This is why what is chosen is held
         // as an identity and not as the row's words: the words change when
         // somebody tidies a name, and the identifier does not.
-        state.saved_searches.searches[0].name = "Mail from Ann".to_string();
+        if let Some(theirs) = state.saved_searches.get_mut("acc") {
+            theirs.searches[0].name = "Mail from Ann".to_string();
+        }
         assert_eq!(
             super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
             Some("Mail from Ann".to_string()),
@@ -20794,9 +20872,13 @@ mod tests {
         // accept a name and then fail on the write, after somebody had typed
         // it and been told it was fine.
         assert_eq!(
-            super::names_already_used(&state_with_saved_searches()),
+            super::names_already_used(&state_with_saved_searches(), "acc"),
             ["Unread from Ann", "Invoices"]
         );
+        // And only that account's. A name is unique inside an account, so a
+        // check across everybody would refuse a name because somebody else's
+        // mail already used it.
+        assert!(super::names_already_used(&state_with_saved_searches(), "other").is_empty());
     }
 
     fn threaded(id: i64, uid: u32, date: &str, depth: usize, thread: &str) -> MessageItem {

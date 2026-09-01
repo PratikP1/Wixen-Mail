@@ -621,26 +621,65 @@ pub fn rows(
         }));
     }
 
-    if !searches.is_empty() {
+    out.extend(saved_search_rows(searches, accounts));
+
+    out
+}
+
+/// The saved searches group: the heading, a branch per account that has one,
+/// and that account's searches under it.
+///
+/// D-2-05, and the same shape as [`favourite_rows`] down to the early return.
+/// Empty when no account on screen has a search, which is what leaves the group
+/// out altogether rather than putting up a heading over nothing.
+///
+/// Ordered by the same function Favourites is ordered by, so somebody arrowing
+/// down the tree meets their accounts in one order. Within one account the
+/// searches keep the order they were read in, which is the readable ones and
+/// then the rest, so a row does not move because a newer version wrote one of
+/// them.
+///
+/// No counts anywhere in here. A saved search holds no mail of its own: what it
+/// lists lives in real folders that have their own rows and their own numbers,
+/// and a count here would be a count of somewhere else.
+fn saved_search_rows(searches: &[SearchInTheTree], accounts: &[AccountInTheTree]) -> Vec<TreeRow> {
+    let named: Vec<(String, String)> = accounts
+        .iter()
+        .map(|account| (account.id.clone(), account.name.clone()))
+        .collect();
+    let branches =
+        crate::application::favourites::what_each_account_has(searches, &named, |search| {
+            search.account.as_str()
+        });
+    if branches.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = vec![plain_row(
+        WhichRow::SavedSearches,
+        crate::application::saved_searches::THE_HEADING.to_string(),
+        0,
+        true,
+    )];
+    for branch in branches {
         out.push(plain_row(
-            WhichRow::SavedSearches,
-            crate::application::saved_searches::THE_HEADING.to_string(),
-            0,
+            WhichRow::SavedSearchesIn(branch.account),
+            branch.name,
+            1,
             true,
         ));
-        out.extend(searches.iter().map(|search| {
+        out.extend(branch.things.into_iter().map(|search| {
             plain_row(
                 WhichRow::SavedSearch {
                     account: search.account.clone(),
                     id: search.id.clone(),
                 },
                 crate::application::saved_searches::a_row_for(&search.name),
-                1,
+                2,
                 false,
             )
         }));
     }
-
     out
 }
 
@@ -793,6 +832,10 @@ fn favourite_rows(
     // row that opens nothing: the storage cannot produce one, because a pin
     // points at a real folder row through a foreign key, but this function is
     // given whatever a caller has in hand.
+    //
+    // `in_account_order` is one caller of the same function the saved-search
+    // group is ordered by, so the two groups cannot come to disagree about what
+    // order somebody meets their accounts in.
     let branches: Vec<(String, String, Vec<&FolderInTheTree>)> =
         crate::application::favourites::in_account_order(pins, &named)
             .into_iter()
@@ -2622,11 +2665,20 @@ mod tests {
         // other saved search: somebody arrowing past is not being asked to
         // tell them apart by ear, and a row that sounded different would read
         // as a different kind of thing.
+        //
+        // Compared with a search the In box does have a name for, rather than
+        // with a depth written here as a number. The number moved in 02-08,
+        // when D-2-05 put a branch per account between the heading and the
+        // rows, and a test that named it would have failed for the one reason
+        // it is not about.
         let rows = tree(
             &[account("a", "Work")],
             &[folder("a", 1, "INBOX", None)],
             &[],
-            &[a_saved_search("nameless", "Everything about billing")],
+            &[
+                a_saved_search("typed", "From Ana"),
+                a_saved_search("nameless", "Everything about billing"),
+            ],
         );
 
         assert_eq!(
@@ -2635,7 +2687,11 @@ mod tests {
                 &crate::application::saved_searches::a_row_for("Everything about billing")
             )
             .depth,
-            1
+            row_for(
+                &rows,
+                &crate::application::saved_searches::a_row_for("From Ana")
+            )
+            .depth
         );
     }
 

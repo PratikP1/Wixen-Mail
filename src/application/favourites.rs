@@ -96,33 +96,72 @@ pub struct PinnedBranch {
     pub folders: Vec<String>,
 }
 
-/// The pinned folders arranged into a branch per account.
+/// One account's part of a group that mirrors the account structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatOneAccountHas<'a, T> {
+    pub account: String,
+    /// What the account is called, which is what the branch reads out as.
+    pub name: String,
+    /// Whatever belongs to this account, in the order it was given in.
+    pub things: Vec<&'a T>,
+}
+
+/// Whatever belongs to each account, in the order the accounts sit in the tree.
+///
+/// The shape D-29 gives Favourites and D-2-05 gives saved searches, written
+/// once. Two groups of the same accounts arranged by two functions is the shape
+/// that comes apart: one of them gets a fix and the other does not, and a
+/// person arrowing down the tree then meets their accounts in two orders.
 ///
 /// `accounts` is every account as `(id, name)` in the order they sit in the
 /// tree, and the branches come back in that same order. Not in the order things
-/// were pinned: the group mirrors the account structure, so it has to mirror
-/// the account order too, or moving an account would leave its favourites
-/// somewhere else.
+/// were added to the group: the group mirrors the account structure, so it has
+/// to mirror the account order too, or moving an account would leave half of
+/// what belongs to it somewhere else.
 ///
-/// An account with nothing pinned gets no branch, following the convention the
-/// labels branch set and D-28 repeats for the group as a whole: no branch at
-/// all rather than an empty one to arrow into. A pin belonging to no account in
-/// the list is left out, which is what happens to a pin whose account is not
-/// being shown.
-pub fn in_account_order(pins: &[Pin], accounts: &[(String, String)]) -> Vec<PinnedBranch> {
+/// An account with nothing gets no branch, following the convention the labels
+/// branch set and D-17 states: no branch at all rather than an empty one to
+/// arrow into. Something belonging to no account in the list is left out, which
+/// is what happens to a pin or a search whose account is not being shown.
+///
+/// Nothing is sorted here. What order things come in within one account is the
+/// group's own question, and the two groups answer it differently: a pin has a
+/// position somebody set, and a saved search keeps the order it was read in.
+pub fn what_each_account_has<'a, T>(
+    things: &'a [T],
+    accounts: &[(String, String)],
+    whose: impl Fn(&T) -> &str,
+) -> Vec<WhatOneAccountHas<'a, T>> {
     accounts
         .iter()
         .filter_map(|(id, name)| {
-            let mut mine: Vec<&Pin> = pins.iter().filter(|pin| &pin.account == id).collect();
-            if mine.is_empty() {
-                return None;
-            }
-            mine.sort_by_key(|pin| pin.position);
-            Some(PinnedBranch {
+            let mine: Vec<&T> = things.iter().filter(|thing| whose(thing) == id).collect();
+            (!mine.is_empty()).then(|| WhatOneAccountHas {
                 account: id.clone(),
                 name: name.clone(),
-                folders: mine.into_iter().map(|pin| pin.path.clone()).collect(),
+                things: mine,
             })
+        })
+        .collect()
+}
+
+/// The pinned folders arranged into a branch per account.
+///
+/// Ordered by [`what_each_account_has`], which is the one place that decides
+/// what order a group meets accounts in. Within one account the pins are in the
+/// order somebody put them in, which is theirs alone and is why the sort is
+/// here rather than in the shared part.
+pub fn in_account_order(pins: &[Pin], accounts: &[(String, String)]) -> Vec<PinnedBranch> {
+    what_each_account_has(pins, accounts, |pin| pin.account.as_str())
+        .into_iter()
+        .map(|branch| {
+            let mut mine = branch.things;
+            mine.sort_by_key(|pin| pin.position);
+            PinnedBranch {
+                account: branch.account,
+                name: branch.name,
+                folders: mine.into_iter().map(|pin| pin.path.clone()).collect(),
+            }
         })
         .collect()
 }
