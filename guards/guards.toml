@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 347 records have arrived since and have not been through it.
+# 348 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10301,4 +10301,39 @@ after = """            Ok(done) => {
                 let _ = &done;"""
 red = [
     "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_choosing_the_offer_starts_the_backfill_and_says_what_it_did",
+]
+
+# ── A dialog that offers a vocabulary of its own ────────────────────────────
+#
+# The filter rule editor held its own list of six fields and its own list of
+# six ways of matching, while the engine answered questions about eleven of
+# each. Five fields could not be asked about at all, and the six that could
+# were offered as the column names they are stored under.
+#
+# The break is the defect coming back: a list written into the dialog instead
+# of read from the engine's constant. Not a shorter version of the constant,
+# because the check compares what the dialog offers against that same constant
+# and both sides would move together, which is the way this kind of guard
+# stops guarding. Measured: adding a twelfth field to the constant makes the
+# dialog offer twelve without the dialog being touched, and the check stays
+# green through it, correctly.
+#
+# It runs against its own suite rather than the library, because it builds the
+# real dialogs and wxWidgets allows one application per process.
+
+[[guard]]
+name = "the filter dialog offers what the engine answers rather than a list of its own"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = """    let field_choices: Vec<String> = A_FIELD_A_RULE_MAY_NAME
+        .iter()
+        .filter_map(|field| the_words_for_a_field(field))
+        .map(str::to_string)
+        .collect();"""
+after = """    let field_choices: Vec<String> = ["Subject", "From", "To", "Cc"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();"""
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
 ]

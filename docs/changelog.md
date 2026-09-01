@@ -8,6 +8,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Filter rules can now ask about the whole message, in plain words.** The Add
+  and Edit Filter Rule window used to offer six things to match on and six ways
+  to match them. It now offers everything Wixen Mail can actually answer.
+
+  Five things you could not write a rule about before: the text of a message,
+  the formatted version of that text, the date it was sent, whether you have
+  read it, whether it is flagged, and whether it is deleted.
+
+  Five ways of matching that were missing: "is not", "is empty", "is not
+  empty", "is yes" and "is no". The last two are for the yes-or-no ones, so
+  "Flagged is yes" is now a rule you can write.
+
+  Everything in both lists is now written the way you would say it. The list
+  used to read out "body_plain", "not_contains" and "starts_with", which are
+  the names these things are stored under and not names anybody would choose
+  to hear.
+
+  Where a way of matching has nothing to compare against, the Pattern box is
+  switched off rather than sitting there asking for something that would be
+  ignored. Choose "is empty" and the box goes quiet; choose "contains" and it
+  comes back.
+
+### Fixed
+
+- **A filter rule about something the window could not show used to break when
+  you opened it.** Six of the eleven things a rule can match on had a place in
+  the list. If a rule matched on one of the other five, opening it and pressing
+  OK quietly rewrote the rule to match on nothing at all, and it stopped
+  finding anything. Nothing said so.
+
 - **A saved search that looks inside your messages now tells you how much of
   that text is actually on this computer, before it runs.** You see a line
   like "This saved search reads the text of your messages, and this computer

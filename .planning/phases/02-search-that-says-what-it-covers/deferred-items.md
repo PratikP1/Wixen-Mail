@@ -71,3 +71,22 @@ possibilities, none of them chosen:
 run, chosen as the three new ones, the two other records on `allowed.rs`, and
 every record about the write census, the imap gate or the POP gate. That took
 about fifty minutes.
+
+## From 02-04
+
+- **`tests/manager_dialog_labels.rs` does not run on the commits that could
+  break it.** `scripts/check.sh` maps a changed `src/a/b.rs` to
+  `cargo test --lib a::b::` and always adds `house_style` and `wired`. A guard
+  living in `tests/` that covers a `src/` module is reached only when the test
+  file itself changes. `tests/checkbox_labels.rs` has the same gap for
+  `wx_item_form.rs`, and it is excluded from the per-commit code path
+  deliberately, so this was recorded rather than reversed. The guard record in
+  `guards/guards.toml` does run it, through `scripts/guards.sh`.
+
+- **A rule naming a field this build has never heard of still loses its field
+  on the way through the dialog.** Opening it selects nothing, and pressing OK
+  stores the empty string. Before this plan that was true for five of the
+  eleven real fields; now it is only reachable by a rule written by a later
+  version. The fix is a refusal or a passthrough rather than a silent
+  rewrite, and it is a decision about what a dialog owes a value it cannot
+  show.

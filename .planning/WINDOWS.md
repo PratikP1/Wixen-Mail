@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 16
 waived_count: 0
 fixed_count: 0
-total_count: 13
-last_updated: 2026-09-01T03:56:12.023Z
+total_count: 16
+last_updated: 2026-09-01T04:57:57.717Z
 ---
 
 # Broken Windows Ledger
@@ -28,6 +28,9 @@ last_updated: 2026-09-01T03:56:12.023Z
 | 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names | open |  | 2026-09-01T03:56:05.356Z |  |
 | 12 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear | open |  | 2026-09-01T03:56:05.812Z |  |
 | 13 | 02 | stub | src/presentation/wx_app.rs |  | The offer only appears while a saved search that reads message text is run; a person who never uses saved searches is never offered the fetch, which is where D-2-08 puts it and is a narrower reach than a menu command would have | open |  | 2026-09-01T03:56:12.023Z |  |
+| 14 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear | open |  | 2026-09-01T04:57:49.641Z |  |
+| 15 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Pattern box is disabled for the four ways of matching that read no pattern. Whether a disabled edit box is skipped cleanly in the tab order, and whether changing the Match Type while focus is nearby moves focus or is announced, is unverified by ear | open |  | 2026-09-01T04:57:57.259Z |  |
+| 16 | 02 | unrun-verify | src/application/filters.rs |  | The eleven field names and eleven ways of matching are now read aloud as words. Whether 'Read is yes', 'Flagged is yes' and 'matches a text pattern' are understood when heard rather than seen is unverified by ear | open |  | 2026-09-01T04:57:57.717Z |  |
 
 ````json
 [
@@ -185,6 +188,42 @@ last_updated: 2026-09-01T03:56:12.023Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T03:56:12.023Z",
+    "resolved_at": null
+  },
+  {
+    "id": 14,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:57:49.641Z",
+    "resolved_at": null
+  },
+  {
+    "id": 15,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_managers.rs",
+    "line": null,
+    "description": "The Pattern box is disabled for the four ways of matching that read no pattern. Whether a disabled edit box is skipped cleanly in the tab order, and whether changing the Match Type while focus is nearby moves focus or is announced, is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:57:57.259Z",
+    "resolved_at": null
+  },
+  {
+    "id": 16,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/application/filters.rs",
+    "line": null,
+    "description": "The eleven field names and eleven ways of matching are now read aloud as words. Whether 'Read is yes', 'Flagged is yes' and 'matches a text pattern' are understood when heard rather than seen is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T04:57:57.717Z",
     "resolved_at": null
   }
 ]
