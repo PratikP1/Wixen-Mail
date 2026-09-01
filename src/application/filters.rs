@@ -77,6 +77,52 @@ pub fn a_rule_may_name(field: &str) -> bool {
     A_FIELD_A_RULE_MAY_NAME.contains(&field)
 }
 
+/// Every field a rule may name, and the words somebody hears for it.
+///
+/// Here rather than in the dialog that shows them. `body_plain`, `message_id`
+/// and the three flags are column names, and a list of them read out loud is a
+/// person being asked to choose between machine names. The dialog used to
+/// carry its own shorter list of those same machine names, which is both
+/// halves of that fault at once, and putting the words next to the dialog
+/// would only move the second vocabulary rather than remove it.
+///
+/// Paired with [`A_FIELD_A_RULE_MAY_NAME`] rather than replacing it, because
+/// the stored name is what a rule holds and what the reading switches on. A
+/// test below requires every name on that list to have words here, so a field
+/// added to one and not the other is caught rather than shown as a blank.
+pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 11] = [
+    ("subject", "a_field"),
+    ("from", "a_field"),
+    ("to", "a_field"),
+    ("cc", "a_field"),
+    ("date", "a_field"),
+    ("message_id", "a_field"),
+    ("body_plain", "a_field"),
+    ("body_html", "a_field"),
+    ("read", "a_field"),
+    ("starred", "a_field"),
+    ("deleted", "a_field"),
+];
+
+/// The words for a stored field name, or nothing when it is not one of these.
+///
+/// Nothing rather than the stored name itself, which is what
+/// `presentation::wx_managers::shown_action` does for an action. That fallback
+/// is right there and wrong here: it exists so a rule written by a later
+/// version still shows something, and what it shows is a machine name. A
+/// caller that gets `None` can decide for itself, and the dialog builds its
+/// list from [`A_FIELD_A_RULE_MAY_NAME`] anyway, so there is no later version
+/// to be kind to.
+pub fn the_words_for_a_field(_stored: &str) -> Option<&'static str> {
+    Some("a_field")
+}
+
+/// The stored field name those words stand for, or nothing when no field is
+/// called that.
+pub fn the_field_those_words_name(_words: &str) -> Option<&'static str> {
+    Some("subject")
+}
+
 /// Every way a rule may ask for the field and the pattern to be compared.
 ///
 /// The other half of a question, and it fails in exactly the same way. A word
@@ -104,6 +150,58 @@ pub const A_WAY_A_RULE_MAY_MATCH: [&str; 11] = [
 /// Whether a rule matching this way is one this build can evaluate.
 pub fn a_rule_may_match(match_type: &str) -> bool {
     A_WAY_A_RULE_MAY_MATCH.contains(&match_type)
+}
+
+/// Every way a rule may match, and the words somebody hears for it.
+///
+/// The other half of the vocabulary, on the same terms as
+/// [`WHAT_EACH_FIELD_IS_CALLED`]. `not_contains`, `starts_with`, `is_not_empty`
+/// and the rest are the stored spellings, and a list of them is a person being
+/// asked to pick a machine name.
+///
+/// Written as a verb phrase, because the dialog reads as a sentence across its
+/// three boxes: the field, then this, then what to compare against. So the
+/// words here begin where the field's words end.
+pub const WHAT_EACH_WAY_OF_MATCHING_IS_CALLED: [(&str, &str); 11] = [
+    ("contains", "a_way"),
+    ("not_contains", "a_way"),
+    ("equals", "a_way"),
+    ("not_equals", "a_way"),
+    ("starts_with", "a_way"),
+    ("ends_with", "a_way"),
+    ("is_empty", "a_way"),
+    ("is_not_empty", "a_way"),
+    ("is_true", "a_way"),
+    ("is_false", "a_way"),
+    ("regex", "a_way"),
+];
+
+/// The words for a stored way of matching, or nothing when it is not one of
+/// these.
+pub fn the_words_for_a_way_of_matching(_stored: &str) -> Option<&'static str> {
+    Some("a_way")
+}
+
+/// The stored way of matching those words stand for, or nothing when no way is
+/// called that.
+pub fn the_way_of_matching_those_words_name(_words: &str) -> Option<&'static str> {
+    Some("contains")
+}
+
+/// Whether this way of matching looks at the pattern at all.
+///
+/// Four of the eleven do not. Two ask whether the field is empty and two ask
+/// whether a flag is set, and all four answer from the field alone. A dialog
+/// that offers a Pattern box beside one of them is offering a control that
+/// changes nothing, and whatever was last typed into it gets stored on the
+/// rule and read back out by anything that describes the rule in words.
+///
+/// Answered here rather than where a dialog happens to need it, so the second
+/// dialog does not arrive with a second copy of the answer. Unknown ways get
+/// `false`, which keeps the box: a rule this build cannot evaluate is not one
+/// to hide a control for.
+pub fn a_way_of_matching_compares_against_nothing(_match_type: &str) -> bool {
+    true
 }
 
 /// The fields holding the message's own text rather than its headers.
@@ -1062,6 +1160,135 @@ mod the_fields_a_rule_may_name {
                 !a_rule_reads_the_message_text(header),
                 "{header} was called message text, so answering a rule about it would fetch \
                  every body this computer holds"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_field_a_rule_may_name_has_words_and_nothing_else_does() {
+        // Presence first. An absence assertion on its own is green against a
+        // reading that answers nothing at all, so it would pass with the whole
+        // vocabulary missing.
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            assert!(
+                the_words_for_a_field(field).is_some(),
+                "{field} is a field a rule may name and has no words, so the dialog would \
+                 offer it blank or not at all"
+            );
+        }
+        // Then absence, which is the half that stops the stored name being
+        // handed back as though it were words. `body_plain` shown as
+        // "body_plain" is the fault, not the fallback.
+        for made_up in ["sender", "Subject", "body", "subj", ""] {
+            assert_eq!(
+                the_words_for_a_field(made_up),
+                None,
+                "{made_up:?} is not a field a rule may name and something was said for it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_way_of_matching_has_words_and_nothing_else_does() {
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            assert!(
+                the_words_for_a_way_of_matching(way).is_some(),
+                "{way} is a way a rule may match and has no words"
+            );
+        }
+        for made_up in ["matches", "Contains", "like", ""] {
+            assert_eq!(
+                the_words_for_a_way_of_matching(made_up),
+                None,
+                "{made_up:?} is not a way a rule may match and something was said for it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_words_lead_back_to_the_name_they_were_written_for() {
+        // The direction a dialog actually runs in: it offers the words, gets
+        // one back, and has to store a name. A pair that does not round-trip
+        // stores the wrong field silently, and a rule on the subject starts
+        // asking about the body.
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            let said = the_words_for_a_field(field).expect("checked just above");
+            assert_eq!(
+                the_field_those_words_name(said),
+                Some(field),
+                "the words for {field} are {said:?} and those words lead back somewhere else"
+            );
+        }
+        for way in A_WAY_A_RULE_MAY_MATCH {
+            let said = the_words_for_a_way_of_matching(way).expect("checked just above");
+            assert_eq!(
+                the_way_of_matching_those_words_name(said),
+                Some(way),
+                "the words for {way} are {said:?} and those words lead back somewhere else"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_two_names_are_offered_in_the_same_words() {
+        // Somebody choosing by ear hears the words and nothing else. Two
+        // entries reading alike are one entry as far as they are concerned,
+        // and picking the wrong one of the pair is not a mistake they can see
+        // themselves making.
+        for (list, what) in [
+            (&WHAT_EACH_FIELD_IS_CALLED[..], "fields"),
+            (&WHAT_EACH_WAY_OF_MATCHING_IS_CALLED[..], "ways of matching"),
+        ] {
+            for (i, (name, said)) in list.iter().enumerate() {
+                for (other, also_said) in &list[i + 1..] {
+                    assert_ne!(
+                        said, also_said,
+                        "{name} and {other} are both offered as {said:?}, so two of the {what} \
+                         sound like one"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_nothing_offered_is_a_machine_name_wearing_a_label() {
+        // The whole reason these pairs exist. An underscore is the tell: no
+        // phrase a person would say has one, and every stored name that needed
+        // words in the first place does.
+        for (name, said) in WHAT_EACH_FIELD_IS_CALLED
+            .iter()
+            .chain(WHAT_EACH_WAY_OF_MATCHING_IS_CALLED.iter())
+        {
+            assert!(
+                !said.contains('_'),
+                "{name} is offered as {said:?}, which is a machine name with a label's job"
+            );
+        }
+    }
+
+    #[test]
+    fn test_exactly_four_ways_of_matching_have_nothing_to_compare_against() {
+        // Counted rather than named, so a twelfth way added later has to be
+        // sorted into one side or the other. Naming the four would leave a new
+        // one silently on the side that keeps the Pattern box, which is the
+        // side that reads an empty pattern out loud.
+        let answer_from_the_field_alone = A_WAY_A_RULE_MAY_MATCH
+            .iter()
+            .filter(|way| a_way_of_matching_compares_against_nothing(way))
+            .count();
+        assert_eq!(
+            answer_from_the_field_alone, 4,
+            "two ways ask whether a field is empty and two ask whether a flag is set, and \
+             those four are the ones with no pattern to show a box for"
+        );
+        // And the direction a count cannot see: a way that really does read
+        // the pattern must not be sorted into that four.
+        for reads_it in ["contains", "regex", "equals"] {
+            assert!(
+                !a_way_of_matching_compares_against_nothing(reads_it),
+                "{reads_it} compares the field against the pattern and was called a way that \
+                 does not, so its Pattern box would go"
             );
         }
     }
