@@ -2524,8 +2524,22 @@ fn the_pattern_box_asks_for_something(match_words: &str) -> bool {
 
 /// What a rule stores as its pattern, given how it matches and what is in the
 /// box.
-fn the_pattern_to_store(_match_words: &str, typed: &str) -> String {
-    typed.to_string()
+///
+/// Nothing, when the way of matching reads no pattern. The box is disabled in
+/// that case and cannot be typed into, but it can still be holding what
+/// somebody typed before they changed the Match Type, and storing that leaves
+/// a rule carrying a pattern nothing compares against. Plan 02-06's sentence
+/// builder would then read it out as though it meant something.
+///
+/// Asked of the words rather than of a stored name, because the dialog reads
+/// words off the list and the conversion back has already gone wrong once in
+/// this file's history by being done in two places.
+fn the_pattern_to_store(match_words: &str, typed: &str) -> String {
+    if the_pattern_box_asks_for_something(match_words) {
+        typed.to_string()
+    } else {
+        String::new()
+    }
 }
 
 fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
