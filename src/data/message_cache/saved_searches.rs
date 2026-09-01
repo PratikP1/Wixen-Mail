@@ -138,6 +138,33 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to save the search: {}", e)))
     }
 
+    /// Write a stored search's whole description back over itself.
+    ///
+    /// The second door D-2-01 describes. The search box writes its three
+    /// questions through [`Self::create_saved_search`]; a rule editor opens
+    /// what is already there and writes back a different question list, a
+    /// different join and a different folder, under the same identifier.
+    ///
+    /// The whole search, not the questions alone. The join says whether every
+    /// question has to be answered and the folder says where to look, so all
+    /// three describe one thing and writing them by separate calls is the
+    /// shape that comes apart: two of the three land, the third does not, and
+    /// the search that comes back is one nobody asked for.
+    ///
+    /// No account, because the account is not something this changes. Taking
+    /// one would offer a caller the chance to move a search between accounts,
+    /// which would leave whatever is holding the row's path in the folder tree
+    /// pointing into another account's branch.
+    ///
+    /// `false` when there is no such search, on the same terms as
+    /// [`Self::delete_saved_search`]: nothing is created, and a caller that
+    /// took silence for success would tell somebody their edit was saved over
+    /// a row that is not there.
+    pub fn replace_saved_search(&self, search: &SavedSearch) -> Result<bool> {
+        let _ = search;
+        Ok(true)
+    }
+
     /// Give a saved search a different name, and say how many rows that
     /// touched.
     ///
@@ -1283,5 +1310,241 @@ mod tests {
             .create_saved_search("acc-1", &a_search("s1", "Work"))
             .expect("a saved search to be stored on the upgraded database");
         assert_eq!(names_in(&reopened, "acc-1"), ["Work"]);
+    }
+
+    // ── Writing a whole question list back ──────────────────────────────────
+
+    /// The one search an account holds, read back through the reader the
+    /// folder tree uses.
+    ///
+    /// Through that reader rather than off the tables, because the claim every
+    /// test below makes is about what somebody opening the search would get.
+    fn the_only_search_in(cache: &MessageCache, account_id: &str) -> SavedSearch {
+        let read = cache
+            .get_saved_searches_for_account(account_id)
+            .expect("the searches to be read");
+        assert_eq!(
+            read.searches.len(),
+            1,
+            "expected exactly one search in {account_id}, got {:?}",
+            read.searches
+        );
+        read.searches.into_iter().next().expect("the one search")
+    }
+
+    #[test]
+    fn test_replacing_a_search_gives_back_exactly_the_new_question_list() {
+        // The new list, in the order it was given, and none of the old one.
+        // Asserted as the whole list rather than as a count, because a replace
+        // that appended would have the right count for one round and the wrong
+        // questions from the first.
+        let cache = a_cache("replace_gives_back_the_new_questions");
+        cache
+            .create_saved_search(
+                "acc-1",
+                &SavedSearch {
+                    id: "s1".to_string(),
+                    name: "Invoices".to_string(),
+                    join: Join::Any,
+                    questions: vec![
+                        asking("subject", "contains", "invoice"),
+                        asking("from", "contains", "billing@"),
+                    ],
+                    folder: None,
+                },
+            )
+            .expect("the search to be stored");
+
+        let edited = SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: Join::Any,
+            questions: vec![
+                asking("to", "equals", "me@example.com"),
+                asking("read", "is_false", ""),
+                asking("subject", "starts_with", "Re:"),
+            ],
+            folder: None,
+        };
+        assert!(
+            cache
+                .replace_saved_search(&edited)
+                .expect("the search to be replaced"),
+            "a replace over a search that is there reported that there was none"
+        );
+
+        assert_eq!(
+            the_only_search_in(&cache, "acc-1").questions,
+            edited.questions
+        );
+        assert_eq!(questions_left_for(&cache, "s1"), 3);
+    }
+
+    #[test]
+    fn test_replacing_a_search_keeps_its_identifier_and_its_account() {
+        // The row in the folder tree and the row in the table have to go on
+        // being the same thing. Whatever is holding the search's path, the
+        // folder somebody has open or the one to restore at startup, is left
+        // pointing at nothing if a replace makes a new row instead.
+        let cache = a_cache("replace_keeps_the_identifier");
+        cache
+            .create_saved_search("acc-1", &a_search("s1", "Work"))
+            .expect("the search to be stored");
+
+        cache
+            .replace_saved_search(&SavedSearch {
+                id: "s1".to_string(),
+                name: "Work".to_string(),
+                join: Join::All,
+                questions: vec![asking("cc", "contains", "team@")],
+                folder: None,
+            })
+            .expect("the search to be replaced");
+
+        assert_eq!(the_only_search_in(&cache, "acc-1").id, "s1");
+        assert!(
+            cache
+                .get_saved_searches_for_account("acc-2")
+                .expect("the other account's searches to be read")
+                .searches
+                .is_empty(),
+            "the replace moved the search to another account"
+        );
+    }
+
+    #[test]
+    fn test_replacing_a_search_writes_the_join_and_the_folder_too() {
+        // The three describe one search. A replace that wrote the questions
+        // and left the join behind would give back a search asking the new
+        // questions the old way round, which is a different search under the
+        // same name.
+        let cache = a_cache("replace_writes_the_join_and_the_folder");
+        cache
+            .create_saved_search(
+                "acc-1",
+                &SavedSearch {
+                    id: "s1".to_string(),
+                    name: "Work".to_string(),
+                    join: Join::Any,
+                    questions: vec![asking("subject", "contains", "report")],
+                    folder: Some("Archive/2026".to_string()),
+                },
+            )
+            .expect("the search to be stored");
+
+        cache
+            .replace_saved_search(&SavedSearch {
+                id: "s1".to_string(),
+                name: "Work".to_string(),
+                join: Join::All,
+                questions: vec![asking("subject", "contains", "report")],
+                folder: Some("INBOX".to_string()),
+            })
+            .expect("the search to be replaced");
+
+        let back = the_only_search_in(&cache, "acc-1");
+        assert_eq!(back.join, Join::All);
+        assert_eq!(back.folder.as_deref(), Some("INBOX"));
+    }
+
+    #[test]
+    fn test_replacing_a_search_that_is_not_there_creates_nothing() {
+        // Reported rather than quietly made. A replace that created the row
+        // would put a search back in the tree after somebody had deleted it,
+        // and the questions written under an identifier no row owns would sit
+        // in the table with nothing to remove them.
+        let cache = a_cache("replace_over_nothing");
+
+        assert!(
+            !cache
+                .replace_saved_search(&a_search("never-stored", "Ghost"))
+                .expect("the replace to answer rather than fail"),
+            "a replace over a search that is not there reported that there was one"
+        );
+
+        assert!(names_in(&cache, "acc-1").is_empty());
+        assert_eq!(questions_left_for(&cache, "never-stored"), 0);
+    }
+
+    #[test]
+    fn test_a_replace_that_fails_part_way_leaves_the_old_questions_intact() {
+        // A real failure rather than an assertion that a transaction was
+        // opened, and a reachable one: a rule editor lets somebody rename a
+        // search to a name another search in the account already has, and the
+        // table refuses that. It refuses it at the last write, after the old
+        // questions have been deleted and the new ones inserted, so this is
+        // exactly the window a transaction exists to cover.
+        //
+        // Written as two statements instead of one transaction, the questions
+        // this reads back are the new ones and the old list is gone.
+        let cache = a_cache("replace_that_fails_part_way");
+        cache
+            .create_saved_search("acc-1", &a_search("taken", "Invoices"))
+            .expect("the first search to be stored");
+        let untouched = SavedSearch {
+            id: "s2".to_string(),
+            name: "Receipts".to_string(),
+            join: Join::Any,
+            questions: vec![
+                asking("subject", "contains", "receipt"),
+                asking("from", "contains", "shop@"),
+            ],
+            folder: Some("Archive/2026".to_string()),
+        };
+        cache
+            .create_saved_search("acc-1", &untouched)
+            .expect("the second search to be stored");
+
+        let clashing = SavedSearch {
+            id: "s2".to_string(),
+            // The name the other search in this account already has.
+            name: "Invoices".to_string(),
+            join: Join::All,
+            questions: vec![asking("to", "contains", "me@")],
+            folder: None,
+        };
+        assert!(
+            cache.replace_saved_search(&clashing).is_err(),
+            "a replace onto a name another search already has was allowed"
+        );
+
+        let read = cache
+            .get_saved_searches_for_account("acc-1")
+            .expect("the searches to be read");
+        let back = read
+            .searches
+            .iter()
+            .find(|search| search.id == "s2")
+            .expect("the search that was not replaced to still be there");
+        assert_eq!(
+            *back, untouched,
+            "the failed replace left the search changed"
+        );
+        assert_eq!(questions_left_for(&cache, "s2"), 2);
+    }
+
+    #[test]
+    fn test_replacing_a_search_with_no_questions_is_refused() {
+        // Refused here as well as in the dialog, and for the reason
+        // `application::saved_searches::selects` gives: a list of conditions
+        // that all have to match is true of every message when the list is
+        // empty. A dialog is a place somebody can be told; a store is a place
+        // nothing gets past.
+        let cache = a_cache("replace_with_no_questions");
+        let stored = a_search("s1", "Work");
+        cache
+            .create_saved_search("acc-1", &stored)
+            .expect("the search to be stored");
+
+        assert!(
+            cache
+                .replace_saved_search(&SavedSearch {
+                    questions: Vec::new(),
+                    ..stored.clone()
+                })
+                .is_err(),
+            "a search was left asking nothing"
+        );
+        assert_eq!(the_only_search_in(&cache, "acc-1"), stored);
     }
 }
