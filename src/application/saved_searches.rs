@@ -396,11 +396,45 @@ const READS_MESSAGE_TEXT: &str = "This saved search reads the text of your messa
 /// would therefore be wrong about one of them whichever way it was computed,
 /// and it would be wrong in the confident direction. Collapsing this into one
 /// number is the failure this sentence exists to prevent, wearing a different
-/// coat. See the doc on the eviction loop in `data::message_cache::bodies`,
-/// which records the same decision from the other side.
+/// coat. The doc on `evict_bodies_over` records the same decision from the
+/// other side.
 pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
-    let _ = (coverage, READS_MESSAGE_TEXT);
-    String::new()
+    let TextStoredHere {
+        messages,
+        with_text,
+    } = coverage;
+    // "the 1 message" and "the 3 messages", so the sentence reads properly at
+    // one as well as at many. A mailbox of one is a real mailbox and hearing
+    // "1 messages" is how a program tells somebody it was not written for
+    // them.
+    let mail = match messages {
+        1 => "the 1 message".to_string(),
+        _ => format!("the {messages} messages"),
+    };
+    // Whether a message with no text here can still be matched at all. It can:
+    // a search asks several questions and only the ones about text lose their
+    // answer, so saying "cannot be searched" would be a worse lie than the one
+    // this sentence is fixing.
+    let rest = "can only be matched on what else this search asks about";
+
+    match (messages, with_text) {
+        // Nothing synced yet. "0 of 0 have their text here" is true, useless,
+        // and reads as a fault in the search rather than as an empty cache.
+        (0, _) => "There is no mail from this account on this computer yet, so this saved \
+                   search has nothing to look at."
+            .to_string(),
+        (total, here) if here >= total => {
+            format!("{READS_MESSAGE_TEXT} this computer has the text of {mail} in this account.")
+        }
+        (_, 0) => format!(
+            "{READS_MESSAGE_TEXT} this computer has the text of none of {mail} in this \
+             account, so a message {rest}."
+        ),
+        (_, here) => format!(
+            "{READS_MESSAGE_TEXT} this computer has the text of {here} of {mail} in this \
+             account. The rest {rest}."
+        ),
+    }
 }
 
 /// How many of a search's results the message list is filled with.
