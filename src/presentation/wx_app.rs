@@ -147,6 +147,12 @@ menu_ids!(
     ID_VIEW_PREVIEW_PANE,
     ID_VIEW_MODULE_BUTTONS,
     ID_VIEW_ALL_INBOXES,
+    // The button above the message list offering to fetch the text a saved
+    // search cannot reach. Not a menu item and not an accelerator of its own:
+    // it belongs beside the sentence that said the numbers, and a new
+    // accelerator would collide with the menus and would have to be documented
+    // in docs/KEYBOARD_SHORTCUTS.md. Tab reaches it.
+    ID_FETCH_MISSING_TEXT,
     ID_EDIT_CUT,
     ID_EDIT_COPY,
     ID_EDIT_PASTE,
@@ -875,6 +881,58 @@ impl WxMailApp {
                 theme::paint(&mail_content, palette.main_surface());
             }
             let mail_content_sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+            // The offer to fetch the message text a saved search cannot reach,
+            // above the list and hidden until there is something to fetch.
+            //
+            // Here rather than on a menu, and that is D-2-08 rather than a
+            // preference: the coverage sentence tells somebody a number, and a
+            // remedy they have to go and find somewhere else is a second
+            // thing. A short answer should be legible as narrow coverage at
+            // the moment it is short.
+            //
+            // A native button, so it is in the tab order, carries the focus
+            // ring Windows draws, and is already larger than the twenty-four
+            // by twenty-four target size. No accelerator of its own: a new one
+            // would collide with the menus and would have to be documented.
+            // Nothing here disappears on its own, so there is no timing trap.
+            let offer_panel = Panel::builder(&mail_content).build();
+            if let Some(palette) = palette {
+                theme::paint(&offer_panel, palette.main_surface());
+            }
+            let offer_sizer = BoxSizer::builder(Orientation::Vertical).build();
+            let offer_button = Button::builder(&offer_panel)
+                .with_label("Fetch the missing message text")
+                .with_id(ID_FETCH_MISSING_TEXT)
+                .build();
+            // Both channels. The label is what Windows falls back to on MSAA,
+            // which NVDA reads, and the accessible name is what a UI
+            // Automation scan reports. Set from the same string as the label
+            // whenever the count changes, so there is nothing to drift.
+            set_accessible_name(&offer_button, "Fetch the missing message text");
+            offer_sizer.add(&offer_button, 0, SizerFlag::All, 4);
+            // The warning where somebody reads it before choosing, rather than
+            // in a tooltip a screen reader may never reach or in a changelog
+            // nobody gets. Named on both channels for the same reason as the
+            // button: a static text is what MSAA falls back to and what
+            // carries the sentence to a braille display.
+            let offer_warning = StaticText::builder(&offer_panel)
+                .with_label(crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL)
+                .build();
+            set_accessible_name(
+                &offer_warning,
+                crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL,
+            );
+            offer_sizer.add(&offer_warning, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            offer_panel.set_sizer(offer_sizer, true);
+            offer_panel.show(false);
+            mail_content_sizer.add(&offer_panel, 0, SizerFlag::Expand | SizerFlag::All, 0);
+            let missing_text_offer = MissingTextOffer {
+                panel: offer_panel,
+                button: offer_button,
+                around_it: mail_content,
+            };
+
             let inner = SplitterWindow::builder(&mail_content).build();
             inner.set_minimum_pane_size(100);
             // The splitter itself, so the sash and any strip either side of
@@ -1682,6 +1740,20 @@ impl WxMailApp {
             // calendar and leaving them looking at the mailbox is a change
             // they have to go and find.
             let switch_for_what_was_opened = do_switch_module.clone();
+
+            // ── The offer to fetch missing message text ──────────────────
+            offer_button.on_click({
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                move |_| {
+                    start_the_missing_text_fetch(AppHandles {
+                        state: &state,
+                        tx: &ui_tx,
+                        rt: &runtime,
+                    });
+                }
+            });
 
             // ── Module button click handlers ─────────────────────────────
             for (btn, module) in module_buttons {
@@ -4998,6 +5070,7 @@ impl WxMailApp {
                                 a11y: &a11y,
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
+                                missing_text_offer: &missing_text_offer,
                                 reader: &reader,
                                 tx: &ui_tx,
                                 rt: &runtime,
@@ -6305,8 +6378,41 @@ fn coverage_before(
 /// fetch no messages beside a sentence saying everything is already here reads
 /// as a fault in one of the two.
 pub fn the_offer_to_fetch(count: usize) -> Option<String> {
-    let _ = count;
-    Some(String::new())
+    match count {
+        0 => None,
+        1 => Some("Fetch the text of 1 message".to_string()),
+        many => Some(format!("Fetch the text of {many} messages")),
+    }
+}
+
+/// How many messages the offer beside this saved search would attempt.
+///
+/// Nought for a search that does not read message text, because the offer is
+/// about a limit that cannot change such a search's answer, and nought when
+/// nothing is missing.
+///
+/// Asked of the list rather than worked out from the coverage numbers, for the
+/// reason [`the_offer_to_fetch`] gives: the two come apart on mail that has no
+/// server to ask, and a subtraction would offer to fetch it.
+///
+/// A count that fails offers nothing and lets the search run, the same as the
+/// coverage sentence beside it. The offer is a remedy for a limit, not part of
+/// answering the question somebody asked.
+fn what_could_be_fetched(
+    cache: &MessageCache,
+    account_id: &str,
+    search: &crate::application::saved_searches::SavedSearch,
+) -> usize {
+    if !search.reads_the_message_text() {
+        return 0;
+    }
+    match cache.messages_with_no_text_here(account_id) {
+        Ok(wanted) => wanted.len(),
+        Err(e) => {
+            tracing::error!("What could be fetched for this account could not be counted: {e}");
+            0
+        }
+    }
 }
 
 fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
@@ -6392,6 +6498,12 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
         if let Some(covers) = coverage_before(&cache, &account_id, &search) {
             say(UIUpdate::StatusUpdated(covers));
         }
+        // Beside the sentence, and sent every time rather than only when there
+        // is something to fetch. Nought is what takes a stale offer off the
+        // screen, so a search run after the text has arrived does not leave
+        // yesterday's button sitting above the results.
+        let could_be_fetched = what_could_be_fetched(&cache, &account_id, &search);
+        say(UIUpdate::WhatCouldBeFetched(could_be_fetched));
         let messages = match cache.messages_a_saved_search_reads(&account_id, folder_id, text) {
             Ok(messages) => messages,
             Err(e) => {
@@ -13957,6 +14069,23 @@ fn handle_settings(
 }
 
 /// The widgets and shared state a `UIUpdate` may need to touch.
+/// The controls carrying the offer to fetch missing message text.
+///
+/// Together rather than as three references, because putting the offer on the
+/// screen means the button, its label on both accessibility channels, and the
+/// panel around it being laid out again. Three separate handles is three
+/// chances to move one and leave the others where they were.
+struct MissingTextOffer {
+    /// The strip above the message list, shown only when there is something
+    /// to fetch.
+    panel: Panel,
+    /// The button itself, whose label says how many messages.
+    button: Button,
+    /// What holds the strip, so a strip that appears or goes makes the list
+    /// below it grow or shrink rather than being drawn over.
+    around_it: Panel,
+}
+
 struct UpdateTargets<'a> {
     state: &'a Arc<StdMutex<WxUIState>>,
     folder_tree: &'a TreeCtrl,
@@ -13973,6 +14102,8 @@ struct UpdateTargets<'a> {
     a11y: &'a Accessibility,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
+    /// The offer to fetch the message text a saved search cannot reach.
+    missing_text_offer: &'a MissingTextOffer,
     /// So a fetched attachment can be opened as a tab. Reading one happens on
     /// a worker and the window it opens into may only be touched here.
     reader: &'a Rc<wx_reader::ReaderWindow>,
@@ -14212,6 +14343,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         a11y,
         pim,
         message_cache,
+        missing_text_offer,
         reader,
         tx,
         rt,
@@ -14497,6 +14629,37 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // mailbox syncs: the queue coalesces same-topic announcements, so
             // the most recent one is heard rather than all of them.
             let _ = a11y.announce_topic(status, Priority::Low, "status");
+        }
+        UIUpdate::WhatCouldBeFetched(count) => {
+            match the_offer_to_fetch(*count) {
+                Some(offer) => {
+                    // The label and the accessible name from one string, so
+                    // the words somebody sees and the words NVDA and Narrator
+                    // read cannot come apart as the number changes.
+                    missing_text_offer.button.set_label(&offer);
+                    set_accessible_name(&missing_text_offer.button, &offer);
+                    missing_text_offer.panel.show(true);
+                    // Its own topic rather than "status", because the
+                    // coverage sentence is on that one and the queue keeps
+                    // only the most recent of a topic. Sharing it would mean
+                    // the offer silenced the sentence that explains why the
+                    // offer is there. One announcement per search, so it is
+                    // bounded as well as distinct.
+                    let _ = a11y.announce_topic(
+                        &format!("{offer}. The button is above the message list."),
+                        Priority::Low,
+                        "message text",
+                    );
+                }
+                // Taken off rather than left saying nought. An offer to fetch
+                // no messages beside a sentence saying everything is here
+                // reads as a fault in one of the two.
+                None => {
+                    missing_text_offer.panel.show(false);
+                }
+            }
+            // Whether it appeared or went, the list below it has changed size.
+            missing_text_offer.around_it.layout();
         }
         UIUpdate::FoldersTheServerStoppedListing(folders) => {
             // Added and nothing else. Nothing has been removed and nothing will
@@ -17583,6 +17746,120 @@ fn bytes_of_the_attachment(
 /// the check at the end: a body only reaches the preview if its message is
 /// still the selected one, so passing over a message costs a fetch and never a
 /// preview that belongs to a different row.
+/// Fetch the message text of this account that is not stored here.
+///
+/// What the offer above the message list does. The work is
+/// `application::mail_sync::fetch_the_missing_message_text`, which is where
+/// the gate, the counting and the reporting live; this opens a connection for
+/// it, carries what it says to the status bar, and asks again afterwards how
+/// much is left so the offer goes away when it is finished.
+///
+/// The connection is opened only when the run is going to happen. The routine
+/// refuses before it touches the server, so an unconnected controller is all a
+/// refusal needs, and nothing reaches somebody's provider for a run they have
+/// already said no to.
+/// `application::mail_sync::tests::test_with_reading_off_nothing_is_asked_of_a_server`
+/// is what holds that order in place.
+fn start_the_missing_text_fetch(app: AppHandles<'_>) {
+    // Written out in full rather than imported at the top of this routine.
+    // A source-reading test asks whether this command reaches the backfill and
+    // says what it did, and an import line naming both functions answers that
+    // question without either being called: the first version of that test was
+    // green through a break that threw the report away, because the two names
+    // it looks for were sitting together in a `use`.
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned());
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let could_not = |why: String| say(UIUpdate::ErrorOccurred(why));
+
+        let Some(account) = account else {
+            return could_not("There is no account open to fetch mail for.".to_string());
+        };
+        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
+            return could_not(format!(
+                "The port for {} is not a number, so nothing can be fetched.",
+                account.email
+            ));
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            return could_not("The mail stored on this computer could not be opened.".to_string());
+        };
+        let Ok(cache) = MessageCache::new(dir, None) else {
+            return could_not("The mail stored on this computer could not be opened.".to_string());
+        };
+
+        let allowed = crate::application::allowed::allowed_for(&account.id);
+        let controller = MailController::new();
+        let mut connected = false;
+        if allowed.reading {
+            let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account))
+            else {
+                return could_not(format!("Signing in to {} did not work.", account.email));
+            };
+            if let Err(e) = handle.block_on(controller.connect_imap(
+                account.imap_server.clone(),
+                port,
+                account.username.clone(),
+                auth,
+                account.imap_use_tls,
+                &account.id,
+            )) {
+                return could_not(format!("Could not reach the mail server: {e}"));
+            }
+            connected = true;
+        }
+
+        // Every line the run says goes to the status bar, which announces it.
+        // The run decides how often, and it is bounded: at most nine lines
+        // between the count it starts with and the report it ends with,
+        // however much mail there is.
+        let progress = |line: &str| say(UIUpdate::StatusUpdated(line.to_string()));
+        let outcome = handle.block_on(
+            crate::application::mail_sync::fetch_the_missing_message_text(
+                &controller,
+                &cache,
+                &account.id,
+                allowed,
+                &progress,
+            ),
+        );
+        if connected {
+            let _ = handle.block_on(controller.disconnect_imap());
+        }
+
+        match outcome {
+            Ok(done) => {
+                say(UIUpdate::StatusUpdated(
+                    crate::application::mail_sync::what_the_fetch_did(&done),
+                ));
+                // Asked again rather than worked out from what the run said,
+                // so the offer reflects the cache rather than a subtraction.
+                // A run that fetched everything takes the offer off the
+                // screen; one stopped part way leaves it saying what is left.
+                let left = cache
+                    .messages_with_no_text_here(&account.id)
+                    .map_or(0, |wanted| wanted.len());
+                say(UIUpdate::WhatCouldBeFetched(left));
+            }
+            Err(e) => could_not(format!("The message text could not be fetched: {e}")),
+        }
+    });
+}
+
 fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
@@ -24926,9 +25203,22 @@ mod what_a_saved_search_says_before_it_runs {
         let asks = path
             .find("what_could_be_fetched")
             .expect("the saved-search path to work out what could be fetched");
+        let said = path[asks..]
+            .find("UIUpdate::WhatCouldBeFetched")
+            .map(|at| at + asks)
+            .expect("what could be fetched is worked out and never reaches the window");
+        // Asking is not saying, and the answer reaching the window is not the
+        // same as the answer being the one that was worked out. A window told
+        // a literal nought would satisfy an ordering check on its own, and the
+        // offer would then never appear however much text was missing. So the
+        // line that says it has to name what was worked out.
+        let line = path[said..]
+            .lines()
+            .next()
+            .expect("the line that says what could be fetched");
         assert!(
-            path[asks..].contains("UIUpdate::WhatCouldBeFetched"),
-            "what could be fetched is worked out and never reaches the window"
+            line.contains("could_be_fetched"),
+            "the window is told a number that is not the one worked out: {line}"
         );
     }
 

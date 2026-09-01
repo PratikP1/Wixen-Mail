@@ -372,6 +372,17 @@ pub enum UIUpdate {
     ConnectionStatusChanged(ConnectionStatus),
     ErrorOccurred(String),
     StatusUpdated(String),
+    /// How many of the open account's messages have no text stored here.
+    ///
+    /// Sent beside the coverage sentence a saved search says before it runs,
+    /// and it is what puts the offer to fetch that text on the screen. Nought
+    /// takes the offer off again, which is the ordinary case: the offer is
+    /// there only while it would do something.
+    ///
+    /// A count rather than a ready-made sentence, because the words are
+    /// decided by `wx_app::the_offer_to_fetch`, which is pure and has the test
+    /// that says no offer appears when there is nothing to fetch.
+    WhatCouldBeFetched(usize),
     /// A command was asked for and did not run, and why.
     ///
     /// Separate from [`Self::StatusUpdated`] because they are different things

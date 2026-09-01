@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 346 records have arrived since and have not been through it.
+# 347 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10273,4 +10273,32 @@ after = """                .map_err(|e| Error::Other(format!("Failed to evict me
             total -= bytes;"""
 red = [
     "data::message_cache::bodies::tests::test_an_evicted_message_stays_findable_by_a_word_from_its_text",
+]
+
+# ── The offer reaches the backfill, and says what it did ───────────────────
+#
+# A button that starts a run and throws its report away is the defect this
+# file has already had once, one plan ago: a number worked out and never said.
+# So the break here is not deleting the call. It is keeping the call and
+# discarding what it answered, which is the shape that gets past a guard
+# written to look for the call.
+#
+# The first version of this record's test was green through exactly that
+# break, and for a reason worth recording: the routine imported both function
+# names on one `use` line, so a test asking whether the command reaches the
+# backfill and reports what it did found both names sitting together in an
+# import with neither being called. The names are written out in full at their
+# call sites now, and the comment above them says why.
+
+[[guard]]
+name = "choosing the offer starts the backfill and says what it did"
+file = "src/presentation/wx_app.rs"
+before = """            Ok(done) => {
+                say(UIUpdate::StatusUpdated(
+                    crate::application::mail_sync::what_the_fetch_did(&done),
+                ));"""
+after = """            Ok(done) => {
+                let _ = &done;"""
+red = [
+    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_choosing_the_offer_starts_the_backfill_and_says_what_it_did",
 ]

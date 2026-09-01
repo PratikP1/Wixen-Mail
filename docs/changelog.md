@@ -58,6 +58,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   refusing it would stop mail arriving rather than stop text being fetched for
   mail you already have.
 
+- **When a saved search tells you some of your message text is missing, there
+  is now a button above the message list to go and fetch it.** It says how
+  many, as in "Fetch the text of 143 messages". It appears only while there is
+  something to fetch and goes away once there is not, and you reach it with
+  Tab. There is no new keyboard shortcut.
+
+  It is beside the line that told you the number on purpose. A number you are
+  told and a remedy you have to go and find in a menu are two separate things
+  to remember.
+
+  **This part is experimental and has never been run against a real account,
+  and that is written on the screen beside the button rather than only here.**
+  Asking your provider for hundreds of whole messages one after another is
+  something they are entitled to refuse, to slow down, or to disconnect you
+  for, and nothing in Wixen Mail can find out which yours will do without
+  trying it. Nothing is changed at the server and nothing is sent, so the worst
+  that happens is that it stops part way and says so. You can start it again,
+  and it carries on from where it stopped rather than fetching the same
+  messages twice.
+
+  It says how many it is about to attempt before it starts, and reports as it
+  goes, so it is not a silent wait of unknown length. It does not announce
+  every message: at most nine lines between the count it starts with and the
+  report it ends with, however much mail there is.
+
+  The report gives both numbers, how many arrived and how many did not, even
+  when none failed. A message that will not come down does not stop the rest.
+
+  The "Message Text" setting above governs this. With it turned off, choosing
+  the button tells you so in a sentence naming the setting and nothing is asked
+  of the server. Turning it off while a fetch is running stops the fetch at the
+  next message.
+
+  Messages that have no server to ask are left alone, so nothing here tries to
+  fetch mail collected over POP or a copy of a message you sent. For a POP
+  account the button never appears at all.
+
 ### Changed
 
 - **The sidebar now shows all your accounts at once, each under its own name.**
