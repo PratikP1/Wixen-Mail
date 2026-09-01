@@ -32,6 +32,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Saving a search now keeps what you chose in the "In" list.** Choose "From
+  Only", search, and save it, and you used to get back a search across the
+  subject, the sender and the recipients. Choose "Current Folder" and you used
+  to get back a search across the whole account. Only the words you typed were
+  kept; where to look for them was thrown away.
+
+  Now "Subject Only" saves a search of the subject, "From Only" saves a search
+  of the sender, and "Current Folder" saves a search of that folder, the one
+  that was open when you ran the search rather than whichever you have moved to
+  since.
+
+  Searches you saved before this are unchanged. They ask about the subject, the
+  sender and the recipients, which is what "All Folders" saves now, so they go
+  on behaving exactly as they did.
+
+- **The window that asks you to name a search now says what the search asks.**
+  It used to say one fixed sentence whatever you had chosen. It now reads out
+  each part of a message the search looks at, and names the folder when the
+  search is kept to one.
+
 - **A filter rule about something the window could not show used to break when
   you opened it.** Six of the eleven things a rule can match on had a place in
   the list. If a rule matched on one of the other five, opening it and pressing

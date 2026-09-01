@@ -509,16 +509,17 @@ fn one_question_in_words(question: &Question) -> String {
         the_words_for_a_way_of_matching,
     };
 
-    let _ = (
+    let (Some(part), Some(way)) = (
         the_words_for_a_field(&question.field),
         the_words_for_a_way_of_matching(&question.match_type),
-        a_way_of_matching_compares_against_nothing(&question.match_type),
-        A_QUESTION_THIS_VERSION_CANNOT_READ,
-    );
-    format!(
-        "{} {} \"{}\"",
-        question.field, question.match_type, question.pattern
-    )
+    ) else {
+        return A_QUESTION_THIS_VERSION_CANNOT_READ.to_string();
+    };
+    if a_way_of_matching_compares_against_nothing(&question.match_type) {
+        format!("{part} {way}")
+    } else {
+        format!("{part} {way} \"{}\"", question.pattern)
+    }
 }
 
 /// Several clauses read out as one list, joined by the word the search uses.
@@ -555,8 +556,10 @@ fn one_after_another(clauses: &[String], join: Join) -> String {
 /// how it describes itself. Building from the questions removes the case
 /// instead of handling it.
 pub fn a_search_in_words(questions: &[Question], join: Join, folder: Option<&str>) -> String {
-    let _ = folder;
-    let where_it_looks = "in this account".to_string();
+    let where_it_looks = match folder {
+        Some(path) => format!("in {path}"),
+        None => "in this account".to_string(),
+    };
     let clauses: Vec<String> = questions.iter().map(one_question_in_words).collect();
     if clauses.is_empty() {
         return format!(

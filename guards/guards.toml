@@ -44,7 +44,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 348 records have arrived since and have not been through it.
+# 349 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10336,4 +10336,35 @@ after = """    let field_choices: Vec<String> = ["Subject", "From", "To", "Cc"]
         .collect();"""
 red = [
     "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+
+# The "In" list offered four answers, the search that ran read all four, and
+# the saved search kept none of them: choosing From Only and saving gave back a
+# search over the subject, the sender and the recipients.
+#
+# The break is dropping the scope argument, because that is the wrong fix
+# somebody would reach for. Shrinking the constant would not do: the tests that
+# are about the unnarrowed answer read it too, so both sides move together and
+# nothing reddens. Ignoring the argument leaves the compiler quiet, the
+# unnarrowed answer right, and only the two narrowed ones wrong, which is
+# exactly how this defect looked when it was there.
+#
+# The round trip is in the red list because it is the only one that proves the
+# narrowed set survives both tables. Neither sentence test reddens, correctly:
+# the sentence is built from whatever questions it is handed, so it says the
+# truth about a set the writer got wrong.
+[[guard]]
+name = "a saved search keeps the question set the In box was narrowed to"
+file = "src/application/saved_searches.rs"
+before = """    match looking_in {
+        WhereToSearch::SubjectOnly => &["subject"],
+        WhereToSearch::SenderOnly => &["from"],
+        WhereToSearch::EveryFolder | WhereToSearch::OneFolder(_) => &WHAT_A_TYPED_SEARCH_LOOKS_AT,
+    }"""
+after = """    let _ = looking_in;
+    &WHAT_A_TYPED_SEARCH_LOOKS_AT"""
+red = [
+    "application::saved_searches::tests::test_from_only_saves_one_question_about_the_sender",
+    "application::saved_searches::tests::test_subject_only_saves_one_question_about_the_subject",
+    "data::message_cache::saved_searches::tests::test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed",
 ]
