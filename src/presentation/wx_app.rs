@@ -6251,6 +6251,32 @@ fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
 /// cannot run because this build does not understand it, and one whose folder
 /// has gone are three different facts, and the empty list looks the same in
 /// all three.
+/// What to tell somebody about coverage before a saved search runs, if
+/// anything.
+///
+/// Nothing at all for a search that does not read message text. Asked through
+/// `reads_the_message_text`, which is the one place that knows, so the answer
+/// here and the read that follows it cannot come to disagree. Saying it anyway
+/// would put a true sentence about a limit that cannot change this search's
+/// answer in front of somebody who is waiting for the answer.
+///
+/// A count that fails says nothing and lets the search run. The count is a
+/// disclosure about the search rather than part of running it, and refusing to
+/// search because the disclosure could not be worked out would trade a real
+/// answer for a caveat.
+///
+/// The sentence itself is built in `application::saved_searches` and only
+/// carried here. A second wording in the window layer is the drift that has
+/// happened before in this file.
+fn coverage_before(
+    cache: &MessageCache,
+    account_id: &str,
+    search: &crate::application::saved_searches::SavedSearch,
+) -> Option<String> {
+    let _ = (cache, account_id, search);
+    Some(String::new())
+}
+
 fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
     use crate::application::saved_searches::{
         Found, MOST_RESULTS_SHOWN, NO_MAIL_HERE_YET, Ran, SAVED_BY_ANOTHER_VERSION,
@@ -6327,6 +6353,13 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
         } else {
             TheMessageText::LeftAlone
         };
+        // Before the gather rather than after it. The progress line above says
+        // only that a saved search is running; a search that reads message
+        // text should also say how much of it is here, and said afterwards
+        // that is a footnote on an answer somebody has already read.
+        if let Some(covers) = coverage_before(&cache, &account_id, &search) {
+            say(UIUpdate::StatusUpdated(covers));
+        }
         let messages = match cache.messages_a_saved_search_reads(&account_id, folder_id, text) {
             Ok(messages) => messages,
             Err(e) => {
@@ -24650,6 +24683,103 @@ mod the_tree_holds_every_account {
 
 #[cfg(test)]
 mod what_a_saved_search_says_before_it_runs {
+    use super::coverage_before;
+    use crate::application::saved_searches::{Join, Question, SavedSearch};
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{CachedFolder, CachedMessage, MessageCache};
+
+    /// An account holding one message whose text is here and one whose is not.
+    fn a_cache_with_mail() -> TempHome<MessageCache> {
+        let cache = TempHome::named("wixen_coverage_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        });
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acc-1".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the folder to be stored");
+        for (uid, subject) in [(1u32, "Quarterly report"), (2, "Never opened")] {
+            let id = cache
+                .save_message(&CachedMessage {
+                    id: 0,
+                    uid,
+                    folder_id,
+                    message_id: format!("<{uid}@example.com>"),
+                    subject: subject.to_string(),
+                    from_addr: "ann@example.com".to_string(),
+                    to_addr: "me@example.com".to_string(),
+                    cc: None,
+                    date: "2026-08-24T09:00:00Z".to_string(),
+                    body_plain: None,
+                    body_html: None,
+                    read: false,
+                    starred: false,
+                    deleted: false,
+                })
+                .expect("the message to be stored");
+            if uid == 1 {
+                cache
+                    .save_message_body(id, Some("The invoice is attached."), None)
+                    .expect("the body to be stored");
+            }
+        }
+        cache
+    }
+
+    fn a_search_asking_about(field: &str) -> SavedSearch {
+        SavedSearch {
+            id: "s1".to_string(),
+            name: "Work".to_string(),
+            join: Join::All,
+            questions: vec![Question {
+                field: field.to_string(),
+                match_type: "contains".to_string(),
+                pattern: "invoice".to_string(),
+                case_sensitive: false,
+            }],
+            folder: None,
+        }
+    }
+
+    #[test]
+    fn test_a_search_that_reads_message_text_is_told_what_it_covers() {
+        // Two messages here, one of them with its text. The sentence has to
+        // carry both numbers, because that gap is the whole reason a short
+        // answer might not be the true one.
+        let cache = a_cache_with_mail();
+
+        let said = coverage_before(&cache, "acc-1", &a_search_asking_about("body_plain"))
+            .expect("a search that reads message text to be told what it covers");
+
+        assert!(
+            said.contains('1'),
+            "how much text is here is missing: {said}"
+        );
+        assert!(
+            said.contains('2'),
+            "how much mail there is is missing: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_search_that_does_not_read_message_text_is_told_nothing() {
+        // It costs a query and says something true about a limit that cannot
+        // change this search's answer. Said anyway, it is noise in front of
+        // somebody waiting for the answer.
+        let cache = a_cache_with_mail();
+
+        assert_eq!(
+            coverage_before(&cache, "acc-1", &a_search_asking_about("subject")),
+            None
+        );
+    }
+
     /// This file with its own tests cut off.
     ///
     /// Cut by `what_ships`, never by a scan for the first `#[cfg(test)]`.
