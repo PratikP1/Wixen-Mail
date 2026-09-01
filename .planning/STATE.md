@@ -4,15 +4,15 @@ current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
 stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-01T03:58:31.317Z"
+last_updated: "2026-09-01T05:07:24.238Z"
 last_activity: 2026-08-31
 last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
-state_head: a1e02ba2624969ae9838ab1217d19d4facce1c35
+state_head: f92cef94c2e5ba7c986129f2d4153d413d30f1c7
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -77,7 +77,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-08-31 — 01-14 done: the sidebar shows every account at once, so two accounts that both have an Inbox are two rows a caller can tell apart, moving between them is arrow keys rather than a rebuild, and the folder you land on is read as its own account's
+Last activity: 2026-09-01 — 02-04 done: the filter rule window offers all eleven fields and all eleven ways of matching instead of six of each, in words rather than the names they are stored under, and a way of matching with nothing to compare against no longer shows a Pattern box asking for something
 
 Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
@@ -85,8 +85,16 @@ different things about the same work all through this phase; the plan count read
 7 while 11 were done, which is how long a number nothing recomputes can sit here
 being wrong.
 
-The suite is 5,818 unit as of `cargo test --lib` on 2026-08-31, with every other
-target green on `cargo test --all-targets` the same day. 01-14 added fifteen.
+The suite is 5,884 unit as of `cargo test --all-targets` on 2026-09-01, with one
+ignored and every other target green in the same run. 02-04 added nine, six in
+`application::filters` and three in `presentation::wx_managers`, and one
+integration target, `tests/manager_dialog_labels.rs`, holding a single test.
+
+The counter above could not be advanced by `gsd-tools query state.advance-plan`
+on 2026-09-01: it looks for "Current Plan" and "Total Plans in Phase" lines this
+file does not have, so it reported that it could not parse them and changed
+nothing. These two lines were written by hand instead. That is the same fault
+the paragraph above describes, seen from the tooling's side.
 
 ## Performance Metrics
 
@@ -135,6 +143,7 @@ target green on `cargo test --all-targets` the same day. 01-14 added fifteen.
 | Phase 01 P11 | 3h 5m | 3 tasks | 12 files |
 | Phase 01 P12 | 4h 5m | 3 tasks | 17 files |
 | Phase 02 P03 | one session | 3 tasks | 7 files |
+| Phase 02 P04 | one session | 3 tasks | 7 files |
 
 ## Accumulated Context
 
