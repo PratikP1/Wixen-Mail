@@ -6443,6 +6443,15 @@ pub fn the_offer_to_fetch(count: usize) -> Option<String> {
     }
 }
 
+/// The offer as it is spoken, rather than as it is printed on the button.
+///
+/// STUB. The words the arm below has always used, lifted out so a test can
+/// read them. They are the wrong words now that the offer is made from the
+/// search box as well, and the tests beside this say why.
+pub fn how_the_offer_is_announced(offer: &str) -> String {
+    format!("{offer}. The button is above the message list.")
+}
+
 /// How many messages the offer beside this saved search would attempt.
 ///
 /// Nought for a search that does not read message text, because the offer is
@@ -15058,7 +15067,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     // offer is there. One announcement per search, so it is
                     // bounded as well as distinct.
                     let _ = a11y.announce_topic(
-                        &format!("{offer}. The button is above the message list."),
+                        &how_the_offer_is_announced(&offer),
                         Priority::Low,
                         "message text",
                     );
@@ -25796,7 +25805,7 @@ mod the_tree_holds_every_account {
 
 #[cfg(test)]
 mod what_a_saved_search_says_before_it_runs {
-    use super::{coverage_before, the_offer_to_fetch};
+    use super::{coverage_before, how_the_offer_is_announced, the_offer_to_fetch};
     use crate::application::saved_searches::{Join, Question, SavedSearch};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage, MessageCache};
@@ -26086,6 +26095,78 @@ mod what_a_saved_search_says_before_it_runs {
         assert_ne!(
             one, several,
             "one message and twelve are offered in the same words"
+        );
+    }
+
+    #[test]
+    fn test_the_offer_says_which_mail_it_counts_and_the_coverage_sentence_says_which_search() {
+        // Two numbers arrive together on one search and they are different
+        // numbers on purpose. The sentence says how much of the text this
+        // search could look inside, narrowed to the folder the In box named.
+        // The offer says how much text can still be fetched, for the whole
+        // account and only for mail with a server to ask. Read as one claim
+        // they contradict each other, and the person reading them has no way
+        // to know they are answers to different questions.
+        //
+        // D-2-13 is the precedent and the standard: where there are genuinely
+        // two coverages, naming them is more honest than collapsing them.
+        use crate::application::saved_searches::what_the_search_box_covers;
+        use crate::data::message_cache::TextTheIndexHolds;
+
+        let covered = what_the_search_box_covers(TextTheIndexHolds {
+            messages: 500,
+            with_text: 40,
+        });
+        let offer = the_offer_to_fetch(137).expect("an offer for a hundred and thirty-seven");
+
+        // The button is pressed from a search of one folder as readily as from
+        // a search of everything, and it walks the account either way. A label
+        // that does not say so reads as being about whatever was just
+        // searched.
+        assert!(
+            offer.contains("in this account"),
+            "the offer does not say which mail it counts, so a search of one \
+             folder reads as an offer about that folder: {offer}"
+        );
+        // Not the sentence's words. Sharing the phrase that carries the
+        // sentence's number is how two claims are heard as one.
+        assert!(
+            !offer.contains("has the text of"),
+            "the offer borrows the coverage sentence's words, so the two read \
+             as one number contradicting itself: {offer} / {covered}"
+        );
+    }
+
+    #[test]
+    fn test_the_offer_announced_says_which_question_its_number_answers() {
+        // What somebody hears, which is not what is printed on the button: the
+        // announcement has room for the distinction and the button does not.
+        // It has to carry three things at once, and the third is the one that
+        // was missing.
+        let offer = the_offer_to_fetch(137).expect("an offer for a hundred and thirty-seven");
+        let announced = how_the_offer_is_announced(&offer);
+
+        assert!(
+            announced.starts_with(&offer),
+            "the announcement stopped opening with the offer itself: {announced}"
+        );
+        assert!(
+            announced.contains("above the message list"),
+            "the announcement stopped saying where the button is, so somebody \
+             is told about a button and not where to find it: {announced}"
+        );
+        // The distinction itself. "Fetched" is this number's question and
+        // "read" is the coverage sentence's, and saying both is what stops the
+        // two being heard as one number that disagrees with itself.
+        assert!(
+            announced.contains("fetched"),
+            "the announcement does not say that its number is what can be \
+             fetched: {announced}"
+        );
+        assert!(
+            announced.contains("read"),
+            "the announcement does not tell its number apart from the one the \
+             coverage sentence gave: {announced}"
         );
     }
 
