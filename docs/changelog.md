@@ -53,10 +53,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   across accounts, so saving it would have given you a search that listed the
   other account's mail.
 
-- **The window that asks you to name a search now says what the search asks.**
-  It used to say one fixed sentence whatever you had chosen. It now reads out
-  each part of a message the search looks at, and names the folder when the
-  search is kept to one.
+- **A saved search now says what it asks, both when you name it and when you
+  open it.** The window that asks you to name a search used to say one fixed
+  sentence whatever you had chosen. Opening a saved search said only how many
+  messages it found, so a short list read as an empty mailbox rather than as a
+  narrow search.
+
+  Both now read out each part of a message the search looks at, and name the
+  folder when the search is kept to one. For a search that reads the text of
+  your messages, the line you get on opening carries that and the coverage
+  figure together.
 
 - **A filter rule about something the window could not show used to break when
   you opened it.** Six of the eleven things a rule can match on had a place in

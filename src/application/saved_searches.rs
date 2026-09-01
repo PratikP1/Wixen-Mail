@@ -629,8 +629,10 @@ pub fn a_search_in_words(questions: &[Question], join: Join, folder: Option<&str
 /// an empty mailbox, and being told afterwards is a footnote on an answer
 /// somebody has already acted on.
 pub fn what_a_search_says_as_it_opens(search: &SavedSearch, covers: Option<String>) -> String {
-    let _ = search;
-    covers.unwrap_or_default()
+    match covers {
+        Some(covers) => format!("{} {covers}", search.in_words()),
+        None => search.in_words(),
+    }
 }
 
 /// How the coverage sentence opens, and the one place those words are written.
