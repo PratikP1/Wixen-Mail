@@ -2230,6 +2230,216 @@ mod tests {
             .collect()
     }
 
+    /// The account each saved-search branch is for, in the order they appear.
+    fn saved_search_branches(rows: &[TreeRow]) -> Vec<String> {
+        rows.iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::SavedSearchesIn(account) => Some(account.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Two accounts, each with an inbox, which is the fixture D-2-05 is about.
+    fn two_accounts_with_mail() -> (Vec<AccountInTheTree>, Vec<FolderInTheTree>) {
+        (
+            vec![account("work", "Work"), account("home", "Home")],
+            vec![
+                folder("work", 1, "INBOX", None),
+                folder("home", 2, "INBOX", None),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_two_accounts_with_searches_give_one_heading_and_a_branch_each() {
+        // D-2-05, and the shape D-29 already gives Favourites: one group, a
+        // branch per account inside it, and the searches under their own
+        // account's branch. Flat, two accounts each with a search called
+        // Invoices are two rows called Invoices with nothing to tell them
+        // apart, which is the defect this whole phase exists to remove.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = tree(
+            &accounts,
+            &folders,
+            &[],
+            &[
+                a_saved_search_in("work", "s1", "Invoices"),
+                a_saved_search_in("home", "s2", "Invoices"),
+            ],
+        );
+
+        assert_eq!(saved_search_headings(&rows).len(), 1);
+        assert_eq!(saved_search_branches(&rows), vec!["work", "home"]);
+
+        let heading = row_for(&rows, crate::application::saved_searches::THE_HEADING);
+        assert_eq!(heading.depth, 0);
+        for row in &rows {
+            match &row.identity {
+                WhichRow::SavedSearchesIn(_) => assert_eq!(row.depth, 1, "{row:?}"),
+                WhichRow::SavedSearch { .. } => assert_eq!(row.depth, 2, "{row:?}"),
+                _ => {}
+            }
+        }
+
+        // Each search under its own account's branch, which is the whole
+        // point: the branch above a row is what says whose it is.
+        let under: Vec<(String, String)> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch { .. }))
+            .map(|row| match &row.identity {
+                WhichRow::SavedSearch { account, id } => (account.clone(), id.clone()),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            under,
+            vec![
+                ("work".to_string(), "s1".to_string()),
+                ("home".to_string(), "s2".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_saved_searches_gets_no_branch() {
+        // The convention D-17 states and `UIUpdate::FoldersLoaded` already
+        // follows: a branch with nothing on it is left out entirely rather
+        // than left as an empty node to arrow into. `in_account_order` does
+        // the same for a pin, and this group has to agree with it or the two
+        // halves of one tree behave differently.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = tree(
+            &accounts,
+            &folders,
+            &[],
+            &[a_saved_search_in("work", "s1", "Invoices")],
+        );
+
+        assert_eq!(saved_search_branches(&rows), vec!["work"]);
+        assert_eq!(saved_search_headings(&rows).len(), 1);
+    }
+
+    #[test]
+    fn test_searches_belonging_to_no_account_on_screen_leave_no_group_at_all() {
+        // Not the same case as having no searches, which is already tested
+        // above: here there are searches and no account they belong to, which
+        // is what a read of an account that has since gone leaves behind. A
+        // heading over nothing is a row somebody arrows onto, opens and finds
+        // empty, and that reads as a broken group rather than an absent one.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = tree(
+            &accounts,
+            &folders,
+            &[],
+            &[a_saved_search_in("gone", "s1", "Invoices")],
+        );
+
+        assert!(
+            saved_search_headings(&rows).is_empty(),
+            "{:?}",
+            labelled(&rows)
+        );
+        assert!(saved_search_branches(&rows).is_empty());
+    }
+
+    #[test]
+    fn test_the_saved_search_group_meets_accounts_in_the_same_order_as_favourites() {
+        // Compared with the other group rather than with the accounts list
+        // restated here, because the fault this is about is the two groups
+        // disagreeing. Restating the expected order would pass against two
+        // orderings that had both been changed the same wrong way, and it
+        // would not notice one of them growing a sort of its own.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = rows(
+            &accounts,
+            &folders,
+            &[pin("home", "INBOX", 0), pin("work", "INBOX", 0)],
+            &[],
+            &[
+                a_saved_search_in("home", "s2", "Receipts"),
+                a_saved_search_in("work", "s1", "Invoices"),
+            ],
+            UnreadOnAParent::default(),
+            &std::collections::HashSet::new(),
+        );
+
+        let pinned: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::PinnedIn(account) => Some(account.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pinned, saved_search_branches(&rows));
+    }
+
+    #[test]
+    fn test_a_search_this_build_cannot_read_lands_under_its_own_account_too() {
+        // `every_saved_search` puts the readable ones first so a row does not
+        // move because a newer version wrote one of them. That rule now holds
+        // inside an account's branch rather than across the whole group, and
+        // an unreadable search is still a row somebody can land on, rename and
+        // remove, so it has to be under the account it belongs to and not left
+        // wherever the flat list happened to put it.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = tree(
+            &accounts,
+            &folders,
+            &[],
+            &[
+                a_saved_search_in("work", "readable", "Invoices"),
+                a_saved_search_in("work", "newer", "Written by a newer version"),
+                a_saved_search_in("home", "theirs", "Receipts"),
+            ],
+        );
+
+        let order: Vec<String> = rows
+            .iter()
+            .filter_map(|row| match &row.identity {
+                WhichRow::SavedSearchesIn(account) => Some(format!("branch {account}")),
+                WhichRow::SavedSearch { account, id } => Some(format!("{account}/{id}")),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                "branch work",
+                "work/readable",
+                "work/newer",
+                "branch home",
+                "home/theirs",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_accounts_saved_searches_are_opened_and_closed_apart_from_its_folders() {
+        // The branch is a branch, so Enter opens and closes it and what
+        // somebody did is written to `tree_state` under its own identity. Under
+        // the account's identity instead, closing an account's searches would
+        // close its folders as well, which is D-29's reasoning for why
+        // `PinnedIn` is distinct from `Account`.
+        let (accounts, folders) = two_accounts_with_mail();
+        let rows = tree(
+            &accounts,
+            &folders,
+            &[],
+            &[a_saved_search_in("work", "s1", "Invoices")],
+        );
+
+        let branch = rows
+            .iter()
+            .find(|row| row.identity == WhichRow::SavedSearchesIn("work".to_string()))
+            .unwrap_or_else(|| panic!("no branch for work in {:?}", labelled(&rows)));
+        assert!(branch.expandable, "Enter on it has to open and close it");
+        assert_ne!(
+            branch.identity.stored(),
+            WhichRow::Account("work".to_string()).stored()
+        );
+    }
+
     #[test]
     fn test_one_heading_holds_every_saved_search_however_it_was_made() {
         // D-2-01 gives a saved search two doors: the search box, which writes
