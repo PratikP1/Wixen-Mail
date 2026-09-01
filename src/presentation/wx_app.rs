@@ -2489,14 +2489,7 @@ impl WxMailApp {
                         .as_ref()
                         .and_then(|which| the_search_a_row_names(&lock_state(&state), which));
                     if let Some(chosen) = chosen {
-                        run_a_saved_search(
-                            AppHandles {
-                                state: &state,
-                                tx: &ui_tx,
-                                rt: &runtime,
-                            },
-                            chosen,
-                        );
+                        run_a_saved_search(&ui_tx, &runtime, chosen);
                     }
                 }
             });
@@ -2605,6 +2598,18 @@ impl WxMailApp {
                                     let mut s = lock_state(&state);
                                     let arrived = s.selected_folder.as_ref() != Some(&which);
                                     s.selected_folder = Some(which.clone());
+                                    // Whose mail this is, said the same way
+                                    // landing on a folder says it. A saved
+                                    // search sits under its own account's
+                                    // branch since D-2-05, so arrowing onto
+                                    // one is arriving in that account, and
+                                    // every command that is not about the
+                                    // search itself acts there.
+                                    if let Some(whose) =
+                                        folder_tree::the_account_a_row_belongs_to(&which)
+                                    {
+                                        s.active_account_id = Some(whose);
+                                    }
                                     arrived
                                 };
                                 if let Some(chosen) = &chosen {
@@ -3456,7 +3461,7 @@ impl WxMailApp {
                         {
                             let chosen = the_chosen_saved_search(&lock_state(&state));
                             if let Some(chosen) = chosen {
-                                run_a_saved_search(app, chosen);
+                                run_a_saved_search(app.tx, app.rt, chosen);
                             }
                         }
                         _ if id == ID_REFRESH_FOLDER => {
@@ -6468,7 +6473,16 @@ fn what_could_be_fetched(
     }
 }
 
-fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
+/// Run a saved search against the account its row names.
+///
+/// It is handed the channel and the runtime and not the held state, and that
+/// is deliberate rather than tidiness. Everything this needs about the search,
+/// its account included, comes off the row that was chosen; taking the state
+/// as well would put the account that happens to be open back within reach,
+/// and reaching for it is exactly the defect 01-14 closed for folders and
+/// D-2-05 would otherwise reopen for searches. A signature that cannot see it
+/// is a guarantee no reading of the body has to be trusted for.
+fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSearch) {
     use crate::application::saved_searches::{
         Found, MOST_RESULTS_SHOWN, NO_MAIL_HERE_YET, Ran, SAVED_BY_ANOTHER_VERSION,
         THAT_FOLDER_IS_NOT_HERE, only_the_newest_are_shown, what_a_search_found,
@@ -6476,7 +6490,6 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
     };
     use crate::data::message_cache::saved_searches::TheMessageText;
 
-    let AppHandles { state, tx, rt } = app;
     let name = chosen.name().to_string();
     let refused = |tx: &Sender<UIUpdate>, why: &str| {
         let _ = tx.try_send(UIUpdate::SavedSearchRan {
@@ -6485,16 +6498,17 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
         });
     };
 
-    let search = match chosen {
-        ChosenSearch::Readable(search) => *search,
+    // The account comes off the row with the search, so nothing here asks
+    // which account was last looked at. Those are two different answers since
+    // the tree started drawing every account (01-14), and the held one is
+    // wrong the moment somebody arrows into another account's branch.
+    let (the_rows_account, search) = match chosen {
+        ChosenSearch::Readable { account, search } => (account, *search),
         // Answered here rather than on a worker. Nothing has to be read to
         // know that this build cannot read the question.
         ChosenSearch::SavedByAnotherVersion { .. } => {
             return refused(tx, SAVED_BY_ANOTHER_VERSION);
         }
-    };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return refused(tx, NO_MAIL_HERE_YET);
     };
     // No name in the progress line. The result names the search, because that
     // is the answer somebody asked for; a line that only says work is under
@@ -6524,6 +6538,28 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
         };
         let Ok(cache) = MessageCache::new(dir, None) else {
             return could_not_run(NO_MAIL_HERE_YET);
+        };
+
+        // Before the folder is resolved, because an account that has gone
+        // would otherwise be reported as a folder that has gone, which sends
+        // somebody looking for the wrong thing, or as an empty result, which
+        // reads as a mailbox with nothing in it.
+        //
+        // A read that fails refuses rather than guessing. Running against an
+        // account this cannot confirm is the one outcome that could list
+        // somebody else's mail.
+        let accounts_here: Vec<String> = match cache.load_accounts() {
+            Ok(accounts) => accounts.into_iter().map(|account| account.id).collect(),
+            Err(e) => {
+                tracing::error!(
+                    "The accounts a saved search could belong to could not be read: {e}"
+                );
+                Vec::new()
+            }
+        };
+        let account_id = match whose_mail_a_saved_search_reads(&the_rows_account, &accounts_here) {
+            WhoseMail::ThisAccount(whose) => whose.to_string(),
+            WhoseMail::Refused(why) => return could_not_run(why),
         };
 
         // The folder the search names, as the number the query narrows by. A
@@ -6838,7 +6874,7 @@ fn save_this_search(
 /// the same way whichever way somebody opens it.
 fn the_conditions_to_edit(chosen: ChosenSearch) -> ConditionsToEdit {
     match chosen {
-        ChosenSearch::Readable(search) => ConditionsToEdit::OfThisSearch(search),
+        ChosenSearch::Readable { search, .. } => ConditionsToEdit::OfThisSearch(search),
         ChosenSearch::SavedByAnotherVersion { .. } => {
             ConditionsToEdit::Refused(crate::application::saved_searches::SAVED_BY_ANOTHER_VERSION)
         }
@@ -6920,6 +6956,9 @@ fn edit_the_chosen_searchs_conditions(
     let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
         return refuse_a_command(tx, WHICH_SAVED_SEARCH);
     };
+    // Whose it is, kept before the search is taken apart, because running it
+    // again on the way out needs the row's account and not the open one.
+    let whose = chosen.account().to_string();
     let search = match the_conditions_to_edit(chosen) {
         ConditionsToEdit::OfThisSearch(search) => *search,
         ConditionsToEdit::Refused(why) => return refuse_a_command(tx, why),
@@ -6962,8 +7001,14 @@ fn edit_the_chosen_searchs_conditions(
                 Some(folder_tree::WhichRow::SavedSearch { id, .. }) if *id == asking_now.id
             ) {
                 run_a_saved_search(
-                    AppHandles { state, tx, rt },
-                    ChosenSearch::Readable(Box::new(asking_now.clone())),
+                    tx,
+                    rt,
+                    ChosenSearch::Readable {
+                        // The row the edit was opened from, not the account
+                        // that happens to be open.
+                        account: whose.clone(),
+                        search: Box::new(asking_now.clone()),
+                    },
                 );
             }
             let said = format!("{} now asks {}", asking_now.name, asking_now.in_words());
@@ -6989,23 +7034,18 @@ fn rename_the_chosen_search(
     use crate::presentation::accessibility::announcements::Priority;
 
     let AppHandles { state, tx, rt } = app;
-    let (chosen, already_used) = {
+    let (chosen, others) = {
         let held = lock_state(state);
-        let looked_at = held.active_account_id.clone().unwrap_or_default();
-        (
-            the_chosen_saved_search(&held),
-            names_already_used(&held, &looked_at),
-        )
+        let chosen = the_chosen_saved_search(&held);
+        let others = chosen
+            .as_ref()
+            .map(|chosen| names_a_rename_may_not_use(&held, chosen))
+            .unwrap_or_default();
+        (chosen, others)
     };
     let (Some(chosen), Some(cache)) = (chosen, cache.as_ref()) else {
         return refuse_a_command(tx, WHICH_SAVED_SEARCH);
     };
-    // Its own name is not a name it may not have: somebody may be fixing the
-    // case of it, or its spacing.
-    let others: Vec<String> = already_used
-        .into_iter()
-        .filter(|held| held != chosen.name())
-        .collect();
 
     let Some(name) = ask_for_a_search_name(
         frame,
@@ -10195,26 +10235,89 @@ fn every_saved_search(
 #[derive(Debug, Clone)]
 enum ChosenSearch {
     /// One this build can read, and so can run.
-    Readable(Box<crate::application::saved_searches::SavedSearch>),
+    Readable {
+        account: String,
+        search: Box<crate::application::saved_searches::SavedSearch>,
+    },
     /// One a newer version wrote. It keeps its name and its row, and says it
     /// could not run when it is opened.
-    SavedByAnotherVersion { id: String, name: String },
+    SavedByAnotherVersion {
+        account: String,
+        id: String,
+        name: String,
+    },
 }
 
 impl ChosenSearch {
     fn id(&self) -> &str {
         match self {
-            ChosenSearch::Readable(search) => &search.id,
+            ChosenSearch::Readable { search, .. } => &search.id,
             ChosenSearch::SavedByAnotherVersion { id, .. } => id,
         }
     }
 
     fn name(&self) -> &str {
         match self {
-            ChosenSearch::Readable(search) => &search.name,
+            ChosenSearch::Readable { search, .. } => &search.name,
             ChosenSearch::SavedByAnotherVersion { name, .. } => name,
         }
     }
+
+    /// Whose search this is.
+    ///
+    /// On both shapes, because a search a newer version wrote is still one
+    /// account's and its rename and its removal act on that account's row.
+    fn account(&self) -> &str {
+        match self {
+            ChosenSearch::Readable { account, .. }
+            | ChosenSearch::SavedByAnotherVersion { account, .. } => account,
+        }
+    }
+}
+
+/// Whose mail a saved search reads, or why it cannot be read at all.
+#[derive(Debug, PartialEq, Eq)]
+enum WhoseMail<'a> {
+    ThisAccount(&'a str),
+    /// The sentence to say instead, in the words a refusal is worded in.
+    Refused(&'static str),
+}
+
+/// Whose mail a saved search reads: the account its row names, if this
+/// computer still has it.
+///
+/// The account comes from the row and never from whichever account was last
+/// looked at, which is the fix 01-14 made for folders and D-2-05 needs for
+/// searches. Set Active changes the held account and leaves the folder tree's
+/// cursor where it was, so the two really do differ, and a search opened under
+/// one branch and run against another lists somebody else's mail under a name
+/// from this one.
+///
+/// An account that has gone is refused rather than run somewhere else or
+/// answered with nothing, for the reason
+/// [`crate::application::saved_searches::THAT_ACCOUNT_IS_NOT_HERE`] gives.
+fn whose_mail_a_saved_search_reads<'a>(
+    the_rows_account: &'a str,
+    accounts_here: &[String],
+) -> WhoseMail<'a> {
+    if accounts_here.iter().any(|here| here == the_rows_account) {
+        WhoseMail::Refused(crate::application::saved_searches::THAT_ACCOUNT_IS_NOT_HERE)
+    } else {
+        WhoseMail::ThisAccount(the_rows_account)
+    }
+}
+
+/// The names a rename of this search may not use.
+///
+/// Its own account's, taken from the row rather than from whichever account
+/// was last looked at, and without its own name: somebody may be fixing the
+/// case of it, or its spacing.
+fn names_a_rename_may_not_use(state: &WxUIState, chosen: &ChosenSearch) -> Vec<String> {
+    let looked_at = state.active_account_id.clone().unwrap_or_default();
+    names_already_used(state, &looked_at)
+        .into_iter()
+        .filter(|held| held != chosen.name())
+        .collect()
 }
 
 /// The saved search a row in the folder tree names, if it names one.
@@ -10230,17 +10333,22 @@ fn the_search_a_row_names(state: &WxUIState, row: &folder_tree::WhichRow) -> Opt
         return None;
     };
     let theirs = state.saved_searches.get(account)?;
+    let whose = state.active_account_id.clone().unwrap_or_default();
     theirs
         .searches
         .iter()
         .find(|search| &search.id == id)
-        .map(|search| ChosenSearch::Readable(Box::new(search.clone())))
+        .map(|search| ChosenSearch::Readable {
+            account: whose.clone(),
+            search: Box::new(search.clone()),
+        })
         .or_else(|| {
             theirs
                 .saved_by_another_version
                 .iter()
                 .find(|search| &search.id == id)
                 .map(|search| ChosenSearch::SavedByAnotherVersion {
+                    account: whose.clone(),
                     id: search.id.clone(),
                     name: search.name.clone(),
                 })
@@ -20865,6 +20973,135 @@ mod tests {
         ));
     }
 
+    /// Two accounts, each with a saved search of the same name, with `work`
+    /// the one last looked at.
+    ///
+    /// The state Set Active leaves behind: it changes which account is held
+    /// and leaves the folder tree's cursor where it was, so the row under the
+    /// cursor and the held account are two different answers.
+    fn state_with_two_accounts_searches() -> super::WxUIState {
+        use crate::data::message_cache::saved_searches::SavedSearchesRead;
+
+        super::WxUIState {
+            saved_searches: std::collections::HashMap::from([
+                (
+                    "work".to_string(),
+                    SavedSearchesRead {
+                        // Invoices is in both accounts, because the account is
+                        // then the only thing telling those two rows apart.
+                        // Payslips is in only one, because two accounts with
+                        // the same set of names are two accounts a wrong
+                        // answer would be right about by luck.
+                        searches: vec![
+                            a_readable_search("w1", "Invoices"),
+                            a_readable_search("w2", "Payslips"),
+                        ],
+                        saved_by_another_version: Vec::new(),
+                    },
+                ),
+                (
+                    "home".to_string(),
+                    SavedSearchesRead {
+                        searches: vec![
+                            a_readable_search("h1", "Invoices"),
+                            a_readable_search("h2", "Receipts"),
+                        ],
+                        saved_by_another_version: Vec::new(),
+                    },
+                ),
+            ]),
+            active_account_id: Some("work".to_string()),
+            ..super::WxUIState::default()
+        }
+    }
+
+    #[test]
+    fn test_a_saved_search_runs_against_the_account_its_row_names_not_the_one_last_looked_at() {
+        // The whole of D-2-05's run half, and the defect 01-14 closed for
+        // folders arriving by the other door. `work` is the held account and
+        // the cursor is on one of `home`'s searches, which is what Set Active
+        // leaves behind. Answered with `work`, this search would list `work`'s
+        // mail under a name given to a search in `home`, and an empty answer
+        // would be indistinguishable from a search that legitimately matched
+        // nothing.
+        //
+        // The two searches are called the same thing on purpose: the account
+        // is the only thing telling them apart, so an answer that came from
+        // the name could not be right by luck.
+        let state = state_with_two_accounts_searches();
+        let chosen = super::the_search_a_row_names(
+            &state,
+            &crate::presentation::folder_tree::WhichRow::SavedSearch {
+                account: "home".to_string(),
+                id: "h1".to_string(),
+            },
+        )
+        .expect("the row to name a search");
+
+        assert_eq!(chosen.id(), "h1");
+        assert_eq!(
+            chosen.account(),
+            "home",
+            "a saved search under one account's branch answered with another account"
+        );
+        assert_ne!(
+            chosen.account(),
+            state.active_account_id.as_deref().unwrap_or_default(),
+            "the answer came from the account last looked at rather than from the row"
+        );
+    }
+
+    #[test]
+    fn test_a_saved_search_whose_account_has_gone_is_refused_in_its_own_words() {
+        // Neither of the two answers that would otherwise be given. Running it
+        // against a different account would list somebody else's mail under a
+        // name from this one; finding nothing would read as an empty mailbox.
+        use super::WhoseMail;
+        use crate::application::saved_searches::{
+            THAT_ACCOUNT_IS_NOT_HERE, THAT_FOLDER_IS_NOT_HERE,
+        };
+
+        let here = ["work".to_string(), "home".to_string()];
+        assert_eq!(
+            super::whose_mail_a_saved_search_reads("home", &here),
+            WhoseMail::ThisAccount("home")
+        );
+        assert_eq!(
+            super::whose_mail_a_saved_search_reads("gone", &here),
+            WhoseMail::Refused(THAT_ACCOUNT_IS_NOT_HERE)
+        );
+        // And in its own words. A sentence about a folder, read by somebody
+        // whose account has gone, sends them looking for a folder that was
+        // never the problem.
+        assert_ne!(THAT_ACCOUNT_IS_NOT_HERE, THAT_FOLDER_IS_NOT_HERE);
+        assert!(THAT_ACCOUNT_IS_NOT_HERE.contains("account"));
+        assert!(!THAT_ACCOUNT_IS_NOT_HERE.contains("folder"));
+    }
+
+    #[test]
+    fn test_renaming_a_saved_search_is_checked_against_its_own_accounts_names() {
+        // The name check is per account, because the table's rule is. Checked
+        // against the held account, renaming `home`'s Receipts would be
+        // offered `work`'s names and refuse nothing it should, and would allow
+        // Invoices, which `home` already has, and then fail on the write after
+        // somebody had typed it and been told it was fine.
+        let state = state_with_two_accounts_searches();
+        let chosen = super::the_search_a_row_names(
+            &state,
+            &crate::presentation::folder_tree::WhichRow::SavedSearch {
+                account: "home".to_string(),
+                id: "h2".to_string(),
+            },
+        )
+        .expect("the row to name a search");
+
+        assert_eq!(
+            super::names_a_rename_may_not_use(&state, &chosen),
+            ["Invoices"],
+            "the names offered are not the ones this search's own account uses"
+        );
+    }
+
     #[test]
     fn test_a_name_is_checked_against_every_saved_search_including_unreadable_ones() {
         // The table refuses two searches with the same name whichever version
@@ -25679,11 +25916,76 @@ mod what_a_saved_search_says_before_it_runs {
     /// called.
     fn the_saved_search_path(source: &str) -> String {
         let after = source
-            .split_once("fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {")
+            .split_once(
+                "fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSearch) {",
+            )
             .expect("the one routine that runs a saved search")
             .1;
         let end = after.find("\n}\n").unwrap_or(after.len());
         after[..end].to_string()
+    }
+
+    #[test]
+    fn test_running_a_saved_search_cannot_reach_the_account_that_was_last_looked_at() {
+        // The signature is the guard, and the assertion here is what says so
+        // out loud. `run_a_saved_search` is handed the channel and the runtime
+        // and not the held state, so the account that happens to be open is
+        // not something the body has to be trusted not to read: it is not in
+        // scope. That is the shape 01-14's defect needs, because a search
+        // opened under one account's branch and run against another lists
+        // somebody else's mail under a name from this one.
+        //
+        // Split on the whole signature above, so a parameter put back would
+        // fail to find the routine at all rather than fail quietly here.
+        let path =
+            the_saved_search_path(&crate::common::what_ships::what_ships(&the_window_itself()));
+
+        assert!(
+            !path.contains("active_account_id"),
+            "the saved-search run reads the account that was last looked at"
+        );
+        assert!(
+            !path.contains("lock_state"),
+            "the saved-search run reaches into the held state"
+        );
+        // And it does take the account off the row it was handed.
+        assert!(
+            path.contains("whose_mail_a_saved_search_reads"),
+            "the saved-search run does not ask whose mail it is reading"
+        );
+    }
+
+    /// The arm the folder tree runs when the cursor lands on a saved search.
+    fn the_landing_on_a_saved_search_arm(source: &str) -> String {
+        let after = source
+            .split_once("WhichRow::SavedSearch { .. } => {")
+            .expect("the arm for landing on a saved search")
+            .1;
+        let end = after
+            .find("\n                            }\n")
+            .unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    #[test]
+    fn test_landing_on_a_saved_search_says_whose_mail_is_being_worked_in() {
+        // The same thing landing on a folder does, and for the same reason: a
+        // saved search sits under its own account's branch now, so arrowing
+        // onto one is arriving in that account, and every command that is not
+        // about the search itself acts there. Without it, somebody who moved
+        // to another account's saved search and then asked for New Folder
+        // would get one in the account they came from.
+        let arm = the_landing_on_a_saved_search_arm(&crate::common::what_ships::what_ships(
+            &the_window_itself(),
+        ));
+
+        let asks = arm
+            .find("the_account_a_row_belongs_to")
+            .expect("landing on a saved search to ask whose row it is");
+        assert!(
+            arm[asks..].contains("active_account_id = Some"),
+            "whose row it is was asked and the answer was not used"
+        );
     }
 
     #[test]
@@ -25976,7 +26278,10 @@ mod editing_the_conditions_of_a_saved_search {
     #[test]
     fn test_a_readable_search_opens_on_the_questions_it_really_holds() {
         let stored = a_stored_search();
-        let opened = the_conditions_to_edit(ChosenSearch::Readable(Box::new(stored.clone())));
+        let opened = the_conditions_to_edit(ChosenSearch::Readable {
+            account: "acc".to_string(),
+            search: Box::new(stored.clone()),
+        });
 
         let ConditionsToEdit::OfThisSearch(opening) = opened else {
             panic!("a search this build can read was refused: {opened:?}");
@@ -25993,6 +26298,7 @@ mod editing_the_conditions_of_a_saved_search {
         // gets when Enter is pressed on it, so it behaves the same way
         // whichever way somebody opens it.
         let opened = the_conditions_to_edit(ChosenSearch::SavedByAnotherVersion {
+            account: "acc".to_string(),
             id: "search-2".to_string(),
             name: "Written later".to_string(),
         });

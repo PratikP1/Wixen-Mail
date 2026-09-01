@@ -783,6 +783,20 @@ pub fn only_the_newest_are_shown(shown: usize) -> String {
 pub const THAT_FOLDER_IS_NOT_HERE: &str =
     "the folder it looks in is not on this computer any more.";
 
+/// What is said about a search whose account has gone.
+///
+/// Its own sentence rather than the folder's, and the difference matters to
+/// the person reading it: told a folder has gone, somebody goes looking for a
+/// folder, and there is no folder to find because the whole account went.
+///
+/// The two answers it replaces are both worse. Running it against a different
+/// account would list somebody else's mail under a name from this one, which
+/// is the one thing D-2-05 exists to make impossible. Finding nothing would
+/// read as an empty mailbox, and a search that says nothing is exactly the
+/// failure this phase is about.
+pub const THAT_ACCOUNT_IS_NOT_HERE: &str =
+    "the account it belongs to is not on this computer any more.";
+
 /// What a row says once its search has run.
 ///
 /// A name rather than a whole search, so a search this build cannot read says
