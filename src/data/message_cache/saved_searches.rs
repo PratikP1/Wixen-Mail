@@ -275,12 +275,38 @@ impl MessageCache {
     }
 
     /// How much of this account's message text is actually on this computer.
+    ///
+    /// Both numbers from one pass. Read separately they could be taken a
+    /// moment apart, and a stored count read after a total that has since
+    /// grown is a sentence whose arithmetic nobody can reproduce.
+    ///
+    /// **It has to agree with [`scan_query`] on two things, and this is the
+    /// whole reason it is worth reading.** The account join and the exclusion
+    /// of deleted mail are what make this a count of the mail a saved search
+    /// actually reads. Disagree on either and the sentence is a true number
+    /// about a set nobody searched, which is a more convincing kind of wrong
+    /// than saying nothing. Change one and change both.
+    ///
+    /// The body table is joined the same way the scan joins it, left, so a
+    /// message whose text was never fetched or has since been evicted is still
+    /// counted as mail to search. That is the gap the sentence is about.
     pub fn how_much_message_text_is_stored_here(&self, account_id: &str) -> Result<TextStoredHere> {
-        let _ = account_id;
-        Ok(TextStoredHere {
-            messages: 7,
-            with_text: 7,
-        })
+        self.conn
+            .query_row(
+                "SELECT COUNT(*), COUNT(b.message_id)
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 LEFT JOIN message_bodies b ON b.message_id = m.id
+                 WHERE f.account_id = ?1 AND m.deleted = 0",
+                params![account_id],
+                |row| {
+                    Ok(TextStoredHere {
+                        messages: row.get(0)?,
+                        with_text: row.get(1)?,
+                    })
+                },
+            )
+            .map_err(|e| Error::Other(format!("Failed to count the mail to search: {}", e)))
     }
 
     /// The listing rows for the messages a search took, newest first.
