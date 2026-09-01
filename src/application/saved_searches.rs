@@ -726,8 +726,24 @@ pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
 /// own doc gives: turning it up would make a saved search the one place in the
 /// program that shows somebody the mail they have thrown away.
 pub fn what_a_saved_search_cannot_find_with(field: &str) -> Option<&'static str> {
-    let _ = field;
-    Some("A saved search may not find everything.")
+    if crate::application::filters::a_rule_reads_the_message_text(field) {
+        // Read from the list of the fields that hold the text rather than
+        // named here, so a third such field arrives with this sentence already
+        // attached rather than silently without one.
+        return Some(
+            "A saved search reads only the message text this computer has stored. Text that \
+             was cleared to make room stays findable from the search box and not here, so a \
+             condition about the message text can miss messages the search box still finds.",
+        );
+    }
+    if field == THE_FIELD_A_SAVED_SEARCH_NEVER_SEES {
+        return Some(
+            "A saved search never looks at mail you have thrown away. Every message it does \
+             look at is one you have not, so a condition about this finds nothing new and \
+             rules nothing out.",
+        );
+    }
+    None
 }
 
 /// The field a saved search's own scan has already decided the answer to.
