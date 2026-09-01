@@ -17,7 +17,7 @@ pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
-pub use searching::WhereToSearch;
+pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub mod notes;
 mod outbox;
 pub mod reminders;

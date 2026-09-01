@@ -89,8 +89,8 @@
 
 use crate::application::filters::{FilterAction, FilterEngine, FilterRule};
 use crate::data::message_cache::CachedMessage;
-use crate::data::message_cache::WhereToSearch;
 use crate::data::message_cache::saved_searches::TextStoredHere;
+use crate::data::message_cache::{TextTheIndexHolds, WhereToSearch};
 
 /// One thing a saved search asks about a message.
 ///
@@ -698,6 +698,26 @@ pub fn what_a_saved_search_covers(coverage: TextStoredHere) -> String {
     }
 }
 
+/// What the search box can actually look inside here.
+///
+/// The same sentence as [`what_a_saved_search_covers`], said about the other
+/// search, and built beside it so the two cannot come to describe themselves
+/// in different voices.
+///
+/// **The numbers are not that one's numbers, and the type is different so
+/// they cannot be handed over by mistake.** A saved search reads the bodies
+/// this computer has stored. The box reads the search index, which keeps the
+/// words of a message whose text was evicted, so it covers more of the same
+/// mailbox and saying otherwise would understate what it just searched.
+pub fn what_the_search_box_covers(coverage: TextTheIndexHolds) -> String {
+    // A stub, until the sentence is written: says the other search's sentence,
+    // which is exactly the false claim this function exists to avoid making.
+    what_a_saved_search_covers(TextStoredHere {
+        messages: coverage.messages,
+        with_text: coverage.with_text,
+    })
+}
+
 /// What a saved search cannot find with a condition on this field, if there is
 /// anything to say.
 ///
@@ -1077,6 +1097,14 @@ mod tests {
         })
     }
 
+    /// The same, for the other search, whose numbers are not these numbers.
+    fn the_box_covering(messages: i64, with_text: i64) -> String {
+        what_the_search_box_covers(TextTheIndexHolds {
+            messages,
+            with_text,
+        })
+    }
+
     /// The shipping half of one file, tests cut off.
     ///
     /// Cut, because the check below looks for the very words it would
@@ -1163,6 +1191,43 @@ mod tests {
              {nothing_yet}"
         );
         assert_ne!(nothing_yet, covering(30, 0));
+    }
+
+    #[test]
+    fn test_the_boxs_coverage_sentence_says_it_is_about_the_box() {
+        // The other half of the sentence above, and the reason both exist.
+        // Somebody may run a saved search and then type into the box in one
+        // session, hear two different numbers about one mailbox, and have no
+        // way to tell which was about what. Naming the subject is what makes
+        // two numbers legible rather than contradictory.
+        for (messages, with_text) in [(30, 12), (30, 30), (30, 0)] {
+            let said = the_box_covering(messages, with_text);
+            assert!(
+                said.contains("search box"),
+                "a coverage sentence that does not say which search it is \
+                 about: {said}"
+            );
+            assert!(
+                !said.contains("saved search"),
+                "the search box described itself as a saved search: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_two_searches_do_not_describe_themselves_in_the_same_words() {
+        // They cover different amounts of the same mailbox, so the same pair
+        // of numbers means a different thing on each. Two sentences that came
+        // out identical would be one claim wearing two hats, which is the
+        // collapse D-2-13 decided against.
+        for (messages, with_text) in [(30, 12), (30, 30), (30, 0), (0, 0)] {
+            assert_ne!(
+                the_box_covering(messages, with_text),
+                covering(messages, with_text),
+                "the box and the saved search said the same thing about \
+                 {with_text} of {messages}"
+            );
+        }
     }
 
     #[test]

@@ -3298,6 +3298,235 @@ mod tests {
         );
     }
 
+    // ── What the box says it could look inside ───────────────────────────
+    //
+    // Behavioural rather than source-reading, and deliberately. A check that
+    // reads this file for the name of the counting function is answered by the
+    // call being present while its answer is thrown away, which is the defect
+    // these tests exist to catch: 02-02's first version of exactly this guard
+    // stayed green through `let _ = ...`. These run the search and read what a
+    // person would have been told, so an answer computed and not said fails
+    // them however it was discarded.
+
+    /// The status line a search put out, or nothing if it put out none.
+    ///
+    /// Drains the other updates on the way. `MessagesLoaded` is sent first and
+    /// synchronously, and the status goes through the runtime, so the two
+    /// arrive in that order and only one of them is what was said.
+    fn what_the_status_line_said(
+        rt: &Runtime,
+        rx: &async_channel::Receiver<crate::presentation::ui_types::UIUpdate>,
+    ) -> Option<String> {
+        rt.block_on(async {
+            loop {
+                let next = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+                match next {
+                    Ok(Ok(crate::presentation::ui_types::UIUpdate::StatusUpdated(said))) => {
+                        return Some(said);
+                    }
+                    Ok(Ok(_)) => continue,
+                    _ => return None,
+                }
+            }
+        })
+    }
+
+    /// An account holding two messages, one of whose text was fetched and then
+    /// evicted, and the other never fetched at all.
+    ///
+    /// The evicted message's distinguishing word sits past the snippet. The
+    /// snippet is the first 200 characters, it is indexed, and it is never
+    /// evicted, so a word inside it is findable whatever happened to the body
+    /// and a fixture built on one cannot tell the two coverages apart.
+    fn an_account_the_box_can_only_half_look_inside(
+        cache: &MessageCache,
+    ) -> crate::data::message_cache::TextTheIndexHolds {
+        use crate::data::message_cache::{CachedFolder, CachedMessage};
+
+        let folder = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: LOCAL_ACCOUNT_ID.to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder to search in");
+        let message = |uid: u32, subject: &str| CachedMessage {
+            id: 0,
+            uid,
+            folder_id: folder,
+            message_id: format!("m{uid}@example.com"),
+            subject: subject.to_string(),
+            from_addr: "Hana <hana@example.com>".to_string(),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            date: "2026-07-30".to_string(),
+            body_plain: None,
+            body_html: None,
+            read: false,
+            starred: false,
+            deleted: false,
+        };
+        let opened = cache
+            .save_message(&message(1, "Quarterly figures"))
+            .expect("a message somebody opened");
+        cache
+            .save_message_body(
+                opened,
+                Some(&format!("{}aubergine", "filler ".repeat(80))),
+                None,
+            )
+            .expect("its text");
+        cache
+            .save_message(&message(2, "Quarterly forecast"))
+            .expect("a message nobody opened");
+        cache.evict_bodies_over(0).expect("an eviction");
+
+        let coverage = cache
+            .how_much_message_text_the_index_holds(LOCAL_ACCOUNT_ID, WhereToSearch::EveryFolder)
+            .expect("what the box covers");
+        assert_eq!(
+            coverage,
+            crate::data::message_cache::TextTheIndexHolds {
+                messages: 2,
+                with_text: 1
+            },
+            "the fixture does not hold the case it was built for"
+        );
+        coverage
+    }
+
+    #[test]
+    fn test_a_search_from_the_box_says_how_much_of_the_mail_it_could_look_inside() {
+        // The whole point of the plan. A search that answers with two of a
+        // hundred reads as an answer rather than as a fraction of one, and
+        // nothing in the result says which it was. The saved search has said
+        // this since 02-02; the box, which is the search people reach for
+        // first, said nothing.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let coverage =
+            an_account_the_box_can_only_half_look_inside(cache.as_ref().expect("a cache"));
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "quarterly",
+                looking_in: WhereToSearch::EveryFolder,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        let said = what_the_status_line_said(&rt, &rx).expect("a search to say something");
+        assert!(
+            said.contains("2 matches for quarterly"),
+            "the search stopped saying what it found: {said}"
+        );
+        assert!(
+            said.contains(
+                &crate::application::saved_searches::what_the_search_box_covers(coverage)
+            ),
+            "the search box said nothing about how much of the mail it could \
+             look inside: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_search_from_the_box_that_found_nothing_still_says_what_it_could_look_inside() {
+        // The moment the sentence is worth most, and the moment it is easiest
+        // to leave out: an empty result and a search that could only read a
+        // tenth of the mailbox look exactly the same on the screen.
+        //
+        // `NothingFound` keeps its channel. It is the earcon, on its own topic,
+        // and the coverage rides the status topic, so neither wipes the other.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        let coverage =
+            an_account_the_box_can_only_half_look_inside(cache.as_ref().expect("a cache"));
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "aubergine",
+                looking_in: WhereToSearch::SubjectOnly,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        assert_eq!(
+            a11y.take_visual_feedback().as_deref(),
+            Some("Nothing found, aubergine"),
+            "an empty search stopped reaching the earcon channel"
+        );
+        let said = what_the_status_line_said(&rt, &rx)
+            .expect("an empty search to still say what it covered");
+        assert!(
+            said.contains(
+                &crate::application::saved_searches::what_the_search_box_covers(coverage)
+            ),
+            "an empty search said nothing about how little it could look \
+             inside: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_search_that_reads_no_message_text_is_not_given_a_coverage_figure() {
+        // From Only reads the sender and nothing else, so how much message
+        // text is here is an answer to a question nobody asked. Saying it
+        // anyway would be noise on every narrowed search, and working it out
+        // would be a count nobody needed.
+        use crate::presentation::accessibility::Accessibility;
+
+        let cache = test_cache_arc();
+        an_account_the_box_can_only_half_look_inside(cache.as_ref().expect("a cache"));
+        let state = Arc::new(StdMutex::new(WxUIState::default()));
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+
+        search_messages(
+            &state,
+            &cache,
+            WhatWasAsked {
+                typed: "hana",
+                looking_in: WhereToSearch::SenderOnly,
+            },
+            &tx,
+            &rt,
+            &a11y,
+        );
+
+        let said = what_the_status_line_said(&rt, &rx).expect("a search to say what it found");
+        assert!(
+            said.contains("2 matches for hana"),
+            "the search stopped saying what it found: {said}"
+        );
+        assert!(
+            !said.contains("text of your messages"),
+            "a search of senders alone was told how much message text is \
+             here: {said}"
+        );
+    }
+
     #[test]
     fn test_find_searches_the_module_being_read_rather_than_always_the_mail() {
         // Find searched mail whatever was on screen. Pressing it while reading
