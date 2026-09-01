@@ -14195,11 +14195,12 @@ fn keep_the_search_that_ran(
     typed: &str,
     looking_in: WhereToSearch,
 ) {
-    let _ = showing;
-    let _ = looking_in;
+    if showing != PimModule::Mail {
+        return;
+    }
     state.mail_search_that_was_run = Some(TheSearchThatWasRun::new(
         typed.to_string(),
-        WhereToSearch::EveryFolder,
+        looking_in,
         the_path_of_the_folder_on_screen(state),
     ));
 }
