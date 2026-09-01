@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 01
 current_phase_name: Folders and conversations
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-08-31T09:55:00.639Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-09-01T03:58:31.317Z"
 last_activity: 2026-08-31
 last_activity_desc: "01-14 done: the sidebar shows every account at once, which closes the one gap phase verification found. Two accounts that both have an Inbox are two rows a caller can tell apart, the branches are in the order Alt+Shift+Up puts them in, and moving one now redraws the sidebar it reordered rather than only writing the number. Moving between accounts is arrow keys in a tree that is already there, and the folder you land on is read as its own account's, which was a real bug the moment other accounts' folders appeared on screen. The plan's premise was wrong and is written up: there are eleven call sites, not twelve, and all eleven are 'the data changed', so the class the plan wanted changed was empty and following it would have changed nothing. What it cost is stated: every one of the eleven redraws now reads five things per account rather than five in all, and some run on a timer. FOLDER-02 stays Pending, because what keeps it pending is a screen reader announcing the level and nothing here touches that"
-state_head: 67d12c5bc286489de8f2ae1cb30042782d4f5c51
+state_head: a1e02ba2624969ae9838ab1217d19d4facce1c35
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 0
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 22
+  completed_plans: 17
   percent: 0
 ---
 
@@ -79,7 +79,7 @@ which the newest, 5,269, was the unit count wearing the label of the total. The 
 
 Last activity: 2026-08-31 — 01-14 done: the sidebar shows every account at once, so two accounts that both have an Inbox are two rows a caller can tell apart, moving between them is arrow keys rather than a rebuild, and the folder you land on is read as its own account's
 
-Progress: 14 of 14 plans. Every plan in phase 01 is executed. The phase
+Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
 different things about the same work all through this phase; the plan count read
 7 while 11 were done, which is how long a number nothing recomputes can sit here
@@ -134,6 +134,7 @@ target green on `cargo test --all-targets` the same day. 01-14 added fifteen.
 | Phase 01 P09 | one session | 3 tasks | 11 files |
 | Phase 01 P11 | 3h 5m | 3 tasks | 12 files |
 | Phase 01 P12 | 4h 5m | 3 tasks | 17 files |
+| Phase 02 P03 | one session | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,8 @@ ahead:
 - [Phase 01]: 01-12: the selection is held across a view switch rather than recomputed, because a conversation cannot say which of its messages was chosen
 - [Phase 01]: 01-12: a subtree is read from parent_id and never from a path, because the hierarchy separator is not persisted
 - [Phase 01]: 01-12: a conversation row confirms a delete where a single message does not, because its contents are off screen and the column that would say how many can be switched off
+- [Phase 01]: 02-03: the offer to fetch missing message text counts the fetch list, not the difference between the two coverage numbers, because mail with no server to ask is missing text that no fetch can supply
+- [Phase 01]: 02-03: a read-gate refusal stops a backfill and an ordinary failure does not, told apart by service::outward::was_refused_by_the_gate
 
 ### Pending Todos
 
@@ -298,8 +301,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-31T09:55:00.607Z
-Stopped at: Phase 2 context gathered
+Last session: 2026-09-01T03:58:30.138Z
+Stopped at: Completed 02-03-PLAN.md
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
@@ -377,4 +380,4 @@ so a folder is made where it is named and nesting waits for 01-03 and 01-05.
 A fourth is a warning for every later plan here: `MAIL_TRANSPORTS`' imap floor
 must rise with every gated write added, because left at 8 with nine present it
 had already taken one reddening test off the `copy_message` gate guard.
-Resume file: .planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md
+Resume file: None

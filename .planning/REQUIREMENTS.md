@@ -205,7 +205,7 @@ write path added by this milestone passes through that gate.
     across all three fields as it does today. The reader's answer for a missing restriction and
     the writer's answer for an unrestricted search are the same answer, written once.
 
-- [ ] **SEARCH-02**: Save and run a search over message text that eviction has cleared.
+- [x] **SEARCH-02**: Save and run a search over message text that eviction has cleared.
   - Evidence: bodies are split out with a size budget and least-recently-read eviction in
     `src/data/message_cache/bodies.rs`. The changelog records that an old message may have
     headers here and no text, and that nothing built into the program saves a search of that
@@ -965,7 +965,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | THREAD-01 | Phase 1 | Complete |
 | THREAD-02 | Phase 1 | Complete |
 | SEARCH-01 | Phase 2 | Pending |
-| SEARCH-02 | Phase 2 | Pending |
+| SEARCH-02 | Phase 2 | Complete |
 | SEARCH-03 | Phase 2 | Pending |
 | SCALE-01 | Phase 3 | Pending |
 | SCALE-02 | Phase 3 | Pending |

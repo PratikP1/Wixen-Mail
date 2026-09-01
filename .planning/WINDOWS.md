@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 13
 waived_count: 0
 fixed_count: 0
-total_count: 10
-last_updated: 2026-09-01T02:14:56.334Z
+total_count: 13
+last_updated: 2026-09-01T03:56:12.023Z
 ---
 
 # Broken Windows Ledger
@@ -25,6 +25,9 @@ last_updated: 2026-09-01T02:14:56.334Z
 | 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | open |  | 2026-08-31T05:13:50.314Z |  |
 | 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | open |  | 2026-08-31T05:13:51.507Z |  |
 | 10 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear | open |  | 2026-09-01T02:14:56.334Z |  |
+| 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names | open |  | 2026-09-01T03:56:05.356Z |  |
+| 12 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear | open |  | 2026-09-01T03:56:05.812Z |  |
+| 13 | 02 | stub | src/presentation/wx_app.rs |  | The offer only appears while a saved search that reads message text is run; a person who never uses saved searches is never offered the fetch, which is where D-2-08 puts it and is a narrower reach than a menu command would have | open |  | 2026-09-01T03:56:12.023Z |  |
 
 ````json
 [
@@ -146,6 +149,42 @@ last_updated: 2026-09-01T02:14:56.334Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T02:14:56.334Z",
+    "resolved_at": null
+  },
+  {
+    "id": 11,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T03:56:05.356Z",
+    "resolved_at": null
+  },
+  {
+    "id": 12,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T03:56:05.812Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "stub",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The offer only appears while a saved search that reads message text is run; a person who never uses saved searches is never offered the fetch, which is where D-2-08 puts it and is a narrower reach than a menu command would have",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T03:56:12.023Z",
     "resolved_at": null
   }
 ]

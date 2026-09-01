@@ -132,21 +132,21 @@ Plans:
   5. Fetching the missing text is built and gated. Since it is a read and every `may_i` call gates a write, `application::allowed` gains a read dimension, on by default, which is a stated exception to that type's rule that `Default` is the safe end.
   6. Saved searches sit inside the account structure the way pinned folders do, so two accounts each holding a search of the same name are never two identical rows.
 
-**Plans**: 8 plans, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
+**Plans**: 3/8 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by nearly every plan under the same-commit rules, and `src/presentation/wx_app.rs` by six of the eight, so the plans are ordered rather than run in parallel. The wave numbers say only "this one after that one"; there is no wave holding two plans.
 
 Plans:
 
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Tracer: a read dimension on `Allowed`, end to end from the stored settings file to the one fetch that already exists (D-2-06, D-2-07, D-2-11, D-2-12)
+- [x] 02-01-PLAN.md — Tracer: a read dimension on `Allowed`, end to end from the stored settings file to the one fetch that already exists (D-2-06, D-2-07, D-2-11, D-2-12)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02-02-PLAN.md — What a body-reading saved search covers, said before it runs, naming which search it is about (D-2-08, D-2-13)
+- [x] 02-02-PLAN.md — What a body-reading saved search covers, said before it runs, naming which search it is about (D-2-08, D-2-13)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 02-03-PLAN.md — Fetching the missing text, behind the gate, marked experimental where somebody meets it (D-2-08)
+- [x] 02-03-PLAN.md — Fetching the missing text, behind the gate, marked experimental where somebody meets it (D-2-08)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -206,6 +206,7 @@ Plans:
 **Plans**: TBD
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
+
 - Gmail mail archived with no label vanishes from a conversation count, because D-08 excludes All Mail by folder rather than by message identity. One extra predicate in one query.
 - A conversation root arriving after a message that already names it is not merged, so three of six arrival orders over such a set merge. One table, one index, one writer.
 - `next_local_uid` hands out 0 after the number range wraps, because it saturates on `i64` and then casts to `u32`. Not reachable in any database this program can currently produce.
@@ -260,6 +261,7 @@ Plans:
 **UI hint**: yes
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
+
 - A permission per account is stored, read by `allowed_for`, honoured out to the provider clients, and offered by no screen. This is FEEDBACK-01's exact shape already live in the tree, found by the mirror guard 01-06 added, and it belongs with the requirement written for that fault.
 - A reminder alert still opens over somebody who is typing. It shares the one-at-a-time gate 01-10 built but does not ask the typing count. Whether a reminder should wait is a question about what a reminder is for.
 
@@ -303,7 +305,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Folders and conversations | 13/13 | Complete | 2026-08-31 |
-| 2. Search that says what it covers | 0/TBD | Not started | - |
+| 2. Search that says what it covers | 3/8 | In Progress|  |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
