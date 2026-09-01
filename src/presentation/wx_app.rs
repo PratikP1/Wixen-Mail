@@ -4202,10 +4202,13 @@ impl WxMailApp {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
                             spawn_mail_sync(app, None);
                         }
-                        // STUB. An arm that is reached and does nothing, which
-                        // is the shape of the defect this file has had before:
-                        // a command on a menu wired to nothing at all.
-                        _ if id == ID_FETCH_MISSING_TEXT => {}
+                        // The same command the button above the message list
+                        // runs, reached by its own id rather than by a second
+                        // one, so the menu and the button cannot come to do
+                        // different things.
+                        _ if id == ID_FETCH_MISSING_TEXT => {
+                            start_the_missing_text_fetch(app);
+                        }
                         // Ctrl+N: the primary action for wherever you are.
                         // A key whose meaning depends on focus is normally a
                         // bad idea for somebody who cannot see what has focus,
@@ -5443,11 +5446,35 @@ impl WxMailApp {
             .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
             .append_separator()
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
-            // STUB. On the menu, named, and saying nothing about what it is.
+            // Beside Check Mail because it is the same thing reaching for
+            // something else: both ask this account's server for mail it has
+            // not got, both act on the account rather than on the row in front
+            // of you, and that last part is what keeps this off the Action
+            // menu with the commands that do.
+            //
+            // It had no menu at all. The button above the message list appears
+            // only while a search that reads message text has just been run,
+            // so somebody who searches by subject, or never searches, was
+            // never offered it. That is ledger 13, and a menu is how somebody
+            // finds out a command exists.
+            //
+            // f, which nothing else on this menu claims. A mnemonic and no
+            // chord: a new accelerator needs a line in
+            // docs/KEYBOARD_SHORTCUTS.md in the same commit, and this is a run
+            // somebody starts once and waits for rather than a key they press
+            // daily.
+            //
+            // Marked experimental on the label as well as in the description,
+            // because a menu has nowhere to put the line of static text that
+            // carries the warning beside the button, and widening where the
+            // fetch is offered widens who meets a path no provider has ever
+            // seen. The description is what Windows shows in the status bar
+            // and hands over as the item's accessible description; the label
+            // is read whatever anybody's settings say.
             .append_item(
                 ID_FETCH_MISSING_TEXT,
-                "&Fetch Missing Message Text",
-                "Fetch the message text that is not on this computer",
+                "&Fetch Missing Message Text (experimental)",
+                crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL,
             )
             .append_separator()
             // Drafts were saved and then unreachable, which is worse than not
@@ -6458,6 +6485,16 @@ pub fn the_offer_to_fetch(count: usize) -> Option<String> {
         many => Some(format!("Fetch the text of {many} messages in this account")),
     }
 }
+
+/// What is said the moment the fetch is chosen, before anything is asked of
+/// anybody.
+///
+/// Deliberately vague about what will happen, because at this point nothing
+/// has looked: reading may be turned off, in which case the next thing said is
+/// a refusal, or there may be nothing missing at all. Naming a number here
+/// would be a promise made before counting.
+const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \
+     computer.";
 
 /// The offer as it is spoken, rather than as it is printed on the button.
 ///
@@ -18219,6 +18256,17 @@ fn start_the_missing_text_fetch(app: AppHandles<'_>) {
     // green through a break that threw the report away, because the two names
     // it looks for were sitting together in a `use`.
     let AppHandles { state, tx, rt } = app;
+    // Said before anything else, because the run itself says nothing until it
+    // has a connection and a mail server takes as long as it takes. From the
+    // button that gap was covered by the label somebody had just pressed and
+    // could still see; from a menu it is a command chosen and then silence,
+    // which is how somebody chooses it a second time and starts a second run.
+    //
+    // The count follows, from `mail_sync::about_to_fetch`, and is the more
+    // useful of the two. Both ride the status topic and the queue keeps the
+    // newest of a topic, so this one gives way to it, which is the right way
+    // round.
+    send_status(tx, rt, STARTING_THE_MISSING_TEXT_FETCH);
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let (accounts, account_id) = {
