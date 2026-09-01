@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 30
+open_count: 33
 waived_count: 0
 fixed_count: 2
-total_count: 32
-last_updated: 2026-09-01T12:51:10.257Z
+total_count: 35
+last_updated: 2026-09-01T14:31:03.243Z
 ---
 
 # Broken Windows Ledger
@@ -47,6 +47,9 @@ last_updated: 2026-09-01T12:51:10.257Z
 | 30 | 02 | unrun-verify | src/presentation/wx_app.rs |  | Landing on a saved search now sets the working account. Whether that is heard, and whether somebody notices they have moved accounts by arrowing onto a search, is unverified by ear | open |  | 2026-09-01T12:51:09.391Z |  |
 | 31 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The refusal for a saved search whose account has gone needs two accounts and one of them removed while a row for its search is still on screen. Never reached in a running build and unverified by ear | open |  | 2026-09-01T12:51:09.821Z |  |
 | 32 | 02 | unrun-verify | src/presentation/wx_app.rs |  | A saved search has never been run against a real account under two accounts. That opening one under account B while account A is current returns B's mail is proved by tests over the decision and by the cache read that narrows on the account, not by a live run | open |  | 2026-09-01T12:51:10.257Z |  |
+| 33 | 02 | unrun-verify | src/presentation/managers.rs |  | The search box's coverage sentence has never been heard. It is appended to the match count on the low-priority status topic, so it is now said on every search that reads message text, including when the whole mailbox is covered and the sentence says nothing new. Whether that is useful or is flooding on every search is a judgement only a screen reader run can make | open |  | 2026-09-01T14:30:53.917Z |  |
+| 34 | 02 | unrun-verify | src/presentation/managers.rs |  | A search box search that finds nothing now signals NothingFound on its own topic at normal priority and sends the coverage sentence on the status topic at low priority. That both are heard, and in an order that makes sense, is reasoned from the queue keeping only the newest of a topic and is unverified by ear | open |  | 2026-09-01T14:31:02.712Z |  |
+| 35 | 02 | deviation | src/data/message_cache/mod.rs |  | The box's coverage count is short for a database that already had a search index and had evicted bodies before this column existed. The index is contentless so it cannot be asked what it holds, and fts5vocab can but takes about nine seconds at two hundred thousand messages, so those rows are backfilled from message_bodies. Those messages stay findable by their text and are counted as though they are not. Short rather than over, and the set never grows | open |  | 2026-09-01T14:31:03.243Z |  |
 
 ````json
 [
@@ -432,6 +435,42 @@ last_updated: 2026-09-01T12:51:10.257Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T12:51:10.257Z",
+    "resolved_at": null
+  },
+  {
+    "id": 33,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The search box's coverage sentence has never been heard. It is appended to the match count on the low-priority status topic, so it is now said on every search that reads message text, including when the whole mailbox is covered and the sentence says nothing new. Whether that is useful or is flooding on every search is a judgement only a screen reader run can make",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T14:30:53.917Z",
+    "resolved_at": null
+  },
+  {
+    "id": 34,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "A search box search that finds nothing now signals NothingFound on its own topic at normal priority and sends the coverage sentence on the status topic at low priority. That both are heard, and in an order that makes sense, is reasoned from the queue keeping only the newest of a topic and is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T14:31:02.712Z",
+    "resolved_at": null
+  },
+  {
+    "id": 35,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "src/data/message_cache/mod.rs",
+    "line": null,
+    "description": "The box's coverage count is short for a database that already had a search index and had evicted bodies before this column existed. The index is contentless so it cannot be asked what it holds, and fts5vocab can but takes about nine seconds at two hundred thousand messages, so those rows are backfilled from message_bodies. Those messages stay findable by their text and are counted as though they are not. Short rather than over, and the set never grows",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T14:31:03.243Z",
     "resolved_at": null
   }
 ]

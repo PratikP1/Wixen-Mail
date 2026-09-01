@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02-08-PLAN.md on branch gsd/plan-02-08, not merged. Phase 02 executed, unverified
-last_updated: "2026-09-01T12:54:50.138Z"
-last_activity: "2026-09-01, 02-08 done and phase 02 executed: saved searches sit under the account they belong to, and opening one runs it against that account rather than against whichever account was last looked at. The tree change was the smaller half; the run reading held state was the defect 01-14 closed for folders and this closes for searches. run_a_saved_search is no longer handed the held state at all. Nothing has been drawn in a running build, and WINDOWS.md stands at 30 open"
-state_head: 3f61e91c00282f4101ee15d50b9a2aac52d54f43
+stopped_at: Completed 02-09-PLAN.md on branch gsd/plan-02-09, not merged. Phase 02 executed, the verification gap closed, unverified
+last_updated: "2026-09-01T14:38:52.688Z"
+last_activity: "2026-09-01, 02-09 done and the verification gap closed. The search box now says how much of the account's message text it could look inside, on the same line as the match count, with its own number rather than the saved search's. The plan was right that the two differ: measured, the index still holds the words of a message whose body was evicted while `message_bodies` does not. The plan was wrong that the box's number is a query, which changed the shape of the work. `message_search` is contentless, so its body column reads as NULL however much is indexed, and the one thing that can ask it takes about nine seconds at two hundred thousand messages. The answer is recorded where it is decided instead. Nothing has been heard under a screen reader, and WINDOWS.md stands at 33 open."
+state_head: 2e6dc9c9865148727eee347e40b83aece8a15658
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 22
-  completed_plans: 22
+  total_plans: 23
+  completed_plans: 23
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -27,7 +27,11 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 02 (Search that says what it covers) — EXECUTED, 8 of 8 plans done, awaiting verification. 02-07 is on branch gsd/plan-02-07 and 02-08 on branch gsd/plan-02-08, neither merged.
+Phase: 02 (Search that says what it covers) — EXECUTED, 9 of 9 plans done, awaiting re-verification. 02-07 is on branch gsd/plan-02-07, 02-08 on gsd/plan-02-08 and 02-09 on gsd/plan-02-09, none merged.
+02-09 was added on 2026-09-01 after the phase verification recorded criterion 4
+as the one partial of six: the saved search said what it covered and the search
+box, which is the search people reach for first, said nothing. It closes that.
+The verification report should be re-run against it rather than read as current.
 Corrected on 2026-09-01: this header and the frontmatter both said phase 01
 while five phase 02 plans had shipped, which is what made
 `gsd-tools query state.advance-plan` fail and tagged new decisions `[Phase 01]`.
@@ -84,7 +88,17 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-01, 02-08 done and phase 02 executed. Saved searches sit under the account they belong to, and opening one runs it against that account rather than against whichever account was last looked at. The tree change was the smaller half of it: moving the rows under account branches without changing the run would have made a latent defect reachable, the same one 01-14 closed for folders. `run_a_saved_search` is no longer handed the held state at all, so the wrong answer is out of scope rather than merely unread. Nothing has been drawn in a running build.
+Last activity: 2026-09-01, 02-09 done and the gap phase verification found on
+2026-09-01 closed. The search box now says how much of the account's message
+text it could look inside, on the same line as the match count, and a search
+that finds nothing gets the sentence on its own. The number is the box's own.
+The plan's central premise held under measurement: an evicted message is gone
+from `message_bodies` and still in the index, so the two searches really do
+cover different amounts of one mailbox. Its second-order premise did not: the
+box's number is not a query, because `message_search` is contentless and its
+body column reads as NULL however much is indexed. It is recorded in a column
+written by the one function that decides what the index holds. Nothing has been
+heard under a screen reader.
 
 Progress: [░░░░░░░░░░] 0%
 percentage above counts phases and this line counts plans, so the two have said
@@ -92,11 +106,13 @@ different things about the same work all through this phase; the plan count read
 7 while 11 were done, which is how long a number nothing recomputes can sit here
 being wrong.
 
-The suite is 5,974 unit as of `cargo test --lib` on 2026-09-01, with one ignored
-and every integration target green in the same session. 02-07 added 30 of those
-and 02-08 added 16, across `presentation::folder_tree` and
-`presentation::wx_app`. The release build has not been run on the 02-08 branch:
-`scripts/check.sh all` is the merge gate and it is Pratik's.
+The suite is 5,986 unit as of `cargo test --all-targets --no-fail-fast` on
+2026-09-01, with one ignored and every integration target green in the same run.
+02-07 added 30 of those, 02-08 added 16 and 02-09 added 12, the last across
+`data::message_cache::searching`, `application::saved_searches` and
+`presentation::managers`. The release build has not been run on the 02-07,
+02-08 or 02-09 branches: `scripts/check.sh all` is the merge gate and it is
+Pratik's.
 
 The counter above could not be advanced by `gsd-tools query state.advance-plan`
 on 2026-09-01: it looks for "Current Plan" and "Total Plans in Phase" lines this
@@ -155,6 +171,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P05 | one session | 3 tasks | 6 files |
 | Phase 02 P06 | one session | 3 tasks | 5 files |
 | Phase 02 P07 | one session | 3 tasks | 13 files |
+| Phase 02 P09 | one session | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -250,6 +267,7 @@ ahead:
 - [Phase 02]: 02-07: every change to a condition list says how many are left, on the end of the one sentence. Only a condition list counts out loud, decided from the kind rather than passed in.
 - [Phase 02]: A saved-search command takes its account from the row under the cursor, never from active_account_id, and run_a_saved_search is not handed the held state at all. A signature that cannot see the wrong answer is a guarantee; a check that the body does not read it is a reading somebody has to trust.
 - [Phase 02]: Every group that mirrors the account structure is ordered by one function, favourites::what_each_account_has. Two groupings of the same accounts is the shape that comes apart, and the test compares the two groups' orders rather than restating either.
+- [Phase 02]: The search box's coverage is recorded in a column written where the index body is decided, because the FTS index is contentless and cannot be asked what it holds
 
 ### Pending Todos
 
