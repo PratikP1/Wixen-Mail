@@ -1779,6 +1779,35 @@ fn event_entry(
     }
 }
 
+/// How many messages a fetch started now would attempt, for one account.
+///
+/// The length of the list the fetch walks rather than the difference between
+/// the two coverage numbers, for the reason `messages_with_no_text_here` gives
+/// on itself: the two sets come apart on mail with no server to ask, and a
+/// subtraction would offer to fetch something nothing can fetch.
+///
+/// **Account-wide, and it has to be.** The fetch behind the offer walks this
+/// list for the whole account and narrows to no folder, so a number counted
+/// any other way would be a label saying what the button does not do.
+///
+/// A count that fails offers nothing and lets the search run. The offer is a
+/// remedy for a limit rather than part of answering the question somebody
+/// asked, and refusing to search because the remedy could not be counted
+/// would trade a real answer for a button.
+///
+/// One place, called by both of this program's searches. Two functions
+/// describing one set is the shape that comes apart, and this set already has
+/// three descriptions to keep in step.
+pub(crate) fn how_many_could_be_fetched(cache: &MessageCache, account_id: &str) -> usize {
+    match cache.messages_with_no_text_here(account_id) {
+        Ok(wanted) => wanted.len(),
+        Err(e) => {
+            tracing::error!("What could be fetched for this account could not be counted: {e}");
+            0
+        }
+    }
+}
+
 /// Search the mail the search box was told to look at, and show what turns up.
 ///
 /// The dialog used to say "Searching: report..." and search nothing at all.
@@ -1827,6 +1856,33 @@ pub fn search_messages(
             None
         })
         .map(crate::application::saved_searches::what_the_search_box_covers);
+
+    // The remedy beside the disclosure, which is what D-2-08 asks for and what
+    // the search box did not have: the offer went out only while a saved
+    // search ran, so somebody who never uses one was never shown it.
+    //
+    // **The same update, carrying the same account-wide number.** The sentence
+    // above narrows to the folder the In box named; this does not, because the
+    // fetch the button starts does not. A count narrowed to match the sentence
+    // would read "2 messages" over a button that opens hundreds of requests
+    // across every folder in the account, which is a label describing
+    // something other than what pressing it does.
+    //
+    // Counted for the account the button would reach, which is not always the
+    // account this search read. `manager_account` falls back to the reserved
+    // local id so a search still runs with nothing signed in;
+    // `start_the_missing_text_fetch` has no such fallback and refuses. An
+    // offer counted over the local id would be a button whose only answer is
+    // an apology.
+    //
+    // Behind the same gate as the sentence. Text arriving cannot change what a
+    // search of subjects or senders alone answers, so that search is offered
+    // no remedy and pays for no count.
+    let could_be_fetched = looking_in
+        .reads_the_message_text()
+        .then(|| lock_state(state).active_account_id.clone())
+        .flatten()
+        .map(|whose_fetch| how_many_could_be_fetched(&cache, &whose_fetch));
 
     match cache.search_messages(&account, typed, looking_in, LIMIT) {
         Ok(rows) => {
@@ -1882,10 +1938,20 @@ pub fn search_messages(
         }
     }
 
-    // STUB. The real control flow, a wrong value: sent on every search
-    // whatever was asked and whatever is missing, so the tests beside this
-    // redden on the number and on the gate rather than on a missing name.
-    let _ = tx.try_send(UIUpdate::WhatCouldBeFetched(999));
+    // Sent whatever the number is, nought included, because nought is what
+    // takes a stale button off the screen: a search run after the text has
+    // arrived should not leave yesterday's offer sitting above the results.
+    // That is the same reason `run_a_saved_search` sends it every time, and it
+    // is why this is not wrapped in a test for something to fetch.
+    //
+    // Its own update rather than a clause on the status line, so the window
+    // announces it on the "message text" topic. The queue keeps only the
+    // newest of a topic, and the coverage sentence is on "status": sharing one
+    // would mean the offer silenced the sentence explaining why the offer is
+    // there.
+    if let Some(count) = could_be_fetched {
+        let _ = tx.try_send(UIUpdate::WhatCouldBeFetched(count));
+    }
 }
 
 /// Search whichever module is showing.

@@ -6449,13 +6449,10 @@ pub fn the_offer_to_fetch(count: usize) -> Option<String> {
 /// about a limit that cannot change such a search's answer, and nought when
 /// nothing is missing.
 ///
-/// Asked of the list rather than worked out from the coverage numbers, for the
-/// reason [`the_offer_to_fetch`] gives: the two come apart on mail that has no
-/// server to ask, and a subtraction would offer to fetch it.
-///
-/// A count that fails offers nothing and lets the search run, the same as the
-/// coverage sentence beside it. The offer is a remedy for a limit, not part of
-/// answering the question somebody asked.
+/// The gate is this search's own; the counting is
+/// [`managers::how_many_could_be_fetched`], which the search box asks as well.
+/// One place answers how many, so the two searches cannot come to offer
+/// different numbers over one button.
 fn what_could_be_fetched(
     cache: &MessageCache,
     account_id: &str,
@@ -6464,13 +6461,7 @@ fn what_could_be_fetched(
     if !search.reads_the_message_text() {
         return 0;
     }
-    match cache.messages_with_no_text_here(account_id) {
-        Ok(wanted) => wanted.len(),
-        Err(e) => {
-            tracing::error!("What could be fetched for this account could not be counted: {e}");
-            0
-        }
-    }
+    managers::how_many_could_be_fetched(cache, account_id)
 }
 
 /// Run a saved search against the account its row names.
