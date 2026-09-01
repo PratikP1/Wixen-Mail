@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 0
 fixed_count: 0
-total_count: 9
-last_updated: 2026-08-31T05:13:51.507Z
+total_count: 10
+last_updated: 2026-09-01T02:14:56.334Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,7 @@ last_updated: 2026-08-31T05:13:51.507Z
 | 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | open |  | 2026-08-31T05:13:49.247Z |  |
 | 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | open |  | 2026-08-31T05:13:50.314Z |  |
 | 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | open |  | 2026-08-31T05:13:51.507Z |  |
+| 10 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear | open |  | 2026-09-01T02:14:56.334Z |  |
 
 ````json
 [
@@ -133,6 +134,18 @@ last_updated: 2026-08-31T05:13:51.507Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T05:13:51.507Z",
+    "resolved_at": null
+  },
+  {
+    "id": 10,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:14:56.334Z",
     "resolved_at": null
   }
 ]
