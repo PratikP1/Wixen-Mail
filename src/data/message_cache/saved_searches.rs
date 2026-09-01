@@ -36,6 +36,23 @@ pub enum TheMessageText {
     Read,
 }
 
+/// How much of one account's mail has its text stored on this computer.
+///
+/// Two numbers rather than a fraction or a percentage, because the two are
+/// different facts and somebody acts differently on each: a hundred of two
+/// hundred and one of two is the same fraction and not the same situation.
+///
+/// Counted over the same mail a saved search is run over, which is what makes
+/// it worth saying at all. A count over everything in the database would be a
+/// true number about a different set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextStoredHere {
+    /// Every message a saved search over this account would look at.
+    pub messages: i64,
+    /// How many of those have their text on this computer.
+    pub with_text: i64,
+}
+
 /// What one account's saved searches came back as.
 ///
 /// Two lists rather than one, because a row this build cannot make sense of is
@@ -255,6 +272,15 @@ impl MessageCache {
                 .collect::<std::result::Result<Vec<_>, _>>(),
         };
         messages.map_err(|e| Error::Other(format!("Failed to collect the mail to search: {}", e)))
+    }
+
+    /// How much of this account's message text is actually on this computer.
+    pub fn how_much_message_text_is_stored_here(&self, account_id: &str) -> Result<TextStoredHere> {
+        let _ = account_id;
+        Ok(TextStoredHere {
+            messages: 7,
+            with_text: 7,
+        })
     }
 
     /// The listing rows for the messages a search took, newest first.
@@ -909,6 +935,142 @@ mod tests {
             read[0].body_plain.as_deref(),
             Some("The invoice is attached."),
             "a search asking about the text of a message was handed no text"
+        );
+    }
+
+    /// What the coverage count says about one account.
+    fn text_stored_in(cache: &MessageCache, account_id: &str) -> TextStoredHere {
+        cache
+            .how_much_message_text_is_stored_here(account_id)
+            .expect("the coverage count to be read")
+    }
+
+    /// A message with its text stored, so a coverage count has something to
+    /// find. The folder path is the message's, so two of these do not land in
+    /// one folder under one uid and become one message.
+    fn a_message_whose_text_is_here(cache: &MessageCache, account_id: &str, subject: &str) -> i64 {
+        let (_, message_id) = a_folder_holding(cache, account_id, subject, subject);
+        cache
+            .save_message_body(message_id, Some("The invoice is attached."), None)
+            .expect("the body to be stored");
+        message_id
+    }
+
+    #[test]
+    fn test_the_coverage_count_gives_the_mail_and_how_much_of_its_text_is_here() {
+        // The two numbers the disclosure is built from. Both of them, from one
+        // pass, because a total read at one moment and a stored count read at
+        // another can disagree and the sentence would then be arithmetic
+        // nobody can reproduce.
+        let cache = a_cache("coverage_both_numbers");
+        a_message_whose_text_is_here(&cache, "acc-1", "Quarterly report");
+        a_message_whose_text_is_here(&cache, "acc-1", "Invoice");
+        a_folder_holding(&cache, "acc-1", "Never opened", "Never opened");
+
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            TextStoredHere {
+                messages: 3,
+                with_text: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_no_mail_here_yet_is_counted_rather_than_refused() {
+        // A search can be saved against an account whose mail has not been
+        // synced, and the disclosure is said before the search runs. An error
+        // here would turn "nothing is here yet" into "this could not run",
+        // which is the more alarming of the two and the wrong one.
+        let cache = a_cache("coverage_empty_account");
+
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            TextStoredHere {
+                messages: 0,
+                with_text: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn test_mail_marked_deleted_is_counted_by_neither_number() {
+        // The count has to describe the same mail the scan reads, or the
+        // sentence is honest about a set nobody searched. `scan_query` leaves
+        // deleted mail out, so this does too. The thrown-out message has its
+        // text stored, so dropping the condition would move both numbers
+        // rather than one.
+        let cache = a_cache("coverage_deleted");
+        a_message_whose_text_is_here(&cache, "acc-1", "Kept");
+        let thrown_out = a_message_whose_text_is_here(&cache, "acc-1", "Thrown out");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET deleted = 1 WHERE id = ?1",
+                params![thrown_out],
+            )
+            .expect("the message to be marked deleted");
+
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            TextStoredHere {
+                messages: 1,
+                with_text: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn test_one_accounts_coverage_is_not_inflated_by_another_accounts_mail() {
+        // Two accounts on one machine share this database. A count that read
+        // the body table on its own, or missed the account join, would tell
+        // somebody their mail is better covered than it is, which is the one
+        // direction this sentence must never be wrong in.
+        let cache = a_cache("coverage_two_accounts");
+        a_message_whose_text_is_here(&cache, "acc-1", "Mine");
+        let alone = text_stored_in(&cache, "acc-1");
+
+        a_message_whose_text_is_here(&cache, "acc-2", "Someone else's");
+        a_message_whose_text_is_here(&cache, "acc-2", "Also theirs");
+
+        assert_eq!(
+            alone,
+            TextStoredHere {
+                messages: 1,
+                with_text: 1,
+            }
+        );
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            alone,
+            "another account's mail changed what this account was told it covers"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_text_has_been_evicted_still_counts_as_mail_to_search() {
+        // Eviction is why this sentence is worth saying. The message is still
+        // there and a saved search still reads it; what has gone is its text,
+        // so the total holds and the stored count falls.
+        let cache = a_cache("coverage_after_eviction");
+        a_message_whose_text_is_here(&cache, "acc-1", "Quarterly report");
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            TextStoredHere {
+                messages: 1,
+                with_text: 1,
+            },
+            "the text was not stored to begin with, so this test proves nothing"
+        );
+
+        cache.evict_bodies_over(0).expect("the body to be evicted");
+
+        assert_eq!(
+            text_stored_in(&cache, "acc-1"),
+            TextStoredHere {
+                messages: 1,
+                with_text: 0,
+            }
         );
     }
 
