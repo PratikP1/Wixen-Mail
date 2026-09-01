@@ -316,6 +316,28 @@ pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has 
      message that has been sent cannot be recalled, and a message deleted from a \
      server may have been the only copy.";
 
+/// The warning shown beside the offer to fetch missing message text in bulk.
+///
+/// Its own sentence, beside [`EXPERIMENTAL_WARNING`] rather than inside it,
+/// for two reasons. That one is about writes, and opens by saying both of the
+/// things it covers are experimental, so a read added to it would be counted
+/// among things that cannot be undone. And six assertions hold its wording
+/// word for word, which is the right way round: a warning about irreversible
+/// changes should be hard to edit by accident.
+///
+/// What it has to carry is the one risk no test in this repository can settle.
+/// Every other experimental thing here is experimental because it has never
+/// run; this is experimental because of what a provider may do when it does.
+/// Asking for hundreds of whole messages in a row is a shape a mail server is
+/// entitled to refuse, throttle or disconnect, and nothing on this side can
+/// find out which without a real account.
+///
+/// Second person and plain language, in the register of the warning above it.
+/// It says what could go wrong and what it costs, rather than only that the
+/// feature is new: "experimental" on its own tells somebody to be careful and
+/// not what to be careful of.
+pub const FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL: &str = "";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every
@@ -596,6 +618,52 @@ mod tests {
         assert!(
             EXPERIMENTAL_WARNING.contains("guest"),
             "{EXPERIMENTAL_WARNING}"
+        );
+    }
+
+    #[test]
+    fn test_fetching_text_in_bulk_says_it_is_experimental_and_says_what_could_go_wrong() {
+        // Its own sentence, and it has to earn being a second one. Everything
+        // else here is experimental because it has never run; this is
+        // experimental because of what a provider may do when it does, and
+        // that is the risk no test in this repository can settle. A warning
+        // saying only "experimental" tells somebody to be careful and not what
+        // to be careful of.
+        assert!(
+            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("experimental"),
+            "{FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("real account"),
+            "{FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("provider"),
+            "it does not say whose decision the thing that could go wrong is: \
+             {FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            !FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("  "),
+            "a wrapped literal lost its continuations, so this is read aloud \
+             with stray silences: {FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+        );
+    }
+
+    #[test]
+    fn test_the_bulk_fetch_warning_is_beside_the_write_warning_and_not_inside_it() {
+        // Two reasons, and both matter. The write warning opens by saying both
+        // of the things it covers are experimental, so a read folded into it
+        // would be counted among things that cannot be undone. And six
+        // assertions hold that warning word for word, which is the right way
+        // round for a warning about irreversible changes.
+        assert!(
+            !EXPERIMENTAL_WARNING.contains("fetch"),
+            "the read was folded into the warning about writes: \
+             {EXPERIMENTAL_WARNING}"
+        );
+        assert_ne!(
+            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL, EXPERIMENTAL_WARNING,
+            "one sentence is doing both jobs"
         );
     }
 

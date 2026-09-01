@@ -572,8 +572,14 @@ fn the_folder_above(folder: &ImapFolder) -> Option<&str> {
 /// is decisions about what to fetch, forget and reconcile, and none of it had
 /// ever been run in a test because running it meant having a server.
 ///
-/// Five methods, which is the whole of what a sync asks. Anything larger would
-/// be a description of the IMAP client rather than of what this needs.
+/// Six methods, which is the whole of what a sync and a backfill ask between
+/// them. Anything larger would be a description of the IMAP client rather than
+/// of what this needs.
+///
+/// Crate-private, and it stays that way: this is the seam the tests need, not
+/// something a caller should have to know about. That is why the backfill has
+/// two entry points, [`fetch_the_missing_message_text`] taking the real
+/// controller and [`fetch_over_a_mailbox`] taking anything shaped like one.
 pub(crate) trait Mailbox {
     /// How many messages a folder holds and how many are unread.
     ///
@@ -626,6 +632,15 @@ pub(crate) trait Mailbox {
         held: &[u32],
         changed_since: Option<u64>,
     ) -> Result<Vec<(u32, Vec<String>)>>;
+
+    /// One whole message exactly as it arrived.
+    ///
+    /// On the trait because [`fetch_the_missing_message_text`] asks for one
+    /// per message, and that per-message call is the property that makes the
+    /// read gate real: it is the first line of `ImapSession::fetch_body`, so
+    /// reading turned off while a backfill runs stops it at the next message
+    /// rather than at the next run.
+    async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>>;
 }
 
 impl Mailbox for MailController {
@@ -667,6 +682,10 @@ impl Mailbox for MailController {
         changed_since: Option<u64>,
     ) -> Result<Vec<(u32, Vec<String>)>> {
         MailController::fetch_flags(self, folder, held, changed_since).await
+    }
+
+    async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
+        MailController::fetch_message_body(self, folder, uid).await
     }
 }
 
@@ -1306,6 +1325,155 @@ pub fn folders_to_sync<'a>(
     worth
 }
 
+/// What a backfill of missing message text came to.
+///
+/// Four outcomes rather than a count and a flag. "Reading is off", "there was
+/// nothing to fetch" and "it ran and fetched none" are three different pieces
+/// of news, and a person acts differently on each: turn a setting on, nothing
+/// to do, or something is wrong with the connection. Collapsing any two of
+/// them into a zero would report the most reassuring of the three.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Backfill {
+    /// Reading was off before anything started, so nothing left the machine.
+    ///
+    /// Carries the sentence rather than an error code, because what somebody
+    /// needs is the name of the setting and where to find it.
+    NotAllowed(String),
+    /// Nothing in this account is missing text that a server could supply.
+    ///
+    /// Which is also the answer for a POP account, where every message came
+    /// down whole and there is no server left holding another copy.
+    NothingToFetch,
+    /// It ran.
+    Ran(Backfilled),
+}
+
+/// How a backfill that really ran got on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Backfilled {
+    /// Messages whose text arrived and is stored.
+    pub fetched: usize,
+    /// Messages that were asked for and did not arrive.
+    ///
+    /// Reported rather than swallowed. A run that gives only its successes
+    /// reads as complete, which is the "short answer that looks finished"
+    /// the whole disclosure exists to prevent.
+    pub could_not: usize,
+    /// Whether it reached the end of the list, and if not, why not.
+    pub ended: Ending,
+}
+
+/// Why a backfill stopped.
+///
+/// Separate from the two counts because "it stopped early" is not a number.
+/// A boolean beside the counts could hold it, and then nothing would carry
+/// the sentence saying which setting closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ending {
+    /// Every message in the list was attempted.
+    WentThroughTheWholeList,
+    /// Reading was turned off while it ran, so it stopped at that message.
+    ///
+    /// Told apart from an ordinary failure by
+    /// [`crate::service::outward::was_refused_by_the_gate`], which is the one
+    /// answer to that question. A refusal is not a message that would not
+    /// arrive: carrying on would ask the server for the rest and be refused
+    /// once per message, and report hundreds of failures for one setting.
+    ReadingWasTurnedOff(String),
+}
+
+/// What the read gate is told this fetch is doing, for its refusal sentence.
+///
+/// A refusal names the act, so somebody reads why rather than only that
+/// something was refused. Spelled out here rather than at the call site so the
+/// same words reach the up-front refusal and the mid-run one.
+pub const FETCHING_THE_MISSING_TEXT: &str = "fetch the message text that is not stored here";
+
+/// At most this many progress lines between the count and the report.
+///
+/// Guardrail 5: feedback must be bounded and must not flood. A backfill of
+/// three hundred messages that announces each one is not progress reporting,
+/// it is three hundred announcements over a status topic that also carries
+/// everything else, and the way somebody stops it is to close the program.
+///
+/// Ten rather than one per message, and never more however much mail there is.
+const AT_MOST_THIS_MANY_PROGRESS_LINES: usize = 10;
+
+/// Whether the run says where it has got to, having done `done` of `total`.
+///
+/// Pure and separate so the bound above is a property with a test rather than
+/// a constant somebody trusts. Nothing at all for a short run: the count line
+/// and the report are two sentences either side of a few seconds, and a
+/// progress line between them would be noise.
+pub(crate) fn says_where_it_is(done: usize, total: usize) -> bool {
+    let _ = (done, total, AT_MOST_THIS_MANY_PROGRESS_LINES);
+    true
+}
+
+/// The line said before the first message is asked for.
+pub fn about_to_fetch(count: usize) -> String {
+    let _ = count;
+    String::new()
+}
+
+/// The line said part-way through a long run.
+pub fn how_far_the_fetch_has_got(done: usize, total: usize) -> String {
+    let _ = (done, total);
+    String::new()
+}
+
+/// What a finished backfill is told to somebody, in one sentence.
+pub fn what_the_fetch_did(outcome: &Backfill) -> String {
+    let _ = outcome;
+    String::new()
+}
+
+/// Fetch the text of every message in one account that has none stored here.
+///
+/// The other half of what a saved search says it covers: the disclosure names
+/// a number, and this is what somebody does about it.
+///
+/// Not generic, deliberately. [`Mailbox`] is the seam that lets the routine be
+/// tested without a server, and a caller has a real controller and should not
+/// have to know the seam is there. The work is in [`fetch_over_a_mailbox`]
+/// just below.
+pub async fn fetch_the_missing_message_text(
+    controller: &MailController,
+    cache: &MessageCache,
+    account_id: &str,
+    allowed: crate::application::allowed::Allowed,
+    say: &dyn Fn(&str),
+) -> Result<Backfill> {
+    fetch_over_a_mailbox(controller, cache, account_id, allowed, say).await
+}
+
+/// The backfill, against anything that answers like a mailbox.
+///
+/// Where the work is, and where every test of it runs.
+pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
+    server: &M,
+    cache: &MessageCache,
+    account_id: &str,
+    allowed: crate::application::allowed::Allowed,
+    say: &dyn Fn(&str),
+) -> Result<Backfill> {
+    let _ = allowed;
+    let wanted = cache.messages_with_no_text_here(account_id)?;
+    for (done, message) in wanted.iter().enumerate() {
+        let _ = server
+            .fetch_message_body(&message.folder_path, message.uid)
+            .await;
+        if says_where_it_is(done + 1, wanted.len()) {
+            say(&how_far_the_fetch_has_got(done + 1, wanted.len()));
+        }
+    }
+    Ok(Backfill::Ran(Backfilled {
+        fetched: 0,
+        could_not: 0,
+        ended: Ending::WentThroughTheWholeList,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1692,6 +1860,28 @@ mod tests {
         asked_for: std::cell::RefCell<Vec<u32>>,
         /// A server that will not say which messages a mailbox holds.
         refuse_list_uids: bool,
+        /// How this server answers a request for a whole message, by uid.
+        ///
+        /// A uid with no entry is answered with an ordinary message, so a test
+        /// about one awkward message names only that one.
+        bodies: std::collections::HashMap<u32, AnswersABodyWith>,
+        /// Every fetch, and every line the run said, in the order they
+        /// happened.
+        ///
+        /// One log rather than two, because "the count is said before the
+        /// first fetch" is a claim about the order of two different kinds of
+        /// event, and two lists cannot be interleaved after the fact.
+        happened: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    /// How a scripted server answers a request for one message's whole text.
+    #[derive(Clone)]
+    enum AnswersABodyWith {
+        /// A failure about this one message. The run counts it and goes on.
+        AFailure,
+        /// A refusal by the read gate, which is what somebody turning reading
+        /// off part-way through a run looks like from in here.
+        TheGateIsClosed,
     }
 
     impl Default for Scripted {
@@ -1710,6 +1900,8 @@ mod tests {
                 asked_for: std::cell::RefCell::new(Vec::new()),
                 refuse_list_uids: false,
                 answers_a_move_with: crate::service::protocols::imap::Moved::Moved,
+                bodies: std::collections::HashMap::new(),
+                happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             }
         }
     }
@@ -1783,6 +1975,342 @@ mod tests {
                 .cloned()
                 .collect())
         }
+
+        async fn fetch_message_body(&self, _folder: &str, uid: u32) -> Result<Vec<u8>> {
+            self.happened.borrow_mut().push(format!("fetched {uid}"));
+            match self.bodies.get(&uid) {
+                Some(AnswersABodyWith::AFailure) => Err(crate::common::Error::Protocol(
+                    "The mail server would not hand that message over.".to_string(),
+                )),
+                Some(AnswersABodyWith::TheGateIsClosed) => {
+                    crate::service::outward::permitted_to_read(false, FETCHING_THE_MISSING_TEXT)
+                        .map(|()| Vec::new())
+                }
+                None => Ok(a_whole_message(uid)),
+            }
+        }
+    }
+
+    /// One message as it comes off a server, with a word only its text holds.
+    ///
+    /// "Bezoar" is nowhere in the subject or the sender, and it is past the two
+    /// hundred characters a snippet keeps, so finding it afterwards can only
+    /// have come from the text being stored and indexed.
+    fn a_whole_message(uid: u32) -> Vec<u8> {
+        format!(
+            "Subject: Quarterly report {uid}\r\n\
+             From: sender@example.com\r\n\
+             To: me@example.com\r\n\
+             \r\n\
+             {}\r\n\
+             The word this test looks for is bezoar.\r\n",
+            "Padding so the word below falls past the snippet. ".repeat(6)
+        )
+        .into_bytes()
+    }
+
+    /// A cache holding `how_many` messages in one account, none with any text.
+    fn an_account_with_no_message_text(cache: &MessageCache, folder_id: i64, how_many: u32) {
+        for uid in 1..=how_many {
+            cache
+                .upsert_message(&IncomingMessage {
+                    folder_id,
+                    uid,
+                    message_id: format!("<{uid}@example.com>"),
+                    refs_header: None,
+                    subject: format!("Quarterly report {uid}"),
+                    from_addr: "sender@example.com".into(),
+                    to_addr: "me@example.com".into(),
+                    cc: None,
+                    reply_to: None,
+                    date: format!("2026-07-{uid:02}"),
+                    internal_date: None,
+                    size_bytes: None,
+                    read: false,
+                    starred: false,
+                    answered: false,
+                    draft: false,
+                    deleted: false,
+                    has_attachments: false,
+                    safety: crate::service::safety::Verdict::ordinary(),
+                    gmail_message_id: None,
+                    labels: None,
+                    receipt_to: None,
+                    pop_uidl: None,
+                })
+                .expect("a message");
+        }
+    }
+
+    /// Run a backfill, handing back what it answered and everything it said.
+    fn backfill(server: &Scripted, cache: &MessageCache, reading: bool) -> (Backfill, Vec<String>) {
+        let happened = std::rc::Rc::clone(&server.happened);
+        let say = {
+            let happened = std::rc::Rc::clone(&happened);
+            move |line: &str| happened.borrow_mut().push(format!("said {line}"))
+        };
+        let allowed = crate::application::allowed::Allowed {
+            mail: false,
+            personal_information: false,
+            reading,
+        };
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(fetch_over_a_mailbox(server, cache, "acct", allowed, &say))
+            .expect("the backfill answers");
+        let log = happened.borrow().clone();
+        (outcome, log)
+    }
+
+    #[test]
+    fn test_with_reading_off_nothing_is_asked_of_a_server() {
+        // D-2-06: a refusal is a sentence naming the setting, not an error
+        // code and not a silent nought. And nothing may reach the server: the
+        // point of the up-front check is that somebody is told before a
+        // connection is opened rather than after.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 3);
+        let server = Scripted::default();
+
+        let (outcome, log) = backfill(&server, &cache, false);
+
+        let Backfill::NotAllowed(sentence) = &outcome else {
+            panic!("reading was off and the backfill did not refuse: {outcome:?}");
+        };
+        assert!(
+            sentence.contains(crate::application::allowed::READING_SECTION),
+            "the refusal does not name the setting to turn on: {sentence}"
+        );
+        assert!(
+            !log.iter().any(|line| line.starts_with("fetched")),
+            "a refused backfill still asked the server for something: {log:?}"
+        );
+    }
+
+    #[test]
+    fn test_each_missing_message_is_fetched_stored_and_then_findable() {
+        // The end to end claim of this plan, and the one that says the fetch
+        // is worth having: the coverage numbers move afterwards, and so does
+        // what a search can reach.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 3);
+        let server = Scripted::default();
+
+        let (outcome, _) = backfill(&server, &cache, true);
+
+        assert_eq!(
+            outcome,
+            Backfill::Ran(Backfilled {
+                fetched: 3,
+                could_not: 0,
+                ended: Ending::WentThroughTheWholeList,
+            }),
+            "the run did not fetch all three"
+        );
+        assert!(
+            cache
+                .messages_with_no_text_here("acct")
+                .expect("the list")
+                .is_empty(),
+            "messages are still missing their text after a run that fetched them"
+        );
+        // Two searches, because they read different things and only one of
+        // them proves the store went through `save_message_body`. The scan
+        // reads `message_bodies`, which a direct insert would also satisfy.
+        // The word search reads the index, which only `index_message_for_search`
+        // fills, and `save_message_body` is the one thing that calls it.
+        let scanned = cache
+            .messages_a_saved_search_reads(
+                "acct",
+                None,
+                crate::data::message_cache::saved_searches::TheMessageText::Read,
+            )
+            .expect("the scan");
+        assert_eq!(
+            scanned
+                .iter()
+                .filter(|message| message
+                    .body_plain
+                    .as_deref()
+                    .is_some_and(|text| text.contains("bezoar")))
+                .count(),
+            3,
+            "a saved search cannot reach the text that was just fetched"
+        );
+        let found = cache
+            .search_messages(
+                "acct",
+                "bezoar",
+                crate::data::message_cache::WhereToSearch::EveryFolder,
+                10,
+            )
+            .expect("the search");
+        assert_eq!(
+            found.len(),
+            3,
+            "the fetched text was stored without being indexed"
+        );
+    }
+
+    #[test]
+    fn test_reading_turned_off_part_way_stops_the_run_at_the_next_message() {
+        // The gate is `fetch_body`'s first line and the loop calls it once per
+        // message, so a setting changed mid-run is honoured at the next one.
+        // A refusal is not a message that would not arrive: carrying on would
+        // ask for the rest and be refused once each, and report a folder full
+        // of failures for one setting.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 4);
+        let mut server = Scripted::default();
+        // Newest first, so the second message asked for is uid 3.
+        server.bodies.insert(3, AnswersABodyWith::TheGateIsClosed);
+
+        let (outcome, log) = backfill(&server, &cache, true);
+
+        let Backfill::Ran(done) = &outcome else {
+            panic!("the run did not start: {outcome:?}");
+        };
+        assert_eq!(
+            done.fetched, 1,
+            "it did not fetch the message before the refusal"
+        );
+        let Ending::ReadingWasTurnedOff(sentence) = &done.ended else {
+            panic!(
+                "a refusal part way through was not reported as one: {:?}",
+                done.ended
+            );
+        };
+        assert!(
+            sentence.contains(crate::application::allowed::READING_SECTION),
+            "the refusal does not name the setting to turn on: {sentence}"
+        );
+        assert_eq!(
+            log.iter()
+                .filter(|line| line.starts_with("fetched"))
+                .count(),
+            2,
+            "it went on asking after being refused: {log:?}"
+        );
+    }
+
+    #[test]
+    fn test_one_message_that_will_not_fetch_does_not_end_the_run() {
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 3);
+        let mut server = Scripted::default();
+        server.bodies.insert(2, AnswersABodyWith::AFailure);
+
+        let (outcome, _) = backfill(&server, &cache, true);
+
+        assert_eq!(
+            outcome,
+            Backfill::Ran(Backfilled {
+                fetched: 2,
+                could_not: 1,
+                ended: Ending::WentThroughTheWholeList,
+            }),
+            "one message that would not arrive ended the run, or was not counted"
+        );
+    }
+
+    #[test]
+    fn test_the_count_is_said_before_the_first_message_is_asked_for() {
+        // Not decoration. Somebody was told a number a moment ago and is about
+        // to wait for an unknown length of time; a fetch that starts silently
+        // is the one they kill half way through.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 3);
+        let server = Scripted::default();
+
+        let (_, log) = backfill(&server, &cache, true);
+
+        let first = log.first().expect("the run said nothing at all");
+        assert!(
+            first.starts_with("said") && first.contains('3'),
+            "the run did not say how many it would attempt before asking: {log:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_run_with_nothing_to_fetch_says_so_rather_than_reporting_success() {
+        // An account whose text is all here, and a POP account, answer the
+        // same way. "Nothing to do" and "it ran and fetched none" are
+        // different pieces of news and the second reads as a fault.
+        let (cache, folder_id, _) = a_cache();
+        let server = Scripted::default();
+
+        let (outcome, log) = backfill(&server, &cache, true);
+
+        assert_eq!(outcome, Backfill::NothingToFetch);
+        assert!(
+            !log.iter().any(|line| line.starts_with("fetched")),
+            "a run with nothing to fetch still asked the server: {log:?}"
+        );
+        let _ = folder_id;
+    }
+
+    #[test]
+    fn test_progress_lines_are_bounded_however_much_mail_there_is() {
+        // Guardrail 5: feedback must be bounded and must not flood. Asserted
+        // as a property over the whole range rather than by reading the
+        // constant, because the constant is a step size and the bound is what
+        // somebody actually hears.
+        for total in [1usize, 2, 5, 11, 47, 300, 10_000, 200_000] {
+            let lines = (1..=total)
+                .filter(|done| says_where_it_is(*done, total))
+                .count();
+            assert!(
+                lines < AT_MOST_THIS_MANY_PROGRESS_LINES,
+                "{total} messages would say where it had got to {lines} times"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_short_run_says_nothing_between_the_count_and_the_report() {
+        // Two sentences either side of a few seconds. A progress line in
+        // between is noise, and it is the same topic as both of them.
+        for total in [1usize, 2, 5] {
+            assert!(
+                (1..=total).all(|done| !says_where_it_is(done, total)),
+                "a run of {total} said where it had got to"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_report_carries_both_numbers_even_when_none_failed() {
+        // A run that gives only its successes reads as complete.
+        let some_failed = what_the_fetch_did(&Backfill::Ran(Backfilled {
+            fetched: 12,
+            could_not: 3,
+            ended: Ending::WentThroughTheWholeList,
+        }));
+        assert!(
+            some_failed.contains("12") && some_failed.contains('3'),
+            "the report dropped one of its two numbers: {some_failed}"
+        );
+
+        let none_failed = what_the_fetch_did(&Backfill::Ran(Backfilled {
+            fetched: 12,
+            could_not: 0,
+            ended: Ending::WentThroughTheWholeList,
+        }));
+        assert!(
+            none_failed.contains("12"),
+            "the report dropped how many arrived: {none_failed}"
+        );
+        assert!(
+            !none_failed.is_empty() && none_failed != some_failed,
+            "a run where nothing failed reads the same as one where three did"
+        );
+
+        let nothing = what_the_fetch_did(&Backfill::NothingToFetch);
+        assert!(
+            !nothing.is_empty() && !nothing.contains('0'),
+            "nothing to fetch was reported as a count of nought: {nothing}"
+        );
     }
 
     fn a_cache() -> (TempHome<MessageCache>, i64, ImapFolder) {
