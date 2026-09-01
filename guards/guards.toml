@@ -10244,14 +10244,35 @@ red = [
 # an earlier version of the test could not see: it looked for the call and
 # went on passing while the number was computed and never said. The break
 # below is the one that found that.
+#
+# Re-measured 2026-09-01, when 02-05 folded the scope sentence into the same
+# update and the recorded text stopped naming a place in the tree. The old
+# shape put the `say` inside `if let Some(covers)`, so throwing the answer away
+# deleted the `say` with it and the check saw an update go missing. It does not
+# any more: the answer is an argument, and a `None` handed in its place leaves
+# the update exactly where it was. So the break below keeps the call, keeps the
+# sentence, and hands `None`, which is sharper than the old one and was invisible
+# to the check until the same commit added the assertion that the answer is bound
+# to a name rather than to `_`.
+#
+# `let _ =` is the point of that assertion. With the answer bound, handing `None`
+# leaves an unused variable and `-D warnings` refuses the build, so the compiler
+# holds the flow; `let _ =` is the one spelling that keeps the call, discards the
+# answer and still compiles, and it is what this record now breaks with. Measured:
+# `let covers = ...` with `None` passed does not build, and the `let _ =` form
+# reddens exactly the one test named below.
 
 [[guard]]
 name = "what a saved search covers is said, not merely worked out"
 file = "src/presentation/wx_app.rs"
-before = """        if let Some(covers) = coverage_before(&cache, &account_id, &search) {
-            say(UIUpdate::StatusUpdated(covers));
-        }"""
-after = """        let _ = coverage_before(&cache, &account_id, &search);"""
+before = """        let covers = coverage_before(&cache, &account_id, &search);
+        say(UIUpdate::StatusUpdated(what_a_search_says_as_it_opens(
+            &search, covers,
+        )));"""
+after = """        let _ = coverage_before(&cache, &account_id, &search);
+        say(UIUpdate::StatusUpdated(what_a_search_says_as_it_opens(
+            &search, None,
+        )));"""
 red = [
     "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_coverage_sentence_is_said_before_the_mail_is_gathered",
 ]

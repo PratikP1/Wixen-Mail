@@ -617,6 +617,22 @@ pub fn a_search_in_words(questions: &[Question], join: Join, folder: Option<&str
     )
 }
 
+/// What is said as a saved search opens, before its mail is gathered.
+///
+/// The scope first, then how much of the message text is here when the search
+/// reads it. One line rather than two updates in a row, because the second
+/// would replace the first on the status bar before anybody had read it, and
+/// a scope said and then wiped is a scope not said.
+///
+/// Said as it opens rather than with the result, for the same reason the
+/// coverage figure is: a narrow result list read without knowing the scope is
+/// an empty mailbox, and being told afterwards is a footnote on an answer
+/// somebody has already acted on.
+pub fn what_a_search_says_as_it_opens(search: &SavedSearch, covers: Option<String>) -> String {
+    let _ = search;
+    covers.unwrap_or_default()
+}
+
 /// How the coverage sentence opens, and the one place those words are written.
 ///
 /// A constant so a check can count the places that build this sentence, which
@@ -872,6 +888,15 @@ impl SavedSearch {
     /// the tree ever carries descriptions, this belongs in one.
     pub fn announced(&self) -> String {
         a_row_for(&self.name)
+    }
+
+    /// What this asks, in words.
+    ///
+    /// The same sentence the window that names a search says, from the same
+    /// builder, so a search cannot describe itself one way while it is being
+    /// saved and another way when it is opened.
+    pub fn in_words(&self) -> String {
+        a_search_in_words(&self.questions, self.join, self.folder.as_deref())
     }
 
     /// Whether answering this search means having the text of each message.
@@ -1966,6 +1991,49 @@ mod tests {
             what_a_typed_search_asks(&across_the_account("invoice")).in_words(),
             "This saved search looks in this account for messages where Subject contains \
              \"invoice\", From contains \"invoice\", or To contains \"invoice\"."
+        );
+    }
+
+    #[test]
+    fn test_opening_a_saved_search_says_what_it_asks() {
+        // SEARCH-01's third criterion. Three results out of a folder is an
+        // answer; three results out of a mailbox somebody believes is being
+        // searched whole is an empty mailbox, and nothing in the list says
+        // which it was.
+        let saved = SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: Join::Any,
+            questions: vec![asking_about("subject", "contains", "invoice")],
+            folder: Some("INBOX/Work".to_string()),
+        };
+
+        assert_eq!(
+            what_a_search_says_as_it_opens(&saved, None),
+            "This saved search looks in INBOX/Work for messages where Subject contains \
+             \"invoice\"."
+        );
+    }
+
+    #[test]
+    fn test_opening_a_search_that_reads_message_text_says_the_scope_and_the_coverage() {
+        // Both facts, in one line. Two updates in a row would put the second
+        // over the first on the status bar, and a scope said and then wiped is
+        // a scope not said.
+        let saved = SavedSearch {
+            id: "s1".to_string(),
+            name: "Invoices".to_string(),
+            join: Join::Any,
+            questions: vec![asking_about("body_plain", "contains", "invoice")],
+            folder: None,
+        };
+
+        let said = what_a_search_says_as_it_opens(&saved, Some("Forty of three hundred.".into()));
+
+        assert_eq!(
+            said,
+            "This saved search looks in this account for messages where Message text contains \
+             \"invoice\". Forty of three hundred."
         );
     }
 

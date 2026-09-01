@@ -6432,6 +6432,7 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
     use crate::application::saved_searches::{
         Found, MOST_RESULTS_SHOWN, NO_MAIL_HERE_YET, Ran, SAVED_BY_ANOTHER_VERSION,
         THAT_FOLDER_IS_NOT_HERE, only_the_newest_are_shown, what_a_search_found,
+        what_a_search_says_as_it_opens,
     };
     use crate::data::message_cache::saved_searches::TheMessageText;
 
@@ -6505,12 +6506,17 @@ fn run_a_saved_search(app: AppHandles<'_>, chosen: ChosenSearch) {
             TheMessageText::LeftAlone
         };
         // Before the gather rather than after it. The progress line above says
-        // only that a saved search is running; a search that reads message
-        // text should also say how much of it is here, and said afterwards
-        // that is a footnote on an answer somebody has already read.
-        if let Some(covers) = coverage_before(&cache, &account_id, &search) {
-            say(UIUpdate::StatusUpdated(covers));
-        }
+        // only that a saved search is running; opening one should say what it
+        // asks, and a search that reads message text should also say how much
+        // of that text is here. Said afterwards, either is a footnote on an
+        // answer somebody has already read.
+        //
+        // One update carrying both. Two in a row would put the second over the
+        // first on the status bar before anybody had read it.
+        let covers = coverage_before(&cache, &account_id, &search);
+        say(UIUpdate::StatusUpdated(what_a_search_says_as_it_opens(
+            &search, covers,
+        )));
         // Beside the sentence, and sent every time rather than only when there
         // is something to fetch. Nought is what takes a stale offer off the
         // screen, so a search run after the text has arrived does not leave
@@ -25429,6 +25435,35 @@ mod what_a_saved_search_says_before_it_runs {
         assert!(
             path[asks..gathers].contains("UIUpdate::StatusUpdated"),
             "what this search covers is worked out and never said to anybody"
+        );
+        // The answer bound to a name rather than to `_`, which is the whole of
+        // what keeps the compiler on this. With it bound, handing the sentence
+        // `None` in its place leaves an unused variable and `-D warnings`
+        // refuses the build; `let _ =` is the one spelling that keeps the call,
+        // throws the answer away and still compiles. The sentence carries the
+        // coverage as an argument now, and no reading of the text can see a
+        // `None` handed where an answer should be, so this holds the shape that
+        // lets the compiler see it instead.
+        assert!(
+            !path[..asks].ends_with("let _ = "),
+            "the coverage answer is bound to `_`, so it can be worked out and \
+             thrown away with nothing refusing the build"
+        );
+
+        // The scope travels on the same line, for the same reason and at the
+        // same moment. Its own `find` rather than trusting the one above: the
+        // coverage sentence alone satisfies every assertion so far, so a scope
+        // that was never said would read as covered.
+        let says = path
+            .find("what_a_search_says_as_it_opens")
+            .expect("the saved-search path to say what the search asks");
+        assert!(
+            says < gathers,
+            "what this search asks is said after the mail is gathered"
+        );
+        assert!(
+            path[says..gathers].contains("UIUpdate::StatusUpdated"),
+            "what this search asks is worked out and never said to anybody"
         );
     }
 
