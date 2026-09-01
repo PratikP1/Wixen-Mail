@@ -10494,7 +10494,10 @@ before = """    if !searches.is_empty() {
         ));
         out.extend(searches.iter().map(|search| {
             plain_row(
-                WhichRow::SavedSearch(search.id.clone()),
+                WhichRow::SavedSearch {
+                    account: search.account.clone(),
+                    id: search.id.clone(),
+                },
                 crate::application::saved_searches::a_row_for(&search.name),
                 1,
                 false,
@@ -10515,7 +10518,10 @@ after = """    if !searches.is_empty() {
             ));
             out.extend(group.iter().map(|search| {
                 plain_row(
-                    WhichRow::SavedSearch(search.id.clone()),
+                    WhichRow::SavedSearch {
+                        account: search.account.clone(),
+                        id: search.id.clone(),
+                    },
                     crate::application::saved_searches::a_row_for(&search.name),
                     2,
                     false,

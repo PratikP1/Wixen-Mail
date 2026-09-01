@@ -114,8 +114,20 @@ pub enum WhichRow {
     Label(String),
     /// The heading saved searches sit under.
     SavedSearches,
-    /// One saved search, by its identifier rather than by its name.
-    SavedSearch(String),
+    /// One account's part of that group, by the account's id.
+    ///
+    /// Distinct from [`WhichRow::Account`] although it names the same account,
+    /// for the reason [`WhichRow::PinnedIn`] gives: they are two rows, and
+    /// closing one must not close the other.
+    SavedSearchesIn(String),
+    /// One saved search, by the account it belongs to and its identifier.
+    ///
+    /// The account as well as the identifier, although the identifier is
+    /// already unique across the table. The pair is what the row is: a search
+    /// sits under its own account's branch (D-2-05), so a row that named only
+    /// the search would be a row that could not say whose mail Enter is about
+    /// to read. Everything that runs, renames or removes one asks the row.
+    SavedSearch { account: String, id: String },
 }
 
 impl WhichRow {
@@ -153,7 +165,8 @@ impl WhichRow {
             WhichRow::Labels => "labels".to_string(),
             WhichRow::Label(id) => format!("label{APART}{id}"),
             WhichRow::SavedSearches => "saved-searches".to_string(),
-            WhichRow::SavedSearch(id) => format!("saved-search{APART}{id}"),
+            WhichRow::SavedSearchesIn(_) => "saved-searches".to_string(),
+            WhichRow::SavedSearch { id, .. } => format!("saved-search{APART}{id}"),
         }
     }
 
@@ -304,6 +317,14 @@ pub struct LabelInTheTree {
 /// A saved search, as much of one as a tree needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchInTheTree {
+    /// Whose search it is, which is the branch it goes under (D-2-05).
+    ///
+    /// Carried here rather than on
+    /// [`crate::application::saved_searches::SavedSearch`], which is the
+    /// stored search and knows nothing about a tree. That is exactly what
+    /// Favourites does: [`crate::application::favourites::Pin`] carries the
+    /// account and the folder it points at does not.
+    pub account: String,
     pub id: String,
     pub name: String,
 }
@@ -597,7 +618,10 @@ pub fn rows(
         ));
         out.extend(searches.iter().map(|search| {
             plain_row(
-                WhichRow::SavedSearch(search.id.clone()),
+                WhichRow::SavedSearch {
+                    account: search.account.clone(),
+                    id: search.id.clone(),
+                },
                 crate::application::saved_searches::a_row_for(&search.name),
                 1,
                 false,
@@ -675,7 +699,8 @@ pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
         | WhichRow::Labels
         | WhichRow::Label(_)
         | WhichRow::SavedSearches
-        | WhichRow::SavedSearch(_) => return None,
+        | WhichRow::SavedSearchesIn(_)
+        | WhichRow::SavedSearch { .. } => return None,
     };
     // The reserved owner is not an account. Answering with it would make the
     // next command act against a thing no account row names, so landing on the
@@ -1284,6 +1309,7 @@ mod tests {
                 name: "Urgent".to_string(),
             }],
             &[SearchInTheTree {
+                account: "a".to_string(),
                 id: "s1".to_string(),
                 name: "From Ana".to_string(),
             }],
@@ -1339,7 +1365,11 @@ mod tests {
             WhichRow::Labels,
             WhichRow::Label("t1".to_string()),
             WhichRow::SavedSearches,
-            WhichRow::SavedSearch("s1".to_string()),
+            WhichRow::SavedSearchesIn("a".to_string()),
+            WhichRow::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            },
         ] {
             assert_eq!(
                 what_the_gesture_moves(Some(&row)),
@@ -1388,6 +1418,138 @@ mod tests {
     }
 
     #[test]
+    fn test_a_saved_search_row_and_its_branch_both_say_whose_search_it_is() {
+        // D-2-05 puts saved searches inside the account structure, and that is
+        // what makes this answerable at all: until the group moved, a search's
+        // row named no account and the run had to take one from wherever the
+        // program happened to be looking. That is the defect 01-14 closed for
+        // folders, and moving these rows without this would reopen it for
+        // searches, with a search under one branch listing another account's
+        // mail under a name from this one.
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::SavedSearch {
+                account: "second".to_string(),
+                id: "s1".to_string(),
+            }),
+            Some("second".to_string())
+        );
+        assert_eq!(
+            the_account_a_row_belongs_to(&WhichRow::SavedSearchesIn("second".to_string())),
+            Some("second".to_string())
+        );
+    }
+
+    #[test]
+    fn test_two_accounts_saved_searches_of_one_name_are_two_rows_a_caller_can_tell_apart() {
+        // Roadmap criterion 6, asked of the two things a caller has: what the
+        // row spells and whose it says it is.
+        let mine = a_saved_search_in("work", "s1", "Invoices");
+        let theirs = a_saved_search_in("home", "s2", "Invoices");
+        let rows = tree(
+            &[account("work", "Work"), account("home", "Home")],
+            &[
+                folder("work", 1, "INBOX", None),
+                folder("home", 2, "INBOX", None),
+            ],
+            &[],
+            &[mine, theirs],
+        );
+        let searches: Vec<&TreeRow> = rows
+            .iter()
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch { .. }))
+            .collect();
+        assert_eq!(searches.len(), 2);
+        assert_eq!(
+            searches[0].label, searches[1].label,
+            "two searches of one name should still read the same; what tells them apart is not the words"
+        );
+        assert_ne!(searches[0].identity.stored(), searches[1].identity.stored());
+        assert_eq!(
+            searches
+                .iter()
+                .map(|row| the_account_a_row_belongs_to(&row.identity))
+                .collect::<Vec<_>>(),
+            vec![Some("work".to_string()), Some("home".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_a_saved_search_rows_spelling_loses_neither_half_of_what_the_row_is() {
+        // The identifier is unique across the whole table, so nothing in the
+        // database produces two searches with one identifier and this pair
+        // cannot arrive from a read. What it holds against is a spelling that
+        // drops half of what the row is on the grounds that the other half is
+        // unique anyway.
+        //
+        // The tree treats the spelling as the whole of the row: it is what is
+        // written to `tree_state`, what the cursor is put back by, and what
+        // `select_row` matches on. A part of the identity that is not in the
+        // spelling is a part nothing downstream can get back, and the folder
+        // above carries its account for exactly this reason although a path is
+        // already unique inside one account.
+        assert_ne!(
+            WhichRow::SavedSearch {
+                account: "work".to_string(),
+                id: "s1".to_string(),
+            }
+            .stored(),
+            WhichRow::SavedSearch {
+                account: "home".to_string(),
+                id: "s1".to_string(),
+            }
+            .stored()
+        );
+
+        // And the join between the two parts is not readable in a second
+        // place, which is the trick a folder's identity already plays: an
+        // account called `a` holding a search called `b\u{1f}s` and an account
+        // called `a\u{1f}b` holding `s` must not spell one identity.
+        assert_ne!(
+            WhichRow::SavedSearch {
+                account: "a".to_string(),
+                id: format!("b{APART}s"),
+            }
+            .stored(),
+            WhichRow::SavedSearch {
+                account: format!("a{APART}b"),
+                id: "s".to_string(),
+            }
+            .stored()
+        );
+    }
+
+    #[test]
+    fn test_the_three_kinds_of_saved_search_row_never_spell_one_identity() {
+        // The heading, one account's branch and one search, for the same
+        // account and the same search. Two of these spelling one identity is a
+        // row that collapses another, or a cursor put back on the wrong one.
+        let heading = WhichRow::SavedSearches;
+        let branch = WhichRow::SavedSearchesIn("a".to_string());
+        let search = WhichRow::SavedSearch {
+            account: "a".to_string(),
+            id: "a".to_string(),
+        };
+        let spelled = [heading.stored(), branch.stored(), search.stored()];
+        let apart: std::collections::HashSet<&String> = spelled.iter().collect();
+        assert_eq!(
+            apart.len(),
+            3,
+            "two of these spell one identity: {spelled:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_saved_search_heading_keeps_the_identity_it_had_before_the_group_moved() {
+        // Written as the literal string rather than as the expression that
+        // builds it, because this is about a value already written to
+        // `tree_state` on somebody's computer. A tree they collapsed before
+        // this change has to open the same way after it, and a check that
+        // built the expected value the same way the code does would agree with
+        // whatever the code now says.
+        assert_eq!(WhichRow::SavedSearches.stored(), "saved-searches");
+    }
+
+    #[test]
     fn test_the_shared_folders_and_the_headings_belong_to_no_one_account() {
         // Since D-18 the shared five have the reserved owner rather than an
         // account, and All Inboxes is every account at once. Landing on any of
@@ -1399,6 +1561,12 @@ mod tests {
         // Paired with the test above rather than left on its own: against a
         // function that answers nothing for everything, every line here passes
         // and proves nothing.
+        //
+        // A saved search's own row left this list in 02-08 and is now in the
+        // test above. D-2-05 moved it inside its account's branch, so the row
+        // names an account and the reason given here stopped being true of it:
+        // there is now another account for it to name. The heading over the
+        // whole group stays here, because a heading is still not mail.
         for row in [
             WhichRow::AllInboxes,
             WhichRow::Favourites,
@@ -1406,7 +1574,6 @@ mod tests {
             WhichRow::Labels,
             WhichRow::Label("t1".to_string()),
             WhichRow::SavedSearches,
-            WhichRow::SavedSearch("s1".to_string()),
             WhichRow::Folder {
                 account: crate::application::local_folders::THIS_COMPUTER.to_string(),
                 path: "Drafts".to_string(),
@@ -1827,6 +1994,7 @@ mod tests {
                 name: "Urgent".to_string(),
             }],
             &[SearchInTheTree {
+                account: "a".to_string(),
                 id: "s1".to_string(),
                 name: "From Ana".to_string(),
             }],
@@ -2018,9 +2186,15 @@ mod tests {
         );
     }
 
-    /// A saved search's row, by the two things a row carries.
+    /// A saved search's row in the one account most of these tests use.
     fn a_saved_search(id: &str, name: &str) -> SearchInTheTree {
+        a_saved_search_in("a", id, name)
+    }
+
+    /// A saved search's row, by the three things a row carries.
+    fn a_saved_search_in(account: &str, id: &str, name: &str) -> SearchInTheTree {
         SearchInTheTree {
+            account: account.to_string(),
             id: id.to_string(),
             name: name.to_string(),
         }
@@ -2083,7 +2257,7 @@ mod tests {
 
         let depths: Vec<usize> = rows
             .iter()
-            .filter(|row| matches!(row.identity, WhichRow::SavedSearch(_)))
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch { .. }))
             .map(|row| row.depth)
             .collect();
 
@@ -2113,7 +2287,7 @@ mod tests {
 
         let searches: Vec<&TreeRow> = rows
             .iter()
-            .filter(|row| matches!(row.identity, WhichRow::SavedSearch(_)))
+            .filter(|row| matches!(row.identity, WhichRow::SavedSearch { .. }))
             .collect();
 
         assert_eq!(searches.len(), 2);
@@ -2165,17 +2339,25 @@ mod tests {
         // source for a name. A text search for `made_by` or `provenance` is
         // answered by whatever the field would really be called, and it would
         // not be called either of those; these two patterns name every field
-        // and carry no `..`, so a third field on the tree row or a sixth on the
-        // stored search stops this file compiling.
+        // and carry no `..`, so a fourth field on the tree row or a sixth on
+        // the stored search stops this file compiling.
+        //
+        // The row gained its account in 02-08 and this test caught it, which is
+        // the check working rather than the property breaking: whose a search
+        // is and which door made it are different questions, and the account
+        // is answered the same way for both doors. What would break D-2-02 is a
+        // field only one door can fill in.
         //
         // The two are checked together because the property is about the whole
         // path: a group can only be split on something that survives from the
         // store to the row, and neither end carries anything to split on.
         let row = SearchInTheTree {
+            account: "a".to_string(),
             id: "s1".to_string(),
             name: "Invoices".to_string(),
         };
-        let SearchInTheTree { id, name } = row;
+        let SearchInTheTree { account, id, name } = row;
+        assert_eq!(account, "a");
         assert_eq!(id, "s1");
         assert_eq!(name, "Invoices");
 
@@ -2833,6 +3015,7 @@ mod tests {
                 name: "Urgent".to_string(),
             }],
             &[SearchInTheTree {
+                account: "a".to_string(),
                 id: "s1".to_string(),
                 name: "From Ana".to_string(),
             }],
@@ -2864,6 +3047,7 @@ mod tests {
                 name: "Urgent".to_string(),
             }],
             &[SearchInTheTree {
+                account: "a".to_string(),
                 id: "s1".to_string(),
                 name: "From Ana".to_string(),
             }],

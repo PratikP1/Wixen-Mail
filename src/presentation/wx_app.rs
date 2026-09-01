@@ -2535,6 +2535,7 @@ impl WxMailApp {
                             // root does. Enter expands it; see the key handler.
                             WhichRow::Labels
                             | WhichRow::SavedSearches
+                            | WhichRow::SavedSearchesIn(_)
                             | WhichRow::Account(_)
                             | WhichRow::Favourites
                             | WhichRow::PinnedIn(_)
@@ -2581,7 +2582,7 @@ impl WxMailApp {
                             // searches would start five of those. Enter runs
                             // it, which is what Enter does everywhere else in a
                             // tree.
-                            WhichRow::SavedSearch(_) => {
+                            WhichRow::SavedSearch { .. } => {
                                 let chosen = the_search_a_row_names(&lock_state(&state), &name);
                                 let arrived = {
                                     let mut s = lock_state(&state);
@@ -3011,7 +3012,7 @@ impl WxMailApp {
                 wire_context_menu(&folder_tree, {
                     let state = state.clone();
                     move || match lock_state(&state).selected_folder {
-                        Some(folder_tree::WhichRow::SavedSearch(_)) => Focus::SavedSearch,
+                        Some(folder_tree::WhichRow::SavedSearch { .. }) => Focus::SavedSearch,
                         _ => Focus::MailFolders,
                     }
                 });
@@ -6923,9 +6924,14 @@ fn edit_the_chosen_searchs_conditions(
             // Run it again, so what is on screen is what the search now asks.
             // A change that is stored and not shown reads as a change that did
             // not happen.
-            if lock_state(state).selected_folder
-                == Some(folder_tree::WhichRow::SavedSearch(asking_now.id.clone()))
-            {
+            // By the identifier the row names, not by the whole identity. The
+            // row also carries the account it sits under and the edited search
+            // does not, so a comparison of the two values would ask a question
+            // this side has no answer to.
+            if matches!(
+                lock_state(state).selected_folder.as_ref(),
+                Some(folder_tree::WhichRow::SavedSearch { id, .. }) if *id == asking_now.id
+            ) {
                 run_a_saved_search(
                     AppHandles { state, tx, rt },
                     ChosenSearch::Readable(Box::new(asking_now.clone())),
@@ -9993,7 +9999,7 @@ fn folder_tree_updates(
                 name: tag.name.clone(),
             })
             .collect::<Vec<_>>(),
-        &every_saved_search(&saved),
+        &every_saved_search(account_id, &saved),
         // How a row that holds rows says what is unread, D-24. Read here at
         // the point of use, which is what every other setting this file reads
         // does, rather than threaded through seven callers that have no
@@ -10097,11 +10103,13 @@ fn folders_in_the_tree(
 /// and remove. Leaving it out would make it unreachable rather than merely
 /// unrunnable, and somebody would go looking for a search that is still there.
 fn every_saved_search(
+    account: &str,
     read: &crate::data::message_cache::saved_searches::SavedSearchesRead,
 ) -> Vec<folder_tree::SearchInTheTree> {
     read.searches
         .iter()
         .map(|search| folder_tree::SearchInTheTree {
+            account: account.to_string(),
             id: search.id.clone(),
             name: search.name.clone(),
         })
@@ -10109,6 +10117,7 @@ fn every_saved_search(
             read.saved_by_another_version
                 .iter()
                 .map(|search| folder_tree::SearchInTheTree {
+                    account: account.to_string(),
                     id: search.id.clone(),
                     name: search.name.clone(),
                 }),
@@ -10185,7 +10194,8 @@ fn the_chosen_saved_search(state: &WxUIState) -> Option<ChosenSearch> {
     // A match on what the row is, rather than a question about how its path
     // is spelled. The identity says outright that this row is a saved search
     // and which one, so nothing has to recognise a prefix to find out.
-    let folder_tree::WhichRow::SavedSearch(chosen) = state.selected_folder.as_ref()? else {
+    let folder_tree::WhichRow::SavedSearch { id: chosen, .. } = state.selected_folder.as_ref()?
+    else {
         return None;
     };
     state
@@ -20690,7 +20700,7 @@ mod tests {
         // tree. Leaving it out would take it off the tree with nothing said,
         // and somebody would go looking for a search that is still there.
         assert_eq!(
-            super::every_saved_search(&state_with_saved_searches().saved_searches)
+            super::every_saved_search("acc", &state_with_saved_searches().saved_searches)
                 .iter()
                 .map(|search| search.name.clone())
                 .collect::<Vec<_>>(),
@@ -20738,7 +20748,10 @@ mod tests {
         });
         assert!(super::the_chosen_saved_search(&state).is_none());
 
-        state.selected_folder = Some(WhichRow::SavedSearch("s1".to_string()));
+        state.selected_folder = Some(WhichRow::SavedSearch {
+            account: "acc".to_string(),
+            id: "s1".to_string(),
+        });
         assert_eq!(
             super::the_chosen_saved_search(&state).map(|chosen| chosen.name().to_string()),
             Some("Unread from Ann".to_string())
@@ -20763,11 +20776,14 @@ mod tests {
         // A search row naming one that has gone is still a saved-search row.
         // Answering "no saved search" and falling through would send it on to
         // be opened as a mailbox that does not exist.
-        state.selected_folder = Some(WhichRow::SavedSearch("gone".to_string()));
+        state.selected_folder = Some(WhichRow::SavedSearch {
+            account: "acc".to_string(),
+            id: "gone".to_string(),
+        });
         assert!(super::the_chosen_saved_search(&state).is_none());
         assert!(matches!(
             state.selected_folder,
-            Some(WhichRow::SavedSearch(_))
+            Some(WhichRow::SavedSearch { .. })
         ));
     }
 
@@ -21722,7 +21738,10 @@ mod tests {
             WhichRow::Account("acc".to_string()),
             WhichRow::Labels,
             WhichRow::Label("t1".to_string()),
-            WhichRow::SavedSearch("s1".to_string()),
+            WhichRow::SavedSearch {
+                account: "acc".to_string(),
+                id: "s1".to_string(),
+            },
             WhichRow::OnThisComputer,
         ] {
             let mut state = WxUIState {
