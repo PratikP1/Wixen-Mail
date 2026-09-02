@@ -205,7 +205,7 @@ Plans:
 
       **This criterion used to name a threading symptom, and that symptom does not exist.** It said a forwarded Hungarian message joins the conversation it is a reply to. `is_a_forward_marker` is read by two functions and both are called only from `src/presentation/wx_compose.rs`; nothing in threading reads either. Traced when 02.1-07 was planned and verified again when it was executed. The mechanism is exactly as recorded and reproduces; the harm is in composition, and it is two things. Replying wrote no reply marker, so the answer went out looking like new mail, and forwarding wrote a second forward marker in front of the one already there.
 
-**Plans**: 7/9 plans executed, one per wave. Counted from the ticked boxes below on 2026-09-02; the line said 1/9 while four were ticked, and 02.1-05 was merged into `main` with its box left unticked. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
+**Plans**: 9/9 plans executed, one per wave. Counted from the summaries on disk on 2026-09-02, which is the count that cannot go stale behind a box nobody ticked; this line said 1/9 while four were ticked, then 7/9 while nine summaries existed, because 02.1-05, 02.1-08 and 02.1-09 each landed with the box left unticked. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
 
 Plans:
 
@@ -239,11 +239,11 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [ ] 02.1-08-PLAN.md — A branch row offers a menu that fits it, and two accounts of one name are two rows (criteria 11, 12, D-2.1-03)
+- [x] 02.1-08-PLAN.md — A branch row offers a menu that fits it, and two accounts of one name are two rows (criteria 11, 12, D-2.1-03)
 
 **Wave 9** *(blocked on Wave 8)*
 
-- [ ] 02.1-09-PLAN.md — A dialog refuses a value it cannot show rather than rewriting it (criterion 10, D-2.1-02)
+- [x] 02.1-09-PLAN.md — A dialog refuses a value it cannot show rather than rewriting it (criterion 10, D-2.1-02)
 
 **UI hint**: yes
 **Scope note**: Inserted 2026-08-31 after routing phase 1's deferred items by subject. Three items went to phase 3 and two to phase 6, where somebody planning those subjects will meet them. Criteria 1 to 6 belong to no phase, which is why they were deferred and why they would otherwise stay deferred.
