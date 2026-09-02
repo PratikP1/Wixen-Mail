@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-04-PLAN.md on branch gsd/plan-02.1-04, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
+stopped_at: Completed 02.1-06-PLAN.md on branch gsd/plan-02.1-06, not merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
 last_updated: "2026-09-02T00:00:00.000Z"
-last_activity: 2026-09-02, 02.1-04 done, unmerged. Criterion 9 closed; the gate now reads guards/guards.toml to find which integration targets a changed source file earns, and the two the criterion names gained the records that make them reachable.
-state_head: 4529af4
+last_activity: 2026-09-02, 02.1-06 done, unmerged. Criteria 2 and 3 closed. Safety orders by severity in both views from one ranking, every writer of a message identifier writes one spelling, and rows written before that are corrected when the database is opened. The plan named the writers and no readers, and one reader would have broken: the lookup the draft path asks with the bracketed spelling now trims the question too.
+state_head: 0967567
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 32
-  completed_plans: 27
+  completed_plans: 29
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
