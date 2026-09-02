@@ -10004,12 +10004,14 @@ fn the_accounts_in_the_tree(
         .map(|account| folder_tree::AccountInTheTree {
             id: account.id.clone(),
             name: account.display_name(),
+            address: account.email.clone(),
         })
         .collect();
     if !every.iter().any(|account| account.id == looked_at) {
         every.push(folder_tree::AccountInTheTree {
             id: looked_at.to_string(),
             name: "This account".to_string(),
+            address: String::new(),
         });
     }
     every

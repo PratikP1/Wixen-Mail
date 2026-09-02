@@ -295,6 +295,17 @@ pub struct AccountInTheTree {
     pub id: String,
     /// What the account is called, which is what its branch reads out as.
     pub name: String,
+    /// The address, held so that two accounts of one name can be told apart.
+    ///
+    /// Read only when a name is shared, so an account nobody else is named
+    /// after reads as its name and nothing more. What separates two accounts
+    /// to the person who owns them is the address rather than an identifier,
+    /// which is why this and not `id`.
+    ///
+    /// Empty for the one row the tree draws for an account the accounts table
+    /// has no row for. Only one of those can exist, so it cannot collide with
+    /// another address-less row.
+    pub address: String,
 }
 
 /// A folder, as much of one as a tree needs.
@@ -1217,6 +1228,10 @@ mod tests {
         AccountInTheTree {
             id: id.to_string(),
             name: name.to_string(),
+            // An address built from the id, so every account in these fixtures
+            // has one and no two share it, which is what the accounts table
+            // guarantees with `email TEXT NOT NULL UNIQUE`.
+            address: format!("{id}@example.com"),
         }
     }
 
@@ -3454,6 +3469,204 @@ mod tests {
             path: "INBOX".to_string(),
         };
         assert_ne!(one.stored(), two.stored());
+    }
+}
+
+/// Two accounts of one name are two rows somebody can tell apart.
+///
+/// Criterion 12. What that criterion says is already true of the running
+/// program, and not because of anything in this module: the caller composes an
+/// account's name and its address into one string before this ever sees it,
+/// and `email TEXT NOT NULL UNIQUE` in the accounts table stops two addresses
+/// being the same. So the property is real and unowned, held by two things in
+/// other layers that no reader of this file would find.
+///
+/// It also costs something. Because the address is put on unconditionally,
+/// every account branch reads its full address aloud, every time, to serve a
+/// case that needs it rarely. These move the property into this module, where
+/// the set of accounts being drawn is known, so the address goes on only where
+/// two of them would otherwise read alike.
+#[cfg(test)]
+mod accounts_that_read_alike {
+    use super::*;
+
+    fn named(id: &str, name: &str, address: &str) -> AccountInTheTree {
+        AccountInTheTree {
+            id: id.to_string(),
+            name: name.to_string(),
+            address: address.to_string(),
+        }
+    }
+
+    fn drawn(accounts: &[AccountInTheTree]) -> Vec<TreeRow> {
+        rows(
+            accounts,
+            &[],
+            &[],
+            &[],
+            &[],
+            UnreadOnAParent::default(),
+            &std::collections::HashSet::new(),
+        )
+    }
+
+    /// What the branches of these accounts read as, in the order drawn.
+    fn branch_labels(accounts: &[AccountInTheTree]) -> Vec<String> {
+        drawn(accounts)
+            .into_iter()
+            .filter(|row| matches!(row.identity, WhichRow::Account(_)))
+            .map(|row| row.label)
+            .collect()
+    }
+
+    #[test]
+    fn test_two_accounts_of_one_name_are_two_rows_that_read_differently() {
+        let labels = branch_labels(&[
+            named("a", "Work", "ana@example.com"),
+            named("b", "Work", "ben@example.org"),
+        ]);
+        assert_eq!(labels.len(), 2, "{labels:?}");
+        assert_ne!(
+            labels[0], labels[1],
+            "two branches read alike, so somebody working by ear cannot tell \
+             which account a command is about to act against: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn test_an_account_whose_name_nobody_shares_reads_as_its_name_and_nothing_more() {
+        // The ordinary case, and the one the disambiguation must not make
+        // noisier. Written as a literal rather than as a rule, because a rule
+        // here would be the same rule the code follows.
+        let labels = branch_labels(&[named("a", "Work", "ana@example.com")]);
+        assert_eq!(labels, vec!["Work, 0 folders".to_string()]);
+    }
+
+    #[test]
+    fn test_three_accounts_of_one_name_are_three_rows_that_all_differ() {
+        let labels = branch_labels(&[
+            named("a", "Work", "ana@example.com"),
+            named("b", "Work", "ben@example.org"),
+            named("c", "Work", "cat@example.net"),
+        ]);
+        let mut apart = labels.clone();
+        apart.sort();
+        apart.dedup();
+        assert_eq!(apart.len(), 3, "{labels:?}");
+    }
+
+    #[test]
+    fn test_two_names_differing_only_in_case_count_as_one_name() {
+        // A screen reader says "Work" and "work" the same way, so the person
+        // this is for cannot tell them apart even though the strings differ.
+        let labels = branch_labels(&[
+            named("a", "Work", "ana@example.com"),
+            named("b", "work", "ben@example.org"),
+        ]);
+        for label in &labels {
+            assert!(
+                label.contains('@'),
+                "a name shared only in the way it is spoken is still shared: {labels:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_name_shared_by_two_leaves_a_third_account_alone() {
+        // Decided from the set being drawn rather than per account, so an
+        // account nobody is named after is not made noisier by two that are.
+        let labels = branch_labels(&[
+            named("a", "Work", "ana@example.com"),
+            named("b", "Work", "ben@example.org"),
+            named("c", "Home", "cat@example.net"),
+        ]);
+        assert_eq!(labels[2], "Home, 0 folders", "{labels:?}");
+    }
+
+    #[test]
+    fn test_an_account_with_no_address_still_differs_from_one_of_the_same_name() {
+        // The tree draws a row for the account being looked at even when the
+        // accounts table has none for it, and that row has no address. Only
+        // one of those can exist, so leaving it alone is enough to keep it
+        // apart from the account it shares a name with.
+        let labels = branch_labels(&[
+            named("a", "This account", "ana@example.com"),
+            named("b", "This account", ""),
+        ]);
+        assert_ne!(labels[0], labels[1], "{labels:?}");
+    }
+
+    #[test]
+    fn test_the_row_identities_are_untouched_by_what_the_rows_read_as() {
+        // A labelling change and nothing more. Identities are keyed on the
+        // account id, which is why a tree collapsed before this opens the same
+        // way after it.
+        let identities: Vec<WhichRow> = drawn(&[
+            named("a", "Work", "ana@example.com"),
+            named("b", "Work", "ben@example.org"),
+        ])
+        .into_iter()
+        .filter(|row| matches!(row.identity, WhichRow::Account(_)))
+        .map(|row| row.identity)
+        .collect();
+        assert_eq!(
+            identities,
+            vec![
+                WhichRow::Account("a".to_string()),
+                WhichRow::Account("b".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_no_two_rows_of_a_tree_with_two_same_named_accounts_sit_in_one_place() {
+        // The mechanism, rather than the symptom. `where_a_row_sits` pairs a
+        // row on a real control back to its identity by the words above it,
+        // and `the_row_on_screen` in `wx_app` takes the first row whose chain
+        // matches. Two branches reading alike would mean landing on the second
+        // account and acting on the first.
+        let accounts = [
+            named("a", "Work", "ana@example.com"),
+            named("b", "Work", "ben@example.org"),
+        ];
+        let folders = [
+            FolderInTheTree {
+                account: "a".to_string(),
+                id: 1,
+                path: "INBOX".to_string(),
+                name: "INBOX".to_string(),
+                unread: 0,
+                parent: None,
+                gone: false,
+            },
+            FolderInTheTree {
+                account: "b".to_string(),
+                id: 2,
+                path: "INBOX".to_string(),
+                name: "INBOX".to_string(),
+                unread: 0,
+                parent: None,
+                gone: false,
+            },
+        ];
+        let built = rows(
+            &accounts,
+            &folders,
+            &[],
+            &[],
+            &[],
+            UnreadOnAParent::default(),
+            &std::collections::HashSet::new(),
+        );
+        let mut seen = std::collections::HashSet::new();
+        for at in 0..built.len() {
+            assert!(
+                seen.insert(where_a_row_sits(&built, at)),
+                "two rows sit in the same place, so the control cannot tell \
+                 them apart: {:?}",
+                where_a_row_sits(&built, at)
+            );
+        }
     }
 }
 

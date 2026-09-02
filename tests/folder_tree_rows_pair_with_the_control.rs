@@ -56,6 +56,7 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                 &[AccountInTheTree {
                     id: "acc".to_string(),
                     name: "Work".to_string(),
+                    address: "ana@example.com".to_string(),
                 }],
                 &[
                     folder(1, "Archive", None),
@@ -105,6 +106,7 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
                 &[AccountInTheTree {
                     id: "acc".to_string(),
                     name: "Work at home".to_string(),
+                    address: "ana@example.com".to_string(),
                 }],
                 &[
                     folder(1, "Archive", None),
