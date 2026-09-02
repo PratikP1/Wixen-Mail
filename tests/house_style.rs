@@ -5903,3 +5903,338 @@ fn test_the_calendar_line_format_is_answered_in_one_place_only() {
         );
     }
 }
+
+/// A run of consecutive comment lines, joined into one piece of prose.
+struct CommentRun {
+    text: String,
+    /// Where each source line starts in `text`, and which line it is.
+    starts: Vec<(usize, usize)>,
+}
+
+impl CommentRun {
+    /// The source line an offset into `text` came from.
+    fn line_at(&self, offset: usize) -> usize {
+        self.starts
+            .iter()
+            .rev()
+            .find(|(start, _)| *start <= offset)
+            .map_or(0, |(_, line)| *line)
+    }
+}
+
+/// Every run of consecutive comment lines in a file of Rust.
+///
+/// [`prose_in`] would be the obvious reader and it is the wrong one here. It
+/// runs each line through [`without_code_and_addresses`], which takes out
+/// everything between backticks, and the claim this is looking for names a
+/// test as `cargo test` or `#[test]` as often as in plain words. Stripped of
+/// its code spans, the flattest instance in the tree reads "Nothing in this
+/// crate builds a live wxWidgets window inside", with the word "test" gone.
+///
+/// A blank comment line keeps the run going, because a paragraph break inside
+/// one doc comment is still one doc comment.
+fn comment_runs_in(text: &str) -> Vec<CommentRun> {
+    let mut found: Vec<CommentRun> = Vec::new();
+    let mut previous = 0;
+
+    for (index, line) in text.lines().enumerate() {
+        let number = index + 1;
+        let Some(after) = line.trim_start().strip_prefix("//") else {
+            previous = 0;
+            continue;
+        };
+        let words = after.trim_start_matches(['/', '!']).trim();
+        match found.last_mut().filter(|_| number == previous + 1) {
+            Some(run) => {
+                run.starts.push((run.text.len() + 1, number));
+                run.text.push(' ');
+                run.text.push_str(words);
+            }
+            None => found.push(CommentRun {
+                starts: vec![(0, number)],
+                text: words.to_string(),
+            }),
+        }
+        previous = number;
+    }
+    found
+}
+
+/// Words for a test or a test run.
+///
+/// `words_of` strips the punctuation around a word, so `#[test]` and
+/// `` `cargo test` `` both arrive here as "test".
+const NAMES_A_TEST: &[&str] = &["test", "tests", "tested", "testing"];
+
+/// Words for a window or a live control.
+///
+/// "screen" is deliberately absent. This tree says "screen reader" hundreds of
+/// times and means a person's software, not a control on a display.
+const NAMES_A_LIVE_WINDOW: &[&str] = &[
+    "window", "windows", "widget", "widgets", "control", "controls", "dialog", "dialogs", "display",
+];
+
+/// Words that say a thing was not done.
+const SAYS_IT_IS_NOT_DONE: &[&str] = &["cannot", "never", "no", "nothing", "not"];
+
+/// Words for putting a window on the screen.
+///
+/// Building, opening and creating. "show" and "raise" were here and came out
+/// again, measured: neither is needed by any wording in this tree, and "shows"
+/// put `occurrences.rs` on the list for "these tests going on measuring a
+/// window the product no longer shows", where the window is a span of time.
+/// A future claim spelled "a test cannot show a dialog" is one this misses,
+/// which is the price of not crying wolf on a word this project mostly uses
+/// for something else.
+const PUTS_ONE_ON_THE_SCREEN: &[&str] = &[
+    "build", "builds", "built", "building", "open", "opens", "opened", "create", "creates",
+    "created",
+];
+
+/// How many words a refusal reaches forward to the verb it refuses.
+///
+/// Four, measured against the longest instance in the tree rather than picked:
+/// "nothing in this crate builds" puts four words between the two. Widening it
+/// further starts collecting sentences where the refusal is about something
+/// else in the same breath, and "a test can build the real dialog ... and
+/// never call `show_modal()`" is thirteen of those.
+const A_REFUSAL_REACHES_THIS_FAR: usize = 4;
+
+/// How a comment names wxWidgets' one-application-per-process ceiling.
+const NAMES_THE_ONE_APPLICATION_CEILING: &[&str] = &["per process", "at most once"];
+
+/// How a comment names the toolkit, so an unrelated per-process fact is not
+/// read as this one.
+///
+/// `mail_controller.rs` says a command line answer "is set once per process",
+/// which is true, is about the command line, and has nothing to do with
+/// windows.
+const NAMES_THE_TOOLKIT: &[&str] = &["wxwidgets", "wxdragon"];
+
+/// The wordings that say what a test may still build.
+///
+/// A comment reaching for the ceiling is not wrong; the ceiling is real. What
+/// makes it wrong is stopping there, because a reader takes a bare ceiling as
+/// a prohibition and this tree has watched that happen. Any of these says the
+/// number, and a run carrying one is left alone.
+///
+/// Every one of them is a wording already in the tree, from the thirteen files
+/// under `tests/` that each spend their one live window and say so.
+const SAYS_WHAT_A_TEST_MAY_STILL_BUILD: &[&str] = &[
+    "initializing twice",
+    "its own process",
+    "process of its own",
+    "one `#[test]` function",
+    "one test function",
+    "one `wxdragon::main` per process",
+];
+
+/// Whether a refusal in this sentence lands on a verb that puts a window up.
+///
+/// Adjacency rather than co-occurrence, and that is the whole of what makes
+/// this usable. A sentence naming a test, a refusal and a window in any
+/// arrangement matches sixty places in this tree, almost all of them saying
+/// the opposite: "a test can build the real dialog ... and never call
+/// `show_modal()`" holds all three words and is a description of a technique
+/// that works.
+fn a_refusal_to_put_one_up(sentence: &str) -> bool {
+    let words = words_of(sentence);
+    words
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, word))| SAYS_IT_IS_NOT_DONE.contains(&word.as_str()))
+        .any(|(at, _)| {
+            words
+                .iter()
+                .skip(at + 1)
+                .take(A_REFUSAL_REACHES_THIS_FAR)
+                .any(|(_, word)| PUTS_ONE_ON_THE_SCREEN.contains(&word.as_str()))
+        })
+}
+
+/// Every comment in one file that would leave a reader believing a test cannot
+/// build a live window.
+///
+/// Two ways to say it, because the tree says it both ways. A sentence refusing
+/// to put a window up, in the same breath as a test: "a dialog cannot be opened
+/// in a test". Or a run naming the ceiling and stopping there, which is the
+/// same claim with the reasoning shown and the number left out.
+///
+/// Read over whole comment runs and not over [`what_ships`]'s answer, because
+/// the flattest instance in the tree sits on a `#[cfg(test)]` helper, and a
+/// comment steers the next person to read it whether or not it ships.
+///
+/// What this cannot see, said here rather than discovered later. It reads one
+/// sentence at a time, so a claim split across a full stop is two halves it
+/// never puts together. A refusal further than
+/// [`A_REFUSAL_REACHES_THIS_FAR`] words from its verb is invisible, and so is
+/// one worded with a verb none of these lists holds. And the exemption is a
+/// wording rather than a meaning: a run saying the number some other way is
+/// named anyway, and the answer to that is to add the wording to
+/// [`SAYS_WHAT_A_TEST_MAY_STILL_BUILD`] with the run quoted beside it, not to
+/// widen it until it exempts everything.
+fn a_window_a_test_cannot_build_in(path: &Path, text: &str) -> Vec<String> {
+    let mut claimed = Vec::new();
+
+    for run in comment_runs_in(text) {
+        let whole = run.text.to_lowercase();
+        if SAYS_WHAT_A_TEST_MAY_STILL_BUILD
+            .iter()
+            .any(|said| whole.contains(said))
+        {
+            continue;
+        }
+        let names_the_ceiling = NAMES_THE_TOOLKIT.iter().any(|it| whole.contains(it))
+            && NAMES_THE_ONE_APPLICATION_CEILING
+                .iter()
+                .any(|it| whole.contains(it));
+
+        for (start, end) in sentence_spans_of(&run.text) {
+            // The trimmed sentence's own offset, not the span's. A span opens
+            // on the character after the previous full stop, which is the
+            // whitespace still belonging to the line before, so reporting the
+            // span's line sends a reader to the wrong paragraph.
+            let span = &run.text[start..end];
+            let sentence = span.trim();
+            let at = start + (span.len() - span.trim_start().len());
+            let words: Vec<String> = words_of(sentence).into_iter().map(|(_, it)| it).collect();
+            let holds = |wanted: &[&str]| words.iter().any(|it| wanted.contains(&it.as_str()));
+            let refuses = holds(NAMES_A_TEST)
+                && holds(NAMES_A_LIVE_WINDOW)
+                && a_refusal_to_put_one_up(sentence);
+            let lowered = sentence.to_lowercase();
+            let states_the_ceiling = names_the_ceiling
+                && NAMES_THE_ONE_APPLICATION_CEILING
+                    .iter()
+                    .any(|it| lowered.contains(it));
+
+            if refuses || states_the_ceiling {
+                claimed.push(format!(
+                    "{}:{}: {sentence}",
+                    path.display(),
+                    run.line_at(at)
+                ));
+            }
+        }
+    }
+    claimed
+}
+
+/// Every file of Rust this rule reads.
+///
+/// This file is left out, and that is a hole rather than a tidy-up. The
+/// companion below holds the claim as data, spelled the way the tree spells
+/// it, so a check reading this file would name its own evidence. Nothing else
+/// under `src` or `tests` is exempt.
+fn rust_apart_from_this_file() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect(Path::new("src"), &["rs"], &mut found);
+    collect(Path::new("tests"), &["rs"], &mut found);
+    found.retain(|path| !path.ends_with("house_style.rs"));
+    found
+}
+
+#[test]
+fn test_no_comment_says_a_test_cannot_build_a_window() {
+    // wxWidgets allows one application per process, and for a long time that
+    // was written down here as though it meant no test could build a window
+    // at all. It does not. A library test can build one real dialog and the
+    // whole library run stays green; a second in the same process prints
+    // `assert "!argc && !argv" failed in Initialize(): initializing twice?`
+    // and hangs. Both directions were measured, in plan 02-04 and again in
+    // `tests/manager_dialog_labels.rs`, and thirteen files under `tests/`
+    // spend their one.
+    //
+    // So the rule is a budget, not a prohibition, and a comment that states
+    // the ceiling without the number leaves the next person believing the
+    // prohibition. Say what a test may still build, in the same comment.
+    let claimed: Vec<String> = rust_apart_from_this_file()
+        .iter()
+        .filter_map(|path| {
+            fs::read_to_string(path)
+                .ok()
+                .map(|text| a_window_a_test_cannot_build_in(path, &text))
+        })
+        .flatten()
+        .collect();
+
+    assert!(
+        claimed.is_empty(),
+        "{} comments tell a reader that a test cannot build a live window, and \
+         one can. The budget is one per process, and `tests/theme_reach.rs` \
+         and `tests/manager_dialog_labels.rs` both state it:\n  {}",
+        claimed.len(),
+        claimed.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_window_claim_check_can_tell_the_two_apart() {
+    // Proving the measurement. The check above reads source and passes when it
+    // finds nothing, and from outside a clean tree and a broken reading look
+    // the same. That is the defect this whole pair was written to close, so
+    // writing a second guard with it would be the joke telling itself.
+    //
+    // Every claim here is a wording that was really in the tree, not one
+    // invented to be catchable. Every correction is the wording that replaced
+    // it.
+    let pretend = Path::new("src/presentation/pretend.rs");
+    let named = |source: &str| a_window_a_test_cannot_build_in(pretend, source);
+
+    for claim in [
+        // The flat one, on a `#[cfg(test)]` helper in `wx_app.rs`. It is why
+        // this reads whole files and not `what_ships`'s answer.
+        "    /// Nothing in this crate builds a live wxWidgets window inside `cargo\n\
+         \x20   /// test`.\n",
+        // The same claim about a dialog, in `wx_folder_choice.rs`.
+        "/// What a row says is the part that has to be right, and a dialog\n\
+         /// cannot be opened in a test.\n",
+        // The ceiling with the number left out, in three modules.
+        "//! wxWidgets supports one application per process, which puts a hard\n\
+         //! ceiling on how much can be proved by building windows.\n",
+    ] {
+        assert!(
+            !named(claim).is_empty(),
+            "a claim the tree really carried was not named:\n{claim}"
+        );
+    }
+
+    for sound in [
+        // The correction: the ceiling with the number, and what happens past
+        // it.
+        "//! A library test can build one real wxWidgets dialog per process. A\n\
+         //! second in the same process prints `initializing twice?` and hangs,\n\
+         //! so `tests/theme_reach.rs` spends the one this binary has.\n",
+        // How the thirteen live-window test files already word it.
+        "//! One `#[test]` function, building real dialogs: wxWidgets supports\n\
+         //! exactly one application per process, and `cargo test` runs each\n\
+         //! file under `tests/` as its own process.\n",
+        // And a comment about none of this, so a reading that named
+        // everything would be caught here rather than praised for its recall.
+        "/// The name first, because that is what somebody is looking for and a\n\
+         /// screen reader reads from the start.\n",
+    ] {
+        assert!(
+            named(sound).is_empty(),
+            "a comment stating the budget correctly was named as a claim:\n{sound}\ngot: {:?}",
+            named(sound)
+        );
+    }
+
+    // The line it reports is the line the sentence starts on, not the line the
+    // comment run does. A run of eighty lines with the claim at the foot of it
+    // would otherwise send somebody to the wrong paragraph.
+    let third_line = "/// A note about nothing.\n\
+                      ///\n\
+                      /// A dialog cannot be opened in a test.\n";
+    assert_eq!(
+        named(third_line).len(),
+        1,
+        "expected exactly one claim in a three-line run"
+    );
+    assert!(
+        named(third_line)[0].contains(":3:"),
+        "the claim was reported at the wrong line: {}",
+        named(third_line)[0]
+    );
+}
