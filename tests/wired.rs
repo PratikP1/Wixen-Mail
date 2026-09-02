@@ -32,6 +32,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The half of a source file a release build compiles.
+///
+/// One answer, reached from here rather than approximated here. It sits behind
+/// a cargo feature a dev-dependency of this package on itself turns on, which is
+/// what makes it reachable at all: an integration test links the library built
+/// without `cfg(test)`, and this used to be gated on exactly that. If that
+/// dev-dependency ever goes, this file stops compiling, which is the failure
+/// direction wanted. The alternative was reading nothing and passing.
+use wixen_mail::common::what_ships::what_ships;
+
 /// The presentation sources, which is where commands are raised and handled.
 fn sources() -> Vec<PathBuf> {
     let mut found = Vec::new();
@@ -1793,7 +1803,7 @@ fn is_on_a_menu(squashed: &str, id: &str) -> bool {
 #[test]
 fn test_the_reading_of_the_main_window_reaches_past_its_first_test_module() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     assert!(
         ship.contains("fn block_the_sender("),
@@ -1822,7 +1832,7 @@ fn test_the_reading_of_the_main_window_reaches_past_its_first_test_module() {
 #[test]
 fn test_no_two_items_on_one_menu_claim_the_same_letter() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     let mut menus_checked = 0;
     for (at, _) in ship.match_indices("= Menu::builder()") {
@@ -1831,7 +1841,7 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
 
         // A submenu, or an item appended once the builder has finished, sits on
         // the menu like any other and claims a letter like any other.
-        let labels = menu_labels_claiming_a_letter(&menu_block(ship, name));
+        let labels = menu_labels_claiming_a_letter(&menu_block(&ship, name));
         if labels.len() < 2 {
             continue;
         }

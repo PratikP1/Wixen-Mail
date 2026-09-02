@@ -3926,7 +3926,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -3948,7 +3948,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -10689,7 +10689,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -10705,7 +10705,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -10735,7 +10735,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -10749,7 +10749,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 58 },
+    { file = "tests/wired.rs", tests = 59 },
 ]
 
 [[guard]]
