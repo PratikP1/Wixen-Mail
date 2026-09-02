@@ -1043,6 +1043,40 @@ mod tests {
     }
 
     #[test]
+    fn test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it() {
+        // Every other column's expression is a column name, and appending a
+        // direction to one of those is the one shape `term` was written
+        // against. Safety's is a `CASE`, so the appending is asserted here, in
+        // both directions, rather than left to read correctly.
+        //
+        // What order the ranking puts the verdicts in is not asked here. That
+        // is a claim about rows and it is made against a real database, in
+        // `data::message_cache::messages`, because this arm and the
+        // conversation arm are built from one ranking and a check that read it
+        // on both sides would agree with itself whatever it said.
+        for (direction, ending) in [
+            (SortDirection::Ascending, " ASC"),
+            (SortDirection::Descending, " DESC"),
+        ] {
+            let clause = Sort {
+                column: MessageColumn::Safety,
+                direction,
+                then: None,
+            }
+            .order_by_clause();
+
+            assert!(
+                clause.starts_with("CASE m.safety"),
+                "the message view is ordering the stored words rather than ranking them: {clause}"
+            );
+            assert!(
+                clause.ends_with(ending),
+                "the direction did not survive being appended to a CASE: {clause}"
+            );
+        }
+    }
+
+    #[test]
     fn test_default_sort_is_newest_received_first() {
         let layout = ColumnLayout::defaults_for(FolderKind::Inbox);
         assert_eq!(layout.sort.column, MessageColumn::Received);

@@ -1027,6 +1027,16 @@ impl MessageCache {
         Ok(filled)
     }
 
+    /// Bring every stored message identifier to the one spelling.
+    ///
+    /// Not written yet. This is the red half: a body that changes nothing, so
+    /// the tests below it fail on what they assert rather than on the compiler
+    /// never having heard of the name. An absent function would be a weaker
+    /// red, because a build that does not finish says nothing about behaviour.
+    pub fn backfill_message_identifiers(&self) -> Result<usize> {
+        Ok(0)
+    }
+
     /// Which conversations this account already files any of these identifiers
     /// under.
     ///
@@ -5764,6 +5774,561 @@ mod tests {
             .unwrap();
         assert_eq!(found.len(), 2, "{found:#?}");
         assert_eq!(found[0].thread_id, "apples@example.com");
+    }
+
+    // ── Sorting by Safety, in the message view ──────────────────────────────
+    //
+    // Safety is stored as a word so a mailbox can be read by a person, and the
+    // alphabet does not agree with how bad the words are: ordinary, phishing,
+    // spam, suspicious. The conversation view has ranked the four since it was
+    // written. The message view ordered the words, so the mildest of the three
+    // bad verdicts came out on top and phishing came third, and one column
+    // meant two different things depending on which view somebody was in.
+    //
+    // Every test here reads row order out of a real database. None of them
+    // compares one expression with another: the two arms are built from one
+    // ranking now, so a check that read it on both sides would agree with
+    // itself whatever the ranking said.
+
+    /// One message per stored safety word, each in a conversation of its own.
+    ///
+    /// Four rows rather than two. A pair chosen carelessly comes out in the
+    /// right order by accident, because alphabetically "ordinary" really does
+    /// sort before "phishing"; it takes all four for the alphabet and the
+    /// ranking to disagree.
+    fn one_message_per_verdict(name: &str) -> (TempHome<super::super::MessageCache>, i64) {
+        use crate::service::safety::{Safety, Verdict};
+
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        for (uid, level) in [
+            (1, Safety::Ordinary),
+            (2, Safety::Suspicious),
+            (3, Safety::Spam),
+            (4, Safety::Phishing),
+        ] {
+            let mut message = in_conversation(
+                inbox,
+                uid,
+                "A message",
+                &format!("{}@example.com", level.as_str()),
+                uid,
+            );
+            message.safety = Verdict {
+                level,
+                reasons: Vec::new(),
+            };
+            cache.upsert_message(&message).unwrap();
+        }
+        (cache, inbox)
+    }
+
+    /// The verdicts a message list comes back in when it is sorted by Safety.
+    fn verdicts_in_order(
+        cache: &super::super::MessageCache,
+        folder_id: i64,
+        direction: crate::presentation::message_columns::SortDirection,
+    ) -> Vec<crate::service::safety::Safety> {
+        use crate::presentation::message_columns::{MessageColumn, Sort};
+
+        let sort = Sort {
+            column: MessageColumn::Safety,
+            direction,
+            then: None,
+        };
+        cache
+            .get_message_list_sorted(folder_id, "acc", Some(&sort.order_by_clause()), None)
+            .unwrap()
+            .iter()
+            .map(|row| row.safety)
+            .collect()
+    }
+
+    #[test]
+    fn test_sorting_messages_by_safety_puts_the_worst_at_the_top() {
+        use crate::presentation::message_columns::SortDirection;
+        use crate::service::safety::Safety::{Ordinary, Phishing, Spam, Suspicious};
+
+        let (cache, inbox) = one_message_per_verdict("message_safety_worst_first");
+
+        assert_eq!(
+            verdicts_in_order(&cache, inbox, SortDirection::Descending),
+            vec![Phishing, Spam, Suspicious, Ordinary],
+            "descending by Safety has to mean worst first, not last word in the alphabet first"
+        );
+    }
+
+    #[test]
+    fn test_the_two_directions_of_a_safety_sort_are_exact_reverses() {
+        // Both directions, because a ranking spelled into one arm and a
+        // direction appended to it are two separate things that can each be
+        // right on their own and wrong together.
+        use crate::presentation::message_columns::SortDirection;
+        use crate::service::safety::Safety::{Ordinary, Phishing, Spam, Suspicious};
+
+        let (cache, inbox) = one_message_per_verdict("message_safety_both_ways");
+
+        let ascending = verdicts_in_order(&cache, inbox, SortDirection::Ascending);
+        let descending = verdicts_in_order(&cache, inbox, SortDirection::Descending);
+
+        assert_eq!(
+            ascending,
+            vec![Ordinary, Suspicious, Spam, Phishing],
+            "ascending by Safety has to mean mildest first"
+        );
+        let mut reversed = descending.clone();
+        reversed.reverse();
+        assert_eq!(
+            ascending, reversed,
+            "the two directions of one column have to be the same order read backwards: \
+             ascending {ascending:?}, descending {descending:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_safety_word_this_build_does_not_know_sorts_as_the_mildest() {
+        // A row written by a later version can hold a word this one has never
+        // heard of. The mild end is the safe end for a claim about how bad
+        // something is: putting an unknown word at the top would say "this is
+        // the worst thing in your mailbox" about a message nothing judged.
+        //
+        // "toxic" sorts after "suspicious" in the alphabet, which is what makes
+        // this test about the ranking. A word that happened to sort last
+        // already would pass against the ordering this replaces.
+        use crate::presentation::message_columns::SortDirection;
+        use crate::service::safety::Safety::{Ordinary, Phishing, Spam, Suspicious};
+
+        let (cache, inbox) = one_message_per_verdict("message_safety_unknown_word");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET safety = 'toxic' WHERE safety = ?1",
+                params![Ordinary.as_str()],
+            )
+            .unwrap();
+
+        let found = verdicts_in_order(&cache, inbox, SortDirection::Descending);
+        assert_eq!(
+            found.len(),
+            4,
+            "a row whose word this build cannot read was dropped from the listing"
+        );
+        assert_eq!(
+            found,
+            vec![Phishing, Spam, Suspicious, Ordinary],
+            "the unknown word did not sort as the mildest; it reads back as Ordinary, \
+             so the last place is where it belongs"
+        );
+    }
+
+    #[test]
+    fn test_both_views_of_the_safety_column_rank_the_verdicts_the_same_way() {
+        // One column cannot mean two things. This compares two orderings of the
+        // same four rows rather than two expressions, because the two arms are
+        // built from one ranking and a check reading that ranking on both sides
+        // would agree with itself no matter what it said.
+        use crate::presentation::message_columns::{MessageColumn, Sort, SortDirection};
+
+        let (cache, inbox) = one_message_per_verdict("safety_views_agree");
+
+        for direction in [SortDirection::Ascending, SortDirection::Descending] {
+            let sort = Sort {
+                column: MessageColumn::Safety,
+                direction,
+                then: None,
+            };
+            let as_messages: Vec<String> = cache
+                .get_message_list_sorted(inbox, "acc", Some(&sort.order_by_clause()), None)
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    crate::application::thread_identity::conversation_root(
+                        &row.message_id,
+                        row.refs_header.as_deref(),
+                    )
+                })
+                .collect();
+            let as_conversations: Vec<String> = cache
+                .conversations_in(
+                    inbox,
+                    "acc",
+                    TheWholeAccount,
+                    Some(&sort.conversation_order_by_clause()),
+                )
+                .unwrap()
+                .iter()
+                .map(|row| row.thread_id.clone())
+                .collect();
+
+            assert_eq!(
+                as_messages, as_conversations,
+                "sorting by Safety {direction:?} puts the same four verdicts in a \
+                 different order depending on which view somebody is in"
+            );
+        }
+    }
+
+    /// Two messages, built so that in every column the first one's value is the
+    /// one that should come first.
+    ///
+    /// The message-level twin of [`apples_and_zebras`], and it is here so that
+    /// giving Safety a ranking cannot quietly change what another column means.
+    fn ahead_and_behind(name: &str) -> (TempHome<super::super::MessageCache>, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+
+        let mut ahead = in_conversation(inbox, 1, "Apples", "apples@example.com", 1);
+        ahead.from_addr = "Ada <ada@example.com>".to_string();
+        ahead.to_addr = "aa@example.com".to_string();
+        ahead.cc = Some("aa@example.com".to_string());
+        ahead.size_bytes = Some(1024);
+        let ahead_row = cache.upsert_message(&ahead).unwrap();
+        cache
+            .save_message_body(ahead_row, Some("aaa"), None)
+            .unwrap();
+
+        let mut behind = in_conversation(inbox, 2, "Zebras", "zebras@example.com", 5);
+        behind.from_addr = "Zoe <zoe@example.com>".to_string();
+        behind.to_addr = "zz@example.com".to_string();
+        behind.cc = Some("zz@example.com".to_string());
+        behind.size_bytes = Some(1_048_576);
+        behind.read = true;
+        behind.has_attachments = true;
+        behind.starred = true;
+        behind.answered = true;
+        behind.draft = true;
+        behind.safety = crate::service::safety::Verdict {
+            level: crate::service::safety::Safety::Phishing,
+            reasons: vec!["a test said so".to_string()],
+        };
+        let behind_row = cache.upsert_message(&behind).unwrap();
+        cache
+            .save_message_body(behind_row, Some("zzz"), None)
+            .unwrap();
+
+        (cache, inbox)
+    }
+
+    #[test]
+    fn test_every_column_still_orders_two_messages_the_way_that_column_reads() {
+        // Green before this change and green after it. That is the point: it is
+        // the net under the fourteen columns nothing here is meant to touch,
+        // and Safety is in it because the ranking has to agree with the
+        // alphabet in the one case where the alphabet was already right.
+        use crate::presentation::message_columns::{MessageColumn, Sort, SortDirection};
+
+        let (cache, inbox) = ahead_and_behind("every_message_column_orders");
+
+        for column in MessageColumn::ALL {
+            for (direction, expected) in [
+                (SortDirection::Ascending, ["Apples", "Zebras"]),
+                (SortDirection::Descending, ["Zebras", "Apples"]),
+            ] {
+                let sort = Sort {
+                    column,
+                    direction,
+                    then: None,
+                };
+                let found = cache
+                    .get_message_list_sorted(inbox, "acc", Some(&sort.order_by_clause()), None)
+                    .unwrap();
+                let order: Vec<&str> = found.iter().map(|row| row.subject.as_str()).collect();
+                assert_eq!(
+                    order,
+                    expected.to_vec(),
+                    "sorting messages by {column:?} {direction:?} disagreed with what the \
+                     column says about the two rows"
+                );
+            }
+        }
+    }
+
+    // ── One spelling of a message identifier ────────────────────────────────
+    //
+    // Mail that arrives through `mail_parser` has the angle brackets taken off
+    // before it reaches the store. A draft this program files keeps them,
+    // because `draft_message::message_id_for` builds the whole header value and
+    // the brackets are part of the header's syntax. So one column held two
+    // spellings of the same thing, and anything comparing a stored identifier
+    // with one somebody handed over found nothing.
+    //
+    // The brackets still belong in the header. They do not belong in the
+    // column, and the store is where that is decided, so no caller has to know.
+
+    /// The identifier a stored row is filed under, as the column holds it.
+    fn stored_message_id(cache: &super::super::MessageCache, row: i64) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT message_id FROM messages WHERE id = ?1",
+                rusqlite::params![row],
+                |found| found.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_an_identifier_arriving_with_brackets_is_stored_without_them() {
+        // The value is the one the draft writer really builds, rather than a
+        // bracketed string written here, so this fails the day that writer
+        // stops bringing brackets and the store's trimming has nothing to do.
+        let cache = fresh("identifier_brackets_stripped");
+        let drafts = folder(&cache, "Drafts");
+        let header_form = crate::application::draft_message::message_id_for("abc-123");
+        assert!(
+            header_form.starts_with('<') && header_form.ends_with('>'),
+            "the draft writer stopped bringing brackets, so this test proves nothing: \
+             {header_form}"
+        );
+
+        let mut draft = incoming(drafts, 1, "Half written");
+        draft.message_id = header_form;
+        let row = cache.upsert_message(&draft).unwrap();
+
+        assert_eq!(
+            stored_message_id(&cache, row),
+            "draft-abc-123@wixen-mail.invalid",
+            "the column holds the header's syntax rather than the identifier"
+        );
+    }
+
+    #[test]
+    fn test_an_identifier_arriving_bare_is_stored_unchanged() {
+        let cache = fresh("identifier_bare_untouched");
+        let inbox = folder(&cache, "INBOX");
+        let mut synced = incoming(inbox, 1, "From a server");
+        synced.message_id = "note-1@example.com".to_string();
+
+        let row = cache.upsert_message(&synced).unwrap();
+
+        assert_eq!(stored_message_id(&cache, row), "note-1@example.com");
+    }
+
+    #[test]
+    fn test_an_identifier_arriving_with_spaces_round_it_is_stored_trimmed() {
+        // A header is folded and unfolded on the way through a mail library,
+        // and what comes out the other end can carry the whitespace that did
+        // the folding.
+        let cache = fresh("identifier_trimmed");
+        let inbox = folder(&cache, "INBOX");
+        let mut synced = incoming(inbox, 1, "From a server");
+        synced.message_id = "  <note-1@example.com>\t".to_string();
+
+        let row = cache.upsert_message(&synced).unwrap();
+
+        assert_eq!(stored_message_id(&cache, row), "note-1@example.com");
+    }
+
+    #[test]
+    fn test_a_message_with_no_identifier_still_stores_the_empty_value() {
+        // "No identifier" is stored as the empty string and several queries
+        // depend on that: `message_ids_in_folder` leaves it out so one such
+        // message cannot match every other one. Trimming must not turn it into
+        // anything else.
+        let cache = fresh("identifier_absent");
+        let inbox = folder(&cache, "INBOX");
+        let mut anonymous = incoming(inbox, 1, "No identifier at all");
+        anonymous.message_id = String::new();
+
+        let row = cache.upsert_message(&anonymous).unwrap();
+
+        assert_eq!(stored_message_id(&cache, row), "");
+    }
+
+    #[test]
+    fn test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over() {
+        // This is the join the two spellings broke. Importing mail from a file
+        // asks the folder what it already holds and compares that with what
+        // `mail_parser` read out of the file, which is bare. A draft filed here
+        // was listed in the bracketed form, matched nothing, and came in a
+        // second time as a second row.
+        let cache = fresh("identifier_import_dedup");
+        let drafts = folder(&cache, "Drafts");
+        let mut draft = incoming(drafts, 1, "Half written");
+        draft.message_id = crate::application::draft_message::message_id_for("abc-123");
+        cache.upsert_message(&draft).unwrap();
+
+        let already_here = cache.message_ids_in_folder(drafts).unwrap();
+
+        assert!(
+            already_here.contains("draft-abc-123@wixen-mail.invalid"),
+            "a reader hands the identifier over bare and the folder lists it \
+             some other way, so the same message comes in twice: {already_here:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_filed_draft_and_a_synced_reply_naming_it_are_one_conversation() {
+        // Green before this change and green after it. The query asks about
+        // both spellings, which is what kept this working while the column held
+        // two, and it goes on asking about both because a database this
+        // backfill has not reached still holds the other one.
+        let cache = fresh("identifier_join_across_writers");
+        let drafts = folder(&cache, "Drafts");
+        let inbox = folder(&cache, "INBOX");
+
+        let filed = crate::application::draft_message::message_id_for("abc-123");
+        let mut draft = incoming(drafts, 1, "Half written");
+        draft.message_id = filed.clone();
+        cache.upsert_message(&draft).unwrap();
+
+        let mut reply = incoming(inbox, 2, "Re: Half written");
+        reply.message_id = "reply-1@example.com".to_string();
+        reply.refs_header = Some("draft-abc-123@wixen-mail.invalid".to_string());
+        cache.upsert_message(&reply).unwrap();
+
+        let found = cache
+            .threads_holding_any_of("acc", &["draft-abc-123@wixen-mail.invalid".to_string()])
+            .unwrap();
+
+        assert_eq!(
+            found,
+            vec!["draft-abc-123@wixen-mail.invalid".to_string()],
+            "the reply names the draft and the join did not find it"
+        );
+    }
+
+    #[test]
+    fn test_looking_a_draft_up_by_the_identifier_its_header_carries_still_finds_it() {
+        // Green before this change and green after it, and it is the half a
+        // correction stopping at the write would break. Saving a draft again
+        // asks the folder for the number the last copy took, using the
+        // bracketed identifier the header carries. A store that trimmed on the
+        // way in and not on the way out would answer "no such message" every
+        // time, take a fresh number, and leave a second copy in Drafts on every
+        // save.
+        let cache = fresh("identifier_lookup_from_the_header");
+        let drafts = folder(&cache, "Drafts");
+        let header_form = crate::application::draft_message::message_id_for("abc-123");
+        let mut draft = incoming(drafts, 7, "Half written");
+        draft.message_id = header_form.clone();
+        cache.upsert_message(&draft).unwrap();
+
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(drafts, &header_form)
+                .unwrap(),
+            Some(7),
+            "the draft path asks with the header's spelling and got nothing back"
+        );
+    }
+
+    // ── The rows written before there was one spelling ──────────────────────
+
+    /// Write a row the way a database held from before this change holds one.
+    ///
+    /// Straight into the table, because the store is the thing being tested and
+    /// going through it would make the fixture agree with whatever the store
+    /// does today.
+    fn stored_the_old_way(
+        cache: &super::super::MessageCache,
+        folder_id: i64,
+        uid: u32,
+        message_id: &str,
+    ) -> i64 {
+        cache
+            .conn
+            .query_row(
+                "INSERT INTO messages (uid, folder_id, message_id, subject, from_addr,
+                                       to_addr, date, thread_id)
+                 VALUES (?1, ?2, ?3, 'An older row', 'ada@example.com', 'me@example.com',
+                         '2026-07-01T10:00:00+00:00', ?4)
+                 RETURNING id",
+                rusqlite::params![
+                    uid,
+                    folder_id,
+                    message_id,
+                    crate::application::thread_identity::conversation_root(message_id, None)
+                ],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened() {
+        // Guardrail 1: the backfill is done when a non-test path reaches it,
+        // and the path is `MessageCache::open`. So this test opens the database
+        // rather than calling the migration, which is the only way to find out
+        // whether it is wired.
+        let cache = fresh("identifier_backfill_on_open");
+        let drafts = folder(&cache, "Drafts");
+        let row = stored_the_old_way(&cache, drafts, 1, "<draft-abc-123@wixen-mail.invalid>");
+        let home = cache.path().to_path_buf();
+        drop(cache);
+
+        let reopened = super::super::MessageCache::new(home, None).unwrap();
+
+        assert_eq!(
+            stored_message_id(&reopened, row),
+            "draft-abc-123@wixen-mail.invalid",
+            "opening the database left the old spelling in place"
+        );
+    }
+
+    #[test]
+    fn test_the_identifier_backfill_counts_only_the_rows_it_changed() {
+        let cache = fresh("identifier_backfill_counts");
+        let drafts = folder(&cache, "Drafts");
+        let bracketed = stored_the_old_way(&cache, drafts, 1, "<one@example.com>");
+        let already_bare = stored_the_old_way(&cache, drafts, 2, "two@example.com");
+
+        assert_eq!(cache.backfill_message_identifiers().unwrap(), 1);
+
+        assert_eq!(stored_message_id(&cache, bracketed), "one@example.com");
+        assert_eq!(stored_message_id(&cache, already_bare), "two@example.com");
+    }
+
+    #[test]
+    fn test_the_identifier_backfill_leaves_a_row_with_no_identifier_alone() {
+        let cache = fresh("identifier_backfill_empty");
+        let drafts = folder(&cache, "Drafts");
+        let anonymous = stored_the_old_way(&cache, drafts, 1, "");
+
+        assert_eq!(cache.backfill_message_identifiers().unwrap(), 0);
+
+        assert_eq!(stored_message_id(&cache, anonymous), "");
+        assert_eq!(how_many_rows(&cache), 1, "the backfill dropped a row");
+    }
+
+    #[test]
+    fn test_running_the_identifier_backfill_twice_changes_nothing_the_second_time() {
+        // Idempotent by its WHERE clause rather than by being called once. It
+        // runs on every open, over the only copy of somebody's mail.
+        let cache = fresh("identifier_backfill_twice");
+        let drafts = folder(&cache, "Drafts");
+        let row = stored_the_old_way(&cache, drafts, 1, "<one@example.com>");
+
+        assert_eq!(cache.backfill_message_identifiers().unwrap(), 1);
+        let after_the_first = stored_message_id(&cache, row);
+
+        assert_eq!(
+            cache.backfill_message_identifiers().unwrap(),
+            0,
+            "the second run rewrote rows that were already right"
+        );
+        assert_eq!(stored_message_id(&cache, row), after_the_first);
+    }
+
+    #[test]
+    fn test_a_row_the_backfill_has_not_reached_is_still_joined_by_the_widened_query() {
+        // Why the query is not narrowed. If the backfill fails, or has not run
+        // yet, the rows are still readable and still join. That is what makes a
+        // failure something to log rather than something to stop opening the
+        // database for.
+        let cache = fresh("identifier_fallback_still_joins");
+        let drafts = folder(&cache, "Drafts");
+        stored_the_old_way(&cache, drafts, 1, "<draft-abc-123@wixen-mail.invalid>");
+
+        let found = cache
+            .threads_holding_any_of("acc", &["draft-abc-123@wixen-mail.invalid".to_string()])
+            .unwrap();
+
+        assert_eq!(
+            found,
+            vec!["draft-abc-123@wixen-mail.invalid".to_string()],
+            "a row still in the old spelling stopped joining"
+        );
     }
 
     #[test]
