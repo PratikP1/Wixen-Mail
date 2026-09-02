@@ -59,7 +59,7 @@ pub fn what_a_selection_means(
     position: Option<usize>,
 ) -> Option<String> {
     position
-        .and_then(|position| destinations.get(position + 1))
+        .and_then(|position| destinations.get(position))
         .cloned()
         .flatten()
 }
