@@ -199,9 +199,11 @@ Plans:
 
   12. Two accounts sharing a name are two rows. `where_a_row_sits` pairs by label chain, so two accounts called "Work" produce identical chains and the pairing takes the first. True of the account branches since 01-14, and the saved-search group inherits it. The comment on `where_a_row_sits` already says so.
 
-  13. A forwarded Hungarian message does not join the conversation it is a reply to. `mail_parser`'s `trim_trailing_fwd` ignores a parenthesised word of one character, so Hungarian's `I:` forward marker is read as a reply marker and the message is threaded as a reply. Recorded as ledger entry 5 against `src/application/conversations.rs`, which documents the behaviour at line 323. It belongs to no phase, which is why it has sat since 01-11.
+  13. A reply to a forwarded Hungarian message does not say it is a reply. `mail_parser`'s `trim_trailing_fwd` ignores a parenthesised word of one character, so Hungarian's `I:` forward marker is read as a reply marker. Recorded as ledger entry 5 against `src/application/conversations.rs`, which documents the behaviour at line 323. It belongs to no phase, which is why it has sat since 01-11.
 
-**Plans**: 6/9 plans executed, one per wave. Counted from the ticked boxes below on 2026-09-02; the line said 1/9 while four were ticked, and 02.1-05 was merged into `main` with its box left unticked. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
+      **This criterion used to name a threading symptom, and that symptom does not exist.** It said a forwarded Hungarian message joins the conversation it is a reply to. `is_a_forward_marker` is read by two functions and both are called only from `src/presentation/wx_compose.rs`; nothing in threading reads either. Traced when 02.1-07 was planned and verified again when it was executed. The mechanism is exactly as recorded and reproduces; the harm is in composition, and it is two things. Replying wrote no reply marker, so the answer went out looking like new mail, and forwarding wrote a second forward marker in front of the one already there.
+
+**Plans**: 7/9 plans executed, one per wave. Counted from the ticked boxes below on 2026-09-02; the line said 1/9 while four were ticked, and 02.1-05 was merged into `main` with its box left unticked. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
 
 Plans:
 
@@ -231,7 +233,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 02.1-07-PLAN.md — Two decisions nothing was asking about (criteria 6, 13)
+- [x] 02.1-07-PLAN.md — Two decisions nothing was asking about (criteria 6, 13)
 
 **Wave 8** *(blocked on Wave 7)*
 

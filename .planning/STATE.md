@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-06-PLAN.md on branch gsd/plan-02.1-06, not merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
-last_updated: "2026-09-02T00:00:00.000Z"
-last_activity: 2026-09-02, 02.1-06 done, unmerged. Criteria 2 and 3 closed. Safety orders by severity in both views from one ranking, every writer of a message identifier writes one spelling, and rows written before that are corrected when the database is opened. The plan named the writers and no readers, and one reader would have broken: the lookup the draft path asks with the bracketed spelling now trims the question too.
-state_head: 0967567
+stopped_at: Completed 02.1-07-PLAN.md on branch gsd/plan-02.1-07, not merged. 02.1-06 is on gsd/plan-02.1-06, also unmerged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
+last_updated: "2026-09-02T18:27:21.744Z"
+last_activity: 2026-09-02, 02.1-07 done, unmerged. Criteria 6 and 13 closed. A one-letter forward marker is read as a forward marker now, so a reply to one says it is a reply and a forward of one does not stack a second, and both of mail-parser's prefix sets are written down in a test with the version and the day so an upgrade fails there. The vanished-folders window's four decisions are read from source with a companion, and the window is still not exercised at run time; the plan said no live window was available and that was wrong, the real reason being that every discriminating path ends at a blocking modal so a wrong argument would hang the gate rather than fail it.
+state_head: 298072cfd0154d98c934899f014d4dbc43759297
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 32
-  completed_plans: 29
+  completed_plans: 30
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -201,6 +201,9 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02.1 P02 | 2h | 3 tasks | 7 files |
 | Phase 02.1 P03 | 2h | 2 tasks | 6 files |
 | Phase 02.1 P04 | 4h30m | 2 tasks | 6 files |
+| Phase 02.1 P05 | about 3h | 3 tasks | 11 files |
+| Phase 02.1 P06 | about 2h30m, 90m of it guard runs | 3 tasks | 6 files |
+| Phase 02.1 P07 | about 1h | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -383,7 +386,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-02
-Stopped at: Completed 02.1-03-PLAN.md on branch gsd/plan-02.1-03, not merged. Criterion 5 is closed. docs/IMPLEMENTATION_STATUS.md was false through where a paragraph sat rather than through anything it said, so no search for the old sentence could find it; the paragraph moved, and "Anything that writes, against a real account" got its own heading so that "What does not work" means one thing. The tree search found a fifth file the plan did not list, docs/roadmap.md, which still had CREATE, RENAME and DELETE unticked; it is ticked and has its own guard. Five records in .planning/intel/context.md corrected and dated. Two guards and two companions, each companion proved by hand to catch its own reading going blind. The by-hand demonstration found a hole in the first check, which read only the first mention of a capability, and that is a red/green pair of its own. Found and not fixed: docs/roadmap.md:156 says Folder favorites is unbuilt and it ships, recorded as ledger entry 38.
+Stopped at: Completed 02.1-07-PLAN.md on branch gsd/plan-02.1-07, not merged. Criteria 6 and 13 are closed. A one-letter forward marker is read as a forward marker, so a reply to one says it is a reply and a forward of one does not stack a second; both of mail-parser's prefix sets are in a test with the version and the day, and production code holds no marker. The vanished-folders question is read from source with a companion and the window is still not exercised at run time, recorded as ledger 42. Three plan premises came out wrong and are corrected in the summary: the live-window budget is per process rather than spent, seven guard records name tests/wired.rs rather than six, and two counts of markers in this module's comments were off by one. The roadmap's wording of criterion 13 named a threading symptom that does not exist, and it is corrected there too. Found while updating state: `gsd-tools query state.advance-plan` still returns only a parse error and has already written three fields by then, one of them wrongly.
+
+Earlier: Completed 02.1-03-PLAN.md on branch gsd/plan-02.1-03, not merged. Criterion 5 is closed. docs/IMPLEMENTATION_STATUS.md was false through where a paragraph sat rather than through anything it said, so no search for the old sentence could find it; the paragraph moved, and "Anything that writes, against a real account" got its own heading so that "What does not work" means one thing. The tree search found a fifth file the plan did not list, docs/roadmap.md, which still had CREATE, RENAME and DELETE unticked; it is ticked and has its own guard. Five records in .planning/intel/context.md corrected and dated. Two guards and two companions, each companion proved by hand to catch its own reading going blind. The by-hand demonstration found a hole in the first check, which read only the first mention of a capability, and that is a red/green pair of its own. Found and not fixed: docs/roadmap.md:156 says Folder favorites is unbuilt and it ships, recorded as ledger entry 38.
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
