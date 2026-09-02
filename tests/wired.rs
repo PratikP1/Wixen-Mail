@@ -1363,8 +1363,12 @@ fn test_no_two_controls_in_one_dialog_claim_the_same_alt_key() {
         // how a check like this goes quietly blind. A test module sits in the
         // middle of most files here, and everything after it is production
         // code: 1,597 lines of `presentation::managers`, which builds dialogs,
-        // were never read by this. Two other guards still cut that way and
-        // between them cannot see about eight thousand lines.
+        // were never read by this. Twelve other checks in this file cut that
+        // way, not two, and each stopped at line 19,728 of `wx_app.rs`'s
+        // 26,593, losing the 389 lines of production code that sit between the
+        // test modules below it. Measured 2026-09-02, which is also when the
+        // last of the twelve stopped cutting: they all read through
+        // `common::what_ships` now.
         let production = without_test_modules(&text);
         for (name, body) in builder_bodies(&production) {
             if READ_AT_RUN_TIME_INSTEAD.contains(&name.as_str()) {
@@ -1783,13 +1787,17 @@ fn is_on_a_menu(squashed: &str, id: &str) -> bool {
 /// The reading these checks do reaches the whole shipping half of the main
 /// window.
 ///
-/// Twelve checks below read `src/presentation/wx_app.rs` and cut it at the
-/// first `#[cfg(test)]`. That is the shipping half only while every test module
-/// sits at the end of the file, and in this one the first sits at line 19,730
-/// of 26,593. So those twelve read 74% of the file and are blind to the 6,863
-/// lines under it, which hold two production functions,
-/// `ask_about_the_alpha_once` and `block_the_sender`, that no check here has
-/// ever read.
+/// Twelve checks below used to read `src/presentation/wx_app.rs` by cutting it
+/// at the first `#[cfg(test)]`. That is the shipping half only while every test
+/// module sits at the end of the file, and in this one the first sits at line
+/// 19,730 of 26,593, so the cut kept 19,728 lines and stopped.
+///
+/// Say the size honestly, because the number that first gets quoted is the
+/// wrong one. 6,865 lines sat below the cut and 6,476 of them are test modules,
+/// which nothing here should be reading anyway. What was really lost is the
+/// other 389: production code between two test modules, including
+/// `ask_about_the_alpha_once` and `block_the_sender`, which no check in this
+/// file had ever read. Measured 2026-09-02.
 ///
 /// `common::what_ships` drops each `#[cfg(test)]` item where it really ends and
 /// keeps everything else, which is the question the cut was approximating. It
@@ -1881,8 +1889,7 @@ fn test_no_two_items_on_one_menu_claim_the_same_letter() {
 #[test]
 fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
-    let squashed = without_whitespace(ship);
+    let squashed = without_whitespace(&what_ships(&app));
 
     for (id, what) in [
         ("ID_MOVE_TO_FOLDER", "move this somewhere else"),
@@ -1946,8 +1953,7 @@ fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
 #[test]
 fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
-    let squashed = without_whitespace(ship);
+    let squashed = without_whitespace(&what_ships(&app));
 
     assert!(
         squashed.contains("id==ID_MOVE_TO_FOLDER&&showing!=PimModule::Mail"),
@@ -2224,9 +2230,9 @@ fn test_every_long_prose_box_says_markdown_is_understood() {
 #[test]
 fn test_making_a_calendar_or_list_is_under_file_new() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
-    let new_menu = without_whitespace(&menu_block(ship, "new_sub"));
+    let new_menu = without_whitespace(&menu_block(&ship, "new_sub"));
     assert!(
         new_menu.contains("ID_NEW_EVENT"),
         "the New submenu was not found, so this guard is measuring nothing"
@@ -2249,7 +2255,7 @@ fn test_making_a_calendar_or_list_is_under_file_new() {
 #[test]
 fn test_file_and_edit_hold_nothing_that_acts_on_a_selection() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     for (menu, moved) in [
         (
@@ -2268,7 +2274,7 @@ fn test_file_and_edit_hold_nothing_that_acts_on_a_selection() {
             ["ID_PIM_TOGGLE_DONE", "ID_PIM_TOGGLE_PIN"].as_slice(),
         ),
     ] {
-        let block = menu_block(ship, menu);
+        let block = menu_block(&ship, menu);
         assert!(
             block.contains("append"),
             "the {menu} menu was not found, so this guard is measuring nothing"
@@ -2867,19 +2873,19 @@ fn test_nothing_asks_for_the_interface_lock_while_it_already_holds_it() {
 #[test]
 fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     assert!(
-        body_of(ship, "fn folder_tree_updates(").contains("get_saved_searches_for_account("),
+        body_of(&ship, "fn folder_tree_updates(").contains("get_saved_searches_for_account("),
         "the folder tree is built without asking what saved searches there are, so none of \
          them can ever appear in it"
     );
     assert!(
-        body_of(ship, "fn folder_tree_updates(").contains("every_saved_search("),
+        body_of(&ship, "fn folder_tree_updates(").contains("every_saved_search("),
         "the searches are read and thrown away: nothing turns them into rows, so none of \
          them reaches the tree"
     );
-    let rebuild = body_of(ship, "        UIUpdate::FoldersLoaded(rows) => {");
+    let rebuild = body_of(&ship, "        UIUpdate::FoldersLoaded(rows) => {");
     assert!(
         rebuild.contains("fill_the_tree("),
         "the tree rebuild draws none of the rows it was handed, so every row the folder \
@@ -2891,7 +2897,7 @@ fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() 
          never opened"
     );
     assert!(
-        body_of(ship, "fn run_a_saved_search(").contains("spawn_blocking"),
+        body_of(&ship, "fn run_a_saved_search(").contains("spawn_blocking"),
         "a saved search is run on the interface thread, so a mailbox of any size stops the \
          window repainting, answering the keyboard and speaking"
     );
@@ -2924,8 +2930,8 @@ fn test_a_saved_search_reaches_the_folder_tree_and_runs_when_enter_is_pressed() 
 #[test]
 fn test_enter_on_a_branch_of_the_folder_tree_only_opens_or_closes_it() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
-    let answering = body_of(ship, "            folder_tree.on_item_activated(");
+    let ship = what_ships(&app);
+    let answering = body_of(&ship, "            folder_tree.on_item_activated(");
 
     let toggles = answering
         .find("toggle(")
@@ -2963,16 +2969,19 @@ fn test_enter_on_a_branch_of_the_folder_tree_only_opens_or_closes_it() {
 #[test]
 fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     for (what, body) in [
         (
             "writing a mailbox out to a file",
-            body_of(ship, "fn export_a_mailbox("),
+            body_of(&ship, "fn export_a_mailbox("),
         ),
         (
             "fetching older messages from the server",
-            body_of(ship, "                        _ if id == ID_GET_OLDER => {"),
+            body_of(
+                &ship,
+                "                        _ if id == ID_GET_OLDER => {",
+            ),
         ),
     ] {
         assert!(
@@ -2996,8 +3005,7 @@ fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
 #[test]
 fn test_delete_on_a_saved_search_row_removes_the_search_rather_than_a_message() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
-    let squashed = without_whitespace(ship);
+    let squashed = without_whitespace(&what_ships(&app));
 
     let for_the_search = squashed
         .find("id==ID_DELETE&&folder_tree.has_focus()&&the_chosen_saved_search")
@@ -3028,7 +3036,7 @@ fn test_delete_on_a_saved_search_row_removes_the_search_rather_than_a_message() 
 #[test]
 fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     for changing in [
         "fn save_this_search(",
@@ -3036,13 +3044,13 @@ fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
         "fn delete_the_chosen_search(",
     ] {
         assert!(
-            body_of(ship, changing).contains("read_the_tree_back("),
+            body_of(&ship, changing).contains("read_the_tree_back("),
             "{changing} changes the saved searches and does not read the tree back, so the \
              rows on screen are what the database held before it ran"
         );
     }
     assert!(
-        body_of(ship, "fn read_the_tree_back(").contains("folder_tree_updates("),
+        body_of(&ship, "fn read_the_tree_back(").contains("folder_tree_updates("),
         "reading the tree back no longer reads the tree"
     );
 }
@@ -3171,7 +3179,7 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
 #[test]
 fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
     for aimed_at_a_row in [
         "fn spawn_folder_move(",
@@ -3182,7 +3190,7 @@ fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
         "fn save_attachment(",
     ] {
         assert!(
-            body_of(ship, aimed_at_a_row).contains("owner_of("),
+            body_of(&ship, aimed_at_a_row).contains("owner_of("),
             "{aimed_at_a_row} works out the account for itself rather than asking which \
              account the chosen message is in, so in All Inboxes it can reach a server the \
              message was never on"
@@ -3211,9 +3219,9 @@ fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
 #[test]
 fn test_the_in_box_on_the_search_window_reaches_the_search() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+    let ship = what_ships(&app);
 
-    let asking = body_of(ship, "fn show_search_dialog(");
+    let asking = body_of(&ship, "fn show_search_dialog(");
     assert!(
         asking.contains("get_selection()"),
         "the search window never asks the In box what was chosen, so every search runs \
