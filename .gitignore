@@ -64,6 +64,12 @@ docs/*.html
 .claude/scripts/
 .claude/gsd-migration-journal/
 .claude/gsd-file-manifest.json
+# Where the harness puts a subagent's git worktree. Transient, and it holds a
+# whole checkout with its own build directory: the one left on 2026-09-02 was
+# 293MB. Untracked and unignored, it is a trap for `git add -A`, and it is
+# nested deeply enough that `git worktree remove` failed on it with "Filename
+# too long" and it had to be deleted through the extended-path prefix.
+.claude/worktrees/
 .claude/gsd-install-state.json
 .claude/.gsd-profile
 .claude/.gsd-runtime
