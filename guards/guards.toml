@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 358 records have arrived since and have not been through it.
+# 360 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -12810,4 +12810,99 @@ red = [
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 61 },
     { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
+]
+
+# ── The two integration guards that named no source file ────────────────────
+#
+# Both records below were written on 2026-09-02 for a reason that is new. A
+# record's `file` and `suite` used to be read only by `scripts/guards.sh`, to
+# know where to apply a break and which suite to run it against. `scripts/check.sh`
+# now reads the same two fields the other way round: given a changed source
+# file, which integration targets guard it, so that a guard living under
+# `tests/` runs on the commits that could break it rather than only on the
+# commits that change the test file.
+#
+# So a guard with no record here is a guard the gate cannot find. These two had
+# none, and both cover a `src/presentation` module from outside it.
+#
+# Each suite holds exactly one `#[test]` function, for the one-live-window-per-
+# process budget `tests/theme_reach.rs` explains: wxWidgets allows one
+# application per process and `cargo test` gives each file under `tests/` its
+# own process, so every window check in a file shares one test function. A break
+# reaching several dialogs still reddens one name there. That is not a red list
+# that shrank, and without this note the next re-measurement would read it as
+# one, the same way the `manager_dialog_labels` record above has to say it.
+
+# The item form built both of its check boxes with an empty label and named them
+# through `set_accessible_name`, which writes MSAA and nothing else. Windows
+# takes a native control's UI Automation name from its own window text, so the
+# control was named for NVDA and unnamed for Narrator: correct on the channel
+# somebody was listening on, and silent on the other.
+#
+# Measured by hand on 2026-09-02. The break reddens the one check in the suite,
+# and the whole library passes through it untouched: 5,997 tests, none of them
+# able to see a name that only exists on one accessibility channel, because
+# seeing it needs a real control built by the platform. `house_style` and
+# `wired` pass through it too. That is the point of an integration guard, and it
+# is also why leaving it uncoupled cost so much: nothing else in the tree would
+# ever have spoken.
+
+[[guard]]
+name = "a check box carries its own label rather than borrowing the text beside it"
+file = "src/presentation/wx_item_form.rs"
+suite = "checkbox_labels"
+before = """            let c = CheckBox::builder(parent).with_label(field.label).build();"""
+after = """            let c = CheckBox::builder(parent).build();"""
+red = [
+    "test_every_check_box_in_a_form_carries_its_own_label",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "tests/checkbox_labels.rs", tests = 1 },
+]
+
+# What a manager window says after a delete, counted against the list as it is
+# afterwards rather than as it was before.
+#
+# The break is the old length: `left` read before the row is removed instead of
+# after. Only a condition list counts out loud, so a tag, a filter or a
+# signature going says the same words either way and the defect is invisible
+# there. A saved search with three conditions, one deleted, then says "3
+# conditions now" over a list holding two.
+#
+# The file's name says the window stays open, and the checks in it are not about
+# that: they are about `delete_selected` and `delete_selected_contact` removing
+# the right row, marking the state changed, repainting the list, and saying the
+# right sentence. The decision the name refers to, `what_it_still_needs` and
+# `nothing_stops_this_closing`, is in the modal loop and nothing in that file
+# reaches it. The break was chosen from what the file really asserts rather than
+# from what its name suggests, and the first plausible break, closing the window
+# on an emptied list, would have reddened nothing.
+#
+# Measured by hand on 2026-09-02. The whole library passes through this break,
+# 5,997 tests, and so do `house_style`, `wired` and `manager_dialog_labels`. The
+# sentence builder's own tests in `manager_words` are given the number, so they
+# cannot see the caller handing them the wrong one. That is the gap this file's
+# own comment names and it is measured here rather than assumed.
+
+[[guard]]
+name = "a delete says how many rows are left rather than how many there were"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_delete_stays_open"
+before = """        let mut s = state.borrow_mut();
+        s.working.remove(idx);
+        s.changed = true;
+        drop(s);
+        let left = state.borrow().working.len();"""
+after = """        let mut s = state.borrow_mut();
+        let left = s.working.len();
+        s.working.remove(idx);
+        s.changed = true;
+        drop(s);"""
+red = [
+    "test_delete_removes_the_right_row_against_real_widgets",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "tests/manager_delete_stays_open.rs", tests = 1 },
 ]

@@ -48,6 +48,48 @@ expect() {
     fi
 }
 
+# Against the real registry the cases below ask whether a suite is in the
+# answer, not whether it is the whole answer.
+#
+# Equality was the first spelling and it was wrong within the hour: this file
+# was written against the registry as it stood, and the very next task added a
+# second record for `wx_managers.rs`, so four cases went red for having done
+# their job. An assertion that pins the exact contents of shared, growing data
+# fails on every addition to it, and a suite that goes red when somebody adds a
+# guard record teaches people not to add guard records.
+#
+# The exclusions stay exact, because those really are claims about the whole
+# answer: a file no record names, or one coupled only to a target the run
+# already ends with, must answer nothing at all.
+expect_among() {
+    local want="$1" desc="$2"
+    shift 2
+    local got
+    got="$(answer "$@")"
+    case " $got " in
+        *" $want "*) ;;
+        *)
+            echo "FAIL [$desc]: answered '$got', which does not include '$want'"
+            echo "       args: $*"
+            failures=$((failures + 1))
+            ;;
+    esac
+}
+
+expect_not_among() {
+    local unwanted="$1" desc="$2"
+    shift 2
+    local got
+    got="$(answer "$@")"
+    case " $got " in
+        *" $unwanted "*)
+            echo "FAIL [$desc]: answered '$got', which still includes '$unwanted'"
+            echo "       args: $*"
+            failures=$((failures + 1))
+            ;;
+    esac
+}
+
 fail() {
     echo "FAIL [$1]: $2"
     failures=$((failures + 1))
@@ -60,8 +102,12 @@ trap 'rm -rf "$work"' EXIT
 # One record couples a source module to a target the gate would otherwise reach
 # only when the test file itself changed. That record is the whole reason this
 # mapping exists, so it is asserted against the real file rather than a fixture.
-expect manager_dialog_labels "the manager window's dialog-label guard is coupled to the window" \
+expect_among manager_dialog_labels "the manager window's dialog-label guard is coupled to the window" \
     "$registry" src/presentation/wx_managers.rs
+expect_among manager_delete_stays_open "and so is its delete guard" \
+    "$registry" src/presentation/wx_managers.rs
+expect_among checkbox_labels "the item form's check-box guard is coupled to the form" \
+    "$registry" src/presentation/wx_item_form.rs
 
 # A source file no record names is answered with nothing, and the run is what it
 # was before. Most commits are this case and it must not get slower or stranger.
@@ -78,7 +124,7 @@ expect "" "a coupling to house_style, likewise" \
     "$registry" src/application/draft_copy.rs
 
 # Several changed files at once, only one of them coupled.
-expect manager_dialog_labels "a coupled file beside an uncoupled one" \
+expect_among manager_dialog_labels "a coupled file beside an uncoupled one" \
     "$registry" src/presentation/wx_managers.rs src/application/threading.rs
 
 # ── The coupling really is what is being read ───────────────────────────────
@@ -97,11 +143,11 @@ if [ "$removed" -ne 1 ]; then
     fail "the copy of the registry differs by exactly one line" \
         "removed $removed lines, wanted 1; the case below would pass for the wrong reason"
 fi
-expect "" "taking the suite line off that record leaves the file uncoupled" \
+expect_not_among manager_dialog_labels "taking the suite line off that record leaves the file uncoupled" \
     "$uncoupled" src/presentation/wx_managers.rs
 # And the real one still answers, so the case above is about the edit rather
 # than about the mapping having stopped working between the two.
-expect manager_dialog_labels "the real registry still answers after the copy was made" \
+expect_among manager_dialog_labels "the real registry still answers after the copy was made" \
     "$registry" src/presentation/wx_managers.rs
 
 # ── Made-up registries, for the shapes the real one does not hold today ─────
