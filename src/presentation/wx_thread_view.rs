@@ -13,6 +13,7 @@
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::theme;
+use crate::presentation::tree_walk;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -72,6 +73,51 @@ fn node_label(node: &ThreadNode) -> String {
     format!("{}{}. {}. {}", unread, node.sender, subject, node.date)
 }
 
+/// One row of the conversation tree, in the order a depth-first walk of the
+/// built tree meets it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Row {
+    /// Which node in the slice this row shows.
+    node: usize,
+    /// Which node's row it hangs under. `None` means the root.
+    under: Option<usize>,
+}
+
+/// The rows of the conversation tree, in the order the built tree is walked.
+///
+/// Not the order the nodes arrive in, and the two differ whenever a message
+/// replies to something other than the one before it: a reply sits under its
+/// parent, so the walk meets it immediately after that parent rather than
+/// where it sat in the slice.
+///
+/// This is what makes a vector beside the control exact rather than
+/// approximate. The rows are appended in this order and each id is pushed in
+/// the same step, so the control's walk and the vector are one sequence rather
+/// than two that have to be kept in step.
+fn rows_in_walk_order(nodes: &[ThreadNode]) -> Vec<Row> {
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| Row {
+            node: index,
+            under: node.parent.filter(|parent| *parent < index),
+        })
+        .collect()
+}
+
+/// What a selection at `position` in the tree's walk means.
+///
+/// `None` is the root, which is not walked and so has no position, and the
+/// root means the whole conversation. A position past the end of `ids` means
+/// the same: the safe answer to a row this cannot place is the conversation,
+/// never a message nobody pointed at.
+fn what_a_selection_means(ids: &[i64], position: Option<usize>) -> ThreadChoice {
+    match position.and_then(|position| ids.get(position)) {
+        Some(id) => ThreadChoice::Message(*id),
+        None => ThreadChoice::AsHeadings,
+    }
+}
+
 /// How the root of the tree reads.
 ///
 /// It says what `Enter` will do rather than repeating the subject, because
@@ -101,7 +147,7 @@ pub fn show_thread_dialog(
         return ThreadChoice::Cancelled;
     }
 
-    let Some((dlg, chosen)) =
+    let Some((dlg, _tree, chosen)) =
         build_thread_dialog(parent, subject, nodes, theme::current_from_stored_config())
     else {
         return ThreadChoice::Cancelled;
@@ -136,12 +182,22 @@ pub fn show_thread_dialog(
 /// Returns what was chosen alongside the dialog: selecting a row in the tree
 /// keeps this current, so reading it back is all `show_thread_dialog` has to
 /// do once the dialog closes.
+///
+/// The tree comes back too, which `show_thread_dialog` does not need and a
+/// test does: choosing a row is the whole of what this dialog does, and
+/// without the control there is no way to choose one and watch the answer
+/// change. `tests/tree_dialogs_resolve_the_row_somebody_is_on.rs` does exactly
+/// that.
 pub fn build_thread_dialog(
     parent: &Frame,
     subject: &str,
     nodes: &[ThreadNode],
     palette: Option<theme::Palette>,
-) -> Option<(Dialog, std::rc::Rc<std::cell::RefCell<ThreadChoice>>)> {
+) -> Option<(
+    Dialog,
+    TreeCtrl,
+    std::rc::Rc<std::cell::RefCell<ThreadChoice>>,
+)> {
     let dlg = Dialog::builder(parent, "Conversation")
         .with_size(620, 460)
         .build();
@@ -187,20 +243,36 @@ pub fn build_thread_dialog(
         return None;
     };
 
-    // The message id rides on the item rather than being looked up by
-    // position or by label. Labels repeat within a conversation, and a
-    // position lookup breaks the moment the tree is built in another order.
-    let mut items: Vec<Option<TreeItemId>> = Vec::with_capacity(nodes.len());
-    for node in nodes {
-        let under = match node.parent.and_then(|index| items.get(index).cloned()) {
-            Some(Some(parent_item)) => parent_item,
-            _ => root.clone(),
+    // The message ids are held here rather than hung off the rows. Labels
+    // repeat within a conversation, so a label lookup is out; what makes a
+    // position lookup safe is that the row and its id are produced in the same
+    // step below, in the one order [`rows_in_walk_order`] gives, and that this
+    // tree is built once and never touched again while the dialog is open.
+    // Nothing is inserted, removed or re-sorted under it.
+    //
+    // Hanging the id off the row instead is what this used to do, and it is
+    // not the cheap option it looks like: `set_custom_data` puts the id in a
+    // process-global map in `wxdragon` and nothing takes it out, so every
+    // opening of this dialog left one entry per message behind for the life of
+    // the program. `tests/tree_rows_leave_no_registry_entry.rs` counts them.
+    let mut items: Vec<Option<TreeItemId>> = vec![None; nodes.len()];
+    let mut ids: Vec<i64> = Vec::with_capacity(nodes.len());
+    for row in rows_in_walk_order(nodes) {
+        let under = row
+            .under
+            .and_then(|parent| items[parent].clone())
+            .unwrap_or_else(|| root.clone());
+        let Some(item) = tree.append_item(&under, &node_label(&nodes[row.node]), None, None) else {
+            // A row that could not be appended would leave the walk one row
+            // short of the ids beside it, and every row after it would resolve
+            // to the message before it. Better no conversation window at all
+            // than one that opens the wrong message, which is the same
+            // judgement the missing root above makes.
+            tracing::error!("Conversation tree row could not be created");
+            return None;
         };
-        let item = tree.append_item(&under, &node_label(node), None, None);
-        if let Some(ref item) = item {
-            tree.set_custom_data(item, node.message_id);
-        }
-        items.push(item);
+        items[row.node] = Some(item);
+        ids.push(nodes[row.node].message_id);
     }
     tree.expand_all();
     tree.select_item(&root);
@@ -212,20 +284,14 @@ pub fn build_thread_dialog(
     // double-clicking a row all act on the same thing: the row you are on.
     tree.on_selection_changed({
         let chosen = chosen.clone();
-        move |event| {
-            let Some(item) = event.get_item() else {
-                return;
-            };
-            // No data means the root, which is the whole conversation.
-            *chosen.borrow_mut() = match tree
-                .get_custom_data(&item)
-                .and_then(|data| data.downcast_ref::<i64>().copied())
-            {
-                Some(id) => ThreadChoice::Message(id),
-                // No data means the root, which is the whole conversation, and
-                // a conversation opens as a page.
-                None => ThreadChoice::AsHeadings,
-            };
+        move |_event| {
+            // The control is asked which row is selected rather than the event
+            // being asked which row it is about. `TreeItemId` has no equality,
+            // so an item the event hands over cannot be matched against
+            // anything; `is_selected`, asked of each row in turn, needs no
+            // comparison and gives an exact position.
+            *chosen.borrow_mut() =
+                what_a_selection_means(&ids, tree_walk::where_the_selection_sits(&tree));
         }
     });
 
@@ -243,7 +309,7 @@ pub fn build_thread_dialog(
         theme::paint(&dlg, palette.main_surface());
     }
 
-    Some((dlg, chosen))
+    Some((dlg, tree, chosen))
 }
 
 #[cfg(test)]
@@ -261,6 +327,124 @@ mod tests {
             depth: 0,
             parent: None,
         }
+    }
+
+    /// One message of a conversation, identified by the id a choice acts on.
+    fn message(message_id: i64, parent: Option<usize>) -> ThreadNode {
+        ThreadNode {
+            message_id,
+            uid: message_id as u32,
+            parent,
+            depth: parent.map_or(0, |_| 1),
+            ..node("Ada Lovelace", true)
+        }
+    }
+
+    /// Four messages whose arrival order and walk order are not the same
+    /// sequence.
+    ///
+    /// The third message replies to the first, so the built tree meets it
+    /// straight after the first while the slice holds it two places later.
+    /// A fixture whose two orders agreed would let the arrival order pass as
+    /// the walk order, and the test would read as green on arrival while
+    /// measuring nothing.
+    fn a_conversation_whose_two_orders_differ() -> Vec<ThreadNode> {
+        vec![
+            message(11, None),
+            message(22, None),
+            message(33, Some(0)),
+            message(44, None),
+        ]
+    }
+
+    fn ids(nodes: &[ThreadNode], rows: &[Row]) -> Vec<i64> {
+        rows.iter().map(|row| nodes[row.node].message_id).collect()
+    }
+
+    #[test]
+    fn test_the_fixtures_two_orders_really_do_differ() {
+        // Guarding the fixture rather than the code. Every test below is only
+        // as strong as this difference, and a later simplification that made
+        // the two orders agree would leave them all passing against an
+        // ordering function that returned its input.
+        let nodes = a_conversation_whose_two_orders_differ();
+        let arrived: Vec<i64> = nodes.iter().map(|node| node.message_id).collect();
+        let walked = ids(&nodes, &rows_in_walk_order(&nodes));
+
+        assert_ne!(arrived, walked, "the fixture cannot tell the two apart");
+    }
+
+    #[test]
+    fn test_a_reply_is_walked_under_the_message_it_replies_to_not_where_it_arrived() {
+        let nodes = a_conversation_whose_two_orders_differ();
+
+        assert_eq!(
+            ids(&nodes, &rows_in_walk_order(&nodes)),
+            vec![11, 33, 22, 44],
+            "the reply to the first message is walked straight after it"
+        );
+    }
+
+    #[test]
+    fn test_two_replies_to_one_message_sit_under_it_in_the_order_they_arrived() {
+        let nodes = vec![
+            message(11, None),
+            message(22, Some(0)),
+            message(33, None),
+            message(44, Some(0)),
+        ];
+
+        assert_eq!(
+            ids(&nodes, &rows_in_walk_order(&nodes)),
+            vec![11, 22, 44, 33]
+        );
+    }
+
+    #[test]
+    fn test_the_root_is_not_a_row_so_the_first_walked_row_is_the_first_message() {
+        // The root is the whole conversation and is never appended, so nothing
+        // in the walk stands for it and position 0 is a real message.
+        let nodes = a_conversation_whose_two_orders_differ();
+        let rows = rows_in_walk_order(&nodes);
+
+        assert_eq!(rows.len(), nodes.len());
+        assert_eq!(rows[0].under, None);
+        assert_eq!(ids(&nodes, &rows)[0], 11);
+        // And the row after it hangs under it rather than under the root,
+        // which is what puts it there.
+        assert_eq!(rows[1].under, Some(0));
+    }
+
+    #[test]
+    fn test_a_row_resolves_to_its_own_message() {
+        let nodes = a_conversation_whose_two_orders_differ();
+        let ids = ids(&nodes, &rows_in_walk_order(&nodes));
+
+        // Each position written out rather than read back off the ordering.
+        // Walking the ordering and asserting each row against itself would
+        // pass whatever the ordering said, which is no assertion at all.
+        for (position, id) in [(0, 11), (1, 33), (2, 22), (3, 44)] {
+            assert_eq!(
+                what_a_selection_means(&ids, Some(position)),
+                ThreadChoice::Message(id),
+                "position {position}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_root_means_the_whole_conversation() {
+        // The root is not walked, so it has no position, and neither has a
+        // position past the end of the rows. Both mean the conversation rather
+        // than a message nobody pointed at.
+        let nodes = a_conversation_whose_two_orders_differ();
+        let ids = ids(&nodes, &rows_in_walk_order(&nodes));
+
+        assert_eq!(what_a_selection_means(&ids, None), ThreadChoice::AsHeadings);
+        assert_eq!(
+            what_a_selection_means(&ids, Some(ids.len())),
+            ThreadChoice::AsHeadings
+        );
     }
 
     #[test]

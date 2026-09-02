@@ -137,7 +137,7 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
             destination.destroy();
 
             let opened = store_item_data(());
-            let (conversation, _chosen) =
+            let (conversation, _tree, _chosen) =
                 wx_thread_view::build_thread_dialog(&frame, "Quarterly report", &nodes(), None)
                     .expect("three nodes give the conversation tree a root");
             let closed = store_item_data(());

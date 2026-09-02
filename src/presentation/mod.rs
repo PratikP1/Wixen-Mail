@@ -31,6 +31,7 @@ pub mod reader_text;
 pub mod scan_target;
 pub mod status_line;
 pub mod theme;
+pub mod tree_walk;
 pub mod ui_types;
 pub mod view_state;
 pub mod wx_account_manager;

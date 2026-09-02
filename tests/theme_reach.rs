@@ -821,7 +821,7 @@ fn check_thread_view(parent: &Frame, palette: theme::Palette, into: &mut Vec<Sit
         depth: 0,
         parent: None,
     }];
-    let (dialog, _chosen) =
+    let (dialog, _tree, _chosen) =
         wx_thread_view::build_thread_dialog(parent, "Quarterly report", &nodes, Some(palette))
             .expect("a tree root should build from one node");
     check("thread view dialog", &dialog, palette.main_surface(), into);
