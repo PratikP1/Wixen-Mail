@@ -12495,7 +12495,7 @@ red = [
     "data::message_cache::saved_searches::tests::test_a_search_saved_from_a_narrowed_search_box_comes_back_narrowed",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 70 },
+    { file = "src/application/saved_searches.rs", tests = 76 },
     { file = "src/data/message_cache/saved_searches.rs", tests = 27 },
 ]
 
@@ -12539,7 +12539,7 @@ red = [
     "application::saved_searches::tests::test_an_all_join_with_no_questions_takes_nothing_rather_than_everything",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 70 },
+    { file = "src/application/saved_searches.rs", tests = 76 },
 ]
 
 # ── One group in the tree, however a saved search was made ──────────────────
@@ -12742,7 +12742,7 @@ red = [
     "application::saved_searches::tests::test_one_place_builds_the_coverage_sentence",
 ]
 tests_last_seen = [
-    { file = "src/application/saved_searches.rs", tests = 70 },
+    { file = "src/application/saved_searches.rs", tests = 76 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 

@@ -247,11 +247,24 @@ impl NotUnderstood {
     /// It names the word it could not read. "This search could not run" on its
     /// own leaves somebody with nothing to fix and no way to tell a search
     /// written by a newer version from one with a typo in it.
+    ///
+    /// A word that is not there at all is said as that rather than dropped
+    /// into the sentence, because "it asks about the  of a message" is a
+    /// sentence with a hole where the answer belongs. The empty string is the
+    /// word this meets most often: it is what a stored condition was rewritten
+    /// to whenever a dialog opened on one it could not show, which is the
+    /// failure the condition editors now refuse before they open.
     pub fn why(&self) -> String {
         match self {
+            NotUnderstood::Field(field) if field.is_empty() => {
+                "it does not say which part of a message it asks about.".to_string()
+            }
             NotUnderstood::Field(field) => format!(
                 "it asks about the {field} of a message, which this version does not understand."
             ),
+            NotUnderstood::WayOfMatching(way) if way.is_empty() => {
+                "it does not say how the message is to be compared.".to_string()
+            }
             NotUnderstood::WayOfMatching(way) => {
                 format!("it asks to match by {way}, which this version does not understand.")
             }
@@ -274,8 +287,15 @@ impl NotUnderstood {
 /// holds, and the two rule editors asking it of the one condition they are
 /// about to open.
 pub fn what_a_condition_cannot_read(field: &str, match_type: &str) -> Option<NotUnderstood> {
-    let _ = (field, match_type);
-    None
+    use crate::application::filters::{a_rule_may_match, a_rule_may_name};
+
+    if !a_rule_may_name(field) {
+        Some(NotUnderstood::Field(field.to_string()))
+    } else if !a_rule_may_match(match_type) {
+        Some(NotUnderstood::WayOfMatching(match_type.to_string()))
+    } else {
+        None
+    }
 }
 
 /// What came of running a saved search over some messages.
@@ -1104,17 +1124,14 @@ impl SavedSearch {
     /// message does not match". The first one found is reported: a search with
     /// two unreadable questions is still one search that cannot run, and
     /// naming one word to fix is more use than naming a list.
+    ///
+    /// The reading itself is [`what_a_condition_cannot_read`], which is where
+    /// the two rule editors ask it of the one condition they are about to
+    /// open. A search and a dialog reading a stored word two ways is how the
+    /// two come to disagree about what this build can show.
     pub fn what_it_cannot_read(&self) -> Option<NotUnderstood> {
-        use crate::application::filters::{a_rule_may_match, a_rule_may_name};
-
         self.questions.iter().find_map(|question| {
-            if !a_rule_may_name(&question.field) {
-                Some(NotUnderstood::Field(question.field.clone()))
-            } else if !a_rule_may_match(&question.match_type) {
-                Some(NotUnderstood::WayOfMatching(question.match_type.clone()))
-            } else {
-                None
-            }
+            what_a_condition_cannot_read(&question.field, &question.match_type)
         })
     }
 

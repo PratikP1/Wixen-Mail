@@ -83,6 +83,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A saved search that does not say what it looks at now says that, instead of
+  leaving a gap in the sentence.** It used to read "From my manager could not
+  run: it asks about the  of a message, which this version does not
+  understand", with nothing between "the" and "of". It now reads "it does not
+  say which part of a message it asks about". The same goes for a search that
+  does not say how to compare.
+
+  You would only see this on a search that was stored while opening a rule the
+  editor could not show still emptied the part it could not read.
+
 - **Your account branches no longer read out their email address unless they
   need to.** Every account in the folder tree used to read as its name followed
   by its address, so a branch was announced as "Work, ana@example.com, 12
