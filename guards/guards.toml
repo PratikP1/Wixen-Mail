@@ -1047,12 +1047,16 @@ red = [
 # back on the screen.
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named.
+# The CalDAV series day is the same rule reaching one more kind of deletion.
 name = "forgetting a calendar deletion a provider could still hand back is refused"
 file = "src/data/message_cache/calendar.rs"
 before = """                "DELETE FROM deleted_calendar_events
                  WHERE id = ?1 AND provider_event_id IS NULL","""
 after = """                "DELETE FROM deleted_calendar_events WHERE id = ?1","""
 red = [
+    "application::caldav_sync::tests::test_a_day_of_a_caldav_series_this_computer_deleted_is_not_written_back",
     "application::caldav_sync::tests::test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read",
     "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
@@ -1132,16 +1136,24 @@ red = [
 # "remembered for ever".
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: three more tests went red than this named,
+# all three of them a day of a series rather than a whole event. The three
+# tables this sweep drains hold a day's deletion the same way they hold an
+# event's, which is the rule and not a surprise.
 name = "only a deletion a provider took is let go of by the clock"
 file = "src/data/message_cache/mod.rs"
 before = """                    &format!("DELETE FROM {table} WHERE taken_at IS NOT NULL AND taken_at < ?1"),"""
 after = """                    &format!("DELETE FROM {table} WHERE taken_at IS NULL OR taken_at < ?1"),"""
 red = [
+    "application::caldav_sync::tests::test_a_day_of_a_caldav_series_this_computer_deleted_is_not_written_back",
     "application::caldav_sync::tests::test_a_deletion_with_no_address_at_the_server_is_kept_and_masks_the_read",
     "application::caldav_sync::tests::test_an_event_deleted_here_is_deleted_at_the_calendar_server_and_stops_being_owed",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_caldav_sync",
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
     "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
+    "application::calendar::tests::test_a_day_of_an_outlook_series_this_computer_deleted_is_not_written_back",
     "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
     "application::calendar::tests::test_a_deletion_in_a_subscribed_calendar_is_kept_so_the_feed_cannot_hand_it_back",
@@ -1446,6 +1458,9 @@ red = [
 # ── An edit that was not an edit ────────────────────────────────────────────
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named. It
+# asks the same question of an occurrence exception.
 name = "a save that changed nothing leaves the row alone"
 file = "src/presentation/managers.rs"
 before = """    if !holds_a_change(data, opened) {
@@ -1456,6 +1471,7 @@ after = """    if false {
     }"""
 red = [
     "presentation::managers::tests::test_a_day_of_a_series_opened_and_not_typed_in_is_not_counted_as_a_change",
+    "presentation::managers::tests::test_an_occurrence_exception_that_was_not_really_changed_is_handed_back_untouched",
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
 ]
 
@@ -1480,12 +1496,18 @@ red = [
 ]
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: two more tests went red than this named,
+# both of them the calendar-server half of a rule the record already carried
+# for Google and for Outlook.
 name = "one day taken off a series joins the days it had already taken off"
 file = "src/application/calendar.rs"
 before = """        exception_dates: Some(all),"""
 after = """        exception_dates: series.exception_dates.clone(),"""
 red = [
     "application::caldav_sync::tests::test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows",
+    "application::caldav_sync::tests::test_a_day_cancelled_at_a_calendar_server_is_taken_off_the_series_here",
+    "application::caldav_sync::tests::test_a_day_moved_at_a_calendar_server_and_then_cancelled_leaves_nothing_behind",
     "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
     "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
@@ -1693,8 +1715,19 @@ red = [
 # stored, which is the right fallback and looks the same as a date nobody has
 # checked.
 #
-# The break takes the two shapes written with a T back out. Fourteen tests in
-# six modules go red, which is the shape of the thing: one list, read everywhere.
+# The break takes the two shapes written with a T back out. Thirty-four tests in
+# twelve modules go red, which is the shape of the thing: one list, read
+# everywhere.
+#
+# That sentence said fourteen tests in six modules until 2026-09-02, and the
+# count is corrected here from the run of 2026-09-01 rather than from a hand
+# break of its own. Twenty more tests had arrived since the record was written,
+# and where they arrived is the finding rather than how many: undo send, free
+# and busy, the task writer and the spoken hour all read a stored moment
+# through this one list, and none of the four is a subject anybody writing this
+# record would have filtered for. Nothing here is a break that reaches too far.
+# The list is the rule, so a reader that stops knowing a shape stops knowing it
+# for every caller at once, and the only honest record of that is the whole set.
 
 [[guard]]
 name = "a moment written with a T is one the reader knows"
@@ -1711,19 +1744,39 @@ after = """const CLOCK_FACES: [&str; 2] = [
 ];"""
 red = [
     "application::caldav_sync::tests::test_what_an_answer_covers_decides_which_absences_mean_anything",
+    "application::calendar::tests::test_a_new_series_near_midnight_tells_outlook_one_day_for_the_rule_and_for_the_meeting",
+    "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
+    "application::calendar::tests::test_a_repeat_outlook_sends_is_stored_as_a_rule_and_not_as_a_page_of_its_own_shape",
+    "application::calendar::tests::test_a_repeating_event_made_here_reaches_outlook_carrying_its_repeat_rule",
+    "application::calendar::tests::test_a_series_created_at_outlook_is_one_meeting_here_after_the_pull_that_follows",
+    "application::calendar::tests::test_an_event_filed_under_several_categories_in_outlook_keeps_all_of_them",
+    "application::calendar::tests::test_every_field_the_event_form_can_set_is_answered_for_at_both_providers",
     "application::calendar::tests::test_every_shape_a_stored_time_comes_in_reaches_microsoft_readable",
+    "application::calendar::tests::test_the_date_of_the_month_outlook_is_told_is_the_date_the_meeting_lands_on",
+    "application::calendar::tests::test_the_day_outlook_is_told_a_series_starts_is_the_day_it_is_told_the_meeting_starts",
     "application::due::tests::test_a_reminder_goes_off_whichever_shape_its_time_was_stored_in",
+    "application::repeating::tests::test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back",
+    "application::sending_later::what_undo_send_is_about::test_a_message_whose_time_cannot_be_read_can_still_be_taken_back",
+    "application::sending_later::what_undo_send_is_about::test_an_empty_queue_and_a_queue_nothing_can_be_caught_in_are_different_answers",
+    "application::sending_later::what_undo_send_is_about::test_the_message_that_can_be_taken_back_gives_no_refusal",
+    "application::sending_later::what_undo_send_is_about::test_undo_send_takes_back_the_message_most_recently_sent",
+    "application::when_people_are_free::tests::test_a_timed_event_blocks_the_instants_its_own_zone_puts_it_at",
+    "application::when_people_are_free::tests::test_an_event_naming_a_zone_nobody_knows_is_read_where_the_person_is",
     "common::moment::tests::test_a_fraction_of_a_second_is_read_whichever_separator_it_uses",
     "common::moment::tests::test_a_value_padded_with_spaces_is_still_the_moment_it_names",
     "common::moment::tests::test_an_offset_is_not_mistaken_for_a_clock_face",
     "common::moment::tests::test_every_zoneless_shape_the_cache_holds_is_read_as_a_clock_face",
     "common::moment::tests::test_the_day_a_moment_falls_on_is_read_from_every_shape",
+    "presentation::date_display::tests::test_the_hour_spoken_comes_from_the_parsed_moment_not_the_characters",
     "presentation::managers::tests::test_correcting_a_spelling_keeps_a_clock_face_and_the_zone_it_is_named_in",
     "presentation::managers::tests::test_every_moment_the_editor_writes_is_a_shape_the_shared_reader_knows",
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
     "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
     "presentation::read_aloud::tests::test_every_shape_a_stored_moment_takes_is_read_as_a_date",
+    "service::caldav::tests::test_a_moment_moved_by_a_duration_keeps_the_shape_normalize_ical_datetime_gives_it",
+    "service::caldav::tests::test_a_real_radicale_master_and_override_in_a_legacy_iana_zone_alias_read_correctly",
     "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
+    "service::tasks_api::tests::test_a_completion_time_microsoft_gave_us_goes_back_as_the_same_hour",
 ]
 
 # -- A whole day sent to a calendar server is a day ------------------------
@@ -3116,6 +3169,11 @@ red = [
 # own words.
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named,
+# and it came from a feature this record has never opened. Emptying a folder
+# was built after the hand measurement above and asks this same question of the
+# same decision, so the record covered one more caller than it said it did.
 name = "not knowing where the trash is does not read as having nowhere to put it"
 file = "src/application/destinations.rs"
 before = """    else {
@@ -3127,6 +3185,7 @@ after = """    else {
 red = [
     "application::deleting_at_the_server::tests::test_a_delete_on_an_account_with_no_recognised_trash_asks_no_server_anything",
     "application::destinations::tests::test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message",
+    "application::emptying::tests::test_an_account_whose_trash_is_not_recognised_is_refused_rather_than_emptied",
     "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
 ]
 
@@ -3420,6 +3479,9 @@ red = [
 ]
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named,
+# a second reading of the same fetch against a server that answers.
 name = "a message the server hands over is not reported as one that is not there"
 file = "src/service/protocols/imap.rs"
 before = """                format!("UID FETCH {uid} BODY.PEEK[]"),
@@ -3436,6 +3498,7 @@ after = """                format!("UID FETCH {uid} BODY.PEEK[]"),
                     _ => None,
                 },"""
 red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_session_allowed_to_read_reaches_the_command",
     "service::protocols::imap::against_a_server_that_answers::test_the_message_a_server_sends_back_is_the_one_that_is_handed_over",
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -3509,12 +3572,20 @@ red = [
 # measurement at all was the one that decides what gets synced.
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: three more tests went red than this named.
+# All three count the gate rather than exercise it, which is the strongest kind
+# of extra to find here: taking one `may_i` away moves a census, so the record
+# was resting on three checks nobody had written down.
 name = "a subscription change refused by the setting says nothing to the server"
 file = "src/service/protocols/imap.rs"
 before = """        self.may_i("change which folders you are subscribed to")?;
         let outcome = if subscribed {"""
 after = """        let outcome = if subscribed {"""
 red = [
+    "service::outward::completeness::test_every_mailbox_write_is_on_the_mail_wire_list",
+    "service::outward::completeness::test_nothing_sends_a_changing_command_without_asking_the_gate",
+    "service::outward::completeness::test_the_read_gate_does_not_move_the_count_of_gated_writes",
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
 
@@ -3643,11 +3714,16 @@ red = [
 ]
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named,
+# and it is in the managers module rather than the window, which is a caller
+# this record's own two tests give no sign of.
 name = "a refusal is said as well as shown"
 file = "src/presentation/wx_app.rs"
 before = """            let _ = a11y.announce_topic(why, Priority::High, "refusal");"""
 after = """            let _ = why;"""
 red = [
+    "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
     "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
     "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
 ]
@@ -5890,12 +5966,17 @@ red = [
 # only checking itself.
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named,
+# the census that walks every way of asking and requires each to be a verb that
+# changes nothing.
 name = "a WebDAV read cannot carry a changing verb"
 file = "src/service/outward.rs"
 before = """            Self::Propfind => "PROPFIND","""
 after = """            Self::Propfind => "DELETE","""
 red = [
     "service::caldav::discovery_tests::test_what_is_asked_of_a_calendar_server_is_the_four_things_the_screen_needs",
+    "service::outward::a_question_is_not_a_change::test_every_way_of_asking_is_a_verb_that_changes_nothing",
     "service::outward::tests::test_a_read_that_is_not_a_get_can_only_ask_for_something",
 ]
 
@@ -7606,6 +7687,16 @@ before = """                AttributeValue::GmailLabels(labels) => Some(
 after = """                _ => None,"""
 red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
 
+# ── The seven ways of faking a flags reply ─────────────────────────────────
+#
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own. All seven records below break one function
+# seven ways, and every one of them named the same single unit test. Each now
+# reddens a second test as well, over a server that really answers, and that
+# test reaches both of the paths a FETCH of flags can take. So the seven have
+# stopped resting on one reader: the extra one arrived after these records were
+# written and nothing asked them again.
+
 [[guard]]
 name = "flags_from_attributes is a real computation, not a stub answering nothing"
 file = "src/service/protocols/imap.rs"
@@ -7615,7 +7706,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     None
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with no flags"
@@ -7626,7 +7720,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((0, vec![]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with one blank flag"
@@ -7637,7 +7734,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((0, vec!["".into()]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with a made-up flag"
@@ -7648,7 +7748,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((0, vec!["xyzzy".into()]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with no flags"
@@ -7659,7 +7762,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((1, vec![]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with one blank flag"
@@ -7670,7 +7776,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((1, vec!["".into()]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with a made-up flag"
@@ -7681,7 +7790,10 @@ before = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Optio
 after = """fn flags_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<(u32, Vec<String>)> {
     Some((1, vec!["xyzzy".into()]))
 }"""
-red = ["service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent"]
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths",
+    "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
+]
 
 [[guard]]
 name = "a bad status says the server did not understand, rather than a generic refusal"
@@ -8944,6 +9056,11 @@ red = [
 ]
 
 [[guard]]
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: one more test went red than this named,
+# and it is the export rather than a sync. Exporting reads the kept original,
+# so the budget this record is about decides what an export can hand over, and
+# no test named here said so.
 name = "the form a signed message arrived in is really kept"
 file = "src/data/message_cache/signed_original.rs"
 before = """            .is_ok_and(|size| size <= LARGEST_SIGNED_MESSAGE_KEPT_BYTES)"""
@@ -8956,6 +9073,7 @@ red = [
     "data::message_cache::signed_original::tests::test_a_signed_message_too_large_to_keep_still_says_it_was_signed",
     "data::message_cache::signed_original::tests::test_dropping_one_to_stay_under_the_budget_leaves_it_saying_it_was_signed",
     "data::message_cache::signed_original::tests::test_the_form_a_signed_message_arrived_in_comes_back_byte_for_byte",
+    "presentation::wx_app::what_an_export_holds::test_a_signed_message_reaches_the_export_as_it_arrived",
 ]
 
 # ── Signed mail brought in from a file said nothing about its signature ─────
@@ -9617,6 +9735,12 @@ red = [
 # Measured by hand on 2026-08-30 against the whole library: five tests, three of
 # them about ordinary moves rather than about the merge. That spread is the
 # evidence the two really do share one implementation.
+#
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: a sixth test went red, in a third family
+# again. Emptying a folder moves its messages to the trash through this same
+# path, so the spread the paragraph above calls evidence is wider than it was
+# when that paragraph was written.
 name = "a moved message is renumbered for the folder it lands in"
 file = "src/data/message_cache/messages.rs"
 before = """        let was = self.uid_of(message_id)?;
@@ -9627,6 +9751,7 @@ after = """        let was = self.uid_of(message_id)?;
         let uid = was.unwrap_or(1);
         let _unused = match numbering {"""
 red = [
+    "application::local_delete::tests::test_emptying_several_folders_does_them_all_and_names_them_in_order",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
     "data::message_cache::messages::tests::test_a_message_moved_into_a_folder_on_this_computer_still_counts_upward",
     "data::message_cache::messages::tests::test_two_messages_moved_into_one_folder_do_not_collide",
@@ -9801,13 +9926,17 @@ red = [
 # what makes it worth guarding: nothing about the shape of the code says which
 # of the two questions was asked.
 #
-# Nine tests, and two of them are the reason this record is worth keeping.
+# Ten tests, and two of them are the reason this record is worth keeping.
 # `local_delete`'s report counts what was left behind through this same
 # function, so breaking the count breaks the sentence a stopped empty says, in
 # a module whose name has nothing to do with counting. Neither would have been
 # guessed from reading the call site.
 #
-# Measured by hand on 2026-08-30 against the whole library: nine tests.
+# Measured by hand on 2026-08-30 against the whole library: nine tests. A tenth
+# was added on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own. It asks whether marking a folder gone
+# leaves the message rows alone, which is a third question this one count
+# answers.
 name = "the count in front of the confirmation comes from this computer and makes no round trip"
 file = "src/data/message_cache/messages.rs"
 before = """                    "SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND deleted = 0","""
@@ -9815,6 +9944,7 @@ after = """                    "SELECT total_count FROM folders WHERE id = ?1","
 red = [
     "application::local_delete::tests::test_emptying_a_folder_here_moves_every_message_to_the_trash",
     "application::local_delete::tests::test_emptying_with_the_permission_off_moves_nothing_and_says_which_setting",
+    "data::message_cache::folders::tests::test_marking_a_folder_gone_changes_no_message_row",
     "data::message_cache::messages::tests::test_a_folder_holding_nothing_counts_nothing_and_so_does_no_folder_at_all",
     "data::message_cache::messages::tests::test_a_message_already_deleted_is_neither_counted_nor_walked_again",
     "data::message_cache::messages::tests::test_emptying_the_same_folder_twice_finds_nothing_the_second_time",
@@ -10295,6 +10425,24 @@ red = [
 # the index forget what the body table forgot, so the two agree. It takes a
 # working search away. A message would become unfindable at the moment its
 # text is evicted rather than merely unsearchable by that text.
+#
+# Corrected on 2026-09-02 from the run of 2026-09-01, and from that run rather
+# than from a hand break of its own: seven more tests went red than this named,
+# against a record written days earlier. That is how fast this happens, and the
+# seven are worth reading rather than counting.
+#
+# One is findability again, asked at the search table instead of at the body
+# table. The other six are not about findability at all. They are the coverage
+# figure and the offer to fetch, which say how much of the mail a search could
+# look inside and offer to go and get the rest. That feature is built on the
+# search index, so re-indexing an evicted message moves its arithmetic, and
+# every one of those six now depends on eviction leaving the index alone.
+#
+# Written down as it was measured, and the spread is the point rather than a
+# problem with the break: the break is one line at the one place the rule
+# lives. What changed is what has come to depend on it. Six tests in a module
+# about searching from a box now rest on a decision recorded in the body
+# cache, and nobody who wrote either would have looked for the other.
 
 [[guard]]
 name = "evicting a message's text leaves it findable by the search box"
@@ -10306,6 +10454,13 @@ after = """                .map_err(|e| Error::Other(format!("Failed to evict me
             total -= bytes;"""
 red = [
     "data::message_cache::bodies::tests::test_an_evicted_message_stays_findable_by_a_word_from_its_text",
+    "data::message_cache::searching::finding_things::test_a_message_whose_text_was_evicted_is_still_text_the_box_can_look_inside",
+    "presentation::managers::tests::test_a_search_from_the_box_offers_the_fetch_the_saved_search_offers",
+    "presentation::managers::tests::test_a_search_from_the_box_says_how_much_of_the_mail_it_could_look_inside",
+    "presentation::managers::tests::test_a_search_from_the_box_that_found_nothing_still_says_what_it_could_look_inside",
+    "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_not_given_a_coverage_figure",
+    "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_offered_no_fetch",
+    "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 
 # ── The offer reaches the backfill, and says what it did ───────────────────
