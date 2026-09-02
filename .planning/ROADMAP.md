@@ -211,7 +211,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02.1-02-PLAN.md — A guard that reads documents can see a violation, and nothing says a test cannot build a window (criteria 7, 8)
+- [x] 02.1-02-PLAN.md — A guard that reads documents can see a violation, and nothing says a test cannot build a window (criteria 7, 8)
 
 **Wave 3** *(blocked on Wave 2)*
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-01-PLAN.md on branch gsd/plan-02.1-01, not merged. Task 4 is a decision awaiting Pratik; nothing the widened reading found needs fixing.
-last_updated: "2026-09-02T10:29:46.132Z"
-last_activity: 2026-09-02, 02.1-01 done, unmerged, nothing found needs fixing.
-state_head: 546a02a790b7e881487660ad381a61a843cb7f6f
+stopped_at: Completed 02.1-02-PLAN.md on branch gsd/plan-02.1-02, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
+last_updated: "2026-09-02T00:00:00.000Z"
+last_activity: 2026-09-02, 02.1-02 done, unmerged. Criteria 7 and 8 closed; the window claim was in ten comment blocks, not five.
+state_head: 55ecafc
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 32
-  completed_plans: 24
+  completed_plans: 25
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -198,6 +198,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P07 | one session | 3 tasks | 13 files |
 | Phase 02 P09 | one session | 2 tasks | 6 files |
 | Phase 02.1 P01 | 3h | 3 tasks | 6 files |
+| Phase 02.1 P02 | 2h | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -379,8 +380,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02T10:29:45.959Z
-Stopped at: Completed 02.1-01-PLAN.md on branch gsd/plan-02.1-01, not merged. Task 4 is a decision awaiting Pratik; nothing the widened reading found needs fixing.
+Last session: 2026-09-02
+Stopped at: Completed 02.1-02-PLAN.md on branch gsd/plan-02.1-02, not merged. Criteria 7 and 8 are closed. Two guards now carry a companion proving each can see a violation, and ten comment blocks in five files say a budget of one live window per process where they used to say a test cannot build one. The plan said five places in three files; two of the extra files were outside its list and were corrected anyway, because the criterion is about the whole tree.
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
