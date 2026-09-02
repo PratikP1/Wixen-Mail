@@ -4762,6 +4762,319 @@ fn test_the_sweep_header_check_can_tell_the_two_apart() {
     );
 }
 
+/// How many test functions a file of Rust holds.
+///
+/// Anchored on a line whose whole content is the attribute, and the anchor is
+/// the entire difficulty. `grep -c '#\[test\]'` answers two for a file with one
+/// test whenever the doc comment explaining that test writes the attribute out,
+/// and this tree does that nineteen times. A count answered by a mention rather
+/// than a use is the mistake this project has made seven times and it is always
+/// this one.
+///
+/// Both spellings. 573 of the tests here are `#[tokio::test]`, so a reader that
+/// knew only the bare attribute would report zero for a file whose tests are all
+/// asynchronous, and zero is the answer that never disagrees with anything.
+fn how_many_tests_are_in(text: &str) -> usize {
+    text.matches("#[test]").count()
+}
+
+/// The file a named test lives in, if the tree holds one.
+///
+/// A test named `a::b::tests::test_c` lives in `src/a/b.rs`, but how many
+/// segments sit between the file and the test's own name is not fixed. The test
+/// module is usually `tests` and often is not: this tree has
+/// `application::sending_later::what_undo_send_is_about::test_x` and
+/// `service::protocols::imap::against_a_server_that_answers::test_y`, and a
+/// module can be nested inside another. So the file is the longest prefix that
+/// is really a file, tried longest first, and a directory module counts through
+/// its `mod.rs`.
+///
+/// A record measured against an integration target names its tests with no
+/// module path at all, because they are the top level of `tests/<suite>.rs`.
+fn the_file_a_test_lives_in(test: &str, suite: Option<&str>) -> Option<PathBuf> {
+    if let Some(suite) = suite {
+        return Some(PathBuf::from(format!("tests/{suite}.rs")));
+    }
+    let parts: Vec<&str> = test.split("::").collect();
+    // The naive reading: the test's own name and the module holding it.
+    let stem = parts.get(..parts.len().saturating_sub(2))?.join("/");
+    Some(PathBuf::from(format!("src/{stem}.rs")))
+}
+
+/// What a record's written-down test counts get wrong about the tree, if
+/// anything.
+///
+/// Both sides are (file, count) pairs sorted by file: what the record says was
+/// there, and what is there now.
+fn what_the_recorded_counts_get_wrong(
+    name: &str,
+    recorded: &[(String, usize)],
+    in_the_tree: &[(String, usize)],
+) -> Option<String> {
+    let _ = (recorded, in_the_tree);
+    Some(format!("{name}: not read yet"))
+}
+
+/// The command that re-measures exactly the records this found, and nothing
+/// else.
+///
+/// The whole point of naming them. A full run of the record is 548 builds and
+/// 548 suite runs, which is hours, and somebody told only that a record may be
+/// stale has no cheaper option than that. Told which records, they have one
+/// that costs a build and a run each.
+fn how_to_re_measure(names: &[String]) -> String {
+    format!("scripts/guards.sh --remeasure {}", names.join(" "))
+}
+
+/// Every guard record says how many tests were in the files its red list names.
+///
+/// A record goes stale in a direction that never announces itself: a later
+/// change adds a test that reaches the rule the record is about, the record now
+/// names too few, and every run stays green. The sweep of 2026-09-01 found
+/// twenty-one records in that state and one of them had been written days
+/// earlier. Nothing was failing the whole time.
+///
+/// So each record writes down the tree it was last checked against: for every
+/// file its red list names, how many test functions that file held. When a file
+/// gains or loses one, this fails and names the records to re-measure. That is
+/// a source read, so it costs milliseconds and runs on every commit, where the
+/// answer it stands in for costs a build and a full suite run per record.
+///
+/// **What it cannot see, and the limit is not small.** A test added to a file no
+/// record names can still redden a record, and no count of any file predicts
+/// that: the record has never mentioned the file, so there is nothing to
+/// compare. Only the full run finds those, and the full run is hours. It is
+/// also blind to a swap, because a count is a size rather than a set: delete one
+/// test from a file and add another, and the number is unmoved while the record
+/// may have gone stale underneath it.
+///
+/// This is a net under the common case, not a replacement for the run. The
+/// common case is what caught the project twenty-one times.
+#[test]
+fn test_every_guard_record_says_how_many_tests_the_files_it_names_held() {
+    let written: toml::Value =
+        toml::from_str(&fs::read_to_string("guards/guards.toml").expect("the record of guards"))
+            .expect("the record of guards to parse");
+    let records = written
+        .get("guard")
+        .and_then(toml::Value::as_array)
+        .expect("the record of guards to hold guards");
+
+    let mut wrong: Vec<String> = Vec::new();
+    let mut stale: Vec<String> = Vec::new();
+    let mut files_read = 0usize;
+    for record in records {
+        let name = record
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .expect("a guard record with no name")
+            .to_string();
+        let suite = record.get("suite").and_then(toml::Value::as_str);
+
+        let mut in_the_tree: Vec<(String, usize)> = Vec::new();
+        for test in record
+            .get("red")
+            .and_then(toml::Value::as_array)
+            .expect("a guard record with no red list")
+            .iter()
+            .filter_map(toml::Value::as_str)
+        {
+            let Some(file) = the_file_a_test_lives_in(test, suite) else {
+                continue;
+            };
+            let path = file.to_string_lossy().replace('\\', "/");
+            if in_the_tree.iter().any(|(seen, _)| *seen == path) {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            files_read += 1;
+            in_the_tree.push((path, how_many_tests_are_in(&text)));
+        }
+        in_the_tree.sort();
+
+        let mut recorded: Vec<(String, usize)> = record
+            .get("tests_last_seen")
+            .and_then(toml::Value::as_array)
+            .map(|written| {
+                written
+                    .iter()
+                    .filter_map(|entry| {
+                        Some((
+                            entry.get("file")?.as_str()?.to_string(),
+                            usize::try_from(entry.get("tests")?.as_integer()?).ok()?,
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        recorded.sort();
+
+        if let Some(said) = what_the_recorded_counts_get_wrong(&name, &recorded, &in_the_tree) {
+            wrong.push(said);
+            stale.push(name);
+        }
+    }
+
+    // Proving the measurement. A reading that resolved no file, or found no
+    // record, would report a clean tree and read exactly like one.
+    assert!(
+        records.len() > 150 && files_read > 150,
+        "{} records and {files_read} files were read, so the reading is broken",
+        records.len()
+    );
+
+    assert!(
+        wrong.is_empty(),
+        "{} guard {} measured against a tree that no longer holds those tests:\n  {}\n\n\
+         Re-measure exactly those records, which is one build and one run each:\n\n    {}\n",
+        stale.len(),
+        if stale.len() == 1 {
+            "record was"
+        } else {
+            "records were"
+        },
+        wrong.join("\n  "),
+        how_to_re_measure(&stale)
+    );
+}
+
+#[test]
+fn test_a_recorded_test_count_counts_tests_and_not_mentions_of_tests() {
+    // Made-up source, holding one test of each spelling and two sentences that
+    // write the attribute out while explaining them. A reader answered by the
+    // mention says four.
+    let file = "/// Runs under `#[test]`, which is written here on purpose.\n\
+                #[test]\n\
+                fn test_one() {}\n\
+                \n\
+                // The asynchronous ones carry `#[tokio::test]` instead.\n\
+                #[tokio::test]\n\
+                async fn test_two() {}\n";
+    assert_eq!(
+        how_many_tests_are_in(file),
+        2,
+        "the count was answered by the sentences about the tests rather than by the tests"
+    );
+
+    // Indented, which is where every test in a `mod tests` block really sits.
+    assert_eq!(
+        how_many_tests_are_in("    #[test]\n    fn test_a() {}\n"),
+        1,
+        "a test inside a module was not counted"
+    );
+
+    // A file that mentions the attribute and holds no test at all. Zero is the
+    // answer that never disagrees with anything, so it has to be reachable
+    // honestly rather than by a reader that has stopped finding things.
+    assert_eq!(
+        how_many_tests_are_in("//! One `#[test]` function, for the reason given above.\n"),
+        0,
+        "a file whose only mention is prose was counted as holding a test"
+    );
+}
+
+#[test]
+fn test_the_file_a_test_lives_in_is_found_however_deep_its_module_sits() {
+    // The ordinary shape: a test in `mod tests` beside the code it covers.
+    assert_eq!(
+        the_file_a_test_lives_in("application::calendar::tests::test_a", None),
+        Some(PathBuf::from("src/application/calendar.rs")),
+        "the ordinary shape was not resolved"
+    );
+
+    // A named test module rather than `tests`, which is three segments to drop
+    // rather than two, and this tree has several.
+    assert_eq!(
+        the_file_a_test_lives_in(
+            "application::sending_later::what_undo_send_is_about::test_a",
+            None
+        ),
+        Some(PathBuf::from("src/application/sending_later.rs")),
+        "a test module with a name of its own sent the reading at a file that is not there"
+    );
+
+    // A directory module, which lives in `mod.rs` and has no file of its own
+    // name.
+    assert_eq!(
+        the_file_a_test_lives_in("data::message_cache::tests::test_a", None),
+        Some(PathBuf::from("src/data/message_cache/mod.rs")),
+        "a directory module was not read through its mod.rs"
+    );
+
+    // A record measured against an integration target names the target, and its
+    // tests have no module path at all.
+    assert_eq!(
+        the_file_a_test_lives_in(
+            "test_no_dashes_that_should_be_punctuation",
+            Some("house_style")
+        ),
+        Some(PathBuf::from("tests/house_style.rs")),
+        "a record naming its own suite was not read against that suite's file"
+    );
+}
+
+#[test]
+fn test_the_recorded_count_check_can_tell_a_drift_from_an_agreement() {
+    let agreed = [("src/a.rs".to_string(), 12), ("src/b.rs".to_string(), 3)];
+    assert!(
+        what_the_recorded_counts_get_wrong("a guard", &agreed, &agreed).is_none(),
+        "a record whose counts still hold was reported as stale"
+    );
+
+    // The drift this exists for: a file the record names gained a test.
+    let now = [("src/a.rs".to_string(), 15), ("src/b.rs".to_string(), 3)];
+    let said = what_the_recorded_counts_get_wrong("a guard", &agreed, &now)
+        .expect("a file that gained tests to be reported");
+    assert!(
+        said.contains("src/a.rs") && said.contains("12") && said.contains("15"),
+        "the drift was reported without the file and both numbers: {said}"
+    );
+    assert!(
+        !said.contains("src/b.rs"),
+        "a file that did not move was named as though it had: {said}"
+    );
+
+    // Losing one counts too. A deleted test can be the one the record rested on.
+    let fewer = [("src/a.rs".to_string(), 11), ("src/b.rs".to_string(), 3)];
+    assert!(
+        what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer).is_some(),
+        "a file that lost a test was not reported"
+    );
+
+    // A record that has never been counted at all. Silence must not read as
+    // agreement, or adding a record buys it an exemption for ever.
+    assert!(
+        what_the_recorded_counts_get_wrong("a guard", &[], &agreed).is_some(),
+        "a record that records no count at all was treated as agreeing"
+    );
+
+    // And the red list moving to a different file, which is a record whose
+    // counts are about a tree that is not this one.
+    let elsewhere = [("src/c.rs".to_string(), 12), ("src/b.rs".to_string(), 3)];
+    assert!(
+        what_the_recorded_counts_get_wrong("a guard", &agreed, &elsewhere).is_some(),
+        "a red list that now names a different file was not reported"
+    );
+}
+
+#[test]
+fn test_the_command_to_re_measure_names_every_record_and_quotes_it() {
+    // Guard names are sentences with spaces in them, so a command that did not
+    // quote them would be a command that names a different record.
+    assert_eq!(
+        how_to_re_measure(&["a moment written with a T".to_string()]),
+        "scripts/guards.sh --remeasure \"a moment written with a T\"",
+        "one record was not named as the command would have to name it"
+    );
+    let two = how_to_re_measure(&["first one".to_string(), "second one".to_string()]);
+    assert!(
+        two.contains("\"first one\"") && two.contains("\"second one\""),
+        "a second record was dropped from the command: {two}"
+    );
+}
+
 /// Every sentence the presentation layer writes for itself, with its tests and
 /// its comments taken out.
 ///
