@@ -1054,15 +1054,28 @@ mod nothing_hangs_off_the_control {
     ///
     /// `wxdragon` stores that data in a process-global map. `store_item_data`
     /// inserts into a static registry; `delete_all_items` calls the raw FFI and
-    /// removes nothing from it; and `cleanup_all_custom_data`, which is meant to
-    /// be the escape hatch, returns early on any item with no children and so
-    /// never clears a leaf. Every folder row is a leaf.
+    /// removes nothing from it; and `cleanup_all_custom_data`, which is meant
+    /// to be the escape hatch, removes nothing either. It walks the tree from
+    /// the root through `clean_item_and_children`, and that function calls
+    /// `remove_item_data` nowhere at all, for a leaf or for a branch. So a
+    /// control that is asked to clean up after itself clears nothing, and the
+    /// same call runs automatically when the control is destroyed, which is
+    /// where anybody reading this would expect the entries to go.
     ///
     /// The folder tree is emptied and rebuilt whenever a sync finishes, which
     /// happens on a timer rather than because anybody asked. So a row keyed on
     /// item data leaks one entry per folder per sync, for the life of the
-    /// process, and nothing in the suite would notice: memory that only grows
-    /// is not a failing test.
+    /// process.
+    ///
+    /// This used to say the leak had no observable behaviour, and that a
+    /// source read was therefore the only thing that could see it. It is
+    /// observable. The registry hands out its keys from a monotonic counter,
+    /// and `store_item_data` and `get_item_data` are both public, so storing a
+    /// throwaway entry either side of a build fences the keys that build issued
+    /// and asking the registry for each of them counts what is still there.
+    /// `tests/tree_rows_leave_no_registry_entry.rs` does that for the two
+    /// dialogs it can build; this tree is drawn inside a running application
+    /// and cannot be reached that way, so it keeps the source read.
     ///
     /// The pattern instead is a vector held beside the control, paired with it
     /// by position. `WxUIState::tree_rows` is that vector.
@@ -1075,16 +1088,11 @@ mod nothing_hangs_off_the_control {
     fn test_no_row_of_a_tree_hangs_its_identity_off_the_control() {
         use crate::common::what_ships::what_ships;
 
-        // Two files that already do it, named rather than quietly skipped.
-        // Both are real instances of the same leak and neither is this plan's
-        // to fix: the destination picker and the conversation view are built
-        // when a dialog opens rather than on a timer, so each leaks per opening
-        // rather than per sync. They are written down in the phase's deferred
-        // items. Naming them keeps them visible while still failing any new
-        // file that starts doing it, which is what the folder tree must never
-        // do.
-        let already_doing_it = ["wx_destination.rs", "wx_thread_view.rs"];
-
+        // Nothing is excepted. Two files were, the destination picker and the
+        // conversation view, and both were fixed in 02.1-05: they hold their
+        // rows in a vector beside the control now, the way this tree does. So
+        // every `.rs` file in the layer is read, and a file that starts doing
+        // this is what the check is for.
         let mut hung: Vec<String> = Vec::new();
         for entry in std::fs::read_dir("src/presentation").expect("the presentation layer") {
             let path = entry.expect("a file").path();
@@ -1096,9 +1104,6 @@ mod nothing_hangs_off_the_control {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            if already_doing_it.contains(&named.as_str()) {
-                continue;
-            }
             let source = std::fs::read_to_string(&path).expect("a file to read");
             let ships = what_ships(&source);
             for call in [

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 360 records have arrived since and have not been through it.
+# 364 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11368,27 +11368,41 @@ tests_last_seen = [
 # `wxdragon` keeps tree item data in a process-global map. `store_item_data`
 # inserts into a static registry, `delete_all_items` calls the raw FFI and
 # removes nothing from it, and `cleanup_all_custom_data`, the escape hatch,
-# returns early on any item with no children and so never clears a leaf. Every
-# folder row is a leaf. This tree is emptied and rebuilt whenever a sync
-# finishes, on a timer, so one call here leaks an entry per folder per sync for
-# the life of the process.
+# removes nothing either: it walks the tree through `clean_item_and_children`,
+# and that function calls `remove_item_data` nowhere at all, for a leaf or for a
+# branch. This tree is emptied and rebuilt whenever a sync finishes, on a timer,
+# so one call here leaks an entry per folder per sync for the life of the
+# process.
 #
-# Nothing in a test suite notices memory that only grows, which is why this is a
-# source read rather than a behaviour test. It reads the shipping half of each
-# file with `what_ships`, because this codebase has test modules sitting between
-# stretches of shipping code and cutting at the first `#[cfg(test)]` would call
-# the rest clean.
+# This is a source read rather than a behaviour test because this tree is drawn
+# inside a running application, so no test can fence a build of it and count
+# what it left. It reads the shipping half of each file with `what_ships`,
+# because this codebase has test modules sitting between stretches of shipping
+# code and cutting at the first `#[cfg(test)]` would call the rest clean.
+#
+# Its exception list is empty as of 02.1-05. The two dialogs on it, the
+# destination picker and the conversation view, hold their rows beside the
+# control now.
 #
 # The break is the obvious way somebody would write this feature: put the
 # identity on the item, where it looks like it belongs.
 #
 # Measured by hand on 2026-08-30 against the whole library: one test.
 #
-# One, and that is the point rather than a weakness. There is no second test
-# that could see this: the leak has no observable behaviour, so the source read
-# is the only thing standing between this tree and an unbounded leak. If this
-# record ever reddens nothing, the check has stopped reading the file rather
-# than the file having stopped calling it, and
+# One, and the reason given here for that was wrong. It said the leak has no
+# observable behaviour, so a source read was the only thing that could see it.
+# The leak is observable: `wxdragon`'s registry hands out its keys from a
+# monotonic counter and `store_item_data` and `get_item_data` are both public,
+# so a throwaway entry either side of a build fences the keys that build issued
+# and asking the registry for each of them counts what is still there.
+# `tests/tree_rows_leave_no_registry_entry.rs` does that, and the two records at
+# the bottom of this file are its measurements.
+#
+# What is true is narrower and still holds for this record: this tree is drawn
+# inside a running application rather than by a builder a test can call, so
+# nothing can fence a build of it, and the source read is what stands between it
+# and an unbounded leak. If this record ever reddens nothing, the check has
+# stopped reading the file rather than the file having stopped calling it, and
 # `test_the_reading_can_see_such_a_call_when_there_is_one` beside it is what
 # says which.
 name = "no row in the folder tree hangs data off the control"
@@ -12905,4 +12919,135 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 36 },
     { file = "tests/manager_delete_stays_open.rs", tests = 1 },
+]
+
+[[guard]]
+# The conversation view starts hanging the message id off the row again.
+#
+# The obvious way to write this feature, and what it did until 02.1-05: the id
+# looks like it belongs on the item. It does not go on the item.
+# `set_custom_data` puts it in a process-global map in `wxdragon` and stores the
+# map key on the row, and nothing takes it out again: `delete_all_items` goes
+# straight to wxWidgets, which has never heard of the map, and
+# `cleanup_all_custom_data` walks the tree through `clean_item_and_children`,
+# which calls `remove_item_data` nowhere at all. So every opening of this dialog
+# left one entry per message behind for the life of the program.
+#
+# The record above `no row in the folder tree hangs data off the control` says
+# that leak has no observable behaviour and that a source read is therefore the
+# only thing that can see it. That was wrong, and this record is the evidence.
+# The registry hands out its keys from a monotonic counter and both
+# `store_item_data` and `get_item_data` are public, so a throwaway entry either
+# side of a build fences the keys that build issued, and asking the registry for
+# each of them counts what is still there.
+#
+# Measured by hand on 2026-09-02 against this target: one test, which is the
+# only test in it. The break leaves three entries behind for a three-message
+# conversation, and the failure says so.
+name = "the conversation view hangs its message ids off the control"
+file = "src/presentation/wx_thread_view.rs"
+suite = "tree_rows_leave_no_registry_entry"
+before = """        items[row.node] = Some(item);"""
+after = """        tree.set_custom_data(&item, nodes[row.node].message_id);
+        items[row.node] = Some(item);"""
+red = [
+    "test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "tests/tree_rows_leave_no_registry_entry.rs", tests = 1 },
+]
+
+[[guard]]
+# The destination picker starts hanging the folder identifier off the row again.
+#
+# The same leak as the record above, through the other call.
+# `append_item_with_data` reads as though the identifier travels with the row,
+# and this dialog's own comment used to argue for it on those grounds. It goes
+# into the same process-global map, so every opening of the move dialog left one
+# entry per folder behind.
+#
+# Measured by hand on 2026-09-02 against this target: one test, which is the
+# only test in it. The break leaves two entries behind for a two-folder account,
+# and the failure says which dialog left them.
+name = "the destination picker hangs its folder identifiers off the control"
+file = "src/presentation/wx_destination.rs"
+suite = "tree_rows_leave_no_registry_entry"
+before = """                let Some(row) = tree.append_item(&account, &place.name, None, None) else {"""
+after = """                let Some(row) =
+                    tree.append_item_with_data(&account, &place.name, place.id.clone(), None, None)
+                else {"""
+red = [
+    "test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_destination.rs", tests = 6 },
+    { file = "tests/tree_rows_leave_no_registry_entry.rs", tests = 1 },
+]
+
+[[guard]]
+# An account heading starts answering with the first folder under it.
+#
+# The row somebody landed on is an account name, which is not a place mail can
+# go. Answering with a folder under it files the message somewhere they never
+# named, and everything reports success, so this is the worst thing this dialog
+# can do and it is the reason the entry for an account row is empty.
+#
+# The break is the plausible convenience: rather than pushing nothing for the
+# heading, push the first place under it, so a stray Enter on the account still
+# "works".
+#
+# The pure tests beside the dialog cannot see this. They ask what a position
+# means against a fixture they write themselves, and this break is in what the
+# build puts in the vector. Only a live control answers it, which is what this
+# target is for.
+#
+# Measured by hand on 2026-09-02 against this target: one test, which is the
+# only test in it. It reddens in three places at once, the vector's contents and
+# both account rows, and names each.
+name = "an account row in the destination picker answers with a folder"
+file = "src/presentation/wx_destination.rs"
+suite = "tree_dialogs_resolve_the_row_somebody_is_on"
+before = """            destinations.push(None);"""
+after = """            destinations.push(branch.places.first().map(|place| place.id.clone()));"""
+red = [
+    "test_choosing_a_row_in_either_dialog_resolves_to_that_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_destination.rs", tests = 6 },
+    { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
+]
+
+[[guard]]
+# The conversation view resolves a selection to the row after the one chosen.
+#
+# The pairing between the walk and the vector beside it is exact or it is
+# nothing, and an off-by-one is how it stops being exact: every row opens the
+# message under it and the last opens the whole conversation. Nothing about that
+# looks wrong in the source.
+#
+# A companion to the record above rather than a repeat of it. That one is about
+# what the build puts in the vector; this is about how a position is read back
+# out, and the two fail in different places. Both are needed here because this
+# target covers two dialogs and a record measures one break.
+#
+# The library's own tests see this break too, and they are not in this list
+# because a record is measured against one target: `--lib` would name
+# `test_a_row_resolves_to_its_own_message` beside `wx_thread_view`. What this
+# record adds is that the break is caught against a real control, where the
+# position comes from the tree rather than from a test's arithmetic.
+#
+# Measured by hand on 2026-09-02 against this target: one test, which is the
+# only test in it. It names all three conversation rows.
+name = "the conversation view answers with the row after the one chosen"
+file = "src/presentation/wx_thread_view.rs"
+suite = "tree_dialogs_resolve_the_row_somebody_is_on"
+before = """    match position.and_then(|position| ids.get(position)) {"""
+after = """    match position.and_then(|position| ids.get(position + 1)) {"""
+red = [
+    "test_choosing_a_row_in_either_dialog_resolves_to_that_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
 ]

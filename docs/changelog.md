@@ -83,6 +83,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Opening the move window or the conversation view used to make Wixen Mail
+  hold a little more memory every time, and never give it back.** Each row of
+  either window left something behind when the window closed, so filing fifty
+  messages left fifty times as much behind as filing one. It was small per row
+  and it only ever grew, so a long session accumulated it and only closing the
+  program cleared it. Both windows now let go of everything when they close.
+
+  Nothing about either window changed to look at or to hear. The move window
+  still opens on the folder you last used, still gives you nothing if you
+  choose an account name rather than a folder under it, and still files into
+  the folder you chose. The conversation view still opens the message you are
+  on, and still opens the whole conversation from the first row.
+
+  **The cause is in the toolkit Wixen Mail is built on, and it is written down
+  rather than papered over.** Asking one of its tree controls to clean up after
+  itself does nothing at all: the routine walks every row and releases none of
+  them, and that same routine is what runs when the window closes. There is no
+  way to use that part of the toolkit and not leak, so Wixen Mail stopped using
+  it. This has not been reported upstream yet.
+
 - **Two pages that ship with Wixen Mail said folder management was not built.
   It is.** You can make a folder on the server, rename it, move it under
   another folder or back to the top level, delete it with everything inside,
