@@ -603,4 +603,150 @@ mod tests {
             );
         }
     }
+
+    /// Every word `mail_parser` reads as a forward marker.
+    ///
+    /// Read out of `mail-parser 0.11.5`, `parsers/fields/thread.rs`,
+    /// `is_fwd_prefix`, on 2026-09-02. It lives here and in no other place in
+    /// this tree, and that is the point: production code asks the dependency
+    /// rather than holding a copy, so this is the only list that can go stale,
+    /// and when the dependency changes either set the sweep below fails and
+    /// somebody measures the probes again.
+    const EVERY_FORWARD_MARKER: [&str; 22] = [
+        "fwd",
+        "fw",
+        "rv",
+        "enc",
+        "vs",
+        "doorst",
+        "vl",
+        "tr",
+        "wg",
+        "πρθ",
+        "הועבר",
+        "továbbítás",
+        "i",
+        "fs",
+        "trs",
+        "vb",
+        "pd",
+        "i̇lt",
+        "yml",
+        "إعادة توجيه",
+        "回覆",
+        "轉寄",
+    ];
+
+    /// Every word `mail_parser` reads as a reply marker. Same source, same day.
+    const EVERY_REPLY_MARKER: [&str; 18] = [
+        "re", "res", "sv", "antw", "ref", "aw", "απ", "השב", "vá", "r", "rif", "bls", "odp", "ynt",
+        "atb", "رد", "回复", "转发",
+    ];
+
+    /// The one forward marker with a space in it, which never reaches the
+    /// question.
+    ///
+    /// `opening_marker` takes everything before the first colon as one token
+    /// and asks `mail_parser` about that whole token. `thread_name` stops at
+    /// the first word, finds `إعادة` is neither kind of marker, and gives the
+    /// subject back unchanged, so the token is not a marker at all and neither
+    /// probe is ever put to it. Named here rather than quietly skipped: this
+    /// is a real gap, and a subject opening with it takes a marker it does not
+    /// need.
+    const THE_MARKER_WITH_A_SPACE_IN_IT: &str = "إعادة توجيه";
+
+    #[test]
+    fn test_a_one_letter_forward_marker_is_a_forward_marker() {
+        // Hungarian writes `I:` for a forward. `trim_trailing_fwd` wants a
+        // parenthesised word of more than one character, so the probe that
+        // asks it reads this as not-a-forward, and the code then concludes it
+        // is a reply because the two sets do not overlap.
+        assert!(
+            opens_with_a_forward_marker("I: Ebéd"),
+            "the Hungarian one-letter forward marker is not read as a forward marker"
+        );
+        assert!(
+            !opens_with_a_reply_marker("I: Ebéd"),
+            "the Hungarian one-letter forward marker is read as a reply marker"
+        );
+    }
+
+    #[test]
+    fn test_a_one_letter_reply_marker_is_still_a_reply_marker() {
+        // The other one-letter marker, and the answer that must not move.
+        // Italian writes `R:` for a reply, and a fix for the forward above
+        // that started calling this a forward would swap one wrong answer for
+        // another.
+        assert!(
+            opens_with_a_reply_marker("R: Pranzo"),
+            "the Italian one-letter reply marker is not read as a reply marker"
+        );
+        assert!(
+            !opens_with_a_forward_marker("R: Pranzo"),
+            "the Italian one-letter reply marker is read as a forward marker"
+        );
+    }
+
+    #[test]
+    fn test_every_marker_the_dependency_knows_is_read_as_the_kind_it_is() {
+        for marker in EVERY_FORWARD_MARKER {
+            if marker == THE_MARKER_WITH_A_SPACE_IN_IT {
+                let subject = format!("{marker}: hello");
+                assert!(
+                    !opens_with_a_forward_marker(&subject) && !opens_with_a_reply_marker(&subject),
+                    "{marker:?} is now read as a marker of some kind, so the reason it is \
+                     excluded here has changed and the exclusion wants measuring again"
+                );
+                continue;
+            }
+            let subject = format!("{marker}: hello");
+            assert!(
+                opens_with_a_forward_marker(&subject),
+                "{marker:?} is a forward marker to mail_parser and not to this"
+            );
+            assert!(
+                !opens_with_a_reply_marker(&subject),
+                "{marker:?} is a forward marker to mail_parser and a reply marker to this"
+            );
+        }
+
+        for marker in EVERY_REPLY_MARKER {
+            let subject = format!("{marker}: hello");
+            assert!(
+                opens_with_a_reply_marker(&subject),
+                "{marker:?} is a reply marker to mail_parser and not to this"
+            );
+            assert!(
+                !opens_with_a_forward_marker(&subject),
+                "{marker:?} is a reply marker to mail_parser and a forward marker to this"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_list_of_markers_ships() {
+        // The whole reason both answers are asked of `mail_parser` by probe is
+        // that the list of forty markers in seventeen languages belongs to the
+        // dependency that maintains it. A copy here would be wrong in a
+        // language nobody in this project reads, and would go wrong silently.
+        //
+        // Comments are cut as well as the test half, because the doc comments
+        // above the probes name markers on purpose and naming one in a
+        // sentence is not holding a list.
+        let source = std::fs::read_to_string("src/application/conversations.rs")
+            .expect("this module's own source");
+        let ships: String = crate::common::what_ships::what_ships(&source)
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for marker in EVERY_FORWARD_MARKER.iter().chain(EVERY_REPLY_MARKER.iter()) {
+            assert!(
+                !ships.contains(&format!("\"{marker}\"")),
+                "{marker:?} is written into the shipping half of this module, so the list of \
+                 markers has started being kept here as well as in the dependency"
+            );
+        }
+    }
 }

@@ -3461,6 +3461,22 @@ mod tests {
     }
 
     #[test]
+    fn test_replying_to_a_one_letter_forward_marker_says_it_is_a_reply() {
+        // Hungarian writes `I:` for a forward. Read as a reply marker, this
+        // subject already looked like a reply, so the reply went out with no
+        // reply marker on it at all and the person receiving it saw new mail
+        // rather than an answer.
+        assert_eq!(format_reply_subject("I: Ebéd"), "Re: I: Ebéd");
+    }
+
+    #[test]
+    fn test_forwarding_a_one_letter_forward_marker_does_not_stack_a_second() {
+        // The other half of the same wrong answer: not recognised as the
+        // forward marker it is, so forwarding wrote a second one in front.
+        assert_eq!(format_forward_subject("I: Ebéd"), "I: Ebéd");
+    }
+
+    #[test]
     fn test_a_mailing_list_tag_is_not_a_marker_and_still_takes_one() {
         // `mail_parser` takes a bracketed tag off as well as a marker, so
         // "would taking markers off change this subject" answers yes here and
