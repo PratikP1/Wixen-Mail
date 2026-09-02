@@ -83,6 +83,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Replying to a message forwarded to you in Hungarian used to send a reply
+  that did not say it was one.** Hungarian marks a forward with `I:`. Wixen
+  Mail read that as the mark of a reply, so replying to `I: Ebéd` sent the
+  subject back unchanged and the person reading it saw new mail rather than an
+  answer. Forwarding it had the opposite fault: the mark already there was not
+  recognised, so a second one went in front of it and the subject read
+  `Fwd: I: Ebéd`.
+
+  Both are fixed, and every mark of either kind that Wixen Mail can meet is now
+  read as the kind it is. One is still not: Arabic writes a forward as two
+  words, and a subject opening that way takes a mark it does not need.
+
 - **Sorting a message list by Safety used to put the wrong messages at the
   top.** The column holds four verdicts: nothing, Suspicious, Spam and
   Phishing. Sorting by it put them in alphabetical order rather than in order

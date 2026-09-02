@@ -10,9 +10,11 @@
 //! `AW: Angebot` produced `Re: AW: Angebot` and the chain grew every time.
 //!
 //! Neither answer is written here. `mail_parser` already implements RFC 5256's
-//! base-subject algorithm with nineteen reply markers and twenty-two forward
-//! markers across seventeen languages, and a list of markers kept here would be
-//! wrong in a language nobody here reads.
+//! base-subject algorithm with eighteen reply markers and twenty-two forward
+//! markers, and a list of markers kept here would be wrong in a language nobody
+//! here reads. This used to say nineteen reply markers; the two sets in
+//! `mail-parser 0.11.5` were counted on 2026-09-02 and the count is in the
+//! length of the two arrays in this module's tests, which the compiler checks.
 //!
 //! # This is a label rule, not a threading rule
 //!
@@ -293,9 +295,8 @@ pub fn opens_with_a_forward_marker(subject: &str) -> bool {
 /// A marker is a word ending in a colon, optionally carrying the RFC's
 /// bracketed count: `Re:`, `AW:`, `Re[2]:`, `fwd[5]:`. Finding where it ends is
 /// reading the shape RFC 5256 defines; deciding whether the word inside it is a
-/// marker is the part that needs a list of forty-one words in seventeen
-/// languages, and that part is asked of `mail_parser` rather than answered
-/// here.
+/// marker is the part that needs a list of forty words in many languages, and
+/// that part is asked of `mail_parser` rather than answered here.
 ///
 /// `None` for a subject that opens with anything else, which includes a
 /// bracketed list tag: `[mailing-list] hello` is not a reply, so replying to it
@@ -320,18 +321,35 @@ fn is_a_marker(word: &str) -> bool {
 /// Whether `mail_parser` reads this word as a forward marker specifically.
 ///
 /// The forward set is the only one of the two that can be asked about on its
-/// own: `trim_trailing_fwd` removes a trailing `(fwd)` for exactly the words in
-/// it and leaves every other word alone.
+/// own, and there are two ways to ask it. Either answering yes is a yes:
+/// neither says yes to a reply marker or to an ordinary word, and between them
+/// they cover every forward marker a subject can open with.
 ///
-/// One marker is read wrongly by this, and it is worth saying rather than
-/// hiding: `trim_trailing_fwd` ignores a parenthesised word of a single
-/// character, so Hungarian's `I:` is taken for a reply marker. The cost is that
-/// forwarding a Hungarian forward writes `Fwd: I: ...` instead of leaving it
-/// alone. Forty of the forty-one markers are read correctly, against one that
-/// was read correctly before this change.
+/// The first hands the word to `trim_trailing_fwd`, which takes a trailing
+/// `(fwd)` off for exactly the words in the forward set and leaves every other
+/// word alone. It wants the parenthesised token to be longer than one
+/// character, so it cannot see Hungarian's `I:`, and that word was read as a
+/// reply marker until the second probe was put beside it.
+///
+/// The second hands the word to `thread_name` inside square brackets, where the
+/// two sets are treated differently rather than alike: a token followed by a
+/// colon in brackets raises a forward flag when it is a forward prefix, and a
+/// reply prefix there is ignored unless a forward prefix came first. So the
+/// word and one other inside brackets comes back as the other word alone for a
+/// forward prefix and unchanged for anything else, whatever its length.
+///
+/// What the pair does not cover, and why nothing rests on it: Arabic's forward
+/// marker is two words, and neither probe answers yes for it. Neither is ever
+/// put to it either. `opening_marker` hands over everything before the first
+/// colon as one token, and `thread_name` reads only the first word of that
+/// token, finds it is neither kind of marker and gives the subject back
+/// unchanged, so `is_a_marker` has already said no.
 fn is_a_forward_marker(word: &str) -> bool {
-    trim_trailing_fwd(&format!("{A_WORD_THAT_IS_NOT_A_MARKER} ({word})"))
-        == A_WORD_THAT_IS_NOT_A_MARKER
+    let trailing = trim_trailing_fwd(&format!("{A_WORD_THAT_IS_NOT_A_MARKER} ({word})"))
+        == A_WORD_THAT_IS_NOT_A_MARKER;
+    let bracketed = thread_name(&format!("[{word}: {A_WORD_THAT_IS_NOT_A_MARKER}]"))
+        == A_WORD_THAT_IS_NOT_A_MARKER;
+    trailing || bracketed
 }
 
 /// The other word in both probes above.
@@ -726,9 +744,9 @@ mod tests {
     #[test]
     fn test_no_list_of_markers_ships() {
         // The whole reason both answers are asked of `mail_parser` by probe is
-        // that the list of forty markers in seventeen languages belongs to the
-        // dependency that maintains it. A copy here would be wrong in a
-        // language nobody in this project reads, and would go wrong silently.
+        // that the list of forty markers belongs to the dependency that
+        // maintains it. A copy here would be wrong in a language nobody in
+        // this project reads, and would go wrong silently.
         //
         // Comments are cut as well as the test half, because the doc comments
         // above the probes name markers on purpose and naming one in a

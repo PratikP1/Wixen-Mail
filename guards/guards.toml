@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 369 records have arrived since and have not been through it.
+# 370 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10672,7 +10672,7 @@ red = [
     "presentation::wx_compose::tests::test_forwarding_a_message_passes_its_pictures_on",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 41 },
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
 ]
 
 [[guard]]
@@ -13216,4 +13216,38 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
     { file = "tests/wired.rs", tests = 61 },
+]
+
+[[guard]]
+# Criterion 2.1-13. `trim_trailing_fwd` wants a parenthesised token longer than
+# one character, so the probe built on it cannot see Hungarian's one-letter
+# `I:`, and the code then concludes reply because the two sets do not overlap.
+# A second probe reads the same set out of `thread_name`'s bracket handling,
+# where a forward prefix and a reply prefix are treated differently, and it can
+# see a one-character word.
+#
+# The break removes the second probe and leaves the first, which is the state
+# this was in from 01-11 until 2026-09-02. It compiles, and thirty-nine of the
+# forty markers are still read correctly.
+#
+# Measured by hand on 2026-09-02 against the whole library: four, two on the
+# classification and two on what a person sees, which is what a marker read
+# wrongly costs. Replying wrote no reply marker and forwarding wrote a second
+# forward marker.
+name = "a one-letter forward marker is read as a forward marker"
+file = "src/application/conversations.rs"
+before = """    let bracketed = thread_name(&format!("[{word}: {A_WORD_THAT_IS_NOT_A_MARKER}]"))
+        == A_WORD_THAT_IS_NOT_A_MARKER;
+    trailing || bracketed"""
+after = """    let bracketed = false;
+    trailing || bracketed"""
+red = [
+    "application::conversations::tests::test_a_one_letter_forward_marker_is_a_forward_marker",
+    "application::conversations::tests::test_every_marker_the_dependency_knows_is_read_as_the_kind_it_is",
+    "presentation::wx_compose::tests::test_forwarding_a_one_letter_forward_marker_does_not_stack_a_second",
+    "presentation::wx_compose::tests::test_replying_to_a_one_letter_forward_marker_says_it_is_a_reply",
+]
+tests_last_seen = [
+    { file = "src/application/conversations.rs", tests = 26 },
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
 ]
