@@ -770,6 +770,34 @@ pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
     (!is_this_computer(named)).then(|| named.clone())
 }
 
+/// Which context menu the row under the cursor offers, or none at all.
+///
+/// The folder tree is the one control here holding twelve kinds of row, and
+/// until this existed it reported one focus for eleven of them: everything that
+/// was not a saved search answered with a folder's menu. So an account branch,
+/// the Favourites heading, the Labels heading and "On this computer" all
+/// offered fetching older messages, on rows that have no messages to fetch.
+///
+/// Answered here, where a row's identity lives, for the reason
+/// [`what_the_gesture_moves`] gives: a question about a row can be tested
+/// without a window, and a chain of `if`s inside an event handler cannot.
+///
+/// `None` means the menu key does nothing on this row, which is a decision
+/// rather than an oversight. `tests/wired.rs` already records the same one for
+/// the reminders sidebar: it holds buckets rather than things somebody made,
+/// there is nothing to do to one, and so it has no menu rather than an empty
+/// one. Four rows here are in that position and each is named below.
+pub fn which_menu_a_row_offers(row: &WhichRow) -> Option<crate::application::context_menu::Focus> {
+    use crate::application::context_menu::Focus;
+    // The two-arm answer the folder tree's closure gives today, moved here
+    // unchanged so the tests below measure the fault rather than describe it.
+    // Right for three kinds of row out of twelve.
+    match row {
+        WhichRow::SavedSearch { .. } => Some(Focus::SavedSearch),
+        _ => Some(Focus::MailFolders),
+    }
+}
+
 /// The labels from the top level down to one row, that row's own last.
 ///
 /// How a row is found again on a control that cannot be asked which row it is
@@ -3399,5 +3427,202 @@ mod tests {
             path: "INBOX".to_string(),
         };
         assert_ne!(one.stored(), two.stored());
+    }
+}
+
+/// Which menu each kind of row offers.
+///
+/// The folder tree holds twelve kinds of row and used to report one focus for
+/// eleven of them. These hold [`which_menu_a_row_offers`] to a decision per
+/// kind, and to the two rules that decide it: a command is offered only where
+/// the row can carry it out, and a command that reads the open account is
+/// offered only where landing on the row set the open account from the row.
+#[cfg(test)]
+mod which_menu {
+    use super::*;
+    use crate::application::context_menu::{Action, Focus, entries_for};
+
+    /// One row of every kind, so a walk over these is a walk over the enum.
+    fn one_of_every_kind() -> Vec<WhichRow> {
+        vec![
+            WhichRow::AllInboxes,
+            WhichRow::Account("a".to_string()),
+            WhichRow::Folder {
+                account: "a".to_string(),
+                path: "INBOX".to_string(),
+            },
+            WhichRow::Favourites,
+            WhichRow::PinnedIn("a".to_string()),
+            WhichRow::Pinned {
+                account: "a".to_string(),
+                path: "INBOX".to_string(),
+            },
+            WhichRow::OnThisComputer,
+            WhichRow::Labels,
+            WhichRow::Label("t1".to_string()),
+            WhichRow::SavedSearches,
+            WhichRow::SavedSearchesIn("a".to_string()),
+            WhichRow::SavedSearch {
+                account: "a".to_string(),
+                id: "s1".to_string(),
+            },
+        ]
+    }
+
+    /// Which kinds of row must answer the same menu as each other.
+    ///
+    /// A match with no catch-all, so a thirteenth kind of row cannot be added
+    /// without this failing to compile. That is the half of the criterion no
+    /// assertion can carry: the compiler asking the question rather than a
+    /// person remembering to.
+    fn the_same_menu_as(row: &WhichRow) -> &'static str {
+        match row {
+            // A pinned folder is a copy of a folder, and every command on that
+            // menu reaches the folder it copies.
+            WhichRow::Folder { .. } | WhichRow::Pinned { .. } => "a folder",
+            WhichRow::SavedSearch { .. } => "a saved search",
+            // Its own branch: the place its folders live, so a folder made
+            // here lands under this row.
+            WhichRow::Account(_) => "an account's own branch",
+            // The same account named from inside a group. A folder made here
+            // would not appear under this row, and the reordering gesture
+            // rearranges nothing on it.
+            WhichRow::PinnedIn(_) | WhichRow::SavedSearchesIn(_) => "an account inside a group",
+            WhichRow::Labels | WhichRow::Label(_) => "labels",
+            // The four rows that name no account and hold nothing of their
+            // own. Nothing this program does acts on one of them.
+            WhichRow::AllInboxes
+            | WhichRow::Favourites
+            | WhichRow::OnThisComputer
+            | WhichRow::SavedSearches => "nothing of its own",
+        }
+    }
+
+    #[test]
+    fn test_every_kind_of_row_is_asked_which_menu_it_offers() {
+        // The walk is over `one_of_every_kind` and `the_same_menu_as` is
+        // exhaustive, so a kind left out of the list is a kind whose menu
+        // nothing below checks. Both numbers are counted here.
+        let kinds = one_of_every_kind();
+        assert_eq!(
+            kinds.len(),
+            12,
+            "the folder tree holds twelve kinds of row and this walks {}",
+            kinds.len()
+        );
+        let mut groups: Vec<&'static str> = kinds.iter().map(the_same_menu_as).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        assert_eq!(
+            groups.len(),
+            6,
+            "six groups of row, {} listed: {groups:?}",
+            groups.len()
+        );
+    }
+
+    #[test]
+    fn test_rows_that_want_different_commands_do_not_share_a_menu() {
+        // The fault this closes. Eleven kinds of row answered with a folder's
+        // menu, so an account branch and a folder were one place.
+        for one in one_of_every_kind() {
+            for two in one_of_every_kind() {
+                let same_menu = which_menu_a_row_offers(&one) == which_menu_a_row_offers(&two);
+                let same_kind = the_same_menu_as(&one) == the_same_menu_as(&two);
+                assert_eq!(
+                    same_menu,
+                    same_kind,
+                    "{one:?} and {two:?}: {} kind of row, {} menu",
+                    if same_kind { "one" } else { "not one" },
+                    if same_menu { "one" } else { "not one" },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_folder_and_a_pinned_copy_of_one_answer_the_mail_folders_menu() {
+        for row in one_of_every_kind() {
+            let offered = which_menu_a_row_offers(&row) == Some(Focus::MailFolders);
+            assert_eq!(
+                offered,
+                the_same_menu_as(&row) == "a folder",
+                "{row:?} and the mail folders menu"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_saved_search_row_still_answers_its_own_menu() {
+        // Unchanged from 02-07, which is what gave this row a menu of its own.
+        for row in one_of_every_kind() {
+            let offered = which_menu_a_row_offers(&row) == Some(Focus::SavedSearch);
+            assert_eq!(
+                offered,
+                the_same_menu_as(&row) == "a saved search",
+                "{row:?} and the saved search menu"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_row_with_nothing_of_its_own_has_no_menu_rather_than_a_folders() {
+        // A heading is not a thing anybody does something to, and nothing this
+        // program does acts on one. The menu key doing nothing there is the
+        // answer `tests/wired.rs` already records for the reminders sidebar:
+        // it holds buckets rather than things somebody made, so it has no menu
+        // rather than an empty one.
+        for row in one_of_every_kind() {
+            let none = which_menu_a_row_offers(&row).is_none();
+            assert_eq!(
+                none,
+                the_same_menu_as(&row) == "nothing of its own",
+                "{row:?} and whether the menu key does anything"
+            );
+        }
+    }
+
+    #[test]
+    fn test_getting_older_messages_is_offered_only_where_a_folder_is_opened() {
+        // The clearest of the folder-only commands: it fetches the next page
+        // of older messages in this folder, and a row that opens no folder has
+        // no next page. It was offered on all eleven.
+        for row in one_of_every_kind() {
+            let offered = which_menu_a_row_offers(&row)
+                .map(|focus| {
+                    entries_for(focus)
+                        .iter()
+                        .any(|entry| entry.action == Action::GetOlder)
+                })
+                .unwrap_or(false);
+            assert_eq!(
+                offered,
+                row.opens().is_some(),
+                "{row:?}: offered older messages, opens a folder"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_command_that_reads_the_open_account_is_offered_only_where_the_row_set_it() {
+        // T-2.1-25, and the defect 02-08 closed on another surface. Choosing
+        // which folders are kept up to date reads whichever account is open.
+        // Landing on a row sets that from the row only where
+        // `the_account_a_row_belongs_to` answers, so on any other row the
+        // command acts against whichever account somebody came from.
+        for row in one_of_every_kind() {
+            let offered = which_menu_a_row_offers(&row)
+                .map(|focus| {
+                    entries_for(focus)
+                        .iter()
+                        .any(|entry| entry.action == Action::ChooseFolders)
+                })
+                .unwrap_or(false);
+            assert!(
+                !offered || the_account_a_row_belongs_to(&row).is_some(),
+                "{row:?} offers a command that reads the open account, and \
+                 landing on it does not set the open account from the row"
+            );
+        }
     }
 }
