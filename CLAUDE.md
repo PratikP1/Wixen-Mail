@@ -96,6 +96,20 @@ A red commit may only be made on a branch. On `main` it is refused: every commit
 CI builds, and a failing test on it is a broken branch for everybody. The red and its green pair go
 on a branch and arrive together at the merge.
 
+**The red gate and the count check collide, and the way through is to name the
+count check as one of the failures.** `red-commit.sh` requires that nothing
+unnamed failed. Adding a test to a module some guard record names turns
+`test_every_guard_record_says_how_many_tests_the_files_it_names_held` red, and
+its remedy needs the green code before a record's red list can be corrected. So
+there is no ordering where a red commit adding such a test has a clean tree
+around it. Measured on 2026-09-02 against `src/data/message_cache/messages.rs`,
+which ten records name.
+
+The answer is not to split the commit, because the fingerprint can only be paid
+once. It is one red commit covering the whole task, naming the real failures and
+the count check together, with the reason in the message. That keeps the red
+honest: it still says exactly what failed and is still held to it.
+
 **A shell suite under `scripts/` cannot be committed red at all, and that is a
 hole rather than a rule.** `check.sh` runs every `scripts/*.test.sh` under
 `set -e` before it branches on the mode, so a failing suite stops the gate before
