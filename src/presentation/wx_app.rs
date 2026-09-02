@@ -10287,18 +10287,21 @@ fn folders_in_the_tree(
 // The tests for the two functions above sit at the foot of this file, in
 // `the_tree_holds_every_account`, rather than here beside what they cover.
 //
-// Not a preference. Ten checks in `tests/wired.rs` read this file's source and
-// cut it at the first `#[cfg(test)]`, keeping what is above. That is only "the
-// shipping half" while every test module sits at the end, and one here left
-// four of those reading 9,600 lines of 24,000 and six more reading a prefix in
-// silence. `the_window_itself` further down had the same bug and now uses
-// `what_ships`; the ten cannot, because `what_ships` is `#[cfg(test)]` and an
-// integration test links the library built without it.
+// **That is now a preference, and this note used to say it was not.** Until
+// 2026-09-02 the checks in `tests/wired.rs` read this file's source by cutting
+// at the first `#[cfg(test)]` and keeping what was above, which is only "the
+// shipping half" while every test module sits at the end. A module placed here
+// left some of them reading a prefix in silence, and that really was
+// load-bearing.
 //
-// So the convention is load-bearing until those ten have a shared answer, which
-// is written up in this phase's deferred items. This note is here because the
-// next person to reach for a test module beside the code is doing the ordinary
-// thing.
+// Plan 02.1-01 closed it. All sixteen readers, of two kinds, now go through
+// `common::what_ships`, which is behind a cargo feature that dev and test
+// builds turn on, so an integration test can reach it. Where a test module sits
+// no longer changes what any of them reads.
+//
+// The note is kept rather than deleted because it is the reason these two
+// tests are down there, and moving them back is a change somebody can now make
+// deliberately instead of one they must not make by accident.
 
 /// Every saved search's row, in the order they sit in the tree.
 ///
@@ -19766,11 +19769,19 @@ pub(crate) fn ask_for_a_name(frame: &Frame, asking: Asking) -> Option<String> {
 mod scan_only_account_tests {
     // `scan_only_account` sits earlier in this file, beside
     // `open_for_scanning`, the one place it is used. Its test lives here
-    // instead, beside the rest of this file's test modules, because
+    // instead, beside the rest of this file's test modules.
+    //
+    // **The reason given here was true and is not any more.** It said
     // `what_the_status_line_says::the_window_itself` below reads this file's
-    // own text and stops at the first line that is exactly `#[cfg(test)]`: a
-    // test module any earlier than this one would cut that reading off
-    // before it ever reached `handle_update`.
+    // own text and stops at the first line that is exactly `#[cfg(test)]`, so
+    // an earlier test module would cut that reading off before it reached
+    // `handle_update`. That function has used `common::what_ships` since
+    // 2026-09-02, which reads the whole shipping half wherever the test
+    // modules sit, so an earlier module would cut nothing off.
+    //
+    // Left where it is, and the reason corrected rather than removed, because
+    // a stale reason is worse than none: this one told the next person to keep
+    // paying a cost that no longer buys anything.
     use super::scan_only_account;
 
     #[test]
