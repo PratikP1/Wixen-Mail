@@ -504,6 +504,23 @@ const A_PAGE_THAT_FILES_IT_RIGHT: &str = "\
 **Moving a task between lists.** Not yet.
 ";
 
+/// A page that says it twice: once where it belongs, once where it does not.
+///
+/// This is how the correction of the real page could have gone wrong and been
+/// approved. Moving a paragraph is two edits, and a hand that makes the second
+/// without the first leaves the capability introduced in both sections.
+const A_PAGE_THAT_SAYS_IT_TWICE: &str = "\
+# Invented status page
+
+## What works
+
+**Folder management.** A folder can be made, renamed and deleted.
+
+## What does not work
+
+**Folder management.** A folder cannot be made, renamed or deleted.
+";
+
 /// An invented roadmap: one box unticked, one ticked, one wording absent.
 const AN_INVENTED_ROADMAP: &str = "\
 # Invented roadmap
@@ -602,6 +619,26 @@ fn test_the_section_reading_can_tell_a_misfiled_capability_from_a_filed_one() {
         Vec::<String>::new(),
         "the paragraph was moved under a heading that is true of it and the check \
          still named it, so it is not reading the position"
+    );
+
+    // A page can introduce a capability in more than one section, and a
+    // reading that stops at the first mention approves the second. Found by
+    // hand, moving the corrected paragraph back to watch the check fail: it
+    // passed, because the correct mention now came first.
+    assert_eq!(
+        capabilities_filed_as_missing(
+            "invented.md",
+            A_PAGE_THAT_SAYS_IT_TWICE,
+            &THE_CAPABILITIES[..1]
+        ),
+        vec![
+            "invented.md:9: \"Folder management\" is described under \
+             \"What does not work\" at line 7, and src/service/protocols/imap.rs \
+             holds fn create_mailbox, fn rename_mailbox, fn delete_mailbox"
+                .to_string(),
+        ],
+        "the page introduces the capability twice and the check read only the \
+         first, so a correction that copies rather than moves is approved"
     );
 
     // The code probe answers from `src/`, both ways round. Without this arm a
