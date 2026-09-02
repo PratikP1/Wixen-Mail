@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 357 records have arrived since and have not been through it.
+# 358 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -12775,4 +12775,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/wired.rs", tests = 59 },
+]
+
+# ── The claim that a test cannot build a window ─────────────────────────────
+#
+# wxWidgets allows one live window per process. Ten comment blocks in this tree
+# wrote that down as though it meant no test could build one at all, and two of
+# them said so flatly while `tests/theme_reach.rs` had been building live
+# dialogs since before either was written. A false premise in a comment steers
+# work away from a technique that works, and nothing tests a comment.
+#
+# The break puts the flat claim back into `wx_folder_choice.rs`, whose dialog
+# `tests/theme_reach.rs` really does open. It takes away the wording that
+# exempts that comment at the same time, which is deliberate: the two halves of
+# the rule are that the claim is refused and that stating the budget is what
+# lifts the refusal, and one edit exercises both.
+#
+# What this cannot see, and it is the hole every source-reading guard has:
+# whether the other nine corrected blocks stay corrected. Putting the claim back
+# into any one of them reddens the same single test, so this record measures the
+# reading rather than the ten sites. The reading itself is bounded by
+# `test_the_window_claim_check_can_tell_the_two_apart`, which feeds it both a
+# claim and a correction and fails if it answers nothing or answers everything.
+
+[[guard]]
+name = "a comment claiming a test cannot build a window is still refused"
+file = "src/presentation/wx_folder_choice.rs"
+suite = "house_style"
+before = """/// itself is opened in a test: wxWidgets allows one live window per process,"""
+after = """/// itself cannot be opened in a test, because no test can build a window,"""
+red = [
+    "test_no_comment_says_a_test_cannot_build_a_window",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 61 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
 ]
