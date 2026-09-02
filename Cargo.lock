@@ -5824,6 +5824,7 @@ dependencies = [
  "uuid",
  "windows",
  "winresource",
+ "wixen-mail",
  "wxdragon",
  "x509-parser",
  "zip",

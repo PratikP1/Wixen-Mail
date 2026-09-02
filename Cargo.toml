@@ -16,6 +16,28 @@ repository = "https://github.com/PratikP1/Wixen-Mail"
 keywords = ["email", "mail-client", "accessibility", "imap", "smtp"]
 categories = ["email", "gui"]
 
+# Code that dev and test builds compile and that no shipped binary contains.
+#
+# `common::what_ships` answers which half of a source file a release build
+# compiles. Sixteen checks in `tests/wired.rs` need that answer. It was gated
+# `#[cfg(test)]`, which the library's own unit tests reach and an integration
+# test does not, because a test under `tests/` links the library built without
+# `cfg(test)`. So those sixteen cut the file themselves at the first
+# `#[cfg(test)]` and went blind to everything below it: 6,863 lines of
+# `wx_app.rs`, holding two production functions no check had ever read.
+#
+# The dev-dependency below is this package on itself, and that is what turns
+# the feature on. Cargo enables it when it builds the library for a dev target
+# and not otherwise. Measured both ways with `-v` on 2026-09-02: a test build
+# passes `--cfg feature="what-ships"` and a release build passes no feature at
+# all, so nothing has to be remembered at release time and no flag can be left
+# on by mistake.
+#
+# Clippy runs `--all-features`, so the gated code is still linted and cannot
+# rot behind the flag.
+[features]
+what-ships = []
+
 [dependencies]
 # Core
 uuid = { version = "1.11", features = ["v4"] }
@@ -213,6 +235,13 @@ winresource = "0.1"
 boa_engine = "0.20"
 tokio-test = "0.4"
 tempfile = "3.14"
+
+# This package, on itself, so `what-ships` is on for every dev target and for
+# nothing else. Not a third-party crate and not a second copy of the library:
+# it is the same one cargo is already building, asked for with one feature
+# added. The `[features]` section above says what that buys and how it was
+# measured.
+wixen-mail = { path = ".", features = ["what-ships"] }
 
 # A held lock guard is how this application deadlocked its own UI thread and
 # froze NVDA with it: the guard in an `if let` condition lives for the whole
