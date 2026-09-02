@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 368 records have arrived since and have not been through it.
+# 369 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3926,7 +3926,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 [[guard]]
@@ -3948,7 +3948,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -10689,7 +10689,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 [[guard]]
@@ -10705,7 +10705,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 [[guard]]
@@ -10735,7 +10735,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 [[guard]]
@@ -10749,7 +10749,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 [[guard]]
@@ -12801,7 +12801,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 59 },
+    { file = "tests/wired.rs", tests = 61 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -13187,4 +13187,33 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 144 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+[[guard]]
+# Criterion 2.1-06. `one_question_at_a_time::what_to_raise` decides when the
+# question about vanished folders may be put, and it is tested without a window
+# against every combination of its three inputs. Nothing tested that it is
+# asked the right question. Both of the answers it is given are worked out in
+# the body of `ask_about_the_folders_that_have_gone`, and either could be
+# replaced by a constant with the whole library still green.
+#
+# The break replaces the gate's answer with `true`, which is what "the moment is
+# free" looks like when nobody asked. A question then opens on top of the
+# reminder alert that is already on screen. Replacing the other argument with
+# `false` is the same shape and reddens the same one test, measured separately.
+#
+# Measured by hand on 2026-09-02, both breaks, against `cargo test --test wired`
+# and against the whole library. One test in `wired`; the library notices
+# neither break, which is why this record names that suite.
+name = "the vanished-folders question is put at a moment that is free"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """    let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, turn.is_none())"""
+after = """    let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, true)"""
+red = [
+    "test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "tests/wired.rs", tests = 61 },
 ]

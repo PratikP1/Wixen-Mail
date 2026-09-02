@@ -3218,3 +3218,267 @@ fn test_the_in_box_on_the_search_window_reaches_the_search() {
          and thrown away one step further along than before"
     );
 }
+
+/// What the vanished-folders question asks before it opens anything.
+///
+/// One reading, so the check that the real body asks all four things and the
+/// check that the reading can see one of them missing put the same question to
+/// two different bodies.
+#[derive(Debug, PartialEq, Eq)]
+struct WhatTheQuestionAsks {
+    /// The decision is handed the one-question gate's answer.
+    whether_one_is_already_up: bool,
+    /// The typing answer reads both ways somebody can be typing.
+    whether_somebody_is_typing: bool,
+    /// Nothing opens when the decision answers with nothing.
+    nothing_opens_when_there_is_nothing_to_raise: bool,
+    /// The question is written down before the window opens, not after.
+    raised_before_the_window: bool,
+}
+
+/// The text between one call's brackets, and where the closing bracket sits.
+///
+/// Counted rather than found, because every argument here carries brackets of
+/// its own and the first `)` after the call belongs to one of them.
+fn arguments_to(body: &str, call: &str) -> Option<(String, usize)> {
+    let opens = body.find(call)? + call.len();
+    let mut depth = 1usize;
+    for (at, ch) in body[opens..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((body[opens..opens + at].to_string(), opens + at + 1));
+                }
+            }
+            _ => (),
+        }
+    }
+    None
+}
+
+/// One argument list split into its arguments.
+///
+/// On the commas that separate arguments only. A comma inside an argument's own
+/// brackets belongs to that argument.
+fn each_argument(list: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut depth = 0i32;
+    let mut so_far = String::new();
+    for ch in list.chars() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                found.push(std::mem::take(&mut so_far));
+                continue;
+            }
+            _ => (),
+        }
+        so_far.push(ch);
+    }
+    found.push(so_far);
+    found
+        .into_iter()
+        .map(|one| one.trim().to_string())
+        .filter(|one| !one.is_empty())
+        .collect()
+}
+
+/// Where an argument's value is worked out.
+///
+/// The argument itself, and the `let` binding the name it is built on, when
+/// there is one. Both, because either half can carry the answer: `turn` is
+/// taken from the gate on one line and asked `is_none()` on another, and
+/// reading only one of the two would miss half of what the argument says.
+fn where_it_comes_from(body: &str, argument: &str) -> String {
+    let name = argument.trim_start_matches('&');
+    let built_on = name.split(['.', '(', ' ']).next().unwrap_or(name);
+    let binding = format!("let {built_on} = ");
+    match body.find(&binding) {
+        Some(at) => {
+            let rest = &body[at..];
+            let ends = rest.find(";\n").map_or(rest.len(), |end| end + 1);
+            format!("{argument}\n{}", &rest[..ends])
+        }
+        None => argument.to_string(),
+    }
+}
+
+/// Read one body of the vanished-folders question.
+fn what_the_vanished_folders_question_asks(body: &str) -> WhatTheQuestionAsks {
+    let handed = arguments_to(body, "what_to_raise(");
+    let arguments = handed
+        .as_ref()
+        .map(|(list, _)| each_argument(list))
+        .unwrap_or_default();
+    let comes_from = |which: usize| {
+        arguments
+            .get(which)
+            .map(|argument| where_it_comes_from(body, argument))
+            .unwrap_or_default()
+    };
+
+    let gate = comes_from(2);
+    let typing = comes_from(1);
+    let when_there_is_nothing = handed
+        .as_ref()
+        .map(|(_, past)| body[*past..].split('}').next().unwrap_or_default())
+        .unwrap_or_default();
+
+    WhatTheQuestionAsks {
+        whether_one_is_already_up: gate.contains(".take()") && gate.contains("is_none()"),
+        whether_somebody_is_typing: typing.contains("somebody_is_typing()")
+            && typing.contains("has_focus()")
+            && typing.contains("is_editable()"),
+        nothing_opens_when_there_is_nothing_to_raise: when_there_is_nothing.contains("else")
+            && when_there_is_nothing.contains("return"),
+        raised_before_the_window: match (body.find(".raised("), body.find("show_modal(")) {
+            (Some(written_down), Some(opened)) => written_down < opened,
+            _ => false,
+        },
+    }
+}
+
+/// The question about folders a server has stopped listing is put at a moment
+/// that is free.
+///
+/// `one_question_at_a_time::what_to_raise` decides all of this and is tested
+/// without a window against every combination. Nothing tested that it is asked
+/// the right question. Both of its answers are worked out in the body of
+/// `ask_about_the_folders_that_have_gone`, and either could stop being worked
+/// out there with every existing test still green: a question would then open
+/// on top of a reminder alert, or over somebody in the middle of a sentence.
+///
+/// What this cannot see: whether the window behaves this way when it runs. It
+/// reads the source and says the call is written correctly, which is weaker
+/// than opening the window and watching, in the way `tests/theme_reach.rs`
+/// says of the call sites it cannot reach.
+///
+/// A live window is available here, which the plan for this check assumed it
+/// was not: a file under `tests/` is its own process and gets its own, as
+/// `tests/tree_rows_leave_no_registry_entry.rs` does. It is not used, for a
+/// different reason. Every path that would tell a right argument from a wrong
+/// one ends at `MessageDialog::show_modal`, which blocks until somebody
+/// answers, and in a test there is nobody. A wrong argument would hang this
+/// file rather than fail it, and a check that hangs the commit gate is one that
+/// gets deleted. The window itself has still never been opened in a running
+/// build, and `.planning/WINDOWS.md` carries that.
+#[test]
+fn test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = what_ships(&app);
+    let body = body_of(&ship, "fn ask_about_the_folders_that_have_gone(");
+
+    assert!(
+        !body.trim().is_empty(),
+        "the vanished-folders question has no body to read, so everything below this is \
+         measuring nothing"
+    );
+
+    let asks = what_the_vanished_folders_question_asks(&body);
+
+    assert!(
+        asks.whether_one_is_already_up,
+        "the decision is not handed the one-question gate's answer, so a tick that runs while \
+         a reminder alert is already on screen opens this question on top of it"
+    );
+    assert!(
+        asks.whether_somebody_is_typing,
+        "the typing answer does not read both ways somebody can be typing, so a question \
+         interrupts either a composer on this thread or an editable box in this window"
+    );
+    assert!(
+        asks.nothing_opens_when_there_is_nothing_to_raise,
+        "nothing returns when the decision answers with nothing, so a window opens carrying no \
+         question"
+    );
+    assert!(
+        asks.raised_before_the_window,
+        "the question is written down after the window opens rather than before, so the tick \
+         that runs inside the modal puts it a second time"
+    );
+}
+
+/// The reading above can see each of those four things missing.
+///
+/// A check that reads source and finds nothing passes, so this one is put to
+/// bodies whose answers are known: one written the way the real one is, and one
+/// per break. Without it the four assertions above could be reading an empty
+/// string and saying so to nobody.
+#[test]
+fn test_the_reading_of_the_vanished_folders_question_can_see_a_missing_argument() {
+    let written_correctly = "\
+fn ask_about_the_folders_that_have_gone(frame: &Frame) {
+    let turn = one_question_on_screen.take();
+    let an_editor_has_focus = one_question_at_a_time::somebody_is_typing()
+        || somewhere_to_type
+            .iter()
+            .any(|box_| box_.has_focus() && box_.is_editable());
+    let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, turn.is_none())
+    else {
+        return;
+    };
+    waiting.borrow_mut().raised(&question);
+    let asked = MessageDialog::builder(frame, &question.words, &question.title).show_modal();
+}
+";
+
+    assert_eq!(
+        what_the_vanished_folders_question_asks(written_correctly),
+        WhatTheQuestionAsks {
+            whether_one_is_already_up: true,
+            whether_somebody_is_typing: true,
+            nothing_opens_when_there_is_nothing_to_raise: true,
+            raised_before_the_window: true,
+        },
+        "the reading cannot see a body that does all four things, so what it says about the \
+         real body means nothing"
+    );
+
+    let gate_gone = written_correctly.replace("turn.is_none()", "true");
+    assert!(
+        !what_the_vanished_folders_question_asks(&gate_gone).whether_one_is_already_up,
+        "the gate's answer was replaced by a constant and the reading still said the decision \
+         was handed it"
+    );
+
+    // At the call only. Replacing the name everywhere would rename the binding
+    // as well, and the reading would then follow `let false = ` to the answer
+    // the call no longer asks for.
+    let typing_gone = written_correctly.replace(", an_editor_has_focus,", ", false,");
+    assert!(
+        !what_the_vanished_folders_question_asks(&typing_gone).whether_somebody_is_typing,
+        "the typing answer was replaced by a constant and the reading still said the decision \
+         was handed it"
+    );
+
+    let half_the_typing =
+        written_correctly.replace("box_.has_focus() && box_.is_editable()", "false");
+    assert!(
+        !what_the_vanished_folders_question_asks(&half_the_typing).whether_somebody_is_typing,
+        "only one of the two ways somebody can be typing is read and the reading still said \
+         both were"
+    );
+
+    let opens_anyway = written_correctly.replace("        return;\n", "        ();\n");
+    assert!(
+        !what_the_vanished_folders_question_asks(&opens_anyway)
+            .nothing_opens_when_there_is_nothing_to_raise,
+        "the early return was taken out and the reading still said nothing opens with no \
+         question in it"
+    );
+
+    let written_down_late = "\
+fn ask_about_the_folders_that_have_gone(frame: &Frame) {
+    let asked = MessageDialog::builder(frame).show_modal();
+    waiting.borrow_mut().raised(&question);
+}
+";
+    assert!(
+        !what_the_vanished_folders_question_asks(written_down_late).raised_before_the_window,
+        "the question is written down after the window opens and the reading still said it was \
+         written down first"
+    );
+}
