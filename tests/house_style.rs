@@ -3044,6 +3044,28 @@ fn versions_named_in(line: &str) -> Vec<String> {
 /// record would be falsifying it.
 const THE_STATUS_PAGES: &[&str] = &["README.md", "docs/IMPLEMENTATION_STATUS.md"];
 
+/// What one status page says that the code does not ship, line by line.
+///
+/// Out here rather than inside the check so that the check and the companion
+/// under it run the same reading over the same real files. A companion that
+/// fed literals to `versions_named_in` would prove the extractor and nothing
+/// about the pages being opened, being non-empty, or being read line by line,
+/// and those are the links that were broken.
+fn wrong_versions_on(page: &str, text: &str, shipped: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        for version in versions_named_in(line) {
+            if version != shipped {
+                wrong.push(format!(
+                    "{page}:{}: names {version}, and the code ships {shipped}",
+                    number + 1
+                ));
+            }
+        }
+    }
+    wrong
+}
+
 #[test]
 fn test_no_status_page_names_a_version_the_code_does_not_ship() {
     // The status page said `0.1.0-alpha.10` and the README said
@@ -3060,16 +3082,7 @@ fn test_no_status_page_names_a_version_the_code_does_not_ship() {
 
     for path in THE_STATUS_PAGES {
         let text = fs::read_to_string(path).expect("a status page to be readable");
-        for (number, line) in text.lines().enumerate() {
-            for version in versions_named_in(line) {
-                if version != shipped {
-                    wrong.push(format!(
-                        "{path}:{}: names {version}, and the code ships {shipped}",
-                        number + 1
-                    ));
-                }
-            }
-        }
+        wrong.extend(wrong_versions_on(path, &text, shipped));
     }
 
     assert!(
