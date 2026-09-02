@@ -12,6 +12,34 @@
 
 use crate::presentation::ui_types::MailSortOption;
 
+/// How bad each stored safety word is, as a number SQL can put in order.
+///
+/// Safety is written down as "ordinary", "suspicious", "spam" and "phishing"
+/// so a stored mailbox can be read by a person, and the alphabet does not
+/// agree with how bad the words are: it puts phishing second and suspicious
+/// last. So the ranking is spelled here, worst last, matching the order
+/// [`crate::service::safety::Safety`] itself is declared in.
+///
+/// A word this build has never heard of falls to the `ELSE` and ranks as the
+/// mildest. That is the safe end for a claim about how bad something is:
+/// putting an unrecognised word at the top would say "this is the worst thing
+/// in your mailbox" about a message nothing judged. It also matches
+/// `Safety::from_stored`, which reads anything it does not recognise back as
+/// ordinary.
+///
+/// A macro rather than a `const` because both arms below need it inside a
+/// larger string, and `concat!` joins literals while the compiler is running.
+/// A `format!` would give up the property both those methods state: fixed
+/// strings chosen by matching on the enum, never built from anything a user
+/// typed, because the result is interpolated into a query.
+macro_rules! how_bad_the_safety_word_is {
+    () => {
+        "CASE m.safety \
+         WHEN 'phishing' THEN 3 WHEN 'spam' THEN 2 WHEN 'suspicious' THEN 1 \
+         ELSE 0 END"
+    };
+}
+
 /// A column the message list can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageColumn {
@@ -133,7 +161,10 @@ impl MessageColumn {
             MessageColumn::Flagged => "m.starred",
             MessageColumn::Answered => "m.answered",
             MessageColumn::Draft => "m.draft",
-            MessageColumn::Safety => "m.safety",
+            // The worst, not the last word in the alphabet. The same ranking
+            // the conversation arm below takes a maximum of, so one column
+            // cannot mean two things depending on which view somebody is in.
+            MessageColumn::Safety => how_bad_the_safety_word_is!(),
             MessageColumn::To => "m.to_addr COLLATE NOCASE",
             MessageColumn::Cc => "m.cc COLLATE NOCASE",
         }
@@ -213,17 +244,11 @@ impl MessageColumn {
             MessageColumn::Flagged => "MAX(m.starred)",
             MessageColumn::Answered => "MAX(m.answered)",
             MessageColumn::Draft => "MAX(m.draft)",
-            // The worst, which is not the largest of the words stored. Safety
-            // is written down as "ordinary", "suspicious", "spam" and
-            // "phishing" so a stored mailbox can be read by a person, and in
-            // that alphabet the worst of the three sorts first. So the ranking
-            // is spelled here, worst last, matching the order the enum itself
-            // is declared in.
-            MessageColumn::Safety => {
-                "MAX(CASE m.safety \
-                 WHEN 'phishing' THEN 3 WHEN 'spam' THEN 2 WHEN 'suspicious' THEN 1 \
-                 ELSE 0 END)"
-            }
+            // The worst, which is not the largest of the words stored. The
+            // ranking is [`how_bad_the_safety_word_is`], the same one the
+            // message arm above uses, with a maximum taken over it: a
+            // conversation is as bad as the worst message in it.
+            MessageColumn::Safety => concat!("MAX(", how_bad_the_safety_word_is!(), ")"),
             MessageColumn::To => "GROUP_CONCAT(DISTINCT char(10) || m.to_addr)",
             MessageColumn::Cc => "GROUP_CONCAT(DISTINCT char(10) || m.cc)",
         }

@@ -69,12 +69,27 @@ pub fn conversation_root(message_id: &str, refs_header: Option<&str>) -> String 
 
 /// One identifier with any angle brackets taken off.
 ///
+/// **This is the one spelling a message identifier is stored in.** Every writer
+/// goes through it, because `MessageCache::upsert_message` applies it on the
+/// way into the parameters rather than each caller applying it first, and the
+/// one lookup that asks the column by value applies it to the question. A
+/// second writer added later gets the rule without knowing about it, and that
+/// is the point: for a while the column held two spellings, because mail
+/// arriving through `mail_parser` had the brackets stripped for it and a draft
+/// this program filed did not.
+///
+/// The brackets are not wrong, they are just not part of the identifier. They
+/// are the header's syntax, which is why
+/// [`crate::application::draft_message::message_id_for`] and
+/// [`crate::application::message_id::derived`] both still build them: those
+/// values go on the wire. This is what goes in the column.
+///
 /// The same trimming [`crate::application::threading::bracketed`] does before
 /// it puts one pair back on. Spelled again here rather than shared because
 /// that function is private and returns the wrapped form, which is the
 /// opposite of what a stored identifier needs, and because the module it lives
 /// in is deliberately not touched by this change.
-fn bare(identifier: &str) -> &str {
+pub(crate) fn bare(identifier: &str) -> &str {
     identifier
         .trim()
         .trim_start_matches('<')

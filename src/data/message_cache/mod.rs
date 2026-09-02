@@ -1254,6 +1254,21 @@ impl MessageCache {
             tracing::warn!("Could not give stored messages a conversation id: {}", e);
         }
 
+        // Databases written before the store trimmed on the way in hold two
+        // spellings of a message identifier: bare for mail that came through
+        // `mail_parser`, angle-bracketed for a draft this program filed. Bring
+        // them to one on open, so a message filed here and a message downloaded
+        // can be joined. Not fatal for the same reason as above: the rows are
+        // still readable where they are, `threads_holding_any_of` still asks
+        // about both spellings and so still joins them, and the next open tries
+        // again.
+        if let Err(e) = cache.backfill_message_identifiers() {
+            tracing::warn!(
+                "Could not bring stored message identifiers to one spelling: {}",
+                e
+            );
+        }
+
         // A database held before there was a search index has to have one
         // built, once. Ordinarily this compares two counts and stops. A
         // failure is not fatal for the same reason the line above is not:

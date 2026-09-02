@@ -680,15 +680,24 @@ impl MessageCache {
     /// How a re-saved draft replaces its row rather than adding another. With
     /// automatic saving on, the alternative is one new message a minute for as
     /// long as somebody writes.
+    ///
+    /// Asked with the same spelling [`Self::upsert_message`] writes, so the
+    /// caller can hand over whichever one it has. The draft path hands over the
+    /// header's, brackets and all, because that is the value it also puts on
+    /// the wire. Trimming on the way in and not here would make this answer "no
+    /// such message" to every draft and leave a fresh copy in Drafts on every
+    /// automatic save, which is the bug this lookup exists to prevent, arriving
+    /// through the fix for a different one.
     pub fn message_uid_by_message_id(
         &self,
         folder_id: i64,
         message_id: &str,
     ) -> Result<Option<u32>> {
+        let asking = crate::application::thread_identity::bare(message_id);
         self.conn
             .query_row(
                 "SELECT uid FROM messages WHERE folder_id = ?1 AND message_id = ?2",
-                params![folder_id, message_id],
+                params![folder_id, asking],
                 |row| row.get::<_, u32>(0),
             )
             .optional()
@@ -826,6 +835,14 @@ impl MessageCache {
             &incoming.message_id,
             incoming.refs_header.as_deref(),
         );
+        // The one spelling, applied here rather than in each caller, because
+        // this is the only production write of the column and a rule applied
+        // per caller is a rule the next caller does not know about. Mail
+        // arriving through `mail_parser` is already bare; a draft this program
+        // files carries the brackets its header needs. The brackets belong in
+        // the header and not in the column, and `thread_identity::bare` is
+        // where that is decided for both.
+        let identifier = crate::application::thread_identity::bare(&incoming.message_id);
         let id: i64 = self
             .conn
             .query_row(
@@ -872,7 +889,7 @@ impl MessageCache {
                 params![
                     incoming.uid,
                     incoming.folder_id,
-                    incoming.message_id,
+                    identifier,
                     incoming.subject,
                     incoming.from_addr,
                     incoming.to_addr,
@@ -1029,12 +1046,75 @@ impl MessageCache {
 
     /// Bring every stored message identifier to the one spelling.
     ///
-    /// Not written yet. This is the red half: a body that changes nothing, so
-    /// the tests below it fail on what they assert rather than on the compiler
-    /// never having heard of the name. An absent function would be a weaker
-    /// red, because a build that does not finish says nothing about behaviour.
+    /// A database written before [`Self::upsert_message`] trimmed on the way in
+    /// holds two spellings of the same thing: bare for mail that came through
+    /// `mail_parser`, angle-bracketed for a draft this program filed. Rows in
+    /// the second shape are rewritten to the first. Returns how many changed.
+    ///
+    /// Values are rewritten and nothing is dropped or renamed, which is what
+    /// `CLAUDE.md`'s additive rule allows. The column, its name and its type
+    /// are untouched.
+    ///
+    /// Idempotent by its `WHERE` clause rather than by being called once, the
+    /// way [`Self::backfill_thread_ids`] is, and narrowed in one place rather
+    /// than two. The clause asks the question
+    /// [`crate::application::thread_identity::bare`] answers, in SQL: is there
+    /// whitespace on either end, a `<` at the front, or a `>` at the back. A
+    /// second narrowing in Rust would be a check that can never be taken red,
+    /// because dropping either half leaves the other one answering.
+    ///
+    /// So a row already in the right shape is not selected, not rewritten and
+    /// not counted, a second run finds nothing, and a large cache is not
+    /// written over on every open.
+    ///
+    /// One case takes two opens and no writer here produces it: a value with
+    /// whitespace inside its brackets, `<a b >`. `bare` trims and then strips,
+    /// in that order, so the first pass leaves `a b ` and the second takes the
+    /// trailing space. It converges rather than oscillating, because each pass
+    /// either shortens the value or leaves it alone. Said here rather than
+    /// worked around, since `mail_parser` hands over a trimmed identifier and
+    /// `draft_message::message_id_for` builds one with no spaces in it.
+    ///
+    /// The candidates are read into a `Vec` before anything is written, for the
+    /// reason [`Self::migrate_inline_bodies`] does the same: a cached statement
+    /// held open over `messages` while the same table is being written is a
+    /// lock against itself.
     pub fn backfill_message_identifiers(&self) -> Result<usize> {
-        Ok(0)
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, message_id FROM messages
+                 WHERE message_id != TRIM(message_id, ' ' || char(9) || char(10) || char(13))
+                    OR message_id LIKE '<%'
+                    OR message_id LIKE '%>'",
+            )
+            .map_err(|e| Error::Other(format!("Failed to find the older identifiers: {}", e)))?;
+
+        let pending: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::Other(format!("Failed to read the older identifiers: {}", e)))?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read an older identifier: {}", e)))?;
+
+        let corrected = pending.len();
+        for (id, stored) in pending {
+            self.conn
+                .execute(
+                    "UPDATE messages SET message_id = ?1 WHERE id = ?2",
+                    params![crate::application::thread_identity::bare(&stored), id],
+                )
+                .map_err(|e| Error::Other(format!("Failed to store an identifier: {}", e)))?;
+        }
+
+        // A count, never an identifier. A `Message-ID` carries a hostname and
+        // a local part, which is somebody's mail turning up in a log file.
+        if corrected > 0 {
+            tracing::info!(
+                "Brought {} stored message identifiers to one spelling",
+                corrected
+            );
+        }
+        Ok(corrected)
     }
 
     /// Which conversations this account already files any of these identifiers
@@ -1081,21 +1161,27 @@ impl MessageCache {
             return Ok(Vec::new());
         }
 
-        // Each identifier is asked about twice, bare and in angle brackets,
-        // because the column holds both and which one depends on where the
-        // message came from. A synced message goes through `mail_parser`,
-        // which strips the brackets, so `filing::a_row_filed_here` and the
-        // sync both store a bare identifier. A draft this program files does
-        // not: `draft_message::message_id_for` builds
-        // `<draft-...@wixen-mail.invalid>` and it is stored as written.
-        // `thread_id` is bare in every row, because `conversation_root` strips
-        // on the way in, so matching only the bare form would silently miss
-        // every conversation rooted at something this program filed.
+        // Each identifier is asked about twice, bare and in angle brackets.
+        // The bare form is the normal case and the bracketed one is the
+        // fallback, which is a change from what this used to be.
         //
-        // Widened here rather than by rewriting the column. What shipped is
-        // not rewritten (CLAUDE.md), and this is a question about how the
-        // column was written rather than about threading, so it belongs with
-        // the query and not with the rule.
+        // The column held both spellings until 02.1-06. A synced message goes
+        // through `mail_parser`, which strips the brackets; a draft this
+        // program files carries them, because `draft_message::message_id_for`
+        // builds `<draft-...@wixen-mail.invalid>` for the header. Now
+        // `upsert_message` puts every value through
+        // `thread_identity::bare` on the way in, so a row written by this
+        // build holds the bare form whichever writer wrote it, and
+        // `backfill_message_identifiers` corrects the older rows when the
+        // database is opened.
+        //
+        // The second form stays because that backfill is not fatal when it
+        // fails, and a database it has not finished still holds bracketed
+        // rows. Narrowing this query would make those rows stop joining, which
+        // is mail dropping out of a conversation rather than an untidy query.
+        // It is also why the values are not rewritten in place and then the
+        // question narrowed in the same change: the query has to keep working
+        // for a database the rewrite never reached.
         //
         // One placeholder per form, so every value a stranger wrote arrives as
         // a bound parameter and nothing is interpolated. Two per identifier
@@ -6254,10 +6340,11 @@ mod tests {
         let cache = fresh("identifier_backfill_on_open");
         let drafts = folder(&cache, "Drafts");
         let row = stored_the_old_way(&cache, drafts, 1, "<draft-abc-123@wixen-mail.invalid>");
-        let home = cache.path().to_path_buf();
-        drop(cache);
 
-        let reopened = super::super::MessageCache::new(home, None).unwrap();
+        // A second connection to the same file rather than dropping the first
+        // one. The first is what owns the temporary folder, and letting go of
+        // it takes the database with it.
+        let reopened = super::super::MessageCache::new(cache.path().to_path_buf(), None).unwrap();
 
         assert_eq!(
             stored_message_id(&reopened, row),
@@ -6289,6 +6376,69 @@ mod tests {
 
         assert_eq!(stored_message_id(&cache, anonymous), "");
         assert_eq!(how_many_rows(&cache), 1, "the backfill dropped a row");
+    }
+
+    #[test]
+    fn test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change() {
+        // The `WHERE` clause asks in SQL the question `thread_identity::bare`
+        // answers in Rust, and one question spelled twice is two things that
+        // can come to differ. So every shape an identifier can arrive in is
+        // stored, and both the count and each value are asserted against what
+        // `bare` says rather than against numbers written down here.
+        //
+        // The last two shapes are the ones a careless clause gets wrong. A
+        // leading `>` and a trailing `<` are not brackets round anything, and
+        // `bare` leaves them alone, so a clause that trimmed any angle from
+        // either end would select them, rewrite nothing, count them anyway and
+        // select them again on the next open.
+        use crate::application::thread_identity::bare;
+
+        let cache = fresh("identifier_backfill_selects_what_changes");
+        let drafts = folder(&cache, "Drafts");
+        let shapes = [
+            "plain@example.com",
+            "<bracketed@example.com>",
+            "  spaced@example.com  ",
+            "\tleading-tab@example.com",
+            "<half-open@example.com",
+            "half-closed@example.com>",
+            ">not-an-opener@example.com",
+            "not-a-closer@example.com<",
+            "",
+        ];
+        let rows: Vec<(i64, &str)> = shapes
+            .iter()
+            .enumerate()
+            .map(|(n, shape)| {
+                (
+                    stored_the_old_way(&cache, drafts, n as u32 + 1, shape),
+                    *shape,
+                )
+            })
+            .collect();
+
+        let ought_to_change = rows
+            .iter()
+            .filter(|(_, shape)| bare(shape) != *shape)
+            .count();
+        assert!(
+            ought_to_change > 0 && ought_to_change < shapes.len(),
+            "a fixture where every shape changes, or none does, would let a \
+             clause that selects everything or nothing pass"
+        );
+
+        assert_eq!(
+            cache.backfill_message_identifiers().unwrap(),
+            ought_to_change,
+            "the clause and the trimming disagree about which rows need doing"
+        );
+        for (row, shape) in rows {
+            assert_eq!(
+                stored_message_id(&cache, row),
+                bare(shape),
+                "the row stored as {shape:?} came out wrong"
+            );
+        }
     }
 
     #[test]

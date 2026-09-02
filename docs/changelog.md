@@ -83,6 +83,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Sorting a message list by Safety used to put the wrong messages at the
+  top.** The column holds four verdicts: nothing, Suspicious, Spam and
+  Phishing. Sorting by it put them in alphabetical order rather than in order
+  of how bad they are, so sorting worst first gave you Suspicious at the top
+  and Phishing third. Sorting by Safety now puts the worst mail at the end you
+  asked for, in both directions.
+
+  A list of conversations was already doing this correctly, so the same column
+  meant two different things depending on which view you were in. Both now
+  answer the same way.
+
+- **A message you filed here and a message you downloaded could not be joined
+  into one conversation.** Every message carries an identifier, and Wixen Mail
+  wrote that identifier down in two different ways: one way for mail that
+  arrived from a server, another way for a draft it filed itself. Anything
+  looking for one and finding the other found nothing, which showed up as the
+  same message coming in twice on an import, and as replies to your own draft
+  not sitting with it.
+
+  Both are now written the same way. A mailbox you already have is corrected
+  the next time Wixen Mail opens it, and mail already in it goes on being
+  readable and searchable while that happens.
+
 - **Opening the move window or the conversation view used to make Wixen Mail
   hold a little more memory every time, and never give it back.** Each row of
   either window left something behind when the window closed, so filing fifty

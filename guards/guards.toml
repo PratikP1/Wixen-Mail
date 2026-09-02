@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 364 records have arrived since and have not been through it.
+# 368 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11063,6 +11063,16 @@ file = "src/data/message_cache/messages.rs"
 # arriving into an open folder reaches the rows on screen fails. A guard about
 # a database column now reaches the interface, which is what a column having
 # acquired real readers looks like.
+#
+# Measured a fifth time on 2026-09-02, prompted the same way: plan 02.1-06 added
+# tests to this file, the count check flagged this record among ten, and the
+# re-measurement found it three short. Thirty-one became thirty-four. None of
+# the three is about conversations, which is the point. Two are new Safety and
+# column-ordering tests that build their fixtures through `in_conversation`, so
+# a writer that stores NULL leaves them with no rows to order. The third is a
+# new identifier test whose whole assertion is that a join finds a conversation.
+# Nobody working on either subject would have filtered for this record, and
+# nine of the other ten came out unchanged.
 before = """                    &conversation,"""
 after = """                    None::<String>,"""
 red = [
@@ -11075,6 +11085,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_that_does_not_touch_this_folder_is_not_listed",
     "data::message_cache::messages::tests::test_a_deleted_conversation_comes_back_whole_and_not_in_part",
     "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
+    "data::message_cache::messages::tests::test_a_filed_draft_and_a_synced_reply_naming_it_are_one_conversation",
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
     "data::message_cache::messages::tests::test_a_hostile_reference_chain_is_stored_and_read_back_unchanged",
     "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
@@ -11084,6 +11095,8 @@ red = [
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
     "data::message_cache::messages::tests::test_an_identifier_nothing_holds_names_no_conversation",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
+    "data::message_cache::messages::tests::test_both_views_of_the_safety_column_rank_the_verdicts_the_same_way",
+    "data::message_cache::messages::tests::test_every_column_still_orders_two_messages_the_way_that_column_reads",
     "data::message_cache::messages::tests::test_rerooting_says_how_many_messages_it_moved",
     "data::message_cache::messages::tests::test_sorting_by_a_column_agrees_with_what_that_column_says",
     "data::message_cache::messages::tests::test_sorting_by_thread_groups_a_conversation",
@@ -11099,7 +11112,7 @@ red = [
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
     { file = "src/presentation/wx_app.rs", tests = 196 },
 ]
 
@@ -11137,7 +11150,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 
 [[guard]]
@@ -11159,7 +11172,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 
 [[guard]]
@@ -11572,7 +11585,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11791,7 +11804,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 
 [[guard]]
@@ -11889,7 +11902,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 
 [[guard]]
@@ -11917,7 +11930,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 
 [[guard]]
@@ -12021,7 +12034,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
@@ -12056,7 +12069,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12085,7 +12098,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 126 },
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13050,4 +13063,128 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 9 },
     { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
+]
+
+[[guard]]
+# Criterion 2 of phase 2.1, and threat T-2.1-17. Safety is stored as a word so
+# a mailbox can be read by a person, and the alphabet does not agree with how
+# bad the words are: ordinary, phishing, spam, suspicious. The conversation
+# view has ranked the four since it was written. The message view ordered the
+# words, so descending put suspicious on top and phishing third, and one column
+# meant two different things depending on which view somebody was in.
+#
+# The break puts the bare column back into the message arm, which is the defect
+# itself. That it is the defect is the tell that it is the right break: the two
+# arms are built from one ranking now, so shrinking or editing that ranking
+# moves both sides together and the guard would stay green while looking as
+# though it had been measured.
+#
+# Measured by hand on 2026-09-02 against the whole library: five tests. Four
+# read row order out of a real database. The fifth is the only one that reads
+# the expression, and it reads it for a different reason: a `CASE` is not a
+# column name, and `By::term` appends a direction to it.
+name = "the message view ranks safety by how bad it is rather than by the alphabet"
+file = "src/presentation/message_columns.rs"
+before = """            MessageColumn::Safety => how_bad_the_safety_word_is!(),"""
+after = """            MessageColumn::Safety => "m.safety","""
+red = [
+    "data::message_cache::messages::tests::test_a_safety_word_this_build_does_not_know_sorts_as_the_mildest",
+    "data::message_cache::messages::tests::test_both_views_of_the_safety_column_rank_the_verdicts_the_same_way",
+    "data::message_cache::messages::tests::test_sorting_messages_by_safety_puts_the_worst_at_the_top",
+    "data::message_cache::messages::tests::test_the_two_directions_of_a_safety_sort_are_exact_reverses",
+    "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/presentation/message_columns.rs", tests = 37 },
+]
+
+[[guard]]
+# Criterion 3 of phase 2.1, and threat T-2.1-18. Mail arriving through
+# `mail_parser` has its angle brackets taken off before it reaches the store; a
+# draft this program files keeps them, because `draft_message::message_id_for`
+# builds the whole header value. So one column held two spellings of the same
+# thing, and anything comparing a stored identifier with one somebody handed
+# over found nothing.
+#
+# The break makes the normalising call a no-op at the one production write. It
+# is applied there rather than in each caller, so this is also what checks that
+# the rule stays where a writer added later cannot miss it.
+#
+# Measured by hand on 2026-09-02 against the whole library: five tests. Four
+# are new. The fifth, `test_a_message_is_found_by_the_id_its_sender_gave_it`,
+# predates this and is the interesting one: it goes red because the lookup
+# trims and the write no longer does, which is the state a correction stopping
+# at one end leaves behind.
+name = "every writer of a message identifier writes one spelling of it"
+file = "src/data/message_cache/messages.rs"
+before = """        let identifier = crate::application::thread_identity::bare(&incoming.message_id);"""
+after = """        let identifier = incoming.message_id.as_str();"""
+red = [
+    "data::message_cache::messages::tests::test_a_message_is_found_by_the_id_its_sender_gave_it",
+    "data::message_cache::messages::tests::test_an_identifier_arriving_with_brackets_is_stored_without_them",
+    "data::message_cache::messages::tests::test_an_identifier_arriving_with_spaces_round_it_is_stored_trimmed",
+    "data::message_cache::messages::tests::test_looking_a_draft_up_by_the_identifier_its_header_carries_still_finds_it",
+    "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
+]
+
+[[guard]]
+# Threat T-2.1-19. The backfill rewrites values in a column that shipped, on
+# every open, over the only copy of somebody's mail. What makes that safe is
+# that it selects only the rows that need it: the count then means something, a
+# second run finds nothing, and a large cache is not written over on every
+# open.
+#
+# The break drops the `WHERE` clause, so it selects every row. Nothing about
+# the result looks wrong, which is the point: every value still ends up right,
+# and what goes is the count's meaning and the idempotence.
+#
+# There is one narrowing to drop, and that is deliberate. A first draft
+# narrowed in SQL and again in Rust, and neither half could be taken red on its
+# own, because whichever one was dropped the other still answered.
+#
+# Measured by hand on 2026-09-02 against the whole library: four tests.
+name = "the identifier backfill selects only the rows that need it"
+file = "src/data/message_cache/messages.rs"
+before = """                "SELECT id, message_id FROM messages
+                 WHERE message_id != TRIM(message_id, ' ' || char(9) || char(10) || char(13))
+                    OR message_id LIKE '<%'
+                    OR message_id LIKE '%>'","""
+after = """                "SELECT id, message_id FROM messages","""
+red = [
+    "data::message_cache::messages::tests::test_running_the_identifier_backfill_twice_changes_nothing_the_second_time",
+    "data::message_cache::messages::tests::test_the_identifier_backfill_counts_only_the_rows_it_changed",
+    "data::message_cache::messages::tests::test_the_identifier_backfill_leaves_a_row_with_no_identifier_alone",
+    "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
+]
+
+[[guard]]
+# Guardrail 1: a feature is done when a non-test path reaches it. The backfill
+# is reached from `MessageCache::open` and from nowhere else, so a test calling
+# it by hand says only that it works, never that it runs.
+#
+# The break leaves the `if let` in place and gives it a result the migration
+# never produced, so the code still compiles, every test that calls the
+# migration by hand still passes, and the only thing that changes is that
+# opening a database no longer corrects anything. That is the state this
+# project keeps finding: written, tested, and wired to nothing.
+#
+# Measured by hand on 2026-09-02 against the whole library: one test, and it is
+# the only one that opens a database rather than calling the migration.
+name = "the identifier backfill is reached when a database is opened"
+file = "src/data/message_cache/mod.rs"
+before = """        if let Err(e) = cache.backfill_message_identifiers() {"""
+after = """        if let Err(e) = Result::<usize>::Ok(0) {"""
+red = [
+    "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
