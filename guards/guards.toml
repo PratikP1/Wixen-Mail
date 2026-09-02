@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 356 records have arrived since and have not been through it.
+# 357 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -12735,4 +12735,44 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 196 },
+]
+
+# Sixteen checks in tests/wired.rs read the main window's source. Twelve of them
+# used to cut it at the first `#[cfg(test)]` and four used a line-walking reader
+# of their own; all sixteen now ask `common::what_ships`. The break is a prefix
+# cut put back.
+#
+# It is put back into the one site where it can be seen, and that is a finding
+# rather than a convenience. Measured by hand on 2026-09-02: putting the cut
+# back into `test_no_two_items_on_one_menu_claim_the_same_letter`, one of the
+# twelve, reddens nothing at all, because that check reaches the same verdict
+# over 19,728 lines as over 20,117. The same is true of the other eleven. So
+# nothing in this file would notice a reader going back to a prefix cut except
+# the one test written to ask that question directly, and this record is the
+# measurement that it would.
+#
+# What this cannot see, said plainly: whether the other fifteen sites still use
+# the one answer. No break reddens anything if they stop. What holds them is the
+# absence of the idiom, which is a reading of the source nobody has written a
+# check for.
+#
+# Taken red by hand against `cargo test --test wired` on 2026-09-02: exactly
+# one, out of 59.
+[[guard]]
+name = "the main window is read whole rather than cut at its first test module"
+file = "tests/wired.rs"
+suite = "wired"
+before = """    let ship = what_ships(&app);
+
+    assert!(
+        ship.contains("fn block_the_sender("),"""
+after = """    let ship = app[..app.find("\\n#[cfg(test)]").unwrap_or(app.len())].to_string();
+
+    assert!(
+        ship.contains("fn block_the_sender("),"""
+red = [
+    "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
+]
+tests_last_seen = [
+    { file = "tests/wired.rs", tests = 59 },
 ]

@@ -1369,7 +1369,7 @@ fn test_no_two_controls_in_one_dialog_claim_the_same_alt_key() {
         // test modules below it. Measured 2026-09-02, which is also when the
         // last of the twelve stopped cutting: they all read through
         // `common::what_ships` now.
-        let production = without_test_modules(&text);
+        let production = what_ships(&text);
         for (name, body) in builder_bodies(&production) {
             if READ_AT_RUN_TIME_INSTEAD.contains(&name.as_str()) {
                 continue;
@@ -2534,7 +2534,7 @@ fn test_every_command_a_sentence_names_is_reachable() {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        let shown = without_test_modules(&text);
+        let shown = what_ships(&text);
         for phrase in capitalised_phrases(&shown) {
             if !names_a_command(&phrase) {
                 continue;
@@ -2601,7 +2601,7 @@ fn words_the_windows_show() -> Vec<String> {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        for line in without_test_modules(&text).lines() {
+        for line in what_ships(&text).lines() {
             for quoted in quoted_runs(line) {
                 found.push(as_it_is_read_out(quoted));
             }
@@ -2620,32 +2620,6 @@ fn application_sources() -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect(Path::new("src/application"), &mut found);
     found
-}
-
-/// The source with its test modules taken out.
-///
-/// Test fixtures are full of capitalised names, and every one of them would
-/// read as a command nobody wired. Cut by lines rather than by counting braces:
-/// a test module sits at the top level of its file, so it ends at the next `}`
-/// in the first column, and a brace inside a string cannot be mistaken for one.
-/// A file with production code between two test modules loses that code from
-/// this check, which makes it blind rather than wrong.
-fn without_test_modules(text: &str) -> String {
-    let mut kept = String::new();
-    let mut skipping = false;
-    for line in text.lines() {
-        if skipping {
-            skipping = line != "}";
-            continue;
-        }
-        if line.trim_start() == "#[cfg(test)]" {
-            skipping = true;
-            continue;
-        }
-        kept.push_str(line);
-        kept.push('\n');
-    }
-    kept
 }
 
 /// Two or more capitalised words running together inside a quoted string.
@@ -2823,7 +2797,7 @@ fn test_nothing_asks_for_the_interface_lock_while_it_already_holds_it() {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        for statement in without_test_modules(&text).split(';') {
+        for statement in what_ships(&text).split(';') {
             if statement.matches("lock_state(").count() < 2 {
                 continue;
             }
