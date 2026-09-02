@@ -1505,7 +1505,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 47] = [
+    const A_CRATE_THAT_CANNOT: [&str; 48] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1575,6 +1575,19 @@ mod completeness {
         "boa_engine",
         "tokio-test",
         "tempfile",
+        // This package, named as a dev-dependency on itself so that dev and
+        // test builds turn the `what-ships` feature on. It is on this list
+        // because the question these two lists ask is which dependency is a
+        // door out of the program, and this one is the program: it adds no
+        // code to any build, and no reach that `crate::` did not already have.
+        //
+        // Not on the other list, and that is a decision rather than a
+        // convenience. Putting it there would oblige
+        // `test_every_crate_that_can_reach_a_server_is_a_way_the_census_looks_for`
+        // to find a census root starting `wixen_mail`, and adding one would
+        // change what the census counts as a way out across the whole tree for
+        // a path no file under `src` ever writes.
+        "wixen-mail",
     ];
 
     /// Every dependency this project builds against, read from the manifest.
