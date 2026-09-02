@@ -789,12 +789,39 @@ pub fn the_account_a_row_belongs_to(row: &WhichRow) -> Option<String> {
 /// one. Four rows here are in that position and each is named below.
 pub fn which_menu_a_row_offers(row: &WhichRow) -> Option<crate::application::context_menu::Focus> {
     use crate::application::context_menu::Focus;
-    // The two-arm answer the folder tree's closure gives today, moved here
-    // unchanged so the tests below measure the fault rather than describe it.
-    // Right for three kinds of row out of twelve.
     match row {
+        // A pinned folder is a copy of a folder (D-30), and every command on
+        // that list reaches the folder it copies, so the two rows want one
+        // menu although they are two rows for everything else.
+        WhichRow::Folder { .. } | WhichRow::Pinned { .. } => Some(Focus::MailFolders),
+        // Unchanged from 02-07, which is what gave this row a menu of its own.
         WhichRow::SavedSearch { .. } => Some(Focus::SavedSearch),
-        _ => Some(Focus::MailFolders),
+        // The account's own branch: where its folders live, so a folder made
+        // from here lands under this row, and where the reordering gesture
+        // moves the account.
+        WhichRow::Account(_) => Some(Focus::AccountBranch),
+        // The same account named from inside a group. Its own two commands
+        // still hold, because landing here sets the open account from the row
+        // the same way; the two that are about the branch do not.
+        WhichRow::PinnedIn(_) | WhichRow::SavedSearchesIn(_) => Some(Focus::AccountInAGroup),
+        WhichRow::Labels | WhichRow::Label(_) => Some(Focus::Labels),
+        // The four rows nothing this program does acts on. Each is a group of
+        // other rows, none of them names an account, and none holds anything
+        // of its own: All Inboxes is every account's inbox read as one list,
+        // Favourites and the saved searches heading are groups of copies and
+        // of questions, and "On this computer" holds the shared five that
+        // belong to the reserved owner rather than to anybody (D-18).
+        //
+        // No menu rather than an empty one, and rather than a borrowed one.
+        // That is the answer `tests/wired.rs` already records for the
+        // reminders sidebar, which holds buckets rather than things somebody
+        // made. Every command that could be put here reads whichever account
+        // is open, and on these rows that is whichever account somebody came
+        // from, which is T-2.1-25 exactly.
+        WhichRow::AllInboxes
+        | WhichRow::Favourites
+        | WhichRow::OnThisComputer
+        | WhichRow::SavedSearches => None,
     }
 }
 

@@ -49,6 +49,28 @@ pub enum Focus {
     /// Which of the two the tree reports is decided when the menu key is
     /// pressed, from the row the cursor is on.
     SavedSearch,
+    /// An account's own branch in that tree.
+    ///
+    /// The place that account's folders live, so a folder made here lands
+    /// under this row. Everything on this list acts on the account the row
+    /// names: landing on the row sets the open account from the row's
+    /// identity, which is what makes a command that reads the open account
+    /// safe to offer here and nowhere a heading can reach.
+    AccountBranch,
+    /// The same account named from inside a group: its part of Favourites, or
+    /// its part of the saved searches.
+    ///
+    /// Apart from [`Focus::AccountBranch`] because two of that list's commands
+    /// are about the branch rather than about the account. A folder made from
+    /// here would not appear under this row, and the reordering gesture
+    /// rearranges nothing on it.
+    AccountInAGroup,
+    /// The labels heading, and one label under it.
+    ///
+    /// One list for both, because the same one thing is true of each: labels
+    /// are made, renamed and removed in one place, and that place is the only
+    /// route to any of it from this tree.
+    Labels,
     /// The list in one of the personal information modules.
     Items(ItemKind),
     /// The sidebar tree of one of them: calendars, task lists, folders.
@@ -57,10 +79,13 @@ pub enum Focus {
 
 impl Focus {
     /// Every place a menu can be raised, so tests cover the whole set.
-    pub const ALL: [Focus; 13] = [
+    pub const ALL: [Focus; 16] = [
         Focus::Messages,
         Focus::MailFolders,
         Focus::SavedSearch,
+        Focus::AccountBranch,
+        Focus::AccountInAGroup,
+        Focus::Labels,
         Focus::Items(ItemKind::Contact),
         Focus::Items(ItemKind::Event),
         Focus::Items(ItemKind::Reminder),
@@ -145,7 +170,39 @@ pub enum Action {
     /// Put a copy of this message in another folder, keeping this one.
     CopyToFolder,
     /// Choose which of this account's folders are kept up to date.
+    ///
+    /// An account's command rather than a folder's, although it has only ever
+    /// been offered from a folder's menu. The handler behind it reads whichever
+    /// account is open and never the row, so it may only be offered where
+    /// landing on the row set the open account from that row.
     ChooseFolders,
+    /// Ask this account's server for mail it has not sent yet.
+    ///
+    /// The same command File then Check Mail runs, by the same id, so the two
+    /// cannot come to do different things. It acts on the open account, which
+    /// on an account row is the account the row names.
+    CheckThisAccount,
+    /// Make a folder on the server, in the account the row names.
+    ///
+    /// Apart from [`Action::NewContainer`], which makes a calendar, a task
+    /// list, a note folder or a contact group depending on which module is
+    /// open. This one is mail, and it is the id File then New then Folder
+    /// already raises.
+    NewMailFolder,
+    /// Move the chosen row one place up its own group.
+    ///
+    /// Named for the row rather than for the account, because D-31 gives
+    /// pinned folders the same gesture and the menu bar's own item was renamed
+    /// for that reason. What it rearranges is whatever
+    /// `folder_tree::what_the_gesture_moves` answers for the row.
+    MoveUp,
+    /// Move the chosen row one place down its own group.
+    MoveDown,
+    /// Open the place labels are made, renamed and removed.
+    ///
+    /// The one thing that is true of the labels heading and of one label
+    /// alike, and the only route to any of it from the folder tree.
+    ManageLabels,
     /// Open the conditions of the chosen saved search.
     ///
     /// D-2-01's second door: one stored search, and a fuller editor beside the
@@ -185,6 +242,9 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
         Focus::Messages => MESSAGES,
         Focus::MailFolders => MAIL_FOLDERS,
         Focus::SavedSearch => SAVED_SEARCHES,
+        Focus::AccountBranch => ACCOUNT_BRANCH,
+        Focus::AccountInAGroup => ACCOUNT_IN_A_GROUP,
+        Focus::Labels => LABELS,
         Focus::Items(ItemKind::Contact) => CONTACTS,
         Focus::Items(ItemKind::Event) => EVENTS,
         Focus::Items(ItemKind::Reminder) => REMINDERS,
@@ -244,6 +304,51 @@ static SAVED_SEARCHES: &[Entry] = &[
     entry("Re&name...", Action::RenameSavedSearch),
     entry("&Delete this search", Action::DeleteSavedSearch),
 ];
+
+/// An account's own branch.
+///
+/// Every entry acts on the account this row names, and that is a fact about
+/// the tree rather than a hope: landing on an account row sets the open
+/// account from the row's identity, so the three commands that read the open
+/// account read this one. On a heading, which names no account, they would
+/// read whichever account somebody had come from, and that is the defect 02-08
+/// closed for saved searches.
+///
+/// Getting older messages is the one entry from the folder list that is not
+/// here. A branch holds no messages, so it has no next page to fetch, and it
+/// was offered on this row from 01-14 until now.
+///
+/// Choosing which folders are kept up to date is here although it used to sit
+/// on the folder menu, because it was never a folder's command: it asks about
+/// this account's folders as a set, and this row is the account.
+static ACCOUNT_BRANCH: &[Entry] = &[
+    entry("&Check this account for mail", Action::CheckThisAccount),
+    entry("&New folder...", Action::NewMailFolder),
+    entry("&Folders to keep up to date...", Action::ChooseFolders),
+    entry("Move this account &up", Action::MoveUp),
+    entry("Move this account &down", Action::MoveDown),
+];
+
+/// One account's part of Favourites, or of the saved searches.
+///
+/// The account's two commands and neither of the branch's. A folder made from
+/// here would be made on the server and would appear in the account's own
+/// branch, not under this row, so offering it here would name the wrong place.
+/// Moving up and down is left off for a plainer reason: on these rows
+/// `folder_tree::what_the_gesture_moves` answers that nothing moves, so the
+/// entry would be a line that refuses.
+static ACCOUNT_IN_A_GROUP: &[Entry] = &[
+    entry("&Check this account for mail", Action::CheckThisAccount),
+    entry("&Folders to keep up to date...", Action::ChooseFolders),
+];
+
+/// The labels heading, and one label under it.
+///
+/// One entry, because one thing is true here. Labels are made, renamed and
+/// removed in the label manager and nowhere else, and nothing in this program
+/// acts on a single label from the tree. A short list that is true beats a
+/// longer one borrowed from a row of another kind.
+static LABELS: &[Entry] = &[entry("&Labels...", Action::ManageLabels)];
 
 static CONTACTS: &[Entry] = &[
     entry("&New contact", Action::NewItem),

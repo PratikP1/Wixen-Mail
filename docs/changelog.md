@@ -83,6 +83,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The menu key in the folder tree used to offer a folder's commands on rows
+  that are not folders.** On your account's branch, on Favourites, on the
+  Labels heading and on "On this computer", pressing the menu key offered
+  "Get older messages" and "Folders to keep up to date". A heading holds no
+  messages, so there was nothing older to get.
+
+  Each kind of row now offers what is true of it.
+
+  On an account's own branch: check that account for mail, make a folder in it,
+  choose which of its folders are kept up to date, and move the account up or
+  down. Every one of these acts on the account whose branch you are on, not on
+  whichever account you were looking at before.
+
+  On an account's part of Favourites or of Saved Searches: check that account
+  for mail, and choose which of its folders are kept up to date. Making a
+  folder is not offered there, because the folder would appear in the account's
+  own branch and not under the row you were on.
+
+  On the Labels heading or on one label: open Labels, which is where labels are
+  made, renamed and removed.
+
+  On All Inboxes, Favourites, "On this computer" and the Saved Searches
+  heading, the menu key now does nothing. There is nothing this program can do
+  to one of those rows, and an item that does nothing is worse than no item.
+
 - **Replying to a message forwarded to you in Hungarian used to send a reply
   that did not say it was one.** Hungarian marks a forward with `I:`. Wixen
   Mail read that as the mark of a reply, so replying to `I: Ebéd` sent the

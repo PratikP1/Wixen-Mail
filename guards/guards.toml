@@ -11372,7 +11372,7 @@ red = [
     "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 82 },
+    { file = "src/presentation/folder_tree.rs", tests = 89 },
 ]
 
 [[guard]]
@@ -11427,7 +11427,7 @@ red = [
     "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 82 },
+    { file = "src/presentation/folder_tree.rs", tests = 89 },
     { file = "src/presentation/wx_app.rs", tests = 196 },
 ]
 
@@ -11685,7 +11685,7 @@ red = [
     "presentation::folder_tree::tests::test_unpinning_leaves_the_account_branchs_row_untouched",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 82 },
+    { file = "src/presentation/folder_tree.rs", tests = 89 },
 ]
 
 [[guard]]
@@ -12624,7 +12624,7 @@ red = [
     "presentation::folder_tree::tests::test_two_accounts_with_searches_give_one_heading_and_a_branch_each",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 82 },
+    { file = "src/presentation/folder_tree.rs", tests = 89 },
 ]
 
 # ── A saved search run against the account somebody was last looking at ──────

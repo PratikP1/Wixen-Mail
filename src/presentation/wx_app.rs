@@ -3026,29 +3026,40 @@ impl WxMailApp {
                 use crate::application::context_menu::Focus;
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
-                wire_context_menu(&msg_list, || Focus::Messages);
-                // The one control here holding two kinds of row. Which it is
-                // is read from what the cursor is on at the moment the key is
-                // pressed, because a saved search and a mailbox have different
-                // commands and two of a folder's do not work on a search.
+                wire_context_menu(&msg_list, || Some(Focus::Messages));
+                // The one control here holding twelve kinds of row. Which menu
+                // each offers is a question about the row, so it is answered in
+                // `folder_tree` where a row's identity lives and a test can
+                // reach it without a window. Asked at the moment the key is
+                // pressed, because the answer changes as the cursor moves.
                 wire_context_menu(&folder_tree, {
                     let state = state.clone();
-                    move || match lock_state(&state).selected_folder {
-                        Some(folder_tree::WhichRow::SavedSearch { .. }) => Focus::SavedSearch,
-                        _ => Focus::MailFolders,
+                    move || {
+                        lock_state(&state)
+                            .selected_folder
+                            .as_ref()
+                            .and_then(folder_tree::which_menu_a_row_offers)
                     }
                 });
 
-                wire_context_menu(&pim_refs.contact_list, || Focus::Items(ItemKind::Contact));
-                wire_context_menu(&pim_refs.cal_event_list, || Focus::Items(ItemKind::Event));
-                wire_context_menu(&pim_refs.reminder_list, || Focus::Items(ItemKind::Reminder));
-                wire_context_menu(&pim_refs.task_list, || Focus::Items(ItemKind::Task));
-                wire_context_menu(&pim_refs.note_list, || Focus::Items(ItemKind::Note));
+                wire_context_menu(&pim_refs.contact_list, || {
+                    Some(Focus::Items(ItemKind::Contact))
+                });
+                wire_context_menu(&pim_refs.cal_event_list, || {
+                    Some(Focus::Items(ItemKind::Event))
+                });
+                wire_context_menu(&pim_refs.reminder_list, || {
+                    Some(Focus::Items(ItemKind::Reminder))
+                });
+                wire_context_menu(&pim_refs.task_list, || Some(Focus::Items(ItemKind::Task)));
+                wire_context_menu(&pim_refs.note_list, || Some(Focus::Items(ItemKind::Note)));
 
                 wire_context_menu(&contacts_sb.tree, || {
-                    Focus::Containers(ContainerKind::ContactGroup)
+                    Some(Focus::Containers(ContainerKind::ContactGroup))
                 });
-                wire_context_menu(&cal_sb.tree, || Focus::Containers(ContainerKind::Calendar));
+                wire_context_menu(&cal_sb.tree, || {
+                    Some(Focus::Containers(ContainerKind::Calendar))
+                });
 
                 // Hiding and showing a calendar.
                 //
@@ -3116,10 +3127,10 @@ impl WxMailApp {
                     }
                 });
                 wire_context_menu(&tasks_sb.tree, || {
-                    Focus::Containers(ContainerKind::TaskList)
+                    Some(Focus::Containers(ContainerKind::TaskList))
                 });
                 wire_context_menu(&notes_sb.tree, || {
-                    Focus::Containers(ContainerKind::NoteFolder)
+                    Some(Focus::Containers(ContainerKind::NoteFolder))
                 });
             }
 
@@ -9230,14 +9241,19 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
 ///
 /// `where_it_is` is asked at that moment rather than fixed at wiring time,
 /// because one control can hold more than one kind of row: the mail folder
-/// tree carries mailboxes and saved searches, which have different commands,
-/// and a menu that offered a folder's commands on a saved search offered two
-/// entries that could not work. Ten of the eleven controls answer with a
-/// constant.
+/// tree carries twelve kinds, and a menu that offered a folder's commands on
+/// any of the other nine offered entries that could not work. Ten of the
+/// eleven controls answer with a constant.
+///
+/// `None` means the key does nothing on this row, which is a decision rather
+/// than an oversight. `folder_tree::which_menu_a_row_offers` answers it for
+/// the four rows of that tree that name no account and hold nothing of their
+/// own, and the reminders sidebar makes the same call by having no menu at all
+/// rather than an empty one.
 fn wire_context_menu<W, F>(control: &W, where_it_is: F)
 where
     W: WxWidget + WxEvtHandler + Copy + 'static,
-    F: Fn() -> crate::application::context_menu::Focus + 'static,
+    F: Fn() -> Option<crate::application::context_menu::Focus> + 'static,
 {
     /// `WXK_WINDOWS_MENU`, the key between the right Windows key and Ctrl.
     ///
@@ -9256,7 +9272,9 @@ where
         if !asked {
             return;
         }
-        crate::presentation::wx_context_menu::show(&owner, where_it_is());
+        if let Some(focus) = where_it_is() {
+            crate::presentation::wx_context_menu::show(&owner, focus);
+        }
     });
 }
 
