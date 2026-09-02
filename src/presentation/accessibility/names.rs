@@ -286,8 +286,11 @@ type RowReports = std::sync::Arc<std::sync::Mutex<RowStates>>;
 /// the list is wired up, unless something has already put the cursor
 /// somewhere or the list has nothing in it yet. Kept apart from the widget
 /// calls that act on the answer so the decision itself can be tested without
-/// a live `CheckListBox`, which nothing in this crate builds inside `cargo
-/// test`.
+/// building a live `CheckListBox`. One can be built, and is: wxWidgets allows
+/// one live window per process, and `tests/theme_reach.rs` spends its binary's
+/// one on the Columns and folder chooser dialogs, which each hold one of these
+/// lists. Keeping the decision out here means proving it never has to compete
+/// for that.
 fn should_select_first_row(has_selection: bool, row_count: u32) -> bool {
     !has_selection && row_count > 0
 }

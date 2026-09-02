@@ -1,9 +1,10 @@
 //! What the message list is showing, and what survives a change of it.
 //!
-//! Pure rules, no window. wxWidgets supports one application per process, so a
-//! rule that needs a control to test is a rule that gets one test. Everything
-//! decidable from values already in memory lives here, and is tested without a
-//! control at all.
+//! Pure rules, no window. wxWidgets allows one live window per process, and
+//! the library's own test binary spends none of its one, so a rule that needs
+//! a real control to prove it needs a test binary of its own, as
+//! `tests/theme_reach.rs` is. Everything decidable from values already in
+//! memory lives here, and is tested without a control at all.
 //!
 //! D-01 fixes the shape this module serves: the list stays a virtual
 //! `ListCtrl`, because only the native control gives UI Automation the real set

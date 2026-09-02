@@ -6027,6 +6027,7 @@ const SAYS_WHAT_A_TEST_MAY_STILL_BUILD: &[&str] = &[
     "one `#[test]` function",
     "one test function",
     "one `wxdragon::main` per process",
+    "one live window per process",
 ];
 
 /// Whether a refusal in this sentence lands on a verb that puts a window up.

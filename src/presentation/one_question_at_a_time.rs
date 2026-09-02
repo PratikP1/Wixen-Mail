@@ -33,8 +33,11 @@
 //!
 //! [`what_to_raise`] takes whether an editor has focus and whether a question
 //! is already up as arguments and builds nothing, so every rule above has a
-//! test that needs no display. wxWidgets supports one application per process,
-//! which puts a hard ceiling on how much can be proved by building windows.
+//! test that needs no display. The ceiling that makes that worth doing is a
+//! budget rather than a bar: wxWidgets allows one live window per process, a
+//! second in the same process prints `initializing twice?` and hangs, and the
+//! library's own test binary spends none of its one. A rule wanting a window
+//! needs a test binary of its own, as `tests/theme_reach.rs` is.
 
 use crate::data::message_cache::WhatTheServerSaid;
 use std::cell::Cell;

@@ -6458,10 +6458,10 @@ fn coverage_before(
 /// What the offer above the message list says, or nothing at all.
 ///
 /// Pure and out here rather than a branch inside the window, because the rule
-/// it carries is one a test can hold and a window is not: wxWidgets supports
-/// one application per process, which is a hard ceiling on how much can be
-/// proved by building one. So the decision comes out here and the window does
-/// as it is told.
+/// it carries is one a test can hold cheaply and a window is not: wxWidgets
+/// allows one live window per process, and the library's own test binary
+/// spends none of its one, so a rule wanting a window needs a test binary of
+/// its own. So the decision comes out here and the window does as it is told.
 ///
 /// `count` is the length of the list the fetch will walk, not the difference
 /// between the two numbers the coverage sentence gives. Those come apart where
@@ -14412,10 +14412,12 @@ fn handle_account_mgr(
 /// Takes `&dyn WxWidget` rather than the widgets' own concrete types so one
 /// function can repaint the whole mixture startup paints, a `Panel` here, a
 /// `TreeCtrl` there, without a type parameter per widget. A test proves this
-/// with fakes, since nothing in this crate builds a live wxWidgets window
-/// inside `cargo test`; whether a real control obeys the colour it is given
-/// is, as everywhere else in this file, a question only a running build
-/// answers.
+/// with fakes rather than with real controls, because wxWidgets allows one
+/// live window per process and the library's own test binary spends none of
+/// its one; `tests/theme_reach.rs` spends its binary's one on real controls
+/// and real colours. Whether a real control obeys the colour it is given is,
+/// as everywhere else in this file, a question that live test and a running
+/// build answer.
 fn repaint_theme(
     palette: Option<theme::Palette>,
     second_surface_widgets: &[&dyn WxWidget],
@@ -19803,10 +19805,13 @@ mod tests {
     /// Stands in for a real window so `repaint_theme` can be tested without
     /// building one.
     ///
-    /// Nothing in this crate builds a live wxWidgets window inside `cargo
-    /// test`: `tests/theme_reach.rs`'s file comment explains why, one
-    /// process may run `wxdragon::main` at most once, and this binary runs
-    /// many `#[test]` functions in parallel. `WxWidget`'s only method
+    /// wxWidgets allows one live window per process, and this is the
+    /// library's own test binary, which runs thousands of `#[test]`
+    /// functions in parallel: spending the one here would hand it to
+    /// whichever of them reached `wxdragon::main` first, and a second call
+    /// prints `initializing twice?` and hangs. `tests/theme_reach.rs` spends
+    /// its own binary's one instead, on real controls and real colours, and
+    /// its file comment gives the measurement. `WxWidget`'s only method
     /// without a default body is `handle_ptr`, so every colour accessor is
     /// overridden here instead of relying on the default, and a null
     /// pointer from `handle_ptr` is safe because none of the overrides call
@@ -19857,7 +19862,9 @@ mod tests {
         // repaints the widgets already on screen, rather than new ones. So
         // this builds each fake once and paints it twice, the same
         // instances both times, which is what "without a restart" means for
-        // a test that cannot open a real window to prove it on.
+        // a test proving it on fakes. wxWidgets allows one live window per
+        // process and this binary spends none of its one, for the reason
+        // `RecordedWindow` gives.
         let sidebar = RecordedWindow::default();
         let tree = RecordedWindow::default();
         let content = RecordedWindow::default();
@@ -25279,9 +25286,11 @@ mod local_folders_at_start_up {
 /// comment beside the menu item that says the feature is not built.
 ///
 /// Both are read out of the shipping half of this file rather than exercised,
-/// because neither can be reached without a window and wxWidgets allows one
-/// application per process. What that buys is narrow and worth stating: it
-/// proves there is one writer of the count and that no comment contradicts the
+/// because neither can be reached without the whole application running.
+/// wxWidgets allows one live window per process, so a dialog that can be
+/// constructed on its own is provable in a test binary of its own, and this is
+/// not one of those. What reading buys is narrow and worth stating: it proves
+/// there is one writer of the count and that no comment contradicts the
 /// feature. It does not prove the count is right on screen, which is a screen
 /// reader on a running window.
 #[cfg(test)]
@@ -25431,10 +25440,13 @@ mod what_the_list_is_told_it_holds {
 /// switch. So the handler sets the open account and redraws nothing.
 ///
 /// Read from the source because the handler is a closure inside the window
-/// builder and wxWidgets allows one application per process, so no test in this
-/// crate can reach it. What that buys is narrow and worth stating: it proves
-/// the handler names the pure answer and names neither rebuild. It does not
-/// prove the rebuild is absent at run time, which is a running window.
+/// builder, so reaching it needs the whole application running rather than a
+/// dialog put together on its own. That is the narrow reason and it is the
+/// true one: wxWidgets allows one live window per process, so a constructible
+/// dialog is provable in a test binary of its own, and this closure is not
+/// one. What reading buys is narrow and worth stating: it proves the handler
+/// names the pure answer and names neither rebuild. It does not prove the
+/// rebuild is absent at run time, which is a running window.
 #[cfg(test)]
 mod moving_between_accounts_does_not_rebuild_the_tree {
     use crate::common::what_ships::what_ships;

@@ -74,8 +74,11 @@ pub struct FolderRow {
 /// it is, and the warning about the one folder where ticking it means
 /// downloading everything twice.
 ///
-/// Separate from the dialog so it can be tested. What a row says is the part
-/// that has to be right, and a dialog cannot be opened in a test.
+/// Separate from the dialog so it can be tested cheaply. What a row says is
+/// the part that has to be right, and a row's words need no dialog. The dialog
+/// itself is opened in a test: wxWidgets allows one live window per process,
+/// and `tests/theme_reach.rs` spends its binary's one on this dialog among
+/// others.
 pub fn row_label(folder: &FolderRow) -> String {
     let mut label = folder.name.clone();
 
