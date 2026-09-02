@@ -95,14 +95,36 @@ struct Row {
 /// the same step, so the control's walk and the vector are one sequence rather
 /// than two that have to be kept in step.
 fn rows_in_walk_order(nodes: &[ThreadNode]) -> Vec<Row> {
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(index, node)| Row {
-            node: index,
-            under: node.parent.filter(|parent| *parent < index),
-        })
-        .collect()
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
+    let mut under_the_root: Vec<usize> = Vec::new();
+    for (index, node) in nodes.iter().enumerate() {
+        // A parent sitting later in the slice, or being the node itself, names
+        // a row that has not been appended when this one is.
+        // `show_thread_dialog` says nodes arrive parents first; a slice that
+        // breaks that promise puts the orphan under the root rather than
+        // losing it, which is what the append loop did before this existed.
+        match node.parent {
+            Some(parent) if parent < index => children[parent].push(index),
+            _ => under_the_root.push(index),
+        }
+    }
+
+    let mut rows = Vec::with_capacity(nodes.len());
+    let mut waiting: Vec<Row> = under_the_root
+        .into_iter()
+        .rev()
+        .map(|node| Row { node, under: None })
+        .collect();
+    while let Some(row) = waiting.pop() {
+        for child in children[row.node].iter().rev() {
+            waiting.push(Row {
+                node: *child,
+                under: Some(row.node),
+            });
+        }
+        rows.push(row);
+    }
+    rows
 }
 
 /// What a selection at `position` in the tree's walk means.
