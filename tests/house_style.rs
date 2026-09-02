@@ -3093,6 +3093,76 @@ fn test_no_status_page_names_a_version_the_code_does_not_ship() {
     );
 }
 
+/// A version this project has never shipped and never will.
+///
+/// Zero major, zero minor, zero patch, and a prerelease name no release
+/// procedure here produces. Spliced into a page it can only be the line this
+/// companion put there.
+const A_VERSION_NOBODY_SHIPS: &str = "0.0.0-notashippedversion.1";
+
+#[test]
+fn test_the_version_reading_can_see_one_on_a_real_page() {
+    // The guard above passes today because there is nothing on either page to
+    // find: neither names any version at all. From outside, that is
+    // indistinguishable from a guard that read both pages and approved them,
+    // and `CLAUDE.md` says so in the paragraph beginning "A guard whose
+    // trigger is". This is the companion that tells the two apart, and it runs
+    // over the real files rather than over literals, because being opened,
+    // holding text, and being read line by line are the three links the guard
+    // rests on and the sibling companion below covers none of them.
+    let shipped = env!("CARGO_PKG_VERSION");
+    assert!(
+        !THE_STATUS_PAGES.is_empty(),
+        "there are no status pages to read, so the guard above is checking nothing"
+    );
+    assert_ne!(
+        A_VERSION_NOBODY_SHIPS, shipped,
+        "the version spliced in below is the one the code ships, so the guard \
+         would be right to stay quiet about it and this proves nothing"
+    );
+
+    for path in THE_STATUS_PAGES {
+        let text = fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{path} is a status page the guard reads, and it {e}"));
+        assert!(
+            !text.trim().is_empty(),
+            "{path} opened and held nothing, so the guard reads an empty page and approves it"
+        );
+
+        // As it stands. This is the vacuity, asserted rather than assumed: if
+        // a page ever does name a version, this fails and names the page,
+        // which is the direction it should fail in.
+        assert_eq!(
+            wrong_versions_on(path, &text, shipped),
+            Vec::<String>::new(),
+            "{path} names a version, so the reading below is no longer the only \
+             thing putting one there"
+        );
+
+        // And with one wrong version put into that page's own text. Its real
+        // lines, not a literal standing in for them.
+        let lines: Vec<&str> = text.lines().collect();
+        let at = lines.len() / 2;
+        let mut spliced: Vec<String> = lines.iter().map(|line| (*line).to_string()).collect();
+        spliced.insert(
+            at,
+            format!("Wixen Mail is at {A_VERSION_NOBODY_SHIPS} today."),
+        );
+
+        assert_eq!(
+            wrong_versions_on(path, &spliced.join("\n"), shipped),
+            vec![format!(
+                "{path}:{}: names {A_VERSION_NOBODY_SHIPS}, and the code ships {shipped}",
+                at + 1
+            )],
+            "a wrong version was put on line {} of {path}'s real text and the \
+             reading did not answer with exactly that page, that line and that \
+             version",
+            at + 1
+        );
+    }
+}
+
 #[test]
 fn test_the_version_reading_can_see_one() {
     // Proving the measurement: the shapes that were really in the two pages,
