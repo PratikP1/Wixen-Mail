@@ -259,6 +259,25 @@ impl NotUnderstood {
     }
 }
 
+/// What one condition holds that this build cannot read, if anything.
+///
+/// Asked of the two stored words a condition is made of, which is the whole of
+/// it: everything else in one is a pattern to compare against or a yes or no,
+/// and neither can be a word this build has never met.
+///
+/// The field is reported before the way of matching when both are unknown. The
+/// order is fixed rather than incidental, because the sentence somebody hears
+/// must not depend on which half a reading happened to look at first, and the
+/// field is the half that decides what the other half is even asking about.
+///
+/// One answer with three askers: a saved search asking it of every question it
+/// holds, and the two rule editors asking it of the one condition they are
+/// about to open.
+pub fn what_a_condition_cannot_read(field: &str, match_type: &str) -> Option<NotUnderstood> {
+    let _ = (field, match_type);
+    None
+}
+
 /// What came of running a saved search over some messages.
 ///
 /// One shape rather than "ask whether it can run, then run it", because the
@@ -1806,6 +1825,96 @@ mod tests {
             unreadable.run_over(&[]).found(),
             Found::CouldNotRun(why) if why.contains("sender_name")
         ));
+    }
+
+    #[test]
+    fn test_a_condition_made_of_words_this_build_knows_holds_nothing_it_cannot_read() {
+        use crate::application::filters::{A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH};
+
+        // Both arms rather than one example of each. A routine that switches
+        // on a word and is tested against one member of the list leaves every
+        // other member unasked, which is what mutation testing found the last
+        // time a family in this codebase went untested.
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            for way in A_WAY_A_RULE_MAY_MATCH {
+                assert_eq!(
+                    what_a_condition_cannot_read(field, way),
+                    None,
+                    "{field} matched by {way} was reported as unreadable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_condition_naming_a_field_this_build_has_never_met_names_that_field() {
+        assert_eq!(
+            what_a_condition_cannot_read("sender_name", "contains"),
+            Some(NotUnderstood::Field("sender_name".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_a_condition_matching_a_way_this_build_has_never_met_names_that_way() {
+        assert_eq!(
+            what_a_condition_cannot_read("subject", "sounds_like"),
+            Some(NotUnderstood::WayOfMatching("sounds_like".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_a_condition_wrong_in_both_halves_names_the_field_and_says_so_every_time() {
+        // Fixed rather than incidental. Somebody hearing a different sentence
+        // for the same stored condition on two openings has no way to tell a
+        // program that changed its mind from one that read something else.
+        for _ in 0..8 {
+            assert_eq!(
+                what_a_condition_cannot_read("sender_name", "sounds_like"),
+                Some(NotUnderstood::Field("sender_name".to_string()))
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_condition_that_cannot_be_read_is_said_in_the_words_the_search_already_uses() {
+        // Against the call rather than against a copied string. A second
+        // wording is the thing this compares to rule out, and two copies of
+        // one sentence in two files is how a second wording begins.
+        let unreadable =
+            what_a_condition_cannot_read("sender_name", "contains").expect("an unknown field");
+        assert_eq!(
+            unreadable.why(),
+            NotUnderstood::Field("sender_name".to_string()).why()
+        );
+
+        let search = a_search(
+            "From my manager",
+            vec![asking("sender_name", "contains", "ann")],
+        );
+        assert_eq!(
+            search.what_it_found(&search.run_over(&[]).found()),
+            format!("From my manager could not run: {}", unreadable.why())
+        );
+    }
+
+    #[test]
+    fn test_a_condition_naming_no_field_at_all_says_that_rather_than_naming_nothing() {
+        // The empty string is what the rewrite this plan refuses used to
+        // store, so it is the word the refusal on the write path meets. Named
+        // rather than dropped into the sentence: "it asks about the  of a
+        // message" is a sentence with a hole where the answer should be.
+        assert_eq!(
+            what_a_condition_cannot_read("", "contains"),
+            Some(NotUnderstood::Field(String::new()))
+        );
+        assert_eq!(
+            NotUnderstood::Field(String::new()).why(),
+            "it does not say which part of a message it asks about."
+        );
+        assert_eq!(
+            NotUnderstood::WayOfMatching(String::new()).why(),
+            "it does not say how the message is to be compared."
+        );
     }
 
     #[test]
