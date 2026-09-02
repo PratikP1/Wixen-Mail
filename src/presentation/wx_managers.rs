@@ -2669,6 +2669,30 @@ fn what_a_condition_still_needs(match_words: &str, typed: &str) -> Option<&'stat
     }
 }
 
+/// What stops this condition being shown at all, if anything.
+///
+/// A different question from [`what_a_condition_still_needs`], which is about a
+/// condition somebody is halfway through writing. This one is about a condition
+/// that was already stored, in a word this build has no meaning for: a newer
+/// version wrote it, or whatever wrote it got the word wrong.
+///
+/// Both editors ask it twice, and one wording serves all four asks. Once before
+/// the dialog is built, because a dialog that opens and then complains has
+/// already shown somebody a list with nothing chosen in it, which is the thing
+/// being refused. Once before a condition is handed back, so nothing is stored
+/// that the dialog could not show even if a caller reached the dialog without
+/// passing the first ask.
+///
+/// The clause naming the word is
+/// [`crate::application::saved_searches::NotUnderstood::why`], which is what a
+/// saved search itself says when it cannot run. The same stored word met two
+/// ways says the same thing, which is the argument plan 02-07 used for
+/// `SAVED_BY_ANOTHER_VERSION`.
+pub fn what_stops_this_condition_being_shown(field: &str, match_type: &str) -> Option<String> {
+    let _ = (field, match_type);
+    None
+}
+
 /// Say what a saved search cannot find with the field now showing, or clear
 /// the line.
 ///
@@ -4524,6 +4548,253 @@ mod tests {
             "run_manager_loop no longer calls delete_selected live, so the check above is \
              asleep on the real file"
         );
+    }
+
+    /// The ask both condition editors are held to, spelled once.
+    const THE_ASK: &str = "what_stops_this_condition_being_shown(";
+
+    /// What an editor that opens on a stored condition gets wrong.
+    ///
+    /// Twice and in an order, which is the whole of the rule. Before the
+    /// dialog is built, because a dialog that opens and then complains has
+    /// already shown somebody a list with nothing chosen in it, and that is
+    /// the thing being refused. Again before a condition is handed back, so
+    /// nothing is stored that the dialog could not show even if some later
+    /// caller reaches the dialog without passing the first ask.
+    ///
+    /// Read from source rather than run, for the reason plan 02.1-07 recorded
+    /// about the vanished-folders window: every path that tells a refusal from
+    /// an opening ends at `show_modal`, which blocks with nobody to answer it,
+    /// so a test that opened the editor would hang the commit gate rather than
+    /// fail it. A test that hangs on the failing case is weaker than a weak
+    /// one that fails.
+    fn what_a_condition_editor_gets_wrong(function_body: &str, builder: &str) -> Vec<String> {
+        let live: Vec<&str> = function_body
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        let asks: Vec<usize> = live
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(THE_ASK))
+            .map(|(at, _)| at)
+            .collect();
+        let builds = live.iter().position(|line| line.contains(builder));
+
+        let mut wrong = Vec::new();
+        match (asks.first(), builds) {
+            (None, _) => wrong.push(format!(
+                "never asks {THE_ASK}, so it opens on a stored condition it cannot show and \
+                 empties it on the way out"
+            )),
+            (Some(first), Some(built)) if built < *first => wrong.push(format!(
+                "calls {builder} before it asks {THE_ASK}, so somebody is shown a list with \
+                 nothing chosen in it before being told why"
+            )),
+            (Some(_), None) => wrong.push(format!(
+                "never calls {builder}, so this reading is about the wrong function"
+            )),
+            _ => {}
+        }
+        if !asks.is_empty() && asks.len() < 2 {
+            wrong.push(format!(
+                "asks {THE_ASK} once, so a condition reaching the dialog another way can still \
+                 be stored with the part this build could not read emptied"
+            ));
+        }
+        wrong
+    }
+
+    /// The two editors that can be opened on a stored condition, and the
+    /// builder each of them must refuse before calling.
+    const BOTH_CONDITION_EDITORS: [(&str, &str); 2] = [
+        ("fn show_rule_edit", "build_rule_edit_dialog("),
+        ("fn show_filter_edit", "build_filter_edit_dialog("),
+    ];
+
+    #[test]
+    fn test_both_condition_editors_refuse_before_they_open_and_before_they_hand_one_back() {
+        // Both doors, traced rather than assumed. These are two separate
+        // functions with two separate builders: the saved-search condition
+        // manager reaches the first and the filter manager reaches the
+        // second, and neither calls the other. Fixing one and reporting both
+        // is exactly what a shared name would have invited.
+        let windows = the_manager_windows();
+        for (function, builder) in BOTH_CONDITION_EDITORS {
+            let wrong = what_a_condition_editor_gets_wrong(body_of(&windows, function), builder);
+            assert!(wrong.is_empty(), "{function}: {}", wrong.join("\n  "));
+        }
+    }
+
+    #[test]
+    fn test_the_condition_editor_check_can_tell_a_refusing_editor_from_one_that_does_not() {
+        // Proving the measurement. A source read that finds nothing passes,
+        // and from outside that is indistinguishable from one that finds
+        // everything. This project has already been caught once by a guard
+        // whose trigger was "a document mentions X" and which was disarmed by
+        // the workaround it recommended.
+        let sound = "    if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+            \x20       return None;\n\
+            \x20   }\n\
+            \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
+            \x20   let chosen = ...;\n\
+            \x20   match what_stops_this_condition_being_shown(&q.field, &q.match_type) {\n\
+            \x20       Some(said) => None,\n\
+            \x20       None => Some(q),\n\
+            \x20   }\n";
+        assert!(
+            what_a_condition_editor_gets_wrong(sound, "build_rule_edit_dialog(").is_empty(),
+            "an editor that refuses at both ends was reported as wrong"
+        );
+
+        let never_asks = "    let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
+            \x20   let chosen = Some(q);\n";
+        let wrong = what_a_condition_editor_gets_wrong(never_asks, "build_rule_edit_dialog(");
+        assert!(
+            wrong.iter().any(|w| w.contains("never asks")),
+            "an editor that never asks was not reported: {wrong:?}"
+        );
+
+        let asks_too_late = "    let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
+            \x20   if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+            \x20       return None;\n\
+            \x20   }\n\
+            \x20   match what_stops_this_condition_being_shown(&q.field, &q.match_type) {\n\
+            \x20       _ => None,\n\
+            \x20   }\n";
+        let wrong = what_a_condition_editor_gets_wrong(asks_too_late, "build_rule_edit_dialog(");
+        assert!(
+            wrong.iter().any(|w| w.contains("before it asks")),
+            "an editor that opens first and complains after was not reported: {wrong:?}"
+        );
+
+        let asks_once = "    if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+            \x20       return None;\n\
+            \x20   }\n\
+            \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
+            \x20   Some(q)\n";
+        let wrong = what_a_condition_editor_gets_wrong(asks_once, "build_rule_edit_dialog(");
+        assert!(
+            wrong.iter().any(|w| w.contains("once")),
+            "an editor that refuses the open and not the write was not reported: {wrong:?}"
+        );
+
+        // Commented out rather than deleted, which is what this project's own
+        // "prove the measurement" convention asks of a check built on reading
+        // source: a call still there in letters but never run.
+        let commented_out = "    // if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+            \x20   // }\n\
+            \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n";
+        let wrong = what_a_condition_editor_gets_wrong(commented_out, "build_rule_edit_dialog(");
+        assert!(
+            wrong.iter().any(|w| w.contains("never asks")),
+            "an ask commented out rather than deleted was not reported: {wrong:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_condition_this_build_can_show_stops_nothing() {
+        // Both arms rather than one example of each, which is what mutation
+        // testing found missing the last time a family here went untested.
+        for field in A_FIELD_A_RULE_MAY_NAME {
+            for way in A_WAY_A_RULE_MAY_MATCH {
+                assert_eq!(
+                    what_stops_this_condition_being_shown(field, way),
+                    None,
+                    "{field} matched by {way} was refused"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_condition_naming_a_field_this_build_cannot_show_is_refused_by_name() {
+        let said = what_stops_this_condition_being_shown("sender_name", "contains")
+            .expect("a field this build has never met");
+        assert!(
+            said.contains("sender_name"),
+            "the refusal does not name the word it could not read: {said:?}"
+        );
+        // What happened, and what to do next. A sentence that says only that
+        // something is wrong leaves somebody with nothing to do about it.
+        assert!(
+            said.contains("cannot be shown"),
+            "the refusal does not say what did not happen: {said:?}"
+        );
+        assert!(
+            said.contains("exactly as it was stored"),
+            "the refusal does not say the condition is still there: {said:?}"
+        );
+        assert!(
+            said.contains("Delete it"),
+            "the refusal does not say what can be done about it: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_way_of_matching_this_build_cannot_show_is_refused_by_name_too() {
+        // The other half of a condition, which fails the same way and was
+        // rewritten to the empty string by the same read-back.
+        let said = what_stops_this_condition_being_shown("subject", "sounds_like")
+            .expect("a way of matching this build has never met");
+        assert!(
+            said.contains("sounds_like"),
+            "the refusal does not name the word it could not read: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_refusal_is_worded_by_the_search_rather_than_a_second_time_here() {
+        // Against the call rather than against a copied string. Two copies of
+        // one sentence in two files is how a second wording begins, and a
+        // saved search and the dialog that edits it disagreeing about the same
+        // stored word is the fault this whole answer exists to prevent.
+        let said = what_stops_this_condition_being_shown("sender_name", "contains")
+            .expect("a field this build has never met");
+        assert!(
+            said.contains(
+                &crate::application::saved_searches::NotUnderstood::Field(
+                    "sender_name".to_string()
+                )
+                .why()
+            ),
+            "the refusal does not carry the clause the search itself says: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_condition_with_no_field_at_all_is_refused_without_a_hole_in_the_sentence() {
+        // The word the write path meets. Emptying the part it could not read
+        // is what the dialog used to do, so "" is the field a condition that
+        // went through the old read-back holds.
+        let said = what_stops_this_condition_being_shown("", "contains")
+            .expect("a condition naming no field at all");
+        assert!(
+            said.contains("does not say which part of a message"),
+            "the refusal has a hole where the word should be: {said:?}"
+        );
+        assert!(
+            !said.contains("the  of"),
+            "the refusal drops an empty word into the sentence: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_condition_that_cannot_be_shown_is_still_a_row_that_says_what_it_holds() {
+        // A refusal to open is not a removal. D-2.1-02 calls it a refusal, and
+        // a row somebody can neither open nor read nor identify is a row they
+        // are stuck with.
+        let stored = Question {
+            field: "sender_name".to_string(),
+            match_type: "contains".to_string(),
+            pattern: "ann".to_string(),
+            case_sensitive: false,
+        };
+        assert!(what_stops_this_condition_being_shown(&stored.field, &stored.match_type).is_some());
+        let [looks_at, how, what] = what_a_condition_row_says(&stored);
+        assert_eq!(looks_at, "sender_name");
+        assert_eq!(how, "contains");
+        assert_eq!(what, "ann");
     }
 
     /// Somebody with two addresses and two numbers, which is the ordinary
