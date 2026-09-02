@@ -7,6 +7,130 @@
 # already put a clippy failure on main once.
 set -euo pipefail
 
+# The targets every scoped run ends with, whatever changed, because they read
+# across the whole tree and a change anywhere can redden one. Named once, here,
+# because two things decide about them: the scoped run, which always adds them,
+# and the registry mapping below, which must not answer one of them and make the
+# run pay for the same target twice.
+guards_that_read_the_whole_tree=(house_style wired)
+
+# Which integration targets guard a changed source file.
+#
+#     check.sh --suites-for <registry> [changed-file ...]
+#
+# A unit test lives beside the code it covers, so `--lib a::b::` reaches it. A
+# guard under `tests/` does not: it covers a `src/` module from outside, so the
+# scoped run reaches it only when the test file itself changes. That is a guard
+# running on the wrong commits, and a guard nobody reads is worse than none
+# because it reads as covered.
+#
+# `guards/guards.toml` already declares the coupling, so it is read rather than
+# restated. Every record names the `file` its break is applied to, and a record
+# whose break reddens an integration target names that target as `suite`. A
+# second list beside the first would drift from it, which is a shape this
+# repository keeps getting caught by.
+#
+# **This is a line scan, not a TOML parse.** A shell script has no TOML reader,
+# and the file is written one key per line. So the scan keys on a `[[guard]]`
+# header and then on `file = "..."` and `suite = "..."` at column 0 inside it,
+# remembering the pair when the next header arrives. What it would miss: a
+# record spelled as an inline table, a `file` or `suite` sharing a line with
+# another key, a value quoted some other way, or a `before`/`after` string
+# holding a line that begins `file = ` at column 0. Measured 2026-09-02: 550
+# records and 550 such lines, so no record has that shape today and nothing
+# would say so if one arrived. A record this misses is a guard that does not run
+# on the commit that could break it, which is the defect this function exists to
+# fix, so the limit is written down here rather than left to be found.
+#
+# Its suite is `scripts/check.test.sh`, which this script runs in every mode.
+the_suites_that_guard_what_changed() {
+    local registry="$1"
+    shift
+
+    # A registry that is not there costs the extra targets and nothing else.
+    # This mapping adds to what a commit earns, so it must never be the reason a
+    # commit cannot be made.
+    if [ ! -r "$registry" ]; then
+        return 0
+    fi
+
+    local -a couplings=() answers=()
+    local line file="" suite="" coupling path candidate already seen
+
+    # Narrowed to the three kinds of line that carry a coupling before the loop
+    # reads them, so the scan is over about 1,650 lines rather than 12,800 and
+    # the shapes it reads are visible in one place.
+    while IFS= read -r line; do
+        case "$line" in
+            '[[guard]]')
+                if [ -n "$file" ] && [ -n "$suite" ]; then
+                    couplings+=("$file|$suite")
+                fi
+                file=""
+                suite=""
+                ;;
+            'file = "'*'"')
+                file="${line#file = \"}"
+                file="${file%\"}"
+                ;;
+            'suite = "'*'"')
+                suite="${line#suite = \"}"
+                suite="${suite%\"}"
+                ;;
+        esac
+    done < <(grep -E '^(\[\[guard\]\]|file = |suite = )' "$registry" || true)
+    if [ -n "$file" ] && [ -n "$suite" ]; then
+        couplings+=("$file|$suite")
+    fi
+
+    for path in "$@"; do
+        # Only a source module. A record whose break lands anywhere else is a
+        # true record that says nothing here: `--lib` was never going to reach
+        # it, and a changed `tests/*.rs` already runs its own target.
+        case "$path" in
+            src/*.rs) ;;
+            *) continue ;;
+        esac
+
+        for coupling in "${couplings[@]+"${couplings[@]}"}"; do
+            [ "${coupling%%|*}" = "$path" ] || continue
+            candidate="${coupling#*|}"
+
+            # Dropped if the scoped run already ends with it, and dropped if
+            # another record has already answered it. Several records couple one
+            # source file to one target, and the target is one run either way.
+            seen=""
+            for already in "${guards_that_read_the_whole_tree[@]}" \
+                           "${answers[@]+"${answers[@]}"}"; do
+                if [ "$already" = "$candidate" ]; then
+                    seen=yes
+                fi
+            done
+            if [ -n "$seen" ]; then
+                continue
+            fi
+
+            answers+=("$candidate")
+        done
+    done
+
+    if [ "${#answers[@]}" -eq 0 ]; then
+        return 0
+    fi
+    printf '%s\n' "${answers[@]}"
+}
+
+# The mapping on its own, so `scripts/check.test.sh` can ask it about a made-up
+# file list and a made-up registry rather than running the whole gate. Answered
+# here, before anything with a side effect and before the mode is looked at, so
+# a suite asking this question can never start a gate run that would run that
+# suite again.
+if [ "${1:-}" = "--suites-for" ]; then
+    shift
+    the_suites_that_guard_what_changed "$@"
+    exit 0
+fi
+
 # Offer to run these on every commit, so the answer cannot be lost between
 # getting it and committing. It has been twice: a stale fingerprint reporting
 # clean, and this script's output piped somewhere so the pipeline's exit status
@@ -71,6 +195,28 @@ case "${1:-}" in
 esac
 
 mode="${1:-}"
+
+# An argument this script does not know is refused rather than falling through
+# to the whole gate.
+#
+# Not a tidiness point. This script runs every `scripts/*.test.sh`, and one of
+# those suites now runs this script. A typo in the argument that suite passes
+# used to be read as a mode, fall past every branch below, and run the whole
+# gate, which ran the suite, which ran the gate. Measured on 2026-09-02 by
+# writing exactly that typo, and it had to be killed. A misspelled `all` also
+# quietly bought somebody the full gate and told them nothing.
+case "$mode" in
+    "" | all | all_but_slow | affected | docs_only | red) ;;
+    *)
+        echo "check.sh: '$mode' is not a mode this script knows." >&2
+        echo "  Modes: all, all_but_slow, affected, docs_only, red." >&2
+        echo "  Or no argument at all, and which-checks.sh decides." >&2
+        echo "  Or --suites-for <registry> [changed-file ...] for the mapping" >&2
+        echo "  from a changed source file to the guards that cover it." >&2
+        exit 64
+        ;;
+esac
+
 # What is about to be committed, which is what the tests should be scoped to.
 # Staged rather than working-tree, because that is what the hook is deciding
 # about. Empty when run by hand outside a commit, and `which-checks.sh` answers
@@ -155,7 +301,8 @@ trap 'rm -f "$run_log"' EXIT
 # the first module does not hide the rest, for the same reason the whole-suite
 # run passes `--no-fail-fast`.
 run_the_tests_that_reach_what_changed() {
-    local status=0 path module target
+    local status=0 path module target suite
+    local -a tree_targets=()
     for path in "${changed[@]+"${changed[@]}"}"; do
         case "$path" in
             src/*.rs)
@@ -176,8 +323,35 @@ run_the_tests_that_reach_what_changed() {
                 ;;
         esac
     done
+    # The integration targets `guards/guards.toml` couples to a changed source
+    # module. Without these, a guard that lives under `tests/` and covers a
+    # `src/` module runs only on commits that change the test file, which is
+    # every commit except the ones that could break it.
+    while IFS= read -r suite; do
+        [ -n "$suite" ] || continue
+        echo "-- $suite (coupled to what changed by guards/guards.toml)"
+        cargo test --test "$suite" >> "$run_log" 2>&1 || status=1
+    done < <(the_suites_that_guard_what_changed \
+        "$(dirname "$0")/../guards/guards.toml" \
+        "${changed[@]+"${changed[@]}"}")
+
     echo "-- the guards that read the whole tree"
-    cargo test --test house_style --test wired >> "$run_log" 2>&1 || status=1
+    for suite in "${guards_that_read_the_whole_tree[@]}"; do
+        tree_targets+=(--test "$suite")
+    done
+    # --no-fail-fast because this is more than one target, and this line used to
+    # be `cargo test --test house_style --test wired` without it: a failure in
+    # house_style meant wired never started, not reported as skipped. That is
+    # the same defect the whole-suite run below carries the flag for, in a line
+    # small enough that nobody looked at it twice.
+    #
+    # Found on 2026-09-02 by `test_one_failing_target_does_not_hide_the_rest`,
+    # which reads this file. It exempts a line carrying `--test ` as one that
+    # runs a named target on purpose, so the old spelling was exempt while
+    # having the defect; building the targets into an array took the flag out of
+    # the text and the guard spoke. The exemption is wider than it means to be,
+    # and that is written up rather than widened further here.
+    cargo test --no-fail-fast "${tree_targets[@]}" >> "$run_log" 2>&1 || status=1
     return $status
 }
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 32
+open_count: 34
 waived_count: 0
 fixed_count: 6
-total_count: 38
-last_updated: 2026-09-02T12:41:25.488Z
+total_count: 40
+last_updated: 2026-09-02T13:30:36.985Z
 ---
 
 # Broken Windows Ledger
@@ -53,6 +53,8 @@ last_updated: 2026-09-02T12:41:25.488Z
 | 36 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The File menu item for the fetch has never been drawn in a running build: whether NVDA reads the experimental marking on its label and in the item description, and whether the offer's spoken line and the coverage sentence are heard as two answers rather than one contradiction, are both unheard | open |  | 2026-09-01T17:15:26.277Z |  |
 | 37 | 02.1 | todo | src/presentation/wx_app.rs | 10262 | Two comments made false by 02.1-01 are still there and were found a second time by 02.1-02. Line 10262 says the ten checks in tests/wired.rs cannot use what_ships because it is cfg(test); it is behind a cargo feature now and they do. Line 19737 says the_window_itself reads this file and stops at the first cfg(test); it uses what_ships. Both instruct the next person to follow a convention for a reason that no longer holds | open |  | 2026-09-02T11:49:49.886Z |  |
 | 38 | 02.1 | deviation | docs/roadmap.md | 156 | Folder favorites is unticked on the shipped roadmap and ships: ID_PIN_FOLDER draws a Pin Folder menu item, application::favourites backs it, and 02-08 used the Favourites branch as the precedent saved searches copied. Found by 02.1-03's tree search, left unfixed as outside criterion 5 and belonging to phase 2 | open |  | 2026-09-02T12:41:25.488Z |  |
+| 39 | 02.1 | deviation | scripts/check.sh |  | The red half of red/green cannot be committed for a shell suite. check.sh runs every scripts/*.test.sh under set -e before it branches on the mode, so a failing suite aborts the gate before the red branch is reached and red-commit.sh verdict is never consulted. Measured by hand on 2026-09-02 by breaking one case in scripts/check.test.sh and committing with a Fails-until-green trailer naming it. Separately, verdict reads cargo's 'test NAME ... FAILED' lines, which a shell suite never produces, so a named shell case would report as never having run | open |  | 2026-09-02T13:30:26.438Z |  |
+| 40 | 02.1 | deviation | tests/house_style.rs | 5499 | runs_the_suite exempts any line containing '--test ' as one that runs a named target on purpose, so a line naming fifteen targets without --no-fail-fast is exempt too. That hid a real defect in check.sh: 'cargo test --test house_style --test wired' ran two targets and stopped at the first failure. Found on 2026-09-02 only because building those targets into an array took the literal flag out of the text and the guard then spoke. The line is fixed; the exemption is still wider than one named target | open |  | 2026-09-02T13:30:36.985Z |  |
 
 ````json
 [
@@ -510,6 +512,30 @@ last_updated: 2026-09-02T12:41:25.488Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T12:41:25.488Z",
+    "resolved_at": null
+  },
+  {
+    "id": 39,
+    "kind": "deviation",
+    "phase": "02.1",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "The red half of red/green cannot be committed for a shell suite. check.sh runs every scripts/*.test.sh under set -e before it branches on the mode, so a failing suite aborts the gate before the red branch is reached and red-commit.sh verdict is never consulted. Measured by hand on 2026-09-02 by breaking one case in scripts/check.test.sh and committing with a Fails-until-green trailer naming it. Separately, verdict reads cargo's 'test NAME ... FAILED' lines, which a shell suite never produces, so a named shell case would report as never having run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T13:30:26.438Z",
+    "resolved_at": null
+  },
+  {
+    "id": 40,
+    "kind": "deviation",
+    "phase": "02.1",
+    "file": "tests/house_style.rs",
+    "line": 5499,
+    "description": "runs_the_suite exempts any line containing '--test ' as one that runs a named target on purpose, so a line naming fifteen targets without --no-fail-fast is exempt too. That hid a real defect in check.sh: 'cargo test --test house_style --test wired' ran two targets and stopped at the first failure. Found on 2026-09-02 only because building those targets into an array took the literal flag out of the text and the guard then spoke. The line is fixed; the exemption is still wider than one named target",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T13:30:36.985Z",
     "resolved_at": null
   }
 ]
