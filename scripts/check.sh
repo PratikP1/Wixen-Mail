@@ -11,7 +11,25 @@ set -euo pipefail
 # getting it and committing. It has been twice: a stale fingerprint reporting
 # clean, and this script's output piped somewhere so the pipeline's exit status
 # was the pipe's rather than this script's.
-if [ "$(git config core.hooksPath || true)" != ".githooks" ]; then
+# Asked as a question rather than matched against one spelling. The old form
+# compared `core.hooksPath` to the literal `.githooks`, and this machine holds
+# the absolute path, which is what makes the hook resolve from a worktree. So it
+# printed "Not running on commit" on every run, including the runs the hook
+# itself started, and the fix it advised would have replaced a working absolute
+# path with a narrower relative one. Found on 2026-09-02 by somebody reading the
+# output of a run the hook had started.
+#
+# What matters is whether a commit will run this, so that is what is asked: does
+# the configured hooks directory hold an executable commit-msg hook. A wrong
+# answer here is not cosmetic, it tells somebody to change a setting that works.
+hooks_path="$(git config core.hooksPath || true)"
+case "$hooks_path" in
+    "") will_run_on_commit="" ;;
+    /* | [A-Za-z]:[/\\]*) will_run_on_commit="$hooks_path/commit-msg" ;;
+    *) will_run_on_commit="$(git rev-parse --show-toplevel)/$hooks_path/commit-msg" ;;
+esac
+
+if [ -z "$will_run_on_commit" ] || [ ! -f "$will_run_on_commit" ]; then
   echo "Not running on commit. To turn that on:"
   echo "    git config core.hooksPath .githooks"
   echo

@@ -129,6 +129,33 @@ if [ "$#" -eq 0 ]; then
     exit 0
 fi
 
+# A manifest reaches every target, so it earns every check.
+#
+# Not a special case bolted on: it is the markdown rule at the top of this file
+# read the other way round. That rule exists because a document can break a Rust
+# test, since `house_style` reads documents. A manifest can too, and something
+# reads it: `service::outward` classifies every dependency by whether it can
+# reach a server.
+#
+# Without this, a manifest change answered `affected`, which maps a changed file
+# to a module by path and finds none for `Cargo.toml`, so the commit ran
+# formatting, clippy and the two tree guards and no tests at all. Clippy catches
+# a manifest change that breaks the build; it does not catch one that breaks a
+# test reading the manifest as data. On 2026-09-02 adding a `[features]` section
+# put this package into its own dependency list, reddened that census, and the
+# break survived three commits before a hand-run of the library found it.
+#
+# Manifests change rarely, so answering `all` costs little in aggregate and asks
+# nobody to remember which tests read them.
+for path in "$@"; do
+    case "$path" in
+        Cargo.toml | Cargo.lock | */Cargo.toml | */Cargo.lock)
+            echo all
+            exit 0
+            ;;
+    esac
+done
+
 # A document is a file whose content only a document-reading test can judge.
 # Everything else is a build input, however much it reads like prose:
 # `guards/guards.toml` names breaks the runner applies to source, `Cargo.toml`

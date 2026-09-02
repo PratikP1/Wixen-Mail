@@ -83,8 +83,25 @@ expect affected "an integration test" gsd/x tests/wired.rs
 
 # Build inputs are not documents, however they are spelled. A dependency bump
 # or a lint change reaches everything, so it earns everything.
-expect affected "Cargo.toml" gsd/x Cargo.toml
-expect affected "Cargo.lock" gsd/x Cargo.lock
+#
+# The manifests really do earn everything, and until 2026-09-02 this file said
+# so in the comment above while asserting `affected` underneath. `affected` maps
+# a changed file to a module by its path, and a manifest maps to none, so a
+# manifest commit ran formatting, clippy and the two tree guards and no tests at
+# all. Clippy catches a manifest change that breaks the build. It does not catch
+# one that breaks a test reading the manifest as data, and that is exactly what
+# happened: adding a `[features]` section put this package into its own
+# dependency list and reddened the census that reads `Cargo.toml`, which then
+# survived three commits.
+#
+# This is the same shape as the markdown rule at the top of this file, which was
+# extended to documents because `house_style` reads them, and never extended to
+# manifests. A manifest changes rarely, so `all` costs little in aggregate and
+# is the honest answer: the dependency graph and the feature set reach every
+# target.
+expect all "Cargo.toml" gsd/x Cargo.toml
+expect all "Cargo.lock" gsd/x Cargo.lock
+expect all "a manifest beside a source file" gsd/x src/lib.rs Cargo.toml
 expect affected "the hook itself" gsd/x .githooks/pre-commit
 expect affected "this decision" gsd/x scripts/which-checks.sh
 
