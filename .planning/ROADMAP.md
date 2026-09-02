@@ -219,7 +219,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02.1-04-PLAN.md — A guard under `tests/` runs on the commits that could break it (criterion 9)
+- [x] 02.1-04-PLAN.md — A guard under `tests/` runs on the commits that could break it (criterion 9)
 
 **Wave 5** *(blocked on Wave 4)*
 

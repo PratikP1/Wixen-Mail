@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-03-PLAN.md on branch gsd/plan-02.1-03, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
+stopped_at: Completed 02.1-04-PLAN.md on branch gsd/plan-02.1-04, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
 last_updated: "2026-09-02T00:00:00.000Z"
-last_activity: 2026-09-02, 02.1-03 done, unmerged. Criterion 5 closed; the status page was false by position, not by wording, and the tree search found a fifth file.
-state_head: 2807e6e
+last_activity: 2026-09-02, 02.1-04 done, unmerged. Criterion 9 closed; the gate now reads guards/guards.toml to find which integration targets a changed source file earns, and the two the criterion names gained the records that make them reachable.
+state_head: 4529af4
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 32
-  completed_plans: 26
+  completed_plans: 27
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -200,6 +200,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02.1 P01 | 3h | 3 tasks | 6 files |
 | Phase 02.1 P02 | 2h | 3 tasks | 7 files |
 | Phase 02.1 P03 | 2h | 2 tasks | 6 files |
+| Phase 02.1 P04 | 4h30m | 2 tasks | 6 files |
 
 ## Accumulated Context
 
