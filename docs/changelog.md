@@ -83,6 +83,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Two pages that ship with Wixen Mail said folder management was not built.
+  It is.** You can make a folder on the server, rename it, move it under
+  another folder or back to the top level, delete it with everything inside,
+  mark a whole one read, and empty one. That has been true since the folders
+  release. `Implementation status` filed all of it under "What does not work",
+  and the shipped roadmap left "CREATE, RENAME and DELETE" unticked. Anyone
+  reading either page to find out whether to bother trying got the wrong
+  answer. The limits are unchanged and still written down: making, renaming,
+  moving and deleting apply to folders on a server, folders kept on this
+  computer are a fixed set, and none of the server side has been run against a
+  real mail server yet.
+
+  **How a page goes wrong this way is worth saying, because nothing looked
+  wrong.** Every sentence in that paragraph had already been rewritten to
+  describe the working feature. Only its position was left behind, so the page
+  was false through where the paragraph sat rather than through anything it
+  said, and searching the page for the claim that used to be there found
+  nothing. A page that sorts things under headings is making a claim with each
+  heading, and that claim now has a test: a capability the code has, described
+  under a heading saying it does not work, fails the suite.
+
+  Two more headings changed with it. "Anything that writes, against a real
+  account" was filed under "What does not work" while saying in its own first
+  sentence that all of it is built, so it now has its own heading, "Built, and
+  never run against a real account", which is what it means. That leaves "What
+  does not work" holding only things that are genuinely not built.
+
 - **Opening a saved search now runs it against its own account.** It used to
   run against whichever account you were last looking at. Set Active in the
   account manager changes that account and leaves the folder tree's cursor

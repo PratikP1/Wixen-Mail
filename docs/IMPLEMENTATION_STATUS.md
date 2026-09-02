@@ -1,6 +1,6 @@
 # Implementation status
 
-_Last updated: 2026-08-09_
+_Last updated: 2026-09-02_
 
 This file is the canonical answer to "does this work yet". It is written to be
 believed, so anything not finished is listed as not finished.
@@ -37,6 +37,19 @@ a time. POP3 with the same protections and its own folders on this computer;
 mail stays on the POP server unless the account is told to remove it. OAuth
 sign-in works for receiving as well as sending.
 
+**Folder management.** A folder can be made on the server, renamed there, moved
+under a different folder or back out to the top level, and deleted along with
+everything inside it. A whole folder can be marked read, and a folder can be
+emptied: emptying does to every message what deleting one of them does, so
+emptying the inbox moves the mail to the trash and emptying the trash removes
+it, and the confirmation says which. Two settings decide whether either command
+reaches the folders inside the one chosen.
+
+Making, renaming, moving and deleting a folder apply to folders on a server
+only; folders kept on this computer are a fixed set. Emptying and marking read
+apply to both. Nothing on the server side of any of this has run against a real
+mail server.
+
 **Local storage.** A cache on this computer holds messages, contacts, contact
 groups, calendars, calendar events, reminders, task lists, tasks, note folders,
 and notes. It is not encrypted, so anybody who can read the file can read the
@@ -71,27 +84,16 @@ screen reader reads for one of these rows; that is a listening pass.
 
 ## What does not work
 
-**Folder management.** A folder can be made on the server, renamed there, moved
-under a different folder or back out to the top level, and deleted along with
-everything inside it. A whole folder can be marked read, and a folder can be
-emptied: emptying does to every message what deleting one of them does, so
-emptying the inbox moves the mail to the trash and emptying the trash removes
-it, and the confirmation says which. Two settings decide whether either command
-reaches the folders inside the one chosen.
-
-Making, renaming, moving and deleting a folder apply to folders on a server
-only; folders kept on this computer are a fixed set. Emptying and marking read
-apply to both. Nothing on the server side of any of this has run against a real
-mail server.
-
 **Moving a task between lists.** A task goes into your provider's default list
 when you make it, and moving and copying work for mail only.
 
-**Anything that writes, against a real account.** Sending, deleting, moving,
-copying, filing a copy in Sent, read receipts, subscriptions, and the syncs
-that push changes are all built, and none of them has ever run against a real
-account. [What is worth testing, and what is known to be
-broken](ALPHA_TESTING.md) keeps the fuller list.
+## Built, and never run against a real account
+
+**Anything that writes.** Sending, deleting, moving, copying, filing a copy in
+Sent, read receipts, subscriptions, and the syncs that push changes are all
+built, and none of them has ever run against a real account. [What is worth
+testing, and what is known to be broken](ALPHA_TESTING.md) keeps the fuller
+list.
 
 ## Quality gates
 

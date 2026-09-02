@@ -11,7 +11,7 @@
 > Two documents answering one question is how this repository's documentation
 > drifted before; keeping their jobs apart is the fix.
 
-_Last updated: 2026-08-23_
+_Last updated: 2026-09-02_
 
 ## Vision
 Wixen Mail aims to be a fully accessible, light-weight mail client built with Rust, providing a Thunderbird/Outlook-inspired experience with first-class support for screen readers and keyboard navigation on Windows.
@@ -55,7 +55,12 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] STATUS for folder counts, LSUB and SUBSCRIBE for which folders sync
 - [x] APPEND for the Sent copy, COPY and MOVE between folders
 - [ ] QRESYNC, so a folder can resume rather than re-list its UIDs
-- [ ] CREATE, RENAME and DELETE, so folders can be managed here
+- [x] CREATE, RENAME and DELETE, so folders can be managed here. A folder can
+      be made on the server, renamed there, moved under a different folder or
+      back out to the top level, and deleted with everything inside it. A whole
+      folder can be marked read and a folder can be emptied. Folders kept on
+      this computer are a fixed set. None of the server side has run against a
+      real mail server
 - [ ] Gmail's X-GM-THRID for conversations, and X-GM-RAW for server-side search.
       Both are blocked on the IMAP library rather than on this code
 
