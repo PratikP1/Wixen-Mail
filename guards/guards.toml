@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 370 records have arrived since and have not been through it.
+# 371 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13250,4 +13250,45 @@ red = [
 tests_last_seen = [
     { file = "src/application/conversations.rs", tests = 26 },
     { file = "src/presentation/wx_compose.rs", tests = 43 },
+]
+
+# ── A row that is not a folder offered a folder's commands ───────────────────
+#
+# The break is not an invention. It is the answer the folder tree's closure
+# gave from 01-14 until 02.1-08: a saved search gets its own menu and every
+# other row gets a folder's, so nine kinds of row out of twelve were offered
+# fetching older messages on a row with no messages to fetch, and choosing
+# which folders are kept up to date on rows that name no account to choose for.
+#
+# Written as an early return rather than as a catch-all arm on purpose. A
+# catch-all would make the arms below unreachable and change what the compiler
+# says about the file, and the point of the record is to measure the tests
+# rather than the warnings. This shape compiles clean and is exactly the old
+# behaviour.
+#
+# What the number says, and it is the reason this record exists: measured by
+# hand against the whole 6,039-test library on 2026-09-02, five, and all five
+# are the tests written in the same plan. Nothing else in the library notices a
+# folder tree that offers a folder's commands on a heading, which is what the
+# fault being live since 01-14 already told us.
+
+[[guard]]
+name = "a row that is not a folder is not offered a folder's commands"
+file = "src/presentation/folder_tree.rs"
+before = """    use crate::application::context_menu::Focus;
+    match row {"""
+after = """    use crate::application::context_menu::Focus;
+    if !matches!(row, WhichRow::SavedSearch { .. }) {
+        return Some(Focus::MailFolders);
+    }
+    match row {"""
+red = [
+    "presentation::folder_tree::which_menu::test_a_command_that_reads_the_open_account_is_offered_only_where_the_row_set_it",
+    "presentation::folder_tree::which_menu::test_a_folder_and_a_pinned_copy_of_one_answer_the_mail_folders_menu",
+    "presentation::folder_tree::which_menu::test_a_row_with_nothing_of_its_own_has_no_menu_rather_than_a_folders",
+    "presentation::folder_tree::which_menu::test_getting_older_messages_is_offered_only_where_a_folder_is_opened",
+    "presentation::folder_tree::which_menu::test_rows_that_want_different_commands_do_not_share_a_menu",
+]
+tests_last_seen = [
+    { file = "src/presentation/folder_tree.rs", tests = 89 },
 ]
