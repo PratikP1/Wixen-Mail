@@ -50,6 +50,15 @@ fi
 # Measured warm: the whole gate is about 330 seconds, of which the suite is 239
 # and the release build 56. A documents-only run is about 51.
 #
+# **Those figures are warm and they are a floor, not an estimate.** Measured
+# again on 2026-09-02, a documents-only commit took 2m56s: it followed two
+# commits that had changed test files, so it paid for a clippy rebuild, and the
+# document-reading list includes two targets that build a live window. Quoting
+# 51 seconds to somebody planning work was quoting a measurement without its
+# conditions. What holds in every case is the shape: a documents commit runs a
+# small fraction of the gate. What it costs on the day depends on what the
+# commits before it left to rebuild.
+#
 # The commit message, when a commit is what is running this. Only the message
 # can say that this is the RED half of red/green, which is why the hook runs
 # from `commit-msg`: at `pre-commit` time the message does not exist yet.

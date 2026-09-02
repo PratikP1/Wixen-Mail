@@ -179,6 +179,14 @@ commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
 markdown commit went from about 330 seconds to 36.
 
+**Read those two numbers as warm, and as a floor.** The same documents-only
+path took 2m56s on 2026-09-02, because it followed two commits that had changed
+test files and so paid for a clippy rebuild, and because the document-reading
+list includes two targets that build a live window. The saving is real and the
+shape holds every time; the figure does not, and quoting it to somebody planning
+work quotes a measurement without its conditions. This project already asks that
+of test counts under PERF-06, and a duration is the same kind of claim.
+
 **The obvious version of that rule is wrong here.** "Nothing Rust changed, so
 skip the tests" would be false, because `tests/house_style.rs` reads documents
 and its em-dash guard has caught two real breaks in markdown. So a document
