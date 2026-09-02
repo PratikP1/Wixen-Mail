@@ -21,6 +21,7 @@ use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::theme;
+use crate::presentation::tree_walk;
 use wxdragon::prelude::*;
 
 /// What the window is called, and what its tree is described as.
@@ -44,6 +45,25 @@ pub fn heading(moving: Moving, copying: bool) -> String {
     }
 }
 
+/// What choosing the row at `position` in the tree's walk means.
+///
+/// `None` three ways, and all three mean the same thing: nothing was chosen.
+/// The root has no position because it is not a row. An account heading has a
+/// position and no destination, because it is somewhere to look rather than
+/// somewhere to put something, and somebody who meant a folder and landed on
+/// the account gets no move, which they can see, instead of a move somewhere
+/// they did not name. A position past the end is a row this cannot place, and
+/// the safe answer to that is nothing rather than a guess.
+pub fn what_a_selection_means(
+    destinations: &[Option<String>],
+    position: Option<usize>,
+) -> Option<String> {
+    position
+        .and_then(|position| destinations.get(position + 1))
+        .cloned()
+        .flatten()
+}
+
 /// Ask where something should go.
 ///
 /// `None` when somebody cancelled or there was nowhere to offer. The caller
@@ -63,7 +83,7 @@ pub fn ask(
     if branches.is_empty() {
         return None;
     }
-    let (dialog, tree) = build_destination_dialog(
+    let (dialog, tree, destinations) = build_destination_dialog(
         parent,
         moving,
         copying,
@@ -73,18 +93,11 @@ pub fn ask(
     );
 
     let answer = dialog.show_modal();
-    // An account row carries no destination, so choosing one gives nothing
-    // rather than the first folder under it. Somebody who meant a folder and
-    // landed on the account gets no move, which they can see, instead of a
-    // move somewhere they did not name.
     let chosen = if answer == ID_OK {
-        tree.get_selection()
-            .and_then(|selected| tree.get_custom_data(&selected))
-            .and_then(|data| data.downcast_ref::<String>().cloned())
+        what_a_selection_means(&destinations, tree_walk::where_the_selection_sits(&tree))
     } else {
         None
     };
-    tree.cleanup_custom_data();
     dialog.destroy();
     chosen
 }
@@ -101,6 +114,10 @@ pub fn ask(
 ///
 /// Returns the tree alongside the dialog, the same way the caller needs it
 /// after a real `.show_modal()`: to read which destination was selected.
+///
+/// And the destinations beside it, one for every row the tree holds, in the
+/// order a depth-first walk meets them. That vector is how a row is turned
+/// back into a folder, so `ask` needs it as much as it needs the control.
 pub fn build_destination_dialog(
     parent: &Frame,
     moving: Moving,
@@ -108,7 +125,7 @@ pub fn build_destination_dialog(
     branches: &[Branch],
     last_used: Option<&str>,
     palette: Option<theme::Palette>,
-) -> (Dialog, TreeCtrl) {
+) -> (Dialog, TreeCtrl, Vec<Option<String>>) {
     let open_on = crate::application::destinations::open_on(branches, last_used)
         .map(|place| place.id.clone());
 
@@ -135,21 +152,45 @@ pub fn build_destination_dialog(
     // Where focus starts: somewhere that is an answer, rather than on an
     // account name that is not one.
     let mut start_on: Option<TreeItemId> = None;
+    // What each row means, in the order the rows are appended, which for this
+    // shape is also the order the built tree is walked: an account goes under
+    // the root and its places go under it before the next account is reached.
+    //
+    // This used to be the other way round, with the identifier travelling on
+    // the row itself, and the comment here argued for it: a list beside the
+    // tree would be two things that have to stay in step, and the failure is
+    // silent, which in this dialog means somebody's mail in a folder they did
+    // not name. Three things answer that argument now. The entry is pushed in
+    // the same step that appends the row and only when the append succeeded,
+    // so the two cannot come apart. This tree is built once and never touched
+    // again while the dialog is open: nothing is inserted, removed or
+    // re-sorted. And the position comes from asking the control which row is
+    // selected rather than from matching labels, so two accounts with the same
+    // name stay two rows.
+    //
+    // What the old way cost is the reason it had to go. `append_item_with_data`
+    // does not put the identifier on the row; it puts it in a process-global
+    // map in `wxdragon` that nothing ever takes anything out of, so every
+    // opening of this dialog left one entry per folder behind for the life of
+    // the program. `tests/tree_rows_leave_no_registry_entry.rs` counts them.
+    let mut destinations: Vec<Option<String>> = Vec::new();
 
     if let Some(root) = root.as_ref() {
         for branch in branches {
             let Some(account) = tree.append_item(root, &branch.account_name, None, None) else {
+                // Its places go with it, as they always have: they have nothing
+                // to hang under. Nothing is pushed either, so the vector still
+                // holds one entry per row the tree really has.
                 continue;
             };
+            destinations.push(None);
             for place in &branch.places {
-                // The identifier travels with the row. Matching rows by their
-                // position in a list built alongside would be one list and one
-                // tree that have to stay in step, and the failure is silent:
-                // the wrong folder, with everything reporting success.
-                let row =
-                    tree.append_item_with_data(&account, &place.name, place.id.clone(), None, None);
+                let Some(row) = tree.append_item(&account, &place.name, None, None) else {
+                    continue;
+                };
+                destinations.push(Some(place.id.clone()));
                 if open_on.as_deref() == Some(place.id.as_str()) {
-                    start_on = row;
+                    start_on = Some(row);
                 }
             }
             tree.expand(&account);
@@ -199,7 +240,7 @@ pub fn build_destination_dialog(
         theme::paint(&dialog, palette.main_surface());
     }
 
-    (dialog, tree)
+    (dialog, tree, destinations)
 }
 
 /// What to say when there is nowhere to put it.
@@ -232,6 +273,64 @@ mod tests {
             assert!(said.starts_with("Move the"), "{kind:?}: {said}");
             assert!(said.ends_with(" to"), "{kind:?}: {said}");
         }
+    }
+
+    /// Two accounts with folders under each, as the rows come out of the
+    /// build: the account heading first, then its places, then the next
+    /// account.
+    ///
+    /// Both accounts have folders on purpose. A fixture whose second account
+    /// were empty would let a resolution that reached forward for the first
+    /// folder it could find answer `None` for that account by luck, and the
+    /// account rows are the whole point of this vector.
+    fn two_accounts_with_folders() -> Vec<Option<String>> {
+        vec![
+            None,
+            Some("acct-1/archive".to_string()),
+            Some("acct-1/receipts".to_string()),
+            None,
+            Some("acct-2/archive".to_string()),
+        ]
+    }
+
+    #[test]
+    fn test_choosing_a_folder_gives_that_folder() {
+        let rows = two_accounts_with_folders();
+
+        for (position, id) in [
+            (1, "acct-1/archive"),
+            (2, "acct-1/receipts"),
+            (4, "acct-2/archive"),
+        ] {
+            assert_eq!(
+                what_a_selection_means(&rows, Some(position)),
+                Some(id.to_string()),
+                "row {position}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_choosing_an_account_gives_nothing_rather_than_the_first_folder_under_it() {
+        // The row somebody landed on is not a place mail can go. Answering
+        // with the folder under it would file the message somewhere they never
+        // named, and everything would report success.
+        let rows = two_accounts_with_folders();
+
+        assert_eq!(what_a_selection_means(&rows, Some(0)), None);
+        assert_eq!(what_a_selection_means(&rows, Some(3)), None);
+    }
+
+    #[test]
+    fn test_a_row_this_cannot_place_gives_nothing() {
+        // The root has no position because it is not a row, and a position
+        // past the end is a row the vector does not know. Both answer nothing,
+        // which is the safe answer rather than a guess.
+        let rows = two_accounts_with_folders();
+
+        assert_eq!(what_a_selection_means(&rows, None), None);
+        assert_eq!(what_a_selection_means(&rows, Some(rows.len())), None);
+        assert_eq!(what_a_selection_means(&[], Some(0)), None);
     }
 
     #[test]

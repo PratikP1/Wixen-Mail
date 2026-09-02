@@ -706,7 +706,7 @@ fn check_destination(parent: &Frame, palette: theme::Palette, into: &mut Vec<Sit
             depth: 0,
         }],
     }];
-    let (dialog, _tree) = wx_destination::build_destination_dialog(
+    let (dialog, _tree, _destinations) = wx_destination::build_destination_dialog(
         parent,
         Moving::Message,
         false,

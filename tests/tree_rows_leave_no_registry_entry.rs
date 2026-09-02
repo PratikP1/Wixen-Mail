@@ -124,7 +124,7 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
             let mut found = Vec::new();
 
             let opened = store_item_data(());
-            let (destination, _tree) = wx_destination::build_destination_dialog(
+            let (destination, _tree, _destinations) = wx_destination::build_destination_dialog(
                 &frame,
                 Moving::Message,
                 false,
