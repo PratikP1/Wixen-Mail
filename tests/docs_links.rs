@@ -186,3 +186,338 @@ fn test_the_check_is_actually_reading_links() {
         "only {counted} links between our documents were found, which means the reader is broken"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Where a capability is described, rather than what is said about it.
+//
+// `docs/IMPLEMENTATION_STATUS.md` had a **Folder management** paragraph whose
+// every sentence described making, renaming, moving, deleting, emptying and
+// marking read a folder, in the present tense, with the two settings that
+// decide how far the last two reach. All of it works. The paragraph sat under
+// the heading `## What does not work`.
+//
+// So the page made a false claim through position rather than through wording.
+// Somebody rewrote the paragraph when the feature shipped and left it where it
+// was. A reader scanning headings, which is how a status page is read, got the
+// false answer; a reader searching for the sentence that used to be wrong
+// found nothing and concluded the page was already fixed. A check hunting for
+// a claim of absence would have passed on the day the defect was live, which
+// is why this one reads the heading instead.
+// ---------------------------------------------------------------------------
+
+/// The page that answers "does this work yet" by sorting things under headings.
+const THE_STATUS_PAGE: &str = "docs/IMPLEMENTATION_STATUS.md";
+
+/// A capability the page describes, paired with the code it cannot work without.
+///
+/// One table rather than two lists, so the pairing is read in one place. Two
+/// entries close the defect that prompted this; a third costs one more entry
+/// and no other edit.
+struct Capability {
+    /// The bolded name opening the paragraph that describes it. The page
+    /// writes these as `**Folder management.**`.
+    on_the_page: &'static str,
+    /// The file that must hold every symbol below.
+    in_the_code: &'static str,
+    /// What the capability cannot work without, as text that file must contain.
+    symbols: &'static [&'static str],
+}
+
+const THE_CAPABILITIES: &[Capability] = &[
+    Capability {
+        on_the_page: "Folder management",
+        in_the_code: "src/service/protocols/imap.rs",
+        symbols: &[
+            "fn create_mailbox",
+            "fn rename_mailbox",
+            "fn delete_mailbox",
+        ],
+    },
+    Capability {
+        on_the_page: "Threaded view",
+        in_the_code: "src/data/message_cache/messages.rs",
+        symbols: &["fn conversations_in"],
+    },
+];
+
+/// Where a capability is described: which section, and the lines of both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DescribedUnder {
+    heading: String,
+    heading_line: usize,
+    paragraph_line: usize,
+}
+
+/// Which `##` section of a page a capability's paragraph sits in.
+///
+/// `None` means the page no longer introduces it by that name. That is a
+/// failure rather than nothing to say: a page reorganised out from under this
+/// reading must not pass as a page with no faults.
+fn described_under(text: &str, name: &str) -> Option<DescribedUnder> {
+    let opening = format!("**{name}.**");
+    let mut section: Option<(String, usize)> = None;
+
+    for (index, line) in text.lines().enumerate() {
+        if let Some(rest) = line.strip_prefix("## ") {
+            section = Some((rest.trim().to_string(), index + 1));
+        }
+        if line.trim_start().starts_with(&opening) {
+            let (heading, heading_line) = section?;
+            return Some(DescribedUnder {
+                heading,
+                heading_line,
+                paragraph_line: index + 1,
+            });
+        }
+    }
+    None
+}
+
+/// Words that refuse.
+const A_REFUSAL: &[&str] = &["not", "no", "cannot", "never"];
+
+/// Words for a thing being there and doing its job.
+const WORKING: &[&str] = &[
+    "work",
+    "works",
+    "working",
+    "built",
+    "build",
+    "done",
+    "finished",
+    "implemented",
+    "supported",
+    "there",
+];
+
+/// Whether a heading tells a reader that what sits under it does not work.
+///
+/// The refusal has to govern the working word, approximated by sitting within
+/// two words of it, rather than the two merely appearing in the same heading.
+/// Asking only for co-occurrence reads "Known gaps in verification" and "Which
+/// tests would fail if the code were wrong" as refusals, and both sit over
+/// things that do work. A predicate over word membership alone cannot tell a
+/// sentence from its opposite, so the companion below asserts what this says
+/// about every other heading on the real page, not only about the one it is
+/// meant to catch.
+fn a_heading_that_denies(heading: &str) -> bool {
+    let words: Vec<String> = heading
+        .split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .collect();
+
+    words.iter().enumerate().any(|(at, word)| {
+        A_REFUSAL.contains(&word.as_str())
+            && words
+                .iter()
+                .skip(at + 1)
+                .take(2)
+                .any(|next| WORKING.contains(&next.as_str()))
+    })
+}
+
+/// Whether the code holds everything a capability cannot work without.
+///
+/// A real read of `src/`. The code's side of the pairing is the half that must
+/// not be a constant: taken as one, this check would go on naming the page
+/// after somebody deleted the feature, which is the page being right.
+fn the_code_has(capability: &Capability) -> bool {
+    let Ok(text) = fs::read_to_string(capability.in_the_code) else {
+        return false;
+    };
+    capability.symbols.iter().all(|s| text.contains(s))
+}
+
+/// Every capability the code has that a page files under a heading saying it
+/// does not.
+///
+/// Takes the page's text and the list, so the companion runs this same reading
+/// over an invented page and an invented capability rather than over a copy of
+/// it. The code is still read from disk, because that is the half being paired.
+fn capabilities_filed_as_missing(
+    page: &str,
+    text: &str,
+    capabilities: &[Capability],
+) -> Vec<String> {
+    let mut wrong = Vec::new();
+
+    for capability in capabilities {
+        let Some(found) = described_under(text, capability.on_the_page) else {
+            wrong.push(format!(
+                "{page}: nothing introduces \"{}\", so this check has stopped reading the page",
+                capability.on_the_page
+            ));
+            continue;
+        };
+
+        if a_heading_that_denies(&found.heading) && the_code_has(capability) {
+            wrong.push(format!(
+                "{page}:{}: \"{}\" is described under \"{}\" at line {}, \
+                 and {} holds {}",
+                found.paragraph_line,
+                capability.on_the_page,
+                found.heading,
+                found.heading_line,
+                capability.in_the_code,
+                capability.symbols.join(", ")
+            ));
+        }
+    }
+    wrong
+}
+
+#[test]
+fn test_no_capability_the_code_has_is_filed_under_a_heading_denying_it() {
+    let text = fs::read_to_string(THE_STATUS_PAGE)
+        .unwrap_or_else(|e| panic!("{THE_STATUS_PAGE} is the status page, and it {e}"));
+
+    let wrong = capabilities_filed_as_missing(THE_STATUS_PAGE, &text, THE_CAPABILITIES);
+
+    assert!(
+        wrong.is_empty(),
+        "this page answers \"does this work yet\", and a heading is one of its \
+         assertions. Each of these describes something the code has, under a \
+         heading saying it does not work:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+/// A page that files a working capability under a heading denying it.
+const A_PAGE_THAT_FILES_IT_WRONG: &str = "\
+# Invented status page
+
+## What works
+
+**Sending.** It sends.
+
+## What does not work
+
+**Folder management.** A folder can be made, renamed and deleted.
+";
+
+/// The same page with the paragraph moved and nothing else changed.
+const A_PAGE_THAT_FILES_IT_RIGHT: &str = "\
+# Invented status page
+
+## What works
+
+**Sending.** It sends.
+
+**Folder management.** A folder can be made, renamed and deleted.
+
+## What does not work
+
+**Moving a task between lists.** Not yet.
+";
+
+/// A capability named the same way on the page and absent from the code.
+const A_CAPABILITY_THE_CODE_DOES_NOT_HAVE: &[Capability] = &[Capability {
+    on_the_page: "Folder management",
+    in_the_code: "src/service/protocols/imap.rs",
+    symbols: &["fn a_mailbox_verb_this_client_has_never_spoken"],
+}];
+
+#[test]
+fn test_the_section_reading_can_tell_a_misfiled_capability_from_a_filed_one() {
+    // The guard above reads a heading, and a guard that reads a document and
+    // finds nothing to read passes. This is the companion `CLAUDE.md` asks
+    // for. It proves four separate things, because the guard rests on four:
+    // the page opens and every capability is found in it, the heading matcher
+    // says yes to the denying heading and no to the rest, the position is what
+    // decides, and the code probe really reads `src/`.
+
+    let text = fs::read_to_string(THE_STATUS_PAGE)
+        .unwrap_or_else(|e| panic!("{THE_STATUS_PAGE} is the status page, and it {e}"));
+    assert!(
+        !text.trim().is_empty(),
+        "{THE_STATUS_PAGE} opened and held nothing, so the guard reads an empty page \
+         and approves it"
+    );
+
+    // Every capability located on the real page. A name the reader could not
+    // find would otherwise pass as a capability with nothing to say about it.
+    for capability in THE_CAPABILITIES {
+        assert!(
+            described_under(&text, capability.on_the_page).is_some(),
+            "\"{}\" is not introduced anywhere in {THE_STATUS_PAGE}, so the guard \
+             has nothing to read about it and says nothing",
+            capability.on_the_page
+        );
+    }
+
+    // What the heading matcher says about the page's own headings. One denies;
+    // the rest must not, or the guard would move every paragraph on the page.
+    let headings: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .map(str::trim)
+        .collect();
+    assert!(
+        headings.len() > 3,
+        "only {} headings were found on {THE_STATUS_PAGE}, so the section reader \
+         is not reading it",
+        headings.len()
+    );
+    let denying: Vec<&&str> = headings
+        .iter()
+        .filter(|heading| a_heading_that_denies(heading))
+        .collect();
+    assert_eq!(
+        denying,
+        vec![&"What does not work"],
+        "these are the headings on {THE_STATUS_PAGE} the matcher calls a refusal, \
+         and it should be exactly the one. All of them: {headings:?}"
+    );
+
+    // Position is what decides. The same paragraph, the same code, two pages.
+    assert_eq!(
+        capabilities_filed_as_missing("invented.md", A_PAGE_THAT_FILES_IT_WRONG, THE_CAPABILITIES),
+        vec![
+            "invented.md:9: \"Folder management\" is described under \
+             \"What does not work\" at line 7, and src/service/protocols/imap.rs \
+             holds fn create_mailbox, fn rename_mailbox, fn delete_mailbox"
+                .to_string(),
+            "invented.md: nothing introduces \"Threaded view\", so this check has \
+             stopped reading the page"
+                .to_string(),
+        ],
+        "a working capability filed under a heading saying it does not work was \
+         not named with its heading and its lines"
+    );
+    assert_eq!(
+        capabilities_filed_as_missing(
+            "invented.md",
+            A_PAGE_THAT_FILES_IT_RIGHT,
+            &THE_CAPABILITIES[..1]
+        ),
+        Vec::<String>::new(),
+        "the paragraph was moved under a heading that is true of it and the check \
+         still named it, so it is not reading the position"
+    );
+
+    // The code probe answers from `src/`, both ways round. Without this arm a
+    // probe hardcoded to `true` would pass every assertion above.
+    assert!(
+        the_code_has(&THE_CAPABILITIES[0]),
+        "the mailbox verbs are in {}, and the probe says they are not",
+        THE_CAPABILITIES[0].in_the_code
+    );
+    assert!(
+        !the_code_has(&A_CAPABILITY_THE_CODE_DOES_NOT_HAVE[0]),
+        "the probe found a symbol this client has never had, so it is not reading \
+         the file"
+    );
+    assert_eq!(
+        capabilities_filed_as_missing(
+            "invented.md",
+            A_PAGE_THAT_FILES_IT_WRONG,
+            A_CAPABILITY_THE_CODE_DOES_NOT_HAVE
+        ),
+        Vec::<String>::new(),
+        "a capability the code does not have was named for sitting under a heading \
+         saying so, which is the page being right"
+    );
+}
