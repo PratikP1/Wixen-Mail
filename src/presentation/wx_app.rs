@@ -10001,9 +10001,22 @@ fn the_accounts_in_the_tree(
             Vec::new()
         })
         .iter()
+        // The name and the address apart, not `display_name`, which joins
+        // them. Putting the address on is `folder_tree`'s to decide, because
+        // only it can see the whole set being drawn and so only it can tell
+        // whether two accounts would read alike. Composing it here meant every
+        // account branch read a full email address aloud, every time.
+        //
+        // An account with no name falls back to its address rather than to a
+        // row that reads as its unread count and nothing else. The account
+        // dialog refuses an empty name, so this is for a row an older build
+        // could have written.
         .map(|account| folder_tree::AccountInTheTree {
             id: account.id.clone(),
-            name: account.display_name(),
+            name: match account.name.trim().is_empty() {
+                true => account.email.clone(),
+                false => account.name.clone(),
+            },
             address: account.email.clone(),
         })
         .collect();

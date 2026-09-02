@@ -534,6 +534,56 @@ fn plain_row(identity: WhichRow, label: String, depth: usize, expandable: bool) 
     }
 }
 
+/// The accounts again, with an address on the name of any two that read alike.
+///
+/// Somebody can give two accounts one name and there is nothing wrong with
+/// doing so. What is wrong is two rows that read identically: a person working
+/// by ear cannot tell which branch they are on, and cannot tell which account
+/// the next command is about to act against. That is the fault this project
+/// keeps finding in lists, and 02-07 and 02-08 closed it for condition rows and
+/// for saved searches.
+///
+/// Decided from the set being drawn rather than per account, so an account
+/// nobody else is named after reads as its name and nothing more. The
+/// alternative, putting the address on every branch, is what the tree did until
+/// now: `the_accounts_in_the_tree` filled the name from `display_name`, which
+/// is the name and the address together. That was never wrong, and it read a
+/// full email address aloud on every account row, every time, for a case that
+/// needs it rarely.
+///
+/// Names are compared by how they are spoken rather than by their bytes.
+/// "Work" and "work" are one name to somebody listening, so both get an
+/// address.
+///
+/// The address, because what separates two accounts to the person who owns them
+/// is where the mail comes from. An identifier would tell them apart on screen
+/// and mean nothing to anybody.
+///
+/// A row with no address is left alone. Only one exists: the account being
+/// looked at when the accounts table has no row for it, drawn as "This
+/// account". Since there can be only one of it, leaving it alone still keeps it
+/// apart from a real account of the same name, which does get an address.
+fn so_no_two_accounts_read_alike(accounts: &[AccountInTheTree]) -> Vec<AccountInTheTree> {
+    let spoken = |account: &AccountInTheTree| account.name.trim().to_lowercase();
+    accounts
+        .iter()
+        .map(|account| {
+            let shared = accounts
+                .iter()
+                .filter(|other| spoken(other) == spoken(account))
+                .count()
+                > 1;
+            match shared && !account.address.is_empty() {
+                true => AccountInTheTree {
+                    name: format!("{} <{}>", account.name, account.address),
+                    ..account.clone()
+                },
+                false => account.clone(),
+            }
+        })
+        .collect()
+}
+
 pub fn rows(
     accounts: &[AccountInTheTree],
     folders: &[FolderInTheTree],
@@ -543,6 +593,11 @@ pub fn rows(
     setting: UnreadOnAParent,
     collapsed: &std::collections::HashSet<String>,
 ) -> Vec<TreeRow> {
+    // Two accounts of one name are told apart before anything is drawn, so
+    // every place an account is named below reads the same words: its own
+    // branch, its part of Favourites, and its part of the saved searches.
+    let accounts = &so_no_two_accounts_read_alike(accounts);
+
     // Every row that has counts to give is worded here, once, from what it is
     // closed to right now. `worded` is the only place that turns a name and two
     // numbers into words, so the rebuild and the handler that hears a branch
@@ -845,12 +900,22 @@ pub fn which_menu_a_row_offers(row: &WhichRow) -> Option<crate::application::con
 /// `get_item_parent` and collecting the words gives this same chain, and that
 /// is what pairs a row on screen back to its identity.
 ///
+/// `wx_app::the_row_on_screen` is what calls this, once per row, taking the
+/// first row whose chain matches the one it walked up from the control. So
+/// every folder tree selection goes through it, by way of `which_row`, and two
+/// rows sitting in the same place would mean landing on the second and acting
+/// on the first.
+///
 /// It is unambiguous where no two rows under one parent read the same, which
 /// holds for every folder: two folders sharing a parent would have to share a
-/// path, and `UNIQUE(account_id, path)` forbids it. Two accounts given the same
-/// name by the person who added them are the one case it cannot separate, and
-/// there it picks the first, which is what every duplicate row did before
-/// identities existed.
+/// path, and `UNIQUE(account_id, path)` forbids it. It holds for account
+/// branches because [`so_no_two_accounts_read_alike`] makes it hold, and that
+/// is a change of ownership rather than of behaviour: it used to hold because
+/// the caller composed each name with its address, and the accounts table
+/// declares that address unique. Nothing in this file said so, so a change to
+/// the caller could have taken it away in silence.
+/// `accounts_that_read_alike::test_no_two_rows_of_a_tree_with_two_same_named_accounts_sit_in_one_place`
+/// is what now says it.
 pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
     let Some(row) = rows.get(at) else {
         return Vec::new();

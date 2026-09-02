@@ -83,6 +83,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Your account branches no longer read out their email address unless they
+  need to.** Every account in the folder tree used to read as its name followed
+  by its address, so a branch was announced as "Work, ana@example.com, 12
+  unread in all" whether or not anything else was called Work.
+
+  An account whose name nobody else shares now reads as just its name. If two
+  or more of your accounts have the same name, those get their addresses back,
+  because otherwise they would be rows you could not tell apart. Names that
+  differ only in capitals count as the same name, since they sound the same.
+
+  Nothing about where the rows sit changes, so a tree you had collapsed opens
+  the way it did before.
+
 - **The menu key in the folder tree used to offer a folder's commands on rows
   that are not folders.** On your account's branch, on Favourites, on the
   Labels heading and on "On this computer", pressing the menu key offered

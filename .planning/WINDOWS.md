@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 36
+open_count: 41
 waived_count: 0
 fixed_count: 7
-total_count: 43
-last_updated: 2026-09-02T18:32:59.629Z
+total_count: 48
+last_updated: 2026-09-02T20:00:23.940Z
 ---
 
 # Broken Windows Ledger
@@ -58,6 +58,11 @@ last_updated: 2026-09-02T18:32:59.629Z
 | 41 | 02.1 | deviation | src/presentation/folder_tree.rs |  | wxdragon 0.9.17 never removes a tree item's custom data from its process-global registry. cleanup_all_custom_data walks the tree through clean_item_and_children, which calls remove_item_data nowhere at all, for a leaf or for a branch, and the same walk is what runs automatically when the control is destroyed. delete_all_items goes straight to the FFI and removes nothing either. So set_custom_data and append_item_with_data leak one entry per row for the life of the process, and the only escape is not to call them. 02.1-05 took both dialogs off them; the folder tree in wx_app.rs was already off them and is held there by a source read. Upstream defect, not reported yet | open |  | 2026-09-02T15:06:11.672Z |  |
 | 42 | 02.1 | unrun-verify | src/presentation/wx_app.rs |  | ask_about_the_folders_that_have_gone has never been opened in a running build. The four things its body decides are read from source by tests/wired.rs; a live window was available and not used, because every path that tells a right argument from a wrong one ends at MessageDialog::show_modal, which blocks with nobody to answer it, so a wrong argument would hang the commit gate rather than fail it | open |  | 2026-09-02T17:57:52.087Z |  |
 | 43 | 02.1 | deviation | .planning/phases/02.1-what-phase-1-found-on-its-way-past/02.1-07-PLAN.md |  | The claim that a test cannot build a live window came back in a planning document. 02.1-02 corrected it in five source comments and left test_no_comment_says_a_test_cannot_build_a_window behind to stop it returning, but that guard reads Rust files only, so 02.1-07's plan could assert the budget was spent and nothing spoke. 02.1-05 had already disproved the same claim from its own plan. The guard cannot be widened to .planning without reading plans that are allowed to be wrong before they are executed, so this is recorded rather than fixed | open |  | 2026-09-02T18:32:59.629Z |  |
+| 44 | 02.1 | unrun-verify | src/application/context_menu.rs |  | The six context menus the folder tree now offers have not been heard. Nothing confirms that an account branch's five entries and their mnemonics are announced, nor that the menu key doing nothing on All Inboxes, Favourites, On this computer and the saved searches heading reads as nothing to do here rather than as a key that failed. That last one is the risk this design takes on purpose: silence teaches as little as an item that does nothing, and only a real NVDA or Narrator run says which is worse | open |  | 2026-09-02T19:59:55.206Z |  |
+| 45 | 02.1 | unrun-verify | src/presentation/folder_tree.rs |  | Account branches stopped reading their email address unless two accounts share a name. Nothing confirms by ear that the shorter label is an improvement, nor that the address appearing on two branches and not on a third is understood as a disambiguator rather than as an inconsistency | open |  | 2026-09-02T20:00:02.105Z |  |
+| 46 | 02.1 | deviation | .planning/phases/02.1-what-phase-1-found-on-its-way-past/02.1-08-PLAN.md |  | The plan's premise correction stated that where_a_row_sits is production code with no production caller, measured that day, and prescribed wire it or remove it. It has one: wx_app::the_row_on_screen calls it once per row and which_row calls that on every folder tree selection, so it is on the main control's selection path. The premise was scoped to the defining file and to tests/ and never to sibling source files, and acting on it would have deleted live code. Recorded because the shape recurs: a negative reachability claim reads as a survey while naming only where somebody looked | open |  | 2026-09-02T20:00:11.219Z |  |
+| 47 | 02.1 | deviation | src/application/context_menu.rs |  | D-2.1-03 says each branch kind gets its own menu and a group heading offers what is true of the group. Four rows got no menu instead: All Inboxes, Favourites, On this computer and the saved searches heading. Nothing this program does acts on one of them, and every candidate command reads whichever account is open, which on a row naming no account is whichever account somebody came from. The decision's own reason for rejecting no menu was losing genuinely useful per-account commands, and none is lost, because every row that names an account keeps its own. Recorded as a divergence from a recorded decision rather than as a fault | open |  | 2026-09-02T20:00:23.296Z |  |
+| 48 | 02.1 | deviation | src/presentation/wx_app.rs |  | Criterion 12 was planned against two accounts of one name drawing rows that read identically. They did not: the_accounts_in_the_tree filled each name from Account::display_name, which is name and address together, and the accounts table declares email NOT NULL UNIQUE. The property was real, held by two layers that folder_tree.rs never mentions, and unowned there. The plan's own remedy would have added a second defence to a case that could not arise. What the trace found instead is the opposite defect, and it was fixed: the address was read aloud on every account branch, always, to serve a case that had never happened | open |  | 2026-09-02T20:00:23.940Z |  |
 
 ````json
 [
@@ -575,6 +580,66 @@ last_updated: 2026-09-02T18:32:59.629Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T18:32:59.629Z",
+    "resolved_at": null
+  },
+  {
+    "id": 44,
+    "kind": "unrun-verify",
+    "phase": "02.1",
+    "file": "src/application/context_menu.rs",
+    "line": null,
+    "description": "The six context menus the folder tree now offers have not been heard. Nothing confirms that an account branch's five entries and their mnemonics are announced, nor that the menu key doing nothing on All Inboxes, Favourites, On this computer and the saved searches heading reads as nothing to do here rather than as a key that failed. That last one is the risk this design takes on purpose: silence teaches as little as an item that does nothing, and only a real NVDA or Narrator run says which is worse",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T19:59:55.206Z",
+    "resolved_at": null
+  },
+  {
+    "id": 45,
+    "kind": "unrun-verify",
+    "phase": "02.1",
+    "file": "src/presentation/folder_tree.rs",
+    "line": null,
+    "description": "Account branches stopped reading their email address unless two accounts share a name. Nothing confirms by ear that the shorter label is an improvement, nor that the address appearing on two branches and not on a third is understood as a disambiguator rather than as an inconsistency",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T20:00:02.105Z",
+    "resolved_at": null
+  },
+  {
+    "id": 46,
+    "kind": "deviation",
+    "phase": "02.1",
+    "file": ".planning/phases/02.1-what-phase-1-found-on-its-way-past/02.1-08-PLAN.md",
+    "line": null,
+    "description": "The plan's premise correction stated that where_a_row_sits is production code with no production caller, measured that day, and prescribed wire it or remove it. It has one: wx_app::the_row_on_screen calls it once per row and which_row calls that on every folder tree selection, so it is on the main control's selection path. The premise was scoped to the defining file and to tests/ and never to sibling source files, and acting on it would have deleted live code. Recorded because the shape recurs: a negative reachability claim reads as a survey while naming only where somebody looked",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T20:00:11.219Z",
+    "resolved_at": null
+  },
+  {
+    "id": 47,
+    "kind": "deviation",
+    "phase": "02.1",
+    "file": "src/application/context_menu.rs",
+    "line": null,
+    "description": "D-2.1-03 says each branch kind gets its own menu and a group heading offers what is true of the group. Four rows got no menu instead: All Inboxes, Favourites, On this computer and the saved searches heading. Nothing this program does acts on one of them, and every candidate command reads whichever account is open, which on a row naming no account is whichever account somebody came from. The decision's own reason for rejecting no menu was losing genuinely useful per-account commands, and none is lost, because every row that names an account keeps its own. Recorded as a divergence from a recorded decision rather than as a fault",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T20:00:23.296Z",
+    "resolved_at": null
+  },
+  {
+    "id": 48,
+    "kind": "deviation",
+    "phase": "02.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Criterion 12 was planned against two accounts of one name drawing rows that read identically. They did not: the_accounts_in_the_tree filled each name from Account::display_name, which is name and address together, and the accounts table declares email NOT NULL UNIQUE. The property was real, held by two layers that folder_tree.rs never mentions, and unowned there. The plan's own remedy would have added a second defence to a case that could not arise. What the trace found instead is the opposite defect, and it was fixed: the address was read aloud on every account branch, always, to serve a case that had never happened",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T20:00:23.940Z",
     "resolved_at": null
   }
 ]

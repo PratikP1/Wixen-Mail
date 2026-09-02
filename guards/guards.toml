@@ -11365,14 +11365,21 @@ name = "the row on screen is found by the words above it and not by its own"
 file = "src/presentation/folder_tree.rs"
 before = """    for above in rows[..at].iter().rev() {"""
 after = """    for above in rows[..0].iter().rev() {"""
+#
+# A fifth arrived on 2026-09-02 with 02.1-08, and it is the ordinary way a
+# record falls behind: that plan gave two same-named accounts distinct labels,
+# and the test holding that property asks it through this same walk. Nobody
+# working on account labels would have filtered for a record about pairing a
+# row back to a control. The count check caught it and the run named it.
 red = [
+    "presentation::folder_tree::accounts_that_read_alike::test_no_two_rows_of_a_tree_with_two_same_named_accounts_sit_in_one_place",
     "presentation::folder_tree::tests::test_every_row_of_a_tree_sits_somewhere_no_other_row_does",
     "presentation::folder_tree::tests::test_two_accounts_pinned_inboxes_sit_under_a_branch_each_rather_than_side_by_side",
     "presentation::folder_tree::tests::test_two_folders_reading_the_same_are_told_apart_by_what_is_above_them",
     "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 89 },
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
 ]
 
 [[guard]]
@@ -11427,7 +11434,7 @@ red = [
     "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 89 },
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
     { file = "src/presentation/wx_app.rs", tests = 196 },
 ]
 
@@ -11685,7 +11692,7 @@ red = [
     "presentation::folder_tree::tests::test_unpinning_leaves_the_account_branchs_row_untouched",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 89 },
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
 ]
 
 [[guard]]
@@ -12624,7 +12631,7 @@ red = [
     "presentation::folder_tree::tests::test_two_accounts_with_searches_give_one_heading_and_a_branch_each",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 89 },
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
 ]
 
 # ── A saved search run against the account somebody was last looking at ──────
@@ -13290,5 +13297,5 @@ red = [
     "presentation::folder_tree::which_menu::test_rows_that_want_different_commands_do_not_share_a_menu",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 89 },
+    { file = "src/presentation/folder_tree.rs", tests = 97 },
 ]
