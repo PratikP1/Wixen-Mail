@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 371 records have arrived since and have not been through it.
+# 372 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2602,7 +2602,7 @@ red = [
     "presentation::wx_managers::tests::test_a_contact_is_found_by_an_address_that_is_not_her_first",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
 
 # The same rule about an address where it decides whether a mailbox is one this
@@ -4622,7 +4622,7 @@ tests_last_seen = [
     { file = "src/presentation/status_line.rs", tests = 2 },
     { file = "src/presentation/wx_account_manager.rs", tests = 13 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
-    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
 
 # ── The failures on the screen accounts are created on ──────────────────────
@@ -4707,7 +4707,7 @@ red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
 
 # ── An update that shows something either says it or is named as quiet ───────
@@ -12460,7 +12460,7 @@ red = [
     "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/manager_dialog_labels.rs", tests = 1 },
 ]
 
@@ -12937,7 +12937,7 @@ red = [
     "test_delete_removes_the_right_row_against_real_widgets",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 36 },
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/manager_delete_stays_open.rs", tests = 1 },
 ]
 
@@ -13298,4 +13298,60 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/folder_tree.rs", tests = 97 },
+]
+
+# ── A stored condition this build cannot show, opened anyway ─────────────────
+#
+# Criterion 10 and D-2.1-02. Both rule editors read their two lists back with
+# `unwrap_or_default`, so a stored word this build has no words for selects
+# nothing in the list and pressing OK stores the empty string in its place.
+# That is a silent rewrite of somebody's stored rule, which is the shape behind
+# every data-losing bug this project has found. Plan 02-04 closed the half that
+# was reachable, where the editor could not show five of the eleven fields it
+# does know; what is left is a rule written by a later version.
+#
+# The break is the refusal removed at its source: the one answer both editors
+# ask, at both ends, saying there is nothing it cannot show. That is what the
+# code did before this plan, so the break is the old behaviour rather than an
+# invention.
+#
+# Measured by hand against the whole 6,060-test library on 2026-09-02: five,
+# all of them written in this plan. Nothing else in the library notices, which
+# is what a defect that has been live since the editors were written already
+# says.
+#
+# One thing this record does not reach, measured the same day and written down
+# here rather than left for somebody to rediscover. Taking the pre-open refusal
+# out of `show_rule_edit` instead, so the dialog really does open on a
+# condition it cannot show, reddens exactly one test:
+# `test_both_condition_editors_refuse_before_they_open_and_before_they_hand_one_back`.
+# That test reads the two editors' source, because every path that tells a
+# refusal from an opening ends at `show_modal`, which blocks with nobody to
+# answer it, so a test that opened the editor would hang the commit gate rather
+# than fail it. One test is thin for a record of its own, so that break has none;
+# the test lives beside the code and `--lib` reaches it on any commit touching
+# that file.
+
+[[guard]]
+name = "a condition this build cannot show is refused rather than opened and emptied"
+file = "src/presentation/wx_managers.rs"
+before = """    let cannot =
+        crate::application::saved_searches::what_a_condition_cannot_read(field, match_type)?;
+    Some(format!(
+        "This {kind} cannot be shown: {}\\n\\nNothing has been lost: it is still in the list, \\
+         exactly as it was stored. You can delete it and write a new one here. If a newer \\
+         version of Wixen Mail wrote it, it still works there.",
+        cannot.why()
+    ))"""
+after = """    let _ = (kind, field, match_type);
+    None"""
+red = [
+    "presentation::wx_managers::tests::test_a_condition_naming_a_field_this_build_cannot_show_is_refused_by_name",
+    "presentation::wx_managers::tests::test_a_condition_that_cannot_be_shown_is_still_a_row_that_says_what_it_holds",
+    "presentation::wx_managers::tests::test_a_condition_with_no_field_at_all_is_refused_without_a_hole_in_the_sentence",
+    "presentation::wx_managers::tests::test_a_way_of_matching_this_build_cannot_show_is_refused_by_name_too",
+    "presentation::wx_managers::tests::test_the_refusal_is_worded_by_the_search_rather_than_a_second_time_here",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]

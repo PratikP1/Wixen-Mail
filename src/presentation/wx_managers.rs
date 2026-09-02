@@ -2669,28 +2669,47 @@ fn what_a_condition_still_needs(match_words: &str, typed: &str) -> Option<&'stat
     }
 }
 
-/// What stops this condition being shown at all, if anything.
+/// What stops this being shown at all, if anything.
 ///
-/// A different question from [`what_a_condition_still_needs`], which is about a
-/// condition somebody is halfway through writing. This one is about a condition
-/// that was already stored, in a word this build has no meaning for: a newer
+/// A different question from [`what_a_condition_still_needs`], which is about
+/// something somebody is halfway through writing. This one is about something
+/// already stored, holding a word this build has no meaning for: a newer
 /// version wrote it, or whatever wrote it got the word wrong.
 ///
 /// Both editors ask it twice, and one wording serves all four asks. Once before
 /// the dialog is built, because a dialog that opens and then complains has
 /// already shown somebody a list with nothing chosen in it, which is the thing
-/// being refused. Once before a condition is handed back, so nothing is stored
-/// that the dialog could not show even if a caller reached the dialog without
-/// passing the first ask.
+/// being refused. Once before a row is handed back, so nothing is stored that
+/// the dialog could not show even if some later caller reaches the dialog
+/// without passing the first ask.
+///
+/// `kind` is the word this window's rows are, from [`manager_words`], because
+/// one editor is opened on a condition and the other on a filter and a sentence
+/// naming the wrong one is a sentence about something else. The same reason
+/// [`a_sub_dialog_needs`] takes its caption rather than holding one.
 ///
 /// The clause naming the word is
 /// [`crate::application::saved_searches::NotUnderstood::why`], which is what a
 /// saved search itself says when it cannot run. The same stored word met two
 /// ways says the same thing, which is the argument plan 02-07 used for
 /// `SAVED_BY_ANOTHER_VERSION`.
-pub fn what_stops_this_condition_being_shown(field: &str, match_type: &str) -> Option<String> {
-    let _ = (field, match_type);
-    None
+///
+/// What to do next is worded for both causes, and the newer version is named
+/// conditionally because it is only one of them. A word this build has never
+/// met arrives either from a version that has met it, or from something that
+/// wrote the word wrong, and this program is on that second list: a condition
+/// emptied by the read-back plan 02-04 fixed holds no field at all, and
+/// telling somebody to open that one where it was written would be sending
+/// them back here.
+pub fn what_stops_this_being_shown(kind: &str, field: &str, match_type: &str) -> Option<String> {
+    let cannot =
+        crate::application::saved_searches::what_a_condition_cannot_read(field, match_type)?;
+    Some(format!(
+        "This {kind} cannot be shown: {}\n\nNothing has been lost: it is still in the list, \
+         exactly as it was stored. You can delete it and write a new one here. If a newer \
+         version of Wixen Mail wrote it, it still works there.",
+        cannot.why()
+    ))
 }
 
 /// Say what a saved search cannot find with the field now showing, or clear
@@ -2942,6 +2961,19 @@ pub fn show_rule_edit(
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
 ) -> Option<Question> {
+    // Before the dialog is built, not after. The lists hold words, so a stored
+    // name this build has no words for selects nothing, and a Choice with
+    // nothing selected reads out as an unfilled combo box. Complaining about
+    // that after opening would mean somebody had already been shown it.
+    if let Some(stored) = existing {
+        if let Some(said) =
+            what_stops_this_being_shown(manager_words::CONDITION, &stored.field, &stored.match_type)
+        {
+            a_sub_dialog_needs(parent, "Not opened", &said);
+            return None;
+        }
+    }
+
     let RuleEditWidgets {
         dialog: dlg,
         field_choice,
@@ -2973,7 +3005,21 @@ pub fn show_rule_edit(
         None
     };
     dlg.destroy();
-    chosen
+
+    // And again on the way out, so nothing is stored that the dialog could not
+    // show. Both `unwrap_or_default` calls above answer the empty string for a
+    // choice with nothing selected, which is the rewrite this refusal exists to
+    // stop; the ask above means no condition can open that way, and this means
+    // none can be stored that way even if some later caller opens the dialog
+    // without asking first.
+    let chosen = chosen?;
+    match what_stops_this_being_shown(manager_words::CONDITION, &chosen.field, &chosen.match_type) {
+        Some(said) => {
+            a_sub_dialog_needs(parent, "Not saved", &said);
+            None
+        }
+        None => Some(chosen),
+    }
 }
 
 /// One condition as the three things its row says: what it looks at, how it
@@ -3371,6 +3417,18 @@ fn show_filter_edit(
     existing: Option<&FilterRule>,
     palette: Option<theme::Palette>,
 ) -> Option<FilterRule> {
+    // The same refusal the condition editor makes, before this dialog is
+    // built. Two editors rather than one: this one has its own builder and its
+    // own read-back, and the rewrite to the empty string was written out twice.
+    if let Some(stored) = existing {
+        if let Some(said) =
+            what_stops_this_being_shown(manager_words::FILTER, &stored.field, &stored.match_type)
+        {
+            a_sub_dialog_needs(parent, "Not opened", &said);
+            return None;
+        }
+    }
+
     let FilterEditWidgets {
         dialog: dlg,
         name_f,
@@ -3415,7 +3473,18 @@ fn show_filter_edit(
         None
     };
     dlg.destroy();
-    chosen
+
+    // And again on the way out, for the reason `show_rule_edit` gives: the two
+    // `unwrap_or_default` calls above answer the empty string for a choice with
+    // nothing selected, and nothing is stored that this dialog could not show.
+    let chosen = chosen?;
+    match what_stops_this_being_shown(manager_words::FILTER, &chosen.field, &chosen.match_type) {
+        Some(said) => {
+            a_sub_dialog_needs(parent, "Not saved", &said);
+            None
+        }
+        None => Some(chosen),
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4551,7 +4620,7 @@ mod tests {
     }
 
     /// The ask both condition editors are held to, spelled once.
-    const THE_ASK: &str = "what_stops_this_condition_being_shown(";
+    const THE_ASK: &str = "what_stops_this_being_shown(";
 
     /// What an editor that opens on a stored condition gets wrong.
     ///
@@ -4633,12 +4702,12 @@ mod tests {
         // everything. This project has already been caught once by a guard
         // whose trigger was "a document mentions X" and which was disarmed by
         // the workaround it recommended.
-        let sound = "    if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+        let sound = "    if let Some(said) = what_stops_this_being_shown(a, b) {\n\
             \x20       return None;\n\
             \x20   }\n\
             \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
             \x20   let chosen = ...;\n\
-            \x20   match what_stops_this_condition_being_shown(&q.field, &q.match_type) {\n\
+            \x20   match what_stops_this_being_shown(&q.field, &q.match_type) {\n\
             \x20       Some(said) => None,\n\
             \x20       None => Some(q),\n\
             \x20   }\n";
@@ -4656,10 +4725,10 @@ mod tests {
         );
 
         let asks_too_late = "    let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
-            \x20   if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+            \x20   if let Some(said) = what_stops_this_being_shown(a, b) {\n\
             \x20       return None;\n\
             \x20   }\n\
-            \x20   match what_stops_this_condition_being_shown(&q.field, &q.match_type) {\n\
+            \x20   match what_stops_this_being_shown(&q.field, &q.match_type) {\n\
             \x20       _ => None,\n\
             \x20   }\n";
         let wrong = what_a_condition_editor_gets_wrong(asks_too_late, "build_rule_edit_dialog(");
@@ -4668,7 +4737,7 @@ mod tests {
             "an editor that opens first and complains after was not reported: {wrong:?}"
         );
 
-        let asks_once = "    if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+        let asks_once = "    if let Some(said) = what_stops_this_being_shown(a, b) {\n\
             \x20       return None;\n\
             \x20   }\n\
             \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n\
@@ -4682,7 +4751,7 @@ mod tests {
         // Commented out rather than deleted, which is what this project's own
         // "prove the measurement" convention asks of a check built on reading
         // source: a call still there in letters but never run.
-        let commented_out = "    // if let Some(said) = what_stops_this_condition_being_shown(a, b) {\n\
+        let commented_out = "    // if let Some(said) = what_stops_this_being_shown(a, b) {\n\
             \x20   // }\n\
             \x20   let widgets = build_rule_edit_dialog(parent, existing, a11y, palette);\n";
         let wrong = what_a_condition_editor_gets_wrong(commented_out, "build_rule_edit_dialog(");
@@ -4696,20 +4765,24 @@ mod tests {
     fn test_a_condition_this_build_can_show_stops_nothing() {
         // Both arms rather than one example of each, which is what mutation
         // testing found missing the last time a family here went untested.
-        for field in A_FIELD_A_RULE_MAY_NAME {
-            for way in A_WAY_A_RULE_MAY_MATCH {
-                assert_eq!(
-                    what_stops_this_condition_being_shown(field, way),
-                    None,
-                    "{field} matched by {way} was refused"
-                );
+        // Both kinds too, since a wrong answer for one window and a right one
+        // for the other is the shape this whole plan is about.
+        for kind in [manager_words::CONDITION, manager_words::FILTER] {
+            for field in A_FIELD_A_RULE_MAY_NAME {
+                for way in A_WAY_A_RULE_MAY_MATCH {
+                    assert_eq!(
+                        what_stops_this_being_shown(kind, field, way),
+                        None,
+                        "{field} matched by {way} was refused in the {kind} editor"
+                    );
+                }
             }
         }
     }
 
     #[test]
     fn test_a_condition_naming_a_field_this_build_cannot_show_is_refused_by_name() {
-        let said = what_stops_this_condition_being_shown("sender_name", "contains")
+        let said = what_stops_this_being_shown(manager_words::CONDITION, "sender_name", "contains")
             .expect("a field this build has never met");
         assert!(
             said.contains("sender_name"),
@@ -4718,15 +4791,16 @@ mod tests {
         // What happened, and what to do next. A sentence that says only that
         // something is wrong leaves somebody with nothing to do about it.
         assert!(
-            said.contains("cannot be shown"),
-            "the refusal does not say what did not happen: {said:?}"
+            said.contains("This condition cannot be shown"),
+            "the refusal does not say what did not happen, in the word this window's rows \
+             are called: {said:?}"
         );
         assert!(
             said.contains("exactly as it was stored"),
             "the refusal does not say the condition is still there: {said:?}"
         );
         assert!(
-            said.contains("Delete it"),
+            said.contains("delete it and write a new one here"),
             "the refusal does not say what can be done about it: {said:?}"
         );
     }
@@ -4734,12 +4808,17 @@ mod tests {
     #[test]
     fn test_a_way_of_matching_this_build_cannot_show_is_refused_by_name_too() {
         // The other half of a condition, which fails the same way and was
-        // rewritten to the empty string by the same read-back.
-        let said = what_stops_this_condition_being_shown("subject", "sounds_like")
+        // rewritten to the empty string by the same read-back. Asked of the
+        // filter editor's word, so both windows are covered rather than one.
+        let said = what_stops_this_being_shown(manager_words::FILTER, "subject", "sounds_like")
             .expect("a way of matching this build has never met");
         assert!(
             said.contains("sounds_like"),
             "the refusal does not name the word it could not read: {said:?}"
+        );
+        assert!(
+            said.contains("This filter cannot be shown"),
+            "the filter editor's refusal calls its rows something else: {said:?}"
         );
     }
 
@@ -4749,7 +4828,7 @@ mod tests {
         // one sentence in two files is how a second wording begins, and a
         // saved search and the dialog that edits it disagreeing about the same
         // stored word is the fault this whole answer exists to prevent.
-        let said = what_stops_this_condition_being_shown("sender_name", "contains")
+        let said = what_stops_this_being_shown(manager_words::CONDITION, "sender_name", "contains")
             .expect("a field this build has never met");
         assert!(
             said.contains(
@@ -4767,7 +4846,7 @@ mod tests {
         // The word the write path meets. Emptying the part it could not read
         // is what the dialog used to do, so "" is the field a condition that
         // went through the old read-back holds.
-        let said = what_stops_this_condition_being_shown("", "contains")
+        let said = what_stops_this_being_shown(manager_words::CONDITION, "", "contains")
             .expect("a condition naming no field at all");
         assert!(
             said.contains("does not say which part of a message"),
@@ -4776,6 +4855,14 @@ mod tests {
         assert!(
             !said.contains("the  of"),
             "the refusal drops an empty word into the sentence: {said:?}"
+        );
+        // A condition holding no field at all was emptied by this program's
+        // own read-back, not written by a newer version, so the newer version
+        // is offered conditionally rather than asserted. Telling somebody to
+        // open this one where it was written would send them back here.
+        assert!(
+            said.contains("If a newer version"),
+            "the refusal names a newer version as a fact rather than a possibility: {said:?}"
         );
     }
 
@@ -4790,7 +4877,14 @@ mod tests {
             pattern: "ann".to_string(),
             case_sensitive: false,
         };
-        assert!(what_stops_this_condition_being_shown(&stored.field, &stored.match_type).is_some());
+        assert!(
+            what_stops_this_being_shown(
+                manager_words::CONDITION,
+                &stored.field,
+                &stored.match_type
+            )
+            .is_some()
+        );
         let [looks_at, how, what] = what_a_condition_row_says(&stored);
         assert_eq!(looks_at, "sender_name");
         assert_eq!(how, "contains");

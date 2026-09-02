@@ -251,6 +251,109 @@ fn check_a_condition_going_says_how_many_are_left(
     );
 }
 
+/// A condition this build cannot show is still a row, and Delete still takes
+/// it away.
+///
+/// The refusal plan 02.1-09 added stops such a condition being opened. D-2.1-02
+/// calls that a refusal, not a removal, so the row has to stay readable and
+/// removable: one somebody can neither open nor get rid of is one they are
+/// stuck with, which would be a worse fault than the one being fixed.
+///
+/// Against real widgets, because "still removable" is a claim about what the
+/// list control and the delete path do together. This was green the day it was
+/// written: `delete_selected` is generic over the row type and never asks a
+/// condition what it says. It is here so that a later change cannot quietly
+/// turn the refusal into a trap.
+///
+/// What the row *says* is asserted by
+/// `presentation::wx_managers::tests::test_a_condition_that_cannot_be_shown_is_still_a_row_that_says_what_it_holds`
+/// rather than here, because `ListCtrl::get_item_text` cannot be trusted to
+/// read a cell back; see the comment inside.
+fn check_a_condition_this_build_cannot_show_is_still_a_row_that_goes(
+    frame: &Frame,
+    a11y: &Accessibility,
+    into: &mut Vec<Outcome>,
+) {
+    let (_dialog, _sizer, list, status) = wx_managers::make_shell(
+        frame,
+        "Conditions for Invoices",
+        "Conditions",
+        620,
+        420,
+        None,
+    );
+    list.insert_column(0, "Looks at", ListColumnFormat::Left, 170);
+    list.insert_column(1, "How", ListColumnFormat::Left, 190);
+    list.insert_column(2, "What", ListColumnFormat::Left, 220);
+
+    // A field no version of this build has ever named, which is the case
+    // criterion 10 is about: a rule written by a later version.
+    let questions = vec![
+        asking("sender_name", "contains", "ann"),
+        asking("subject", "contains", "invoice"),
+    ];
+    record(
+        into,
+        "a condition this build cannot show is one the editor refuses to open",
+        wx_managers::what_stops_this_being_shown("condition", "sender_name", "contains").is_some(),
+        "the refusal answered nothing about a field this build has never met",
+    );
+    populate_questions(&list, &questions);
+    // What the row says is asserted by the unit test named in this function's
+    // doc comment, not here. `ListCtrl::get_item_text` answers "sender_nam\0"
+    // for a cell holding "sender_name": one character short, with a NUL where
+    // the last one should be. That is windows ledger 28, measured again on
+    // 2026-09-02 against this row. `tests/manager_dialog_labels.rs` carries a
+    // helper that allows for it; copying that helper here would be a second
+    // copy of a workaround for somebody else's defect, and asserting against
+    // the truncated answer would be writing the bug down as the rule.
+    record(
+        into,
+        "the list really holds the row before anything is deleted",
+        list.get_item_count() == 2,
+        format!("rows before the delete: {}", list.get_item_count()),
+    );
+    select_row(&list, 0);
+
+    let state = Rc::new(RefCell::new(ManagerState {
+        working: questions,
+        changed: false,
+    }));
+    delete_selected(
+        &state,
+        &list,
+        &status,
+        a11y,
+        "condition",
+        populate_questions,
+        |q: &Question| {
+            format!(
+                "{} {} {}",
+                the_words_for_a_field(&q.field).unwrap_or(&q.field),
+                the_words_for_a_way_of_matching(&q.match_type).unwrap_or(&q.match_type),
+                q.pattern
+            )
+        },
+    );
+
+    record(
+        into,
+        "a condition this build cannot show can still be deleted",
+        list.get_item_count() == 1 && state.borrow().working.len() == 1,
+        format!(
+            "rows left: {}, conditions left: {}",
+            list.get_item_count(),
+            state.borrow().working.len()
+        ),
+    );
+    record(
+        into,
+        "deleting one says so in the words it is stored in",
+        status.get_label().contains("sender_name"),
+        format!("line of text after the delete: {:?}", status.get_label()),
+    );
+}
+
 /// `delete_selected` with nothing selected: nothing is removed, nothing is
 /// marked changed, and the line of text asks for a selection instead of
 /// reporting a deletion that never happened.
@@ -424,6 +527,11 @@ fn test_delete_removes_the_right_row_against_real_widgets() {
                 &mut outcomes,
             );
             check_a_condition_going_says_how_many_are_left(&frame, &a11y, &mut outcomes);
+            check_a_condition_this_build_cannot_show_is_still_a_row_that_goes(
+                &frame,
+                &a11y,
+                &mut outcomes,
+            );
             check_delete_selected_contact_removes_the_selected_row(&frame, &a11y, &mut outcomes);
             check_delete_selected_contact_with_nothing_selected_changes_nothing(
                 &frame,

@@ -83,6 +83,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A saved search condition or filter rule written by a newer version of Wixen
+  Mail is no longer emptied when you open it.** Both editors used to open on a
+  rule they could not read, leave the list blank where the part they did not
+  understand should be, and write that blank over your rule the moment you
+  pressed OK. The part you could not see was gone, and nothing said so.
+
+  Opening one is now refused, and the box that says so names what could not be
+  read: "This condition cannot be shown: it asks about the sender_name of a
+  message, which this version does not understand." It then tells you the rule
+  is still in the list exactly as it was stored, that you can delete it and
+  write a new one, and that it still works in a newer version of Wixen Mail if
+  that is what wrote it.
+
+  The rule stays in the list, still showing the words it was stored with, and
+  Delete still removes it. A rule you cannot open is not a rule you are stuck
+  with.
+
+  This applies to both windows: Edit Conditions on a saved search, and the
+  Filter manager.
+
 - **A saved search that does not say what it looks at now says that, instead of
   leaving a gap in the sentence.** It used to read "From my manager could not
   run: it asks about the  of a message, which this version does not
