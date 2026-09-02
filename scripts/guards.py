@@ -307,6 +307,20 @@ def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        # Both named, and neither is a preference.
+        #
+        # `text=True` alone decodes with the locale codec, which on this machine
+        # is cp1252. A test name or a panic message carrying a byte cp1252
+        # cannot decode kills the reader thread, and `stdout` is then never
+        # assigned: that is the `NoneType + str` that ended a sweep on its 122nd
+        # record, and the decode traceback sits in that run's own log underneath
+        # the failure it caused.
+        #
+        # `errors="replace"` rather than strict, because a mangled character in
+        # a panic message must not cost an hour of measuring. What this reads
+        # out are test paths, and those are ASCII.
+        encoding="utf-8",
+        errors="replace",
     )
     # Both halves can come back as None, which is not what the documentation
     # for `capture_output` says and was seen anyway: a sweep of 208 records
