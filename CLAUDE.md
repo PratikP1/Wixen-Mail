@@ -303,6 +303,27 @@ which at a build and a run each is hours. That case is what the paragraph below
 about the critical path is for, and the answer is to run the command it prints in
 the background rather than to lower the check.
 
+**A renamed test is worse than a stale record, and it is the second half of
+that middle limit.** A count cannot see a rename: 71 tests before, 71 after. And
+a record naming a test that no longer exists is not stale, it is
+*unmeasurable*, because `scripts/guards.py` refuses it before reporting anything
+about the break, so the message reads as a broken tool rather than as a finding.
+One record sat that way from 2026-08-16 until 2026-09-02, surviving a six-hour
+sweep that could not report it, and when it was finally measured the break
+reddened 20 tests rather than the 10 written down.
+
+The commit that caused it shows how little warning there is: it renamed two
+tests, corrected those two names in the record above, and left them in the
+record below. Its message says it re-measured both records it touched, and it
+had, by the only reading anyone applies. It counted the records whose *code* it
+changed and missed the one it broke by renaming a test that record merely
+*names*.
+
+So `test_every_test_a_guard_record_names_is_a_test_that_exists` asks the other
+direction, in milliseconds, on every commit. **If you rename a test, that check
+tells you which records name it, and the record then wants re-measuring rather
+than editing**, because a rename can change what the break reddens.
+
 **Guard re-measurement is not on the critical path.** This used to say "run
 `scripts/guards.sh` unfiltered before you finish", and that instruction put the
 whole library on a branch once per record. Plan 02-01 ran fourteen records, 49

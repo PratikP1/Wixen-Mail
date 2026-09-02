@@ -5031,6 +5031,98 @@ fn test_every_guard_record_says_how_many_tests_the_files_it_names_held() {
 }
 
 #[test]
+fn test_every_test_a_guard_record_names_is_a_test_that_exists() {
+    // The failure this cannot be caught by counting, and the one that hides
+    // longest.
+    //
+    // `scripts/guards.py` refuses a record naming a test the harness never ran,
+    // and it refuses it before reporting anything about what the break does. So
+    // a renamed test does not make a record stale, it makes it *unmeasurable*:
+    // every sweep reaching it stops there, and the message reads as a broken
+    // tool rather than as a finding. One record sat that way from 2026-08-16 to
+    // 2026-09-02, through a six-hour sweep that could not report it.
+    //
+    // The count fingerprint next door cannot see this by construction. A rename
+    // leaves the number exactly where it was, 71 tests before and 71 after, and
+    // renaming is the commonest edit a test name ever gets.
+    //
+    // The commit that caused it shows how little warning there is. It renamed
+    // two tests, corrected those same two names in the record above this one,
+    // and left them in the record below. Its message says it re-measured both
+    // records it touched, and it had: it counted the records whose *code* it
+    // edited, and missed the one it broke by renaming a test that record merely
+    // *names*. Nothing prompts that direction, so this asks instead.
+    let written: toml::Value =
+        toml::from_str(&fs::read_to_string("guards/guards.toml").expect("the record of guards"))
+            .expect("the record of guards to parse");
+    let records = written
+        .get("guard")
+        .and_then(toml::Value::as_array)
+        .expect("the record of guards to hold guards");
+
+    let mut gone: Vec<String> = Vec::new();
+    let mut names_read = 0usize;
+    for record in records {
+        let name = record
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .expect("a guard record with no name");
+        let suite = record.get("suite").and_then(toml::Value::as_str);
+
+        for test in record
+            .get("red")
+            .and_then(toml::Value::as_array)
+            .expect("a guard record with no red list")
+            .iter()
+            .filter_map(toml::Value::as_str)
+        {
+            let Some(file) = the_file_a_test_lives_in(test, suite) else {
+                continue;
+            };
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            names_read += 1;
+
+            // The function's own name, which is the last step of the path. The
+            // `(` matters: without it a name that is a prefix of another passes
+            // on its neighbour.
+            let written_as = test.rsplit("::").next().unwrap_or(test);
+            if !text.contains(&format!("fn {written_as}(")) {
+                gone.push(format!(
+                    "{name}:\n      {test}\n      is not in {}",
+                    file.to_string_lossy().replace('\\', "/")
+                ));
+            }
+        }
+    }
+
+    // Proving the measurement, for the reason the record file gives about every
+    // check that reads documents: a reader resolving nothing reports a clean
+    // tree and reads exactly like one.
+    assert!(
+        names_read > 400,
+        "{names_read} test names resolved to a file, so the reading is broken"
+    );
+
+    assert!(
+        gone.is_empty(),
+        "{} guard {} a test that is not there:\n\n  {}\n\n\
+         A renamed test is the usual cause, and a record naming one cannot be \
+         measured at all: the runner reports the lookup failure instead of the \
+         check. Find what the test is called now and correct the record, then \
+         re-measure it, because a rename can change what the break reddens.\n",
+        gone.len(),
+        if gone.len() == 1 {
+            "record names"
+        } else {
+            "records name"
+        },
+        gone.join("\n  ")
+    );
+}
+
+#[test]
 fn test_a_recorded_test_count_counts_tests_and_not_mentions_of_tests() {
     // Made-up source, holding one test of each spelling and two sentences that
     // write the attribute out while explaining them. A reader answered by the

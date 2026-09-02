@@ -592,7 +592,32 @@ def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
     return verdicts
 
 
-def measure(guard: Guard, scratch: Path) -> Measured:
+def what_is_already_failing(suite: tuple[str, ...]) -> set[str]:
+    """What this suite fails without any break applied.
+
+    Every failure a run reports gets blamed on the break, which is right only if
+    the tree was green to start with. When it is not, one unrelated failure
+    appears in every record measured and each one reads as naming too few tests.
+
+    That is not hypothetical and it deadlocks the remedy. Adding a test to a
+    file some record names turns
+    `test_every_guard_record_says_how_many_tests_the_files_it_names_held` red,
+    which is the check telling you to re-measure. Re-measuring then sees that
+    same red test under every break, calls each record short, and refuses to
+    write, because it will not stamp a fingerprint on a record it believes is
+    wrong. The check stays red and the only remedy for it cannot clear it. It
+    happened the first time anybody used it, on 17 records at once.
+
+    So the failures already there are read once, before anything is broken, and
+    taken out of what each break is blamed for. They are printed rather than
+    quietly subtracted: measuring against a tree that is not green is worth
+    knowing about, even when the arithmetic is now right.
+    """
+    verdicts = run_the_whole_suite(suite)
+    return {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+
+
+def measure(guard: Guard, scratch: Path, already_failing: set[str] | None = None) -> Measured:
     """Apply the break, run the guard's own suite, put the file back."""
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
@@ -632,6 +657,11 @@ def measure(guard: Guard, scratch: Path) -> Measured:
         )
     named = set(guard.red)
     went_red = {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+    # A test that was failing before the break was applied was not felled by it.
+    # Only subtracted from what the break is blamed for; a named test that is
+    # already red is left alone, because it stays a test this break is recorded
+    # as reddening and the run has not shown otherwise.
+    went_red -= (already_failing or set()) - named
     return Measured(
         stayed_green=[name for name in guard.red if name not in went_red],
         also_went_red=sorted(went_red - named),
@@ -823,12 +853,35 @@ def main() -> int:
     print(f"{header}\n")
     slipped: list[str] = []
     agreed: list[Guard] = []
+    # Once per suite, before anything is broken, so an unrelated failure is not
+    # blamed on every break in turn. See `what_is_already_failing`, and the
+    # deadlock it describes, which is why this is not optional.
+    already_failing: dict[tuple[str, ...], set[str]] = {}
+    for suite in {guard.suite for guard in guards}:
+        try:
+            already_failing[suite] = what_is_already_failing(suite)
+        except Wrong as wrong:
+            print(f"\nThe tree could not be read before breaking it: {wrong}\n")
+            return 1
+        if already_failing[suite]:
+            print(
+                f"Already failing before any break, with {' '.join(suite)}, and "
+                "therefore not counted against any record below:"
+            )
+            for name in sorted(already_failing[suite]):
+                print(f"    {name}")
+            print(
+                "\nThat is worth fixing on its own. A measurement taken against "
+                "a tree that is not green is a weaker measurement, even with "
+                "the arithmetic corrected.\n"
+            )
+
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
             print(f"-- {guard.name}")
             try:
-                measured = measure(guard, scratch)
+                measured = measure(guard, scratch, already_failing.get(guard.suite))
             except Wrong as wrong:
                 print(f"   {wrong}\n")
                 slipped.append(guard.name)
