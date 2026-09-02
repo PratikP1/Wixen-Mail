@@ -201,13 +201,54 @@ Plans:
 
   13. A forwarded Hungarian message does not join the conversation it is a reply to. `mail_parser`'s `trim_trailing_fwd` ignores a parenthesised word of one character, so Hungarian's `I:` forward marker is read as a reply marker and the message is threaded as a reply. Recorded as ledger entry 5 against `src/application/conversations.rs`, which documents the behaviour at line 323. It belongs to no phase, which is why it has sat since 01-11.
 
-**Plans**: TBD
+**Plans**: 9 plans, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02.1-01-PLAN.md — The checks that read the main window read all of it, and what that finds is reported before it is fixed (criterion 4, D-2.1-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02.1-02-PLAN.md — A guard that reads documents can see a violation, and nothing says a test cannot build a window (criteria 7, 8)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02.1-03-PLAN.md — Every page that says folder management is missing (criterion 5)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02.1-04-PLAN.md — A guard under `tests/` runs on the commits that could break it (criterion 9)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02.1-05-PLAN.md — Two dialogs stop leaking a registry entry per row (criterion 1)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 02.1-06-PLAN.md — Safety sorts by how bad it is, and one spelling of a message identifier (criteria 2, 3)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 02.1-07-PLAN.md — Two decisions nothing was asking about (criteria 6, 13)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 02.1-08-PLAN.md — A branch row offers a menu that fits it, and two accounts of one name are two rows (criteria 11, 12, D-2.1-03)
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 02.1-09-PLAN.md — A dialog refuses a value it cannot show rather than rewriting it (criterion 10, D-2.1-02)
+
 **UI hint**: yes
 **Scope note**: Inserted 2026-08-31 after routing phase 1's deferred items by subject. Three items went to phase 3 and two to phase 6, where somebody planning those subjects will meet them. Criteria 1 to 6 belong to no phase, which is why they were deferred and why they would otherwise stay deferred.
 
 Criteria 7 to 12 were added 2026-09-02 from phase 2's own deferrals and from the observation log, and each was re-checked against the tree rather than taken from the note that recorded it. Two came out worse than logged: the doc comments about windows are five places rather than three, and the version guard is disarmed now rather than historically.
 
 Three further things are recorded elsewhere and are deliberately not criteria here. The spellcheck test that fails about one full library run in five through a Windows COM call made twice is diagnosed only as far as reading, and inventing a criterion for it would be pretending otherwise. `wxdragon 0.9.17`'s `ListCtrl::get_item_text` loses the last character of every cell and returns a NUL in its place, which is an upstream defect carried in the ledger as entry 28 and unreported so far; reporting it upstream is not this phase's work but it should not stay unreported. And a `said_and_shown` census in `wx_managers.rs` was noted by 02-06 as holding a floor of 10 against 19 members, so it is slack by nine and no longer load-bearing; that was noted rather than measured and wants confirming before it earns a criterion.
+
+Planning on 2026-09-02 re-checked every criterion against the tree again and found five whose stated premise had moved. They are left as written above, because the criteria are the record of what was believed, and each plan's `<premise_corrections>` carries the measurement and what it changes. Criterion 4 says ten checks; there are twelve of one kind and four of a second, plus a helper to delete. Criterion 2 says the conversation expression is the answer; that half already ranks by severity and the message half does not, so the work is the message half. Criterion 5 says the status page describes folder management as unbuilt; every sentence in that paragraph is true and it sits under the heading saying what does not work, so the page is wrong by position and a search for the sentence finds nothing. Criterion 9 says the registry already declares the coupling; it does for one of the two targets named and not for the other, which has no record at all. Criterion 12's mechanism is not live: `where_a_row_sits` has no production caller, and what two accounts of one name really cost is two rows a person cannot tell apart. Criterion 13's mechanism reproduces exactly and its symptom does not: the classification is read only by the composer, so the cost is a reply that does not say it is one and a doubled forward marker, not threading.
 
 ### Phase 3: Mail at scale on the wire
 
