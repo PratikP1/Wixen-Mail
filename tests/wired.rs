@@ -1770,6 +1770,43 @@ fn is_on_a_menu(squashed: &str, id: &str) -> bool {
     .any(|call| squashed.contains(call))
 }
 
+/// The reading these checks do reaches the whole shipping half of the main
+/// window.
+///
+/// Twelve checks below read `src/presentation/wx_app.rs` and cut it at the
+/// first `#[cfg(test)]`. That is the shipping half only while every test module
+/// sits at the end of the file, and in this one the first sits at line 19,730
+/// of 26,593. So those twelve read 74% of the file and are blind to the 6,863
+/// lines under it, which hold two production functions,
+/// `ask_about_the_alpha_once` and `block_the_sender`, that no check here has
+/// ever read.
+///
+/// `common::what_ships` drops each `#[cfg(test)]` item where it really ends and
+/// keeps everything else, which is the question the cut was approximating. It
+/// is reachable from here because it sits behind a cargo feature a
+/// dev-dependency turns on: an integration test links the library built without
+/// `cfg(test)`, and this used to be gated on exactly that.
+///
+/// What this cannot see: whether the other checks in this file use it. That is
+/// what the guard record about cutting the main window at its first test module
+/// is for.
+#[test]
+fn test_the_reading_of_the_main_window_reaches_past_its_first_test_module() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = &app[..app.find("\n#[cfg(test)]").unwrap_or(app.len())];
+
+    assert!(
+        ship.contains("fn block_the_sender("),
+        "the reading stops before `block_the_sender`, which begins at line 24,394, so every \
+         check built on it is blind to the production code below the first test module"
+    );
+    assert!(
+        !ship.contains("fn test_the_scan_fixture_cannot_reach_a_real_provider("),
+        "the reading carries the body of the first test module with it, so a fixture reads \
+         to every check here as shipping code"
+    );
+}
+
 /// No two items on one menu claim the same letter.
 ///
 /// Inside an open menu a mnemonic is meant to be one keystroke: press the
