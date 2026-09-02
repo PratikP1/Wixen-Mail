@@ -529,7 +529,33 @@ def why_no_test_was_named(status: int, said: str) -> str:
     return f"{which}. cargo exited {status} and said:\n{said[-4000:]}"
 
 
-def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
+def the_filters_for(red: tuple[str, ...]) -> list[str]:
+    """One filter per module the record's tests live in, deduplicated.
+
+    A filter is a substring the harness matches against a test's whole path, so
+    the module prefix reaches every test in it. Grouping by module rather than
+    naming each test means a test *added* to one of those modules is still run
+    and can still be reported as unnamed, which is the one part of the second
+    direction a filtered run keeps.
+
+    >>> the_filters_for(("a::b::tests::test_one", "a::b::tests::test_two"))
+    ['a::b::tests::']
+    >>> the_filters_for(("a::b::tests::test_one", "c::d::tests::test_two"))
+    ['a::b::tests::', 'c::d::tests::']
+    >>> the_filters_for(("test_bare",))
+    ['test_bare']
+    """
+    seen: list[str] = []
+    for name in red:
+        prefix = name.rsplit("::", 1)[0] + "::" if "::" in name else name
+        if prefix not in seen:
+            seen.append(prefix)
+    return seen
+
+
+def run_the_whole_suite(
+    suite: tuple[str, ...], filters: list[str] | None = None
+) -> dict[str, str]:
     """Every test in one suite, and whether it passed. One build, one run.
 
     The whole suite and not only the tests a record names. Running the named
@@ -546,9 +572,38 @@ def run_the_whole_suite(suite: tuple[str, ...]) -> dict[str, str]:
 
     Which suite is the guard's own, for the reason written on `Guard.suite`.
     Almost always the library.
+
+    **`filters` narrows it, and it does not answer the same question. Measured,
+    and the measurement is why this mode is a pre-filter and not a sweep.**
+
+    The arithmetic looked good: the rebuild a break forces is 23 seconds and the
+    library is 89, so filtering would take a 220-record sweep from 6.8 hours to
+    about 88 minutes. Two things spoil it.
+
+    The known one: it cannot see a test in a module no filter reaches, and 21 of
+    the 23 records the 2026-09-01 sweep found wrong were wrong in exactly that
+    direction.
+
+    The one that was not predicted: **filtered and unfiltered runs of the same
+    break disagree.** On the first record tried, "the constant that changes
+    nothing still reads mail", the unfiltered run had all six named tests red
+    and nothing else, and the filtered run had one of the six green:
+    `application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first`
+    fails under the break when the whole library runs and passes under the same
+    break when only its own modules do. So some tests here fail only in company,
+    and a filtered run reports a correct record as broken.
+
+    A false alarm is the safer direction, which is why this stays: it is cheap,
+    and anything it flags can be confirmed unfiltered. But it must never be read
+    as a sweep, and a green answer from it covers one direction of one question.
     """
+    # After the separator, not before it. `cargo test` takes one positional
+    # filter and refuses a second; the harness behind it takes as many as you
+    # like. The first spelling failed with cargo's own usage message, which
+    # reads like a bad flag rather than like one filter too many.
+    filtered = list(filters or [])
     finished = subprocess.run(
-        ["cargo", "test", *suite, "--", f"--test-threads={TEST_THREADS}"],
+        ["cargo", "test", *suite, "--", f"--test-threads={TEST_THREADS}", *filtered],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -617,7 +672,12 @@ def what_is_already_failing(suite: tuple[str, ...]) -> set[str]:
     return {name for name, verdict in verdicts.items() if verdict == "FAILED"}
 
 
-def measure(guard: Guard, scratch: Path, already_failing: set[str] | None = None) -> Measured:
+def measure(
+    guard: Guard,
+    scratch: Path,
+    already_failing: set[str] | None = None,
+    named_only: bool = False,
+) -> Measured:
     """Apply the break, run the guard's own suite, put the file back."""
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
@@ -640,7 +700,9 @@ def measure(guard: Guard, scratch: Path, already_failing: set[str] | None = None
             guard.before, guard.after
         )
         guard.file.write_bytes(broken.encode("utf-8"))
-        verdicts = run_the_whole_suite(guard.suite)
+        verdicts = run_the_whole_suite(
+            guard.suite, the_filters_for(guard.red) if named_only else None
+        )
     finally:
         # The bytes, not the timestamps: a restored file with its old
         # modification time reads to cargo as one that never changed, and the
@@ -760,6 +822,15 @@ def main() -> int:
         "which is what a merge needs and is minutes rather than hours",
     )
     parsing.add_argument(
+        "--named-only",
+        action="store_true",
+        help="a cheap pre-filter, not a sweep. Runs only the modules a "
+        "record's tests live in, so it does not ask whether anything else went "
+        "red, and it disagrees with a full run on tests that fail only in "
+        "company: measured 2026-09-02, one record read as broken filtered and "
+        "correct unfiltered. Confirm anything it flags without this flag",
+    )
+    parsing.add_argument(
         "--remeasure",
         nargs="+",
         metavar="NAME",
@@ -859,6 +930,9 @@ def main() -> int:
     already_failing: dict[tuple[str, ...], set[str]] = {}
     for suite in {guard.suite for guard in guards}:
         try:
+            # Unfiltered even under --named-only: this reads what is already
+            # broken before any break is applied, and a filtered reading of
+            # that would miss the failures it exists to subtract.
             already_failing[suite] = what_is_already_failing(suite)
         except Wrong as wrong:
             print(f"\nThe tree could not be read before breaking it: {wrong}\n")
@@ -881,7 +955,12 @@ def main() -> int:
         for guard in guards:
             print(f"-- {guard.name}")
             try:
-                measured = measure(guard, scratch, already_failing.get(guard.suite))
+                measured = measure(
+                    guard,
+                    scratch,
+                    already_failing.get(guard.suite),
+                    named_only=asked.named_only,
+                )
             except Wrong as wrong:
                 print(f"   {wrong}\n")
                 slipped.append(guard.name)
@@ -945,6 +1024,25 @@ def main() -> int:
             "way: measure it by hand and write down\nwhat it really does now."
         )
         return 1
+    if asked.named_only:
+        # Never "and nothing else does", because this run did not ask. Said
+        # every time rather than once at the top, since the last line is what
+        # gets quoted into a summary and a clean-looking one that answered half
+        # the question is how a weaker check becomes indistinguishable from the
+        # stronger one it replaced.
+        print(
+            f"All {len(guards)} guards still redden the tests their records name.\n"
+            "\n"
+            "**This run did not ask whether anything else went red.** It ran\n"
+            "only the modules those tests live in, so a test elsewhere that the\n"
+            "break also reddens is neither run nor reported, and a record that\n"
+            "names too few still reads as correct here. That is the direction 21\n"
+            "of the 23 records found wrong on 2026-09-01 were wrong in.\n"
+            "\n"
+            "Run the same selection without --named-only to ask it. That is\n"
+            "about 112 seconds a record against 24."
+        )
+        return 0
     print(
         "The guard still goes red when what it defends breaks, and nothing else does."
         if len(guards) == 1
