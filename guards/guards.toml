@@ -6351,13 +6351,25 @@ red = [
 # cancelling PUT.
 #
 # So what keeps a delete off the whole series now is that routing rather
-# than this gate, and that routing has a guard of its own. What is left with
-# nothing watching it is this gate's own answer for deleting. Three tests
-# still hold the gate and all three are about the flag or about editing, so
-# the gate is weaker than it was on 2026-08-15 and the record below is the
-# weaker reality. The repair is a test that asserts the refusal directly
-# rather than one that checks the wording of a refusal it may not be given,
-# which is a rewrite of that test and not a correction of this record.
+# than this gate, and that routing has a guard of its own.
+#
+# The first draft of this paragraph said that nothing was left watching this
+# gate's answer for deleting, which was reasoned from the three tests above
+# and not measured. It is wrong. Taking the refusal off deleting altogether,
+# `&& matches!(done, WhatIsBeingDone::Changing)` on the refusal in
+# `can_be_honoured`, reddens two tests in `application::calendar`:
+# `test_a_row_that_shares_its_address_with_its_series_is_refused_whatever_is_chosen`
+# and
+# `test_a_row_that_shares_its_address_is_allowed_only_to_change_the_whole_series_once_its_series_is_known`.
+# They build `WhatTheCalendarAllows` by hand, which is why the break above
+# does not reach them and why they hold the decision rather than the flag.
+#
+# So no link in the chain is unguarded: the flag has the three tests below,
+# the decision has those two, and the routing has its own. What is gone is
+# the one test that joined them, the only one that drove a real delete from
+# this flag out to a request. It cannot be written again in its old shape,
+# because the request it was watching for is no longer sent whatever this
+# gate answers.
 #
 # Re-measured by hand on 2026-09-02, against the whole library: exactly
 # these three tests went red and nothing else did.
