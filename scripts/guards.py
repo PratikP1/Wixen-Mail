@@ -50,6 +50,19 @@ TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "4")
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
 
+# A test attribute as it is really written: a line that is nothing else.
+#
+# Anchored at both ends, and the anchor is the whole difficulty. The other
+# reading is answered by a mention: `#[test]` sits in nineteen doc comments in
+# this tree explaining what a test does, so `grep -c` reports two for a file
+# holding one test. A count answered by a mention rather than a use is the
+# mistake this project has made seven times and it is always this one.
+#
+# Both spellings, because 573 of the tests here are `#[tokio::test]`. A reader
+# that knew only the bare attribute would report zero for a file whose tests are
+# all asynchronous, and zero is the answer that never disagrees with anything.
+TEST_ATTRIBUTE = re.compile(r"^[ \t]*#\[(?:tokio::)?test\][ \t]*$", re.M)
+
 
 @dataclass(frozen=True)
 class Guard:
@@ -223,6 +236,238 @@ def could_have_gone_stale(guard: "Guard", changed: list[str]) -> bool:
         if guard.suite[0] == "--test" and path == f"tests/{guard.suite[1]}.rs":
             return True
     return False
+
+
+def tests_in(text: str) -> int:
+    """How many test functions a file of Rust holds.
+
+    >>> tests_in("#[test]\\nfn test_a() {}\\n")
+    1
+    >>> tests_in("    #[tokio::test]\\n    async fn test_b() {}\\n")
+    1
+
+    And the mention, which is what the unanchored reading counts:
+
+    >>> tests_in("/// Runs under `#[test]`, as this sentence says.\\n")
+    0
+    >>> tests_in("//! One `#[test]` function.\\n#[test]\\nfn test_a() {}\\n")
+    1
+    """
+    return len(TEST_ATTRIBUTE.findall(text))
+
+
+def the_file_a_test_lives_in(test: str, suite: tuple[str, ...]) -> str | None:
+    """The file a named test lives in, as a path from the repository root.
+
+    A test named `a::b::tests::test_c` lives in `src/a/b.rs`, but how many
+    segments sit between the file and the test's own name is not fixed. The test
+    module is usually `tests` and often is not, and it can be nested. So the
+    file is the longest prefix that is really a file, tried longest first, and a
+    directory module is reached through its `mod.rs`.
+
+    >>> the_file_a_test_lives_in("application::calendar::tests::test_a", ("--lib",))
+    'src/application/calendar.rs'
+
+    A directory module, which has no file of its own name:
+
+    >>> the_file_a_test_lives_in("data::message_cache::tests::test_a", ("--lib",))
+    'src/data/message_cache/mod.rs'
+
+    A test module named for what it is about rather than `tests`:
+
+    >>> the_file_a_test_lives_in(
+    ...     "application::sending_later::what_undo_send_is_about::test_a", ("--lib",)
+    ... )
+    'src/application/sending_later.rs'
+
+    A record measured against an integration target names its own suite, and
+    those tests have no module path at all:
+
+    >>> the_file_a_test_lives_in("test_no_dashes", ("--test", "house_style"))
+    'tests/house_style.rs'
+
+    And a name nothing in the tree answers:
+
+    >>> the_file_a_test_lives_in("nowhere::at::all::test_a", ("--lib",)) is None
+    True
+    """
+    if suite[0] == "--test":
+        return f"tests/{suite[1]}.rs"
+    parts = test.split("::")
+    for cut in range(len(parts) - 1, 0, -1):
+        stem = "/".join(parts[:cut])
+        for candidate in (f"src/{stem}.rs", f"src/{stem}/mod.rs"):
+            if (ROOT / candidate).exists():
+                return candidate
+    return None
+
+
+def what_the_tree_holds_now(guard: Guard) -> list[tuple[str, int]]:
+    """For every file this record is about, how many tests it holds.
+
+    This is what a record writes down so that a source read can notice the tree
+    moving underneath it. A file gaining a test is how a record comes to name
+    too few, which is the direction that never announces itself.
+
+    The files its red list names, and the file it breaks. A unit test lives
+    beside what it covers, so a test arriving in the guarded file is at least as
+    likely to reach the break as one arriving anywhere else, and 34 of the 548
+    records break a Rust file no test in their red list lives in. "the question
+    about which days focuses the answer it ticks" breaks
+    `src/presentation/wx_which_days.rs` and every test it names is in
+    `wx_calendar.rs`, so without this a test written next to the code that
+    record is about would move nothing.
+
+    Measured before it was added, because the cost of watching more files is
+    flagging more records: those 34 gain one entry each, and the file that
+    already flags the most records is unchanged by it.
+
+    Rust files only. A handful of records guard a document, and counting the
+    tests in `README.md` is a number that can never move.
+    """
+    guarded = str(guard.file.relative_to(ROOT)).replace("\\", "/")
+    about = [the_file_a_test_lives_in(test, guard.suite) for test in guard.red]
+    about.append(guarded if guarded.endswith(".rs") else None)
+
+    seen: dict[str, int] = {}
+    for where in about:
+        if where is None or where in seen:
+            continue
+        seen[where] = tests_in((ROOT / where).read_text(encoding="utf-8"))
+    return sorted(seen.items())
+
+
+def with_its_counts(block: list[str], counts: list[tuple[str, int]]) -> list[str]:
+    """One record's lines, with `tests_last_seen` written under its red list.
+
+    Under the list it is about, and never at the end of the block: the lines
+    after a record's last key are the comment introducing the next record, and
+    a key written after those would read as belonging to the wrong one.
+
+    >>> with_its_counts(
+    ...     ["[[guard]]", "red = [", '    "a",', "]"], [("src/a.rs", 3)]
+    ... )
+    ['[[guard]]', 'red = [', '    "a",', ']', 'tests_last_seen = [', '    { file = "src/a.rs", tests = 3 },', ']']
+
+    A red list written on one line, which some records use:
+
+    >>> with_its_counts(['red = ["a"]'], [("src/a.rs", 1)])
+    ['red = ["a"]', 'tests_last_seen = [', '    { file = "src/a.rs", tests = 1 },', ']']
+
+    An existing count is replaced rather than added to, so running this twice
+    leaves what running it once left:
+
+    >>> with_its_counts(
+    ...     ['red = ["a"]', "tests_last_seen = [", '    { file = "src/a.rs", tests = 2 },', "]"],
+    ...     [("src/a.rs", 3)],
+    ... )
+    ['red = ["a"]', 'tests_last_seen = [', '    { file = "src/a.rs", tests = 3 },', ']']
+
+    A comment following the record keeps its place, because it belongs to
+    whatever comes next rather than to this:
+
+    >>> with_its_counts(['red = ["a"]', "", "# about the next one"], [("src/a.rs", 1)])[-2:]
+    ['', '# about the next one']
+    """
+    kept: list[str] = []
+    dropping = False
+    for line in block:
+        if line.startswith("tests_last_seen = ["):
+            dropping = True
+            continue
+        if dropping:
+            dropping = line != "]"
+            continue
+        kept.append(line)
+
+    written = ["tests_last_seen = ["]
+    written += [f'    {{ file = "{where}", tests = {count} }},' for where, count in counts]
+    written.append("]")
+
+    for at, line in enumerate(kept):
+        if not line.startswith("red = "):
+            continue
+        end = at
+        if not line.rstrip().endswith("]"):
+            end = next(i for i in range(at + 1, len(kept)) if kept[i] == "]")
+        return kept[: end + 1] + written + kept[end + 1 :]
+    raise Wrong("a record with no red list, which read_record already refuses")
+
+
+def rewritten_with_counts(
+    raw: str, guards: list[Guard], counts: dict[str, list[tuple[str, int]]]
+) -> str:
+    """The whole record file, with the named records' counts written down.
+
+    Everything else byte for byte. The comments in that file carry the reasoning
+    for every record, and several of them are the only account of a defect that
+    was shipped, so a rewrite that parsed and dumped would cost far more than
+    this check is worth. This is a line edit, and the line endings the file
+    already uses are the ones it keeps.
+
+    >>> one = Guard("only me", Path("a.rs"), "a", "b", ("x",))
+    >>> print(rewritten_with_counts(
+    ...     '# a note\\n[[guard]]\\nname = "only me"\\nred = ["x"]\\n',
+    ...     [one],
+    ...     {"only me": [("src/a.rs", 4)]},
+    ... ))
+    # a note
+    [[guard]]
+    name = "only me"
+    red = ["x"]
+    tests_last_seen = [
+        { file = "src/a.rs", tests = 4 },
+    ]
+    <BLANKLINE>
+
+    A record nobody asked about is not touched:
+
+    >>> rewritten_with_counts(
+    ...     '[[guard]]\\nname = "only me"\\nred = ["x"]\\n', [one], {}
+    ... )
+    '[[guard]]\\nname = "only me"\\nred = ["x"]\\n'
+    """
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    lines = raw.split(newline)
+    starts = [at for at, line in enumerate(lines) if line.rstrip() == "[[guard]]"]
+    if len(starts) != len(guards):
+        raise Wrong(
+            f"the record file holds {how_many(len(starts), 'guard header')} and "
+            f"{how_many(len(guards), 'record')} were read out of it, so the two "
+            "readings do not pair up and nothing here may be written."
+        )
+
+    out = lines[: starts[0]]
+    for n, start in enumerate(starts):
+        end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        block = lines[start:end]
+        guard = guards[n]
+        if guard.name in counts:
+            # The headers and the records are one list read two ways, so this
+            # pairs them by position. Checked rather than trusted: anything that
+            # made the two readings disagree would land every rewrite after it
+            # on the wrong record, silently.
+            if f'name = "{guard.name}"' not in block:
+                raise Wrong(
+                    f"the {n + 1}th record in the file is not {guard.name!r}, so "
+                    "the two readings of it disagree and nothing may be written."
+                )
+            block = with_its_counts(block, counts[guard.name])
+        out += block
+    return newline.join(out)
+
+
+def write_down_the_counts(
+    guards: list[Guard], counts: dict[str, list[tuple[str, int]]]
+) -> None:
+    """Put the counts into the record file, keeping the bytes around them.
+
+    Bytes rather than text, for the reason `measure` gives about the tree it
+    breaks: a text-mode write turns every line of this file into CRLF on
+    Windows, which git records as a change to all ten thousand of them.
+    """
+    raw = RECORD.read_bytes().decode("utf-8")
+    RECORD.write_bytes(rewritten_with_counts(raw, guards, counts).encode("utf-8"))
 
 
 def files_changed_since(ref: str) -> list[str]:
@@ -484,6 +729,22 @@ def main() -> int:
         help="only the records this branch could have made stale since REF, "
         "which is what a merge needs and is minutes rather than hours",
     )
+    parsing.add_argument(
+        "--remeasure",
+        nargs="+",
+        metavar="NAME",
+        help="measure these records, named exactly, and write down the tree "
+        "each one agreed with. This is what "
+        "test_every_guard_record_says_how_many_tests_the_files_it_names_held "
+        "tells you to run, and it names the records for you",
+    )
+    parsing.add_argument(
+        "--recount-everything",
+        action="store_true",
+        help="write down the tree every record is sitting in, having measured "
+        "nothing. For adopting the count on records written before it existed, "
+        "and for nothing else: it does not say a record is right",
+    )
     asked = parsing.parse_args()
 
     try:
@@ -491,6 +752,36 @@ def main() -> int:
     except Wrong as wrong:
         print(f"\n{wrong}\n")
         return 1
+
+    if asked.recount_everything:
+        # Loud, and it says the thing it does not do. A count written here is
+        # "no test has been added to these files since somebody looked", which
+        # is a weaker claim than "this record is right" and reads exactly like
+        # it in the file. The only way to earn the stronger one is to measure.
+        write_down_the_counts(guards, {g.name: what_the_tree_holds_now(g) for g in guards})
+        print(
+            f"Wrote down, for {how_many(len(guards), 'record')}, the tree it "
+            "is sitting in.\n\n"
+            "This measured nothing. It does not say any of those records names "
+            "the right\ntests; it says what the files they name held today, so "
+            "that a test added to\none of those files from now on fails the "
+            "commit that adds it. A record that\nis already short stays short, "
+            "and only a run finds that.\n"
+        )
+        return 0
+
+    if asked.remeasure:
+        known = {guard.name: guard for guard in guards}
+        unknown = [name for name in asked.remeasure if name not in known]
+        if unknown:
+            print(
+                "\nNo record is named exactly:\n    "
+                + "\n    ".join(unknown)
+                + "\n\nThese are matched whole rather than by part, because the "
+                "check that\nsends you here prints them whole.\n"
+            )
+            return 1
+        guards = [known[name] for name in asked.remeasure]
 
     if asked.only:
         guards = [g for g in guards if asked.only.lower() in g.name.lower()]
@@ -531,6 +822,7 @@ def main() -> int:
     )
     print(f"{header}\n")
     slipped: list[str] = []
+    agreed: list[Guard] = []
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
@@ -557,8 +849,28 @@ def main() -> int:
                 slipped.append(guard.name)
                 continue
             say_what_it_found(guard, measured)
-            if not measured.agrees_with_the_record():
+            if measured.agrees_with_the_record():
+                agreed.append(guard)
+            else:
                 slipped.append(guard.name)
+
+    # The tree a record agreed against, written down so a source read can
+    # notice it moving. Only for the records that agreed, and that is the
+    # load-bearing half: writing it for a record whose red list is wrong would
+    # say "checked against this tree" over a record still known to be short,
+    # and the check would then stay quiet about it for ever. A record that
+    # disagreed gets its `red` list corrected by hand and measured again, and
+    # it is that second run that writes the count.
+    #
+    # Only under --remeasure. An ordinary run is a report, and a report that
+    # edits the thing it reports on is not one.
+    if asked.remeasure and agreed:
+        write_down_the_counts(read_record(), {g.name: what_the_tree_holds_now(g) for g in agreed})
+        print(
+            f"\nWrote down the tree {how_many(len(agreed), 'record')} agreed "
+            "with, so a test added\nto any file they name fails the commit that "
+            "adds it."
+        )
 
     # Both ways written out rather than one built from parts. Three words have
     # to agree in number and this project has already read out "1 changes are

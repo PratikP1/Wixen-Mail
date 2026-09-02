@@ -4775,7 +4775,12 @@ fn test_the_sweep_header_check_can_tell_the_two_apart() {
 /// knew only the bare attribute would report zero for a file whose tests are all
 /// asynchronous, and zero is the answer that never disagrees with anything.
 fn how_many_tests_are_in(text: &str) -> usize {
-    text.matches("#[test]").count()
+    text.lines()
+        .filter(|line| {
+            let line = line.trim();
+            line == "#[test]" || line == "#[tokio::test]"
+        })
+        .count()
 }
 
 /// The file a named test lives in, if the tree holds one.
@@ -4796,9 +4801,17 @@ fn the_file_a_test_lives_in(test: &str, suite: Option<&str>) -> Option<PathBuf> 
         return Some(PathBuf::from(format!("tests/{suite}.rs")));
     }
     let parts: Vec<&str> = test.split("::").collect();
-    // The naive reading: the test's own name and the module holding it.
-    let stem = parts.get(..parts.len().saturating_sub(2))?.join("/");
-    Some(PathBuf::from(format!("src/{stem}.rs")))
+    // Longest first. Dropping a fixed number of segments is right for the
+    // common shape and wrong twice over: a directory module has no file of its
+    // own name, and a test module named for its subject is one more segment
+    // than `tests`.
+    (1..parts.len()).rev().find_map(|cut| {
+        let stem = parts[..cut].join("/");
+        [format!("src/{stem}.rs"), format!("src/{stem}/mod.rs")]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|candidate| candidate.is_file())
+    })
 }
 
 /// What a record's written-down test counts get wrong about the tree, if
@@ -4806,13 +4819,60 @@ fn the_file_a_test_lives_in(test: &str, suite: Option<&str>) -> Option<PathBuf> 
 ///
 /// Both sides are (file, count) pairs sorted by file: what the record says was
 /// there, and what is there now.
+///
+/// Silence is not agreement. A record that has written nothing down is reported
+/// rather than passed over, because the other reading gives every record added
+/// from now on a permanent exemption, granted by leaving a line out.
 fn what_the_recorded_counts_get_wrong(
     name: &str,
     recorded: &[(String, usize)],
     in_the_tree: &[(String, usize)],
 ) -> Option<String> {
-    let _ = (recorded, in_the_tree);
-    Some(format!("{name}: not read yet"))
+    if recorded.is_empty() {
+        return Some(format!(
+            "{name}: says nothing about the tests in the {} its red list \
+             names, so nothing here can notice one of them gaining a test. \
+             Measure it and write down what it agrees with.",
+            how_many_files(in_the_tree.len())
+        ));
+    }
+
+    let moved: Vec<String> = in_the_tree
+        .iter()
+        .filter_map(
+            |(file, now)| match recorded.iter().find(|(was, _)| was == file) {
+                Some((_, then)) if then == now => None,
+                Some((_, then)) => Some(format!("{file} held {then} tests and holds {now}")),
+                None => Some(format!(
+                    "{file} is named by the red list and was never counted"
+                )),
+            },
+        )
+        .chain(
+            recorded
+                .iter()
+                .filter(|(file, _)| !in_the_tree.iter().any(|(now, _)| now == file))
+                .map(|(file, _)| format!("{file} was counted and the red list no longer names it")),
+        )
+        .collect();
+
+    if moved.is_empty() {
+        return None;
+    }
+    Some(format!("{name}:\n      {}", moved.join("\n      ")))
+}
+
+/// A count of files with the word, so a line reads as a sentence.
+///
+/// The product keeps `how_many` in `src/service/caldav.rs` for this and
+/// `guards/guards.toml` guards it, and this file has already printed
+/// "1 guard records" once.
+fn how_many_files(count: usize) -> String {
+    if count == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{count} files")
+    }
 }
 
 /// The command that re-measures exactly the records this found, and nothing
@@ -4823,7 +4883,8 @@ fn what_the_recorded_counts_get_wrong(
 /// stale has no cheaper option than that. Told which records, they have one
 /// that costs a build and a run each.
 fn how_to_re_measure(names: &[String]) -> String {
-    format!("scripts/guards.sh --remeasure {}", names.join(" "))
+    let quoted: Vec<String> = names.iter().map(|name| format!("\"{name}\"")).collect();
+    format!("scripts/guards.sh --remeasure {}", quoted.join(" "))
 }
 
 /// Every guard record says how many tests were in the files its red list names.
@@ -4835,18 +4896,34 @@ fn how_to_re_measure(names: &[String]) -> String {
 /// earlier. Nothing was failing the whole time.
 ///
 /// So each record writes down the tree it was last checked against: for every
-/// file its red list names, how many test functions that file held. When a file
-/// gains or loses one, this fails and names the records to re-measure. That is
-/// a source read, so it costs milliseconds and runs on every commit, where the
-/// answer it stands in for costs a build and a full suite run per record.
+/// file its red list names, and for the file it breaks, how many test functions
+/// that file held. When one of them gains or loses a test, this fails and names
+/// the records to re-measure. That is a source read, so it costs milliseconds
+/// and runs on every commit, where the answer it stands in for costs a build and
+/// a full suite run per record.
 ///
-/// **What it cannot see, and the limit is not small.** A test added to a file no
-/// record names can still redden a record, and no count of any file predicts
-/// that: the record has never mentioned the file, so there is nothing to
-/// compare. Only the full run finds those, and the full run is hours. It is
-/// also blind to a swap, because a count is a size rather than a set: delete one
-/// test from a file and add another, and the number is unmoved while the record
-/// may have gone stale underneath it.
+/// **What it cannot see, and none of the three is small.**
+///
+/// A test added to a file no record names can still redden a record, and no
+/// count of any file predicts that: the record has never mentioned the file, so
+/// there is nothing to compare. Only the full run finds those, and the full run
+/// is hours.
+///
+/// A swap is invisible, because a count is a size and not a set. Delete one test
+/// from a file and add another and the number does not move, while the record
+/// may have gone stale underneath it. That direction is real: a re-measurement
+/// on 2026-09-01 found four tests before and four after with two of the four
+/// changed, and one of the two that left had been made blind to the break by
+/// somebody improving it.
+///
+/// And what it costs when it fires is not flat. 471 of the 548 records name one
+/// file, so their remedy is one build and one run. The largest shared modules
+/// are named by many: a test added to `src/application/contacts_sync.rs` flags
+/// 74 records, and at a build and a run each that is hours rather than minutes.
+/// `CLAUDE.md` already says there is no clever selection that makes that quick.
+/// It also says guard re-measurement belongs off the critical path, which is
+/// the honest answer here: run the command it prints in the background and let
+/// the follow-up commit carry the corrected records.
 ///
 /// This is a net under the common case, not a replacement for the run. The
 /// common case is what caught the project twenty-one times.
@@ -4871,17 +4948,30 @@ fn test_every_guard_record_says_how_many_tests_the_files_it_names_held() {
             .to_string();
         let suite = record.get("suite").and_then(toml::Value::as_str);
 
-        let mut in_the_tree: Vec<(String, usize)> = Vec::new();
-        for test in record
+        // The files its red list names, and the file it breaks. The second
+        // because a unit test lives beside what it covers, so a test arriving
+        // in the guarded file is at least as likely to reach the break as one
+        // arriving anywhere else, and 34 of these records break a Rust file no
+        // test they name lives in. `scripts/guards.py` names one and says what
+        // watching them costs.
+        let guarded = record
+            .get("file")
+            .and_then(toml::Value::as_str)
+            .expect("a guard record with no file");
+        let mut about: Vec<Option<PathBuf>> = record
             .get("red")
             .and_then(toml::Value::as_array)
             .expect("a guard record with no red list")
             .iter()
             .filter_map(toml::Value::as_str)
-        {
-            let Some(file) = the_file_a_test_lives_in(test, suite) else {
-                continue;
-            };
+            .map(|test| the_file_a_test_lives_in(test, suite))
+            .collect();
+        // Rust files only. A handful of records guard a document, and the count
+        // of tests in `README.md` is a number that can never move.
+        about.push(guarded.ends_with(".rs").then(|| PathBuf::from(guarded)));
+
+        let mut in_the_tree: Vec<(String, usize)> = Vec::new();
+        for file in about.into_iter().flatten() {
             let path = file.to_string_lossy().replace('\\', "/");
             if in_the_tree.iter().any(|(seen, _)| *seen == path) {
                 continue;
