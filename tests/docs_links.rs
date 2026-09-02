@@ -256,29 +256,42 @@ struct DescribedUnder {
     paragraph_line: usize,
 }
 
-/// Which `##` section of a page a capability's paragraph sits in.
+/// Every `##` section of a page that introduces a capability by name.
 ///
-/// `None` means the page no longer introduces it by that name. That is a
+/// Every, not the first. A page can introduce the same capability twice, and
+/// that is how correcting one of these pages goes wrong: moving a paragraph is
+/// a deletion and an insertion, and doing the insertion alone leaves the
+/// capability described in both sections. A reading that stopped at the first
+/// mention approved exactly that, and did so on this page after the paragraph
+/// moved, because the correct mention now comes first.
+///
+/// An empty answer means the page no longer introduces it at all. That is a
 /// failure rather than nothing to say: a page reorganised out from under this
 /// reading must not pass as a page with no faults.
-fn described_under(text: &str, name: &str) -> Option<DescribedUnder> {
+fn described_under(text: &str, name: &str) -> Vec<DescribedUnder> {
     let opening = format!("**{name}.**");
     let mut section: Option<(String, usize)> = None;
+    let mut found = Vec::new();
 
     for (index, line) in text.lines().enumerate() {
         if let Some(rest) = line.strip_prefix("## ") {
             section = Some((rest.trim().to_string(), index + 1));
         }
         if line.trim_start().starts_with(&opening) {
-            let (heading, heading_line) = section?;
-            return Some(DescribedUnder {
+            // Before any `##` heading, so there is no section to name. Left
+            // out rather than reported: this reading is about which section a
+            // capability sits in, and a paragraph in none sits in none.
+            let Some((heading, heading_line)) = section.clone() else {
+                continue;
+            };
+            found.push(DescribedUnder {
                 heading,
                 heading_line,
                 paragraph_line: index + 1,
             });
         }
     }
-    None
+    found
 }
 
 /// Words that refuse.
@@ -353,25 +366,28 @@ fn capabilities_filed_as_missing(
     let mut wrong = Vec::new();
 
     for capability in capabilities {
-        let Some(found) = described_under(text, capability.on_the_page) else {
+        let everywhere = described_under(text, capability.on_the_page);
+        if everywhere.is_empty() {
             wrong.push(format!(
                 "{page}: nothing introduces \"{}\", so this check has stopped reading the page",
                 capability.on_the_page
             ));
             continue;
-        };
+        }
 
-        if a_heading_that_denies(&found.heading) && the_code_has(capability) {
-            wrong.push(format!(
-                "{page}:{}: \"{}\" is described under \"{}\" at line {}, \
-                 and {} holds {}",
-                found.paragraph_line,
-                capability.on_the_page,
-                found.heading,
-                found.heading_line,
-                capability.in_the_code,
-                capability.symbols.join(", ")
-            ));
+        for found in everywhere {
+            if a_heading_that_denies(&found.heading) && the_code_has(capability) {
+                wrong.push(format!(
+                    "{page}:{}: \"{}\" is described under \"{}\" at line {}, \
+                     and {} holds {}",
+                    found.paragraph_line,
+                    capability.on_the_page,
+                    found.heading,
+                    found.heading_line,
+                    capability.in_the_code,
+                    capability.symbols.join(", ")
+                ));
+            }
         }
     }
     wrong
@@ -560,14 +576,19 @@ fn test_the_section_reading_can_tell_a_misfiled_capability_from_a_filed_one() {
          and approves it"
     );
 
-    // Every capability located on the real page. A name the reader could not
-    // find would otherwise pass as a capability with nothing to say about it.
+    // Every capability located on the real page, exactly once. A name the
+    // reader could not find would otherwise pass as a capability with nothing
+    // to say about it, and a name found twice is a page describing one thing
+    // in two sections, which is a fault whichever sections they are.
     for capability in THE_CAPABILITIES {
-        assert!(
-            described_under(&text, capability.on_the_page).is_some(),
-            "\"{}\" is not introduced anywhere in {THE_STATUS_PAGE}, so the guard \
-             has nothing to read about it and says nothing",
-            capability.on_the_page
+        let everywhere = described_under(&text, capability.on_the_page);
+        assert_eq!(
+            everywhere.len(),
+            1,
+            "\"{}\" is introduced {} times in {THE_STATUS_PAGE}, and it should be \
+             once: {everywhere:?}",
+            capability.on_the_page,
+            everywhere.len()
         );
     }
 
