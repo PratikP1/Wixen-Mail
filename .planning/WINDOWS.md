@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 33
+open_count: 30
 waived_count: 0
-fixed_count: 3
+fixed_count: 6
 total_count: 36
-last_updated: 2026-09-01T17:15:26.277Z
+last_updated: 2026-09-02T07:10:31.448Z
 ---
 
 # Broken Windows Ledger
@@ -16,9 +16,9 @@ last_updated: 2026-09-01T17:15:26.277Z
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 01 | unrun-verify | src/presentation/folder_tree.rs |  | The Favourites group is not confirmed with a screen reader; FOLDER-03's last criterion is satisfied structurally only | open |  | 2026-08-30T19:15:54.071Z |  |
-| 2 | 01 | deviation | src/presentation/wx_app.rs |  | The running tree builds one account at a time, so D-29's per-account Favourites branches are tested but not visible in the program yet | open |  | 2026-08-30T19:15:54.459Z |  |
-| 3 | 01 | stub | src/presentation/message_rows.rs |  | conversation_cell_text is written and tested per column and has no non-test caller; 01-12 draws the collapsed conversation list | open |  | 2026-08-31T01:12:14.164Z |  |
-| 4 | 01 | stub | src/presentation/message_columns.rs |  | Sort::conversation_order_by_clause is written and tested and has no non-test caller; 01-12 passes the user's chosen sort | open |  | 2026-08-31T01:12:21.927Z |  |
+| 2 | 01 | deviation | src/presentation/wx_app.rs |  | The running tree builds one account at a time, so D-29's per-account Favourites branches are tested but not visible in the program yet | fixed |  | 2026-08-30T19:15:54.459Z | 2026-09-02T07:10:31.448Z |
+| 3 | 01 | stub | src/presentation/message_rows.rs |  | conversation_cell_text is written and tested per column and has no non-test caller; 01-12 draws the collapsed conversation list | fixed |  | 2026-08-31T01:12:14.164Z | 2026-09-02T07:09:47.226Z |
+| 4 | 01 | stub | src/presentation/message_columns.rs |  | Sort::conversation_order_by_clause is written and tested and has no non-test caller; 01-12 passes the user's chosen sort | fixed |  | 2026-08-31T01:12:21.927Z | 2026-09-02T07:09:55.366Z |
 | 5 | 01 | deviation | src/application/conversations.rs |  | Hungarian's one-letter I: forward marker is read as a reply marker, because mail_parser's trim_trailing_fwd ignores a parenthesised word of one character | open |  | 2026-08-31T01:12:22.334Z |  |
 | 6 | 01 | unrun-verify | src/presentation/wx_app.rs |  | Rethreading on arrival repaints one row and does not touch the selection; no screen reader has confirmed that a repainted row is silent to somebody not on it | open |  | 2026-08-31T05:13:47.847Z |  |
 | 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | open |  | 2026-08-31T05:13:49.247Z |  |
@@ -73,10 +73,10 @@ last_updated: 2026-09-01T17:15:26.277Z
     "file": "src/presentation/wx_app.rs",
     "line": null,
     "description": "The running tree builds one account at a time, so D-29's per-account Favourites branches are tested but not visible in the program yet",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-30T19:15:54.459Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-02T07:10:31.448Z"
   },
   {
     "id": 3,
@@ -85,10 +85,10 @@ last_updated: 2026-09-01T17:15:26.277Z
     "file": "src/presentation/message_rows.rs",
     "line": null,
     "description": "conversation_cell_text is written and tested per column and has no non-test caller; 01-12 draws the collapsed conversation list",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T01:12:14.164Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-02T07:09:47.226Z"
   },
   {
     "id": 4,
@@ -97,10 +97,10 @@ last_updated: 2026-09-01T17:15:26.277Z
     "file": "src/presentation/message_columns.rs",
     "line": null,
     "description": "Sort::conversation_order_by_clause is written and tested and has no non-test caller; 01-12 passes the user's chosen sort",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T01:12:21.927Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-02T07:09:55.366Z"
   },
   {
     "id": 5,

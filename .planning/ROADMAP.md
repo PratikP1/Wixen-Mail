@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Folders and conversations** - Make and manage folders, nest them, pin them, and collapse the list to one row per conversation
 - [ ] **Phase 2: Search that says what it covers** - The scope selector scopes, the coverage is disclosed, and a rule can be a folder
-- [ ] **Phase 2.1: What phase 1 found on its way past** (INSERTED) - Six defects and two stale documents that belong to no other phase
+- [ ] **Phase 2.1: What phase 1 found on its way past** (INSERTED) - Thirteen defects and stale documents that belong to no other phase
 - [ ] **Phase 3: Mail at scale on the wire** - Resume rather than re-list, hold one connection, fetch a whole mailbox, and never pick a conflict winner silently
 - [ ] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
 - [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere, recurring events across weeks and months, notes that sync, contacts over CardDAV
@@ -198,6 +198,8 @@ Plans:
   11. A branch row offers a menu that fits it. `wire_context_menu` answers `Focus::MailFolders` for everything that is not a saved-search row, so account branches, the Favourites branch, the Labels heading and "On this computer" all offer "Get older messages" and "Folders to keep up to date" on rows that are not folders. True since 01-14 and D-29; 02-07 gave only the saved-search row its own focus. Deciding what a branch row's menu holds is the work.
 
   12. Two accounts sharing a name are two rows. `where_a_row_sits` pairs by label chain, so two accounts called "Work" produce identical chains and the pairing takes the first. True of the account branches since 01-14, and the saved-search group inherits it. The comment on `where_a_row_sits` already says so.
+
+  13. A forwarded Hungarian message does not join the conversation it is a reply to. `mail_parser`'s `trim_trailing_fwd` ignores a parenthesised word of one character, so Hungarian's `I:` forward marker is read as a reply marker and the message is threaded as a reply. Recorded as ledger entry 5 against `src/application/conversations.rs`, which documents the behaviour at line 323. It belongs to no phase, which is why it has sat since 01-11.
 
 **Plans**: TBD
 **UI hint**: yes
