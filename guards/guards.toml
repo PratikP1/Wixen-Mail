@@ -6324,12 +6324,55 @@ red = [
 # enough to answer the question. Breaking the leading check that reads it
 # reproduces the exact gap round 22 left open, one call at a time: the pure
 # fact function, the production glue code in `presentation::managers` that
-# never gets a chance to compare against a series it cannot find, and both
-# real call sites the gate protects, edit and delete, reproduced end to end
-# against a synced first-sync CalDAV answer that never names the series.
+# never gets a chance to compare against a series it cannot find, and the
+# edit call site the gate protects, reproduced end to end against a synced
+# first-sync CalDAV answer that never names the series.
 #
-# Measured by hand on 2026-08-15, against the whole library: exactly these
-# four tests went red and nothing else did.
+# The delete call site was the fourth test named here on 2026-08-15, and it
+# is written up rather than quietly dropped, because losing it is the part
+# worth knowing. That test is built in two arms: the gate refuses, so check
+# the refusal reads right; the gate lets it through, so drive the delete and
+# prove an unconditional DELETE goes out at the address this row shares with
+# its series. The second arm was the whole of its value, because that day
+# the deletion loop in `push_to_the_calendar_server` held one unconditional
+# `delete_event` and nothing else. `ba7ed88`, the next day, gave that loop a
+# second door: a deletion note carrying its own `provider_recurrence_id`
+# goes through `delete_one_occurrence`, which marks the one VEVENT cancelled
+# rather than removing the resource. So the damage the second arm was
+# written to catch cannot happen by that route any more, both arms pass, and
+# no answer this gate can give will fail that test.
+#
+# Measured three ways rather than assumed. The break on its own leaves it
+# green. The break with that routing put back reddens it, with the DELETE at
+# the shared address this record describes. The routing put back on its own,
+# with this gate whole, reddens the sibling test instead:
+# `application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series`
+# takes the open arm, because its series is known here, and asserts the
+# cancelling PUT.
+#
+# So what keeps a delete off the whole series now is that routing rather
+# than this gate, and that routing has a guard of its own.
+#
+# The first draft of this paragraph said that nothing was left watching this
+# gate's answer for deleting, which was reasoned from the three tests above
+# and not measured. It is wrong. Taking the refusal off deleting altogether,
+# `&& matches!(done, WhatIsBeingDone::Changing)` on the refusal in
+# `can_be_honoured`, reddens two tests in `application::calendar`:
+# `test_a_row_that_shares_its_address_with_its_series_is_refused_whatever_is_chosen`
+# and
+# `test_a_row_that_shares_its_address_is_allowed_only_to_change_the_whole_series_once_its_series_is_known`.
+# They build `WhatTheCalendarAllows` by hand, which is why the break above
+# does not reach them and why they hold the decision rather than the flag.
+#
+# So no link in the chain is unguarded: the flag has the three tests below,
+# the decision has those two, and the routing has its own. What is gone is
+# the one test that joined them, the only one that drove a real delete from
+# this flag out to a request. It cannot be written again in its old shape,
+# because the request it was watching for is no longer sent whatever this
+# gate answers.
+#
+# Re-measured by hand on 2026-09-02, against the whole library: exactly
+# these three tests went red and nothing else did.
 
 [[guard]]
 name = "a CalDAV exception row shares its series' address without needing the series"
@@ -6345,7 +6388,6 @@ after = """    if false {
 red = [
     "application::calendar::tests::test_a_day_carrying_a_provider_recurrence_id_shares_the_series_address_even_when_the_series_is_not_given",
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever",
-    "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_whose_series_was_never_resolved_never_sends_a_delete_for_the_whole_series",
     "presentation::managers::changing_one_day_of_a_series::test_what_this_rows_calendar_allows_flags_a_row_whose_series_is_not_yet_resolved",
 ]
 
