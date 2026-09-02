@@ -7820,6 +7820,30 @@ tests_last_seen = [
 # went red and nothing else did. (Corrected from an earlier count of 8: the
 # break also reddens the escaping tests added a commit later, which the
 # original count was taken before.)
+#
+# Measured by hand again on 2026-09-02, and that is the first measurement
+# this record has allowed since the day it was written. Two of its ten names
+# had not existed for seventeen days, so every run that reached it stopped at
+# "the test harness never ran" before reporting anything about the break.
+# The two tests were renamed, not removed. 8445b96, the same day and under
+# four hours later, carried a recipient's display name onto the outgoing To
+# and Cc headers and renamed the pair from `..._reaches_the_request_bare` to
+# `..._reaches_the_request_with_the_name_kept`, widening each from asserting
+# the address alone to asserting the address and the name both. That commit
+# corrected those same two names in the record directly above this one and
+# left them stale here. It re-measured the two records whose code it edited;
+# this was the third, made stale by renaming tests it names rather than by
+# touching the line it breaks, and nothing asked about that direction.
+#
+# Nothing stopped guarding the rule. All ten tests named on 2026-08-16 still
+# go red, the renamed two included, and those two now assert more than they
+# used to. What the record had wrong is the other direction: the break
+# reddens 20 tests, not 10. Ten more read a name back through this same
+# writer and none of them was written down. Replying to a sender whose name
+# holds a bracket, exporting contacts, the people-lookup line, writing a
+# message out to a file, and the message list's correspondent column all
+# corrupt when the quoting comes off. All 20 went red, nothing else did, and
+# the file was restored byte for byte from a copy taken before the break.
 
 [[guard]]
 name = "a name written back out is quoted when it needs to be"
@@ -7846,16 +7870,31 @@ red = [
     "common::types::tests::test_a_display_name_with_an_angle_bracket_is_quoted_so_it_does_not_look_like_a_second_address",
     "service::mime::tests::test_a_quoted_name_with_a_comma_is_read_back_as_one_address",
     "service::mime::tests::test_a_quoted_name_with_an_angle_bracket_is_read_back_as_one_address",
-    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_bare",
-    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_bare",
+    "application::mail_controller::send_request_tests::test_a_comma_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept",
+    "application::mail_controller::send_request_tests::test_an_angle_bracket_in_a_stored_display_name_still_reaches_the_request_with_the_name_kept",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_a_comma_reaches_the_wire_as_a_bare_address",
     "presentation::wx_app::reply_recipients_reach_the_wire::test_replying_to_a_sender_whose_name_has_an_angle_bracket_reaches_the_wire_as_a_bare_address",
     "common::types::tests::test_a_quote_mark_inside_a_display_name_is_escaped_so_the_quoting_stays_well_formed",
     "common::types::tests::test_a_backslash_inside_a_display_name_is_escaped_so_it_is_not_read_as_an_escape_itself",
+    "application::export_tree::tests::test_a_list_of_awkward_names_keeps_its_length_and_its_order",
+    "application::export_tree::tests::test_any_name_a_stored_column_can_hold_comes_back_as_itself",
+    "application::export_tree::tests::test_every_name_in_a_stored_column_is_the_same_name_when_it_comes_back",
+    "application::looking_people_up::tests::test_the_line_a_choice_makes_reads_back_as_the_people_who_are_in_it",
+    "application::message_files::tests::test_every_header_a_message_carries_survives_being_written_out",
+    "application::reply::tests::test_a_reply_to_one_person_whose_name_has_a_bracket_says_the_whole_name",
+    "application::reply::tests::test_key_of_recovers_the_real_address_when_the_name_contains_a_literal_angle_bracket",
+    "application::reply::tests::test_name_or_address_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
+    "application::reply::tests::test_reply_to_all_does_not_double_a_sender_whose_name_has_a_bracket_in_it",
+    "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
+    { file = "src/application/export_tree.rs", tests = 35 },
+    { file = "src/application/looking_people_up.rs", tests = 37 },
     { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/message_files.rs", tests = 51 },
+    { file = "src/application/reply.rs", tests = 28 },
     { file = "src/common/types.rs", tests = 30 },
+    { file = "src/presentation/message_rows.rs", tests = 38 },
     { file = "src/presentation/wx_app.rs", tests = 196 },
     { file = "src/service/mime.rs", tests = 37 },
 ]
