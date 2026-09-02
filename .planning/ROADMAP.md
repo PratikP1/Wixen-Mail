@@ -215,7 +215,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 02.1-03-PLAN.md — Every page that says folder management is missing (criterion 5)
+- [x] 02.1-03-PLAN.md — Every page that says folder management is missing (criterion 5)
 
 **Wave 4** *(blocked on Wave 3)*
 

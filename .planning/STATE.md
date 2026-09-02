@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-02-PLAN.md on branch gsd/plan-02.1-02, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
+stopped_at: Completed 02.1-03-PLAN.md on branch gsd/plan-02.1-03, not merged. 02.1-01 is on gsd/plan-02.1-01, also unmerged, with a task 4 decision still awaiting Pratik.
 last_updated: "2026-09-02T00:00:00.000Z"
-last_activity: 2026-09-02, 02.1-02 done, unmerged. Criteria 7 and 8 closed; the window claim was in ten comment blocks, not five.
-state_head: 55ecafc
+last_activity: 2026-09-02, 02.1-03 done, unmerged. Criterion 5 closed; the status page was false by position, not by wording, and the tree search found a fifth file.
+state_head: 2807e6e
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 32
-  completed_plans: 25
+  completed_plans: 26
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -199,6 +199,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P09 | one session | 2 tasks | 6 files |
 | Phase 02.1 P01 | 3h | 3 tasks | 6 files |
 | Phase 02.1 P02 | 2h | 3 tasks | 7 files |
+| Phase 02.1 P03 | 2h | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -381,7 +382,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-02
-Stopped at: Completed 02.1-02-PLAN.md on branch gsd/plan-02.1-02, not merged. Criteria 7 and 8 are closed. Two guards now carry a companion proving each can see a violation, and ten comment blocks in five files say a budget of one live window per process where they used to say a test cannot build one. The plan said five places in three files; two of the extra files were outside its list and were corrected anyway, because the criterion is about the whole tree.
+Stopped at: Completed 02.1-03-PLAN.md on branch gsd/plan-02.1-03, not merged. Criterion 5 is closed. docs/IMPLEMENTATION_STATUS.md was false through where a paragraph sat rather than through anything it said, so no search for the old sentence could find it; the paragraph moved, and "Anything that writes, against a real account" got its own heading so that "What does not work" means one thing. The tree search found a fifth file the plan did not list, docs/roadmap.md, which still had CREATE, RENAME and DELETE unticked; it is ticked and has its own guard. Five records in .planning/intel/context.md corrected and dated. Two guards and two companions, each companion proved by hand to catch its own reading going blind. The by-hand demonstration found a hole in the first check, which read only the first mention of a capability, and that is a red/green pair of its own. Found and not fixed: docs/roadmap.md:156 says Folder favorites is unbuilt and it ships, recorded as ledger entry 38.
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.
