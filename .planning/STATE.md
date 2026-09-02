@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02-09-PLAN.md on branch gsd/plan-02-09, not merged. Phase 02 executed, the verification gap closed, unverified
-last_updated: "2026-09-01T14:38:52.688Z"
-last_activity: "2026-09-01, 02-09 done and the verification gap closed. The search box now says how much of the account's message text it could look inside, on the same line as the match count, with its own number rather than the saved search's. The plan was right that the two differ: measured, the index still holds the words of a message whose body was evicted while `message_bodies` does not. The plan was wrong that the box's number is a query, which changed the shape of the work. `message_search` is contentless, so its body column reads as NULL however much is indexed, and the one thing that can ask it takes about nine seconds at two hundred thousand messages. The answer is recorded where it is decided instead. Nothing has been heard under a screen reader, and WINDOWS.md stands at 33 open."
-state_head: 2e6dc9c9865148727eee347e40b83aece8a15658
+stopped_at: Completed 02.1-01-PLAN.md on branch gsd/plan-02.1-01, not merged. Task 4 is a decision awaiting Pratik; nothing the widened reading found needs fixing.
+last_updated: "2026-09-02T10:29:46.132Z"
+last_activity: 2026-09-02, 02.1-01 done, unmerged, nothing found needs fixing.
+state_head: 546a02a790b7e881487660ad381a61a843cb7f6f
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 32
+  completed_plans: 24
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -88,8 +88,33 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-01, 02-09 done and the gap phase verification found on
-2026-09-01 closed. The search box now says how much of the account's message
+Last activity: 2026-09-02, 02.1-01 done, unmerged, nothing found needs fixing.
+
+Written as one line because `gsd-tools query state.record-session` copies this
+paragraph's first physical line into the frontmatter and stops there, so a
+sentence wrapped across two lines arrives in the frontmatter as a broken half.
+It did that twice here before this was noticed.
+
+The sixteen checks in `tests/wired.rs` that read `wx_app.rs` go through
+`common::what_ships`, which is behind a cargo feature a dev-dependency of this
+package on itself turns on. Measured both ways with a positive control in each
+run, because the first two attempts counted zero off a warm tree that compiled
+nothing: a test build enables the feature four times and a release build never.
+
+Nothing the widened reading uncovered failed, and the size the phase was scoped
+against is wrong by a factor of about seventeen. 6,865 lines sat below the cut,
+6,476 of them test modules, so the real exposure was 389 lines of production
+code. Two things worth carrying. Putting a prefix cut back into any of the
+twelve reddens nothing, so the twelve are unguarded against going back and only
+the one new test would notice. And the self dev-dependency reddened a dependency
+census three commits after it landed, because `which-checks.sh` maps a changed
+file to a module by path, `Cargo.toml` maps to none, and so a manifest change
+runs no test that reads the manifest. That is the same shape as the markdown
+case the script already knows about. Task 4 of the plan is a decision waiting on
+Pratik; nothing found has been fixed or recorded.
+
+Previous activity: 2026-09-01, 02-09 done and the gap phase verification found
+on 2026-09-01 closed. The search box now says how much of the account's message
 text it could look inside, on the same line as the match count, and a search
 that finds nothing gets the sentence on its own. The number is the box's own.
 The plan's central premise held under measurement: an evicted message is gone
@@ -172,6 +197,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02 P06 | one session | 3 tasks | 5 files |
 | Phase 02 P07 | one session | 3 tasks | 13 files |
 | Phase 02 P09 | one session | 2 tasks | 6 files |
+| Phase 02.1 P01 | 3h | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -268,6 +294,10 @@ ahead:
 - [Phase 02]: A saved-search command takes its account from the row under the cursor, never from active_account_id, and run_a_saved_search is not handed the held state at all. A signature that cannot see the wrong answer is a guarantee; a check that the body does not read it is a reading somebody has to trust.
 - [Phase 02]: Every group that mirrors the account structure is ordered by one function, favourites::what_each_account_has. Two groupings of the same accounts is the shape that comes apart, and the test compares the two groups' orders rather than restating either.
 - [Phase 02]: The search box's coverage is recorded in a column written where the index body is decided, because the FTS index is contentless and cannot be asked what it holds
+- [Phase 02]: 02.1-01: common::what_ships is gated on a cargo feature alone, not that and cfg(test). Two conditions would keep the library's unit tests green while integration tests failed to compile.
+- [Phase 02]: 02.1-01: wixen-mail goes on service::outward's A_CRATE_THAT_CANNOT list. The other list would oblige the census to look for a path root starting wixen_mail, changing what counts as a way out across the tree for a path no file under src writes.
+- [Phase 02]: 02.1-01: the six guard records naming tests/wired.rs were re-measured in the green commit rather than at the end of the plan, because the count check reddens on the commit that adds a test and re-measuring needs a green tree.
+- [Phase 02]: 02.1-01: the new guard record's break is a prefix cut put back into the new test, because that is the only site where putting one back reddens anything. Measured: putting it back into any of the twelve reddens nothing, so they are unguarded and the record says so.
 
 ### Pending Todos
 
@@ -349,8 +379,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T12:54:50.099Z
-Stopped at: Completed 02-08-PLAN.md on branch gsd/plan-02-08, not merged. Phase 02 executed, unverified
+Last session: 2026-09-02T10:29:45.959Z
+Stopped at: Completed 02.1-01-PLAN.md on branch gsd/plan-02.1-01, not merged. Task 4 is a decision awaiting Pratik; nothing the widened reading found needs fixing.
 verification found
 
 01-14 built the multi-account folder tree. Three things worth carrying.

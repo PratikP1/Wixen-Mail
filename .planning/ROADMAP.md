@@ -201,13 +201,13 @@ Plans:
 
   13. A forwarded Hungarian message does not join the conversation it is a reply to. `mail_parser`'s `trim_trailing_fwd` ignores a parenthesised word of one character, so Hungarian's `I:` forward marker is read as a reply marker and the message is threaded as a reply. Recorded as ledger entry 5 against `src/application/conversations.rs`, which documents the behaviour at line 323. It belongs to no phase, which is why it has sat since 01-11.
 
-**Plans**: 9 plans, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
+**Plans**: 1/9 plans executed, one per wave. `guards/guards.toml` and `docs/changelog.md` are touched by most of them under the same-commit rules, so the plans are ordered rather than run in parallel. Each plan's file list is deliberately small and of one kind, because the commit gate is scoped to what a commit touches: a documents-only commit is about 51 seconds against about 350 for the whole gate, and mixing a document correction with three source modules makes every commit in that plan pay for all of them.
 
 Plans:
 
 **Wave 1**
 
-- [ ] 02.1-01-PLAN.md — The checks that read the main window read all of it, and what that finds is reported before it is fixed (criterion 4, D-2.1-01)
+- [x] 02.1-01-PLAN.md — The checks that read the main window read all of it, and what that finds is reported before it is fixed (criterion 4, D-2.1-01)
 
 **Wave 2** *(blocked on Wave 1)*
 
