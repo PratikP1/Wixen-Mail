@@ -208,15 +208,21 @@ fn test_the_check_is_actually_reading_links() {
 /// The page that answers "does this work yet" by sorting things under headings.
 const THE_STATUS_PAGE: &str = "docs/IMPLEMENTATION_STATUS.md";
 
-/// A capability the page describes, paired with the code it cannot work without.
+/// The page that answers the same question with a tick beside each item.
+const THE_ROADMAP: &str = "docs/roadmap.md";
+
+/// A capability the two pages describe, paired with the code it cannot work
+/// without.
 ///
-/// One table rather than two lists, so the pairing is read in one place. Two
+/// One table rather than three lists, so the pairing is read in one place. Two
 /// entries close the defect that prompted this; a third costs one more entry
 /// and no other edit.
 struct Capability {
-    /// The bolded name opening the paragraph that describes it. The page
-    /// writes these as `**Folder management.**`.
+    /// The bolded name opening the paragraph that describes it on the status
+    /// page. That page writes these as `**Folder management.**`.
     on_the_page: &'static str,
+    /// The wording of the roadmap's checkbox for it, where it has one.
+    on_the_roadmap: Option<&'static str>,
     /// The file that must hold every symbol below.
     in_the_code: &'static str,
     /// What the capability cannot work without, as text that file must contain.
@@ -226,6 +232,7 @@ struct Capability {
 const THE_CAPABILITIES: &[Capability] = &[
     Capability {
         on_the_page: "Folder management",
+        on_the_roadmap: Some("CREATE, RENAME and DELETE"),
         in_the_code: "src/service/protocols/imap.rs",
         symbols: &[
             "fn create_mailbox",
@@ -235,6 +242,7 @@ const THE_CAPABILITIES: &[Capability] = &[
     },
     Capability {
         on_the_page: "Threaded view",
+        on_the_roadmap: Some("Thread view with conversation grouping"),
         in_the_code: "src/data/message_cache/messages.rs",
         symbols: &["fn conversations_in"],
     },
@@ -385,6 +393,89 @@ fn test_no_capability_the_code_has_is_filed_under_a_heading_denying_it() {
     );
 }
 
+/// What the roadmap says about one item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OnTheRoadmap {
+    /// `- [ ]`, which says the thing is not built, and the line it is on.
+    Unticked(usize),
+    /// `- [x]`, which says it is.
+    Ticked,
+    /// No line carrying a box says this. A reading that has stopped working
+    /// rather than a roadmap with nothing to say, so the caller reports it.
+    NotFound,
+}
+
+/// What the roadmap says about one wording.
+///
+/// The roadmap answers the same question as the status page in a different
+/// shape: a tick beside each item. A wrapped item's continuation line carries
+/// no box, so the wording has to be found on the line that does.
+fn on_the_roadmap(text: &str, wording: &str) -> OnTheRoadmap {
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if !trimmed.contains(wording) {
+            continue;
+        }
+        if trimmed.starts_with("- [ ]") {
+            return OnTheRoadmap::Unticked(index + 1);
+        }
+        if trimmed.starts_with("- [x]") || trimmed.starts_with("- [X]") {
+            return OnTheRoadmap::Ticked;
+        }
+    }
+    OnTheRoadmap::NotFound
+}
+
+/// Every capability the code has that the roadmap still lists as unticked.
+///
+/// The status page went wrong by position and this page goes wrong by a box
+/// nobody ticked, which is the same defect in the shape this page has. Reading
+/// only the status page would have left the claim alive here: it is where the
+/// tree search found it after both documents the criterion names came out
+/// clean or already corrected.
+fn capabilities_the_roadmap_leaves_unticked(
+    page: &str,
+    text: &str,
+    capabilities: &[Capability],
+) -> Vec<String> {
+    let mut wrong = Vec::new();
+
+    for capability in capabilities {
+        let Some(wording) = capability.on_the_roadmap else {
+            continue;
+        };
+        match on_the_roadmap(text, wording) {
+            OnTheRoadmap::Ticked => {}
+            OnTheRoadmap::NotFound => wrong.push(format!(
+                "{page}: no checkbox line says \"{wording}\", so this check has \
+                 stopped reading the page"
+            )),
+            OnTheRoadmap::Unticked(line) if the_code_has(capability) => wrong.push(format!(
+                "{page}:{line}: \"{wording}\" is unticked, and {} holds {}",
+                capability.in_the_code,
+                capability.symbols.join(", ")
+            )),
+            OnTheRoadmap::Unticked(_) => {}
+        }
+    }
+    wrong
+}
+
+#[test]
+fn test_no_capability_the_code_has_is_unticked_on_the_roadmap() {
+    let text = fs::read_to_string(THE_ROADMAP)
+        .unwrap_or_else(|e| panic!("{THE_ROADMAP} is the roadmap, and it {e}"));
+
+    let wrong = capabilities_the_roadmap_leaves_unticked(THE_ROADMAP, &text, THE_CAPABILITIES);
+
+    assert!(
+        wrong.is_empty(),
+        "an unticked box on this page says the thing is not built, and each of \
+         these is:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
 /// A page that files a working capability under a heading denying it.
 const A_PAGE_THAT_FILES_IT_WRONG: &str = "\
 # Invented status page
@@ -413,9 +504,24 @@ const A_PAGE_THAT_FILES_IT_RIGHT: &str = "\
 **Moving a task between lists.** Not yet.
 ";
 
-/// A capability named the same way on the page and absent from the code.
+/// An invented roadmap: one box unticked, one ticked, one wording absent.
+const AN_INVENTED_ROADMAP: &str = "\
+# Invented roadmap
+
+### IMAP
+- [x] Message fetching
+- [ ] CREATE, RENAME and DELETE, so folders can be managed here
+- [ ] QRESYNC, so a folder can resume rather than re-list its UIDs
+
+### Message list
+- [x] Thread view with conversation grouping. Ctrl+T on the View menu collapses
+      the list to one row per conversation
+";
+
+/// A capability named the same way on both pages and absent from the code.
 const A_CAPABILITY_THE_CODE_DOES_NOT_HAVE: &[Capability] = &[Capability {
     on_the_page: "Folder management",
+    on_the_roadmap: Some("CREATE, RENAME and DELETE"),
     in_the_code: "src/service/protocols/imap.rs",
     symbols: &["fn a_mailbox_verb_this_client_has_never_spoken"],
 }];
@@ -519,5 +625,90 @@ fn test_the_section_reading_can_tell_a_misfiled_capability_from_a_filed_one() {
         Vec::<String>::new(),
         "a capability the code does not have was named for sitting under a heading \
          saying so, which is the page being right"
+    );
+}
+
+#[test]
+fn test_the_roadmap_reading_can_tell_an_unticked_box_from_a_ticked_one() {
+    // The same three things the companion above proves, for the page that
+    // answers by ticking rather than by sorting: the file opens and every
+    // wording is found in it, a tick and a blank are told apart, and the code
+    // probe decides whether a blank is a fault or the truth.
+
+    let text = fs::read_to_string(THE_ROADMAP)
+        .unwrap_or_else(|e| panic!("{THE_ROADMAP} is the roadmap, and it {e}"));
+    assert!(
+        !text.trim().is_empty(),
+        "{THE_ROADMAP} opened and held nothing, so the guard reads an empty page \
+         and approves it"
+    );
+
+    // Every wording located on the real roadmap. A wording nothing carries
+    // would otherwise pass as an item with nothing to say about it.
+    for capability in THE_CAPABILITIES {
+        let Some(wording) = capability.on_the_roadmap else {
+            continue;
+        };
+        assert_ne!(
+            on_the_roadmap(&text, wording),
+            OnTheRoadmap::NotFound,
+            "no checkbox line in {THE_ROADMAP} says \"{wording}\", so the guard \
+             has nothing to read about \"{}\"",
+            capability.on_the_page
+        );
+    }
+
+    // A tick and a blank, told apart on an invented page whose lines are the
+    // shapes the real one uses, including a wrapped item and an item that is
+    // genuinely not built.
+    assert_eq!(
+        on_the_roadmap(AN_INVENTED_ROADMAP, "CREATE, RENAME and DELETE"),
+        OnTheRoadmap::Unticked(5)
+    );
+    assert_eq!(
+        on_the_roadmap(
+            AN_INVENTED_ROADMAP,
+            "Thread view with conversation grouping"
+        ),
+        OnTheRoadmap::Ticked
+    );
+    assert_eq!(
+        on_the_roadmap(AN_INVENTED_ROADMAP, "APPEND for the Sent copy"),
+        OnTheRoadmap::NotFound
+    );
+    // The continuation line of the wrapped item carries no box, so a reading
+    // that matched anywhere would call this ticked item unticked or missing.
+    assert_eq!(
+        on_the_roadmap(AN_INVENTED_ROADMAP, "one row per conversation"),
+        OnTheRoadmap::NotFound
+    );
+
+    assert_eq!(
+        capabilities_the_roadmap_leaves_unticked(
+            "invented.md",
+            AN_INVENTED_ROADMAP,
+            THE_CAPABILITIES
+        ),
+        vec![
+            "invented.md:5: \"CREATE, RENAME and DELETE\" is unticked, and \
+             src/service/protocols/imap.rs holds fn create_mailbox, \
+             fn rename_mailbox, fn delete_mailbox"
+                .to_string(),
+        ],
+        "the unticked box over working code was not named with its line, or the \
+         ticked one was named as well"
+    );
+
+    // The code probe decides here too. An unticked box over code that is not
+    // there is the roadmap being right, and must not be named.
+    assert_eq!(
+        capabilities_the_roadmap_leaves_unticked(
+            "invented.md",
+            AN_INVENTED_ROADMAP,
+            A_CAPABILITY_THE_CODE_DOES_NOT_HAVE
+        ),
+        Vec::<String>::new(),
+        "an unticked box over a capability the code does not have was named, \
+         which is the roadmap being right"
     );
 }
