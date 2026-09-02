@@ -96,6 +96,16 @@ A red commit may only be made on a branch. On `main` it is refused: every commit
 CI builds, and a failing test on it is a broken branch for everybody. The red and its green pair go
 on a branch and arrive together at the merge.
 
+**A shell suite under `scripts/` cannot be committed red at all, and that is a
+hole rather than a rule.** `check.sh` runs every `scripts/*.test.sh` under
+`set -e` before it branches on the mode, so a failing suite stops the gate before
+the red branch is reached and `red-commit.sh` never gets to judge it. Even past
+that ordering, `red-commit.sh` reads cargo's `test NAME ... FAILED` lines, which
+a shell suite never produces, so a named shell case would report as never having
+run. Measured by hand on 2026-09-02 and recorded as windows ledger 39. Until it
+is fixed, a new shell suite and the code that makes it pass arrive in one commit,
+and the commit says which cases were red and what they said.
+
 This existed as a hole for one day and nobody noticed, which is the point of writing it down here.
 Phase 1 committed failing tests freely because no hook was installed. Turning the hook on closed the
 gate, the next plan worked around it by recording red as a measurement in its summary rather than
@@ -178,6 +188,18 @@ documents runs formatting, clippy and the three targets that read documents; a
 commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
 markdown commit went from about 330 seconds to 36.
+
+**A guard living in `tests/` also runs on the commits that could break it, and
+`guards/guards.toml` is what says which those are.** A unit test lives beside
+the code it covers, so `--lib a::b::` reaches it. A guard that covers a `src/`
+module from outside was reached only when its own file changed, which is every
+commit except the ones that matter. Each record already carries a `file`, the
+source its break is applied to, and some carry a `suite`, the target that goes
+red, so `check.sh` reads that coupling rather than keeping a second list beside
+it. A guard with no record is therefore a guard the gate cannot find: two had
+none until 2026-09-02, both covering `src/presentation` from outside. If you
+write an integration test that guards a source module, write it a record too, or
+it runs on every commit except the ones that could break it.
 
 **Read those two numbers as warm, and as a floor.** The same documents-only
 path took 2m56s on 2026-09-02, because it followed two commits that had changed
