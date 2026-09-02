@@ -277,6 +277,32 @@ record.** The filter you would naturally pick for your own subject is not
 enough. One record turned out to redden nine tests, two of them in a module
 nobody working on that feature would have filtered for.
 
+That sentence sat here unenforced and did not happen. A run of 2026-09-01 found
+21 records naming too few, one of them written days earlier. So every record now
+carries the tree it was last checked against: for the files its red list names
+and for the file it breaks, how many test functions each held.
+`test_every_guard_record_says_how_many_tests_the_files_it_names_held` compares
+those with the tree on every commit, and when a file gains or loses a test it
+names the records and prints the command:
+
+```bash
+scripts/guards.sh --remeasure "a name" "another name"
+```
+
+That measures those records and writes the counts down again for each one whose
+red list turns out still to be right. A record that comes out short is corrected
+by hand first; the run after that records it.
+
+The check is a net under the common case and not a replacement for the run.
+Three things it cannot see. A test added to a file no record names can still
+redden a record, and nothing about the counts predicts that. A count is a size
+rather than a set, so a test deleted and another added leaves the number where it
+was. And what it costs when it fires is not flat: 471 of the 548 records name one
+file, but a test added to `src/application/contacts_sync.rs` flags 74 of them,
+which at a build and a run each is hours. That case is what the paragraph below
+about the critical path is for, and the answer is to run the command it prints in
+the background rather than to lower the check.
+
 **Guard re-measurement is not on the critical path.** This used to say "run
 `scripts/guards.sh` unfiltered before you finish", and that instruction put the
 whole library on a branch once per record. Plan 02-01 ran fourteen records, 49

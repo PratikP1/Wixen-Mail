@@ -44,6 +44,20 @@
 # Usage:
 #   scripts/guards.sh              every guard in the record
 #   scripts/guards.sh deletion     only the guards whose names match
+#   scripts/guards.sh --remeasure "a name" "another"
+#                                  exactly those records, and write down the
+#                                  tree each one agreed with
+#
+# `--remeasure` is what the commit gate sends people here for. Each record
+# writes down how many tests were in the files its red list names, and
+# `test_every_guard_record_says_how_many_tests_the_files_it_names_held` fails
+# the moment one of those files gains or loses a test. That test prints the
+# records and the command, so the remedy is a build and a run each rather than
+# the whole file's worth of them.
+#
+# The counts are written only for records whose measurement agreed with what
+# they say. A record that came out short is corrected by hand first, and it is
+# the run after that which writes its count down.
 #
 # It fails three ways and says which. A named test that stayed green is a guard
 # that has stopped defending anything. A test that went red and is not named is
