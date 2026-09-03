@@ -72,6 +72,19 @@ pub struct FolderSync {
     pub flags_updated: usize,
     /// Whether the server had renumbered the mailbox since the last sync.
     pub renumbered: bool,
+    /// How many messages were thrown away because of that renumbering.
+    ///
+    /// Two values rather than one, because they answer different questions. A
+    /// folder can be renumbered with nothing held for it, on the sync after
+    /// somebody added the account and before anything was downloaded, and that
+    /// is a renumbering that cost nobody anything. Saying "0 messages" is the
+    /// honest answer there and it needs both fields to be sayable at all.
+    ///
+    /// From what [`crate::data::message_cache::MessageCache::forget_folder_messages`]
+    /// answers, which is the number of rows it really deleted, rather than
+    /// from the size of anything counted afterwards. What is counted afterwards
+    /// is the folder as it stands after the same sync has begun refilling it.
+    pub discarded_after_renumbering: usize,
     /// What the rules did to the mail that just arrived.
     pub filtered: Filtered,
 }
@@ -115,6 +128,15 @@ pub fn what_the_folder_sync_did(result: &FolderSync) -> String {
     }
     say_what_the_rules_did(&result.filtered, &mut said);
     said.spoken()
+}
+
+/// What to say when the server renumbered a folder, or nothing when it did not.
+///
+/// Not yet built. The stub is here so the tests below can name it and so the
+/// count it is supposed to carry is a failing assertion rather than a
+/// compiler error.
+pub fn what_the_renumbering_discarded(_result: &FolderSync) -> Option<String> {
+    None
 }
 
 /// Add what the rules did to a summary, in one place.
@@ -1204,6 +1226,9 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             .map(|held| held.len())
             .unwrap_or(0),
         renumbered,
+        // Not carried out of the branch that knows it yet, which is what the
+        // failing test below says.
+        discarded_after_renumbering: 0,
         filtered,
     })
 }
@@ -3921,6 +3946,157 @@ mod tests {
             "the folder was not read again after being renumbered"
         );
         assert_eq!(done.fetched, 1);
+    }
+
+    /// Fill a folder with `held` messages the server also lists, so a later
+    /// sync of the same folder has something to discard.
+    ///
+    /// Numbered from one, and the same numbers are put back on the server
+    /// afterwards under a new numbering: that is the case the discard exists
+    /// for, since a uid the server still lists is one nothing else would
+    /// notice had changed hands.
+    fn a_folder_already_holding(
+        cache: &MessageCache,
+        id: i64,
+        folder: &ImapFolder,
+        held: u32,
+        numbering: u32,
+    ) {
+        let uids: Vec<u32> = (1..=held).collect();
+        run(
+            &Scripted {
+                on_server: uids.clone(),
+                headers: uids.iter().copied().map(message).collect(),
+                uid_validity: Some(numbering),
+                ..Default::default()
+            },
+            cache,
+            id,
+            folder,
+        );
+    }
+
+    #[test]
+    fn test_a_renumbered_folder_says_what_it_discarded() {
+        // Criterion 1. Before this the discard reached `tracing::info!` and a
+        // clause in the folder's summary line, which is announced at Low under
+        // the topic every steady sync line shares, so the next "Checking..."
+        // replaced it where it stood. Neither said how much went.
+        let (cache, id, folder) = a_cache();
+        a_folder_already_holding(&cache, id, &folder, 2, 1);
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1, 2],
+                headers: vec![message(1), message(2)],
+                uid_validity: Some(2),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert!(done.renumbered);
+        assert_eq!(
+            done.discarded_after_renumbering, 2,
+            "the count the discard itself answered was thrown away"
+        );
+        assert_eq!(
+            what_the_renumbering_discarded(&done).as_deref(),
+            Some(
+                "The mail server gave Inbox new numbers, so what this computer held for it \
+                 no longer matches. It has been discarded and is being read again: 2 messages."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_gives_no_numbering_at_all_discards_nothing() {
+        // Absent is not changed. A server that answers no UIDVALIDITY has said
+        // nothing about whether it renumbered, and reading silence as a change
+        // empties every folder on every sync against such a server. This is
+        // the arm with the most to lose and it had no test.
+        let (cache, id, folder) = a_cache();
+        a_folder_already_holding(&cache, id, &folder, 2, 1);
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1, 2],
+                // Nothing offered, so anything still held has to have survived
+                // rather than been fetched back.
+                headers: Vec::new(),
+                uid_validity: None,
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert!(!done.renumbered, "silence was read as a renumbering");
+        assert_eq!(done.discarded_after_renumbering, 0);
+        assert_eq!(what_the_renumbering_discarded(&done), None);
+        assert_eq!(
+            cache.stored_uids(id).expect("what is held"),
+            vec![1, 2],
+            "the mail this computer held was thrown away on a server that said nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_read_for_the_first_time_discards_nothing() {
+        // Every folder, on the sync that follows adding an account. There is
+        // no stored numbering to differ from, so there is nothing to discard
+        // and nothing to say about it.
+        let (cache, id, folder) = a_cache();
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1],
+                headers: vec![message(1)],
+                uid_validity: Some(9),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert!(!done.renumbered, "a first sync was read as a renumbering");
+        assert_eq!(done.discarded_after_renumbering, 0);
+        assert_eq!(what_the_renumbering_discarded(&done), None);
+        assert_eq!(done.fetched, 1);
+    }
+
+    #[test]
+    fn test_a_folder_the_server_numbered_the_same_way_discards_nothing() {
+        // The ordinary sync, which is every sync but the two above. Kept
+        // beside them because the four arms are one decision and a reader
+        // checking it wants all four in one place.
+        let (cache, id, folder) = a_cache();
+        a_folder_already_holding(&cache, id, &folder, 2, 7);
+
+        let done = run(
+            &Scripted {
+                on_server: vec![1, 2],
+                headers: Vec::new(),
+                uid_validity: Some(7),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        assert!(!done.renumbered);
+        assert_eq!(done.discarded_after_renumbering, 0);
+        assert_eq!(what_the_renumbering_discarded(&done), None);
+        assert_eq!(
+            cache.stored_uids(id).expect("what is held"),
+            vec![1, 2],
+            "an unchanged numbering threw mail away"
+        );
     }
 
     #[test]

@@ -23071,6 +23071,51 @@ mod what_the_status_line_says {
     }
 
     #[test]
+    fn test_a_renumbered_folder_is_said_where_the_next_sync_line_cannot_replace_it() {
+        // Criterion 1's announcement half. A folder the server renumbered has
+        // had mail deleted from this computer, and the only thing that fact
+        // reached before this was `tracing::info!` and a clause inside the
+        // folder's summary line. That line goes out as `StatusUpdated`, which
+        // is announced at Low under the topic every steady sync line shares,
+        // and the queue keeps only the newest of a topic: the very next
+        // "Checking Sent..." replaces it where it stands.
+        //
+        // So it needs a topic of its own, exactly as "message text" was split
+        // off `"status"` for the same reason. Read as text because reaching
+        // the arm needs a window, a frame and a running event loop.
+        //
+        // What this cannot see, and what a screen reader run has to settle:
+        // whether the sentence is heard at all, whether a topic of its own is
+        // the right choice, and whether a Normal announcement arriving in the
+        // middle of a sync cuts across something somebody was reading.
+        let source = the_window_itself();
+        let arm = the_arm_for(&source, "FolderWasRenumbered(said)");
+
+        assert!(
+            arm.contains("a11y.announce_topic("),
+            "a folder discard that reaches only the status bar was written to nobody"
+        );
+        assert!(
+            !arm.contains("\"status\""),
+            "on \"status\" the next sync line replaces this where it stands"
+        );
+        assert!(
+            arm.contains("Priority::Normal"),
+            "this happened to somebody's mail, so it is not progress"
+        );
+
+        // And somebody sends it. An arm nothing reaches is a sentence that
+        // exists and is never said, which is the whole failure this test is
+        // about; the handler is cut out so its own label does not count.
+        let handler = the_update_handler(&source);
+        assert!(
+            source.matches("UIUpdate::FolderWasRenumbered").count()
+                > handler.matches("UIUpdate::FolderWasRenumbered").count(),
+            "nothing outside the update handler sends this, so the arm is unreachable"
+        );
+    }
+
+    #[test]
     fn test_the_saying_check_on_those_two_can_tell_the_two_apart() {
         // Proving the measurement. A source read that finds nothing passes, and
         // from outside that is indistinguishable from one that finds
