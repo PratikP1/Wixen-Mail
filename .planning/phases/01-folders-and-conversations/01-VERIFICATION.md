@@ -31,7 +31,7 @@ re_verification:
   new_findings:
     - id: W1
       severity: warning
-      title: "The guard cited as proof that Thread View is enabled examines zero lines and cannot fail"
+      title: "The guard cited as proof that Thread View is enabled examined zero lines and could not fail. Closed 2026-09-03: rewritten to anchor on the item rather than on a call that existed only while the bug did, and it now refuses an empty reading. Injecting a real violation was proved to leave the old check green"
       file: src/presentation/wx_app.rs
       line: 25438
     - id: W2
@@ -77,7 +77,7 @@ human_verification:
     why_human: "Ledger entry 6, open. What is proved is the decision, which rows changed and that refresh_item is used rather than set_item_count. Whether repainting one row of a virtual wxListCtrl is silent to NVDA is a question about a real screen reader on a real window with real mail arriving, and nothing here has run against a real account."
   - test: "Open the View menu and switch Thread View on and off in a folder holding conversations."
     expected: "The item is available rather than greyed out, the check state matches, and the list collapses to one row per conversation and comes back."
-    why_human: "The decision layer is fully tested (55 tests in presentation::view_state, including the toggle, the count in conversation mode, the selection round-trip and the sort surviving the switch). The paint callback that reads state.showing is a closure inside the window builder, which wxWidgets' one-application-per-process limit puts out of reach of any test in this crate, so it is proved by reading the source. See finding W1: the guard that was supposed to prove the item is not disabled proves nothing."
+    why_human: "The decision layer is fully tested (55 tests in presentation::view_state, including the toggle, the count in conversation mode, the selection round-trip and the sort surviving the switch). The paint callback that reads state.showing is a closure inside the window builder, which wxWidgets' one-application-per-process limit puts out of reach of any test in this crate, so it is proved by reading the source. See finding W1: the guard that was supposed to prove the item is not disabled proved nothing, and was rewritten on 2026-09-03 so that it does. The reading is still a source read, so what it proves is that nothing in the shipping half switches the item off, not that a running window shows it enabled."
 ---
 
 # Phase 1: Folders and conversations Verification Report

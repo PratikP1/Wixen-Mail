@@ -921,7 +921,7 @@ def main() -> int:
         if len(guards) == 1
         else f"== {len(guards)} guards, one build and one run each =="
     )
-    print(f"{header}\n")
+    print(f"{header}\n", flush=True)
     slipped: list[str] = []
     agreed: list[Guard] = []
     # Once per suite, before anything is broken, so an unrelated failure is not
@@ -929,6 +929,15 @@ def main() -> int:
     # deadlock it describes, which is why this is not optional.
     already_failing: dict[tuple[str, ...], set[str]] = {}
     for suite in {guard.suite for guard in guards}:
+        # Announced, because this is a whole suite run per distinct suite before
+        # any break is applied, and it is the first two minutes of every run.
+        # Silence for two minutes reads as a hang, and a check that reads as
+        # hung is one somebody kills.
+        print(
+            f"Reading what already fails with {' '.join(suite)}, "
+            "before anything is broken.",
+            flush=True,
+        )
         try:
             # Unfiltered even under --named-only: this reads what is already
             # broken before any break is applied, and a filtered reading of
@@ -953,7 +962,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
-            print(f"-- {guard.name}")
+            # Flushed, because this is the only sign of life a run gives and a
+            # run here is hours. Python block-buffers a redirected stdout, so
+            # without this a sweep writes nothing to its log until it exits: a
+            # 220-record run showed an empty file for seven hours, and a
+            # 33-record re-measurement killed at about 50 minutes had already
+            # written 31 counts into the record with its whole report still in
+            # the buffer, leaving a committable artefact and no evidence for it.
+            # A check that cannot be watched is one somebody kills.
+            print(f"-- {guard.name}", flush=True)
             try:
                 measured = measure(
                     guard,
