@@ -1309,6 +1309,7 @@ mod tests {
         // reports a fragment of its own body as a test name.
         const START_OF_A_TEST: &str = concat!("    fn ", "test_");
         let mut misnamed: Vec<&str> = Vec::new();
+        let mut designed_colour_checks_read = 0;
         for chunk in SOURCE.split(START_OF_A_TEST).skip(1) {
             let Some((name, body)) = chunk.split_once('(') else {
                 continue;
@@ -1317,10 +1318,23 @@ mod tests {
             if !checks_a_designed_colour || !body.contains("contrast(") {
                 continue;
             }
+            designed_colour_checks_read += 1;
             if !name.contains("palette") && !name.contains("mark") {
                 misnamed.push(name);
             }
         }
+        // The subject, before anything is said about it. Everything above is a
+        // filter, and a filter that selects nothing reports no offenders, which
+        // is byte for byte what a clean file reports. The marker carries the
+        // indentation of a test inside one module, so moving these into a
+        // nested module, or any change to how the file is laid out, empties
+        // the reading and leaves this saying "all good" about no tests at all.
+        assert!(
+            designed_colour_checks_read > 0,
+            "no check on a designed colour was read at all, so this has nothing \
+             to hold to the naming rule and would pass over a file full of \
+             violations"
+        );
         assert!(
             misnamed.is_empty(),
             "these check a designed colour and are not named after the palette: {misnamed:?}"
