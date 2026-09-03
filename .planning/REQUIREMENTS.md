@@ -267,18 +267,26 @@ write path added by this milestone passes through that gate.
     rather than left unticked forever.
 
 - [ ] **SCALE-02**: Hold one connection open instead of signing in again per fetch.
-  - Evidence: corrected 2026-08-29. The claim is right and the citation was not:
-    `src/application/opening.rs` and `src/application/attaching.rs` exist but neither opens a
-    connection. The sign-ins are in the interface. `src/application/mail_session.rs` line 21,
-    `a_session_at`, is the purpose-built helper that signs in for one piece of work, and it has
-    three callers: `deleting_at_the_server.rs` line 112, `sent_copy.rs` line 245 and
-    `wx_app.rs` line 9517. Eight further sites in `src/presentation/wx_app.rs` (lines 11504,
-    11818, 11978, 12454, 13007, 13747, 13812 and 14086) bypass it, each building a
+  - Evidence: corrected 2026-08-29, and again 2026-09-03 when every line number in it had
+    moved and the count was half the truth. The claim is right and the citation keeps going
+    stale, which is itself the argument for the counting test below.
+    `src/application/mail_session.rs` line 21, `a_session_at`, is the purpose-built helper that
+    signs in for one piece of work, and it has three production callers:
+    `deleting_at_the_server.rs` line 112, `sent_copy.rs` line 245 and `wx_app.rs` line 13485.
+    **Twelve** further sites in `src/presentation/wx_app.rs` bypass it, each building a
     `MailController` of its own, calling `connect_imap`, and calling `disconnect_imap` on the
-    way out. `src/application/mail_controller.rs` line 278, `require_imap`, is the single lock
-    a held session would live behind. The mail-at-scale plan budgets one connection for IDLE
-    and two or three for fetching, and notes Gmail allows fifteen per account and punishes
-    more.
+    way out: lines 7555, 8124, 8405, 8627, 8803, 16289, 16450, 17509, 18249, 18350, 18439 and
+    18713. The earlier eight (11504, 11818, 11978, 12454, 13007, 13747, 13812, 14086) are not
+    connect sites any more, so a plan budgeted against that list would be wrong twice over.
+    The worst case is line 17509: marking one message read builds a controller, connects,
+    issues one `set_flag`, and disconnects.
+    `src/application/mail_controller.rs` line 278, `require_imap`, is the single lock a held
+    session would live behind, and it does not need replacing. There is no reconnect or retry
+    anywhere in `mail_controller.rs`, `imap.rs` or `mail_sync.rs`.
+    The budget starts at two rather than one: `watch_folder` (`mail_sync.rs` line 1165) already
+    holds its own connection for IDLE and is reached from `wx_app.rs` line 17212. The
+    mail-at-scale plan budgets one connection for IDLE and two or three for fetching, and notes
+    Gmail allows fifteen per account and punishes more.
 
   - [S] `docs/changelog.md` known limitations: "Holding one connection open needs reconnect
     handling that is not built."
@@ -316,10 +324,26 @@ write path added by this milestone passes through that gate.
     the message has no body.
 
 - [ ] **SCALE-04**: Split storage into envelope, body cache and attachments.
-  - Evidence: `src/data/message_cache/bodies.rs` keeps one body cache under a size budget with
-    least-recently-read eviction. The hot, warm and cold split the plan describes was not
-    built, and `docs/plans/20260726-mail-at-scale.md` is the only record of it in the
-    repository.
+  - Evidence: corrected 2026-09-03. The sentence "the hot, warm and cold split the plan
+    describes was not built" was true when written and is not true now, and a requirement
+    saying a shipped thing is missing is the defect phase 2.1 existed to remove.
+    All three tiers exist. `src/data/message_cache/bodies.rs` keeps the body cache in its own
+    `message_bodies` table (`mod.rs` lines 2060 to 2069), zlib-packed at level 6
+    (`bodies.rs` line 57), evicted least-recently-read against a budget by
+    `keep_bodies_within_budget`, which is called at the end of every `sync_folder`
+    (`mail_sync.rs` line 1134) and so is reached from a non-test path. The attachment tier is
+    an `attachments` table plus a digest-keyed content store (`mod.rs` lines 1421 to 1442).
+    `migrate_inline_bodies` (`bodies.rs` line 609) runs on every cache open (`mod.rs` line
+    1226), non-fatally.
+    The first deliverable below is **already satisfied**: `listing_query`
+    (`messages.rs` lines 56 to 68) selects `m.snippet` and touches neither `messages.body_plain`
+    nor `message_bodies`, and its doc comment says it is built in one place so a test can ask
+    SQLite how it plans the exact query. What it wants is the guard, not the change.
+    What remains hard is permanent rather than one-off: `messages.body_plain` and
+    `messages.body_html` are in the original `CREATE TABLE` (`mod.rs` lines 1407 to 1408), not
+    added by `ensure_column_exists`, so they exist in every database ever written and cannot be
+    dropped. The migration therefore runs on every open forever, and any path that still writes
+    those columns reintroduces the problem.
 
   - [S] The SPEC states the tiers: envelope always local at about 1 KB each, roughly 200 MB at
     200,000 messages; body cache fetched on open and evicted least-recently-used against a
@@ -340,9 +364,22 @@ write path added by this milestone passes through that gate.
 - [ ] **SCALE-05**: Detect network status and offer offline mode rather than only accepting a
   manual toggle.
 
-  - Evidence: `grep -rni "is_online|network_status|connectivity" src/` returns nothing. The
-    offline toggle and outbox are built (`src/application/mail_controller.rs`,
-    `mail_session.rs`), with indicators in the status bar.
+  - Evidence: sharpened 2026-09-03. `grep -rni "is_online|network_status|connectivity|
+    InternetGetConnectedState|NetworkInformation" src/` returns nothing, so there is no
+    detection of any kind.
+    The outbox is genuinely complete: `queue_outbox_message` (`outbox.rs` line 38),
+    `outbox_messages_that_may_go_now` (line 95), `when_a_queued_message_may_go` (line 112),
+    `cancel_queued` (line 256), `update_outbox_failure` (line 287).
+    **The offline toggle is not built, it is drawn.** `WxUIState.offline_mode`
+    (`wx_app.rs` line 315) is initialised at line 430, toggled at lines 4854 to 4871, mirrored
+    at line 15247, and read by nothing that decides anything; those four are its only
+    occurrences in the file. `flush_outbox` (line 15883) has one caller, the menu item at line
+    4877, and never consults it. And the toggle's own status line at line 4862 says "Offline
+    mode enabled - outgoing mail will be queued", which is a promise the build does not keep
+    and a person is told it today.
+    One consequence for planning: because the flush is manual-only, the deliverable about not
+    flushing unasked is satisfied at present by accident, and wiring "the network came back"
+    straight to `flush_outbox` would break it and send mail nobody asked to send.
 
   - [S] Roadmap Phase 7 leaves "network status detection to toggle offline mode
     automatically" unticked.
@@ -357,8 +394,27 @@ write path added by this milestone passes through that gate.
     are told the same thing (guardrail 5, feedback must be distinct and bounded).
 
 - [ ] **SCALE-06**: Resolve sync conflicts rather than letting the last write win.
-  - Evidence: no conflict resolution path in `src/`. Roadmap Phase 7 leaves it unticked. The
-    five `*_sync.rs` files total over 38,000 lines and none has met a live account.
+  - Evidence: corrected 2026-09-03. "No conflict resolution path in `src/`" is wrong, and
+    getting it wrong would have had this phase write a second conflict model beside a working
+    one, with the two disagreeing about who wins.
+    Contacts already resolves. `whose_copy_wins` (`src/application/contacts_sync.rs` line 988)
+    returns a four-armed `WhoseCopyWins` (lines 949 to 974) built from whether local work is
+    unsent and whether the address book's version marker moved, comparing markers rather than
+    clocks on purpose (lines 977 to 982). It has two production call sites (lines 2289 and
+    2485), reached from `wx_app.rs` lines 18959 and 18986, and the losing case is counted and
+    spoken rather than silent: `sent_over_a_newer_copy` (line 335) becomes a sentence at lines
+    1674 to 1690 and reaches the user at `wx_app.rs` line 15289.
+    CalDAV has the markers and not the choice: `etag` and `If-Match` at `caldav_sync.rs` lines
+    870, 1028, 3424 and 3716, resolved automatically, showing the user nothing.
+    Mail is a third case and is not last-write-wins. A flag change is applied locally, pushed
+    on a fresh connection (`wx_app.rs` lines 17509 to 17534), and reverted per flag kind with a
+    sentence if the push fails (lines 17381 to 17404). Nothing queues a mail flag change, so
+    the "both changed" state this requirement describes largely cannot arise there. The real
+    mail defect is adjacent: a change made while the server is unreachable is silently reverted
+    rather than queued.
+    So the deliverables below want aiming at contacts and CalDAV, where the state exists, and
+    the mail case wants restating. Roadmap Phase 7 leaves it unticked. The five `*_sync.rs`
+    files total over 38,000 lines and none has met a live account.
 
   - [S] Roadmap Phase 7, unticked.
   - [D] When the local copy and the server copy of an item have both changed, the user is
