@@ -1,0 +1,30 @@
+# How a file's lines end, decided here rather than by whoever cloned it.
+#
+# Without this, line endings are a property of the checkout and not of the
+# repository: `core.autocrlf` is `input` on the machine this is written on and
+# `true` on a GitHub Windows runner, so the same commit becomes two different
+# trees. Between 2026-07-31 and 2026-09-03 that made CI red for sixty runs
+# while the local gate passed on every one of those commits, because the checks
+# that read source match newlines exactly. `tests/house_style.rs` searches for
+# `" {\n"` and the seven copies of `the_body_of` under `src/` search for
+# `"\n}\n"`; under CRLF neither matches, the reading returns nothing, and a
+# check that reads nothing cannot fail for the reason it was written.
+#
+# So: text is LF everywhere, in every checkout, on every platform. Nothing in
+# this tree needs CRLF. There is no `.bat` or `.cmd`, and Inno Setup,
+# PowerShell and Python all read LF on Windows without complaint.
+#
+# `tests/house_style.rs::test_the_repository_pins_the_line_endings_its_own_checks_depend_on`
+# holds this file to that, per kind of file the checks actually read, and
+# `test_no_file_this_project_writes_holds_a_carriage_return` notices one that
+# arrives some other way.
+* text=auto eol=lf
+
+# Binary, so git neither converts them nor tries to diff them as text. Declared
+# rather than left to detection: detection is a heuristic on the first bytes,
+# and a wav or an ico that begins with something that reads as text would be
+# rewritten by the rule above and silently corrupted.
+*.wav binary
+*.png binary
+*.ico binary
+*.svg text eol=lf

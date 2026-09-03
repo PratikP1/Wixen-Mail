@@ -5525,6 +5525,50 @@ fn stops_at_the_first_failure(line: &str) -> bool {
     runs_the_suite(line) && !line.contains("--no-fail-fast")
 }
 
+/// Steps checking the search handler that an earlier failure would skip.
+///
+/// The same fault as the one above, one level up and missed when the lesson
+/// was learned. `--no-fail-fast` stops a failing cargo target hiding the
+/// targets after it; nothing was stopping a failing *step* hiding the steps
+/// after it, and GitHub Actions skips the rest of a job by default.
+///
+/// The search handler is the crate this matters for. It is not a workspace
+/// member, so no cargo command run locally or in any other job reaches it,
+/// and each of its three steps sits directly after the equivalent step for
+/// the main crate. When CI was red from 2026-07-31 to 2026-09-03 its tests
+/// were not failing: they were reported `skipped`, every run, for 34 days.
+///
+/// `if: always()` still fails the job. It runs the step first.
+fn steps_an_earlier_failure_would_skip(yaml: &str) -> Vec<String> {
+    let mut skipped = Vec::new();
+    let mut name = String::new();
+    let mut in_the_handler = false;
+    let mut runs_anyway = false;
+    let mut finish = |name: &str, in_the_handler: bool, runs_anyway: bool| {
+        if in_the_handler && !runs_anyway && !name.is_empty() {
+            skipped.push(name.to_string());
+        }
+    };
+    for line in yaml.lines() {
+        let trimmed = line.trim();
+        if let Some(started) = trimmed.strip_prefix("- name:") {
+            finish(&name, in_the_handler, runs_anyway);
+            name = started.trim().to_string();
+            in_the_handler = false;
+            runs_anyway = false;
+            continue;
+        }
+        if trimmed == "working-directory: search-handler" {
+            in_the_handler = true;
+        }
+        if trimmed.starts_with("if:") && trimmed.contains("always()") {
+            runs_anyway = true;
+        }
+    }
+    finish(&name, in_the_handler, runs_anyway);
+    skipped
+}
+
 #[test]
 fn test_one_failing_target_does_not_hide_the_rest() {
     // `cargo test` runs each target in turn and stops at the first one that
@@ -5554,6 +5598,47 @@ fn test_one_failing_target_does_not_hide_the_rest() {
          first failure:\n  {}",
         stopping.len(),
         stopping.join("\n  ")
+    );
+
+    // And the same question one level up, which the lesson above was learned
+    // without asking. A job stops at its first failing step, so the steps
+    // checking the search handler never ran at all while CI was red: reported
+    // `skipped`, every run, from 2026-07-31 to 2026-09-03. That crate is a
+    // workspace outsider, so nothing else on this machine or in any other job
+    // was checking it either.
+    let ci = fs::read_to_string(".github/workflows/ci.yml").expect("the ci workflow");
+    let skipped = steps_an_earlier_failure_would_skip(&ci);
+    assert!(
+        skipped.is_empty(),
+        "{} step(s) checking the search handler would be skipped when an \
+         earlier step in the same job fails, so a red run says nothing about \
+         that crate: {skipped:?}",
+        skipped.len()
+    );
+
+    // The companion, because the reading above is the kind that quietly finds
+    // nothing. A step written the old way must be seen, and one written the
+    // new way must not, so it is the reading being proved rather than the
+    // workflow file.
+    let old_way = concat!(
+        "    - name: Run the search handler's tests\n",
+        "      run: cargo test\n",
+        "      working-directory: search-handler\n",
+    );
+    let new_way = concat!(
+        "    - name: Run the search handler's tests\n",
+        "      if: always()\n",
+        "      run: cargo test\n",
+        "      working-directory: search-handler\n",
+    );
+    assert_eq!(
+        steps_an_earlier_failure_would_skip(old_way).len(),
+        1,
+        "the reading cannot see a step that an earlier failure would skip"
+    );
+    assert!(
+        steps_an_earlier_failure_would_skip(new_way).is_empty(),
+        "the reading reports a step that already runs anyway"
     );
 }
 
@@ -6275,5 +6360,150 @@ fn test_the_window_claim_check_can_tell_the_two_apart() {
         named(third_line)[0].contains(":3:"),
         "the claim was reported at the wrong line: {}",
         named(third_line)[0]
+    );
+}
+
+/// The extensions the checks in this file read, taken from `ours()` rather
+/// than written down again.
+///
+/// A second list would go stale the first time somebody taught `ours()` about
+/// a new kind of file, and the check reading it would then pass while covering
+/// less than it says.
+fn kinds_of_file_this_project_writes() -> Vec<String> {
+    let mut kinds: Vec<String> = ours()
+        .iter()
+        .filter_map(|path| path.extension()?.to_str().map(str::to_string))
+        .collect();
+    kinds.sort();
+    kinds.dedup();
+    kinds
+}
+
+/// Whether `.gitattributes` promises this kind of file arrives with Unix line
+/// endings, however that promise is spelled.
+///
+/// Either a catch-all covering every path, or a rule naming this extension.
+/// Both are honest ways to say it and this asks about the effect rather than
+/// the wording.
+fn line_endings_are_pinned_for(attributes: &str, extension: &str) -> bool {
+    for line in attributes.lines() {
+        let rule = line.split('#').next().unwrap_or_default().trim();
+        if rule.is_empty() || !rule.contains("eol=lf") {
+            continue;
+        }
+        let Some(pattern) = rule.split_whitespace().next() else {
+            continue;
+        };
+        if pattern == "*" || pattern == format!("*.{extension}") {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn test_the_repository_pins_the_line_endings_its_own_checks_depend_on() {
+    // Every check in this file and in `tests/wired.rs` reads source as text and
+    // matches on it, and several match a newline directly: `find(" {\n")` a few
+    // hundred lines above, `find("\n}\n")` in the seven copies of `the_body_of`
+    // under `src/`. Those matches are exact, so they find nothing at all in a
+    // file whose lines end `\r\n`, and a reading that finds nothing is the
+    // failure this project keeps building defences against.
+    //
+    // Which endings a file has on disk is not a property of the file. It is a
+    // property of the checkout, decided by `core.autocrlf`, and that differs
+    // between this machine and a Windows runner: `input` here keeps what the
+    // repository holds, `true` on the runner rewrites every text file to CRLF
+    // on the way out of git. So the same commit is two different trees, and the
+    // local gate tests one of them while CI tests the other.
+    //
+    // That is not a hypothetical. CI was red from 2026-07-31 to 2026-09-03,
+    // sixty runs, on nine tests that all read source and all found nothing,
+    // while `scripts/check.sh` passed on every one of those commits. A gate
+    // that cannot reproduce CI says nothing about CI.
+    //
+    // `.gitattributes` is what makes the checkout stop being a variable.
+    let attributes = fs::read_to_string(".gitattributes").unwrap_or_else(|e| {
+        panic!(
+            "the repository has no .gitattributes, so how a source file's \
+             lines end is decided by whoever cloned it: {e}"
+        )
+    });
+
+    let kinds = kinds_of_file_this_project_writes();
+    assert!(
+        !kinds.is_empty(),
+        "the list of file kinds came out empty, so this check is looking for \
+         nothing"
+    );
+
+    let unpinned: Vec<&String> = kinds
+        .iter()
+        .filter(|kind| !line_endings_are_pinned_for(&attributes, kind))
+        .collect();
+    assert!(
+        unpinned.is_empty(),
+        ".gitattributes does not pin Unix line endings for every kind of file \
+         this project's checks read, so a checkout can still hand them CRLF \
+         and they will read nothing: {unpinned:?}"
+    );
+}
+
+#[test]
+fn test_no_file_this_project_writes_holds_a_carriage_return() {
+    // The drift guard for the rule above. `.gitattributes` stops a checkout
+    // introducing CRLF; this notices one that arrived some other way, such as
+    // an editor writing Windows endings into a new file, or a rule being
+    // narrowed later so a kind of file falls outside it.
+    //
+    // It is here rather than in CI's shell so that it reddens on the machine
+    // where the file was written, which is the only place somebody can fix it
+    // without a fourteen-minute round trip.
+    let ours = ours();
+    assert!(
+        !ours.is_empty(),
+        "no files were collected, so this check is looking for nothing"
+    );
+
+    let mut carrying = Vec::new();
+    for path in &ours {
+        let Ok(text) = fs::read_to_string(path) else {
+            continue;
+        };
+        if text.contains('\r') {
+            carrying.push(path.display().to_string());
+        }
+    }
+    assert!(
+        carrying.is_empty(),
+        "these files hold a carriage return, so every check that matches a \
+         newline directly reads nothing in them: {carrying:?}"
+    );
+}
+
+#[test]
+fn test_the_carriage_return_check_can_see_one() {
+    // The companion the check above needs. Without it, a tree that really is
+    // clean and a reading that cannot see a violation look identical, and this
+    // project has shipped that confusion often enough to have a name for it.
+    //
+    // The two strings differ in one character, and the check must tell them
+    // apart, so it is the reading being proved rather than the tree.
+    assert!(
+        "fn a() {\r\n}\r\n".contains('\r'),
+        "the carriage return check cannot see a carriage return"
+    );
+    assert!(
+        !"fn a() {\n}\n".contains('\r'),
+        "the carriage return check reports one where there is none"
+    );
+
+    // And the mechanism itself, said in the form the failures took: an exact
+    // match on a newline finds its target in one and not the other.
+    assert!("fn a() {\n}\n".contains("\n}\n"));
+    assert!(
+        !"fn a() {\r\n}\r\n".contains("\n}\n"),
+        "the_body_of's search would still find its end under CRLF, so the \
+         diagnosis behind these checks is wrong"
     );
 }

@@ -59,7 +59,17 @@ jobs:
     # any kind until scripts/build-installer.sh started building it, at which
     # point a broken commit there would break installer builds with nothing
     # having gone red first.
+    #
+    # if: always() for the same reason as --no-fail-fast above, one level up. A
+    # job stops at its first failing step, and because this crate is a
+    # workspace outsider nothing else anywhere reaches it, so a red step above
+    # leaves it wholly unchecked rather than checked by something else. That is
+    # not hypothetical: this step was reported skipped on every run from
+    # 2026-07-31 to 2026-09-03. The step still fails the job when it should.
+    # tests/house_style.rs::test_one_failing_target_does_not_hide_the_rest
+    # holds every step here to it.
     - name: Run the search handler's tests
+      if: always()
       run: cargo test --all-targets --verbose --no-fail-fast
       working-directory: search-handler
 
@@ -83,6 +93,7 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Check the search handler's formatting
+      if: always()
       run: cargo fmt --all -- --check
       working-directory: search-handler
 
@@ -124,6 +135,7 @@ jobs:
       run: cargo clippy --all-targets --all-features -- -D warnings
 
     - name: Run clippy on the search handler
+      if: always()
       run: cargo clippy --all-targets --all-features -- -D warnings
       working-directory: search-handler
 
