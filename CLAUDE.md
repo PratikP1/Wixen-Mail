@@ -476,6 +476,30 @@ two concurrent suites take 131s each against 88s alone, so the contention is on
 something shared rather than on the processor and crosses process boundaries.
 Five workers would buy about 1.8x for 43GB of disk and a five-minute build each.
 
+**The other environment setting is `WIXEN_NO_AUDIO`, and it says the machine
+cannot play sound.** CI sets it. Set it anywhere else a sound device opens and
+then does not work, which is not the same as having none and is the case
+nothing can detect: GitHub's Windows runners ship no audio driver at all
+(`actions/runner-images#6983`), `rodio` 0.22.2 opens something there regardless,
+and the first write faults.
+
+**It is not a way to skip the sound tests, and reading it as one is the mistake
+to avoid.** Every test that plays still runs and still asserts; the sound goes
+to a mixer with nothing listening instead of to a card, and
+`test_a_player_with_no_device_behind_it_still_plays_and_still_suppresses` holds
+it to that. What stops being exercised is `rodio`'s own device handling, which
+no test here covered anyway.
+
+Two things this cost before it existed, both worth remembering because they are
+the same shape as the CRLF break above. **A crash is not a failing test.** The
+run died partway and about 3,500 tests after it never ran, while the summary
+named two, so the number that mattered was the one nothing reported. And
+**fixing the tests a grep finds is not fixing the class**: four in
+`feedback.rs` were corrected, the next run crashed on one in
+`sound_scheme_import` whose name ends "and its files really play", and
+`Accessibility::new` builds a player at 50 sites in `src/` and 12 files under
+`tests/`. The flag went on the player for that reason.
+
 **It is a candidate set and it says so when it runs.** A test added in a module a
 record has never named can still redden it, and no reading of the record predicts
 that. Only the whole sweep does.
