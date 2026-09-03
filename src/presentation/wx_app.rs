@@ -25353,6 +25353,38 @@ mod what_the_list_is_told_it_holds {
             .collect()
     }
 
+    /// What to look for in the source to find the Thread View menu item.
+    ///
+    /// One place, because the check on the item and the check proving that
+    /// check reads anything have to be looking for the same thing. A positive
+    /// control with an anchor of its own proves a reading nothing else does.
+    const THE_MENU_ITEM: &str = "find_item(ID_THREAD_VIEW)";
+
+    /// How many lines a mention of a menu item carries with it.
+    ///
+    /// A call switching an item off sits under the line naming it rather than
+    /// on it, so a reading a line at a time would never see one. Six is the
+    /// extent this was first measured with, and the block that really did
+    /// disable the item put `enable(false)` three lines below the mention.
+    const A_MENTION_CARRIES: usize = 6;
+
+    /// Every place `text` names `what`, each with the lines under it.
+    ///
+    /// Empty when the text never names it at all, and that is the point: it
+    /// lets a caller tell "nothing switches this off" apart from "there is
+    /// nothing here to switch off". Those two used to read the same.
+    fn where_it_is_named(text: &str, what: &str) -> Vec<String> {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut named = Vec::new();
+        for (at, line) in lines.iter().enumerate() {
+            if line.contains(what) {
+                let to = lines.len().min(at + A_MENTION_CARRIES);
+                named.push(lines[at..to].join("\n"));
+            }
+        }
+        named
+    }
+
     #[test]
     fn test_the_reading_can_see_a_call_when_there_is_one() {
         // Proving the measurement before believing an absence. A source read
@@ -25437,17 +25469,57 @@ mod what_the_list_is_told_it_holds {
     }
 
     #[test]
-    fn test_the_thread_view_item_is_not_disabled_on_the_way_up() {
+    fn test_the_reading_can_see_the_item_being_switched_off_when_it_is() {
+        // Proving the measurement, through the same reading and the same
+        // anchor the check below uses. A positive control that looks for
+        // something of its own proves a reading nothing else performs.
+        //
+        // Switched off here by holding the identifier in a variable first,
+        // which is an ordinary thing to write and is not the shape the item
+        // was ever disabled in. A check that recognises one spelling of a rule
+        // is one refactor away from reading nothing.
+        let switched_off = "\
+            frame.set_menu_bar(Self::build_menu_bar());\n\
+            let thread_view = ID_THREAD_VIEW;\n\
+            if let Some(bar) = frame.get_menu_bar()\n\
+                && let Some(item) = bar.find_item(thread_view)\n\
+            {\n\
+                item.enable(false);\n\
+            }\n";
+        assert!(
+            where_it_is_named(switched_off, THE_MENU_ITEM)
+                .iter()
+                .any(|place| place.contains("enable(false)")),
+            "the reading cannot see the menu item being switched off, so \
+             whatever the check below reports, it is not reporting that"
+        );
+        assert!(
+            where_it_is_named(
+                "frame.set_menu_bar(Self::build_menu_bar());\n",
+                THE_MENU_ITEM
+            )
+            .is_empty(),
+            "a source that never names the item reads as one that does"
+        );
+    }
+
+    #[test]
+    fn test_the_thread_view_item_is_not_switched_off_anywhere_it_is_named() {
         let ships = ships();
-        let disabled: Vec<&str> = ships
-            .lines()
-            .skip_while(|line| !line.contains("find_item(ID_THREAD_VIEW)"))
-            .take(6)
-            .filter(|line| line.contains("enable(false)"))
+        let named = where_it_is_named(&ships, THE_MENU_ITEM);
+        assert!(
+            !named.is_empty(),
+            "the shipping half never names the Thread View item, so this check \
+             has read nothing and has nothing to say about whether the item is \
+             switched off"
+        );
+        let switched_off: Vec<&String> = named
+            .iter()
+            .filter(|place| place.contains("enable(false)"))
             .collect();
         assert!(
-            disabled.is_empty(),
-            "the menu item is still switched off where the window is built: {disabled:?}"
+            switched_off.is_empty(),
+            "the menu item is switched off where the window is built: {switched_off:?}"
         );
     }
 
