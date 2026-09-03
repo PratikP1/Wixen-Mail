@@ -572,7 +572,7 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 105 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "src/service/caldav.rs", tests = 163 },
     { file = "src/service/ical_subscription.rs", tests = 19 },
 ]
@@ -3937,7 +3937,7 @@ red = [
     "test_a_draft_the_server_would_not_take_reaches_the_person",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 
@@ -3959,7 +3959,7 @@ red = [
     "test_the_delete_and_move_handlers_ask_one_place_what_to_say_and_what_to_do",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 
@@ -4386,7 +4386,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -4405,7 +4405,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -4752,7 +4752,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -4764,7 +4764,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -4776,7 +4776,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -4792,7 +4792,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── One day cut out of a series is two writes, and only one takes a day away ─
@@ -5042,7 +5042,7 @@ red = [
     "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_owner_words_what_a_move_or_a_copy_did",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -5055,7 +5055,7 @@ red = [
     "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_delete_owner_words_what_a_delete_did",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -5074,7 +5074,7 @@ red = [
     "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_delete_owner_words_what_a_delete_did",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # -- One owner for what a failed command says --------------------------------
@@ -5828,7 +5828,7 @@ red = [
     "presentation::wx_app::tests::test_each_way_of_sorting_the_list_puts_it_in_that_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -5840,7 +5840,7 @@ red = [
     "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -5853,7 +5853,7 @@ red = [
     "presentation::wx_app::tests::test_a_search_query_narrows_within_the_selected_group_rather_than_resetting_to_all_contacts",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── A priority no task service understands stops before the wire ────────────
@@ -7817,7 +7817,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── A name written back out is quoted when it needs to be ──────────────────
@@ -7907,7 +7907,7 @@ tests_last_seen = [
     { file = "src/application/reply.rs", tests = 28 },
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 38 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "src/service/mime.rs", tests = 37 },
 ]
 
@@ -10700,7 +10700,7 @@ red = [
     "test_nothing_raises_the_window_without_also_taking_it_out_of_the_taskbar",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 
@@ -10716,7 +10716,7 @@ red = [
     "test_cut_and_copy_ask_the_box_rather_than_indexing_its_value",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 
@@ -10760,7 +10760,7 @@ red = [
     "test_every_item_list_is_drawn_in_the_font_that_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 
@@ -10807,7 +10807,7 @@ tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 37 },
     { file = "src/application/pop_sync.rs", tests = 48 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── Signed mail brought in from a file said nothing about its signature ─────
@@ -10917,7 +10917,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_a_read_or_flagged_state_that_will_not_save_is_put_back_and_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -10964,7 +10964,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_a_refusal_is_not_written_to_the_status_line",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -11125,7 +11125,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 144 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -11447,7 +11447,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/folder_tree.rs", tests = 97 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -11515,7 +11515,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/account_order.rs", tests = 11 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -11743,7 +11743,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/favourites.rs", tests = 19 },
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 [[guard]]
@@ -12217,7 +12217,7 @@ red = [
     "presentation::wx_app::moving_between_accounts_does_not_rebuild_the_tree::test_landing_on_a_row_does_not_read_the_tree_back",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── The read dimension on Allowed, and the gate it reaches ──────────────────
@@ -12339,7 +12339,7 @@ red = [
     "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_coverage_sentence_is_said_before_the_mail_is_gathered",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── Eviction leaves the search index alone, on purpose ─────────────────────
@@ -12419,7 +12419,7 @@ red = [
     "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_choosing_the_offer_starts_the_backfill_and_says_what_it_did",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── A dialog that offers a vocabulary of its own ────────────────────────────
@@ -12669,7 +12669,7 @@ red = [
     "presentation::wx_app::tests::test_renaming_a_saved_search_is_checked_against_its_own_accounts_names",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # ── An upgraded database learning what its own search index holds ───────────
@@ -12780,7 +12780,7 @@ red = [
     "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_fetch_says_it_has_started_before_it_opens_a_connection",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
 ]
 
 # Sixteen checks in tests/wired.rs read the main window's source. Twelve of them
@@ -13233,7 +13233,7 @@ red = [
     "test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 196 },
+    { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "tests/wired.rs", tests = 61 },
 ]
 

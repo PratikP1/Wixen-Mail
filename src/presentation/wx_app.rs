@@ -25358,7 +25358,20 @@ mod what_the_list_is_told_it_holds {
     /// One place, because the check on the item and the check proving that
     /// check reads anything have to be looking for the same thing. A positive
     /// control with an anchor of its own proves a reading nothing else does.
-    const THE_MENU_ITEM: &str = "find_item(ID_THREAD_VIEW)";
+    ///
+    /// The item's own identifier, and that is the whole correction. This was
+    /// `find_item(ID_THREAD_VIEW)`, a call that only ever existed while the
+    /// item was disabled: 44ed93f wrote it, 01-12 wrote the check against it,
+    /// and making the check green meant deleting the block the call lived in.
+    /// The guard's own green half deleted its anchor, so from that commit
+    /// until this one the check read no lines and passed unconditionally.
+    ///
+    /// An anchor has to be something the feature keeps, not something its
+    /// defect brought with it. The identifier is named wherever the item is
+    /// built, handled or ticked, so a source with no mention of it is a source
+    /// with no Thread View item, and the check below says so rather than
+    /// reporting a clean result.
+    const THE_MENU_ITEM: &str = "ID_THREAD_VIEW";
 
     /// How many lines a mention of a menu item carries with it.
     ///
