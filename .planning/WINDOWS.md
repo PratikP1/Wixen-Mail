@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 39
+open_count: 41
 waived_count: 0
 fixed_count: 10
-total_count: 49
-last_updated: 2026-09-03T09:36:22.242Z
+total_count: 51
+last_updated: 2026-09-03T20:59:03.743Z
 ---
 
 # Broken Windows Ledger
@@ -64,6 +64,8 @@ last_updated: 2026-09-03T09:36:22.242Z
 | 47 | 02.1 | deviation | src/application/context_menu.rs |  | D-2.1-03 says each branch kind gets its own menu and a group heading offers what is true of the group. Four rows got no menu instead: All Inboxes, Favourites, On this computer and the saved searches heading. Nothing this program does acts on one of them, and every candidate command reads whichever account is open, which on a row naming no account is whichever account somebody came from. The decision's own reason for rejecting no menu was losing genuinely useful per-account commands, and none is lost, because every row that names an account keeps its own. Recorded as a divergence from a recorded decision rather than as a fault | open |  | 2026-09-02T20:00:23.296Z |  |
 | 48 | 02.1 | deviation | src/presentation/wx_app.rs |  | Criterion 12 was planned against two accounts of one name drawing rows that read identically. They did not: the_accounts_in_the_tree filled each name from Account::display_name, which is name and address together, and the accounts table declares email NOT NULL UNIQUE. The property was real, held by two layers that folder_tree.rs never mentions, and unowned there. The plan's own remedy would have added a second defence to a case that could not arise. What the trace found instead is the opposite defect, and it was fixed: the address was read aloud on every account branch, always, to serve a case that had never happened | open |  | 2026-09-02T20:00:23.940Z |  |
 | 49 | 02.1 | unrun-verify | src/presentation/wx_managers.rs |  | The box a condition editor now shows instead of opening on a rule it cannot read has not been heard. It goes through a_sub_dialog_needs, which builds a MessageDialog a screen reader reads on its own, captioned "Not opened" before the open and "Not saved" before the write, and the sentence under it runs to two paragraphs. Whether the caption and the sentence read as one thing rather than two, and where the sentence breaks for speech, is unverified. Nothing in the library can hear it: every path from show_rule_edit or show_filter_edit to a real box ends at show_modal, which blocks with nobody to answer it, so a test that opened one would hang the commit gate rather than fail it | open |  | 2026-09-02T22:30:00.000Z |  |
+| 50 | 03 | deviation | src/service/signed_mail.rs |  | Two certificate tests fail on GitHub's Windows runners and pass on a real machine: one of the runner's root authorities is genuinely reported withdrawn by Windows, and its three authorities produce no per-certificate answer because nothing local holds a withdrawal list. Checked 2026-09-03 and deferred by Pratik on the ground that it does not change how the application behaves: what_windows_found maps only CERT_TRUST_IS_REVOKED and CRYPT_E_REVOKED to Withdrawn, while offline, no list held, and no revocation information each map to CouldNotFindOut with a reason, so the code never reads could-not-check as revoked. CI stays red on these two until a runner with a representative certificate store exists, or the tests take their certificates as an argument. | open |  | 2026-09-03T20:58:51.850Z |  |
+| 51 | 03 | deviation | src/service/spellcheck/windows_speller.rs | 166 | supported_languages returns an empty list both when this machine has no spell checkers and when the COM call failed, with nothing logged: CoCreateInstance's error is discarded by a let-else that returns the empty vec. available_languages then reports no languages, best_available_match answers None, and default_language at data/config.rs:466 falls back to en, so a transient COM failure at first run sets a French user's fresh install to English and marks every word of their mail wrong. Found 2026-09-03 while investigating the one-in-five test flake the phase 1 deferred list records; the flake is this defect seen through a test that asks the same question twice. The codebase already has the right shape for the fix in Withdrawal, which distinguishes NotWithdrawn from CouldNotFindOut with a reason. Not yet routed to a phase. | open |  | 2026-09-03T20:59:03.743Z |  |
 
 ````json
 [
@@ -653,6 +655,30 @@ last_updated: 2026-09-03T09:36:22.242Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T22:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 50,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/service/signed_mail.rs",
+    "line": null,
+    "description": "Two certificate tests fail on GitHub's Windows runners and pass on a real machine: one of the runner's root authorities is genuinely reported withdrawn by Windows, and its three authorities produce no per-certificate answer because nothing local holds a withdrawal list. Checked 2026-09-03 and deferred by Pratik on the ground that it does not change how the application behaves: what_windows_found maps only CERT_TRUST_IS_REVOKED and CRYPT_E_REVOKED to Withdrawn, while offline, no list held, and no revocation information each map to CouldNotFindOut with a reason, so the code never reads could-not-check as revoked. CI stays red on these two until a runner with a representative certificate store exists, or the tests take their certificates as an argument.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T20:58:51.850Z",
+    "resolved_at": null
+  },
+  {
+    "id": 51,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/service/spellcheck/windows_speller.rs",
+    "line": 166,
+    "description": "supported_languages returns an empty list both when this machine has no spell checkers and when the COM call failed, with nothing logged: CoCreateInstance's error is discarded by a let-else that returns the empty vec. available_languages then reports no languages, best_available_match answers None, and default_language at data/config.rs:466 falls back to en, so a transient COM failure at first run sets a French user's fresh install to English and marks every word of their mail wrong. Found 2026-09-03 while investigating the one-in-five test flake the phase 1 deferred list records; the flake is this defect seen through a test that asks the same question twice. The codebase already has the right shape for the fix in Withdrawal, which distinguishes NotWithdrawn from CouldNotFindOut with a reason. Not yet routed to a phase.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T20:59:03.743Z",
     "resolved_at": null
   }
 ]
