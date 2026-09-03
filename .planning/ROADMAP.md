@@ -268,7 +268,19 @@ Planning on 2026-09-02 re-checked every criterion against the tree again and fou
   5. Losing the network puts the application offline and announces it once; regaining it offers to go back online rather than flushing the outbox unasked.
   6. When a local copy and a server copy have both changed, the user is shown both and chooses, and nothing is pushed until they do.
 
-**Plans**: TBD
+**Plans**: 9 plans, one per wave. The first six depend on none of the four
+decisions `03-RESEARCH.md` leaves for Pratik and can start whenever; the last
+three each state the assumption they were planned under.
+
+- [ ] `03-01-PLAN.md` — Nothing deletes cached mail on the strength of a partial listing, and a renumbered folder says what it discarded
+- [ ] `03-02-PLAN.md` — Count, in a test, the sign-ins that go round the helper, so the number stops going stale in a document
+- [ ] `03-03-PLAN.md` — Prove the storage split that already ships, and pin the numbering rule a dispatcher currently holds
+- [ ] `03-04-PLAN.md` — Gmail mail archived with no label counts toward its conversation, by identity rather than by folder
+- [ ] `03-05-PLAN.md` — A conversation root that arrives late merges, and the backfill that makes the fix visible on mail already stored
+- [ ] `03-06-PLAN.md` — One session held open per account, one reconnect, and a budget with a number
+- [ ] `03-07-PLAN.md` — Resume a folder instead of re-listing it, and let somebody ask for a whole one (assumes the recorded UID-comparison fallback over QRESYNC)
+- [ ] `03-08-PLAN.md` — Offline mode does what it says, the network is noticed, and coming back is offered rather than done (assumes the false promise is fixed in this phase)
+- [ ] `03-09-PLAN.md` — The conflict choice is built where the state occurs, contacts and CalDAV, and mail's case is restated (assumes mail is out of scope)
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
 
