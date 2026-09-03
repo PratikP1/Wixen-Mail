@@ -5525,6 +5525,50 @@ fn stops_at_the_first_failure(line: &str) -> bool {
     runs_the_suite(line) && !line.contains("--no-fail-fast")
 }
 
+/// Steps checking the search handler that an earlier failure would skip.
+///
+/// The same fault as the one above, one level up and missed when the lesson
+/// was learned. `--no-fail-fast` stops a failing cargo target hiding the
+/// targets after it; nothing was stopping a failing *step* hiding the steps
+/// after it, and GitHub Actions skips the rest of a job by default.
+///
+/// The search handler is the crate this matters for. It is not a workspace
+/// member, so no cargo command run locally or in any other job reaches it,
+/// and each of its three steps sits directly after the equivalent step for
+/// the main crate. When CI was red from 2026-07-31 to 2026-09-03 its tests
+/// were not failing: they were reported `skipped`, every run, for 34 days.
+///
+/// `if: always()` still fails the job. It runs the step first.
+fn steps_an_earlier_failure_would_skip(yaml: &str) -> Vec<String> {
+    let mut skipped = Vec::new();
+    let mut name = String::new();
+    let mut in_the_handler = false;
+    let mut runs_anyway = false;
+    let mut finish = |name: &str, in_the_handler: bool, runs_anyway: bool| {
+        if in_the_handler && !runs_anyway && !name.is_empty() {
+            skipped.push(name.to_string());
+        }
+    };
+    for line in yaml.lines() {
+        let trimmed = line.trim();
+        if let Some(started) = trimmed.strip_prefix("- name:") {
+            finish(&name, in_the_handler, runs_anyway);
+            name = started.trim().to_string();
+            in_the_handler = false;
+            runs_anyway = false;
+            continue;
+        }
+        if trimmed == "working-directory: search-handler" {
+            in_the_handler = true;
+        }
+        if trimmed.starts_with("if:") && trimmed.contains("always()") {
+            runs_anyway = true;
+        }
+    }
+    finish(&name, in_the_handler, runs_anyway);
+    skipped
+}
+
 #[test]
 fn test_one_failing_target_does_not_hide_the_rest() {
     // `cargo test` runs each target in turn and stops at the first one that
@@ -5554,6 +5598,47 @@ fn test_one_failing_target_does_not_hide_the_rest() {
          first failure:\n  {}",
         stopping.len(),
         stopping.join("\n  ")
+    );
+
+    // And the same question one level up, which the lesson above was learned
+    // without asking. A job stops at its first failing step, so the steps
+    // checking the search handler never ran at all while CI was red: reported
+    // `skipped`, every run, from 2026-07-31 to 2026-09-03. That crate is a
+    // workspace outsider, so nothing else on this machine or in any other job
+    // was checking it either.
+    let ci = fs::read_to_string(".github/workflows/ci.yml").expect("the ci workflow");
+    let skipped = steps_an_earlier_failure_would_skip(&ci);
+    assert!(
+        skipped.is_empty(),
+        "{} step(s) checking the search handler would be skipped when an \
+         earlier step in the same job fails, so a red run says nothing about \
+         that crate: {skipped:?}",
+        skipped.len()
+    );
+
+    // The companion, because the reading above is the kind that quietly finds
+    // nothing. A step written the old way must be seen, and one written the
+    // new way must not, so it is the reading being proved rather than the
+    // workflow file.
+    let old_way = concat!(
+        "    - name: Run the search handler's tests\n",
+        "      run: cargo test\n",
+        "      working-directory: search-handler\n",
+    );
+    let new_way = concat!(
+        "    - name: Run the search handler's tests\n",
+        "      if: always()\n",
+        "      run: cargo test\n",
+        "      working-directory: search-handler\n",
+    );
+    assert_eq!(
+        steps_an_earlier_failure_would_skip(old_way).len(),
+        1,
+        "the reading cannot see a step that an earlier failure would skip"
+    );
+    assert!(
+        steps_an_earlier_failure_would_skip(new_way).is_empty(),
+        "the reading reports a step that already runs anyway"
     );
 }
 
