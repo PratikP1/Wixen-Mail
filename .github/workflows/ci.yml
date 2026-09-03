@@ -8,6 +8,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # These runners ship no audio driver (actions/runner-images#6983), and
+  # rodio 0.22.2 does not fail cleanly there: it opens something anyway and
+  # faults on the first write, killing the test binary. That is not two
+  # failing tests, it is every test scheduled after the crash never running,
+  # and about 3,500 of ours were lost that way with nothing saying so.
+  #
+  # This does not skip a single sound test. They all still run and all still
+  # assert; the sound goes to a mixer with nothing listening instead of to a
+  # card. src/presentation/accessibility/feedback.rs has the detail.
+  WIXEN_NO_AUDIO: "1"
 
 permissions:
   contents: read

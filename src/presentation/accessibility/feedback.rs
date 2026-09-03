@@ -650,6 +650,28 @@ impl std::fmt::Debug for EarconPlayer {
 /// Below about a tenth of a second two tones stop being heard as two events.
 const EARCON_GAP: std::time::Duration = std::time::Duration::from_millis(120);
 
+/// Says this machine cannot play sound, whatever its audio device claims.
+///
+/// Set it where a device opens and then does not work, which is not the same
+/// as having none and is the case nothing can detect. GitHub's Windows
+/// runners ship no audio driver at all (runner-images#6983); `rodio` 0.22.2
+/// opens something there regardless and faults on the first write, killing
+/// the process. A crash is not a failing test: it takes down every test
+/// scheduled after it, and about 3,500 of ours went with it, unreported.
+///
+/// This is not a way to skip the sound tests. They all still run and all
+/// still assert; the sound goes to a mixer nothing listens to instead of to
+/// a card. What stops being exercised is `rodio`'s own device handling,
+/// which no test here covered anyway.
+///
+/// Setting it in ordinary use turns earcons off, which is why `new` says so
+/// through `tracing` rather than going quiet with no explanation.
+const NO_AUDIO: &str = "WIXEN_NO_AUDIO";
+
+fn audio_is_declared_unusable() -> bool {
+    std::env::var_os(NO_AUDIO).is_some_and(|value| !value.is_empty())
+}
+
 impl Default for EarconPlayer {
     fn default() -> Self {
         Self::new()
@@ -658,6 +680,13 @@ impl Default for EarconPlayer {
 
 impl EarconPlayer {
     pub fn new() -> Self {
+        if audio_is_declared_unusable() {
+            tracing::info!(
+                "{NO_AUDIO} is set, so earcons play into a mixer with nothing \
+                 listening. Every decision about whether to play still runs.",
+            );
+            return Self::into_the_air().0;
+        }
         // A machine with no audio device, or one none of rodio's own
         // fallback attempts could open, gets a silent player rather
         // than a construction failure: a missing sound is a smaller
@@ -670,24 +699,19 @@ impl EarconPlayer {
         }
     }
 
-    /// A player that mixes into the returned source instead of a sound card.
+    /// A player that mixes somewhere real, with no device behind it.
     ///
-    /// So the decisions in `play_at` can be tested where there is no device
-    /// to open, and so a test can ask the stronger question: not whether
-    /// playing answered true, but whether a sound really arrived. Every test
-    /// below that plays uses this. None of them used to, and on a machine
-    /// with no sound card they did not fail, they crashed the process and
-    /// took about 3,500 unrelated library tests down with them.
-    ///
-    /// The channel count and sample rate are the ones `sound_for` produces,
-    /// so nothing is resampled on the way in and a sample read back is the
-    /// sample that was written.
-    #[cfg(test)]
-    fn detached() -> (Self, rodio::mixer::MixerSource) {
+    /// The returned source is where the sound goes. Dropping it is safe and
+    /// is what `new` does: `rodio::mixer::Mixer::add` ignores the send when
+    /// nothing is listening, so a player whose source has gone is silent
+    /// rather than broken.
+    fn into_the_air() -> (Self, rodio::mixer::MixerSource) {
         // Both are `NonZero` in rodio's types, and neither can be zero here:
-        // mono, at the rate `sound_for` produces.
-        let channels = std::num::NonZero::new(1).expect("one channel is not zero");
-        let rate = std::num::NonZero::new(TONE_SAMPLE_RATE).expect("48kHz is not zero");
+        // mono, at the rate `sound_for` produces, so a sample read back is
+        // the sample that was written rather than a resampled one.
+        let channels = std::num::NonZero::new(1).unwrap_or(std::num::NonZero::<u16>::MIN);
+        let rate =
+            std::num::NonZero::new(TONE_SAMPLE_RATE).unwrap_or(std::num::NonZero::<u32>::MIN);
         let (mixer, source) = rodio::mixer::mixer(channels, rate);
         (
             Self {
@@ -697,6 +721,18 @@ impl EarconPlayer {
             },
             source,
         )
+    }
+
+    /// A player that mixes into the returned source instead of a sound card.
+    ///
+    /// So a test can ask the stronger question: not whether playing answered
+    /// true, but whether a sound really arrived. Every test below that plays
+    /// uses this. None of them used to, and on a machine with no sound card
+    /// they did not fail, they crashed the process and took about 3,500
+    /// unrelated library tests down with them.
+    #[cfg(test)]
+    fn detached() -> (Self, rodio::mixer::MixerSource) {
+        Self::into_the_air()
     }
 
     /// Play an event's sound, under `scheme`, if enough time has passed
@@ -846,6 +882,44 @@ mod tests {
         let start = std::time::Instant::now();
         assert!(player.play_at(Event::MisspelledWord, &scheme, start));
         assert!(player.play_at(Event::MisspelledWord, &scheme, start + EARCON_GAP));
+    }
+
+    #[test]
+    fn test_a_player_with_no_device_behind_it_still_plays_and_still_suppresses() {
+        // What `WIXEN_NO_AUDIO` buys, asked of the thing it produces rather
+        // than of the environment variable, because a test that sets one is
+        // racing every other test in the process.
+        //
+        // The point is that declaring the machine deaf changes where a sound
+        // goes and nothing else. Both answers still come out of `play_at`, so
+        // no assertion anywhere is weakened by setting it, and a decision that
+        // stopped working would still be caught.
+        let (player, _sound) = EarconPlayer::into_the_air();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        let start = std::time::Instant::now();
+
+        assert!(
+            player.play_at(Event::NewMail, &scheme, start),
+            "a player with nowhere to play should still make the decision"
+        );
+        assert!(
+            !player.play_at(Event::NewMail, &scheme, start),
+            "and should still suppress the one inside the gap"
+        );
+    }
+
+    #[test]
+    fn test_a_player_that_has_lost_its_listener_is_silent_rather_than_broken() {
+        // `new` drops the source when `WIXEN_NO_AUDIO` is set, so this is the
+        // shape the running program is in under that flag. It holds because
+        // `Mixer::add` ignores the send when nothing is listening. If a
+        // future rodio panicked there instead, every earcon on such a machine
+        // would take the application down, and this is what would say so.
+        let (player, sound) = EarconPlayer::into_the_air();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+        drop(sound);
+
+        assert!(player.play(Event::NewMail, &scheme));
     }
 
     #[test]
