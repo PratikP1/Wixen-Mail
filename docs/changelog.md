@@ -1143,9 +1143,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     folder, not each under a branch named after the file it came from. Nothing
     records which archive a folder arrived in, so there is nothing yet to build
     those branches from.
-  - Two accounts you have given exactly the same name are the one case the tree
-    cannot tell apart when putting your cursor back. Give them different names
-    and it is exact.
+  - Two accounts you have given exactly the same name used to be the one case
+    the tree could not tell apart when putting your cursor back. They can be
+    told apart now: two accounts sharing a name each get their address shown
+    beside it, which is the change described further up this release.
   - Nothing about your mail moved or was deleted.
   - This has been tested against a mail server written for the tests, not
     against a real account.

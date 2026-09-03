@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 40
+open_count: 39
 waived_count: 0
-fixed_count: 9
+fixed_count: 10
 total_count: 49
-last_updated: 2026-09-03T08:58:32.016Z
+last_updated: 2026-09-03T09:36:22.242Z
 ---
 
 # Broken Windows Ledger
@@ -22,7 +22,7 @@ last_updated: 2026-09-03T08:58:32.016Z
 | 5 | 01 | deviation | src/application/conversations.rs |  | Hungarian's one-letter I: forward marker is read as a reply marker, because mail_parser's trim_trailing_fwd ignores a parenthesised word of one character | fixed |  | 2026-08-31T01:12:22.334Z | 2026-09-02T18:18:48.506Z |
 | 6 | 01 | unrun-verify | src/presentation/wx_app.rs |  | Rethreading on arrival repaints one row and does not touch the selection; no screen reader has confirmed that a repainted row is silent to somebody not on it | open |  | 2026-08-31T05:13:47.847Z |  |
 | 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | open |  | 2026-08-31T05:13:49.247Z |  |
-| 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | open |  | 2026-08-31T05:13:50.314Z |  |
+| 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | fixed |  | 2026-08-31T05:13:50.314Z | 2026-09-03T09:36:22.242Z |
 | 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | open |  | 2026-08-31T05:13:51.507Z |  |
 | 10 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear | open |  | 2026-09-01T02:14:56.334Z |  |
 | 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names | open |  | 2026-09-01T03:56:05.356Z |  |
@@ -158,10 +158,10 @@ last_updated: 2026-09-03T08:58:32.016Z
     "file": "src/data/message_cache/messages.rs",
     "line": null,
     "description": "messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T05:13:50.314Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-03T09:36:22.242Z"
   },
   {
     "id": 9,
