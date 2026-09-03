@@ -6,6 +6,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **A first run no longer sets your spelling to English when Windows could not
+  be asked what it checks.** Wixen Mail asks Windows which languages it can
+  check spelling in, and that question can fail. A failed question and a
+  machine that genuinely checks nothing gave the same answer, so a failure was
+  read as "this machine checks nothing" and the setting fell back to English.
+  Anybody writing in another language then had every word of their mail marked
+  as a mistake until they found the setting, which is hard to find when
+  everything on screen is already marked wrong.
+
+  The two are now told apart. When Windows answers, nothing changes: your
+  language if it can be checked, English if it cannot, because English checked
+  is better than nothing checked. When Windows cannot be asked, your own
+  language is kept and the reason is written to the log rather than being
+  passed over in silence.
+
+  This also removes a test that failed about one run in five, because it asked
+  Windows the same question twice and compared the answers with each other.
+
 ### Added
 
 - **A saved search can now ask anything a filter rule can ask.** Press the menu

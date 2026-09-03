@@ -11478,7 +11478,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 48 },
+    { file = "src/data/config.rs", tests = 52 },
 ]
 
 [[guard]]
@@ -12296,7 +12296,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 25 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 48 },
+    { file = "src/data/config.rs", tests = 52 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────

@@ -240,6 +240,24 @@ pub enum WhatThisMachineOffers {
     CouldNotAsk { reason: String },
 }
 
+/// What this machine offers, asked once, on whichever platform this is.
+///
+/// The one place the question is put, so a caller cannot accidentally ask it
+/// twice and compare the answers with each other.
+pub fn what_this_machine_offers() -> WhatThisMachineOffers {
+    #[cfg(windows)]
+    {
+        windows_speller::WindowsSpeller::what_this_machine_offers()
+    }
+    #[cfg(not(windows))]
+    {
+        // Nothing was asked because there is nothing here to ask, which is an
+        // answer rather than a failure: the built-in list is what this machine
+        // offers, and `choices_from` already knows how to say so.
+        WhatThisMachineOffers::TheseLanguages(Vec::new())
+    }
+}
+
 /// Which language to check in, decided from what was asked rather than from
 /// what was reachable at the time.
 ///
@@ -261,7 +279,14 @@ pub fn language_to_check_in(system: Option<&str>, offers: &WhatThisMachineOffers
         // not they see their own language named rather than silently getting
         // English. Choosing English here is what marked a French user's every
         // word wrong.
-        WhatThisMachineOffers::CouldNotAsk { .. } => "en".to_string(),
+        WhatThisMachineOffers::CouldNotAsk { reason } => {
+            tracing::warn!(
+                "this machine could not be asked which languages it checks ({reason}), \
+                 so spelling is set to {system} without knowing whether anything can \
+                 check it"
+            );
+            system.to_string()
+        }
         // Asked and answered. English when this machine can check nothing of
         // theirs, which is a decision rather than an accident: English checked
         // is better than nothing checked.

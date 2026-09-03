@@ -463,7 +463,15 @@ fn default_true() -> bool {
 /// English when the machine's language is one nothing can check, because
 /// English checked is better than nothing checked.
 fn default_language() -> String {
-    crate::service::spellcheck::language_of_this_machine().unwrap_or_else(|| "en".to_string())
+    // Asked once, and the answer carries whether it could be asked at all.
+    // Two calls used to be made and compared, which is how a platform question
+    // that comes back empty under load turned into English for somebody who
+    // writes in French.
+    let system = crate::service::spellcheck::system_language();
+    crate::service::spellcheck::language_to_check_in(
+        system.as_deref(),
+        &crate::service::spellcheck::what_this_machine_offers(),
+    )
 }
 fn default_sort_order() -> String {
     "date_newest".to_string()
