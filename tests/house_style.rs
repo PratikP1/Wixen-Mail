@@ -5564,8 +5564,30 @@ fn test_the_fail_fast_check_can_tell_the_two_apart() {
     // need the flag: there is nothing after it to hide.
     assert!(!stops_at_the_first_failure("cargo test --doc"));
     assert!(!stops_at_the_first_failure("cargo test --test house_style"));
+    assert!(!stops_at_the_first_failure("cargo test --lib help_page::"));
     // A line that runs no tests at all.
     assert!(!stops_at_the_first_failure("cargo build --release"));
+
+    // One named target is exempt. More than one is a set, and one failing
+    // target hides the rest of the set exactly as it does in the whole suite.
+    //
+    // The exemption used to be "the line mentions --test at all", which
+    // exempted a line naming fifteen targets as readily as one, and it hid a
+    // real defect in `check.sh`: `cargo test --test house_style --test wired`
+    // ran two targets and stopped at the first, so a red `house_style` meant
+    // `wired` never started. That was only found on 2026-09-02 because
+    // building the targets into an array took the literal flag out of the
+    // text and this check spoke. An exemption wider than the thing it exempts
+    // is a hole the size of the difference.
+    assert!(stops_at_the_first_failure(
+        "cargo test --test house_style --test wired"
+    ));
+    assert!(stops_at_the_first_failure(
+        "    cargo test --test house_style --test docs_links --test wired"
+    ));
+    assert!(!stops_at_the_first_failure(
+        "cargo test --no-fail-fast --test house_style --test wired"
+    ));
 }
 
 // ── A handler that can refuse has to consume the click ──────────────────────
