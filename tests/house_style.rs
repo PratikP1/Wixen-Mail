@@ -6277,3 +6277,148 @@ fn test_the_window_claim_check_can_tell_the_two_apart() {
         named(third_line)[0]
     );
 }
+
+/// The extensions the checks in this file read, taken from `ours()` rather
+/// than written down again.
+///
+/// A second list would go stale the first time somebody taught `ours()` about
+/// a new kind of file, and the check reading it would then pass while covering
+/// less than it says.
+fn kinds_of_file_this_project_writes() -> Vec<String> {
+    let mut kinds: Vec<String> = ours()
+        .iter()
+        .filter_map(|path| path.extension()?.to_str().map(str::to_string))
+        .collect();
+    kinds.sort();
+    kinds.dedup();
+    kinds
+}
+
+/// Whether `.gitattributes` promises this kind of file arrives with Unix line
+/// endings, however that promise is spelled.
+///
+/// Either a catch-all covering every path, or a rule naming this extension.
+/// Both are honest ways to say it and this asks about the effect rather than
+/// the wording.
+fn line_endings_are_pinned_for(attributes: &str, extension: &str) -> bool {
+    for line in attributes.lines() {
+        let rule = line.split('#').next().unwrap_or_default().trim();
+        if rule.is_empty() || !rule.contains("eol=lf") {
+            continue;
+        }
+        let Some(pattern) = rule.split_whitespace().next() else {
+            continue;
+        };
+        if pattern == "*" || pattern == format!("*.{extension}") {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn test_the_repository_pins_the_line_endings_its_own_checks_depend_on() {
+    // Every check in this file and in `tests/wired.rs` reads source as text and
+    // matches on it, and several match a newline directly: `find(" {\n")` a few
+    // hundred lines above, `find("\n}\n")` in the seven copies of `the_body_of`
+    // under `src/`. Those matches are exact, so they find nothing at all in a
+    // file whose lines end `\r\n`, and a reading that finds nothing is the
+    // failure this project keeps building defences against.
+    //
+    // Which endings a file has on disk is not a property of the file. It is a
+    // property of the checkout, decided by `core.autocrlf`, and that differs
+    // between this machine and a Windows runner: `input` here keeps what the
+    // repository holds, `true` on the runner rewrites every text file to CRLF
+    // on the way out of git. So the same commit is two different trees, and the
+    // local gate tests one of them while CI tests the other.
+    //
+    // That is not a hypothetical. CI was red from 2026-07-31 to 2026-09-03,
+    // sixty runs, on nine tests that all read source and all found nothing,
+    // while `scripts/check.sh` passed on every one of those commits. A gate
+    // that cannot reproduce CI says nothing about CI.
+    //
+    // `.gitattributes` is what makes the checkout stop being a variable.
+    let attributes = fs::read_to_string(".gitattributes").unwrap_or_else(|e| {
+        panic!(
+            "the repository has no .gitattributes, so how a source file's \
+             lines end is decided by whoever cloned it: {e}"
+        )
+    });
+
+    let kinds = kinds_of_file_this_project_writes();
+    assert!(
+        !kinds.is_empty(),
+        "the list of file kinds came out empty, so this check is looking for \
+         nothing"
+    );
+
+    let unpinned: Vec<&String> = kinds
+        .iter()
+        .filter(|kind| !line_endings_are_pinned_for(&attributes, kind))
+        .collect();
+    assert!(
+        unpinned.is_empty(),
+        ".gitattributes does not pin Unix line endings for every kind of file \
+         this project's checks read, so a checkout can still hand them CRLF \
+         and they will read nothing: {unpinned:?}"
+    );
+}
+
+#[test]
+fn test_no_file_this_project_writes_holds_a_carriage_return() {
+    // The drift guard for the rule above. `.gitattributes` stops a checkout
+    // introducing CRLF; this notices one that arrived some other way, such as
+    // an editor writing Windows endings into a new file, or a rule being
+    // narrowed later so a kind of file falls outside it.
+    //
+    // It is here rather than in CI's shell so that it reddens on the machine
+    // where the file was written, which is the only place somebody can fix it
+    // without a fourteen-minute round trip.
+    let ours = ours();
+    assert!(
+        !ours.is_empty(),
+        "no files were collected, so this check is looking for nothing"
+    );
+
+    let mut carrying = Vec::new();
+    for path in &ours {
+        let Ok(text) = fs::read_to_string(path) else {
+            continue;
+        };
+        if text.contains('\r') {
+            carrying.push(path.display().to_string());
+        }
+    }
+    assert!(
+        carrying.is_empty(),
+        "these files hold a carriage return, so every check that matches a \
+         newline directly reads nothing in them: {carrying:?}"
+    );
+}
+
+#[test]
+fn test_the_carriage_return_check_can_see_one() {
+    // The companion the check above needs. Without it, a tree that really is
+    // clean and a reading that cannot see a violation look identical, and this
+    // project has shipped that confusion often enough to have a name for it.
+    //
+    // The two strings differ in one character, and the check must tell them
+    // apart, so it is the reading being proved rather than the tree.
+    assert!(
+        "fn a() {\r\n}\r\n".contains('\r'),
+        "the carriage return check cannot see a carriage return"
+    );
+    assert!(
+        !"fn a() {\n}\n".contains('\r'),
+        "the carriage return check reports one where there is none"
+    );
+
+    // And the mechanism itself, said in the form the failures took: an exact
+    // match on a newline finds its target in one and not the other.
+    assert!("fn a() {\n}\n".contains("\n}\n"));
+    assert!(
+        !"fn a() {\r\n}\r\n".contains("\n}\n"),
+        "the_body_of's search would still find its end under CRLF, so the \
+         diagnosis behind these checks is wrong"
+    );
+}
