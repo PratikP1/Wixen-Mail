@@ -2610,11 +2610,23 @@ tests_last_seen = [
 # second account for one mailbox is a second mailbox as far as the rest of the
 # program is concerned.
 
+# Re-measured by hand on 2026-09-03, after the 220-record sweep refused it: the
+# text the old break replaced appeared 0 times, because a `debug_assert_eq!`
+# about flag-bit overlap was added between the call and the combination and the
+# expression now goes through a local. The behaviour is unchanged and better
+# guarded than it was. Break applied by hand against the whole library: exactly
+# the one test named went red and nothing else did.
+#
+# Worth noting what the sweep bought here. This is the one record of 220 it
+# found, and it is the direction that announces itself rather than the silent
+# one: the break stops applying and the run says so. The count check cannot see
+# it, because a refactor that moves an expression changes no test count.
+
 [[guard]]
 name = "a deletion that cannot be undone does not let Enter answer Yes"
 file = "src/presentation/asking.rs"
-before = """    yes_no_where_enter_answers_yes() | ENTER_DOES_NOT_ANSWER_YES"""
-after = """    yes_no_where_enter_answers_yes()"""
+before = """    two_answers | ENTER_DOES_NOT_ANSWER_YES"""
+after = """    two_answers"""
 red = [
     "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
 ]
