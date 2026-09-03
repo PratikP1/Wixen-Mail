@@ -61,9 +61,21 @@ declare -A suite_case_count=()
 
 # One case, reported in the shape cargo reports a test in.
 #
-# The two refusals are about the name being usable in a commit message. A case
-# with no description cannot be named at all, and one holding ` ... ` would be
-# cut in the wrong place by the reader on the other side.
+# The three refusals are all one rule: the description has to be a name a commit
+# message can carry, and the place to find out that it is not is where it is
+# written. A case with no description cannot be named at all; one holding
+# ` ... ` would be cut in the wrong place, because that is the separator between
+# a name and its outcome; and one holding a comma would be split in two, because
+# `red-commit.sh names` reads a `Fails-until-green:` value as a comma-separated
+# list of Rust test paths, and a Rust path never holds a comma.
+#
+# The comma was found by using this. The first commit that tried to name a case
+# named `which-checks::main, code changed`, and the gate reported two tests
+# called `which-checks::main` and `code changed`, neither of which had ever run.
+# Refused here rather than guessed at there: a reader deciding which commas were
+# separators and which were prose would be a gate deciding by heuristic, and the
+# leak in every version of that heuristic is a description whose parts happen to
+# look like paths.
 suite_case_line() {
     local desc="$1" outcome="$2" name
 
@@ -76,6 +88,11 @@ suite_case_line() {
         *" ... "*)
             echo "shell-suite: '$desc' holds ' ... ', which is where the reader" >&2
             echo "  of these lines cuts the name off. Word it another way." >&2
+            exit 70
+            ;;
+        *,*)
+            echo "shell-suite: '$desc' holds a comma, and the commit trailer that" >&2
+            echo "  names a case separates names with commas. Word it another way." >&2
             exit 70
             ;;
     esac

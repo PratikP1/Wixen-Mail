@@ -116,7 +116,7 @@ honest: it still says exactly what failed and is still held to it.
 ```
 test(gate): failing case for the mode nobody routed
 
-Fails-until-green: which-checks::a branch, a red commit touching only documents
+Fails-until-green: which-checks::a branch and a red commit touching only documents
 ```
 
 The suite name is the file name without `.test.sh`, and the description is the
@@ -135,13 +135,25 @@ The passing line is the half worth understanding. Without it, a named case that
 passed and a name nobody ever wrote are the same silence, and "every named test
 ran" cannot be asked at all.
 
-Two things a suite must therefore do. Report every case, on the passing path as
-well as the failing one, through `suite_case_passed` and `suite_case_failed`.
-And end at `suite_verdict`, which prints the line saying it got there;
-`check.sh` refuses a run where a suite stopped short of it, in every mode
-including `red`, because the cases it never reached said nothing and a run like
-that cannot be judged. Two cases sharing a description are refused for the same
-reason: a commit naming one of them cannot say which.
+Three things a suite must therefore do. Report every case, on the passing path
+as well as the failing one, through `suite_case_passed` and `suite_case_failed`.
+End at `suite_verdict`, which prints the line saying it got there; `check.sh`
+refuses a run where a suite stopped short of it, in every mode including `red`,
+because the cases it never reached said nothing and a run like that cannot be
+judged. And give each case a description that is a name a commit can carry.
+`shell-suite.sh` refuses three that are not, where they are written rather than
+where they are read: an empty one, one holding ` ... `, which is the separator
+between a name and its outcome, and one holding a comma, which is the separator
+between two names. Two cases sharing a description are refused as well, because
+a commit naming one of them cannot say which.
+
+The comma was found by using this rather than by reading it. The first commit
+that tried to name a case named `which-checks::main, code changed`, and the gate
+reported two tests called `which-checks::main` and `code changed`, neither of
+which had ever run. About ten descriptions were reworded. Guessing at the other
+end which commas were separators and which were prose would have been a gate
+deciding by heuristic, and every version of that heuristic leaks on a
+description whose parts happen to look like test paths.
 
 **One kind of shell change still cannot be split, and it is this mechanism
 itself.** A case asserting how the red gate treats shell suites is red until the

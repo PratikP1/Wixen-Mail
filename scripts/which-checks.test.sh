@@ -50,15 +50,15 @@ expect_refused() {
 # ── Where you are: main always earns everything ─────────────────────────────
 # Every commit here lands on main, so the four checks are what stands between a
 # broken commit and the branch CI builds. What changed does not soften that.
-expect all "main, code changed" main src/presentation/wx_app.rs
+expect all "main with code changed" main src/presentation/wx_app.rs
 expect all "main with no file list" main
 
 # But a document cannot break the release build or a test that never reads one,
 # wherever it is committed. Deferring the slow half is about the branch; what a
 # change can possibly break is about the change. These are separate questions
 # and main only answers the first.
-expect docs_only "main, docs only" main docs/changelog.md
-expect docs_only "master, docs only" master README.md
+expect docs_only "main with only documents changed" main docs/changelog.md
+expect docs_only "master with only documents changed" master README.md
 
 # A name that could be read two ways is not a licence.
 expect affected "maintenance is a branch nobody builds" maintenance src/lib.rs
@@ -110,7 +110,7 @@ expect affected "this decision" gsd/x scripts/which-checks.sh
 expect affected "a guard record" gsd/x guards/guards.toml
 
 # ── No file list means we cannot tell, so defer only what the branch allows ──
-expect all_but_slow "a branch, nothing said about the change" gsd/x
+expect all_but_slow "a branch with nothing said about the change" gsd/x
 
 # ── A commit that says which tests must fail ────────────────────────────────
 # Red/green needs a commit whose tests fail, and this gate refuses one unless it
@@ -140,12 +140,12 @@ test(02-02): failing tests
 Fails-until-green:
 MSG
 
-expect red "a branch, a commit naming the tests that must fail" \
+expect red "a branch and a commit naming the tests that must fail" \
     --message-file="$red_marker" gsd/plan-02-02 src/application/saved_searches.rs
 
 # A document change can redden a document-reading test, so a red commit is not
 # a code-only idea and is not refused for touching only markdown.
-expect red "a branch, a red commit touching only documents" \
+expect red "a branch and a red commit touching only documents" \
     --message-file="$red_marker" gsd/plan-02-02 docs/changelog.md
 
 # The overwhelmingly common case, and it must not get slower or stranger for
@@ -153,7 +153,7 @@ expect red "a branch, a red commit touching only documents" \
 expect affected "a message with no marker changes nothing" \
     --message-file="$plain_message" gsd/plan-02-02 src/application/saved_searches.rs
 
-expect docs_only "a message with no marker, documents only" \
+expect docs_only "a message with no marker and only documents changed" \
     --message-file="$plain_message" gsd/plan-02-02 README.md
 
 # ── Where a red commit may not be made ──────────────────────────────────────

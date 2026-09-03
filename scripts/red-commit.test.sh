@@ -86,7 +86,7 @@ expect_names "application::allowed::tests::test_a" "one named test" \
 Fails-until-green: application::allowed::tests::test_a"
 
 expect_names "application::allowed::tests::test_a|application::allowed::tests::test_b" \
-    "two markers, in the order written" \
+    "two markers in the order written" \
     "test(02-02): failing tests
 
 Fails-until-green: application::allowed::tests::test_a
@@ -236,7 +236,7 @@ test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out"
 
 # A test that does not compile is not a red. It is a broken build, and it must
 # not be reported as the failure the commit was expecting.
-verdict_is refused "nothing compiled, so nothing ran" \
+verdict_is refused "nothing compiled so nothing ran" \
     "application::allowed::tests::test_a" \
     "   Compiling wixen-mail v0.46.0 (C:\\Users\\prati\\Documents\\projects\\Wixen-Mail)
 error[E0425]: cannot find function \`may_i_read\` in this scope
@@ -291,7 +291,7 @@ test check::every case in this suite ran ... ok"
 
 # A shell case and a Rust test in one run, which is what a commit changing both
 # a suite and the code under it produces.
-verdict_is accepted "a shell case and a rust test, both named and both red" \
+verdict_is accepted "a shell case and a rust test both named and both red" \
     "check::the suites run before any mode branch
 application::allowed::tests::test_a" \
     "test check::the suites run before any mode branch ... FAILED

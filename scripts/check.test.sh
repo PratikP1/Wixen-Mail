@@ -113,9 +113,9 @@ expect "" "a source file no record names answers nothing" \
 # read across the whole tree. A record coupling a source file to one of them is
 # a true statement that buys this mapping nothing, and answering it would run
 # the same target twice.
-expect "" "a coupling to wired, which every scoped run already ends with" \
+expect "" "a coupling to wired which every scoped run already ends with" \
     "$registry" src/presentation/wx_app.rs
-expect "" "a coupling to house_style, likewise" \
+expect "" "a coupling to house_style likewise" \
     "$registry" src/application/draft_copy.rs
 
 # Several changed files at once, only one of them coupled.
