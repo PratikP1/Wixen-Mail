@@ -326,7 +326,15 @@ impl ServerListing {
 /// whole of the rule and it was written here in prose. [`ServerListing`] is what
 /// enforces it now, and this paragraph is the reason rather than the rule.
 fn uids_to_forget(on_server: &ServerListing, stored: &[u32]) -> Vec<u32> {
-    let present: std::collections::HashSet<u32> = on_server.uids().iter().copied().collect();
+    // A listing of part of a folder says nothing about the messages outside
+    // it. Every uid held and not named is one this listing never asked about,
+    // not one the server has lost, and the empty page is the case that would
+    // take a whole mailbox: nothing named, everything held, so everything
+    // held reads as gone.
+    let ServerListing::TheWholeMailbox(present) = on_server else {
+        return Vec::new();
+    };
+    let present: std::collections::HashSet<u32> = present.iter().copied().collect();
     let mut gone: Vec<u32> = stored
         .iter()
         .copied()
