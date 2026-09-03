@@ -218,6 +218,85 @@ pub fn language_of_this_machine() -> Option<String> {
     best_available_match(&wanted, &available_languages())
 }
 
+/// What this machine said when it was asked which languages it can check.
+///
+/// Two answers, because they mean opposite things and were the same value.
+/// A machine with no spell checkers installed and a machine whose spell
+/// checking could not be reached both produced an empty list, and nothing
+/// was written down either way.
+///
+/// The cost of that was not a test: `default_language` reads no languages,
+/// finds no match, and settles on English, so somebody writing in French got
+/// every word of their mail marked wrong on a first run where the platform
+/// call happened to fail. `Withdrawal` in `service::signed_mail` already
+/// draws this line, between a certificate really not withdrawn and one
+/// nobody could find out about, and for the same reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatThisMachineOffers {
+    /// It answered. The list may still be empty: a machine really can have no
+    /// spell checkers on it.
+    TheseLanguages(Vec<(String, String)>),
+    /// The question could not be put, with the reason in words.
+    CouldNotAsk { reason: String },
+}
+
+/// What this machine offers, asked once, on whichever platform this is.
+///
+/// The one place the question is put, so a caller cannot accidentally ask it
+/// twice and compare the answers with each other.
+pub fn what_this_machine_offers() -> WhatThisMachineOffers {
+    #[cfg(windows)]
+    {
+        windows_speller::WindowsSpeller::what_this_machine_offers()
+    }
+    #[cfg(not(windows))]
+    {
+        // Nothing was asked because there is nothing here to ask, which is an
+        // answer rather than a failure: the built-in list is what this machine
+        // offers, and `choices_from` already knows how to say so.
+        WhatThisMachineOffers::TheseLanguages(Vec::new())
+    }
+}
+
+/// Which language to check in, decided from what was asked rather than from
+/// what was reachable at the time.
+///
+/// Pure, so the three arms can be tested without a spell checking feature on
+/// the machine running the test. That is also what stops the test that used
+/// to cover this failing about one full library run in five: it compared two
+/// live platform calls against each other, and when one of them came back
+/// empty the two disagreed and neither was wrong.
+pub fn language_to_check_in(system: Option<&str>, offers: &WhatThisMachineOffers) -> String {
+    let Some(system) = system else {
+        // No language from the platform at all. English is a guess, and it is
+        // the only guess available.
+        return "en".to_string();
+    };
+    match offers {
+        // Nobody could be asked what this machine checks, so nothing is known
+        // about whether this language is checkable. Their own language is the
+        // better guess: if something can check it the setting is right, and if
+        // not they see their own language named rather than silently getting
+        // English. Choosing English here is what marked a French user's every
+        // word wrong.
+        WhatThisMachineOffers::CouldNotAsk { reason } => {
+            tracing::warn!(
+                "this machine could not be asked which languages it checks ({reason}), \
+                 so spelling is set to {system} without knowing whether anything can \
+                 check it"
+            );
+            system.to_string()
+        }
+        // Asked and answered. English when this machine can check nothing of
+        // theirs, which is a decision rather than an accident: English checked
+        // is better than nothing checked.
+        WhatThisMachineOffers::TheseLanguages(pairs) => {
+            best_available_match(&system.to_ascii_lowercase(), &choices_from(pairs.clone()))
+                .unwrap_or_else(|| "en".to_string())
+        }
+    }
+}
+
 /// Which of `choices` best answers `wanted`, if any.
 ///
 /// The exact tag first: en-GB should not settle for en-US when both are

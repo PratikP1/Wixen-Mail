@@ -158,6 +158,24 @@ impl WindowsSpeller {
     /// `find_regional_variant`) against lists it makes up itself, which is
     /// what actually needed pinning; this is the live data feeding it.
     pub fn supported_languages() -> Vec<String> {
+        match Self::what_this_machine_offers() {
+            crate::service::spellcheck::WhatThisMachineOffers::TheseLanguages(pairs) => {
+                pairs.into_iter().map(|(tag, _)| tag).collect()
+            }
+            crate::service::spellcheck::WhatThisMachineOffers::CouldNotAsk { .. } => Vec::new(),
+        }
+    }
+
+    /// The same question, with the two answers kept apart.
+    ///
+    /// An empty list used to mean either "this machine checks nothing" or
+    /// "the question could not be put", and nothing was written down either
+    /// way. The second reached a user: a failed call on a first run set their
+    /// spelling to English whatever language they write in. Everything that
+    /// only wants the tags still goes through `supported_languages` above.
+    pub fn what_this_machine_offers() -> crate::service::spellcheck::WhatThisMachineOffers {
+        use crate::service::spellcheck::WhatThisMachineOffers;
+
         ensure_com_initialised();
         let mut tags = Vec::new();
         // Safe: as above. `Next` reports how many it wrote, and nothing is read
@@ -168,10 +186,14 @@ impl WindowsSpeller {
                 None,
                 CLSCTX_INPROC_SERVER,
             ) else {
-                return tags;
+                return WhatThisMachineOffers::CouldNotAsk {
+                    reason: "this machine has no spell checking factory to ask".to_string(),
+                };
             };
             let Ok(languages) = factory.SupportedLanguages() else {
-                return tags;
+                return WhatThisMachineOffers::CouldNotAsk {
+                    reason: "the spell checking factory would not say what it supports".to_string(),
+                };
             };
             loop {
                 let mut buffer = [windows::core::PWSTR::null(); 1];
@@ -180,11 +202,12 @@ impl WindowsSpeller {
                     break;
                 }
                 if let Ok(tag) = buffer[0].to_string() {
-                    tags.push(tag);
+                    let name = display_name(&tag);
+                    tags.push((tag, name));
                 }
             }
         }
-        tags
+        WhatThisMachineOffers::TheseLanguages(tags)
     }
 }
 

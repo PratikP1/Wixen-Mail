@@ -463,7 +463,15 @@ fn default_true() -> bool {
 /// English when the machine's language is one nothing can check, because
 /// English checked is better than nothing checked.
 fn default_language() -> String {
-    crate::service::spellcheck::language_of_this_machine().unwrap_or_else(|| "en".to_string())
+    // Asked once, and the answer carries whether it could be asked at all.
+    // Two calls used to be made and compared, which is how a platform question
+    // that comes back empty under load turned into English for somebody who
+    // writes in French.
+    let system = crate::service::spellcheck::system_language();
+    crate::service::spellcheck::language_to_check_in(
+        system.as_deref(),
+        &crate::service::spellcheck::what_this_machine_offers(),
+    )
 }
 fn default_sort_order() -> String {
     "date_newest".to_string()
@@ -1395,12 +1403,75 @@ mod permission_tests {
         // language had every word of it called a mistake until they found the
         // setting, and finding a setting by hearing every word marked wrong is
         // not finding it. An upgraded file already followed the machine.
-        assert_eq!(
-            AppConfig::default().language,
-            crate::service::spellcheck::language_of_this_machine()
-                .unwrap_or_else(|| "en".to_string()),
-            "a fresh installation does not check spelling in this machine's language"
+        //
+        // This used to compare two live platform calls with each other and
+        // failed about one full library run in five, because the spell
+        // checking question can come back empty under thread pressure and then
+        // the two sides disagreed with neither being wrong. The arms below ask
+        // the decision directly instead, so it is the rule being tested rather
+        // than whether COM answered twice in a row.
+        assert!(
+            !AppConfig::default().language.is_empty(),
+            "a fresh installation has no language at all"
         );
+    }
+
+    use crate::service::spellcheck::{WhatThisMachineOffers, language_to_check_in};
+
+    #[test]
+    fn test_a_machine_that_could_not_be_asked_keeps_its_own_language() {
+        // The defect this whole distinction exists for. Asking the platform
+        // what it can check is a call that can fail, and when it did the answer
+        // was indistinguishable from "this machine checks nothing", so a French
+        // user's fresh install was set to English and every word of their mail
+        // was marked wrong.
+        //
+        // Nothing is known about whether French is checkable here, and that is
+        // the point: their own language is the better guess, because if
+        // something can check it the setting is already right, and if not they
+        // at least see their own language named rather than silently getting
+        // somebody else's.
+        let could_not_ask = WhatThisMachineOffers::CouldNotAsk {
+            reason: "the spell checking factory could not be created".to_string(),
+        };
+
+        assert_eq!(
+            language_to_check_in(Some("fr-FR"), &could_not_ask),
+            "fr-FR",
+            "a platform call that failed was read as a machine that checks nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_language_this_machine_can_check_is_the_one_it_checks_in() {
+        let offered = WhatThisMachineOffers::TheseLanguages(vec![(
+            "fr-FR".to_string(),
+            "Francais".to_string(),
+        )]);
+
+        assert_eq!(language_to_check_in(Some("fr-FR"), &offered), "fr-FR");
+    }
+
+    #[test]
+    fn test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose() {
+        // Different from the arm above and deliberately so. Here the question
+        // was put and answered: this machine really cannot check Welsh. English
+        // checked is better than nothing checked, which is a decision rather
+        // than an accident, and it is why the two cases had to stop sharing a
+        // value.
+        let offered = WhatThisMachineOffers::TheseLanguages(vec![(
+            "en-US".to_string(),
+            "English".to_string(),
+        )]);
+
+        assert_eq!(language_to_check_in(Some("cy-GB"), &offered), "en");
+    }
+
+    #[test]
+    fn test_a_machine_that_names_no_language_of_its_own_gets_english() {
+        let offered = WhatThisMachineOffers::TheseLanguages(Vec::new());
+
+        assert_eq!(language_to_check_in(None, &offered), "en");
     }
 
     #[test]
