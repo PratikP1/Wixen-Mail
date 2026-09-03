@@ -9630,7 +9630,7 @@ before = """        f.write_str(self.key())"""
 after = """        Ok(Default::default())"""
 red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 38 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 39 },
 ]
 
 [[guard]]
