@@ -5501,8 +5501,24 @@ fn runs_the_suite(line: &str) -> bool {
     !trimmed.starts_with('#')
         && trimmed.contains("cargo test")
         && !trimmed.contains("--doc")
-        && !trimmed.contains("--test ")
-        && !trimmed.contains("--lib ")
+        && targets_named_one_by_one(trimmed) != 1
+}
+
+/// How many targets a line picks out by name.
+///
+/// Counted rather than looked for, because the exemption above is for a line
+/// running ONE target on purpose. Written as "the line mentions `--test `" it
+/// exempted a line naming fifteen just as readily, which is an exemption
+/// wider than the thing it exempts, and it hid a real defect in `check.sh`
+/// for as long as that defect fitted on one line.
+///
+/// Whole words rather than substrings. `--all-targets` is not a named target
+/// and must not be read as one, and `cargo test --lib` with no filter after
+/// it names the library and is as exempt as `--lib some::module::`.
+fn targets_named_one_by_one(line: &str) -> usize {
+    line.split_whitespace()
+        .filter(|word| *word == "--test" || *word == "--lib")
+        .count()
 }
 
 fn stops_at_the_first_failure(line: &str) -> bool {

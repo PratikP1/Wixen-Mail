@@ -275,7 +275,13 @@ if [ "$mode" = "docs_only" ]; then
     # guard has already caught one this month. `checkbox_labels` and
     # `manager_delete_stays_open` read documents too.
     cargo test --lib help_page::
-    cargo test --test house_style --test docs_links --test wired \
+    # --no-fail-fast because this names five targets, and without it a red
+    # `house_style` meant the other four never started. Found on 2026-09-03 by
+    # `test_one_failing_target_does_not_hide_the_rest`, the moment its exemption
+    # was narrowed from "the line names a target" to "the line names exactly
+    # one". This is the same defect that was fixed in the scoped run below, in
+    # the same shape, on a line the wider exemption could not see.
+    cargo test --no-fail-fast --test house_style --test docs_links --test wired \
         --test checkbox_labels --test manager_delete_stays_open
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
@@ -346,11 +352,12 @@ run_the_tests_that_reach_what_changed() {
     # small enough that nobody looked at it twice.
     #
     # Found on 2026-09-02 by `test_one_failing_target_does_not_hide_the_rest`,
-    # which reads this file. It exempts a line carrying `--test ` as one that
-    # runs a named target on purpose, so the old spelling was exempt while
+    # which reads this file. It used to exempt a line carrying `--test ` as one
+    # that runs a named target on purpose, so the old spelling was exempt while
     # having the defect; building the targets into an array took the flag out of
-    # the text and the guard spoke. The exemption is wider than it means to be,
-    # and that is written up rather than widened further here.
+    # the text and the guard spoke. The exemption now counts the targets and
+    # covers only a line naming exactly one, which found the same defect on the
+    # documents-only run above the moment it was narrowed.
     cargo test --no-fail-fast "${tree_targets[@]}" >> "$run_log" 2>&1 || status=1
     return $status
 }
