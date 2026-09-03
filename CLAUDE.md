@@ -422,24 +422,44 @@ is green and the tests pass. What it means is that a guard is weaker than its
 record claims, and nobody has been told. That has to be caught reliably. It does
 not have to be caught before a merge.
 
-So: the executor does not run guards, and neither does the merge. After merging,
-run the records the branch could have disturbed, in the background:
+So: the executor does not run guards, the merge does not run guards, and neither
+does anything after a merge. **One sweep, once every phase is complete.** That is
+a decision of 2026-09-03 and not a measurement. Nothing about a sweep gets
+cheaper by happening sooner, and a sweep per merge spent about 90 minutes of
+every branch to find, across the last 220 records measured, one problem.
+
+What holds the line in between is not the sweep, and saying which checks do the
+work matters more than the rule itself. On every commit,
+`test_every_guard_record_says_how_many_tests_the_files_it_names_held` names the
+records a changed test count could have made stale and prints the command that
+re-measures them, and `test_every_test_a_guard_record_names_is_a_test_that_exists`
+catches a rename before it turns a record unmeasurable. Both cost milliseconds.
+**Running the scoped remedy when a commit prints it is not optional**, and it is
+the reason the deferral is affordable: phase 2.1 ran that remedy throughout, and
+its 220-record sweep afterwards found one problem where an earlier 208-record
+sweep had found 23.
 
 ```bash
-scripts/guards.sh --touched-by <the commit the branch left main at>
+scripts/guards.sh --touched-by <a commit to compare against>   # scoped, still there
+scripts/guards.sh                                              # the whole sweep
 ```
 
-That reads the diff and measures every record those files could have made stale,
-both ways round: the guarded file changed so the break may no longer apply, or a
-record already names a test in a module that changed so its red set may have
-grown. What it finds becomes a follow-up commit correcting the record.
+**What the decision costs, said plainly.** The sweep will run against a tree many
+phases past the changes it is judging, so a record found stale will have gone
+stale for a reason somebody has to reconstruct rather than remember, and
+everything it finds will arrive while the milestone is trying to close. That is
+accepted because a stale record breaks nothing and the two per-commit checks
+cover the common case. It is carried as a success criterion of phase 8 rather
+than left here as a sentence, for the reason this file keeps giving: a rule that
+lives in a document is one somebody has to notice being broken.
 
-**Know what it costs before starting it.** For plan 02-01 that is 63 records of
-536, about 90 minutes. Narrowing the rule to modules that actually gained a test
-only reaches 52, because one large shared file gained tests and many records name
-a test in it, so there is no clever selection that makes this quick. The whole
-sweep is 536 records and about 15 hours, which is an overnight job rather than an
-impossible one since the thread setting halved it.
+**Know what it costs before starting it.** The whole sweep is 564 records and
+about 15 hours, an overnight job rather than an impossible one since the thread
+setting halved it. Scoped to a single branch it was 63 records of the 536 that
+existed then, about 90 minutes, for plan 02-01. Narrowing that to modules which
+actually gained a test only reached 52, because one large shared file gained
+tests and many records name a test in it, so there is no clever selection that
+makes a scoped run quick either.
 
 That setting is `WIXEN_TEST_THREADS`, it defaults to 4, and it applies to the
 guard runs only. Measured on 24 logical cores over the 5,837-test library run on

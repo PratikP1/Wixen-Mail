@@ -357,7 +357,8 @@ Planning on 2026-09-02 re-checked every criterion against the tree again and fou
   2. The message list is exercised against 200,000 synthetic rows, the sort, filter and scroll paths each produce a number, and a test asserts the virtual text callback issues no SQLite query.
   3. Every count in the documentation carries the command it came from and the date it was taken, and the documents agree with each other. Nothing asserts that a written number equals what a tool reports today, because that is false the next time anyone adds a test. Low coverage is attributed to the untested network transport rather than treated as a number to raise.
   4. One whole-tree mutation run completes, its report is read after the process exits, and every survivor is either killed with a test or recorded with a reason.
-  5. Each target is either met or revised with the reason written down.
+  5. One whole-tree guard sweep completes, `scripts/guards.sh` unfiltered over every record in `guards/guards.toml`, and each record it reports short is corrected by hand and then re-measured. This is the one sweep of the milestone: by the decision of 2026-09-03 no sweep runs per merge or per phase, so nothing before this point has re-measured a record that only the whole sweep can reach. Expect roughly 15 hours and expect findings, since the tree will be many phases past the changes being judged.
+  6. Each target is either met or revised with the reason written down.
 
 **Plans**: TBD
 
@@ -369,8 +370,9 @@ the earlier phases produce and can be reordered if something makes that useful.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Folders and conversations | 13/13 | Complete | 2026-08-31 |
-| 2. Search that says what it covers | 9/9 | In Progress|  |
+| 1. Folders and conversations | 14/14 | Executed, verification human_needed | - |
+| 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
+| 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 0/TBD | Not started | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
