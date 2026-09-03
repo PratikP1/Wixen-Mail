@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 105 },
+    { file = "src/application/mail_sync.rs", tests = 109 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 197 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4036,7 +4036,7 @@ tests_last_seen = [
 [[guard]]
 name = "a mailbox the server counted and then would not list is not one that emptied"
 file = "src/application/mail_sync.rs"
-before = """    if listing_contradicts_the_count(on_server.len(), counts.total) {
+before = """    if listing_contradicts_the_count(on_server.uids().len(), counts.total) {
         let counted = crate::service::caldav::how_many(counts.total as usize, "message");
         let name = &folder.name;
         return Err(Error::Protocol(format!(
@@ -4050,7 +4050,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 105 },
+    { file = "src/application/mail_sync.rs", tests = 109 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4083,7 +4083,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 105 },
+    { file = "src/application/mail_sync.rs", tests = 109 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
