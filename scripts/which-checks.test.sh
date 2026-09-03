@@ -16,7 +16,8 @@ set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 subject="$root/scripts/which-checks.sh"
 
-failures=0
+# shellcheck source=scripts/shell-suite.sh
+. "$root/scripts/shell-suite.sh"
 
 expect() {
     local want="$1" desc="$2"
@@ -25,13 +26,12 @@ expect() {
     got="$("$subject" "$@" 2>/dev/null)"
     status=$?
     if [ "$status" -ne 0 ]; then
-        echo "FAIL [$desc]: refused (exit $status) instead of answering '$want'"
-        echo "       args: $*"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" \
+            "refused (exit $status) instead of answering '$want'" "args: $*"
     elif [ "$got" != "$want" ]; then
-        echo "FAIL [$desc]: answered '$got', wanted '$want'"
-        echo "       args: $*"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "answered '$got', wanted '$want'" "args: $*"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -41,9 +41,9 @@ expect_refused() {
     local desc="$1"
     shift
     if "$subject" "$@" >/dev/null 2>&1; then
-        echo "FAIL [$desc]: answered instead of refusing"
-        echo "       args: $*"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "answered instead of refusing" "args: $*"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -183,9 +183,4 @@ expect_refused "a marker that names nothing" \
 expect_refused "a message file that is not there" \
     --message-file="$red_marker.absent" gsd/plan-02-02 src/application/saved_searches.rs
 
-if [ "$failures" -eq 0 ]; then
-    echo "which-checks: all cases pass"
-else
-    echo "which-checks: $failures case(s) failed"
-    exit 1
-fi
+suite_verdict

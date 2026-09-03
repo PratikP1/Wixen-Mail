@@ -110,15 +110,43 @@ once. It is one red commit covering the whole task, naming the real failures and
 the count check together, with the reason in the message. That keeps the red
 honest: it still says exactly what failed and is still held to it.
 
-**A shell suite under `scripts/` cannot be committed red at all, and that is a
-hole rather than a rule.** `check.sh` runs every `scripts/*.test.sh` under
-`set -e` before it branches on the mode, so a failing suite stops the gate before
-the red branch is reached and `red-commit.sh` never gets to judge it. Even past
-that ordering, `red-commit.sh` reads cargo's `test NAME ... FAILED` lines, which
-a shell suite never produces, so a named shell case would report as never having
-run. Measured by hand on 2026-09-02 and recorded as windows ledger 39. Until it
-is fixed, a new shell suite and the code that makes it pass arrive in one commit,
-and the commit says which cases were red and what they said.
+**A case in a shell suite is committed red the same way, and the name is
+`<suite>::<the case description>`:**
+
+```
+test(gate): failing case for the mode nobody routed
+
+Fails-until-green: which-checks::a branch, a red commit touching only documents
+```
+
+The suite name is the file name without `.test.sh`, and the description is the
+string the case was written with. Both halves of the gate had to change for that
+to work, and they were windows ledger 39 until 2026-09-03. `check.sh` ran every
+`scripts/*.test.sh` under `set -e` before it branched on the mode, so a failing
+suite stopped the run several branches above `red` and `red-commit.sh` was never
+asked; it now collects their output into the same run log the scoped cargo runs
+append to, and refuses on it in every mode but `red`. And `red-commit.sh` reads
+cargo's `test NAME ... FAILED` lines, which a shell suite never produced, so a
+named case reported as never having run; `scripts/shell-suite.sh` now prints one
+such line per case, passing as well as failing, so all three conditions hold
+across both kinds of test at once. `red-commit.sh` itself did not change.
+
+The passing line is the half worth understanding. Without it, a named case that
+passed and a name nobody ever wrote are the same silence, and "every named test
+ran" cannot be asked at all.
+
+Two things a suite must therefore do. Report every case, on the passing path as
+well as the failing one, through `suite_case_passed` and `suite_case_failed`.
+And end at `suite_verdict`, which prints the line saying it got there;
+`check.sh` refuses a run where a suite stopped short of it, in every mode
+including `red`, because the cases it never reached said nothing and a run like
+that cannot be judged. Two cases sharing a description are refused for the same
+reason: a commit naming one of them cannot say which.
+
+**One kind of shell change still cannot be split, and it is this mechanism
+itself.** A case asserting how the red gate treats shell suites is red until the
+gate treats them that way, and committing it red needs the very thing it is
+about. The commit that closed ledger 39 was therefore one commit, and said so.
 
 This existed as a hole for one day and nobody noticed, which is the point of writing it down here.
 Phase 1 committed failing tests freely because no hook was installed. Turning the hook on closed the

@@ -11,10 +11,11 @@ set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 subject="$root/scripts/red-commit.sh"
 
+# shellcheck source=scripts/shell-suite.sh
+. "$root/scripts/shell-suite.sh"
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-
-failures=0
 
 # What `names` prints for a message, as one string with newlines shown as `|`
 # so a case reads on one line, **and** whether it succeeded.
@@ -35,11 +36,12 @@ expect_names() {
     got="$(paste -sd '|' - < "$work/out")"
 
     if [ "$status" -ne 0 ]; then
-        echo "FAIL [$desc]: refused the message (exit $status) instead of reading '$want'"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" \
+            "refused the message (exit $status) instead of reading '$want'"
     elif [ "$got" != "$want" ]; then
-        echo "FAIL [$desc]: read '$got', wanted '$want'"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "read '$got', wanted '$want'"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -47,8 +49,9 @@ expect_names_refused() {
     local desc="$1" message="$2"
     printf '%s' "$message" > "$work/msg"
     if "$subject" names "$work/msg" >/dev/null 2>&1; then
-        echo "FAIL [$desc]: accepted a malformed marker instead of refusing it"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "accepted a malformed marker instead of refusing it"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -170,9 +173,10 @@ verdict_is() {
     local got=refused
     [ "$status" -eq 0 ] && got=accepted
     if [ "$got" != "$want" ]; then
-        echo "FAIL [$desc]: $got the run, wanted it $want"
-        echo "       said: $(head -2 "$work/said" | paste -sd ' ' -)"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "$got the run, wanted it $want" \
+            "said: $(head -2 "$work/said" | paste -sd ' ' -)"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -251,9 +255,52 @@ test application::allowed::tests::test_a ... FAILED
 
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"
 
-if [ "$failures" -eq 0 ]; then
-    echo "red-commit: all cases pass"
-else
-    echo "red-commit: $failures case(s) failed"
-    exit 1
-fi
+# ── A case in a shell suite is named the same way ───────────────────────────
+# `scripts/shell-suite.sh` prints one line per case in the shape cargo prints,
+# so a `scripts/*.test.sh` case can be the red half of red/green. Nothing here
+# changed to allow that: these cases say what this reader already did with a
+# name it had never been given, which is why they were green the moment they
+# were written and are a description rather than a specification.
+#
+# The name is `<suite>::<case description>`, so it holds spaces and punctuation
+# where a Rust path holds none. That is the half worth asserting: the reader
+# strips a known prefix and a known suffix rather than splitting on whitespace,
+# and it would be easy for it not to.
+
+verdict_is accepted "a shell case named as failing and failing" \
+    "check::the suites run before any mode branch" \
+    "test check::a source file no record names answers nothing ... ok
+test check::the suites run before any mode branch ... FAILED
+test check::every case in this suite ran ... ok"
+
+verdict_is refused "a shell case that failed and was not named" \
+    "check::the suites run before any mode branch" \
+    "test check::a source file no record names answers nothing ... FAILED
+test check::the suites run before any mode branch ... FAILED
+test check::every case in this suite ran ... ok"
+
+verdict_is refused "a shell case named as failing that passed" \
+    "check::a source file no record names answers nothing" \
+    "test check::a source file no record names answers nothing ... ok
+test check::every case in this suite ran ... ok"
+
+verdict_is refused "a shell case named as failing that no suite reported" \
+    "check::a case nobody wrote" \
+    "test check::a source file no record names answers nothing ... ok
+test check::every case in this suite ran ... ok"
+
+# A shell case and a Rust test in one run, which is what a commit changing both
+# a suite and the code under it produces.
+verdict_is accepted "a shell case and a rust test, both named and both red" \
+    "check::the suites run before any mode branch
+application::allowed::tests::test_a" \
+    "test check::the suites run before any mode branch ... FAILED
+test check::every case in this suite ran ... ok
+
+running 2 tests
+test application::allowed::tests::test_a ... FAILED
+test application::allowed::tests::test_b ... ok
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"
+
+suite_verdict

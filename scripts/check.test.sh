@@ -26,7 +26,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 subject="$root/scripts/check.sh"
 registry="$root/guards/guards.toml"
 
-failures=0
+# shellcheck source=scripts/shell-suite.sh
+. "$root/scripts/shell-suite.sh"
 
 # The mapping's answer as one line, so a case reads as a sentence.
 #
@@ -42,9 +43,9 @@ expect() {
     local got
     got="$(answer "$@")"
     if [ "$got" != "$want" ]; then
-        echo "FAIL [$desc]: answered '$got', wanted '$want'"
-        echo "       args: $*"
-        failures=$((failures + 1))
+        suite_case_failed "$desc" "answered '$got', wanted '$want'" "args: $*"
+    else
+        suite_case_passed "$desc"
     fi
 }
 
@@ -67,11 +68,10 @@ expect_among() {
     local got
     got="$(answer "$@")"
     case " $got " in
-        *" $want "*) ;;
+        *" $want "*) suite_case_passed "$desc" ;;
         *)
-            echo "FAIL [$desc]: answered '$got', which does not include '$want'"
-            echo "       args: $*"
-            failures=$((failures + 1))
+            suite_case_failed "$desc" \
+                "answered '$got', which does not include '$want'" "args: $*"
             ;;
     esac
 }
@@ -83,16 +83,11 @@ expect_not_among() {
     got="$(answer "$@")"
     case " $got " in
         *" $unwanted "*)
-            echo "FAIL [$desc]: answered '$got', which still includes '$unwanted'"
-            echo "       args: $*"
-            failures=$((failures + 1))
+            suite_case_failed "$desc" \
+                "answered '$got', which still includes '$unwanted'" "args: $*"
             ;;
+        *) suite_case_passed "$desc" ;;
     esac
-}
-
-fail() {
-    echo "FAIL [$1]: $2"
-    failures=$((failures + 1))
 }
 
 work="$(mktemp -d)"
@@ -140,8 +135,11 @@ uncoupled="$work/registry-without-the-suite.toml"
 grep -v '^suite = "manager_dialog_labels"$' "$registry" > "$uncoupled" || true
 removed=$(( $(wc -l < "$registry") - $(wc -l < "$uncoupled") ))
 if [ "$removed" -ne 1 ]; then
-    fail "the copy of the registry differs by exactly one line" \
-        "removed $removed lines, wanted 1; the case below would pass for the wrong reason"
+    suite_case_failed "the copy of the registry differs by exactly one line" \
+        "removed $removed lines, wanted 1" \
+        "the case below would pass for the wrong reason"
+else
+    suite_case_passed "the copy of the registry differs by exactly one line"
 fi
 expect_not_among manager_dialog_labels "taking the suite line off that record leaves the file uncoupled" \
     "$uncoupled" src/presentation/wx_managers.rs
@@ -319,16 +317,21 @@ ask_check_sh_for_a_mode() {
 unknown_mode_output="$(ask_check_sh_for_a_mode not-a-mode-this-script-knows)"
 unknown_mode_status=$?
 if [ "$unknown_mode_status" -eq 0 ]; then
-    fail "an argument check.sh does not know" "answered instead of refusing"
+    suite_case_failed "an argument check.sh does not know is refused" \
+        "answered instead of refusing"
 elif [ "$unknown_mode_status" -eq 124 ]; then
-    fail "an argument check.sh does not know" \
+    suite_case_failed "an argument check.sh does not know is refused" \
         "ran for thirty seconds instead of refusing, which is the gate running"
+else
+    suite_case_passed "an argument check.sh does not know is refused"
 fi
 case "$unknown_mode_output" in
-    *"is not a mode this script knows"*) ;;
+    *"is not a mode this script knows"*)
+        suite_case_passed "the refusal says the argument was the problem"
+        ;;
     *)
-        fail "an argument check.sh does not know" \
-            "did not say the argument was the problem: '$unknown_mode_output'"
+        suite_case_failed "the refusal says the argument was the problem" \
+            "said instead: '$unknown_mode_output'"
         ;;
 esac
 
@@ -337,13 +340,18 @@ esac
 # has to get past that guard. Each is asked from the same empty directory, where
 # it gets past the guard and then stops at the first thing it tries to do, so
 # the case costs a fork rather than a build.
+#
+# Named one case per mode rather than one case for the loop. A case a commit
+# message can name has to say which mode it is about, and a shared description
+# would report `ok` and `FAILED` under one name in the same run.
 for known_mode in all all_but_slow affected docs_only red; do
     known_mode_output="$(ask_check_sh_for_a_mode "$known_mode")"
     case "$known_mode_output" in
         *"is not a mode this script knows"*)
-            fail "the modes which-checks.sh can answer" \
-                "check.sh refused '$known_mode', which which-checks.sh answers"
+            suite_case_failed "check.sh knows the mode $known_mode" \
+                "which-checks.sh answers '$known_mode' and check.sh refused it"
             ;;
+        *) suite_case_passed "check.sh knows the mode $known_mode" ;;
     esac
 done
 
@@ -354,18 +362,162 @@ done
 # no mode can skip it.
 suite_loop_at="$(grep -n 'for suite in' "$subject" | head -1 | cut -d: -f1)"
 first_mode_branch_at="$(grep -n 'if \[ "\$mode" = ' "$subject" | head -1 | cut -d: -f1)"
-if [ -z "$suite_loop_at" ]; then
-    fail "check.sh runs every scripts/*.test.sh" "no loop over the suites found in check.sh"
-elif [ -z "$first_mode_branch_at" ]; then
-    fail "check.sh branches on a mode" "no mode branch found in check.sh, so the ordering cannot be judged"
-elif [ "$suite_loop_at" -ge "$first_mode_branch_at" ]; then
-    fail "the suites run before any mode branch" \
-        "the loop is at line $suite_loop_at and the first mode branch at $first_mode_branch_at"
+
+if [ -n "$suite_loop_at" ]; then
+    suite_case_passed "check.sh runs every scripts/*.test.sh"
+else
+    suite_case_failed "check.sh runs every scripts/*.test.sh" \
+        "no loop over the suites found in check.sh"
 fi
 
-if [ "$failures" -eq 0 ]; then
-    echo "check: all cases pass"
+if [ -n "$first_mode_branch_at" ]; then
+    suite_case_passed "check.sh branches on a mode"
 else
-    echo "check: $failures case(s) failed"
-    exit 1
+    suite_case_failed "check.sh branches on a mode" \
+        "no mode branch found in check.sh, so the ordering cannot be judged"
 fi
+
+if [ -z "$suite_loop_at" ] || [ -z "$first_mode_branch_at" ]; then
+    suite_case_failed "the suites run before any mode branch" \
+        "one of the two lines was not found, so the ordering cannot be judged"
+elif [ "$suite_loop_at" -ge "$first_mode_branch_at" ]; then
+    suite_case_failed "the suites run before any mode branch" \
+        "the loop is at line $suite_loop_at and the first mode branch at $first_mode_branch_at"
+else
+    suite_case_passed "the suites run before any mode branch"
+fi
+
+# ── And a failing suite does not stop the gate before that branch ───────────
+# The ordering above was only half of what windows ledger 39 was. The loop ran
+# before any mode branch and it ran under `set -e`, so a failing suite aborted
+# the gate there, several branches above `red`, and `red-commit.sh` was never
+# asked for a verdict. A shell case could be written but never committed red.
+#
+# Read out of `check.sh` rather than run, for the same reason as the ordering:
+# running it is minutes. The end-to-end proof is a commit, and the three ways it
+# can go are the ones `red-commit.sh` is held to.
+# Anchored past leading whitespace and away from a comment marker, because the
+# comment above that loop quotes the old spelling of the line while explaining
+# what was wrong with it. Read without the anchor, this found the comment first
+# and reported the defect it describes as the defect it is about. Which is the
+# same shape as the check above it: a scan that reads prose as the thing.
+suite_run_line="$(grep -n '^[[:space:]]*bash "\$suite"' "$subject" | head -1)"
+suite_run_at="${suite_run_line%%:*}"
+suite_run_text="${suite_run_line#*:}"
+run_log_at="$(grep -n '^run_log=' "$subject" | head -1 | cut -d: -f1)"
+
+case "$suite_run_text" in
+    *"||"*) suite_case_passed "a failing suite does not abort the gate where it runs" ;;
+    *)
+        suite_case_failed "a failing suite does not abort the gate where it runs" \
+            "the line that runs a suite has no failure branch: $suite_run_text" \
+            "under set -e that stops the run before the mode is looked at"
+        ;;
+esac
+
+case "$suite_run_text" in
+    *'>> "$run_log"'*)
+        suite_case_passed "the suites' cases are collected where the verdict reads them"
+        ;;
+    *)
+        suite_case_failed "the suites' cases are collected where the verdict reads them" \
+            "the line that runs a suite does not append to the run log: $suite_run_text"
+        ;;
+esac
+
+if [ -z "$run_log_at" ] || [ -z "$suite_run_at" ]; then
+    suite_case_failed "the run log is opened before the suites run" \
+        "one of the two lines was not found, so the ordering cannot be judged"
+elif [ "$run_log_at" -ge "$suite_run_at" ]; then
+    suite_case_failed "the run log is opened before the suites run" \
+        "the log is opened at line $run_log_at and a suite runs at line $suite_run_at"
+else
+    suite_case_passed "the run log is opened before the suites run"
+fi
+
+# ── What a suite prints, proved against a suite written here ────────────────
+# `red-commit.sh` can only hold a run to "every named case ran" if a passing
+# case says so out loud, and a case that says nothing when it passes is
+# indistinguishable from a name nobody wrote. So both outcomes are asserted, and
+# so is the line saying the suite reached its own end.
+#
+# Written and run here rather than asserted about the three real suites, because
+# a fixture can be made to fail on purpose and the real ones cannot.
+fixture="$work/fixture.test.sh"
+cat > "$fixture" <<EOF
+#!/usr/bin/env bash
+. "$root/scripts/shell-suite.sh"
+suite_case_passed "one that holds"
+suite_case_failed "one that does not" "because it was told not to"
+suite_verdict
+EOF
+
+fixture_said="$(bash "$fixture" 2>&1)"
+fixture_status=$?
+
+expect_fixture_says() {
+    local want="$1" desc="$2" said="$3"
+    case "$said" in
+        *"$want"*) suite_case_passed "$desc" ;;
+        *) suite_case_failed "$desc" "did not print '$want'" "printed: $said" ;;
+    esac
+}
+
+expect_fixture_silent_about() {
+    local unwanted="$1" desc="$2" said="$3"
+    case "$said" in
+        *"$unwanted"*)
+            suite_case_failed "$desc" "printed '$unwanted' and should not have" \
+                "printed: $said"
+            ;;
+        *) suite_case_passed "$desc" ;;
+    esac
+}
+
+expect_fixture_says "test fixture::one that holds ... ok" \
+    "a passing case prints a line saying it ran" "$fixture_said"
+expect_fixture_says "test fixture::one that does not ... FAILED" \
+    "a failing case prints a line in the shape the verdict reads" "$fixture_said"
+expect_fixture_says "test fixture::every case in this suite ran ... ok" \
+    "a suite that reaches its verdict says so" "$fixture_said"
+# The detail a person reads is still there. The machine line went beside it
+# rather than instead of it.
+expect_fixture_says "FAIL [one that does not]: because it was told not to" \
+    "the human-readable detail survives beside the machine line" "$fixture_said"
+if [ "$fixture_status" -ne 0 ]; then
+    suite_case_passed "a suite with a failing case still exits non-zero"
+else
+    suite_case_failed "a suite with a failing case still exits non-zero" \
+        "exited 0, so every mode but red would let it through"
+fi
+
+# Two cases under one name is a name a commit cannot use, because nothing says
+# which of them it meant and the reader keeps one outcome per name.
+twice="$work/twice.test.sh"
+cat > "$twice" <<EOF
+#!/usr/bin/env bash
+. "$root/scripts/shell-suite.sh"
+suite_case_passed "the same words"
+suite_case_passed "the same words"
+suite_verdict
+EOF
+twice_said="$(bash "$twice" 2>&1)"
+expect_fixture_says "test twice::no case name is used twice ... FAILED" \
+    "a name used twice is reported as a failing case of its own" "$twice_said"
+
+# And a suite that dies partway prints no line saying it reached its end, which
+# is what `check.sh` refuses on before it looks at the marker.
+died="$work/died.test.sh"
+cat > "$died" <<EOF
+#!/usr/bin/env bash
+. "$root/scripts/shell-suite.sh"
+suite_case_passed "one that holds"
+exit 3
+EOF
+died_said="$(bash "$died" 2>&1)"
+expect_fixture_says "test died::one that holds ... ok" \
+    "a suite that dies still reported the cases it reached" "$died_said"
+expect_fixture_silent_about "every case in this suite ran" \
+    "a suite that dies does not say it reached its end" "$died_said"
+
+suite_verdict

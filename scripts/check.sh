@@ -251,11 +251,66 @@ cargo clippy --all-targets --all-features -- -D warnings
 #
 # In every mode and before every other decision, because they cost milliseconds
 # and because the mode was chosen by the very script under test.
+#
+# # Why the output is collected rather than left to abort the run
+#
+# This loop used to be `bash "$suite"` under `set -e`, so a failing suite stopped
+# the gate here, several branches above the `red` one. A `scripts/*.test.sh`
+# case could therefore never be committed red: the run died before
+# `red-commit.sh` was asked for a verdict, and the answer was to commit a new
+# suite and the code that makes it pass together, which is the thing red/green
+# exists to stop. That was windows ledger 39.
+#
+# Nothing is forgiven by collecting it. Every mode but `red` refuses the commit
+# immediately below, with the whole output. In `red` the failure is handed to
+# exactly the verdict a cargo failure gets, because the suites print a line per
+# case in the shape cargo prints, and the three conditions then hold across both
+# kinds of test at once: every named case ran, every named case failed, and
+# nothing else failed.
+#
+# The whole output of every run below is kept for the same reason, so the log is
+# opened here rather than after the mode branches.
+run_log="$(mktemp)"
+trap 'rm -f "$run_log"' EXIT
+
 echo "== the scripts that decide what runs =="
+shell_suites_failed=""
+shell_suites_run=()
 for suite in "$(dirname "$0")"/*.test.sh; do
     [ -e "$suite" ] || continue
-    bash "$suite"
+    suite_name="$(basename "$suite" .test.sh)"
+    shell_suites_run+=("$suite_name")
+    echo "-- $suite_name"
+    bash "$suite" >> "$run_log" 2>&1 || shell_suites_failed=yes
 done
+
+# A suite that died partway through, on an unset variable or a syntax error,
+# left its remaining cases unrun and said so nowhere a name could match. In
+# `red` that would read as a clean run with one expected failure in it, so it is
+# refused in every mode, before the marker is looked at. `shell-suite.sh` prints
+# this line from its own verdict, which a suite that died never reaches.
+for suite_name in "${shell_suites_run[@]+"${shell_suites_run[@]}"}"; do
+    if ! grep -qxF "test $suite_name::every case in this suite ran ... ok" "$run_log"; then
+        echo >&2
+        echo "$suite_name.test.sh stopped before it reached its own verdict, so the" >&2
+        echo "cases it did not get to said nothing and this run cannot be judged." >&2
+        echo >&2
+        cat "$run_log" >&2
+        exit 1
+    fi
+done
+
+# Refused here in every mode but `red`, where the marker decides instead.
+if [ -n "$shell_suites_failed" ] && [ "$mode" != red ]; then
+    echo >&2
+    echo "A suite that decides what this gate runs is failing:" >&2
+    echo >&2
+    grep -E '^(FAIL |       )' "$run_log" >&2 || cat "$run_log" >&2
+    echo >&2
+    echo "A case here can be committed red on a branch, by naming it:" >&2
+    echo "    Fails-until-green: <suite>::<the case description>" >&2
+    exit 1
+fi
 
 if [ "$mode" = "all_but_slow" ]; then
     echo
@@ -291,13 +346,12 @@ if [ "$mode" = "docs_only" ]; then
     exit 0
 fi
 
-# The whole output of every scoped run, kept rather than summarised. It used to
-# be piped through `tail -3` per module, which threw away the names of the tests
-# that failed and left a gate that said something was wrong without saying what.
-# `red` needs the full text anyway, to see which tests failed.
-run_log="$(mktemp)"
-trap 'rm -f "$run_log"' EXIT
-
+# The scoped runs below append to the same log, kept rather than summarised. It
+# used to be piped through `tail -3` per module, which threw away the names of
+# the tests that failed and left a gate that said something was wrong without
+# saying what. `red` needs the full text anyway, to see which tests failed, and
+# it needs the shell suites' cases in the same place for the same reason.
+#
 # A unit test lives beside the code it covers, so a changed `src/a/b.rs` is
 # covered by `--lib a::b::`. The source-reading guards run whatever changed,
 # because they read across the whole tree and a change anywhere can redden one:
