@@ -580,13 +580,22 @@ impl<I: Source<Item = f32>> Source for Faded<I> {
     }
 }
 
+/// The rate every tone here is produced at, in samples per second.
+///
+/// `SineWave` is fixed at 48kHz mono. This was a `const` inside `sound_for`
+/// while its own doc comment said every caller gets the rate from here rather
+/// than assuming it, which no caller could: it was not in scope for one. It
+/// is now, and `EarconPlayer::detached` builds its mixer at this rate so a
+/// test reads back the samples that were written rather than resampled ones.
+const TONE_SAMPLE_RATE: u32 = 48_000;
+
 /// A tone as a real sound rather than a fact about frequency and length.
 ///
 /// `SineWave` is fixed at 48kHz mono, which is why nothing here takes a
 /// sample rate as a parameter: there is only the one, and every caller gets
-/// it from here rather than assuming it.
+/// it from `TONE_SAMPLE_RATE` rather than assuming it.
 fn sound_for(tone: Tone) -> impl Source<Item = f32> {
-    const SAMPLE_RATE: u64 = 48_000;
+    const SAMPLE_RATE: u64 = TONE_SAMPLE_RATE as u64;
     let total_samples = SAMPLE_RATE * tone.millis as u64 / 1000;
     let edge_samples = (SAMPLE_RATE * TONE_EDGE.as_millis() as u64 / 1000).max(1);
     Faded {
@@ -604,14 +613,36 @@ fn sound_for(tone: Tone) -> impl Source<Item = f32> {
 /// Guardrail: feedback must be bounded. A syncing mailbox can raise the same
 /// event forty times a second, and forty overlapping tones is not information,
 /// it is noise that drives people to switch sound off for good.
-#[derive(Debug)]
 pub struct EarconPlayer {
     last_played: std::sync::Mutex<Option<std::time::Instant>>,
-    /// The open output device, or `None` on a machine with no audio device
-    /// to open, or none `rodio`'s own fallback search could find. Held for
-    /// as long as the player exists: `rodio` stops playing the moment this
-    /// is dropped, so there is nowhere shorter-lived it could live.
-    device: Option<rodio::MixerDeviceSink>,
+    /// The open output device. Held for as long as the player exists and read
+    /// by nothing: `rodio` stops playing the moment this is dropped, so there
+    /// is nowhere shorter-lived it could live. `None` on a machine with no
+    /// audio device to open, and `None` in a test, which plays into a mixer
+    /// of its own.
+    _device: Option<rodio::MixerDeviceSink>,
+    /// Where a sound goes, which is the device's own mixer in the running
+    /// program. `None` when there is nothing to play through, and that is
+    /// what makes `play` answer false rather than pretend.
+    ///
+    /// Separate from the device because a mixer does not need one. A test
+    /// gets a detached mixer and can read back what was played, which is a
+    /// stronger question than the boolean, and it asks that question on a
+    /// machine with no sound card. GitHub's Windows runners have none, and
+    /// `rodio` 0.22.2 does not fail cleanly there: it opens something and
+    /// then faults on the first write, taking the whole test binary with it.
+    mixer: Option<rodio::mixer::Mixer>,
+}
+
+/// Written out because `rodio::mixer::Mixer` has no `Debug`, and derived
+/// `Debug` on a struct holding one does not compile.
+impl std::fmt::Debug for EarconPlayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EarconPlayer")
+            .field("last_played", &self.last_played)
+            .field("has_somewhere_to_play", &self.mixer.is_some())
+            .finish()
+    }
 }
 
 /// Shortest gap between two earcons.
@@ -627,14 +658,45 @@ impl Default for EarconPlayer {
 
 impl EarconPlayer {
     pub fn new() -> Self {
+        // A machine with no audio device, or one none of rodio's own
+        // fallback attempts could open, gets a silent player rather
+        // than a construction failure: a missing sound is a smaller
+        // problem than an application that will not start over one.
+        let device = rodio::DeviceSinkBuilder::open_default_sink().ok();
         Self {
             last_played: std::sync::Mutex::new(None),
-            // A machine with no audio device, or one none of rodio's own
-            // fallback attempts could open, gets a silent player rather
-            // than a construction failure: a missing sound is a smaller
-            // problem than an application that will not start over one.
-            device: rodio::DeviceSinkBuilder::open_default_sink().ok(),
+            mixer: device.as_ref().map(|sink| sink.mixer().clone()),
+            _device: device,
         }
+    }
+
+    /// A player that mixes into the returned source instead of a sound card.
+    ///
+    /// So the decisions in `play_at` can be tested where there is no device
+    /// to open, and so a test can ask the stronger question: not whether
+    /// playing answered true, but whether a sound really arrived. Every test
+    /// below that plays uses this. None of them used to, and on a machine
+    /// with no sound card they did not fail, they crashed the process and
+    /// took about 3,500 unrelated library tests down with them.
+    ///
+    /// The channel count and sample rate are the ones `sound_for` produces,
+    /// so nothing is resampled on the way in and a sample read back is the
+    /// sample that was written.
+    #[cfg(test)]
+    fn detached() -> (Self, rodio::mixer::MixerSource) {
+        // Both are `NonZero` in rodio's types, and neither can be zero here:
+        // mono, at the rate `sound_for` produces.
+        let channels = std::num::NonZero::new(1).expect("one channel is not zero");
+        let rate = std::num::NonZero::new(TONE_SAMPLE_RATE).expect("48kHz is not zero");
+        let (mixer, source) = rodio::mixer::mixer(channels, rate);
+        (
+            Self {
+                last_played: std::sync::Mutex::new(None),
+                _device: None,
+                mixer: Some(mixer),
+            },
+            source,
+        )
     }
 
     /// Play an event's sound, under `scheme`, if enough time has passed
@@ -654,7 +716,7 @@ impl EarconPlayer {
         scheme: &super::sound_scheme::SoundScheme,
         now: std::time::Instant,
     ) -> bool {
-        let Some(device) = &self.device else {
+        let Some(mixer) = &self.mixer else {
             return false;
         };
         let Ok(mut last) = self.last_played.lock() else {
@@ -673,8 +735,8 @@ impl EarconPlayer {
         // calling thread for the tone's own length. A caller that needs the
         // old wait-for-it-to-finish behaviour has to ask for that itself now
         // rather than getting it as a side effect of playing a sound.
-        if !self.play_file(device, scheme, event) {
-            device.mixer().add(sound_for(event.tone()));
+        if !self.play_file(mixer, scheme, event) {
+            mixer.add(sound_for(event.tone()));
         }
         true
     }
@@ -688,7 +750,7 @@ impl EarconPlayer {
     /// a promise that every file it names still exists on this machine.
     fn play_file(
         &self,
-        device: &rodio::MixerDeviceSink,
+        mixer: &rodio::mixer::Mixer,
         scheme: &super::sound_scheme::SoundScheme,
         event: Event,
     ) -> bool {
@@ -708,7 +770,7 @@ impl EarconPlayer {
         };
         match rodio::Decoder::new(std::io::BufReader::new(file)) {
             Ok(decoded) => {
-                device.mixer().add(decoded);
+                mixer.add(decoded);
                 true
             }
             Err(err) => {
@@ -753,7 +815,7 @@ mod tests {
     fn test_earcons_do_not_stack_up_under_a_burst() {
         // A syncing mailbox can raise the same event forty times a second.
         // Forty overlapping tones is noise, not information.
-        let player = EarconPlayer::new();
+        let (player, _sound) = EarconPlayer::detached();
         let scheme = super::super::sound_scheme::SoundScheme::generated();
         let start = std::time::Instant::now();
         assert!(player.play_at(Event::NewMail, &scheme, start));
@@ -779,11 +841,33 @@ mod tests {
         //
         // Named rather than written as a number, so it keeps meaning the
         // boundary if the constant moves.
-        let player = EarconPlayer::new();
+        let (player, _sound) = EarconPlayer::detached();
         let scheme = super::super::sound_scheme::SoundScheme::generated();
         let start = std::time::Instant::now();
         assert!(player.play_at(Event::MisspelledWord, &scheme, start));
         assert!(player.play_at(Event::MisspelledWord, &scheme, start + EARCON_GAP));
+    }
+
+    #[test]
+    fn test_playing_puts_a_real_sound_where_the_device_would_hear_it() {
+        // Every other test here asks whether `play` answered true, which is a
+        // question about the decision and not about the sound. Answering true
+        // and adding nothing to the mixer would pass all of them.
+        //
+        // This reads back what arrived. A tone is not silence, so somewhere in
+        // the first tenth of a second there is a sample away from zero.
+        let (player, sound) = EarconPlayer::detached();
+        let scheme = super::super::sound_scheme::SoundScheme::generated();
+
+        assert!(player.play(Event::NewMail, &scheme));
+
+        let loudest = sound
+            .take(TONE_SAMPLE_RATE as usize / 10)
+            .fold(0.0f32, |loudest, sample| loudest.max(sample.abs()));
+        assert!(
+            loudest > 0.0,
+            "playing said it played and the mixer got silence"
+        );
     }
 
     #[test]
@@ -797,7 +881,7 @@ mod tests {
         // second call is inside the gap. On Windows the first one really does
         // sound, which is why the shortest tone in the set is the one used;
         // the suite already beeps for the burst test above.
-        let player = EarconPlayer::new();
+        let (player, _sound) = EarconPlayer::detached();
         let scheme = super::super::sound_scheme::SoundScheme::generated();
         assert!(player.play(Event::MisspelledWord, &scheme));
         assert!(!player.play(Event::MisspelledWord, &scheme));
@@ -816,7 +900,7 @@ mod tests {
             std::path::Path::new("/nowhere/that/exists"),
         )
         .expect("a valid manifest, even if its file is not real");
-        let player = EarconPlayer::new();
+        let (player, _sound) = EarconPlayer::detached();
         assert!(player.play(Event::NewMail, &scheme));
     }
 
