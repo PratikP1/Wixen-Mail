@@ -505,6 +505,41 @@ twice_said="$(bash "$twice" 2>&1)"
 expect_fixture_says "test twice::no case name is used twice ... FAILED" \
     "a name used twice is reported as a failing case of its own" "$twice_said"
 
+# A description holding a comma is a name the commit trailer cannot carry.
+#
+# `red-commit.sh names` splits a `Fails-until-green:` value on commas, because a
+# list of Rust test paths is written that way and a Rust path never holds one.
+# A case description does hold one: the first name this mechanism was tried with
+# was `which-checks::main, code changed`, and the gate read it as two tests
+# called `which-checks::main` and `code changed`, said both had never run, and
+# refused the commit. Found on 2026-09-03 by making that exact commit.
+#
+# Refused where the description is written rather than where it is read, because
+# that is the end that can say what to do about it, and because a reader that
+# guessed which commas were separators and which were prose would be a gate
+# deciding by heuristic.
+comma="$work/comma.test.sh"
+cat > "$comma" <<EOF
+#!/usr/bin/env bash
+. "$root/scripts/shell-suite.sh"
+suite_case_passed "one that holds a comma, like this one"
+suite_verdict
+EOF
+comma_said="$(bash "$comma" 2>&1)"
+comma_status=$?
+
+if [ "$comma_status" -ne 0 ]; then
+    suite_case_passed "a case description holding a comma is refused"
+else
+    suite_case_failed "a case description holding a comma is refused" \
+        "the suite accepted it, so a commit could name a test the reader splits in two"
+fi
+# Matched on the refusal's own words rather than on the word "comma", which the
+# fixture prints in its description anyway. Written the loose way first, this
+# passed against a suite that had refused nothing.
+expect_fixture_says "separates names with commas" \
+    "the refusal says why a comma cannot be in a name" "$comma_said"
+
 # And a suite that dies partway prints no line saying it reached its end, which
 # is what `check.sh` refuses on before it looks at the marker.
 died="$work/died.test.sh"
