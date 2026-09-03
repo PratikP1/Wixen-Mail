@@ -278,15 +278,55 @@ fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     missing
 }
 
+/// What the server answered when it was asked which messages a folder holds,
+/// and how much of the folder that answer covers.
+///
+/// The two are one value because they are never safely apart. Plan 03-07 exists
+/// to stop `sync_folder` listing every uid on every sync, and the listing it
+/// will narrow is the same listing the forget path compares against. A page
+/// compared against what this computer holds says that every message outside the
+/// page has gone from the server, and the first sync after such a change would
+/// then delete somebody's whole cached mailbox.
+///
+/// That constraint was a sentence in the doc comment below, where nothing could
+/// hold anybody to it. Here it is a type: the forget path is handed this rather
+/// than a bare list, so a caller with only part of a folder cannot reach the
+/// deletion without writing the false claim down on the line where a reader can
+/// see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerListing {
+    /// Every uid the folder holds, because the server was asked about all of it
+    /// and answered.
+    TheWholeMailbox(Vec<u32>),
+    /// Some of them. A page, a window, or whatever a narrower question returned.
+    PartOfIt(Vec<u32>),
+}
+
+impl ServerListing {
+    /// The uids themselves, for the readers that do not care what they cover.
+    ///
+    /// Fetching headers and asking after flags are both safe against a page:
+    /// asking about fewer messages than exist is a smaller sync, not a deletion.
+    /// Only the forget path is held to the whole folder, so only the forget path
+    /// is given the type instead of this.
+    pub fn uids(&self) -> &[u32] {
+        match self {
+            Self::TheWholeMailbox(uids) | Self::PartOfIt(uids) => uids,
+        }
+    }
+}
+
 /// Which stored messages the server no longer has.
 ///
 /// Deleted from another client, or expunged. Leaving them listed means a reader
 /// arrows onto a row, presses Enter, and gets an error rather than a message.
 ///
 /// The server list must be the whole mailbox, not the page just fetched.
-/// Comparing against a page would delete everything outside it.
-fn uids_to_forget(on_server: &[u32], stored: &[u32]) -> Vec<u32> {
-    let present: std::collections::HashSet<u32> = on_server.iter().copied().collect();
+/// Comparing against a page would delete everything outside it. That was the
+/// whole of the rule and it was written here in prose. [`ServerListing`] is what
+/// enforces it now, and this paragraph is the reason rather than the rule.
+fn uids_to_forget(on_server: &ServerListing, stored: &[u32]) -> Vec<u32> {
+    let present: std::collections::HashSet<u32> = on_server.uids().iter().copied().collect();
     let mut gone: Vec<u32> = stored
         .iter()
         .copied()
@@ -1011,10 +1051,14 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         cache.set_folder_uid_validity(folder_id, validity)?;
     }
 
-    let on_server = controller.list_uids(&folder.path).await?;
+    // Claimed here, at the one place that knows the claim is true: this asks the
+    // server about the whole folder and gets the whole folder back. Anything
+    // that narrows this question has to change the claim on this line, and the
+    // forget path below stops deleting the moment it does.
+    let on_server = ServerListing::TheWholeMailbox(controller.list_uids(&folder.path).await?);
     let stored = cache.stored_uids(folder_id)?;
 
-    if listing_contradicts_the_count(on_server.len(), counts.total) {
+    if listing_contradicts_the_count(on_server.uids().len(), counts.total) {
         let counted = crate::service::caldav::how_many(counts.total as usize, "message");
         let name = &folder.name;
         return Err(Error::Protocol(format!(
@@ -1025,7 +1069,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     let forgotten = uids_to_forget(&on_server, &stored);
     cache.forget_messages(folder_id, &forgotten)?;
 
-    let wanted = uids_to_fetch(&on_server, &stored, limit);
+    let wanted = uids_to_fetch(on_server.uids(), &stored, limit);
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
     // One transaction for the batch rather than one per message. The sync has
     // its own connection on a worker thread, so writing them one at a time
@@ -1141,7 +1185,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         folder: folder.name.clone(),
         fetched: fetched.len(),
         forgotten: forgotten.len(),
-        total_on_server: on_server.len(),
+        total_on_server: on_server.uids().len(),
         unread,
         flags_updated: brought_up_to_date,
         // Counted after the write, so it includes what this round brought
@@ -4105,12 +4149,44 @@ mod tests {
     fn test_a_message_deleted_elsewhere_is_forgotten() {
         // Otherwise the reader arrows onto a row, presses Enter, and gets an
         // error instead of a message.
-        assert_eq!(uids_to_forget(&[1, 3], &[1, 2, 3]), vec![2]);
+        assert_eq!(
+            uids_to_forget(&ServerListing::TheWholeMailbox(vec![1, 3]), &[1, 2, 3]),
+            vec![2]
+        );
     }
 
     #[test]
     fn test_nothing_is_forgotten_when_the_server_still_has_it_all() {
-        assert!(uids_to_forget(&[1, 2, 3], &[1, 2, 3]).is_empty());
+        assert!(
+            uids_to_forget(&ServerListing::TheWholeMailbox(vec![1, 2, 3]), &[1, 2, 3]).is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_listing_that_covers_part_of_a_folder_forgets_nothing() {
+        // The whole point of the type. The same two arguments that make the
+        // test above answer "forget uid 2" answer nothing here, because a
+        // listing of part of a folder says nothing at all about the messages
+        // outside it. Every uid held and not named is a message this listing
+        // never asked about, not a message the server has lost.
+        assert!(
+            uids_to_forget(&ServerListing::PartOfIt(vec![1, 3]), &[1, 2, 3]).is_empty(),
+            "a page of a folder was allowed to say which messages the server \
+             no longer has"
+        );
+    }
+
+    #[test]
+    fn test_a_page_that_named_nothing_forgets_nothing_rather_than_everything() {
+        // The case that destroys a mailbox. Ask a narrowed listing about a
+        // folder whose recent messages are all held already and it can answer
+        // with nothing, which compared against what is held reads as "the
+        // server has none of these" and takes the lot. This is the arm plan
+        // 03-07 would otherwise reach on its first sync.
+        assert!(
+            uids_to_forget(&ServerListing::PartOfIt(Vec::new()), &[1, 2, 3, 4]).is_empty(),
+            "an empty page of a folder was read as an emptied folder"
+        );
     }
 
     #[test]
@@ -4135,7 +4211,122 @@ mod tests {
 
     #[test]
     fn test_an_empty_mailbox_forgets_everything_that_was_in_it() {
-        assert_eq!(uids_to_forget(&[], &[1, 2]), vec![1, 2]);
+        assert_eq!(
+            uids_to_forget(&ServerListing::TheWholeMailbox(Vec::new()), &[1, 2]),
+            vec![1, 2]
+        );
+    }
+
+    /// The call that forgets messages one uid at a time.
+    ///
+    /// Not `forget_folder_messages`, which discards a whole folder on a
+    /// renumbering and answers to a different rule: that one is right to take
+    /// everything, because every uid held really has stopped meaning what it
+    /// meant. This is the one that decides from a comparison, and a comparison
+    /// is only as good as what it was given.
+    const FORGETTING_BY_UID: &str = ".forget_messages(";
+
+    /// Every line of `source` that forgets messages by uid, with its number.
+    ///
+    /// The number is the line in the shipping half rather than in the file,
+    /// which for this file is the same number: its one `#[cfg(test)]` sits
+    /// below everything the census is about. Said because a file with a test
+    /// module part way up would number from there on differently, and a line
+    /// number that is nearly right is worse than none.
+    fn forgetting_lines_in(source: &str) -> Vec<String> {
+        crate::common::what_ships::what_ships(source)
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| line.contains(FORGETTING_BY_UID))
+            .map(|(at, line)| format!("line {}: {}", at + 1, line.trim()))
+            .collect()
+    }
+
+    /// Every place in the shipping half of `src/application` that forgets
+    /// messages by uid.
+    fn where_messages_are_forgotten_by_uid() -> Vec<String> {
+        let mut found = Vec::new();
+        let mut looking = vec![std::path::PathBuf::from("src/application")];
+        while let Some(here) = looking.pop() {
+            let Ok(entries) = std::fs::read_dir(&here) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    looking.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|kind| kind != "rs") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                found.extend(
+                    forgetting_lines_in(&text)
+                        .into_iter()
+                        .map(|at| format!("{}, {at}", path.display())),
+                );
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn test_one_place_in_the_application_forgets_messages_by_uid() {
+        // A second one is a second chance to hand this a listing that does not
+        // cover the folder, and the type only helps where somebody has to say
+        // out loud what their listing covers. This is the census that makes
+        // adding one a failing test rather than a thing found afterwards.
+        let found = where_messages_are_forgotten_by_uid();
+        assert_eq!(
+            found.len(),
+            1,
+            "{} places forget messages by uid:\n  {}\n\
+             Each one deletes somebody's cached mail on the strength of a \
+             comparison, so each one needs its own argument about what the \
+             listing it compares against covers.",
+            found.len(),
+            found.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_the_census_would_see_a_second_place_that_forgets() {
+        // Proving the reading before believing what it counts. A census that
+        // has stopped reading passes exactly as a tree with one call does, and
+        // nothing tells the two apart.
+        assert_eq!(
+            forgetting_lines_in(
+                "    cache.forget_messages(folder_id, &gone)?;\n\
+                 something else\n\
+                     other.forget_messages(id, &also)?;\n"
+            )
+            .len(),
+            2
+        );
+        // And it counts the right call. The whole-folder discard is a
+        // different decision with a different argument behind it, and a census
+        // that lumped the two together would report two here for ever and stop
+        // meaning anything.
+        assert!(forgetting_lines_in("    cache.forget_folder_messages(id)?;\n").is_empty());
+        // And a mention inside a test module is not a call. Without this the
+        // census counts its own words and can never answer one.
+        assert!(
+            forgetting_lines_in(
+                "#[cfg(test)]\nmod tests {\n    fn a() { cache.forget_messages(1, &[]); }\n}\n"
+            )
+            .is_empty()
+        );
+        // And the walk really reaches files. Without this, a walk that found
+        // nothing anywhere would be indistinguishable from a clean tree in
+        // every assertion above.
+        assert!(
+            !where_messages_are_forgotten_by_uid().is_empty(),
+            "the walk over src/application reached no call at all, so it is \
+             reading nothing rather than finding nothing"
+        );
     }
 
     #[test]
