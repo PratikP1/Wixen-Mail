@@ -60,8 +60,8 @@ use crate::service::mime;
 use crate::service::protocols::MailAuth;
 use abilities::Abilities;
 use async_imap::imap_proto::{
-    AttributeValue, Capability, MailboxDatum, MessageSection, NameAttribute, Response, SectionPath,
-    Status,
+    AttributeValue, Capability, MailboxDatum, MessageSection, NameAttribute, Response,
+    ResponseCode, SectionPath, Status,
 };
 use async_imap::types::Flag;
 use std::pin::Pin;
@@ -1011,28 +1011,59 @@ impl ImapSession {
     /// Select a mailbox, and say what is in it.
     ///
     /// The path is the server's own spelling, as `ImapFolder::path` carries it.
+    ///
+    /// Written as a command line rather than through the library's helper, for
+    /// the same reason [`ImapSession::set_flag`] is, and here the reason is a
+    /// path that destroys mail. `parse_mailbox` in async-imap 0.11.3 reads
+    /// responses until the stream ends and hands back whatever it has
+    /// collected, so a connection that closed before the tagged line comes back
+    /// as `Ok` with an empty mailbox: no UIDVALIDITY, nought messages, no
+    /// flags. A folder that never opened reads exactly like one that did.
+    ///
+    /// [`crate::application::mail_sync`] reads an absent UIDVALIDITY as the
+    /// server having renumbered the folder and forgets every message stored for
+    /// it. So a connection dropping in the middle of a SELECT would delete
+    /// somebody's cached mail and report a successful sync. Before sessions
+    /// were held open, a drop could only land in the moment between opening a
+    /// connection and using it; a session that sits open between commands is
+    /// the thing a provider drops, which is what made this worth closing now.
+    ///
+    /// [`ImapSession::read_command`] has the four endings this needs, and the
+    /// one that matters is the third: the stream ending before the tagged line
+    /// is a lost connection and is raised as one.
     pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
-        let mailbox = if self.abilities.condstore {
-            with_timeout(
-                COMMAND_TIMEOUT,
-                self.session.select_condstore(path),
-                "opening the folder",
-            )
-            .await?
-        } else {
-            with_timeout(
-                COMMAND_TIMEOUT,
-                self.session.select(path),
-                "opening the folder",
-            )
-            .await?
-        }
-        .map_err(protocol_error("Could not open the folder"))?;
+        // CONDSTORE asks the server to name the folder's highest modification
+        // sequence in the same breath, which is what a sync compares against.
+        let asking = match self.abilities.condstore {
+            true => format!("SELECT {} (CONDSTORE)", quoted(path)),
+            false => format!("SELECT {}", quoted(path)),
+        };
+        let said = self
+            .read_command(asking, "opening the folder", |response| match response {
+                Response::Data {
+                    status: Status::Ok,
+                    code: Some(ResponseCode::UidValidity(uid)),
+                    ..
+                } => Some(WhatOpeningAFolderSaid::UidValidity(*uid)),
+                Response::Data {
+                    status: Status::Ok,
+                    code: Some(ResponseCode::HighestModSeq(modseq)),
+                    ..
+                } => Some(WhatOpeningAFolderSaid::HighestModSeq(*modseq)),
+                _ => None,
+            })
+            .await?;
 
         self.selected = Some(path.to_string());
         Ok(MailboxStatus {
-            uid_validity: mailbox.uid_validity,
-            highest_modseq: mailbox.highest_modseq,
+            uid_validity: said.iter().find_map(|line| match line {
+                WhatOpeningAFolderSaid::UidValidity(uid) => Some(*uid),
+                WhatOpeningAFolderSaid::HighestModSeq(_) => None,
+            }),
+            highest_modseq: said.iter().find_map(|line| match line {
+                WhatOpeningAFolderSaid::HighestModSeq(modseq) => Some(*modseq),
+                WhatOpeningAFolderSaid::UidValidity(_) => None,
+            }),
         })
     }
 
@@ -1982,6 +2013,29 @@ fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abilities) -> b
     !uids.is_empty() && !abilities.uid_expunge
 }
 
+/// One of the two facts an untagged OK carries when a folder opens.
+///
+/// A small enum rather than two passes over the answer, because
+/// [`ImapSession::read_command`] hands each response to one closure and there
+/// is one answer to read.
+enum WhatOpeningAFolderSaid {
+    UidValidity(u32),
+    HighestModSeq(u64),
+}
+
+/// A mailbox name as it goes on the wire, quoted.
+///
+/// A backslash and a double quote are the two characters that mean something
+/// inside a quoted string, so both are escaped. The third thing that could end
+/// a command early is a line break, and [`one_command_only`] refuses that on
+/// every hand-built command including this one.
+///
+/// Nothing is encoded here. The path arrives spelled the way the server spells
+/// it, which is what `ImapFolder::path` carries.
+fn quoted(name: &str) -> String {
+    format!("\"{}\"", name.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 /// What to say when the connection itself gave out part way through.
 fn connection_failed(doing: &str, error: &impl std::fmt::Display) -> Error {
     Error::Network(format!(
@@ -2037,11 +2091,20 @@ pub fn what_separates_a_folder_from_one_inside<'a>(
 }
 
 fn protocol_error(doing: &'static str) -> impl Fn(async_imap::error::Error) -> Error {
-    move |error| {
-        Error::Protocol(format!(
+    move |error| match &error {
+        // The transport gave out; the server did not answer at all. Told apart
+        // by the library's own variant rather than by reading the message,
+        // because the two want different answers and a message is not a type:
+        // a refusal is final, and a connection that has gone is worth signing
+        // in again for. Without this the caller sees a lost connection as a
+        // refusal and has no reason to try again.
+        async_imap::error::Error::Io(_) | async_imap::error::Error::ConnectionLost => {
+            connection_failed(doing, &error)
+        }
+        _ => Error::Protocol(format!(
             "{doing}: {}",
             redact_provider_message(&error.to_string())
-        ))
+        )),
     }
 }
 

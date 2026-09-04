@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **A connection to the mail server that drops is made again once, and if that
+  does not work Wixen Mail says so in words rather than in an error code.**
+
+  Now that an account keeps one session open, that session can be sitting idle
+  when the provider closes it, and the next thing you do finds a connection that
+  is no longer there. Wixen Mail signs in again and tries the same piece of work
+  once more. If that fails too you are told three things: the connection was
+  lost, a second attempt was already made, and to check that this computer is
+  online and try again.
+
+  Once means once. It does not keep trying, because a mail client that does is
+  one a provider starts turning away.
+
+  Known limitation: no real provider has ever dropped a connection on this
+  program, because no account has ever been used with it. Whether a provider
+  accepts a fresh sign-in straight after a drop, or treats it as something to
+  slow down, is unknown.
+
 - **Wixen Mail signs in to your mail server once for an account, instead of once
   for every command.**
 
@@ -50,6 +68,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   text somewhere nothing would ever look again.
 
 ### Fixed
+
+- **A connection that dropped while a folder was being opened could delete the
+  mail Wixen Mail had stored for that folder.**
+
+  Opening a folder is how checking for mail starts, and the server answers with
+  a number it uses to say whether the numbering you already have still holds. A
+  missing number means the same as a changed one: throw away what is stored for
+  that folder and fetch it again.
+
+  The library Wixen Mail uses to talk to mail servers reported a folder as
+  opened when the connection had gone away part way through the command, with
+  that number missing. So a connection dropping at the wrong moment read as a
+  folder whose mail had all been renumbered, and the stored copy went.
+
+  Wixen Mail now reads the server's own end-of-command line, so a connection
+  that goes while a folder is opening is a failure rather than a folder that
+  opened empty. Nothing has been lost to this: no account has ever been used
+  with this program.
 
 - **A reply no longer sits in a separate conversation from the message it
   answers, when the message that ties the two together arrived first.**

@@ -3402,13 +3402,13 @@ tests_last_seen = [
 [[guard]]
 name = "a delete opens the folder it names before it removes anything"
 file = "src/application/mail_controller.rs"
-before = """        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.delete_message(uid, trash).await"""
-after = """        let session = &mut *guard;
-        session.delete_message(uid, trash).await"""
+before = """        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.delete_message(uid, trash).await"""
+after = """        once_more_if_the_connection_went!(self, session, {
+            session.delete_message(uid, trash).await"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
     "application::mail_controller::against_a_server_that_answers::test_a_delete_with_a_trash_folder_really_moves_the_message_there",
@@ -3432,11 +3432,13 @@ tests_last_seen = [
 [[guard]]
 name = "saving a copy does not change which folder is open"
 file = "src/application/mail_controller.rs"
-before = """        let session = &mut *guard;
-        session.append_message(into, flags, raw).await"""
-after = """        let session = &mut *guard;
-        session.select_folder(into).await?;
-        session.append_message(into, flags, raw).await"""
+before = """        once_more_if_the_connection_went!(self, session, {
+            session.append_message(into, flags, raw).await
+        })"""
+after = """        once_more_if_the_connection_went!(self, session, {
+            session.select_folder(into).await?;
+            session.append_message(into, flags, raw).await
+        })"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
     "application::mail_controller::against_a_server_that_answers::test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read",
@@ -7428,7 +7430,7 @@ tests_last_seen = [
 name = "a second SELECT of an already-open folder still asks the server"
 file = "src/service/protocols/imap.rs"
 before = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
-        let mailbox = if self.abilities.condstore {"""
+        // CONDSTORE asks the server to name the folder's highest modification"""
 after = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
         if self.selected.as_deref() == Some(path) {
             return Ok(MailboxStatus {
@@ -7436,7 +7438,7 @@ after = """    pub async fn select_folder(&mut self, path: &str) -> Result<Mailb
                 highest_modseq: None,
             });
         }
-        let mailbox = if self.abilities.condstore {"""
+        // CONDSTORE asks the server to name the folder's highest modification"""
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_second_select_of_the_same_folder_reports_a_changed_uidvalidity",
 ]

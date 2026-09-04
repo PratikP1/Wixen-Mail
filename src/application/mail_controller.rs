@@ -4,6 +4,7 @@
 
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
+use crate::data::account::Account;
 use crate::service::protocols::MailAuth;
 use crate::service::protocols::imap::{
     Deletion, FolderCounts, ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession,
@@ -253,9 +254,118 @@ fn safe_recipient(address: &EmailAddress) -> EmailAddress {
     )
 }
 
+/// What to say when the connection went and signing in again did not help.
+///
+/// Three things, in the order somebody needs them. What happened, which is that
+/// the connection was lost rather than the command being refused. What was
+/// already tried, so nobody sits waiting for a retry that has been and gone.
+/// And what to do next, which is what `CLAUDE.md`'s cognitive rule asks of every
+/// error here.
+///
+/// No protocol string and no code. The server said nothing: it stopped
+/// answering, so there is nothing of its to quote, and a number in front of
+/// these words would be read out before them.
+fn the_second_attempt_failed_too() -> Error {
+    Error::InPlainWords(
+        "The connection to the mail server was lost. Wixen Mail signed in again \
+         and tried once more, and that did not work either. Check that this \
+         computer is online, then try again."
+            .to_string(),
+    )
+}
+
+/// Run one piece of work against the held session, signing in again once if the
+/// connection has gone.
+///
+/// The single place a retry happens, so no caller has to remember to make one.
+/// Every IMAP command on [`MailController`] goes through it.
+///
+/// Once, and once means once. A loop that kept trying against a server that
+/// keeps dropping is what gets an account rate-limited: Gmail allows fifteen
+/// connections to an account and punishes one that opens more.
+///
+/// What counts as a connection that has gone is decided at the boundary where
+/// the failure was raised rather than by reading its message here. A refusal is
+/// `Error::Protocol` and is final: the server answered, and asking again gets
+/// the same answer at the cost of a sign-in. A transport that gave out is
+/// `Error::Network`, and that is the one worth trying again for.
+///
+/// The work is written out twice by the expansion, and it is the whole piece of
+/// work rather than the last command in it. Most of these are two commands, a
+/// folder opened and then something done in it, and a session signed in again
+/// has no folder open, so replaying only the last step would send it to
+/// whichever folder that session was last pointed at, which is none.
+///
+/// # Why a macro and not a closure
+///
+/// This was written first as `impl AsyncFn(&mut ImapSession) -> Result<T>`,
+/// which reads better and does not compile here. The future an async closure
+/// returns borrows the session for a lifetime the caller chooses, and nothing
+/// stable can then say that future is `Send`. The window spawns this work onto
+/// a runtime that requires `Send`, so the whole of `flush_outbox` stopped
+/// building with "implementation of `Send` is not general enough" pointing at a
+/// function two hundred lines from anything that had changed.
+///
+/// A macro expands inside the caller, so there is no closure, no
+/// higher-ranked lifetime and nothing to prove.
+///
+/// Neither lock is held across the sign-in.
+macro_rules! once_more_if_the_connection_went {
+    ($self:expr, $session:ident, $work:block) => {{
+        let first = {
+            let mut guard = $self.require_imap().await?;
+            let $session = &mut *guard;
+            $work
+        };
+        // Asked without holding the value, so the answer can be handed back
+        // untouched when it is not a lost connection.
+        if !matches!(&first, Err(Error::Network(_))) {
+            return first;
+        }
+
+        // Nothing to sign in with, so nothing was tried and nothing is
+        // claimed: the failure goes back as it stands rather than as a
+        // sentence saying a second attempt was made.
+        let account = $self.signed_in_for.lock().await.clone();
+        let Some(account) = account else {
+            return first;
+        };
+        if let Err(why) = $self.sign_in_for(&account).await {
+            tracing::warn!("Signing in again after a dropped connection did not work: {why}");
+            return Err(the_second_attempt_failed_too());
+        }
+
+        let again = {
+            let mut guard = $self.require_imap().await?;
+            let $session = &mut *guard;
+            $work
+        };
+        match again {
+            Err(Error::Network(_)) => Err(the_second_attempt_failed_too()),
+            other => other,
+        }
+    }};
+}
+
 /// Mail controller for managing mail operations
 pub struct MailController {
     imap_session: Arc<Mutex<Option<ImapSession>>>,
+    /// The account this session was signed in for, kept so that a connection
+    /// which has gone can be made again.
+    ///
+    /// The account rather than the credential it was signed in with. An access
+    /// token lasts about an hour and a held session outlives one, so signing in
+    /// again with the token this connection was opened with would fail on every
+    /// provider that issues them, which is both of the ones this program
+    /// supports. [`crate::application::mail_auth::for_account`] is what turns
+    /// an account into a credential and fetches a fresh one where it has to, so
+    /// the account is the thing worth keeping and the credential is not.
+    ///
+    /// Empty on a controller nothing signed in through [`Self::sign_in_for`],
+    /// which is every one a test stands up by hand. A connection that goes on
+    /// one of those is reported as it always was: there is nothing to sign in
+    /// again with, so nothing is tried and nothing is claimed.
+    signed_in_for: Arc<Mutex<Option<Account>>>,
     pop3_session: Arc<Mutex<Option<Pop3Session>>>,
 }
 
@@ -264,6 +374,7 @@ impl MailController {
     pub fn new() -> Self {
         Self {
             imap_session: Arc::new(Mutex::new(None)),
+            signed_in_for: Arc::new(Mutex::new(None)),
             pop3_session: Arc::new(Mutex::new(None)),
         }
     }
@@ -343,26 +454,49 @@ impl MailController {
         Ok(())
     }
 
+    /// Sign in to this account's mail server, and remember how.
+    ///
+    /// One call rather than working out the port, fetching the credential and
+    /// connecting at three places that each have to remember the third. The
+    /// third is the one that gets forgotten, and what it costs is not visible
+    /// until a connection drops weeks later.
+    ///
+    /// The refusals are worded for a person, because they reach one: they end
+    /// up in "so nothing was deleted. ..." in the window and are read out.
+    pub async fn sign_in_for(&self, account: &Account) -> Result<()> {
+        let port = account.imap_port.trim().parse::<u16>().map_err(|_| {
+            Error::InPlainWords(format!("{} has no usable IMAP port.", account.name))
+        })?;
+        let auth = crate::application::mail_auth::for_account(account).await?;
+        self.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )
+        .await?;
+        *self.signed_in_for.lock().await = Some(account.clone());
+        Ok(())
+    }
+
     /// Fetch the mailbox list, in the order the folder tree should show it.
     pub async fn fetch_folders(&self) -> Result<Vec<ImapFolder>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.list_folders().await
+        once_more_if_the_connection_went!(self, session, { session.list_folders().await })
     }
 
     /// Open a folder, and say what is in it.
     pub async fn select_folder(&self, folder: &str) -> Result<MailboxStatus> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.select_folder(folder).await
+        once_more_if_the_connection_went!(self, session, { session.select_folder(folder).await })
     }
 
     /// Every UID in a folder, oldest first.
     pub async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.select_folder(folder).await?;
-        session.all_uids().await
+        once_more_if_the_connection_went!(self, session, {
+            session.select_folder(folder).await?;
+            session.all_uids().await
+        })
     }
 
     /// Fetch headers for the UIDs given.
@@ -372,12 +506,12 @@ impl MailController {
     /// A mailbox of two hundred thousand messages cannot be a single call that
     /// either returns everything or fails.
     pub async fn fetch_headers(&self, folder: &str, uids: &[u32]) -> Result<Vec<ImapMessage>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.fetch_headers(uids).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.fetch_headers(uids).await
+        })
     }
 
     /// Fetch one message exactly as it arrived.
@@ -386,12 +520,12 @@ impl MailController {
     /// would mean guessing a character set before the headers that name it have
     /// been read.
     pub async fn fetch_message_body(&self, folder: &str, uid: u32) -> Result<Vec<u8>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.fetch_body(uid).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.fetch_body(uid).await
+        })
     }
 
     /// Send an email via SMTP, and hand back what went out.
@@ -437,12 +571,12 @@ impl MailController {
 
     /// Add or remove a flag on a message in a folder.
     pub async fn set_flag(&self, folder: &str, uid: u32, flag: &str, on: bool) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.set_flag(uid, flag, on).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.set_flag(uid, flag, on).await
+        })
     }
 
     /// Delete a message, and say what actually happened to it.
@@ -458,32 +592,32 @@ impl MailController {
         uid: u32,
         trash: Option<&str>,
     ) -> Result<Deletion> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.delete_message(uid, trash).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.delete_message(uid, trash).await
+        })
     }
 
     /// Move a message to another folder.
     pub async fn move_message(&self, from: &str, uid: u32, into: &str) -> Result<Moved> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(from) {
-            session.select_folder(from).await?;
-        }
-        session.move_message(uid, into).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(from) {
+                session.select_folder(from).await?;
+            }
+            session.move_message(uid, into).await
+        })
     }
 
     /// Copy a message into another folder, leaving the original in place.
     pub async fn copy_message(&self, from: &str, uid: u32, into: &str) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(from) {
-            session.select_folder(from).await?;
-        }
-        session.copy_message(uid, into).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(from) {
+                session.select_folder(from).await?;
+            }
+            session.copy_message(uid, into).await
+        })
     }
 
     /// Remove any message in a folder carrying this identifier.
@@ -506,36 +640,36 @@ impl MailController {
     /// follows names the copies that were there beforehand and cannot take the
     /// one just filed: both carry the same identifier.
     pub async fn uids_with_message_id(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.uids_with_message_id(message_id).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.uids_with_message_id(message_id).await
+        })
     }
 
     /// Take these messages out of a folder, and say how many really went.
     pub async fn remove_these(&self, folder: &str, uids: &[u32]) -> Result<usize> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.remove_these(uids).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.remove_these(uids).await
+        })
     }
 
     /// Save a copy of a message into a folder, as the Sent copy is saved.
     pub async fn append_message(&self, into: &str, flags: Option<&str>, raw: &[u8]) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.append_message(into, flags, raw).await
+        once_more_if_the_connection_went!(self, session, {
+            session.append_message(into, flags, raw).await
+        })
     }
 
     /// Subscribe to a folder, or drop the subscription.
     pub async fn set_subscribed(&self, path: &str, subscribed: bool) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.set_subscribed(path, subscribed).await
+        once_more_if_the_connection_went!(self, session, {
+            session.set_subscribed(path, subscribed).await
+        })
     }
 
     /// Make a folder on the server.
@@ -544,9 +678,7 @@ impl MailController {
     /// is spelled on the wire are both decided inside the session, so this
     /// cannot answer either question differently.
     pub async fn create_mailbox(&self, path: &str) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.create_mailbox(path).await
+        once_more_if_the_connection_went!(self, session, { session.create_mailbox(path).await })
     }
 
     /// Give a folder on the server a different path.
@@ -558,9 +690,7 @@ impl MailController {
     /// and passes them through. Neither decision is taken here, so this cannot
     /// answer either question differently from the session.
     pub async fn rename_mailbox(&self, from: &str, to: &str) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.rename_mailbox(from, to).await
+        once_more_if_the_connection_went!(self, session, { session.rename_mailbox(from, to).await })
     }
 
     /// Take a folder off the server.
@@ -569,16 +699,12 @@ impl MailController {
     /// section 6.3.5 forbids `DELETE` from removing the names inside a folder,
     /// so the caller walks deepest first and sends one of these per folder.
     pub async fn delete_mailbox(&self, path: &str) -> Result<()> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.delete_mailbox(path).await
+        once_more_if_the_connection_went!(self, session, { session.delete_mailbox(path).await })
     }
 
     /// How many messages a folder holds, and how many are unread.
     pub async fn folder_counts(&self, folder: &str) -> Result<FolderCounts> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        session.folder_counts(folder).await
+        once_more_if_the_connection_went!(self, session, { session.folder_counts(folder).await })
     }
 
     /// Re-read the flags of messages already held.
@@ -588,12 +714,12 @@ impl MailController {
         held: &[u32],
         changed_since: Option<u64>,
     ) -> Result<Vec<(u32, Vec<String>)>> {
-        let mut guard = self.require_imap().await?;
-        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.fetch_flags(held, changed_since).await
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.fetch_flags(held, changed_since).await
+        })
     }
 
     /// Check if connected
@@ -1187,6 +1313,7 @@ mod against_a_server_that_answers {
     fn holding(session: ImapSession) -> MailController {
         MailController {
             imap_session: Arc::new(Mutex::new(Some(session))),
+            signed_in_for: Arc::new(Mutex::new(None)),
             pop3_session: Arc::new(Mutex::new(None)),
         }
     }
@@ -1283,6 +1410,7 @@ mod against_a_server_that_answers {
     fn holding_pop(session: Pop3Session) -> MailController {
         MailController {
             imap_session: Arc::new(Mutex::new(None)),
+            signed_in_for: Arc::new(Mutex::new(None)),
             pop3_session: Arc::new(Mutex::new(Some(session))),
         }
     }

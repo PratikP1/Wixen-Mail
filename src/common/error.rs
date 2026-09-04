@@ -23,6 +23,17 @@ pub enum Error {
     },
     /// Generic error
     Other(String),
+    /// Something already worded for the person who is going to read it.
+    ///
+    /// Every other variant names a layer, which is right for a log and wrong
+    /// for a status line: it arrives in front of the words as "Network error:"
+    /// or "Protocol error:", and a screen reader says that first. This one
+    /// arrives as itself.
+    ///
+    /// For sentences that were written to be heard, and only those. A failure
+    /// that has not been turned into one belongs in the variant that says which
+    /// layer raised it, so that a log still says where to look.
+    InPlainWords(String),
 }
 
 impl fmt::Display for Error {
@@ -45,6 +56,9 @@ impl fmt::Display for Error {
                 )
             }
             Error::Other(msg) => write!(f, "Error: {}", msg),
+            // Nothing in front of it. That is the whole point of the variant:
+            // these words were written for somebody to read or hear.
+            Error::InPlainWords(said) => write!(f, "{said}"),
         }
     }
 }

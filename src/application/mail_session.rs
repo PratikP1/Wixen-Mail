@@ -89,28 +89,10 @@ fn the_sessions_being_held() -> &'static Mutex<HashMap<String, TheSessionForOneA
 /// permission the rest of that account's writing does: an account that may not
 /// change anything at its server gets a session that refuses each command
 /// rather than one that carries it out.
-pub(crate) async fn a_session_at(
-    account: &Account,
-) -> std::result::Result<crate::application::mail_controller::MailController, String> {
-    let port = account
-        .imap_port
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| format!("{} has no usable IMAP port", account.name))?;
-    let auth = crate::application::mail_auth::for_account(account)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let controller = crate::application::mail_controller::MailController::new();
+pub(crate) async fn a_session_at(account: &Account) -> std::result::Result<MailController, String> {
+    let controller = MailController::new();
     controller
-        .connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )
+        .sign_in_for(account)
         .await
         .map_err(|e| e.to_string())?;
     Ok(controller)
