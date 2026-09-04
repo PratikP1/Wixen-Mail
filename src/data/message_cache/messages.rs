@@ -738,6 +738,16 @@ impl MessageCache {
     /// Only for a folder no server numbers. In a folder a server fills, one
     /// past the highest is the next number the SERVER is about to issue, and
     /// [`Self::next_reserved_uid`] is what to ask instead.
+    ///
+    /// # What keeps this from being asked about the wrong folder
+    ///
+    /// [`Self::numbering_in`], and not anything here. It dispatches by folder
+    /// path, and a folder either counts up or counts down and never both, so a
+    /// row filed into a folder a server fills is never given a number from this
+    /// end. The tests holding that dispatch, and the census saying nothing new
+    /// calls this without going through it, are the load-bearing ones. Do not
+    /// read the saturation below as making them unnecessary: it makes one
+    /// impossible answer safer and decides nothing about which folder is asked.
     pub fn next_local_uid(&self, folder_id: i64) -> Result<u32> {
         let highest: Option<i64> = self
             .conn
@@ -749,7 +759,13 @@ impl MessageCache {
             .optional()
             .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))?
             .flatten();
-        Ok(highest.unwrap_or(0).saturating_add(1) as u32)
+        // `saturating_add` guarded the i64 and the cast that followed it
+        // guarded nothing, so a folder holding a row at the top of the range
+        // answered zero: a number no message has, which the next row would be
+        // given as well, so the second would write over the first. The top of
+        // the range is the honest answer to "one past the highest" when the
+        // highest is the top, and it is at least a number a row can hold.
+        Ok(u32::try_from(highest.unwrap_or(0).saturating_add(1)).unwrap_or(u32::MAX))
     }
 
     /// The next number for a row this program writes into a folder a server

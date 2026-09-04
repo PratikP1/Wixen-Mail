@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 379 records have arrived since and have not been through it.
+# 381 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11124,7 +11124,7 @@ red = [
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -11162,7 +11162,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11184,7 +11184,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11604,7 +11604,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11823,7 +11823,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11949,7 +11949,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -12053,7 +12053,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
@@ -12088,7 +12088,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12117,7 +12117,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13114,7 +13114,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/presentation/message_columns.rs", tests = 37 },
 ]
 
@@ -13147,7 +13147,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -13180,7 +13180,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -13204,7 +13204,7 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13493,7 +13493,7 @@ red = [
     "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 148 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 # ── The migration moves every row it found ─────────────────────────────────
@@ -13662,4 +13662,74 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 42 },
+]
+
+# ── Which end of a folder's numbering a filed row takes ────────────────────
+#
+# The dispatch is what makes the `next_local_uid` wrap unreachable, and phase 1
+# deferred that wrap as a defect in the function. It is not one the function can
+# fix: the harm is a row filed into a folder a server fills being given the
+# number that server is about to issue, which hides a real message forever and
+# lets a later sync write over the copy. `next_reserved_uid`'s own doc comment
+# is where that reasoning is written down.
+#
+# The break makes every folder count up, whatever its path. It compiles, it
+# reads as a simplification, and it is the whole defect.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,096 passed and five
+# failed. The dispatch test written for it, and four that were already there
+# and had been holding this rule from four different directions without
+# anything saying so: an import into a folder a server fills, a sent copy filed
+# here, and two in the cache about a message filed into such a folder.
+
+[[guard]]
+name = "which end of a folder's numbering a filed row takes"
+file = "src/data/message_cache/messages.rs"
+before = """        Ok(match path {
+            Some(path) => WrittenDownAs::for_folder(&path),"""
+after = """        Ok(match path {
+            Some(_) => WrittenDownAs::FiledHereCountingUp,"""
+red = [
+    "application::importing_messages::end_to_end::test_a_message_imported_into_a_folder_the_server_fills_leaves_its_numbers_alone",
+    "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
+    "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
+]
+
+# ── Nothing new asks for the counting-up numbering directly ────────────────
+#
+# `03-RESEARCH.md` names the thing that makes the wrap reachable: one new direct
+# caller pointed at a folder a server fills, which brings it within one row
+# rather than four billion. So the break is that caller, written at the most
+# plausible place for it, where a sent copy is filed.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,099 passed and two
+# failed. The census, naming the new site, and the sent-copy test that already
+# asserted the number is one the server will never issue.
+#
+# The second is worth reading before concluding the census is redundant. It
+# covers this one site, by its behaviour, and it is the only such test: the
+# census covers every site there could be, including ones written into modules
+# that do not exist yet, which is what nothing else here can do.
+
+[[guard]]
+name = "nothing new asks for the counting-up numbering without going through the dispatcher"
+file = "src/application/sent_copy.rs"
+before = """    let uid = cache
+        .next_uid_for_filing(row.id)
+        .map_err(|e| e.to_string())?;"""
+after = """    let uid = cache.next_local_uid(row.id).map_err(|e| e.to_string())?;"""
+red = [
+    "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
+    "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_only_the_dispatcher_and_a_pop_inbox_ask_for_the_counting_up_numbering",
+]
+tests_last_seen = [
+    { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
