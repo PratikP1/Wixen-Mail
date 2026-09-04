@@ -1606,3 +1606,302 @@ mod tests {
         assert!(leftover.is_none(), "inline body was left behind");
     }
 }
+
+/// A database written before message text moved out of the messages table.
+///
+/// `migrate_inline_bodies` runs on every cache open and has done since the text
+/// moved, and until now every test of it started from a database this program
+/// had already migrated. Such a test asserts that a migration of nothing loses
+/// nothing, which is true and worth nothing: the rows it is really about are
+/// ones this program's own schema code can no longer produce.
+///
+/// So the fixture here is a database written from the old schema directly, with
+/// text in the inline columns and no `message_bodies` table at all, opened
+/// through the real `MessageCache::new`.
+#[cfg(test)]
+mod a_database_from_the_schema_that_kept_text_inline {
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::MessageCache;
+
+    /// `folders` and `messages` exactly as they shipped, before anything was
+    /// added to either.
+    ///
+    /// **A copy of a schema that shipped. Do not update it to match today's.**
+    /// Updating it is exactly how this stops testing anything: the point is a
+    /// database today's code has never touched, and a fixture built from
+    /// today's schema is already migrated before the test starts. Every column
+    /// this program has added since arrives through `ensure_column_exists` when
+    /// the cache opens the file below, which is the path a database in the
+    /// field really takes.
+    const THE_SCHEMA_THAT_KEPT_TEXT_INLINE: [&str; 2] = [
+        "CREATE TABLE folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            folder_type TEXT NOT NULL,
+            unread_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            UNIQUE(account_id, path)
+        )",
+        "CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL,
+            folder_id INTEGER NOT NULL,
+            message_id TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            from_addr TEXT NOT NULL,
+            to_addr TEXT NOT NULL,
+            cc TEXT,
+            date TEXT NOT NULL,
+            body_plain TEXT,
+            body_html TEXT,
+            read BOOLEAN DEFAULT 0,
+            starred BOOLEAN DEFAULT 0,
+            deleted BOOLEAN DEFAULT 0,
+            FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE,
+            UNIQUE(folder_id, uid)
+        )",
+    ];
+
+    /// One message as the old schema held it.
+    struct HeldInline {
+        uid: u32,
+        subject: &'static str,
+        body_plain: Option<&'static str>,
+        body_html: Option<&'static str>,
+    }
+
+    /// Write a database from the schema above into `dir`, under the name the
+    /// cache opens.
+    fn write_a_database_from_the_old_schema(dir: &std::path::Path, held: &[HeldInline]) {
+        todo!(
+            "the {} statements of the old schema written into {}, with {} messages \
+             holding their text inline",
+            THE_SCHEMA_THAT_KEPT_TEXT_INLINE.len(),
+            dir.display(),
+            held.len()
+        )
+    }
+
+    /// That database, opened through the real cache, which is what migrates it.
+    fn opened_through_the_real_cache(held: &[HeldInline]) -> TempHome<MessageCache> {
+        TempHome::named("wixen_old_schema_", |dir| {
+            write_a_database_from_the_old_schema(dir, held);
+            MessageCache::new(dir.to_path_buf(), None)
+                .expect("a database from the old schema opens")
+        })
+    }
+
+    /// Four messages covering every shape a row could be in.
+    fn four_messages_the_old_way() -> Vec<HeldInline> {
+        vec![
+            HeldInline {
+                uid: 1,
+                subject: "Plain text only",
+                body_plain: Some("The quarterly figures are attached."),
+                body_html: None,
+            },
+            HeldInline {
+                uid: 2,
+                subject: "HTML only",
+                body_plain: None,
+                body_html: Some("<p>The quarterly figures are attached.</p>"),
+            },
+            HeldInline {
+                uid: 3,
+                subject: "Both kinds",
+                body_plain: Some("Both kinds were stored for this one."),
+                body_html: Some("<p>Both kinds were stored for this one.</p>"),
+            },
+            HeldInline {
+                uid: 4,
+                subject: "Neither",
+                body_plain: None,
+                body_html: None,
+            },
+        ]
+    }
+
+    /// The row the message with this number is stored as.
+    fn row_id_of(cache: &MessageCache, uid: u32) -> i64 {
+        cache
+            .conn
+            .query_row(
+                "SELECT id FROM messages WHERE uid = ?1",
+                rusqlite::params![uid],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|e| panic!("the message numbered {uid} is not in the database: {e}"))
+    }
+
+    /// Everything either place holds about one message's text.
+    ///
+    /// The packed columns as well as the plain ones, because a body is stored
+    /// packed and a comparison over the unpacked columns alone would find two
+    /// databases equal on a pair of nulls.
+    #[derive(Debug, PartialEq, Eq)]
+    struct WhatIsHeldAbout {
+        message: i64,
+        inline_plain: Option<String>,
+        inline_html: Option<String>,
+        stored_plain: Option<String>,
+        stored_html: Option<String>,
+        packed_plain: Option<Vec<u8>>,
+        packed_html: Option<Vec<u8>>,
+    }
+
+    /// The same, for every message, in a fixed order.
+    fn every_word_of_text_this_database_holds(cache: &MessageCache) -> Vec<WhatIsHeldAbout> {
+        let mut stmt = cache
+            .conn
+            .prepare(
+                "SELECT m.id, m.body_plain, m.body_html,
+                        b.body_plain, b.body_html, b.body_plain_packed, b.body_html_packed
+                 FROM messages m
+                 LEFT JOIN message_bodies b ON b.message_id = m.id
+                 ORDER BY m.id",
+            )
+            .expect("the stored text reads");
+        stmt.query_map([], |row| {
+            Ok(WhatIsHeldAbout {
+                message: row.get(0)?,
+                inline_plain: row.get(1)?,
+                inline_html: row.get(2)?,
+                stored_plain: row.get(3)?,
+                stored_html: row.get(4)?,
+                packed_plain: row.get(5)?,
+                packed_html: row.get(6)?,
+            })
+        })
+        .expect("the stored text reads")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("the stored text reads")
+    }
+
+    #[test]
+    fn test_every_message_that_had_text_still_has_it_after_the_open() {
+        let held = four_messages_the_old_way();
+        let cache = opened_through_the_real_cache(&held);
+
+        for message in &held {
+            let id = row_id_of(&cache, message.uid);
+            let body = cache.get_message_body(id).expect("the body reads back");
+            let (plain, html) = match &body {
+                Some(body) => (body.body_plain.as_deref(), body.body_html.as_deref()),
+                None => (None, None),
+            };
+            assert_eq!(
+                plain, message.body_plain,
+                "the plain text of '{}' did not survive the open",
+                message.subject
+            );
+            assert_eq!(
+                html, message.body_html,
+                "the HTML of '{}' did not survive the open",
+                message.subject
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_inline_columns_are_empty_afterwards_so_the_space_is_reclaimed() {
+        let cache = opened_through_the_real_cache(&four_messages_the_old_way());
+
+        let still_inline: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages
+                 WHERE body_plain IS NOT NULL OR body_html IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the count reads");
+
+        assert_eq!(
+            still_inline, 0,
+            "{still_inline} messages still hold their text inline after the open \
+             that is supposed to have moved it, so the space it takes is never \
+             reclaimed and the migration runs over them again on every open"
+        );
+    }
+
+    #[test]
+    fn test_no_message_is_lost_including_the_ones_that_never_had_any_text() {
+        let held = four_messages_the_old_way();
+        let cache = opened_through_the_real_cache(&held);
+
+        let after: i64 = cache
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+            .expect("the count reads");
+
+        assert_eq!(
+            after,
+            held.len() as i64,
+            "the database held {} messages before it was opened and holds {after} after",
+            held.len()
+        );
+
+        // Named rather than left to the count. A migration written around
+        // bodies could drop the message that has none, and a count that also
+        // gained one would not notice.
+        let id = row_id_of(&cache, 4);
+        assert!(
+            cache
+                .get_message_body(id)
+                .expect("the body reads back")
+                .is_none(),
+            "a message that never had any text came out of the migration with some"
+        );
+    }
+
+    #[test]
+    fn test_a_row_holding_text_in_both_places_keeps_the_inline_copy() {
+        // Not a state this program writes, and a state a half-finished
+        // migration leaves: the body row written, the process stopped before
+        // the inline copy was cleared, and the file opened again later. Which
+        // copy wins has to be said rather than found out, and it is the inline
+        // one, because that is the copy the migration has not finished with.
+        let cache = opened_through_the_real_cache(&four_messages_the_old_way());
+        let id = row_id_of(&cache, 1);
+
+        cache
+            .save_message_body(id, Some("moved across by an earlier open"), None)
+            .expect("a body row");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET body_plain = ?1 WHERE id = ?2",
+                rusqlite::params!["still inline, and not yet cleared", id],
+            )
+            .expect("the inline copy is put back");
+
+        cache.migrate_inline_bodies().expect("the migration runs");
+
+        let body = cache
+            .get_message_body(id)
+            .expect("the body reads")
+            .expect("a body");
+        assert_eq!(
+            body.body_plain.as_deref(),
+            Some("still inline, and not yet cleared"),
+            "the copy the migration had not finished with lost to the one it had"
+        );
+    }
+
+    #[test]
+    fn test_opening_the_same_database_a_second_time_changes_no_message() {
+        let cache = opened_through_the_real_cache(&four_messages_the_old_way());
+        let before = every_word_of_text_this_database_holds(&cache);
+
+        let reopened =
+            MessageCache::new(cache.path().to_path_buf(), None).expect("the second open");
+
+        assert_eq!(
+            every_word_of_text_this_database_holds(&reopened),
+            before,
+            "opening a database that has already been migrated changed what it holds"
+        );
+    }
+}

@@ -4135,6 +4135,68 @@ mod tests {
         assert_eq!(done.folder, "Inbox");
     }
 
+    #[test]
+    fn test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file() {
+        // SCALE-04's third deliverable: opening a folder must not fetch
+        // anything an attachment is made of. That is bandwidth and disk
+        // somebody did not agree to spend, on a folder they may only be
+        // glancing at, and the files can be tens of megabytes each.
+        //
+        // What a sync can know about an attachment turns out to be one bit.
+        // `ImapMessage` carries `has_attachments` and no list, because a header
+        // fetch does not read a message's structure, so a sync cannot write an
+        // attachment's name or its size either. The only thing that writes
+        // either is `replace_attachments_with_content`, whose one production
+        // caller is the reader, on a message somebody has opened.
+        let (cache, id, folder) = a_cache();
+        let server = Scripted {
+            on_server: vec![1],
+            headers: vec![ImapMessage {
+                has_attachments: true,
+                ..message(1)
+            }],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 1,
+                unread: 0,
+            },
+            ..Default::default()
+        };
+
+        let done = run(&server, &cache, id, &folder);
+        assert_eq!(done.fetched, 1, "the sync did not bring the message down");
+
+        let listed = cache
+            .get_message_list(id, "acct")
+            .expect("the folder lists");
+        let row = listed.first().expect("the message the sync brought down");
+
+        let described = cache
+            .get_attachments_for_message(row.id)
+            .expect("the attachments read back");
+        assert!(
+            described.is_empty(),
+            "a sync wrote {} attachment rows for a message nobody has opened: {described:#?}",
+            described.len()
+        );
+
+        let files = cache
+            .cached_attachment_bytes()
+            .expect("the stored files are measured");
+        assert_eq!(
+            files, 0,
+            "a sync put {files} bytes of attachment file on this computer for a \
+             message nobody has opened, which is a download nobody asked for"
+        );
+
+        // And the one bit it does know is kept, so the row can say there is an
+        // attachment without anything having been fetched.
+        assert!(
+            row.has_attachments,
+            "the sync threw away the one thing it does know about the \
+             attachment, so the row cannot say there is one"
+        );
+    }
+
     fn message(uid: u32) -> ImapMessage {
         ImapMessage {
             uid,
