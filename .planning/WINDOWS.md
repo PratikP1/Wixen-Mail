@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 50
+open_count: 56
 waived_count: 0
 fixed_count: 13
-total_count: 63
-last_updated: 2026-09-04T18:30:00.000Z
+total_count: 69
+last_updated: 2026-09-04T21:04:03.565Z
 ---
 
 # Broken Windows Ledger
@@ -23,7 +23,7 @@ last_updated: 2026-09-04T18:30:00.000Z
 | 6 | 01 | unrun-verify | src/presentation/wx_app.rs |  | Rethreading on arrival repaints one row and does not touch the selection; no screen reader has confirmed that a repainted row is silent to somebody not on it | open |  | 2026-08-31T05:13:47.847Z |  |
 | 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | fixed |  | 2026-08-31T05:13:49.247Z | 2026-09-04T18:30:00.000Z |
 | 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | fixed |  | 2026-08-31T05:13:50.314Z | 2026-09-03T09:36:22.242Z |
-| 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | fixed |  | 2026-09-04T18:30:00.000Z |
+| 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | fixed |  | 2026-08-31T05:13:51.507Z | 2026-09-04T18:30:00.000Z |
 | 10 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear | open |  | 2026-09-01T02:14:56.334Z |  |
 | 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names | open |  | 2026-09-01T03:56:05.356Z |  |
 | 12 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear | open |  | 2026-09-01T03:56:05.812Z |  |
@@ -78,6 +78,12 @@ last_updated: 2026-09-04T18:30:00.000Z
 | 61 | 03 | deviation | src/application/thread_identity.rs |  | A merged conversation can settle under an identifier that is nobody's root. Two conversations an arrival has proved to be one carry no ordering between their names, so the winner is the least of them by ordinary string comparison, which is stable and arbitrary. Stability is what was needed and finding the older message is not available to rejoin. Recorded rather than glossed, because for a chain naming only its parent the conversation is then filed under a message in the middle. | open |  | 2026-09-04T18:30:00.000Z |  |
 | 62 | 03 | unrun-verify | src/data/message_cache/messages.rs |  | A merge renames one of the two conversations and nothing in the running program says so. The changelog says a conversation may change which message it is filed under; the interface does not, and whether somebody reading a conversation notices it move under a screen reader is unverified by ear. | open |  | 2026-09-04T18:30:00.000Z |  |
 | 63 | 03 | deviation | src/data/message_cache/mod.rs |  | The first open after this change walks every stored message and reports nothing while it does. Measured at 5.66 seconds with nothing to join and 6.45 with every conversation split in two, over two hundred thousand messages on this computer. It happens once, it is gated on a probe rather than a marker, and a larger mailbox pays more with the window showing nothing. | open |  | 2026-09-04T18:30:00.000Z |  |
+| 64 | 03 | unrun-verify | src/application/mail_controller.rs |  | Whether a real provider accepts a fresh sign-in straight after it has dropped a connection, or treats it as something to slow down or refuse, is unknown. The single retry is proved against a loopback server that hangs up on command and answers the next connection immediately. No account has ever been used with this program, so nothing here has met a provider's real behaviour on reconnect, including whether it counts against a connection limit. | open |  | 2026-09-04T21:03:06.059Z |  |
+| 65 | 03 | unrun-verify | src/application/mail_session.rs |  | What a real provider does with a session held open and idle for minutes is unknown, and the whole point of holding one is that it sits idle between commands. Whether providers drop an idle IMAP session at all, how soon, and whether they say anything before they do, has never been observed by this program: no account has ever been used with it. The reconnect exists because a drop is expected, and that expectation is reasoning rather than a measurement. | open |  | 2026-09-04T21:03:24.528Z |  |
+| 66 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether the refusal after a failed retry is heard once rather than once per failed request is unverified by ear. It reaches somebody through each site's existing reporting, which is ErrorOccurred for the flag path and CommandRefused for the folder commands, and both announce at High priority through accessibility::announce. That is structure, not experience: nobody has heard it with NVDA, and a mailbox where every command meets a dead connection would produce one of these per command with nothing coalescing them, which is exactly the flooding guardrail 5 is about. | open |  | 2026-09-04T21:03:34.593Z |  |
+| 67 | 03 | unrun-verify | src/application/mail_session.rs |  | The connection budget of two per account is counted against a loopback server and has never been counted against a provider. Whether two per account is welcome, what a provider counts as a connection when several accounts sit on the same one, and whether the IDLE connection and the working session are counted together, are all unknown. Gmail's limit of fifteen per account is the number the requirement's evidence records rather than one this program has ever approached. | open |  | 2026-09-04T21:03:43.871Z |  |
+| 68 | 03 | deviation | src/service/protocols/imap.rs |  | folder_counts has the same shape select_folder was fixed for and is not fixed. It calls async-imap's session.status, whose parser reads responses until the stream ends and hands back what it collected, so a connection dropping mid-command comes back as Ok with nought messages and nought unread. That is a wrong number in the folder tree rather than a deletion, which is why it was left, and it is the same defect: a command that never completed reported as one that did. Fixing it means writing STATUS as a command line through read_command, the way select_folder now is. | open |  | 2026-09-04T21:03:53.498Z |  |
+| 69 | 03 | deviation | src/presentation/wx_app.rs |  | Checking for mail used to refuse an unusable port with the value it could not read, 'has an IMAP port that is not a number: 14 3'. All twelve sites lost their own port check when they went through the held session, because a_session_at asks the same question and answers it in the same words, so each was a second answer to one question. Eleven lost nothing by that; this one lost the offending value, which is the part somebody fixing it needs. The value is visible in the account settings screen. | open |  | 2026-09-04T21:04:03.565Z |  |
 
 ````json
 [
@@ -835,6 +841,78 @@ last_updated: 2026-09-04T18:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-04T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 64,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/mail_controller.rs",
+    "line": null,
+    "description": "Whether a real provider accepts a fresh sign-in straight after it has dropped a connection, or treats it as something to slow down or refuse, is unknown. The single retry is proved against a loopback server that hangs up on command and answers the next connection immediately. No account has ever been used with this program, so nothing here has met a provider's real behaviour on reconnect, including whether it counts against a connection limit.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:03:06.059Z",
+    "resolved_at": null
+  },
+  {
+    "id": 65,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/mail_session.rs",
+    "line": null,
+    "description": "What a real provider does with a session held open and idle for minutes is unknown, and the whole point of holding one is that it sits idle between commands. Whether providers drop an idle IMAP session at all, how soon, and whether they say anything before they do, has never been observed by this program: no account has ever been used with it. The reconnect exists because a drop is expected, and that expectation is reasoning rather than a measurement.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:03:24.528Z",
+    "resolved_at": null
+  },
+  {
+    "id": 66,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the refusal after a failed retry is heard once rather than once per failed request is unverified by ear. It reaches somebody through each site's existing reporting, which is ErrorOccurred for the flag path and CommandRefused for the folder commands, and both announce at High priority through accessibility::announce. That is structure, not experience: nobody has heard it with NVDA, and a mailbox where every command meets a dead connection would produce one of these per command with nothing coalescing them, which is exactly the flooding guardrail 5 is about.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:03:34.593Z",
+    "resolved_at": null
+  },
+  {
+    "id": 67,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/mail_session.rs",
+    "line": null,
+    "description": "The connection budget of two per account is counted against a loopback server and has never been counted against a provider. Whether two per account is welcome, what a provider counts as a connection when several accounts sit on the same one, and whether the IDLE connection and the working session are counted together, are all unknown. Gmail's limit of fifteen per account is the number the requirement's evidence records rather than one this program has ever approached.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:03:43.871Z",
+    "resolved_at": null
+  },
+  {
+    "id": 68,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "folder_counts has the same shape select_folder was fixed for and is not fixed. It calls async-imap's session.status, whose parser reads responses until the stream ends and hands back what it collected, so a connection dropping mid-command comes back as Ok with nought messages and nought unread. That is a wrong number in the folder tree rather than a deletion, which is why it was left, and it is the same defect: a command that never completed reported as one that did. Fixing it means writing STATUS as a command line through read_command, the way select_folder now is.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:03:53.498Z",
+    "resolved_at": null
+  },
+  {
+    "id": 69,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Checking for mail used to refuse an unusable port with the value it could not read, 'has an IMAP port that is not a number: 14 3'. All twelve sites lost their own port check when they went through the held session, because a_session_at asks the same question and answers it in the same words, so each was a second answer to one question. Eleven lost nothing by that; this one lost the offending value, which is the part somebody fixing it needs. The value is visible in the account settings screen.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T21:04:03.565Z",
     "resolved_at": null
   }
 ]
