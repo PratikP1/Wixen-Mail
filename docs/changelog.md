@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Wixen Mail signs in to your mail server once for an account, instead of once
+  for every command.**
+
+  Marking a message read, flagging one, moving one to another folder, emptying a
+  folder, making one, fetching a message you opened: each of those used to open
+  a connection to the server, sign in, send one command and sign out again.
+  Marking three messages read in a row was three sign-ins. Twelve places in the
+  main window worked that way, and the one the effort was most visible in was
+  the simplest: marking a single message read.
+
+  Each account now keeps one signed-in session. It opens the first time
+  something needs it, and it closes when you remove that account or close Wixen
+  Mail. Together with the connection held open to hear about new mail as it
+  arrives, that is two connections per account.
+
+  Known limitation: none of this has met a real mail server. No account has ever
+  been used with this program, so what a provider does with a session left open
+  for minutes, and whether two connections per account is welcome on the
+  providers people actually use, are both unknown.
+
 - **Wixen Mail no longer reads every message you have each time it starts.**
   Older versions kept the text of a message in the same place as its subject
   line and its date. Newer ones keep it separately, and every start looks for
