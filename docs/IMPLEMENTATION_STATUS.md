@@ -84,8 +84,14 @@ screen reader reads for one of these rows; that is a listening pass.
 
 ## What does not work
 
-**Moving a task between lists.** A task goes into your provider's default list
-when you make it, and moving and copying work for mail only.
+**Moving a task between lists has never been done against a real account.** The
+command is there and works on what is stored on this computer: press the menu
+key on a task and choose "Move to another list", or use Ctrl+Shift+V. Events
+and notes have the same command. What has not happened is a move reaching a
+provider, because no account has ever been used with this program.
+
+This entry used to say that moving and copying work for mail only. That stopped
+being true when the command was added and nobody corrected it here.
 
 ## Built, and never run against a real account
 

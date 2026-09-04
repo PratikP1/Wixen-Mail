@@ -410,7 +410,11 @@ joined the feedback phase instead of the measurement phase.
 **Blockers known at roadmap time.**
 
 - SHIP-01 is blocked on a certificate decision that is Pratik's.
-- PIM-04 needs a sync target chosen before anything can be built.
+- PIM-04's blocker is narrower than this said. "A sync target chosen" was
+  answered on 2026-08-29, and that answer is what split the requirement into
+  PIM-04, PIM-07 and PIM-08; `.planning/REQUIREMENTS.md` carries it. What is
+  still open is only which backend goes first, costed in
+  `.planning/phases/05-the-other-five-modules-keep-up/05-RESEARCH.md`.
 - SHIP-04 is a decision before it is an implementation.
 - SCALE-01 depends on what async-imap 0.11.3 actually exposes; the fallback is already
   specified in the mail-at-scale plan.

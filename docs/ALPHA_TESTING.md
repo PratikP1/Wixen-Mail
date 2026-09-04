@@ -113,8 +113,12 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
-- **A task cannot be moved between lists.** It goes into your provider's
-  default list when you make it. Moving and copying work for mail only so far.
+- **Moving a task between lists has never reached a provider.** The command is
+  there and works on what is held on this computer: press the menu key on a
+  task and choose "Move to another list", or use Ctrl+Shift+V. Events and notes
+  have the same command. What no build has done is send that move to a real
+  account, because none has ever been used. This entry used to say a task
+  cannot be moved at all, which stopped being true when the command was added.
 - **Importing a file can join two people who share a name.** Two cards in one
   imported file are read as one person when nothing but their addresses tells
   them apart. Two people with the same name, and nothing else on their cards,
