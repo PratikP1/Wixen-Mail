@@ -31,6 +31,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Gmail: a conversation no longer disappears from the list because its mail
+  was archived without a label.** Gmail keeps a copy of everything in All Mail
+  as well as under each label, so counting a conversation across your whole
+  account used to leave All Mail out. Otherwise every conversation would have
+  reported twice its real size.
+
+  Leaving the folder out also left out the mail that is only in it. Archiving a
+  message without giving it a label puts it in All Mail and nowhere else, so
+  those messages counted for nothing. A conversation whose messages had all been
+  archived that way had nothing left to count, and standing in All Mail you
+  would not see it at all. There was no sign that anything was missing, which is
+  the worst part of it: a row that is not there does not announce itself.
+
+  What is left out now is the copy rather than the folder. A message that some
+  label already holds is not counted again in All Mail, and a message that is in
+  All Mail and nowhere else is counted, because it is a message you have. The
+  number the delete confirmation names moved with it, so what it says and what
+  it takes are still the same messages.
+
+  Wixen Mail decides which copy is which by the identifier Gmail gives every
+  message, or by the `Message-ID` the sender wrote when your server does not
+  give one of its own.
+
+  Known limitations. None of this has run against a real Gmail account, because
+  this program has never been used with an account at all: it is proved against
+  a mail cache built inside a test, which is evidence about the question being
+  asked and no evidence about what Gmail really sends. And a message is counted
+  twice if your server holds it in two places and gives neither an identifier of
+  its own nor a `Message-ID`, which is the direction we chose to be wrong in: a
+  count that is too high is one you can see.
+
 - **A first run no longer sets your spelling to English when Windows could not
   be asked what it checks.** Wixen Mail asks Windows which languages it can
   check spelling in, and that question can fail. A failed question and a

@@ -74,6 +74,164 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
 /// the two views does not reorder the mailbox under somebody.
 pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
 
+/// Which message a row is, for a count that must not say one message twice.
+///
+/// A server that holds a copy of every message presents one message as two
+/// rows, and to anything counting rows the two are the same as two messages.
+/// This is the expression that tells them apart. Three answers, strongest
+/// first, and the value says which one decided:
+///
+/// - Gmail's own `X-GM-MSGID`, stored in `gmail_msgid`. It is asked for on
+///   every Gmail connection, `header_query` builds the fetch, and the copy
+///   under a label and the copy in All Mail carry the same one.
+/// - the `Message-ID` the sender wrote, trimmed of its angle brackets. `\All`
+///   is RFC 6154 rather than a Gmail invention, so a server can advertise a
+///   folder holding everything and offer no Gmail identifier at all, and the
+///   two copies are still one message. Trimmed because the column has held
+///   both spellings: `upsert_message` writes the bare form now and
+///   `backfill_message_identifiers` corrects older rows, but that backfill is
+///   not fatal when it fails, so a database it never finished still holds
+///   bracketed values.
+/// - the row itself, for a message carrying neither. A row id is unique to its
+///   row, so a message with no identity of its own is never taken for another
+///   message. It also means two copies of such a message count as two, which
+///   is a number too high rather than a conversation that disappears, and of
+///   the two ways to be wrong that is the one somebody can see.
+///
+/// Tagged rather than coalesced into one column, so a Gmail identifier can
+/// never equal a row id that happens to hold the same number. `searching.rs`
+/// writes the same idea as `COALESCE(m.gmail_msgid, m.id)` for the narrower
+/// question it asks, which is how to show one search result per message; this
+/// one has to survive a server that gives no Gmail identifier.
+///
+/// Written against the alias `m`, which both places using it bind to
+/// `messages`.
+const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
+                     WHEN m.gmail_msgid IS NOT NULL THEN 'gmail:' || m.gmail_msgid
+                     WHEN TRIM(TRIM(m.message_id), '<>') <> ''
+                         THEN 'header:' || TRIM(TRIM(m.message_id), '<>')
+                     ELSE 'row:' || m.id
+                 END";
+
+/// The folders a conversation is counted across, and its messages within them.
+///
+/// One text, shared verbatim by [`conversations_query`] and
+/// [`messages_in_one_conversation`], and that is the whole point of it being a
+/// function rather than two hand-written copies. D-07 needs the number named
+/// before a deletion to be the number of messages that go, and two queries
+/// written out separately agree until the first time somebody changes one of
+/// them. They cannot drift now, because there is nothing to drift from.
+///
+/// `?1` is the account, `?2` the folder being stood in, and `?3` is 1 when the
+/// count reaches the whole account and 0 when it reaches this folder alone.
+///
+/// # reach
+///
+/// Which folders count. A parameter rather than a branch around two queries, so
+/// both answers go down one path.
+///
+/// It used to drop every folder holding a copy of all mail whenever the reach
+/// was the whole account. The reason was real: on Gmail a label is a mailbox and
+/// All Mail holds a copy of everything, so counting rows across the account
+/// reported twice the size of every conversation. The reason it was wrong is
+/// that a message archived without a label is in All Mail and nowhere else, so
+/// excluding the folder excluded the message. A conversation with nothing
+/// outside All Mail then had no rows at all and left the list entirely, which is
+/// a failure nobody can see: a row that is not there does not announce itself.
+///
+/// # elsewhere
+///
+/// Which messages some folder other than an all-mail one already holds, by
+/// [`WHICH_MESSAGE_THIS_ROW_IS`]. `here` drops an all-mail row whose message is
+/// in that set, so a copy is dropped and a message with no copy anywhere else is
+/// kept. That is the same exclusion as before, narrowed from a folder to the
+/// rows that are really duplicates, and it leaves every other answer where it
+/// was: a conversation with no all-mail row is untouched.
+///
+/// Built once as a set rather than asked per row. The per-row form is a scan of
+/// the account for every row in All Mail, which on Gmail is a scan per message.
+///
+/// Empty when the reach is one folder and that folder is the all-mail one,
+/// which is right: standing in All Mail and counting only All Mail must count
+/// what All Mail holds.
+///
+/// `NOT IN` over it is safe against SQLite's usual trap because
+/// [`WHICH_MESSAGE_THIS_ROW_IS`] never yields NULL. Its last arm is the row id,
+/// which every row has.
+///
+/// # here
+///
+/// The messages within that reach, one row per message, with the arrival time
+/// worked out once as `received_at` so the newest and the oldest are asked the
+/// same way.
+///
+/// Which conversations to list is a separate question, and it is asked without
+/// any of this: a row appears in every folder the conversation touches, and All
+/// Mail is one of them.
+///
+/// # The index this needs
+///
+/// `idx_messages_thread`, added by plan 01-02. The existing indexes cannot serve
+/// this: an index is searched from its leftmost column and theirs begin with
+/// `folder_id`, which [`unified_inbox_query`] already explains for a query of
+/// the same shape.
+pub(super) fn conversation_scope() -> String {
+    format!(
+        "WITH reach AS (
+             SELECT id FROM folders
+             WHERE account_id = ?1
+               AND (?3 = 1 OR id = ?2)
+         ),
+         elsewhere AS (
+             SELECT DISTINCT {WHICH_MESSAGE_THIS_ROW_IS} AS message
+             FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE m.folder_id IN (SELECT id FROM reach)
+               AND m.deleted = 0
+               AND f.holds_all_mail = 0
+         ),
+         here AS (
+             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
+                    m.answered, m.draft, m.has_attachments, m.safety,
+                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
+                    COALESCE(m.internaldate, m.date) AS received_at
+             FROM messages m
+             INNER JOIN folders mf ON m.folder_id = mf.id
+             WHERE m.folder_id IN (SELECT id FROM reach)
+               AND m.deleted = 0
+               AND (mf.holds_all_mail = 0
+                    OR {WHICH_MESSAGE_THIS_ROW_IS}
+                       NOT IN (SELECT message FROM elsewhere))
+               AND m.thread_id IS NOT NULL AND m.thread_id <> ''
+               AND m.thread_id IN (
+                   SELECT thread_id FROM messages
+                   WHERE folder_id = ?2 AND deleted = 0
+                     AND thread_id IS NOT NULL AND thread_id <> ''
+               )
+         )"
+    )
+}
+
+/// The messages of one conversation, under the reach its row is counted with.
+///
+/// [`conversation_scope`] and then one narrowing, so the rows this walks are the
+/// rows the row's own count counted. `?4` is the conversation. Nothing else
+/// differs from the listing, and nothing can, because the part that decides
+/// which messages exist is the same text in both.
+///
+/// A conversation named by the empty string matches nothing, because `here`
+/// leaves out a row with no conversation.
+pub(super) fn messages_in_one_conversation() -> String {
+    format!(
+        "{scope}
+         SELECT m.id
+         FROM here m
+         WHERE m.thread_id = ?4
+         ORDER BY m.received_at ASC, m.id ASC",
+        scope = conversation_scope()
+    )
+}
+
 /// The query a conversation listing runs, in one place.
 ///
 /// Built here rather than inline for the reason [`listing_query`] gives: a test
@@ -88,88 +246,13 @@ pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
 /// one expression rather than two that have to be kept in step. D-02 says that
 /// in words; this is where it is true.
 ///
-/// # What the two CTEs are for
-///
-/// `reach` is which folders count, and it is a parameter rather than a branch
-/// around two queries, so both answers go down one path and cannot drift apart.
-/// `?3` is 1 for the whole account and 0 for this folder alone.
-///
-/// The exclusion of folders holding a copy of every message is tied to the
-/// account-wide answer, and that is deliberate. On Gmail a label is a mailbox
-/// and All Mail holds a copy of everything, so counting across the account
-/// without the exclusion reports twice the size of every conversation. Counting
-/// one folder cannot double anything, and applying the exclusion there would
-/// leave somebody standing in All Mail with a reach of one folder and no rows
-/// at all.
-///
-/// `here` is this conversation's messages within that reach, with the arrival
-/// time worked out once as `received_at` so the newest and the oldest are asked
-/// the same way. Which conversations to list is a separate question and is asked
-/// without the exclusion: a row appears in every folder the conversation
-/// touches, and All Mail is one of them.
-///
-/// # The index this needs
-///
-/// `idx_messages_thread`, added by plan 01-02. The existing indexes cannot serve
-/// this: an index is searched from its leftmost column and theirs begin with
-/// `folder_id`, which [`unified_inbox_query`] already explains for a query of
-/// the same shape.
-/// The messages of one conversation, under the reach its row is counted with.
-///
-/// The `reach` and `here` parts are the same two the listing query uses, with
-/// the same three parameters in the same order, and that is the point of them
-/// being written this way. D-07 needs the number named before a deletion to be
-/// the number of messages that go; two queries agreeing today would drift the
-/// first time somebody changed one of them.
-///
-/// The fourth parameter narrows to a single conversation. Nothing else differs:
-/// the same account bound, the same all-mail exclusion for the account-wide
-/// reach, the same folder bound for the narrow one, and the same rule that a
-/// message already deleted is not there.
-const MESSAGES_IN_ONE_CONVERSATION: &str = "WITH reach AS (
-         SELECT id FROM folders
-         WHERE account_id = ?1
-           AND (?3 = 0 OR holds_all_mail = 0)
-           AND (?3 = 1 OR id = ?2)
-     )
-     SELECT m.id
-     FROM messages m
-     WHERE m.folder_id IN (SELECT id FROM reach)
-       AND m.deleted = 0
-       AND m.thread_id = ?4
-       AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-       AND m.thread_id IN (
-           SELECT thread_id FROM messages
-           WHERE folder_id = ?2 AND deleted = 0
-             AND thread_id IS NOT NULL AND thread_id <> ''
-       )
-     ORDER BY COALESCE(m.internaldate, m.date) ASC, m.id ASC";
-
+/// Every one of those expressions counts rows of `here`, and none of them
+/// deduplicates, which is why `here` is what holds one row per message.
 pub(super) fn conversations_query(order: &str) -> String {
     use crate::presentation::message_columns::MessageColumn;
 
     format!(
-        "WITH reach AS (
-             SELECT id FROM folders
-             WHERE account_id = ?1
-               AND (?3 = 0 OR holds_all_mail = 0)
-               AND (?3 = 1 OR id = ?2)
-         ),
-         here AS (
-             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
-                    m.answered, m.draft, m.has_attachments, m.safety,
-                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
-                    COALESCE(m.internaldate, m.date) AS received_at
-             FROM messages m
-             WHERE m.folder_id IN (SELECT id FROM reach)
-               AND m.deleted = 0
-               AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-               AND m.thread_id IN (
-                   SELECT thread_id FROM messages
-                   WHERE folder_id = ?2 AND deleted = 0
-                     AND thread_id IS NOT NULL AND thread_id <> ''
-               )
-         )
+        "{scope}
          SELECT m.thread_id,
                 {subject},
                 {messages},
@@ -189,6 +272,7 @@ pub(super) fn conversations_query(order: &str) -> String {
          FROM here m
          GROUP BY m.thread_id
          ORDER BY {order}, m.thread_id ASC",
+        scope = conversation_scope(),
         subject = MessageColumn::Subject.conversation_sort_expression(),
         messages = MessageColumn::Thread.conversation_sort_expression(),
         unread = MessageColumn::Unread.conversation_sort_expression(),
@@ -1900,9 +1984,10 @@ impl MessageCache {
         folder_id: i64,
         reach: AConversationReaches,
     ) -> Result<Vec<i64>> {
+        let query = messages_in_one_conversation();
         let mut stmt = self
             .conn
-            .prepare_cached(MESSAGES_IN_ONE_CONVERSATION)
+            .prepare_cached(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare the conversation read: {e}")))?;
         let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
         let rows = stmt
@@ -5474,32 +5559,51 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count() {
-        // On Gmail a label is a mailbox and All Mail holds a copy of
-        // everything, so without the exclusion every conversation on the
-        // largest provider there is reports twice its size. A plausible wrong
-        // number is worse than an obviously wrong one.
-        let cache = fresh("conversation_all_mail");
+    /// Two messages under a label, and the copy of each that All Mail holds.
+    ///
+    /// Four rows for two messages. Each copy carries its original's
+    /// `Message-ID` and its original's Gmail identifier, and differs only in
+    /// the folder it is in and the number that folder gave it, because that is
+    /// what a server really presents when a label and All Mail both hold a
+    /// message.
+    ///
+    /// The fixture used to be four calls to `in_conversation` with four UIDs,
+    /// which gave four different `Message-ID`s: four separate messages, two of
+    /// them in All Mail and nowhere else. Under a count that excludes All Mail
+    /// by folder that arrangement answers two either way, so the test passed
+    /// while its fixture said the opposite of its name. Under a count that
+    /// asks which message a row is, the difference decides the answer, and
+    /// only the fixture that really holds copies asserts what the name claims.
+    fn a_label_and_its_all_mail_copies(
+        name: &str,
+    ) -> (TempHome<super::super::MessageCache>, i64, i64) {
+        let cache = fresh(name);
         let inbox = folder(&cache, "INBOX");
         let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
 
-        for (uid, folder_id, day) in [
-            (1, inbox, 1),
-            (2, inbox, 3),
-            (11, all_mail, 1),
-            (12, all_mail, 3),
-        ] {
-            cache
-                .upsert_message(&in_conversation(
-                    folder_id,
-                    uid,
-                    "Quarterly report",
-                    "root@example.com",
-                    day,
-                ))
-                .unwrap();
+        for (uid, in_all_mail, day) in [(1u32, 11u32, 1), (2, 12, 3)] {
+            let mut labelled =
+                in_conversation(inbox, uid, "Quarterly report", "root@example.com", day);
+            labelled.message_id = format!("<labelled-{uid}@example.com>");
+            labelled.gmail_message_id = Some(17_000_000_000_000_000 + u64::from(uid));
+            cache.upsert_message(&labelled).unwrap();
+
+            let mut copy = labelled.clone();
+            copy.folder_id = all_mail;
+            copy.uid = in_all_mail;
+            cache.upsert_message(&copy).unwrap();
         }
+
+        (cache, inbox, all_mail)
+    }
+
+    #[test]
+    fn test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count() {
+        // On Gmail a label is a mailbox and All Mail holds a copy of
+        // everything, so counting both copies makes every conversation on the
+        // largest provider there is report twice its size. A plausible wrong
+        // number is worse than an obviously wrong one.
+        let (cache, inbox, _all_mail) = a_label_and_its_all_mail_copies("conversation_all_mail");
 
         let found = cache
             .conversations_in(inbox, "acc", TheWholeAccount, None)
@@ -5513,33 +5617,371 @@ mod tests {
 
     #[test]
     fn test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one() {
-        // The exclusion is about counting, not about what is listed. Standing
-        // in All Mail still shows the conversations it holds; they are counted
-        // through the labels that hold them.
-        let cache = fresh("conversation_standing_in_all_mail");
-        let inbox = folder(&cache, "INBOX");
-        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
-        for (uid, folder_id, day) in [
-            (1, inbox, 1),
-            (2, inbox, 3),
-            (11, all_mail, 1),
-            (12, all_mail, 3),
-        ] {
-            cache
-                .upsert_message(&in_conversation(
-                    folder_id,
-                    uid,
-                    "Quarterly report",
-                    "root@example.com",
-                    day,
-                ))
-                .unwrap();
-        }
+        // Standing in All Mail shows the conversations it holds, counted once
+        // each, whichever folder each message's other copy is under.
+        let (cache, _inbox, all_mail) =
+            a_label_and_its_all_mail_copies("conversation_standing_in_all_mail");
 
         let found = cache
             .conversations_in(all_mail, "acc", TheWholeAccount, None)
             .unwrap();
         assert_eq!(conversation(&found, "root@example.com").messages, 2);
+    }
+
+    /// A label, a folder holding all mail, and mail archived without a label.
+    ///
+    /// Five rows for four messages, and the arrangement Gmail really leaves
+    /// behind. `labelled-1` is in the inbox and All Mail holds its copy.
+    /// `archived-1` is in All Mail and nowhere else, which is what archiving
+    /// with no label does, and it belongs to the same conversation as
+    /// `labelled-1`. `lunch-1` is a conversation every one of whose messages
+    /// was archived that way, so nothing outside All Mail holds any part of it.
+    fn archived_without_a_label(name: &str) -> (TempHome<super::super::MessageCache>, i64, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+
+        let mut labelled = in_conversation(inbox, 1, "Quarterly report", "root@example.com", 1);
+        labelled.message_id = "<labelled-1@example.com>".to_string();
+        labelled.gmail_message_id = Some(17_000_000_000_000_001);
+        cache.upsert_message(&labelled).unwrap();
+
+        let mut its_copy = labelled.clone();
+        its_copy.folder_id = all_mail;
+        its_copy.uid = 101;
+        cache.upsert_message(&its_copy).unwrap();
+
+        let mut archived =
+            in_conversation(all_mail, 102, "Re: Quarterly report", "root@example.com", 3);
+        archived.message_id = "<archived-1@example.com>".to_string();
+        archived.gmail_message_id = Some(17_000_000_000_000_002);
+        cache.upsert_message(&archived).unwrap();
+
+        let mut alone = in_conversation(all_mail, 103, "Lunch on Friday", "lunch@example.com", 4);
+        alone.message_id = "<lunch-1@example.com>".to_string();
+        alone.gmail_message_id = Some(17_000_000_000_000_003);
+        cache.upsert_message(&alone).unwrap();
+
+        (cache, inbox, all_mail)
+    }
+
+    #[test]
+    fn test_a_conversation_archived_with_no_label_is_still_in_the_list() {
+        // The failure this is about cannot be seen: a conversation missing
+        // from a list is not something anybody can notice is missing. Standing
+        // in All Mail, counting across the account, a conversation every one of
+        // whose messages had been archived without a label had no row at all.
+        // The count excluded All Mail by folder, so it drew no rows for that
+        // conversation, while the list qualified the conversation by whether
+        // All Mail held it, so it was asked for and answered with nothing.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_alone");
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert!(
+            found.iter().any(|row| row.thread_id == "lunch@example.com"),
+            "the conversation whose every message was archived without a label \
+             is missing from {found:#?}"
+        );
+        assert_eq!(conversation(&found, "lunch@example.com").messages, 1);
+    }
+
+    #[test]
+    fn test_a_message_archived_with_no_label_counts_toward_its_conversation() {
+        // The same defect where it only takes a number off rather than a whole
+        // row: one message under a label, one archived with none, and the
+        // second counted for nothing from wherever somebody stood.
+        let (cache, inbox, all_mail) = archived_without_a_label("all_mail_archived_counts");
+
+        for (standing_in, where_that_is) in [(inbox, "the inbox"), (all_mail, "All Mail")] {
+            let found = cache
+                .conversations_in(standing_in, "acc", TheWholeAccount, None)
+                .unwrap();
+            assert_eq!(
+                conversation(&found, "root@example.com").messages,
+                2,
+                "counted from {where_that_is}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_unread_count_holds_a_message_archived_with_no_label() {
+        // The second number the Thread column says, which is the one that
+        // decides whether a conversation reads as unread at all. A message
+        // nothing counts is a message whose unread state nothing counts
+        // either, so the row says read when it is not.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_unread");
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&found, "root@example.com").unread, 2);
+    }
+
+    #[test]
+    fn test_two_messages_with_no_identity_of_their_own_are_two_messages() {
+        // The last arm of `WHICH_MESSAGE_THIS_ROW_IS`, which falls back to the
+        // row. A message carrying neither Gmail's identifier nor a Message-ID
+        // has nothing about it to be recognised by, and the answer has to be
+        // that it is only ever itself. Two of them in a folder holding all mail
+        // are two messages, whatever the count decides about which rows are
+        // copies of which.
+        //
+        // Three rows, one of them outside All Mail, so the set of messages held
+        // elsewhere is not empty. An empty one would answer this by accident.
+        let cache = fresh("all_mail_no_identity");
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+
+        for (uid, folder_id, day) in [(1, inbox, 1), (11, all_mail, 2), (12, all_mail, 3)] {
+            let mut nameless =
+                in_conversation(folder_id, uid, "No identifier", "root@example.com", day);
+            nameless.message_id = String::new();
+            cache.upsert_message(&nameless).unwrap();
+        }
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            3,
+            "two messages with nothing to be recognised by were taken for one"
+        );
+    }
+
+    /// A folder holding all mail on a server that offers no identifier of its
+    /// own, and one message it holds twice.
+    ///
+    /// `\All` is RFC 6154 and `holds_all_mail` is set from that attribute
+    /// whoever sent it, so this arrangement is not hypothetical: a server can
+    /// present every message a second time and never say `X-GM-MSGID`. The two
+    /// rows are one message and the only thing saying so is the `Message-ID`
+    /// the sender wrote.
+    fn a_copy_with_no_gmail_identifier(
+        name: &str,
+    ) -> (TempHome<super::super::MessageCache>, i64, i64, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "Archives/All");
+
+        let mut here = in_conversation(inbox, 1, "Quarterly report", "root@example.com", 1);
+        here.message_id = "<the-one-message@example.com>".to_string();
+        cache.upsert_message(&here).unwrap();
+
+        let mut copy = here.clone();
+        copy.folder_id = all_mail;
+        copy.uid = 11;
+        let copied = cache.upsert_message(&copy).unwrap();
+
+        (cache, inbox, all_mail, copied)
+    }
+
+    #[test]
+    fn test_a_copy_on_a_server_that_gives_no_identifier_of_its_own_is_counted_once() {
+        // The plan for this work said to tell messages apart by
+        // `COALESCE(gmail_msgid, id)`, which `searching.rs` uses. It is not
+        // enough once the folder exclusion is gone: with no Gmail identifier
+        // the two rows fall back to their own ids, so they are two messages and
+        // every conversation on such a server reports twice its size. That is
+        // the harm the folder exclusion existed to prevent, and it would have
+        // been traded for the archived-mail fix rather than fixed alongside it.
+        let (cache, inbox, _all_mail, _copied) =
+            a_copy_with_no_gmail_identifier("all_mail_no_gmail_id");
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            1,
+            "the copy was counted as a second message"
+        );
+    }
+
+    #[test]
+    fn test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy() {
+        // Ledger 8. The column held both spellings until 02.1-06: mail through
+        // `mail_parser` arrives bare and a draft this program files carries the
+        // brackets its header needs. `upsert_message` puts every write through
+        // `thread_identity::bare` now and `backfill_message_identifiers`
+        // corrects the older rows, but that backfill is not fatal when it
+        // fails, so a database it never finished still holds bracketed values.
+        //
+        // Written straight into the row, because that is the only way to have
+        // one: no writer in this build produces it.
+        let (cache, inbox, _all_mail, copied) =
+            a_copy_with_no_gmail_identifier("all_mail_two_spellings");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET message_id = ?1 WHERE id = ?2",
+                params!["<the-one-message@example.com>", copied],
+            )
+            .unwrap();
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            1,
+            "a row the backfill never reached stopped being recognised as a copy"
+        );
+    }
+
+    #[test]
+    fn test_the_row_and_the_action_agree_over_every_conversation_fixture_here() {
+        // D-07 as one assertion rather than as two numbers somebody keeps in
+        // step by hand. Over every fixture in this module that builds a
+        // conversation, from every folder somebody can stand in, under both
+        // reaches, and for every conversation the fixture holds including the
+        // ones a folder does not show.
+        //
+        // That last part is what makes this more than the test it generalises.
+        // A conversation absent from the list has to be a conversation the
+        // action reaches nothing of, and a listing and an action that disagreed
+        // about which conversations exist would still agree about the ones both
+        // could see.
+        let split = split_across_two_folders("agreement_split");
+        let copies = a_label_and_its_all_mail_copies("agreement_copies");
+        let archived = archived_without_a_label("agreement_archived");
+
+        for (what, cache, folders, threads) in [
+            (
+                "a conversation split across two folders",
+                &split.0,
+                [split.1, split.2],
+                vec!["root@example.com"],
+            ),
+            (
+                "a label and the copies All Mail holds",
+                &copies.0,
+                [copies.1, copies.2],
+                vec!["root@example.com"],
+            ),
+            (
+                "mail archived with no label",
+                &archived.0,
+                [archived.1, archived.2],
+                vec!["root@example.com", "lunch@example.com"],
+            ),
+        ] {
+            for reach in [TheWholeAccount, ThisFolderOnly] {
+                for standing_in in folders {
+                    let listed = cache
+                        .conversations_in(standing_in, "acc", reach, None)
+                        .unwrap();
+                    for thread in &threads {
+                        let says = listed
+                            .iter()
+                            .find(|row| row.thread_id == *thread)
+                            .map_or(0, |row| row.messages);
+                        let reaching = cache
+                            .messages_in_conversation(thread, "acc", standing_in, reach)
+                            .unwrap();
+                        assert_eq!(
+                            says,
+                            reaching.len() as i64,
+                            "{what}: standing in folder {standing_in} with {reach:?}, \
+                             the row for {thread} says {says} and the action would take {}",
+                            reaching.len()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether two queries were built on the same scope.
+    ///
+    /// A prefix comparison, because the scope is the whole `WITH` and each query
+    /// puts its own `SELECT` after it.
+    ///
+    /// Written as a function over its inputs rather than as an assertion about
+    /// the two real queries, so the companions below can feed it a pair that
+    /// differs and a scope that says nothing. A check written only against the
+    /// real pair passes and cannot show that it would notice anything else.
+    fn built_on_the_same_scope(scope: &str, queries: [&str; 2]) -> bool {
+        !scope.trim().is_empty() && queries.iter().all(|query| query.starts_with(scope))
+    }
+
+    #[test]
+    fn test_both_conversation_queries_are_built_on_one_scope() {
+        // What the doc comment above the two queries has asked for since it was
+        // written, as a test rather than a sentence. D-07 needs the number named
+        // before a deletion to be the number of messages that go, and the only
+        // way to be sure is for both to decide which messages exist with the
+        // same text.
+        let scope = super::conversation_scope();
+        let listing = super::conversations_query(super::NEWEST_CONVERSATION_FIRST);
+        let of_one = super::messages_in_one_conversation();
+        assert!(
+            built_on_the_same_scope(&scope, [listing.as_str(), of_one.as_str()]),
+            "one of the two conversation queries no longer begins with the shared scope.\n\
+             scope:\n{scope}\n\nlisting:\n{listing}\n\nof one:\n{of_one}"
+        );
+    }
+
+    #[test]
+    fn test_the_shared_scope_still_names_the_parts_the_two_queries_share() {
+        // So that "the same scope" cannot quietly become "the same nothing". A
+        // scope that had stopped naming one of its three parts, or one of the
+        // three parameters, would still be a common prefix of both queries and
+        // the check above would still pass.
+        let scope = super::conversation_scope();
+        for part in ["reach AS", "elsewhere AS", "here AS", "?1", "?2", "?3"] {
+            assert!(
+                scope.contains(part),
+                "the scope the two conversation queries share no longer names {part}:\n{scope}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_query_that_went_its_own_way_is_caught() {
+        // The companion `CLAUDE.md` asks for. Invented source, one of the two
+        // queries carrying its own version of the scope, and the reading has to
+        // say no.
+        assert!(!built_on_the_same_scope(
+            "WITH reach AS (SELECT id FROM folders WHERE account_id = ?1)",
+            [
+                "WITH reach AS (SELECT id FROM folders WHERE account_id = ?1) SELECT m.id",
+                "WITH reach AS (SELECT id FROM folders WHERE account_id = ?2) SELECT m.id",
+            ]
+        ));
+    }
+
+    #[test]
+    fn test_an_empty_scope_is_not_two_queries_agreeing() {
+        // Every string begins with the empty string, so a reading that had
+        // stopped reading would answer yes about any two queries at all,
+        // including two with nothing whatever in common.
+        assert!(!built_on_the_same_scope(
+            "",
+            ["SELECT one thing", "SELECT another"]
+        ));
+    }
+
+    #[test]
+    fn test_a_delete_reaches_the_message_archived_with_no_label() {
+        // D-07: the number named before a deletion is the number of messages
+        // that go. The archived message was in neither, so it survived a
+        // deletion of the conversation it belongs to and was never counted in
+        // the question either.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_delete");
+
+        let reaching = cache
+            .messages_in_conversation("root@example.com", "acc", all_mail, TheWholeAccount)
+            .unwrap();
+        assert_eq!(
+            reaching.len(),
+            2,
+            "the delete would take {} of the 2 messages in the conversation",
+            reaching.len()
+        );
     }
 
     #[test]

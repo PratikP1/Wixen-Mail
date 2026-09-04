@@ -289,7 +289,7 @@ announcement topic a whole-folder fetch belongs on.
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
 
-- Gmail mail archived with no label vanishes from a conversation count, because D-08 excludes All Mail by folder rather than by message identity. One extra predicate in one query.
+- ~~Gmail mail archived with no label vanishes from a conversation count, because D-08 excludes All Mail by folder rather than by message identity.~~ Closed by `03-04`. "One extra predicate in one query" was wrong three ways: there are two queries and they must change together, the `here` CTE had no join to `folders`, and a per-row rule needs the set of messages held elsewhere, which is a third CTE. About 90 lines of SQL.
 - A conversation root arriving after a message that already names it is not merged, so three of six arrival orders over such a set merge. One table, one index, one writer.
 - `next_local_uid` hands out 0 after the number range wraps, because it saturates on `i64` and then casts to `u32`. Not reachable in any database this program can currently produce.
 

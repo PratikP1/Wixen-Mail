@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 381 records have arrived since and have not been through it.
+# 385 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11085,16 +11085,42 @@ file = "src/data/message_cache/messages.rs"
 # new identifier test whose whole assertion is that a join finds a conversation.
 # Nobody working on either subject would have filtered for this record, and
 # nine of the other ten came out unchanged.
+#
+# Measured a sixth time on 2026-09-04, prompted the same way again: plan 03-04
+# added four tests to this file and the count check flagged this record among
+# seventeen. Thirty-four became thirty-eight, and this was the only one of the
+# seventeen that had fallen behind. The four are the archived-mail tests, and
+# they belong here for the plainest possible reason: every one of them asks what
+# a conversation holds, so a column nothing fills leaves them with no
+# conversation to ask about. Their own record is next to this one and is about
+# which folders are counted, not about whether the column is written, so neither
+# record makes the other redundant.
+#
+# And a seventh time an hour later, in the same session, prompted the same way
+# again: plan 03-04's second task added eight more tests to this file. Three of
+# them reach this rule and thirty-eight became forty-one. Two are about a copy
+# of a message on a server that offers no identifier of its own, and one about a
+# message with no identifier at all; every one of them asks what a conversation
+# holds, so a column nothing fills leaves all three with nothing to hold.
+#
+# Six of the seven measurements were prompted by the run rather than by anybody
+# remembering, which is what the count check is for. The two an hour apart are
+# also the plainest argument this file has for putting all of a plan's tests in
+# one commit: the second measurement cost the same as the first and found the
+# same kind of thing.
 before = """                    &conversation,"""
 after = """                    None::<String>,"""
 red = [
     "data::message_cache::messages::tests::test_a_chain_that_arrives_later_moves_the_message_into_its_conversation",
+    "data::message_cache::messages::tests::test_a_conversation_archived_with_no_label_is_still_in_the_list",
     "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
     "data::message_cache::messages::tests::test_a_conversation_is_found_by_a_message_in_the_middle_of_it_not_only_its_root",
     "data::message_cache::messages::tests::test_a_conversation_of_one_message_counts_one",
     "data::message_cache::messages::tests::test_a_conversation_split_across_two_folders_counts_the_same_from_either",
     "data::message_cache::messages::tests::test_a_conversation_that_does_not_touch_this_folder_is_not_listed",
+    "data::message_cache::messages::tests::test_a_copy_on_a_server_that_gives_no_identifier_of_its_own_is_counted_once",
+    "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
     "data::message_cache::messages::tests::test_a_deleted_conversation_comes_back_whole_and_not_in_part",
     "data::message_cache::messages::tests::test_a_deleted_message_is_not_counted",
     "data::message_cache::messages::tests::test_a_filed_draft_and_a_synced_reply_naming_it_are_one_conversation",
@@ -11103,7 +11129,9 @@ red = [
     "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
     "data::message_cache::messages::tests::test_a_message_a_sync_stores_carries_its_conversation_id",
     "data::message_cache::messages::tests::test_a_message_already_deleted_is_not_reached_again",
+    "data::message_cache::messages::tests::test_a_message_archived_with_no_label_counts_toward_its_conversation",
     "data::message_cache::messages::tests::test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names",
+    "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
     "data::message_cache::messages::tests::test_an_identifier_nothing_holds_names_no_conversation",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
@@ -11118,13 +11146,15 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_arriving_twice_moves_nothing_the_second_time",
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
     "data::message_cache::messages::tests::test_the_two_reaches_take_different_numbers_of_messages",
+    "data::message_cache::messages::tests::test_the_unread_count_holds_a_message_archived_with_no_label",
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
     "data::message_cache::messages::tests::test_two_accounts_do_not_share_a_conversation",
+    "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
     "data::message_cache::messages::tests::test_with_the_reach_on_one_folder_a_conversation_counts_only_what_is_here",
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -11162,7 +11192,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -11184,7 +11214,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -11604,7 +11634,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11823,7 +11853,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -11921,35 +11951,56 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
 # D-08 and threat T-01-50. On Gmail a label is a mailbox and All Mail holds a
 # copy of every message, so counting a conversation across the account without
-# leaving those folders out reports twice its size, on the largest provider
-# there is, for every conversation. The number stays plausible while being
-# wrong, which is worse than one that is obviously wrong.
+# leaving those copies out reports twice its size, on the largest provider there
+# is, for every conversation. The number stays plausible while being wrong,
+# which is worse than one that is obviously wrong.
 #
-# The break leaves the reach parameter in place and makes its exclusion always
-# true, so the shape of the query is untouched and only the exclusion goes. A
-# weaker break, dropping the whole clause, changes the parameter's arithmetic
-# as well and would redden for a second reason.
+# The rule moved on 2026-09-04 and this record moved with it. It used to be an
+# exclusion of the folder, in the reach; the break was that exclusion made
+# always true. Excluding the folder also excluded the messages that are in it
+# and nowhere else, which is what archiving without a label leaves behind, so
+# the exclusion is now over the rows that are really duplicates: an all-mail row
+# whose message some other folder in reach already holds.
 #
-# Measured by hand on 2026-08-30 against the whole library: two tests. One is
-# the doubling. The other is the half that is easy to lose while fixing the
-# first, because the exclusion is about counting and not about what is listed:
-# somebody standing in All Mail still sees the conversations it holds.
+# The break has the same shape as the one it replaces. It leaves the join and
+# the clause in place and makes the condition always true, so only the exclusion
+# goes and nothing reddens for a second reason.
+#
+# Measured by hand on 2026-09-04 against the whole library: five tests. The two
+# written for this rule, and three of the four written for the archived-mail one
+# next to it, because the fixture there has a labelled message whose copy is in
+# All Mail and every number it asserts moves by one when that copy is counted
+# again. The one that does not move is the presence assertion: a conversation
+# that was in the list is still in the list when something is counted twice.
+#
+# Re-measured an hour later in the same session, because the plan's second task
+# added tests that reach this rule. Five became seven: both of the tests about a
+# copy on a server that offers no identifier of its own, which is this same rule
+# asked of the other arm of `WHICH_MESSAGE_THIS_ROW_IS`. Nothing about this
+# guarded code changed between the two measurements.
 name = "a folder holding a copy of every message is left out of a conversation count"
 file = "src/data/message_cache/messages.rs"
-before = """               AND (?3 = 0 OR holds_all_mail = 0)"""
-after = """               AND (?3 = 0 OR ?3 = 1)"""
+before = """               AND (mf.holds_all_mail = 0
+                    OR {WHICH_MESSAGE_THIS_ROW_IS}
+                       NOT IN (SELECT message FROM elsewhere))"""
+after = """               AND (mf.holds_all_mail = 0 OR mf.holds_all_mail = 1)"""
 red = [
+    "data::message_cache::messages::tests::test_a_copy_on_a_server_that_gives_no_identifier_of_its_own_is_counted_once",
+    "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
     "data::message_cache::messages::tests::test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count",
+    "data::message_cache::messages::tests::test_a_message_archived_with_no_label_counts_toward_its_conversation",
+    "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
+    "data::message_cache::messages::tests::test_the_unread_count_holds_a_message_archived_with_no_label",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -12053,7 +12104,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
@@ -12088,7 +12139,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12117,7 +12168,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13114,7 +13165,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
     { file = "src/presentation/message_columns.rs", tests = 37 },
 ]
 
@@ -13147,7 +13198,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -13180,7 +13231,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 [[guard]]
@@ -13204,7 +13255,7 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13493,7 +13544,7 @@ red = [
     "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 # ── The migration moves every row it found ─────────────────────────────────
@@ -13699,7 +13750,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 37 },
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
 
 # ── Nothing new asks for the counting-up numbering directly ────────────────
@@ -13731,5 +13782,181 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 157 },
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
+]
+
+# ── Mail archived with no label counts toward its conversation ─────────────
+#
+# D-08 asks which folders a conversation is counted across, and it used to
+# answer by dropping every folder holding a copy of all mail. On Gmail that is
+# All Mail, and archiving a message without giving it a label leaves it in All
+# Mail and nowhere else. So the message was excluded along with the folder, and
+# a conversation with nothing outside All Mail had no rows at all and left the
+# list.
+#
+# The break is that exclusion, put back exactly as it was. It reads as a
+# simplification of a query that now says the same thing in a longer way, and it
+# is the whole defect.
+#
+# Worth knowing before trusting the agreement record further down: this break is
+# invisible to it. The two queries still agree under it, because both lose the
+# same rows. A guard asking whether two answers match cannot see the case where
+# both are wrong in the same way, which is why this record exists separately.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,101 passed and four
+# failed, which are the four written for it. The first of them is the one to
+# read, because it is the only one that fails on a row being absent rather than
+# on a number being short.
+#
+# Re-measured an hour later in the same session, because the plan's second task
+# added tests that reach this rule. Four became five, and the fifth is worth
+# reading: it is about a message with no identifier of its own, and its fixture
+# puts two such messages in All Mail, so excluding the folder takes them both.
+# Nothing about identity is what makes it fail. It is here for the same reason
+# every other one is, that the folder holds the only copy.
+
+[[guard]]
+name = "mail archived with no label counts toward its conversation"
+file = "src/data/message_cache/messages.rs"
+before = """               AND (?3 = 1 OR id = ?2)
+         ),"""
+after = """               AND (?3 = 0 OR holds_all_mail = 0)
+               AND (?3 = 1 OR id = ?2)
+         ),"""
+red = [
+    "data::message_cache::messages::tests::test_a_conversation_archived_with_no_label_is_still_in_the_list",
+    "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
+    "data::message_cache::messages::tests::test_a_message_archived_with_no_label_counts_toward_its_conversation",
+    "data::message_cache::messages::tests::test_the_unread_count_holds_a_message_archived_with_no_label",
+    "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
+]
+
+# ── The two conversation queries decide which messages exist with one text ──
+#
+# D-07 needs the number named before a deletion to be the number of messages
+# that go. The doc comment above these two queries has said since it was written
+# that they carry the same reach and the same qualifier on purpose, and that two
+# queries agreeing today would drift the first time somebody changed one of
+# them. It said it, and nothing checked it.
+#
+# They are one text now. `conversation_scope` is the whole `WITH` and each query
+# is that plus its own `SELECT`, so the drift the comment warns about needs
+# somebody to take one of them off the shared text first.
+#
+# Which is what the break is, and the reason is worth reading before anybody
+# writes a simpler one. Both sides read `conversation_scope`, so editing the
+# scope moves both together and they still agree: a guard over two things built
+# from one source can never be falsified by editing that source. The break has
+# to reintroduce the divergence the sharing removed, and that is also the defect
+# the guard exists to prevent, which is the tell that it is the right one. It is
+# written as the most plausible version of that mistake rather than an arbitrary
+# one: the query as it stood before this change, with the thread qualifier left
+# out.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,108 passed and three
+# failed. The reading, the agreement, and a delete on the archived-mail fixture,
+# which is the one that says what a disagreement costs somebody: the question
+# names two messages and the deletion takes three.
+
+[[guard]]
+name = "the two conversation queries decide which messages exist with one text"
+file = "src/data/message_cache/messages.rs"
+before = """pub(super) fn messages_in_one_conversation() -> String {
+    format!(
+        "{scope}
+         SELECT m.id
+         FROM here m
+         WHERE m.thread_id = ?4
+         ORDER BY m.received_at ASC, m.id ASC",
+        scope = conversation_scope()
+    )
+}"""
+after = """pub(super) fn messages_in_one_conversation() -> String {
+    "WITH reach AS (
+             SELECT id FROM folders
+             WHERE account_id = ?1
+               AND (?3 = 1 OR id = ?2)
+         )
+         SELECT m.id
+         FROM messages m
+         WHERE m.folder_id IN (SELECT id FROM reach)
+           AND m.deleted = 0
+           AND m.thread_id = ?4
+         ORDER BY COALESCE(m.internaldate, m.date) ASC, m.id ASC"
+        .to_string()
+}"""
+red = [
+    "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
+    "data::message_cache::messages::tests::test_both_conversation_queries_are_built_on_one_scope",
+    "data::message_cache::messages::tests::test_the_row_and_the_action_agree_over_every_conversation_fixture_here",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
+]
+
+# ── A message with no identity of its own is only ever itself ───────────────
+#
+# The last arm of `WHICH_MESSAGE_THIS_ROW_IS`. A message carrying neither
+# Gmail's identifier nor a Message-ID has nothing about it to be recognised by,
+# and the answer has to be its own row: a message merged with a stranger is a
+# message that disappears out of somebody's conversation.
+#
+# The break makes that arm answer a constant, so every row with no identity is
+# the same message as every other one. It is the shape of mistake the arm exists
+# to prevent, and it looks harmless, because a placeholder is still a value.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,110 passed and one
+# failed. One test is the whole defence of this arm, which is what the record is
+# for. Every other fixture in the module gives its messages identifiers, so the
+# arm decides nothing for them and a break in it changes none of their answers.
+
+[[guard]]
+name = "a message with no identity of its own is only ever itself"
+file = "src/data/message_cache/messages.rs"
+before = """                     ELSE 'row:' || m.id"""
+after = """                     ELSE 'row:0'"""
+red = [
+    "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
+]
+
+# ── A copy is recognised by the sender's message identifier when the server
+#    gives none ───────────────────────────────────────────────────────────────
+#
+# The \All attribute is RFC 6154 and holds_all_mail is set from it whoever sent
+# it, so a server that is not Gmail can hold a copy of every message and never
+# say X-GM-MSGID. With only the Gmail arm and the row fallback, the two rows are
+# two messages, and every conversation on such a server reports twice its size.
+# That is the harm the folder exclusion used to prevent, so taking the exclusion
+# out without this arm trades one defect for another.
+#
+# The plan for 03-04 said to reuse searching.rs's COALESCE(m.gmail_msgid, m.id),
+# which is the Gmail arm and the row fallback with nothing between them. The
+# break is therefore that plan as written, which is worth saying: it is not a
+# hypothetical mistake, it is the one that was nearly made.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,111 passed and two
+# failed. The copy counted twice, and the row still holding the bracketed
+# spelling, which is the second half of the arm: the column held both spellings
+# until 02.1-06 and the backfill that corrects the older rows is not fatal when
+# it fails.
+
+[[guard]]
+name = "a copy is recognised by the sender's message identifier when the server gives none"
+file = "src/data/message_cache/messages.rs"
+before = """                     WHEN TRIM(TRIM(m.message_id), '<>') <> ''
+                         THEN 'header:' || TRIM(TRIM(m.message_id), '<>')
+                     ELSE 'row:' || m.id"""
+after = """                     ELSE 'row:' || m.id"""
+red = [
+    "data::message_cache::messages::tests::test_a_copy_on_a_server_that_gives_no_identifier_of_its_own_is_counted_once",
+    "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 169 },
 ]
