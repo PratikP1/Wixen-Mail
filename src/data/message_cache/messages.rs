@@ -74,6 +74,164 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
 /// the two views does not reorder the mailbox under somebody.
 pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
 
+/// Which message a row is, for a count that must not say one message twice.
+///
+/// A server that holds a copy of every message presents one message as two
+/// rows, and to anything counting rows the two are the same as two messages.
+/// This is the expression that tells them apart. Three answers, strongest
+/// first, and the value says which one decided:
+///
+/// - Gmail's own `X-GM-MSGID`, stored in `gmail_msgid`. It is asked for on
+///   every Gmail connection, `header_query` builds the fetch, and the copy
+///   under a label and the copy in All Mail carry the same one.
+/// - the `Message-ID` the sender wrote, trimmed of its angle brackets. `\All`
+///   is RFC 6154 rather than a Gmail invention, so a server can advertise a
+///   folder holding everything and offer no Gmail identifier at all, and the
+///   two copies are still one message. Trimmed because the column has held
+///   both spellings: `upsert_message` writes the bare form now and
+///   `backfill_message_identifiers` corrects older rows, but that backfill is
+///   not fatal when it fails, so a database it never finished still holds
+///   bracketed values.
+/// - the row itself, for a message carrying neither. A row id is unique to its
+///   row, so a message with no identity of its own is never taken for another
+///   message. It also means two copies of such a message count as two, which
+///   is a number too high rather than a conversation that disappears, and of
+///   the two ways to be wrong that is the one somebody can see.
+///
+/// Tagged rather than coalesced into one column, so a Gmail identifier can
+/// never equal a row id that happens to hold the same number. `searching.rs`
+/// writes the same idea as `COALESCE(m.gmail_msgid, m.id)` for the narrower
+/// question it asks, which is how to show one search result per message; this
+/// one has to survive a server that gives no Gmail identifier.
+///
+/// Written against the alias `m`, which both places using it bind to
+/// `messages`.
+const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
+                     WHEN m.gmail_msgid IS NOT NULL THEN 'gmail:' || m.gmail_msgid
+                     WHEN TRIM(TRIM(m.message_id), '<>') <> ''
+                         THEN 'header:' || TRIM(TRIM(m.message_id), '<>')
+                     ELSE 'row:' || m.id
+                 END";
+
+/// The folders a conversation is counted across, and its messages within them.
+///
+/// One text, shared verbatim by [`conversations_query`] and
+/// [`messages_in_one_conversation`], and that is the whole point of it being a
+/// function rather than two hand-written copies. D-07 needs the number named
+/// before a deletion to be the number of messages that go, and two queries
+/// written out separately agree until the first time somebody changes one of
+/// them. They cannot drift now, because there is nothing to drift from.
+///
+/// `?1` is the account, `?2` the folder being stood in, and `?3` is 1 when the
+/// count reaches the whole account and 0 when it reaches this folder alone.
+///
+/// # reach
+///
+/// Which folders count. A parameter rather than a branch around two queries, so
+/// both answers go down one path.
+///
+/// It used to drop every folder holding a copy of all mail whenever the reach
+/// was the whole account. The reason was real: on Gmail a label is a mailbox and
+/// All Mail holds a copy of everything, so counting rows across the account
+/// reported twice the size of every conversation. The reason it was wrong is
+/// that a message archived without a label is in All Mail and nowhere else, so
+/// excluding the folder excluded the message. A conversation with nothing
+/// outside All Mail then had no rows at all and left the list entirely, which is
+/// a failure nobody can see: a row that is not there does not announce itself.
+///
+/// # elsewhere
+///
+/// Which messages some folder other than an all-mail one already holds, by
+/// [`WHICH_MESSAGE_THIS_ROW_IS`]. `here` drops an all-mail row whose message is
+/// in that set, so a copy is dropped and a message with no copy anywhere else is
+/// kept. That is the same exclusion as before, narrowed from a folder to the
+/// rows that are really duplicates, and it leaves every other answer where it
+/// was: a conversation with no all-mail row is untouched.
+///
+/// Built once as a set rather than asked per row. The per-row form is a scan of
+/// the account for every row in All Mail, which on Gmail is a scan per message.
+///
+/// Empty when the reach is one folder and that folder is the all-mail one,
+/// which is right: standing in All Mail and counting only All Mail must count
+/// what All Mail holds.
+///
+/// `NOT IN` over it is safe against SQLite's usual trap because
+/// [`WHICH_MESSAGE_THIS_ROW_IS`] never yields NULL. Its last arm is the row id,
+/// which every row has.
+///
+/// # here
+///
+/// The messages within that reach, one row per message, with the arrival time
+/// worked out once as `received_at` so the newest and the oldest are asked the
+/// same way.
+///
+/// Which conversations to list is a separate question, and it is asked without
+/// any of this: a row appears in every folder the conversation touches, and All
+/// Mail is one of them.
+///
+/// # The index this needs
+///
+/// `idx_messages_thread`, added by plan 01-02. The existing indexes cannot serve
+/// this: an index is searched from its leftmost column and theirs begin with
+/// `folder_id`, which [`unified_inbox_query`] already explains for a query of
+/// the same shape.
+pub(super) fn conversation_scope() -> String {
+    format!(
+        "WITH reach AS (
+             SELECT id FROM folders
+             WHERE account_id = ?1
+               AND (?3 = 1 OR id = ?2)
+         ),
+         elsewhere AS (
+             SELECT DISTINCT {WHICH_MESSAGE_THIS_ROW_IS} AS message
+             FROM messages m
+             INNER JOIN folders f ON m.folder_id = f.id
+             WHERE m.folder_id IN (SELECT id FROM reach)
+               AND m.deleted = 0
+               AND f.holds_all_mail = 0
+         ),
+         here AS (
+             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
+                    m.answered, m.draft, m.has_attachments, m.safety,
+                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
+                    COALESCE(m.internaldate, m.date) AS received_at
+             FROM messages m
+             INNER JOIN folders mf ON m.folder_id = mf.id
+             WHERE m.folder_id IN (SELECT id FROM reach)
+               AND m.deleted = 0
+               AND (mf.holds_all_mail = 0
+                    OR {WHICH_MESSAGE_THIS_ROW_IS}
+                       NOT IN (SELECT message FROM elsewhere))
+               AND m.thread_id IS NOT NULL AND m.thread_id <> ''
+               AND m.thread_id IN (
+                   SELECT thread_id FROM messages
+                   WHERE folder_id = ?2 AND deleted = 0
+                     AND thread_id IS NOT NULL AND thread_id <> ''
+               )
+         )"
+    )
+}
+
+/// The messages of one conversation, under the reach its row is counted with.
+///
+/// [`conversation_scope`] and then one narrowing, so the rows this walks are the
+/// rows the row's own count counted. `?4` is the conversation. Nothing else
+/// differs from the listing, and nothing can, because the part that decides
+/// which messages exist is the same text in both.
+///
+/// A conversation named by the empty string matches nothing, because `here`
+/// leaves out a row with no conversation.
+pub(super) fn messages_in_one_conversation() -> String {
+    format!(
+        "{scope}
+         SELECT m.id
+         FROM here m
+         WHERE m.thread_id = ?4
+         ORDER BY m.received_at ASC, m.id ASC",
+        scope = conversation_scope()
+    )
+}
+
 /// The query a conversation listing runs, in one place.
 ///
 /// Built here rather than inline for the reason [`listing_query`] gives: a test
@@ -88,88 +246,13 @@ pub(super) const NEWEST_CONVERSATION_FIRST: &str = "MAX(m.received_at) DESC";
 /// one expression rather than two that have to be kept in step. D-02 says that
 /// in words; this is where it is true.
 ///
-/// # What the two CTEs are for
-///
-/// `reach` is which folders count, and it is a parameter rather than a branch
-/// around two queries, so both answers go down one path and cannot drift apart.
-/// `?3` is 1 for the whole account and 0 for this folder alone.
-///
-/// The exclusion of folders holding a copy of every message is tied to the
-/// account-wide answer, and that is deliberate. On Gmail a label is a mailbox
-/// and All Mail holds a copy of everything, so counting across the account
-/// without the exclusion reports twice the size of every conversation. Counting
-/// one folder cannot double anything, and applying the exclusion there would
-/// leave somebody standing in All Mail with a reach of one folder and no rows
-/// at all.
-///
-/// `here` is this conversation's messages within that reach, with the arrival
-/// time worked out once as `received_at` so the newest and the oldest are asked
-/// the same way. Which conversations to list is a separate question and is asked
-/// without the exclusion: a row appears in every folder the conversation
-/// touches, and All Mail is one of them.
-///
-/// # The index this needs
-///
-/// `idx_messages_thread`, added by plan 01-02. The existing indexes cannot serve
-/// this: an index is searched from its leftmost column and theirs begin with
-/// `folder_id`, which [`unified_inbox_query`] already explains for a query of
-/// the same shape.
-/// The messages of one conversation, under the reach its row is counted with.
-///
-/// The `reach` and `here` parts are the same two the listing query uses, with
-/// the same three parameters in the same order, and that is the point of them
-/// being written this way. D-07 needs the number named before a deletion to be
-/// the number of messages that go; two queries agreeing today would drift the
-/// first time somebody changed one of them.
-///
-/// The fourth parameter narrows to a single conversation. Nothing else differs:
-/// the same account bound, the same all-mail exclusion for the account-wide
-/// reach, the same folder bound for the narrow one, and the same rule that a
-/// message already deleted is not there.
-const MESSAGES_IN_ONE_CONVERSATION: &str = "WITH reach AS (
-         SELECT id FROM folders
-         WHERE account_id = ?1
-           AND (?3 = 0 OR holds_all_mail = 0)
-           AND (?3 = 1 OR id = ?2)
-     )
-     SELECT m.id
-     FROM messages m
-     WHERE m.folder_id IN (SELECT id FROM reach)
-       AND m.deleted = 0
-       AND m.thread_id = ?4
-       AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-       AND m.thread_id IN (
-           SELECT thread_id FROM messages
-           WHERE folder_id = ?2 AND deleted = 0
-             AND thread_id IS NOT NULL AND thread_id <> ''
-       )
-     ORDER BY COALESCE(m.internaldate, m.date) ASC, m.id ASC";
-
+/// Every one of those expressions counts rows of `here`, and none of them
+/// deduplicates, which is why `here` is what holds one row per message.
 pub(super) fn conversations_query(order: &str) -> String {
     use crate::presentation::message_columns::MessageColumn;
 
     format!(
-        "WITH reach AS (
-             SELECT id FROM folders
-             WHERE account_id = ?1
-               AND (?3 = 0 OR holds_all_mail = 0)
-               AND (?3 = 1 OR id = ?2)
-         ),
-         here AS (
-             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
-                    m.answered, m.draft, m.has_attachments, m.safety,
-                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
-                    COALESCE(m.internaldate, m.date) AS received_at
-             FROM messages m
-             WHERE m.folder_id IN (SELECT id FROM reach)
-               AND m.deleted = 0
-               AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-               AND m.thread_id IN (
-                   SELECT thread_id FROM messages
-                   WHERE folder_id = ?2 AND deleted = 0
-                     AND thread_id IS NOT NULL AND thread_id <> ''
-               )
-         )
+        "{scope}
          SELECT m.thread_id,
                 {subject},
                 {messages},
@@ -189,6 +272,7 @@ pub(super) fn conversations_query(order: &str) -> String {
          FROM here m
          GROUP BY m.thread_id
          ORDER BY {order}, m.thread_id ASC",
+        scope = conversation_scope(),
         subject = MessageColumn::Subject.conversation_sort_expression(),
         messages = MessageColumn::Thread.conversation_sort_expression(),
         unread = MessageColumn::Unread.conversation_sort_expression(),
@@ -1900,9 +1984,10 @@ impl MessageCache {
         folder_id: i64,
         reach: AConversationReaches,
     ) -> Result<Vec<i64>> {
+        let query = messages_in_one_conversation();
         let mut stmt = self
             .conn
-            .prepare_cached(MESSAGES_IN_ONE_CONVERSATION)
+            .prepare_cached(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare the conversation read: {e}")))?;
         let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
         let rows = stmt
