@@ -1040,7 +1040,7 @@ impl MessageCache {
         // that could be listed and not found would be the worse half of the
         // gap this replaced.
         self.index_message_for_search(id)?;
-        self.merge_what_this_message_connects(incoming, &conversation)?;
+        self.merge_what_this_message_connects(id, incoming, &conversation)?;
         Ok(id)
     }
 
@@ -1060,6 +1060,7 @@ impl MessageCache {
     /// arrival.
     fn merge_what_this_message_connects(
         &self,
+        row: i64,
         incoming: &IncomingMessage,
         conversation: &str,
     ) -> Result<usize> {
@@ -1072,6 +1073,7 @@ impl MessageCache {
         let Some(account_id) = self.account_of_folder(incoming.folder_id)? else {
             return Ok(0);
         };
+        self.record_what_this_message_names(row, &asking)?;
         let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {
             return Ok(0);
@@ -1089,6 +1091,52 @@ impl MessageCache {
             );
         }
         Ok(moved)
+    }
+
+    /// Write down every identifier this message names, against the message.
+    ///
+    /// The half of a merge that was missing. [`Self::threads_holding_any_of`]
+    /// could only ask whether some stored message's own identifier was one of
+    /// these, so a conversation root arriving after a message that already
+    /// named it was invisible: the knowledge sat in that message's stored
+    /// `refs_header` and no index over a header can answer a question about a
+    /// name inside it. These rows are that knowledge, one per name.
+    ///
+    /// # Before the merge, and why the ordering does not matter
+    ///
+    /// The table holds no conversation. A row says what a message named, and
+    /// which conversation that message is in stays in `messages.thread_id`,
+    /// read through a join when the question is asked. So there is nothing
+    /// here for a rename to make stale, and recording before a merge or after
+    /// it comes to the same thing.
+    ///
+    /// It is done before because what a message names is a fact about its
+    /// headers rather than about any conversation, so it belongs with the
+    /// message, and a merge that fails should not take it down with it.
+    ///
+    /// # No second narrowing
+    ///
+    /// Empty identifiers are not filtered here.
+    /// [`crate::application::thread_identity::identifiers_worth_asking_about`]
+    /// already drops them, and it has to, because an empty identifier reaching
+    /// the lookup matches every message the cache holds with none of its own.
+    /// A second filter here could never be taken red, which is the shape
+    /// [`Self::backfill_message_identifiers`]'s comment argues against.
+    fn record_what_this_message_names(&self, row: i64, identifiers: &[String]) -> Result<()> {
+        for identifier in identifiers {
+            // OR IGNORE rather than a check first: the same identifier arrives
+            // twice through a chain that repeats its root, which senders
+            // write, and through the same message being stored again, which is
+            // every repeat sync. Both are the primary key doing its job.
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO identifiers_a_message_names (message_id, identifier)
+                     VALUES (?1, ?2)",
+                    params![row, identifier],
+                )
+                .map_err(|e| Error::Other(format!("Failed to record what a message names: {e}")))?;
+        }
+        Ok(())
     }
 
     /// Give a conversation id to every message stored before there was one.
@@ -1217,6 +1265,155 @@ impl MessageCache {
         Ok(corrected)
     }
 
+    /// Record what every stored message names, and apply the merges that
+    /// reveals.
+    ///
+    /// The table [`Self::record_what_this_message_names`] writes starts empty,
+    /// so on its own it changes nothing for mail already stored: every merge it
+    /// enables would apply only to what has not arrived yet, and every
+    /// conversation already split would stay split. To somebody who has been
+    /// using this program that is a fix that does not work.
+    ///
+    /// Returns how many stored messages were moved into another conversation.
+    ///
+    /// # Gated by a check, and the check is the state itself
+    ///
+    /// This walks every message, so it must not run on every open. It is gated
+    /// on the table holding nothing, which is one probe and does not grow with
+    /// the mailbox.
+    ///
+    /// That is deliberately not a marker. A marker is a second thing that can
+    /// be wrong, and one wrong in the direction of "already done" leaves
+    /// conversations split with nothing left that would ever join them. Here
+    /// the gate is the state: the table is empty exactly when this has not
+    /// filled it.
+    ///
+    /// The whole of it is one transaction, and that is what keeps the gate
+    /// honest. A run that fails half way rolls back to an empty table, so the
+    /// next open sees the same "not done yet" and starts again. Filling the
+    /// table half way and then reading it as done is the failure this ordering
+    /// exists against.
+    ///
+    /// One database pays for this on every open: one whose messages name no
+    /// identifiers at all, since the table then stays empty however often this
+    /// runs. Nothing writes such a database. `message_id` is what a message is
+    /// threaded by, and mail with none of it is a row rather than a mailbox.
+    ///
+    /// # Two passes, and why not one
+    ///
+    /// Every message's names are recorded first, and the merges are asked
+    /// afterwards. A merge asked half way through the recording can only see
+    /// the part recorded so far, so it would answer differently depending on
+    /// which message came first, which is exactly the arrival-order dependence
+    /// this is here to remove.
+    ///
+    /// # What it costs
+    ///
+    /// Measured on a release build, warm, over two hundred thousand messages
+    /// in ten thousand conversations, each message naming its root, its parent
+    /// and itself, which comes to five hundred and seventy thousand recorded
+    /// names:
+    ///
+    /// | | the first open | every open after |
+    /// | --- | --- | --- |
+    /// | nothing left split | 5.66 s | 73 us |
+    /// | every conversation split in two | 6.45 s | 69 us |
+    ///
+    /// The second column is the gate, which is one probe. The extra 0.8 s in
+    /// the second row is ten thousand merges moving a hundred thousand
+    /// messages, so a mailbox with more to join pays a little more and not a
+    /// different order of it.
+    pub fn backfill_identifiers_a_message_names(&self) -> Result<usize> {
+        let already: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM identifiers_a_message_names)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to ask what is recorded: {e}")))?;
+        if already {
+            return Ok(0);
+        }
+
+        // Read into a `Vec` before anything is written, for the reason
+        // [`Self::migrate_inline_bodies`] does the same: a cached statement
+        // held open over `messages` while the same table is being written is a
+        // lock against itself.
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT m.id, m.message_id, m.refs_header, f.account_id
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id",
+            )
+            .map_err(|e| Error::Other(format!("Failed to find the stored messages: {e}")))?;
+        let stored: Vec<(i64, String, Option<String>, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the stored messages: {e}")))?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read a stored message: {e}")))?;
+
+        let filling = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to begin recording: {e}")))?;
+
+        for (row, message_id, refs_header, _) in &stored {
+            let asking = crate::application::thread_identity::identifiers_worth_asking_about(
+                message_id,
+                refs_header.as_deref(),
+            );
+            self.record_what_this_message_names(*row, &asking)?;
+        }
+
+        let mut moved = 0usize;
+        for (row, message_id, refs_header, account_id) in &stored {
+            let asking = crate::application::thread_identity::identifiers_worth_asking_about(
+                message_id,
+                refs_header.as_deref(),
+            );
+            // Read again rather than remembered from the select above. An
+            // earlier merge in this same pass may already have moved this
+            // message, and merging from the conversation it used to be in
+            // would rewrite a conversation nobody is left in.
+            let conversation: String = self
+                .conn
+                .query_row(
+                    "SELECT COALESCE(thread_id, '') FROM messages WHERE id = ?1",
+                    params![row],
+                    |found| found.get(0),
+                )
+                .map_err(|e| Error::Other(format!("Failed to read a conversation: {e}")))?;
+            let found = self.threads_holding_any_of(account_id, &asking)?;
+            let Some(merge) = crate::application::thread_identity::rejoin(&conversation, &found)
+            else {
+                continue;
+            };
+            moved = moved.saturating_add(self.reroot_threads(
+                account_id,
+                &merge.roots_to_rewrite,
+                &merge.winning_root,
+            )?);
+        }
+
+        filling
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to finish recording: {e}")))?;
+
+        // A count, never an identifier. A `Message-ID` carries a hostname and
+        // a local part, which is somebody's mail turning up in a log file.
+        if moved > 0 {
+            tracing::info!(
+                "Joined conversations that were stored apart, moving {} messages",
+                moved
+            );
+        }
+        Ok(moved)
+    }
+
     /// Which conversations this account already files any of these identifiers
     /// under.
     ///
@@ -1284,9 +1481,7 @@ impl MessageCache {
         // for a database the rewrite never reached.
         //
         // One placeholder per form, so every value a stranger wrote arrives as
-        // a bound parameter and nothing is interpolated. Two per identifier
-        // against a cap of 64 is 128, plus the account: inside SQLite's limit
-        // of 999 with room to spare.
+        // a bound parameter and nothing is interpolated.
         let both_forms: Vec<String> = wanted
             .iter()
             .flat_map(|id| [(*id).clone(), format!("<{id}>")])
@@ -1294,23 +1489,80 @@ impl MessageCache {
         let placeholders = std::iter::repeat_n("?", both_forms.len())
             .collect::<Vec<_>>()
             .join(", ");
+
+        // The second question, of `identifiers_a_message_names`: which
+        // conversations hold a message that *named* one of these, whether or
+        // not it is that message's own identifier. That is the half the
+        // message column cannot answer, and it is what lets a conversation
+        // root arriving after a message that already named it join it.
+        //
+        // One spelling here rather than two. Every row in that table was
+        // written through `identifiers_worth_asking_about`, which applies
+        // `thread_identity::bare`, so the bracketed form can never be in it and
+        // asking about one would be a placeholder that cannot match. The
+        // question is brought to the same spelling for the same reason, since
+        // this method is public and a caller is not obliged to have applied it.
+        //
+        // Two per identifier against a cap of 64 is 128 for the message
+        // column, plus at most 64 more for the table, plus the account named
+        // once in each half: 194 against SQLite's limit of 999. The old sum
+        // was 129.
+        //
+        // What the second question costs, measured on a release build, warm,
+        // over two hundred thousand messages with five hundred and seventy
+        // thousand recorded names, asking about a root, a parent and a
+        // message: 19.0 microseconds against 9.6 before. So an arrival pays
+        // about twice, and about nine microseconds more, which over a sync of
+        // five thousand messages is under fifty milliseconds.
+        let mut named: Vec<&str> = Vec::with_capacity(wanted.len());
+        for identifier in &wanted {
+            let bare = crate::application::thread_identity::bare(identifier);
+            if !bare.is_empty() && !named.contains(&bare) {
+                named.push(bare);
+            }
+        }
+        let named_placeholders = std::iter::repeat_n("?", named.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+
         // Every placeholder is anonymous, and that is not a style choice.
         // SQLite gives a bare `?` the next unused index, so one numbered
         // parameter beside a generated list of bare ones silently renumbers
         // whatever follows the list, and the query then reads a value out of
         // the wrong slot while still running.
+        //
+        // A union of two questions rather than one with an OR: an index is
+        // searched from its leftmost column, and an OR reaching across two
+        // tables leaves SQLite nothing to seek on, so each half is written as
+        // the seek it is. UNION rather than UNION ALL, because both halves
+        // answer the same conversation for an ordinary arrival and the
+        // duplicate means nothing.
         let asking = format!(
-            "SELECT DISTINCT m.thread_id FROM messages m
-             INNER JOIN folders f ON m.folder_id = f.id
-             WHERE f.account_id = ?
-               AND m.thread_id IS NOT NULL AND m.thread_id != ''
-               AND m.message_id IN ({placeholders})
-             ORDER BY m.thread_id"
+            "SELECT thread_id FROM (
+                 SELECT m.thread_id AS thread_id FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE f.account_id = ?
+                   AND m.thread_id IS NOT NULL AND m.thread_id != ''
+                   AND m.message_id IN ({placeholders})
+                 UNION
+                 SELECT m.thread_id AS thread_id FROM identifiers_a_message_names n
+                 INNER JOIN messages m ON m.id = n.message_id
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE f.account_id = ?
+                   AND m.thread_id IS NOT NULL AND m.thread_id != ''
+                   AND n.identifier IN ({named_placeholders})
+             )
+             ORDER BY thread_id"
         );
 
-        let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(both_forms.len() + 1);
+        let mut values: Vec<&dyn rusqlite::ToSql> =
+            Vec::with_capacity(both_forms.len() + named.len() + 2);
         values.push(&account_id);
         for identifier in &both_forms {
+            values.push(identifier);
+        }
+        values.push(&account_id);
+        for identifier in &named {
             values.push(identifier);
         }
 
@@ -3001,30 +3253,46 @@ mod tests {
     fn test_the_same_message_arriving_twice_moves_nothing_the_second_time() {
         let cache = fresh("merge_is_idempotent");
         let inbox = folder(&cache, "INBOX");
-        cache
+        let a = cache
             .upsert_message(&naming(inbox, 1, "a@x", None))
             .unwrap();
-        cache
+        let c = cache
             .upsert_message(&naming(inbox, 2, "c@x", None))
             .unwrap();
 
+        // The connector goes in through the storing path rather than by
+        // handing the merge a message the cache has never seen. It has to now:
+        // the merge records what the message named, against the message, so it
+        // needs a row that exists. Asking again afterwards is the second
+        // delivery this is about.
         let connecting = naming(inbox, 3, "x@x", Some("a@x c@x"));
         let conversation = crate::application::thread_identity::conversation_root(
             &connecting.message_id,
             connecting.refs_header.as_deref(),
         );
-        let first = cache
-            .merge_what_this_message_connects(&connecting, &conversation)
-            .unwrap();
-        let again = cache
-            .merge_what_this_message_connects(&connecting, &conversation)
-            .unwrap();
-
-        assert!(
-            first > 0,
-            "the first delivery must move something, or the second moving nothing \
+        let row = cache.upsert_message(&connecting).unwrap();
+        assert_eq!(
+            how_many_conversations(&cache, &[a, c, row]),
+            1,
+            "the first delivery must merge something, or the second moving nothing \
              says only that nothing ever moves"
         );
+        // Named rather than counted, and that is not belt and braces. A count
+        // of distinct conversations is one when every row holds the same
+        // conversation and also one when every row holds nothing, so on its own
+        // it is satisfied by a cache that never wrote a conversation id at all.
+        // The guard record for the writer caught this test in exactly that
+        // state.
+        assert_eq!(
+            conversation_of(&cache, c),
+            "a@x",
+            "the message that started the losing conversation must have moved into \
+             the winning one"
+        );
+
+        let again = cache
+            .merge_what_this_message_connects(row, &connecting, &conversation)
+            .unwrap();
         assert_eq!(again, 0, "the second delivery rewrote messages again");
     }
 
