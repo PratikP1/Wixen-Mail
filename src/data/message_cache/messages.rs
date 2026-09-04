@@ -3144,6 +3144,195 @@ mod tests {
         assert_eq!(conversation_of(&cache, second), "");
     }
 
+    /// Every identifier the cache has recorded against this stored message.
+    ///
+    /// Read straight out of the table rather than through a method, because
+    /// what is asserted is that the rows are there and in the one spelling. A
+    /// reader that normalised on the way out would answer the same for a table
+    /// holding the bracketed form, which is the half of ledger 8 this must not
+    /// reopen.
+    fn identifiers_recorded_for(cache: &super::super::MessageCache, row: i64) -> Vec<String> {
+        let mut held: Vec<String> = cache
+            .conn
+            .prepare("SELECT identifier FROM identifiers_a_message_names WHERE message_id = ?1")
+            .expect("the identifier table to exist")
+            .query_map(params![row], |found| found.get::<_, String>(0))
+            .expect("the identifiers to be readable")
+            .collect::<std::result::Result<Vec<String>, _>>()
+            .expect("an identifier to be readable");
+        held.sort();
+        held
+    }
+
+    /// The set phase 1 deferred, stored in one of its six arrival orders.
+    ///
+    /// Two conversation roots that name nothing, `a@x` and `c@x`, and one
+    /// message `x@x` whose chain says the two are one conversation. Whichever
+    /// order they arrive in, the three belong in one conversation, and three
+    /// of the six ended that way before there was a table recording what a
+    /// message names.
+    fn stored_in_this_order(
+        cache: &super::super::MessageCache,
+        inbox: i64,
+        order: [usize; 3],
+    ) -> Vec<i64> {
+        let set: [(&str, Option<&str>); 3] =
+            [("a@x", None), ("c@x", None), ("x@x", Some("a@x c@x"))];
+        let mut rows = Vec::new();
+        for (position, which) in order.iter().enumerate() {
+            let (message_id, chain) = set[*which];
+            rows.push(
+                cache
+                    .upsert_message(&naming(inbox, position as u32 + 1, message_id, chain))
+                    .expect("the message to store"),
+            );
+        }
+        rows
+    }
+
+    #[test]
+    fn test_the_arrival_orders_that_already_ended_with_one_conversation_still_do() {
+        // The half of the six that worked before there was an identifier
+        // table, written down so whatever fixes the other three is held to not
+        // breaking these. In each of them the connector arrives after at least
+        // one of the roots it names, so asking about its own chain reaches a
+        // stored `message_id` and the merge fires.
+        for order in [[0, 1, 2], [1, 0, 2], [1, 2, 0]] {
+            let cache = fresh(&format!(
+                "orders_that_worked_{}{}{}",
+                order[0], order[1], order[2]
+            ));
+            let inbox = folder(&cache, "INBOX");
+            let rows = stored_in_this_order(&cache, inbox, order);
+            assert_eq!(
+                how_many_conversations(&cache, &rows),
+                1,
+                "arrival order {order:?} used to end with one conversation and must still"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_root_arriving_after_the_message_that_names_it_joins_its_conversation() {
+        // Phase 1's second deferred defect, and broken windows ledger 7. In
+        // each of these three the connector `x@x` is stored before the root
+        // `c@x`, so when `c@x` arrives the only question ever asked is whether
+        // some stored message's own identifier is `c@x`, and `x@x`'s is `x@x`.
+        // The knowledge that they are one conversation exists and is
+        // unreachable: it is in `x@x`'s stored chain, and no index over
+        // `refs_header` can answer a question about a name inside it.
+        for order in [[0, 2, 1], [2, 0, 1], [2, 1, 0]] {
+            let cache = fresh(&format!("root_after_{}{}{}", order[0], order[1], order[2]));
+            let inbox = folder(&cache, "INBOX");
+            let rows = stored_in_this_order(&cache, inbox, order);
+            assert_eq!(
+                how_many_conversations(&cache, &rows),
+                1,
+                "arrival order {order:?} left the conversation split"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_identifier_an_arriving_message_names_is_recorded_against_it() {
+        // The whole of what the table holds: the message's own identifier and
+        // each one of its chain, which is exactly what
+        // `identifiers_worth_asking_about` returns, bare, which is the
+        // spelling the message column holds.
+        let cache = fresh("identifiers_recorded");
+        let inbox = folder(&cache, "INBOX");
+        let row = cache
+            .upsert_message(&naming(inbox, 1, "x@x", Some("a@x c@x")))
+            .unwrap();
+
+        assert_eq!(
+            identifiers_recorded_for(&cache, row),
+            vec!["a@x".to_string(), "c@x".to_string(), "x@x".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_recording_the_same_identifier_twice_neither_fails_nor_duplicates_a_row() {
+        // Two ways the same identifier arrives twice, and both really happen:
+        // a chain that repeats its root, which senders write, and the same
+        // message stored again, which is every repeat sync.
+        let cache = fresh("identifiers_recorded_twice");
+        let inbox = folder(&cache, "INBOX");
+        let row = cache
+            .upsert_message(&naming(inbox, 1, "x@x", Some("a@x a@x")))
+            .expect("a chain repeating its root still stores");
+        let again = cache
+            .upsert_message(&naming(inbox, 1, "x@x", Some("a@x a@x")))
+            .expect("storing the same message a second time still stores");
+        assert_eq!(row, again, "the same folder and uid is the same row");
+
+        assert_eq!(
+            identifiers_recorded_for(&cache, row),
+            vec!["a@x".to_string(), "x@x".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_identifiers_records_none_and_merges_nothing() {
+        // The arm the lookup's first guard clause is about. The cache stores
+        // "this message had no identifier" as an empty string, so a row
+        // recorded here for one would make every nameless message in the
+        // account answer to it, which is a stranger's mail joining somebody's
+        // conversation.
+        let cache = fresh("identifiers_recorded_none");
+        let inbox = folder(&cache, "INBOX");
+        let mut nameless = incoming(inbox, 1, "No identifier");
+        nameless.message_id = String::new();
+        let row = cache
+            .upsert_message(&nameless)
+            .expect("a message with no identifier at all still stores");
+
+        assert!(
+            identifiers_recorded_for(&cache, row).is_empty(),
+            "an empty identifier recorded here joins every nameless message there is"
+        );
+        assert_eq!(conversation_of(&cache, row), "");
+    }
+
+    #[test]
+    fn test_a_stored_row_holding_the_bracketed_spelling_still_names_its_conversation() {
+        // Ledger 8's territory, and the reason the lookup asks each identifier
+        // twice. A database whose identifier backfill has not finished still
+        // holds `<a@x>` in the message column, and once there is a second
+        // table it will have rows no backfill of that has reached either. The
+        // row is put into both of those states on purpose: the older spelling
+        // in the column, and nothing at all in the new table. Narrowing the
+        // question the column is asked would make rows like this stop joining,
+        // which is mail dropping out of a conversation.
+        let cache = fresh("bracketed_still_joins");
+        let inbox = folder(&cache, "INBOX");
+        let row = cache
+            .upsert_message(&naming(inbox, 1, "a@x", None))
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET message_id = '<a@x>' WHERE id = ?1",
+                params![row],
+            )
+            .expect("the older spelling to be written back");
+        cache
+            .conn
+            .execute(
+                "DELETE FROM identifiers_a_message_names WHERE message_id = ?1",
+                params![row],
+            )
+            .expect("a row no backfill of the new table has reached");
+
+        assert_eq!(
+            cache
+                .threads_holding_any_of("acc", &["a@x".to_string()])
+                .unwrap(),
+            vec!["a@x".to_string()],
+            "a row in the older spelling that no backfill has reached must still join"
+        );
+    }
+
     #[test]
     fn test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names() {
         // The ordinary case, and the positive half the absence assertions
