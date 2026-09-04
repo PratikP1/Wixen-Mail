@@ -113,9 +113,28 @@ expect "" "a source file no record names answers nothing" \
 # read across the whole tree. A record coupling a source file to one of them is
 # a true statement that buys this mapping nothing, and answering it would run
 # the same target twice.
-expect "" "a coupling to wired which every scoped run already ends with" \
+#
+# Asked as "the answer does not name it" rather than as "the answer is empty",
+# and that is the same lesson the header above records, learnt a second time in
+# the place it was deliberately not applied. The exclusions were left exact on
+# the grounds that an exclusion really is a claim about the whole answer. It is
+# not. It is a claim about one name, and the rest of the answer belongs to
+# whatever else the registry couples that file to. On 2026-09-04 the first
+# record arrived coupling `wx_app.rs` to a target no scoped run reaches by
+# itself, which is the whole reason this mapping exists, and this case went red
+# for somebody having done the thing it is here to encourage.
+#
+# What these two cannot say, said here because narrowing them is what takes it
+# away. Neither would notice if the registry stopped coupling those files to a
+# tree-reading target at all: an answer that never held the name and an answer
+# the mapping dropped it from read exactly alike. That half is covered already,
+# below, by "a target the run already ends with is dropped and the other kept",
+# which asks it of a made-up registry where one file is coupled to both kinds
+# and only one of them may come back. Both were run against a `check.sh` with
+# the exclusion taken out on 2026-09-04, and both went red.
+expect_not_among wired "a coupling to wired which every scoped run already ends with" \
     "$registry" src/presentation/wx_app.rs
-expect "" "a coupling to house_style likewise" \
+expect_not_among house_style "a coupling to house_style likewise" \
     "$registry" src/application/draft_copy.rs
 
 # Several changed files at once, only one of them coupled.
