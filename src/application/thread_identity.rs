@@ -155,7 +155,8 @@ pub fn identifiers_worth_asking_about(message_id: &str, refs_header: Option<&str
 /// it. Never empty, and never holds the winner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rerooting {
-    /// The conversation the arriving message names, which is the one that wins.
+    /// The earliest identifier among the conversations being merged, which is
+    /// the one they all settle under.
     pub winning_root: String,
     /// The conversations revealed to be the same one, to be rewritten onto it.
     pub roots_to_rewrite: Vec<String>,
@@ -180,10 +181,42 @@ pub struct Rerooting {
 /// same reason: a property the signature enforces is not one somebody has to
 /// remember.
 ///
-/// The chain is oldest first, so the conversation the arriving message names is
-/// the chain's earliest identifier, and the earliest is the winner. Merging is
-/// therefore not a new rule; it is [`conversation_root`]'s rule applied where
-/// more than one candidate turns out to exist.
+/// # Which of them wins
+///
+/// The earliest identifier among the conversations being merged, counting the
+/// arriving message's own.
+///
+/// This used to be the arriving message's conversation, unconditionally, and
+/// the argument for that was written here: the chain is oldest first, so the
+/// conversation an arriving message names is the chain's earliest identifier,
+/// and merging is therefore [`conversation_root`]'s rule applied where more
+/// than one candidate exists. That sentence is true of a message carrying a
+/// full `References` chain, which is the common case and is why it went
+/// unquestioned. It is not true of a message naming only its parent, which is
+/// what a client sending `In-Reply-To` and nothing else produces: there the
+/// arriving conversation is a message somewhere in the middle. The old rule was
+/// right about the common case, had no answer for the other one, and gave a
+/// different answer depending on which message arrived first.
+///
+/// Earliest is an ordinary comparison of the two strings, and it is worth
+/// saying what that is and is not. It is not archaeology: it does not find the
+/// older message, and the conversation can settle under an identifier that is
+/// nobody's root. Nothing here could find the older one, because two
+/// conversations an arrival has just proved to be one carry no ordering between
+/// their names, and no rule available to this function invents one. What
+/// earliest buys is the only thing left that matters once the merge is decided,
+/// which is that the answer does not depend on the order the mail arrived in.
+/// The same set of messages ends under the same name every time, so nothing
+/// keyed on a conversation id is silently orphaned by a resync.
+///
+/// **This is not the rejected batch rule.** That one re-derived a
+/// conversation's name from whatever happened to be in hand, so a smaller
+/// identifier turning up renamed a conversation nobody had learned anything new
+/// about. Earliest here is applied only among conversations an arrival has
+/// PROVED to be one, and the guard below is untouched: when everything found is
+/// the conversation the message already names, there is nothing to rewrite and
+/// nothing is renamed, whatever the arriving message's own identifier sorts
+/// like.
 ///
 /// # What a merge costs, said plainly
 ///
@@ -202,18 +235,39 @@ pub fn rejoin(
         return None;
     }
 
-    let mut roots_to_rewrite: Vec<String> = Vec::new();
+    // Every conversation this arrival says is one conversation, named once
+    // each, with the arriving message's own first. The arriving one belongs in
+    // here rather than beside it, because when a chain names only its parent it
+    // is no more the root than any of the others and has no claim to win.
+    let mut merging: Vec<&str> = vec![the_arriving_conversation];
     for found in conversations_found {
-        let worth_rewriting = !found.is_empty()
-            && found != the_arriving_conversation
-            && !roots_to_rewrite.iter().any(|held| held == found);
-        if worth_rewriting {
-            roots_to_rewrite.push(found.clone());
+        let worth_merging = !found.is_empty() && !merging.contains(&found.as_str());
+        if worth_merging {
+            merging.push(found);
         }
     }
 
+    let winning_root = merging
+        .iter()
+        .copied()
+        .min()
+        // `merging` always holds the arriving conversation, which the guard
+        // above has already shown is not empty, so this never answers. Written
+        // out because nothing in this crate unwraps outside a test.
+        .unwrap_or(the_arriving_conversation);
+
+    // Order kept from the list above, so the conversations move in the order
+    // they were named and a guard over this cannot pass or fail by luck.
+    let roots_to_rewrite: Vec<String> = merging
+        .iter()
+        .filter(|root| **root != winning_root)
+        .map(|root| (*root).to_string())
+        .collect();
+
+    // Nothing but the conversation this message is already in, so nothing has
+    // been revealed. D-39.
     (!roots_to_rewrite.is_empty()).then(|| Rerooting {
-        winning_root: the_arriving_conversation.to_string(),
+        winning_root: winning_root.to_string(),
         roots_to_rewrite,
     })
 }

@@ -12100,52 +12100,65 @@ tests_last_seen = [
 ]
 
 [[guard]]
-name = "an arriving message and the conversation rule agree, because one of them is not consulted"
-file = "src/data/message_cache/messages.rs"
-# Pitfall 6 and D-39, which is the decision this whole module was built to
-# make unavailable to get wrong. The defect is an incremental join that adopts
-# the conversation id it happened to find, rather than the one the arriving
-# message's own chain names. Adoption disagrees with the derivation, so the
-# same set of messages comes out under different names depending on which
-# arrived first, and anything keyed on a conversation id is silently orphaned.
+name = "a merged conversation settles on the same name whatever order its messages arrived in"
+file = "src/application/thread_identity.rs"
+# Pitfall 6 and D-39, moved here on 2026-09-04 because the break it used to
+# carry stopped discriminating that day, and the reason is worth the whole of
+# this comment.
 #
-# The break is adoption, written the way somebody would write it: take the
-# conversation the lookup found and use that. It has to name a found one
-# deterministically to be worth recording, which is why the lookup orders its
-# answer, and `last` rather than `first` because a chain names its root first
-# and first would be right here by luck rather than by rule.
+# It used to live in `merge_what_this_message_connects` and read: the defect is
+# an incremental join that adopts the conversation id it happened to find,
+# rather than the one the arriving message's own chain names, because adoption
+# disagrees with the derivation and the same set of messages then comes out
+# under different names depending on which arrived first. Its break was that
+# adoption, written as `found.last().map_or(conversation, ...)`. Measured on
+# 2026-08-31 it reddened three tests.
 #
-# Note what is NOT broken: `rejoin` still runs and still merges. This break
-# only changes which conversation wins, which is the point. A break that
-# stopped the merge altogether would prove the merge happens, not that it
-# agrees with the rule, and the record below already covers the merge.
+# Plan 03-05 changed the winner from the arriving message's own conversation to
+# the earliest identifier among all of them, because the old rule had no answer
+# for a chain naming only its parent and gave a different one depending on
+# arrival order. That makes adoption harmless: the winner is now a function of
+# the SET of conversations being merged, the arriving message's own is always in
+# that set because its row is written before the lookup is asked, and adopting
+# any member of a set does not change the set. Measured, not assumed: run
+# against the tree of 2026-09-04 the old break left all three of its named tests
+# green.
 #
-# Measured by hand on 2026-08-31 against the whole library, which passes 5803
-# at 0 failed with 1 ignored on `cargo test --lib`:
-# three tests. Two of them are the ones worth having, and neither is about a merge
-# failing to happen. The batch one fails because a conversation stored as one
-# batch and the same messages stored one at a time settle on different names,
-# which is Pitfall 6 exactly: the answer depends on what else was in hand. The
-# cross-folder one fails because the conversation that wins is the wrong one,
-# so the rewrite moves the surviving tree instead of the losing one.
+# So the defect it guarded is not unguarded, it is impossible, and what replaced
+# it is the property below: the answer depends on the set and not on the order.
+# The record is repointed rather than deleted, so the file keeps the reason.
 #
-# A fourth test went red and is deliberately not named: the spellcheck test in
-# `data::config`, which fails about one whole-library run in five through a
-# Windows COM call made twice. It is recorded in this phase's deferred items
-# and it is not this break.
+# The break puts the old rule back, which is the most plausible way somebody
+# would undo this: take the first of the list, which is the arriving message's
+# own conversation, instead of the earliest.
+#
+# Measured by hand on 2026-09-04 against the whole library, which passes 6124 at
+# 0 failed with 1 ignored on `cargo test --lib`: three tests, and each one is a
+# different reason. The chain naming only its parent disagrees across arrival
+# orders, which is the case the old rule could not answer. The root arriving
+# late disagrees across arrival orders, which is the case that only became
+# reachable when the identifier table arrived. And the winner test asserts the
+# rule directly.
+#
+# Nothing in `data::message_cache` reddens, which is the same finding from the
+# other side: the storing path cannot tell the two rules apart, because both are
+# asked the same set.
 red = [
-    "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
-    "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
-    "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
+    "application::thread_identity::tests::a_chain_naming_only_its_parent_agrees_in_every_arrival_order",
+    "application::thread_identity::tests::a_late_message_merging_two_conversations_agrees_in_every_arrival_order",
+    "application::thread_identity::tests::the_winner_is_the_earliest_identifier_the_merging_conversations_know_between_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/application/thread_identity.rs", tests = 31 },
 ]
-before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
-        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
-after = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
-        let conversation = found.last().map_or(conversation, String::as_str);
-        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
+before = """    let winning_root = merging
+        .iter()
+        .copied()
+        .min()"""
+after = """    let winning_root = merging
+        .iter()
+        .copied()
+        .next()"""
 
 [[guard]]
 name = "a merge reaches the losing conversation in every folder it is filed in"

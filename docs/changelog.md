@@ -51,6 +51,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   each one is called, so it can ask the question the other way round too. All
   six orders end as one conversation.
 
+  They also end under the same name. Which message a joined conversation was
+  filed under used to depend on which of its messages arrived last, so reading
+  the same mailbox twice could file the same conversation two different ways,
+  and anything Wixen Mail remembered against the old name was left behind. The
+  name is now taken from the conversations being joined rather than from
+  whichever message happened to do the joining.
+
   **Conversations already on this computer are joined as well**, the first time
   Wixen Mail opens after this change. Without that the fix would reach only
   mail that has not arrived yet, and everything already split would stay split.
