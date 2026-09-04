@@ -1549,7 +1549,7 @@ write path added by this milestone passes through that gate.
 
     ```
     cargo test --lib -- --list            counts 6,079      2026-09-04
-    cargo test --all-targets -- --list    counts 6,264      2026-09-04
+    cargo test --all-targets -- --list    counts 6,271      2026-09-04
     ```
 
     which makes the integration and other-target figure 185. The documents are therefore about
