@@ -21,8 +21,9 @@
 //! What this cannot see. It reads source, so it says where a sign-in is written
 //! and not whether that code is ever reached. It says nothing about how long a
 //! session is held open, whether one is reused, or what a failed connection
-//! does. Those are plan 03-06's, and they are why this number is expected to
-//! fall.
+//! does. Those are answered where they can be counted at a server, in
+//! `application::mail_session`'s own tests, and a green reading here says only
+//! that nobody has written a new place to dial from.
 
 use std::cmp::Ordering;
 use std::fs;
@@ -34,15 +35,17 @@ const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 
 /// How many places build their own connection instead of asking the helper.
 ///
-/// Counted on 2026-09-04. Twelve is not a target, it is a measurement: the
-/// requirement said eight and was wrong by half, twice, which is why it is
-/// written here beside the code that re-derives it rather than in a document.
+/// Nought, as of 2026-09-04. It was twelve that morning, and eight in the
+/// requirement before that, which was wrong by half and had been wrong twice:
+/// that is why the number lives here beside the code that re-derives it rather
+/// than in a document.
 ///
-/// It is expected to fall, and plan 03-06 is what makes it fall. That plan holds
-/// one session open for a piece of work and reconnects when the server drops it,
-/// so the sites below stop dialling for themselves. When it lands, this number
-/// goes down and the day beside it changes.
-const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 12;
+/// It is not expected to fall any further, because there is nowhere further to
+/// fall. Plan 03-06 gave each account one session that outlives a piece of work,
+/// so nothing in the main window dials for itself any more. What this number
+/// says now is different from what it used to say: a site turning up here again
+/// is a regression rather than a step, and the failure below says so.
+const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 0;
 
 /// The line `what_ships` looks at by its exact text, which is why it is the one
 /// line left unmarked below.
@@ -173,14 +176,15 @@ fn the_sign_ins_that_go_round_the_helper(source: &str) -> Vec<SignsInForItself> 
 fn what_the_census_found(found: &[SignsInForItself]) -> String {
     let which_way = match found.len().cmp(&SIGN_INS_THAT_GO_ROUND_THE_HELPER) {
         Ordering::Greater => {
-            "That is more than were counted, so somewhere new signs in for \
-             itself. Take it through application::mail_session::a_session_at, \
-             or say here why it cannot."
+            "That is more than were counted, so somewhere signs in for itself \
+             again. Take it through application::mail_session::the_session_at, \
+             which hands back the session that account already has, or say here \
+             why it cannot."
         }
         Ordering::Less => {
-            "That is fewer than were counted. If plan 03-06 took one out, lower \
-             the number here and change the day beside it. If nothing was \
-             taken out, this reading has stopped working."
+            "That is fewer than were counted, and nought is as few as there can \
+             be, so this reading has stopped working rather than the tree \
+             having improved."
         }
         Ordering::Equal => "",
     };

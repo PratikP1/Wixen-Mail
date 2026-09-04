@@ -368,6 +368,7 @@ pub enum Turn {
 pub struct Conversation {
     address: std::net::SocketAddr,
     heard: std::sync::Arc<tokio::sync::Mutex<Vec<String>>>,
+    connections: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Conversation {
@@ -389,6 +390,21 @@ impl Conversation {
     /// Everything said to the server, in order.
     pub async fn transcript(&self) -> Vec<String> {
         self.heard.lock().await.clone()
+    }
+
+    /// How many connections this server has taken.
+    ///
+    /// The transcript cannot answer this and it looks as though it can. Two
+    /// commands sent down one connection and the same two sent down two leave
+    /// exactly the same lines, so a question about how many sockets a program
+    /// opens has to be counted where the sockets are accepted.
+    ///
+    /// Counted at accept, before the greeting goes out, so a client that
+    /// connects and says nothing is still one connection. That is the case a
+    /// budget is about: a connection a provider counts against the account is
+    /// one that was opened, whatever was done with it afterwards.
+    pub fn connections(&self) -> usize {
+        self.connections.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Where the first line holding this text is, matched without case.
@@ -427,10 +443,13 @@ pub async fn conversing(
     let address = listener.local_addr().expect("the port that was taken");
     let heard = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let recording = heard.clone();
+    let connections = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counting = connections.clone();
     let script = std::sync::Arc::new(answer);
 
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            counting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let recording = recording.clone();
             let script = script.clone();
             tokio::spawn(async move {
@@ -439,7 +458,11 @@ pub async fn conversing(
         }
     });
 
-    Conversation { address, heard }
+    Conversation {
+        address,
+        heard,
+        connections,
+    }
 }
 
 /// One connection, held until the client stops talking.

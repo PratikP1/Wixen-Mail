@@ -4690,7 +4690,7 @@ impl WxMailApp {
                             delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
                         _ if id == ID_ACCOUNT_MGR => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
                         }
                         _ if id == ID_NEW_CONTACT => managers::new_contact(
                             &state,
@@ -4701,7 +4701,7 @@ impl WxMailApp {
                             &a11y,
                         ),
                         _ if id == ID_NEW_ACCOUNT => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
                         }
                         _ if id == ID_SAVE => {
                             send_refusal(&ui_tx, &runtime, "No active draft to save")
@@ -5008,6 +5008,7 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let really_quitting = really_quitting.clone();
                 let tray = tray.clone();
+                let runtime = runtime.clone();
                 let said_it_once = std::rc::Rc::new(std::cell::Cell::new(false));
                 move |event| {
                     use crate::application::closing::{Asked, Closing, what_closing_should_do};
@@ -5042,6 +5043,14 @@ impl WxMailApp {
                         }
                         Closing::LetItClose => {
                             tracing::info!("Frame on_close fired, window is closing");
+                            // Signed out of rather than dropped. A session this
+                            // program was holding stays open at the provider
+                            // until it times it out, and counts against the
+                            // account for as long as it does.
+                            signing_off(
+                                &runtime,
+                                crate::application::mail_session::no_longer_signed_in_to_anything(),
+                            );
                             // Taken away first. An icon left in the notification
                             // area after the program has gone is one somebody
                             // clicks and nothing answers.
@@ -7540,30 +7549,15 @@ fn spawn_the_folder_write(
                 let _ = tx.send(update).await;
             });
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return say(UIUpdate::CommandRefused(
-                "This account has no usable IMAP port set, so no folder was made.".to_string(),
-            ));
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return say(UIUpdate::CommandRefused(
-                "This account could not be signed in to, so no folder was made.".to_string(),
-            ));
-        };
-
-        let controller = MailController::new();
-        if let Err(why) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return say(UIUpdate::CommandRefused(format!(
-                "The mail server could not be reached, so no folder was made. {why}"
-            )));
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account could not be signed in to, so no folder was made. {why}"
+                    )));
+                }
+            };
 
         let made = handle.block_on(controller.create_mailbox(&path));
         // Subscribed as well as made, and only if it was made. A server that
@@ -7577,7 +7571,6 @@ fn spawn_the_folder_write(
                 .block_on(controller.set_subscribed(&path, true))
                 .inspect_err(|why| tracing::warn!("The new folder could not be subscribed: {why}"))
                 .is_ok();
-        let _ = handle.block_on(controller.disconnect_imap());
 
         if let Err(said) = what_came_of(FolderAct::Made, &path, made) {
             // Nothing is recorded and the tree is not read back, because
@@ -8109,30 +8102,15 @@ fn spawn_the_folder_delete(
                 let _ = tx.send(update).await;
             });
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return say(UIUpdate::CommandRefused(
-                "This account has no usable IMAP port set, so nothing was deleted.".to_string(),
-            ));
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return say(UIUpdate::CommandRefused(
-                "This account could not be signed in to, so nothing was deleted.".to_string(),
-            ));
-        };
-
-        let controller = MailController::new();
-        if let Err(why) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return say(UIUpdate::CommandRefused(format!(
-                "The mail server could not be reached, so nothing was deleted. {why}"
-            )));
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account could not be signed in to, so nothing was deleted. {why}"
+                    )));
+                }
+            };
 
         let cache = AppPaths::resolve().ok().and_then(|paths| {
             crate::data::message_cache::MessageCache::new(paths.cache_dir(), None).ok()
@@ -8168,8 +8146,6 @@ fn spawn_the_folder_delete(
                 }
             }
         }
-        let _ = handle.block_on(controller.disconnect_imap());
-
         let said = got.what_deleting_folders_did();
         let Some(cache) = cache else {
             return say(UIUpdate::CommandAnswered(said));
@@ -8390,30 +8366,15 @@ fn spawn_the_folder_empty(
                 let _ = tx.send(update).await;
             });
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return say(UIUpdate::CommandRefused(
-                "This account has no usable IMAP port set, so nothing was emptied.".to_string(),
-            ));
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return say(UIUpdate::CommandRefused(
-                "This account could not be signed in to, so nothing was emptied.".to_string(),
-            ));
-        };
-
-        let controller = MailController::new();
-        if let Err(why) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return say(UIUpdate::CommandRefused(format!(
-                "The mail server could not be reached, so nothing was emptied. {why}"
-            )));
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account could not be signed in to, so nothing was emptied. {why}"
+                    )));
+                }
+            };
 
         let mut got = HowFarItGot::default();
         for (path, name) in &emptying.going {
@@ -8466,8 +8427,6 @@ fn spawn_the_folder_empty(
                 }
             }
         }
-        let _ = handle.block_on(controller.disconnect_imap());
-
         let said = crate::application::emptying::what_emptying_did(&got);
         // The tree's counts have changed for every folder that was emptied, and
         // the mail this computer has stored for them has not caught up: the
@@ -8612,30 +8571,15 @@ fn spawn_the_folder_move(
                 let _ = tx.send(update).await;
             });
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return say(UIUpdate::CommandRefused(
-                "This account has no usable IMAP port set, so nothing was moved.".to_string(),
-            ));
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return say(UIUpdate::CommandRefused(
-                "This account could not be signed in to, so nothing was moved.".to_string(),
-            ));
-        };
-
-        let controller = MailController::new();
-        if let Err(why) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return say(UIUpdate::CommandRefused(format!(
-                "The mail server could not be reached, so nothing was moved. {why}"
-            )));
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account could not be signed in to, so nothing was moved. {why}"
+                    )));
+                }
+            };
 
         // Coming out to the top level needs no separator: the folder's own name
         // with nothing in front of it is the whole path.
@@ -8646,7 +8590,6 @@ fn spawn_the_folder_move(
                 Ok(listed) => what_separates_a_folder_from_one_inside(&listed, &moving.into)
                     .map(str::to_string),
                 Err(why) => {
-                    let _ = handle.block_on(controller.disconnect_imap());
                     return say(UIUpdate::CommandRefused(format!(
                         "This account's folders could not be read, so nothing was moved. {why}"
                     )));
@@ -8654,7 +8597,6 @@ fn spawn_the_folder_move(
             }
         };
         let Some(separator) = separator else {
-            let _ = handle.block_on(controller.disconnect_imap());
             // Said rather than guessed. A slash sent to a server that separates
             // with a dot makes a folder whose name holds a slash, which is a
             // different folder from the one somebody asked for and is not easy
@@ -8673,7 +8615,6 @@ fn spawn_the_folder_move(
             &separator,
         );
         let outcome = handle.block_on(controller.rename_mailbox(&moving.path, &to));
-        let _ = handle.block_on(controller.disconnect_imap());
 
         if let Err(said) = what_came_of(FolderAct::Moved, &moving.path, outcome) {
             return say(UIUpdate::CommandRefused(said));
@@ -8788,33 +8729,17 @@ fn spawn_the_folder_rename(
                 let _ = tx.send(update).await;
             });
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return say(UIUpdate::CommandRefused(
-                "This account has no usable IMAP port set, so nothing was changed.".to_string(),
-            ));
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return say(UIUpdate::CommandRefused(
-                "This account could not be signed in to, so nothing was changed.".to_string(),
-            ));
-        };
-
-        let controller = MailController::new();
-        if let Err(why) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return say(UIUpdate::CommandRefused(format!(
-                "The mail server could not be reached, so nothing was changed. {why}"
-            )));
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::CommandRefused(format!(
+                        "This account could not be signed in to, so nothing was changed. {why}"
+                    )));
+                }
+            };
 
         let outcome = handle.block_on(controller.rename_mailbox(&renaming.from, &renaming.to));
-        let _ = handle.block_on(controller.disconnect_imap());
 
         if let Err(said) = what_came_of(renaming.act, &renaming.from, outcome) {
             // Nothing here is moved and the tree is not read back, because
@@ -14358,12 +14283,28 @@ fn owner_of(
         .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
 }
 
+/// Sign out of a mail session without letting a silent server hold the window.
+///
+/// A sign-off is a round trip, and both places that make one are on the thread
+/// the window is drawn on. A server that has taken the connection and then gone
+/// quiet would otherwise hold the window still for the two minutes a command is
+/// given, which somebody navigating by ear cannot tell from a crash. Past the
+/// bound the socket goes the way every session went before any of this existed,
+/// which is dropped and left for the server to time out.
+fn signing_off(rt: &Arc<Runtime>, ending: impl std::future::Future<Output = ()>) {
+    const LONG_ENOUGH_TO_SIGN_OFF: std::time::Duration = std::time::Duration::from_secs(3);
+    rt.block_on(async {
+        let _ = tokio::time::timeout(LONG_ENOUGH_TO_SIGN_OFF, ending).await;
+    });
+}
+
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
+    rt: &Arc<Runtime>,
 ) {
     let (accounts, active_id, default_id) = {
         let s = lock_state(state);
@@ -14384,6 +14325,14 @@ fn handle_account_mgr(
         default_id.as_deref(),
         a11y,
     ) {
+        // An account that has gone is signed out of rather than left holding a
+        // session. Worked out before the list is replaced, because afterwards
+        // there is nothing left to compare against.
+        let removed: Vec<String> = accounts
+            .iter()
+            .filter(|held| !new.iter().any(|kept| kept.id == held.id))
+            .map(|held| held.id.clone())
+            .collect();
         let mut s = lock_state(state);
         // What Set Active chose, when it named an account that is still
         // there. This used to be dropped on the way out of the dialog and
@@ -14434,6 +14383,15 @@ fn handle_account_mgr(
             );
         }
         s.accounts = new;
+        // Let go before anything is said to a server. This lock is the window's
+        // own, and a sign-off is a round trip.
+        drop(s);
+        for id in removed {
+            signing_off(
+                rt,
+                crate::application::mail_session::no_longer_signed_in_to(&id),
+            );
+        }
     }
 }
 
@@ -16298,25 +16256,11 @@ fn spawn_folder_move(
         let Some(account) = account else {
             return fail("no account is set up".to_string());
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return fail(format!("{} has no usable IMAP port", account.name));
-        };
-        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
-            Ok(auth) => auth,
-            Err(e) => return fail(e.to_string()),
-        };
-
-        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            return fail(e.to_string());
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => return fail(why),
+            };
 
         // What happens to the row and what is said are one decision, made in
         // one place, because they have to agree. A move whose copy landed and
@@ -16340,7 +16284,6 @@ fn spawn_folder_move(
                     crate::application::server_delete::after_a_move(&moved, &into, &subject)
                 })
         };
-        let _ = handle.block_on(controller.disconnect_imap());
 
         match outcome {
             Ok(next) => {
@@ -16459,27 +16402,18 @@ fn spawn_subscription_writes(app: AppHandles<'_>, changed: Vec<(String, bool)>) 
             });
         };
         let Some(account) = account else { return };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return;
-        };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return;
-        };
-
-        let controller = MailController::new();
-        if handle
-            .block_on(controller.connect_imap(
-                account.imap_server.clone(),
-                port,
-                account.username.clone(),
-                auth,
-                account.imap_use_tls,
-                &account.id,
-            ))
-            .is_err()
-        {
-            return;
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                // Said nowhere but the log, as it was before. Nobody pressed
+                // anything to cause this: the choice is already recorded here
+                // and already decides what syncs, and the courtesy to other
+                // mail apps is what did not happen.
+                Err(why) => {
+                    tracing::warn!("The subscriptions could not be sent to the server: {why}");
+                    return;
+                }
+            };
 
         let mut refused: Vec<String> = Vec::new();
         for (path, sync) in &changed {
@@ -16488,7 +16422,6 @@ fn spawn_subscription_writes(app: AppHandles<'_>, changed: Vec<(String, bool)>) 
                 refused.push(path.clone());
             }
         }
-        let _ = handle.block_on(controller.disconnect_imap());
 
         if !refused.is_empty() {
             say(UIUpdate::StatusUpdated(format!(
@@ -17428,10 +17361,6 @@ fn spawn_server_change(
             refuse("no account is set up".to_string());
             return;
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            refuse(format!("{} has no usable IMAP port", account.name));
-            return;
-        };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             refuse("there is no cache directory".to_string());
             return;
@@ -17518,26 +17447,23 @@ fn spawn_server_change(
             ServerChange::Flag(flag) => flag,
         };
 
-        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
-            Ok(auth) => auth,
-            Err(e) => {
-                refuse(e.to_string());
-                return;
-            }
-        };
-
-        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            refuse(e.to_string());
-            return;
-        }
+        // The session this account is already signed in with, and a sign-in
+        // only if there is not one. This is the case SCALE-02 is named for:
+        // marking three messages read in a row used to be three TLS
+        // handshakes, three CAPABILITYs, three LOGINs and three SELECTs.
+        //
+        // The unusable-port refusal that used to be spelled out above is gone
+        // rather than kept. `a_session_at`, underneath this, refuses the same
+        // account in the same words, and it did even while this checked first,
+        // so the check here was a second answer to the same question.
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    refuse(why);
+                    return;
+                }
+            };
 
         let outcome = match flag {
             FlagChange::Read(read) => handle.block_on(controller.set_flag(
@@ -17553,7 +17479,9 @@ fn spawn_server_change(
                 handle.block_on(controller.set_flag(&folder_path, uid, keyword, *on))
             }
         };
-        let _ = handle.block_on(controller.disconnect_imap());
+        // Nothing is disconnected here. The session belongs to the account
+        // rather than to this piece of work, and closing it would end one that
+        // a sync or another flag is part way through using.
 
         match outcome {
             Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),
@@ -18256,28 +18184,14 @@ fn bytes_of_the_attachment(
     }
 
     let account = account.ok_or_else(|| Error::Other("No account is set up".into()))?;
-    let port = account
-        .imap_port
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| Error::Other("The account has no usable IMAP port".into()))?;
     let folder = cache
         .folder_path_for_message(attachment.message_row_id)?
         .ok_or_else(|| Error::Other("The message is no longer in the folder list".into()))?;
 
-    let auth = handle.block_on(crate::application::mail_auth::for_account(&account))?;
-    let controller = MailController::new();
-    handle.block_on(controller.connect_imap(
-        account.imap_server.clone(),
-        port,
-        account.username.clone(),
-        auth,
-        account.imap_use_tls,
-        &account.id,
-    ))?;
-    let raw = handle.block_on(controller.fetch_message_body(&folder, attachment.uid));
-    let _ = handle.block_on(controller.disconnect_imap());
-    let raw = raw?;
+    let controller = handle
+        .block_on(crate::application::mail_session::the_session_at(&account))
+        .map_err(Error::Other)?;
+    let raw = handle.block_on(controller.fetch_message_body(&folder, attachment.uid))?;
 
     crate::service::mime::attachment_bytes(&raw, attachment.index)
 }
@@ -18347,12 +18261,6 @@ fn start_the_missing_text_fetch(app: AppHandles<'_>) {
         let Some(account) = account else {
             return could_not("There is no account open to fetch mail for.".to_string());
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return could_not(format!(
-                "The port for {} is not a number, so nothing can be fetched.",
-                account.email
-            ));
-        };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             return could_not("The mail stored on this computer could not be opened.".to_string());
         };
@@ -18361,25 +18269,29 @@ fn start_the_missing_text_fetch(app: AppHandles<'_>) {
         };
 
         let allowed = crate::application::allowed::allowed_for(&account.id);
-        let controller = MailController::new();
-        let mut connected = false;
-        if allowed.reading {
-            let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account))
-            else {
-                return could_not(format!("Signing in to {} did not work.", account.email));
-            };
-            if let Err(e) = handle.block_on(controller.connect_imap(
-                account.imap_server.clone(),
-                port,
-                account.username.clone(),
-                auth,
-                account.imap_use_tls,
-                &account.id,
-            )) {
-                return could_not(format!("Could not reach the mail server: {e}"));
+        // Nothing is dialled when reading is not allowed, and the run below is
+        // handed a controller that was never signed in so that it takes its own
+        // refusal path. That is the same shape as before; what changed is that
+        // the signed-in half is the account's own session rather than one
+        // opened and thrown away here.
+        let never_signed_in = MailController::new();
+        let session = if allowed.reading {
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => Some(session),
+                Err(why) => {
+                    return could_not(format!(
+                        "Signing in to {} did not work. {why}",
+                        account.email
+                    ));
+                }
             }
-            connected = true;
-        }
+        } else {
+            None
+        };
+        let controller: &MailController = match &session {
+            Some(session) => session,
+            None => &never_signed_in,
+        };
 
         // Every line the run says goes to the status bar, which announces it.
         // The run decides how often, and it is bounded: at most nine lines
@@ -18388,16 +18300,13 @@ fn start_the_missing_text_fetch(app: AppHandles<'_>) {
         let progress = |line: &str| say(UIUpdate::StatusUpdated(line.to_string()));
         let outcome = handle.block_on(
             crate::application::mail_sync::fetch_the_missing_message_text(
-                &controller,
+                controller,
                 &cache,
                 &account.id,
                 allowed,
                 &progress,
             ),
         );
-        if connected {
-            let _ = handle.block_on(controller.disconnect_imap());
-        }
 
         match outcome {
             Ok(done) => {
@@ -18440,9 +18349,6 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         if account.imap_server.trim().is_empty() {
             return;
         }
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            return;
-        };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             return;
         };
@@ -18452,32 +18358,23 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         let Ok(Some(folder_path)) = cache.folder_path_for_message(message_row_id) else {
             return;
         };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return;
-        };
 
-        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            tracing::warn!("Could not connect to fetch a message body: {}", e);
-            return;
-        }
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    tracing::warn!("Could not sign in to fetch a message body: {why}");
+                    return;
+                }
+            };
 
         let raw = match handle.block_on(controller.fetch_message_body(&folder_path, uid)) {
             Ok(raw) => raw,
             Err(e) => {
                 tracing::warn!("Could not fetch message {}: {}", uid, e);
-                let _ = handle.block_on(controller.disconnect_imap());
                 return;
             }
         };
-        let _ = handle.block_on(controller.disconnect_imap());
 
         let parsed = match crate::service::mime::parse(&raw) {
             Ok(parsed) => parsed,
@@ -18691,14 +18588,6 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
             fail(format!("{} has no IMAP server set", account.name));
             return;
         }
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            fail(format!(
-                "{} has an IMAP port that is not a number: {}",
-                account.name, account.imap_port
-            ));
-            return;
-        };
-
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             fail("No cache directory available".to_string());
             return;
@@ -18719,29 +18608,19 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
             account.imap_server
         )));
 
-        // Fetched before connecting, because an expired token is refreshed here
-        // and a missing one is a configuration problem worth naming rather than
-        // a sign-in the server refuses for reasons nobody can act on.
-        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
-            Ok(auth) => auth,
-            Err(e) => {
-                fail(e.to_string());
-                return;
-            }
-        };
-
-        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            fail(e.to_string());
-            return;
-        }
+        // The account's own session, signed in only if there is not one
+        // already. The credential is still fetched before anything is dialled,
+        // and still inside the helper: an expired token is refreshed there and
+        // a missing one is named as a configuration problem rather than left to
+        // the server to refuse for reasons nobody can act on.
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    fail(why);
+                    return;
+                }
+            };
         say(UIUpdate::ConnectionStatusChanged(
             ConnectionStatus::Connected,
         ));
@@ -18867,7 +18746,7 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                 folder.name
             )));
             match handle.block_on(crate::application::mail_sync::sync_folder(
-                &controller,
+                controller.as_ref(),
                 &cache,
                 folder,
                 *folder_id,
@@ -18903,8 +18782,6 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                 Err(e) => problems.push(format!("{}: {}", folder.name, e)),
             }
         }
-
-        let _ = handle.block_on(controller.disconnect_imap());
 
         // The tree reads from the cache, which has changed underneath it.
         match folder_tree_updates(&cache, &account.id) {

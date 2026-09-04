@@ -1159,8 +1159,8 @@ mod tests {
         //
         // It used to be here, and there was a second copy of the same six lines
         // in the draft path. Both are gone into one sign-in, so this module now
-        // holds none and that file holds one. Counted in both directions: a
-        // module that grows its own sign-in again is what this notices.
+        // holds none. Counted in both directions: a module that grows its own
+        // sign-in again is what this notices.
         let mine = include_str!("sent_copy.rs")
             .split_once("#[cfg(test)]")
             .expect("this module has tests")
@@ -1171,15 +1171,36 @@ mod tests {
             "this module opens a session of its own again, and the one it should \
              be using is opened once for the whole queue"
         );
-        let one_sign_in = include_str!("mail_session.rs")
+
+        // The one place has moved and there is still one of it. `mail_session`
+        // used to build the connection itself; it now asks the controller,
+        // which is what remembers the account so a connection that goes can be
+        // made again. So the route is two named hops, and each has to be one:
+        // one call asking to be signed in, and one call reaching a server.
+        //
+        // Both halves, because either alone can be satisfied by the other
+        // moving. A file that stopped asking would pass a check that only
+        // counted the far end, and a second dialler would pass one that only
+        // counted the near end.
+        let asking = include_str!("mail_session.rs")
             .split_once("#[cfg(test)]")
             .expect("the sign-in has tests")
             .0;
         assert_eq!(
-            one_sign_in.matches(".connect_imap(").count(),
+            asking.matches(".sign_in_for(").count(),
             1,
-            "the one sign-in the copies go through reaches a mail server by \
-             some other number of routes than one"
+            "the one sign-in the copies go through asks to be signed in by some \
+             other number of routes than one"
+        );
+        let dialling = include_str!("mail_controller.rs")
+            .split_once("#[cfg(test)]")
+            .expect("the controller has tests")
+            .0;
+        assert_eq!(
+            dialling.matches(".connect_imap(").count(),
+            1,
+            "the controller reaches a mail server by some other number of \
+             routes than one"
         );
     }
 

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 387 records have arrived since and have not been through it.
+# 389 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3402,13 +3402,13 @@ tests_last_seen = [
 [[guard]]
 name = "a delete opens the folder it names before it removes anything"
 file = "src/application/mail_controller.rs"
-before = """        let session = &mut *guard;
-        if session.selected_folder() != Some(folder) {
-            session.select_folder(folder).await?;
-        }
-        session.delete_message(uid, trash).await"""
-after = """        let session = &mut *guard;
-        session.delete_message(uid, trash).await"""
+before = """        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.delete_message(uid, trash).await"""
+after = """        once_more_if_the_connection_went!(self, session, {
+            session.delete_message(uid, trash).await"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_a_delete_the_server_would_not_finish_comes_back_saying_where_both_copies_are",
     "application::mail_controller::against_a_server_that_answers::test_a_delete_with_a_trash_folder_really_moves_the_message_there",
@@ -3432,11 +3432,13 @@ tests_last_seen = [
 [[guard]]
 name = "saving a copy does not change which folder is open"
 file = "src/application/mail_controller.rs"
-before = """        let session = &mut *guard;
-        session.append_message(into, flags, raw).await"""
-after = """        let session = &mut *guard;
-        session.select_folder(into).await?;
-        session.append_message(into, flags, raw).await"""
+before = """        once_more_if_the_connection_went!(self, session, {
+            session.append_message(into, flags, raw).await
+        })"""
+after = """        once_more_if_the_connection_went!(self, session, {
+            session.select_folder(into).await?;
+            session.append_message(into, flags, raw).await
+        })"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
     "application::mail_controller::against_a_server_that_answers::test_the_copy_of_a_sent_message_is_appended_where_it_was_told_flagged_as_read",
@@ -7428,7 +7430,7 @@ tests_last_seen = [
 name = "a second SELECT of an already-open folder still asks the server"
 file = "src/service/protocols/imap.rs"
 before = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
-        let mailbox = if self.abilities.condstore {"""
+        // CONDSTORE asks the server to name the folder's highest modification"""
 after = """    pub async fn select_folder(&mut self, path: &str) -> Result<MailboxStatus> {
         if self.selected.as_deref() == Some(path) {
             return Ok(MailboxStatus {
@@ -7436,7 +7438,7 @@ after = """    pub async fn select_folder(&mut self, path: &str) -> Result<Mailb
                 highest_modseq: None,
             });
         }
-        let mailbox = if self.abilities.condstore {"""
+        // CONDSTORE asks the server to name the folder's highest modification"""
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_second_select_of_the_same_folder_reports_a_changed_uidvalidity",
 ]
@@ -13582,54 +13584,166 @@ tests_last_seen = [
 # numbers too and seven of them had moved by the next day. So the count lives in
 # a test now, which reads the tree rather than repeating a number.
 #
-# The break is the change the census exists to notice, made for real rather than
-# invented: the site that marks one message read, which is the requirement's own
-# worst case, goes through `application::mail_session::a_session_at` instead of
-# dialling for itself. Eleven where twelve were counted.
+# The break used to be the change the census exists to notice: the site that
+# marks one message read going through `application::mail_session::a_session_at`
+# instead of dialling for itself. Plan 03-06 made that change for real, so the
+# text the record named stopped being in the file and the record became
+# unmeasurable, which the commit gate refused before anything else could happen.
+#
+# It is turned round rather than moved to another site, because moving it would
+# only have to be turned round later anyway. Once every site goes through the
+# helper there is nothing left to convert, and the change worth noticing is the
+# opposite one: somewhere new dialling for itself. So the break puts the old
+# sign-in back at that same site, and the census answers one more than it was
+# told. That is the break the record keeps for good: it discriminates while the
+# count is eleven and it still discriminates when it is nought.
 #
 # This record couples the census to `wx_app.rs` for a second reason as well. The
 # census lives under `tests/`, so without a record `scripts/check.sh` would run
 # it only on the commits that change the census itself, which is every commit
 # except the ones that could change the number.
 #
-# Measured by hand on 2026-09-04, against the census target, `tests/house_style`,
-# `tests/wired` and the whole library. One test went red, the one named below.
-# Nothing else did: house_style 64 passed, wired 61 passed, and the library
-# 6,078 passed with none failing. That is the finding rather than an aside. It
-# says this part of `wx_app.rs` had nothing reading it for this property before
-# now, so the whole defence of the count is the single test named here.
+# Measured by hand twice, both times on 2026-09-04. First against the break that
+# converted the site, and then again against the break that puts it back, which
+# is what the record now carries. Both runs covered the census target,
+# `tests/house_style`, `tests/wired` and the whole library, and both gave the
+# same answer: one test went red, the one named below, and nothing else did.
+# house_style 64 passed and wired 61 passed in each.
+#
+# The second run's library was 6,127 passed with 3 failed, and those three are
+# not this break. They are 03-06's own red half, still red at the commit this
+# was measured at, and they fail identically with the break applied and taken
+# away again.
+#
+# That one test is the finding rather than an aside. It says this part of
+# `wx_app.rs` has nothing else reading it for this property, so the whole
+# defence of the count is the single test named here.
 
 [[guard]]
 name = "the count of sign-ins that go round the helper is read from the tree"
 file = "src/presentation/wx_app.rs"
 suite = "one_sign_in_per_piece_of_work"
-before = """        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
+before = """        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    refuse(why);
+                    return;
+                }
+            };
+
+        let outcome = match flag {"""
+after = """        let controller = MailController::new();
+        let _ = handle.block_on(controller.connect_imap(
             account.imap_server.clone(),
-            port,
+            143,
             account.username.clone(),
-            auth,
+            crate::service::protocols::MailAuth::Password(String::new()),
             account.imap_use_tls,
             &account.id,
-        )) {
-            refuse(e.to_string());
-            return;
-        }"""
-after = """        let controller = match handle
-            .block_on(crate::application::mail_session::a_session_at(&account))
-        {
-            Ok(session) => session,
-            Err(reason) => {
-                refuse(reason);
-                return;
-            }
-        };"""
+        ));
+
+        let outcome = match flag {"""
 red = [
     "test_the_places_that_sign_in_for_themselves_are_counted_and_named",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/one_sign_in_per_piece_of_work.rs", tests = 7 },
+]
+
+# ── One sign-in for an account, not one per piece of work ───────────────────
+#
+# SCALE-02. Marking one message read used to be a TLS handshake, a CAPABILITY,
+# a LOGIN and a SELECT, and twelve places in the main window worked that way.
+# The census under `tests/` says nothing new goes round the helper; this says
+# the helper actually holds what it hands out, which is a different claim and
+# the one a person feels.
+#
+# The break is the version that would pass a census and fail a person: the
+# holder still hands out a session, and signs in for a fresh one every time it
+# is asked. Every site still goes through it, so the count stays at nought.
+#
+# It reddens the connection budget as well, and that is why the budget has no
+# record of its own. Two pieces of work signing in twice is three connections
+# where two were budgeted, so one break covers both and a second record would
+# only redden the same tests, which is the duplication this file's header warns
+# about.
+#
+# Measured by hand on 2026-09-04 against the whole library: 6,133 passed, the
+# two below failed, one ignored.
+#
+# What stayed green is the finding. Closing an account and closing the program
+# both still send LOGOUT, because the break only stops the held session being
+# handed back and still writes one down. So this record is about reuse and says
+# nothing about the closing, which has no record and is defended by its two
+# tests alone.
+
+[[guard]]
+name = "one sign-in serves every piece of work for an account"
+file = "src/application/mail_session.rs"
+before = """    let mut holding = held.lock().await;
+    if let Some(session) = holding.as_ref() {
+        return Ok(session.clone());
+    }"""
+after = """    let mut holding = held.lock().await;"""
+red = [
+    "application::mail_session::tests::test_the_connections_open_for_one_account_stay_within_the_budget",
+    "application::mail_session::tests::test_two_pieces_of_work_for_one_account_sign_in_once",
+]
+tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 14 },
+]
+
+# ── Once means once ─────────────────────────────────────────────────────────
+#
+# A connection that has gone is signed in again and the work tried once more.
+# The number that matters is the second one: Gmail allows fifteen connections
+# to an account and punishes one that opens more, so a client that keeps trying
+# against a server that keeps dropping is what gets somebody locked out.
+#
+# The break is one more attempt rather than a loop, deliberately. A loop against
+# the server this is measured with never ends, so the run would hang rather than
+# report, and a guard that hangs says nothing. Two retries where one was
+# recorded is the same defect at a size that terminates.
+#
+# Measured by hand on 2026-09-04 against the whole library: 6,134 passed, the
+# one below failed, one ignored. It counted three sign-ins where two were
+# recorded, at the server rather than here.
+#
+# The two tests about a connection that drops once are not in the list and could
+# not be: a second retry that is never reached changes nothing about a server
+# that answers the first one. Only a server that drops every time tells one
+# retry from two, which is why that fixture exists.
+
+[[guard]]
+name = "a dropped connection is tried once more and not twice"
+file = "src/application/mail_controller.rs"
+before = """        match again {
+            Err(Error::Network(_)) => Err(the_second_attempt_failed_too()),
+            other => other,
+        }"""
+after = """        if !matches!(&again, Err(Error::Network(_))) {
+            return again;
+        }
+        if $self.sign_in_for(&account).await.is_err() {
+            return Err(the_second_attempt_failed_too());
+        }
+        let third = {
+            let mut guard = $self.require_imap().await?;
+            let $session = &mut *guard;
+            $work
+        };
+        match third {
+            Err(Error::Network(_)) => Err(the_second_attempt_failed_too()),
+            other => other,
+        }"""
+red = [
+    "application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more",
+]
+tests_last_seen = [
+    { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/mail_session.rs", tests = 14 },
 ]
 
 # ── A folder listing reads no message text ─────────────────────────────────

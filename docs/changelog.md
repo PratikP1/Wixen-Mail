@@ -8,6 +8,44 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **A connection to the mail server that drops is made again once, and if that
+  does not work Wixen Mail says so in words rather than in an error code.**
+
+  Now that an account keeps one session open, that session can be sitting idle
+  when the provider closes it, and the next thing you do finds a connection that
+  is no longer there. Wixen Mail signs in again and tries the same piece of work
+  once more. If that fails too you are told three things: the connection was
+  lost, a second attempt was already made, and to check that this computer is
+  online and try again.
+
+  Once means once. It does not keep trying, because a mail client that does is
+  one a provider starts turning away.
+
+  Known limitation: no real provider has ever dropped a connection on this
+  program, because no account has ever been used with it. Whether a provider
+  accepts a fresh sign-in straight after a drop, or treats it as something to
+  slow down, is unknown.
+
+- **Wixen Mail signs in to your mail server once for an account, instead of once
+  for every command.**
+
+  Marking a message read, flagging one, moving one to another folder, emptying a
+  folder, making one, fetching a message you opened: each of those used to open
+  a connection to the server, sign in, send one command and sign out again.
+  Marking three messages read in a row was three sign-ins. Twelve places in the
+  main window worked that way, and the one the effort was most visible in was
+  the simplest: marking a single message read.
+
+  Each account now keeps one signed-in session. It opens the first time
+  something needs it, and it closes when you remove that account or close Wixen
+  Mail. Together with the connection held open to hear about new mail as it
+  arrives, that is two connections per account.
+
+  Known limitation: none of this has met a real mail server. No account has ever
+  been used with this program, so what a provider does with a session left open
+  for minutes, and whether two connections per account is welcome on the
+  providers people actually use, are both unknown.
+
 - **Wixen Mail no longer reads every message you have each time it starts.**
   Older versions kept the text of a message in the same place as its subject
   line and its date. Newer ones keep it separately, and every start looks for
@@ -30,6 +68,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   text somewhere nothing would ever look again.
 
 ### Fixed
+
+- **A connection that dropped while a folder was being opened could delete the
+  mail Wixen Mail had stored for that folder.**
+
+  Opening a folder is how checking for mail starts, and the server answers with
+  a number it uses to say whether the numbering you already have still holds. A
+  missing number means the same as a changed one: throw away what is stored for
+  that folder and fetch it again.
+
+  The library Wixen Mail uses to talk to mail servers reported a folder as
+  opened when the connection had gone away part way through the command, with
+  that number missing. So a connection dropping at the wrong moment read as a
+  folder whose mail had all been renumbered, and the stored copy went.
+
+  Wixen Mail now reads the server's own end-of-command line, so a connection
+  that goes while a folder is opening is a failure rather than a folder that
+  opened empty. Nothing has been lost to this: no account has ever been used
+  with this program.
 
 - **A reply no longer sits in a separate conversation from the message it
   answers, when the message that ties the two together arrived first.**
