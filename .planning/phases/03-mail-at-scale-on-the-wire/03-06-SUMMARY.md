@@ -88,11 +88,26 @@ the server. If the second attempt fails too, the caller gets this sentence:
 > tried once more, and that did not work either. Check that this computer is
 > online, then try again.
 
-No protocol string, no code, and nothing in front of it. It reaches somebody
-through each site's own reporting, which is `ErrorOccurred` for the flag path
-and `CommandRefused` for the folder commands, and both announce at `High`
-priority through `accessibility::announce`, above the `Low` that steady sync
-lines use.
+No protocol string and no code, and nothing of the error type's in front of it:
+that is what `Error::InPlainWords` is for. It reaches somebody through each
+site's own reporting, which is `ErrorOccurred` for the flag path and
+`CommandRefused` for the folder commands, and both announce at `High` priority
+through `accessibility::announce`, above the `Low` that steady sync lines use.
+
+**What the flag path really says is longer than that, and the extra is not
+new.** `ErrorOccurred` writes "Error: " in front of everything, and the flag
+path wraps a refusal in "The change did not reach the server, so it has been
+undone here: ". So marking a message read against a connection that has gone
+twice is spoken as:
+
+> Error: The change did not reach the server, so it has been undone here: The
+> connection to the mail server was lost. Wixen Mail signed in again and tried
+> once more, and that did not work either. Check that this computer is online,
+> then try again.
+
+Every word of that is plain and the sentence still ends with what to do next.
+Both prefixes were there before this plan and neither is inspected here. The
+folder commands take the `CommandRefused` path and get no "Error: ".
 
 **The budget is two per account and the reason is beside the number.** One is
 held by `watch_folder` for IDLE and is open before any mail is fetched, which
