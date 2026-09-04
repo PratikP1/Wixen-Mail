@@ -6919,3 +6919,333 @@ mod a_listing_reads_no_message_text {
         );
     }
 }
+
+/// Which end of a folder's numbering a filed row takes its number from.
+///
+/// Phase 1 deferred this as a defect in [`MessageCache::next_local_uid`]: it
+/// saturates on `i64` and then casts to `u32`, and [`FIRST_RESERVED_UID`] is
+/// `u32::MAX`, so one reserved row in a folder would make the next call answer
+/// zero. The wrap is real. It is also unreachable, and not because of anything
+/// that function does: [`MessageCache::numbering_in`] dispatches by folder
+/// path, and a folder either counts up or counts down, never both.
+///
+/// So the guard belongs on the dispatcher. A fix inside the function would make
+/// the answer safe and leave the thing that actually decides unguarded, while
+/// making the whole question look handled. The answer is made safe as well,
+/// below, and its doc comment says which of the two is load-bearing.
+#[cfg(test)]
+mod the_dispatcher_is_what_keeps_the_two_numberings_apart {
+    use crate::application::importing_messages::WrittenDownAs;
+    use crate::application::local_folders;
+    use crate::common::temp_home::TempHome;
+    use crate::common::types::Protocol;
+    use crate::common::what_ships::what_ships;
+
+    fn a_cache() -> TempHome<super::super::MessageCache> {
+        TempHome::named("wixen_numbering_", |dir| {
+            super::super::MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    /// A folder stored at this path, and the row it is.
+    fn a_folder_at(cache: &super::super::MessageCache, path: &str) -> i64 {
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (account_id, name, path, folder_type)
+                 VALUES ('acc', ?1, ?1, 'Inbox')",
+                rusqlite::params![path],
+            )
+            .unwrap_or_else(|e| panic!("a folder at {path}: {e}"));
+        cache.conn.last_insert_rowid()
+    }
+
+    /// Every path this program can give a folder that lives on this computer.
+    ///
+    /// Taken from `local_folders` rather than written out, so a folder added
+    /// there is a folder this asks about without anybody remembering to add a
+    /// case. That is the whole difference between a test that stays true and a
+    /// list somebody has to maintain.
+    fn every_path_a_folder_on_this_computer_can_have() -> Vec<String> {
+        let mut paths: Vec<String> = local_folders::SHARED_BY_EVERY_ACCOUNT
+            .iter()
+            .map(local_folders::LocalFolder::path)
+            .collect();
+        for protocol in [Protocol::Pop3, Protocol::Imap] {
+            paths.extend(
+                local_folders::for_account(protocol)
+                    .iter()
+                    .map(local_folders::LocalFolder::path),
+            );
+        }
+        paths.sort();
+        paths.dedup();
+        paths
+    }
+
+    /// Paths a server can hand this program for a mailbox.
+    ///
+    /// The last two are the ones that matter. `LOCAL_PREFIX` opens with a
+    /// control character a mailbox name cannot carry, and the word after it is
+    /// there to be read rather than to tell the two apart: nothing stops a
+    /// server calling a mailbox "Local", and a folder of somebody's real mail
+    /// numbered as though it were on this computer takes the numbers that
+    /// server is about to issue.
+    const EVERY_SHAPE_A_SERVER_CAN_NAME: [&str; 7] = [
+        "INBOX",
+        "INBOX/Receipts",
+        "[Gmail]/All Mail",
+        "Sent",
+        "Trash",
+        "Local",
+        "Local/Sent",
+    ];
+
+    #[test]
+    fn test_a_folder_on_this_computer_counts_up() {
+        let cache = a_cache();
+        for path in every_path_a_folder_on_this_computer_can_have() {
+            let folder = a_folder_at(&cache, &path);
+            assert_eq!(
+                cache.numbering_in(folder).expect("the numbering"),
+                WrittenDownAs::FiledHereCountingUp,
+                "the folder at {path} lives on this computer and was numbered \
+                 from the top of the range"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folder_a_server_names_counts_down_from_the_top() {
+        let cache = a_cache();
+        for path in EVERY_SHAPE_A_SERVER_CAN_NAME {
+            let folder = a_folder_at(&cache, path);
+            assert_eq!(
+                cache.numbering_in(folder).expect("the numbering"),
+                WrittenDownAs::FiledHereCountingDownFromTheTop,
+                "the folder at {path} is one a server fills, and a row filed \
+                 into it was given the number that server is about to issue"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folder_that_is_not_there_counts_down_from_the_top() {
+        // The move this decides a number for is about to fail on the foreign
+        // key, so all this picks is which number it fails with. Counting down
+        // is the answer that cannot collide with one a server will issue, and
+        // it is the safe answer for the same reason it is the answer for a
+        // folder nobody recognises.
+        let cache = a_cache();
+
+        assert_eq!(
+            cache.numbering_in(4_242).expect("the numbering"),
+            WrittenDownAs::FiledHereCountingDownFromTheTop,
+            "a folder id naming no folder was answered with the numbering that \
+             takes the server's next number"
+        );
+    }
+
+    #[test]
+    fn test_the_next_number_in_a_folder_holding_the_top_of_the_range_is_not_zero() {
+        // Phase 1's third deferred item, stated as a property of the answer
+        // rather than of the arithmetic. Zero is not a number any message has,
+        // so a row given it collides with the next row given it, and the
+        // second overwrites the first.
+        let cache = a_cache();
+        let folder = a_folder_at(&cache, "\u{1}Local/Sent");
+        cache
+            .conn
+            .execute(
+                "INSERT INTO messages (uid, folder_id, message_id, subject, from_addr, to_addr, date)
+                 VALUES (?1, ?2, 'top@example.com', 'At the top', 'a@example.com',
+                         'me@example.com', '2026-07-20T10:00:00+00:00')",
+                rusqlite::params![i64::from(super::FIRST_RESERVED_UID), folder],
+            )
+            .expect("a row at the top of the range");
+
+        assert_ne!(
+            cache.next_local_uid(folder).expect("a number"),
+            0,
+            "the next number after the top of the range came back as zero"
+        );
+    }
+
+    // ── Who asks for the counting-up numbering directly ──────────────────
+    //
+    // The dispatcher is what makes the wrap unreachable, so what has to be
+    // watched is anything that goes round it. One new direct caller pointed at
+    // a folder a server fills makes the wrap reachable with one row rather than
+    // four billion, and does it silently.
+
+    /// How the counting-up numbering is asked for.
+    const ASKING_FOR_IT: &str = "next_local_uid(";
+
+    /// Every place in the shipping half of a file that asks for it directly.
+    ///
+    /// Named by the line of code rather than by where the line is. A position
+    /// is the artefact this phase keeps finding stale: `SCALE-02` carried its
+    /// sites as line numbers and they moved twice in two days. A line of code
+    /// is found by searching for it and says what it does while it is being
+    /// read, and it cannot drift by somebody adding a paragraph above it.
+    ///
+    /// The comment comes off each line before anything is looked for, because a
+    /// census that reads whole lines is answered by the prose explaining the
+    /// code rather than by the code, and the paragraphs above this one name the
+    /// very thing it forbids.
+    fn who_asks_directly_in(source: &str) -> Vec<String> {
+        what_ships(source)
+            .lines()
+            .map(|line| line.split_once("//").map_or(line, |(code, _)| code))
+            .filter(|code| code.contains(ASKING_FOR_IT))
+            .map(|code| code.trim().to_string())
+            .collect()
+    }
+
+    /// The files allowed to ask for it, and why each one is.
+    const WHO_MAY_ASK_DIRECTLY: [(&str, &str); 2] = [
+        (
+            "src/data/message_cache/messages.rs",
+            "the dispatcher itself, which asks numbering_in which end this \
+             folder counts from and then asks for that end",
+        ),
+        (
+            "src/application/pop_sync.rs",
+            "a POP account's own inbox, which lives on this computer under the \
+             reserved prefix, so counting up is what the dispatcher would \
+             answer for it anyway",
+        ),
+    ];
+
+    /// Every Rust file under `src`, so a caller written in a new module is a
+    /// caller this finds.
+    fn every_rust_file_under_src() -> Vec<String> {
+        fn walk(folder: &std::path::Path, into: &mut Vec<String>) {
+            let Ok(listing) = std::fs::read_dir(folder) else {
+                return;
+            };
+            for entry in listing.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().is_some_and(|kind| kind == "rs") {
+                    into.push(path.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(std::path::Path::new("src"), &mut found);
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn test_only_the_dispatcher_and_a_pop_inbox_ask_for_the_counting_up_numbering() {
+        let mut found: Vec<(String, String)> = Vec::new();
+        for file in every_rust_file_under_src() {
+            let Ok(source) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            for line in who_asks_directly_in(&source) {
+                found.push((file.clone(), line));
+            }
+        }
+
+        let unexpected: Vec<String> = found
+            .iter()
+            .filter(|(file, _)| !WHO_MAY_ASK_DIRECTLY.iter().any(|(may, _)| may == file))
+            .map(|(file, line)| format!("{file}: {line}"))
+            .collect();
+        assert!(
+            unexpected.is_empty(),
+            "something asks for the counting-up numbering without going through \
+             the dispatcher. In a folder a server fills that hands out the number \
+             the server is about to issue, which makes a real message invisible \
+             and overwrites the copy filed here. Ask next_uid_for_filing instead, \
+             or add the site here with a sentence saying why it is safe:\n  {}",
+            unexpected.join("\n  ")
+        );
+
+        for (file, why) in WHO_MAY_ASK_DIRECTLY {
+            assert!(
+                found.iter().any(|(where_it_is, _)| where_it_is == file),
+                "{file} is written down here as a place that asks directly, \
+                 because {why}, and nothing there does. Either it stopped, in \
+                 which case take it off this list, or this reading has stopped \
+                 working"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_direct_call_in_invented_source_is_found() {
+        let invented = "\
+fn files_a_message(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    let uid = cache.next_local_uid(folder_id)?;
+    Ok(uid)
+}
+";
+        assert_eq!(
+            who_asks_directly_in(invented),
+            vec!["let uid = cache.next_local_uid(folder_id)?;"],
+            "the census did not find the call written into this test"
+        );
+    }
+
+    #[test]
+    fn test_a_call_through_the_dispatcher_is_not_found() {
+        let invented = "\
+fn files_a_message(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    let uid = cache.next_uid_for_filing(folder_id)?;
+    Ok(uid)
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a call that went through the dispatcher was counted as one that \
+             went round it"
+        );
+    }
+
+    #[test]
+    fn test_a_call_only_a_test_build_compiles_is_not_found() {
+        // The one direct caller outside the two listed above is a test helper
+        // in application::local_delete, and a census that counted it would
+        // answer a number that moves when somebody writes a test.
+        let invented = "\
+fn ships(cache: &MessageCache) {
+    let _ = cache.next_uid_for_filing(1);
+}
+
+#[cfg(test)]
+mod tests {
+    fn a_row(cache: &MessageCache, folder_id: i64) {
+        let uid = cache.next_local_uid(folder_id).expect(\"a number\");
+    }
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a call only a test build compiles was counted as one the program makes"
+        );
+    }
+
+    #[test]
+    fn test_a_comment_naming_the_call_is_not_a_call() {
+        // The lesson of 2026-09-04, which cost a correct commit a red run: a
+        // comment justifying a choice names the alternative it rejected, so the
+        // better the comment the more reliably it answers a census reading whole
+        // lines. `sent_copy.rs` carries exactly such a comment today.
+        let invented = "\
+fn files_a_copy(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    // Not next_local_uid(folder_id): in a folder a server fills that is the
+    // number the server is about to issue.
+    cache.next_uid_for_filing(folder_id)
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a comment naming the call was counted as a call"
+        );
+    }
+}
