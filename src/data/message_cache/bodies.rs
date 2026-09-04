@@ -57,6 +57,40 @@ pub struct MessageBody {
 /// and unpacking is the half that happens on the interface thread.
 const PACKING_EFFORT: flate2::Compression = flate2::Compression::new(6);
 
+/// The messages still holding their text in the old inline columns.
+///
+/// In one place so a test can ask SQLite how it plans to answer this exact
+/// query, which is the reason `messages::listing_query` gives for the same
+/// arrangement. It matters more here than there.
+///
+/// # This runs on every open of every database, and always will
+///
+/// `messages.body_plain` and `messages.body_html` shipped in the original
+/// `CREATE TABLE`, so they are in every database this program has ever written,
+/// and a column that shipped is never dropped here. So
+/// [`MessageCache::migrate_inline_bodies`] can never be retired: anything that
+/// stops running it is something that leaves message text inline with nothing
+/// left to move it.
+///
+/// The cost is what gets attacked instead. Without an index this is a full read
+/// of the messages table on the way in, before anything is shown.
+///
+/// `idx_messages_inline_body` is that index. Its `WHERE` is this `WHERE`
+/// exactly, which is what lets SQLite answer from it; change one and change the
+/// other, or this goes back to reading every message and the only thing that
+/// says so is the test that asks for the plan.
+///
+/// # Nothing remembers that this has been done, and nothing should
+///
+/// A marker saying "already migrated" would have to be trusted, and a marker
+/// wrong in that direction is message text left inline that nothing else will
+/// ever move. The index removes the reason to want one: on a database that has
+/// been through the migration, asking costs a lookup against an index holding
+/// nothing. There is no state left to be wrong.
+pub(super) const THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE: &str =
+    "SELECT id, body_plain, body_html FROM messages
+                 WHERE body_plain IS NOT NULL OR body_html IS NOT NULL";
+
 /// Pack message text for storage.
 fn packed(text: &str) -> Result<Vec<u8>> {
     use std::io::Write;
@@ -606,13 +640,14 @@ impl MessageCache {
     /// Returns how many were moved. The inline copies are cleared afterwards so
     /// the space is actually reclaimed, but the columns themselves stay, because
     /// a column that shipped is never dropped from under a user's database.
+    ///
+    /// Which is why this runs on every open of every database and always will.
+    /// See [`THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE`] for what that costs
+    /// and what makes it cheap.
     pub fn migrate_inline_bodies(&self) -> Result<usize> {
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, body_plain, body_html FROM messages
-                 WHERE body_plain IS NOT NULL OR body_html IS NOT NULL",
-            )
+            .prepare_cached(THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE)
             .map_err(|e| Error::Other(format!("Failed to find inline bodies: {}", e)))?;
 
         let pending: Vec<(i64, Option<String>, Option<String>)> = stmt
@@ -1932,6 +1967,183 @@ mod a_database_from_the_schema_that_kept_text_inline {
             every_word_of_text_this_database_holds(&reopened),
             before,
             "opening a database that has already been migrated changed what it holds"
+        );
+    }
+}
+
+/// The migration that runs on every open of every database, forever.
+///
+/// `migrate_inline_bodies` cannot be retired. `messages.body_plain` and
+/// `messages.body_html` shipped in the original `CREATE TABLE`, so they are in
+/// every database this program has ever written, and this project does not drop
+/// a column that shipped. Anything that stops running the migration is
+/// something that leaves message text inline with nothing left to move it.
+///
+/// So the cost is what gets attacked rather than the running. The question
+/// "does any message still hold its text inline" is asked of the messages
+/// themselves on every open, and an index whose condition is the question's
+/// condition is what makes asking free.
+///
+/// # Nothing remembers that this has been done, and nothing should
+///
+/// A marker saying "already migrated" would have to be trusted, and a marker
+/// that is wrong in that direction is message text left inline that nothing
+/// else will ever move. The index removes the reason to want one: on a database
+/// that has been through the migration, the index holds nothing, so asking
+/// costs a lookup against nothing rather than a read of every message. There is
+/// no state to be wrong.
+#[cfg(test)]
+mod the_migration_that_runs_on_every_open {
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::{MessageCache, how_it_will_be_answered};
+
+    /// The index that has to answer it.
+    const THE_INDEX: &str = "idx_messages_inline_body";
+
+    fn fresh(name: &str) -> TempHome<MessageCache> {
+        TempHome::named(name, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    /// A message with its text already moved, which is what every database in
+    /// the field looks like after one open.
+    fn a_message_whose_text_has_moved(cache: &MessageCache) -> i64 {
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (id, account_id, name, path, folder_type)
+                 VALUES (1, 'acc', 'INBOX', 'INBOX', 'Inbox')",
+                [],
+            )
+            .expect("a folder");
+        cache
+            .conn
+            .execute(
+                "INSERT INTO messages (uid, folder_id, message_id, subject, from_addr, to_addr, date)
+                 VALUES (1, 1, 'one@example.com', 'Notes', 'ada@example.com',
+                         'me@example.com', '2026-07-20T10:00:00+00:00')",
+                [],
+            )
+            .expect("a message");
+        let id = cache.conn.last_insert_rowid();
+        cache
+            .save_message_body(id, Some("moved across by an earlier open"), None)
+            .expect("a body row");
+        id
+    }
+
+    #[test]
+    fn test_the_migration_reads_an_index_rather_than_every_message_in_the_file() {
+        let cache = fresh("inline_migration_plan");
+
+        let plan = how_it_will_be_answered(
+            &cache.conn,
+            super::THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE,
+            [],
+        );
+
+        assert!(
+            plan.iter().any(|step| step.contains(THE_INDEX)),
+            "the migration that runs on every open of every database reads the \
+             messages table rather than an index:\n  {}\nThe index's condition \
+             has to be the query's condition exactly, or SQLite cannot use it.",
+            plan.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_the_plan_this_is_read_from_can_tell_a_read_of_every_message_from_a_lookup() {
+        // The companion the assertion above needs. Without it, a plan reader
+        // that had stopped answering, or one answering about some other query,
+        // would leave the test above passing on nothing.
+        let cache = fresh("inline_migration_companion");
+
+        let plan = how_it_will_be_answered(
+            &cache.conn,
+            "SELECT id FROM messages WHERE subject IS NOT NULL",
+            [],
+        );
+
+        assert!(
+            !plan.is_empty(),
+            "the plan reader answered nothing at all, so the assertion above is \
+             about nothing"
+        );
+        assert!(
+            !plan.iter().any(|step| step.contains(THE_INDEX)),
+            "a query no index covers was reported as answered from the index, so \
+             the assertion above would pass whatever the migration read:\n  {}",
+            plan.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks() {
+        // The safety property, and the one to keep. Every sign a database could
+        // give that the migration is finished is present here: the body table
+        // holds this message's text, the migration has already run over the
+        // file once, and it is opened again by the same program. The text put
+        // back inline is still moved, because nothing was remembered and the
+        // messages themselves are what get asked.
+        //
+        // This is the test that goes red if somebody later adds a marker and
+        // lets it decide whether to ask.
+        let cache = fresh("nothing_is_remembered");
+        let id = a_message_whose_text_has_moved(&cache);
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET body_plain = ?1 WHERE id = ?2",
+                rusqlite::params!["left inline, and nothing else will ever move it", id],
+            )
+            .expect("the text is put back inline");
+
+        let reopened = MessageCache::new(cache.path().to_path_buf(), None).expect("the next open");
+
+        let still_inline: Option<String> = reopened
+            .conn
+            .query_row(
+                "SELECT body_plain FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .expect("the inline column reads");
+        assert!(
+            still_inline.is_none(),
+            "a message holding its text inline was passed over by an open, and \
+             nothing else moves it: {still_inline:?}"
+        );
+        assert_eq!(
+            reopened
+                .get_message_body(id)
+                .expect("the body reads")
+                .expect("a body")
+                .body_plain
+                .as_deref(),
+            Some("left inline, and nothing else will ever move it"),
+            "the text that was inline did not arrive in the body table"
+        );
+    }
+
+    #[test]
+    fn test_a_database_with_no_messages_at_all_opens_and_is_asked_the_same_way() {
+        // The empty case, which is a first run. It is here because the index is
+        // created on every open and an index over an empty table is the one
+        // shape where a mistake in the statement would never show itself.
+        let cache = fresh("inline_migration_empty");
+
+        let plan = how_it_will_be_answered(
+            &cache.conn,
+            super::THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE,
+            [],
+        );
+
+        assert!(
+            plan.iter().any(|step| step.contains(THE_INDEX)),
+            "a database with no messages in it does not have the index the \
+             migration is answered from:\n  {}",
+            plan.join("\n  ")
         );
     }
 }
