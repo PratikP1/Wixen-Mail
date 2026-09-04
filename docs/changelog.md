@@ -28,6 +28,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A folder your mail server has renumbered now says so, and says how much it
+  is fetching again.** Servers sometimes give a folder a fresh set of message
+  numbers. When that happens, every message Wixen Mail was holding for that
+  folder points at the wrong mail, so it throws them away and reads the folder
+  again from the server.
+
+  It has always done that. It did it silently: the only record was a line in
+  the log file, which nobody sees while they are using the program. Now it
+  says which folder, and how many messages went, on its own announcement, so
+  the next line of sync progress cannot replace it before you have heard it.
+
+  **Known limitation: this has never happened outside a test.** Wixen Mail has
+  not yet been used with a real account, so no server has ever renumbered a
+  folder for it. The discard, and the sentence about it, have only ever run
+  against a scripted server in the test suite. Whether the sentence is spoken
+  clearly by a screen reader, and whether it arrives at a moment that does not
+  cut across something you were reading, are questions a real screen reader
+  session has to answer and nobody has held one yet.
+
 - **A saved search can now ask anything a filter rule can ask.** Press the menu
   key on a saved search in the folder tree and choose "Edit conditions", or use
   Saved Search > Edit Conditions on the menu bar.
