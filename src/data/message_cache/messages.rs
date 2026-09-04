@@ -6625,3 +6625,197 @@ mod marking_read_tells_no_server {
         assert!(calls_out_of_this_machine("        let x = 1 + 1;").is_empty());
     }
 }
+
+/// A folder listing reads no message text, asked of SQLite rather than of the
+/// query.
+///
+/// Criterion 4's first half. `bodies.rs` says message text was moved out of the
+/// `messages` table because every folder listing dragged it through SQLite to
+/// show a subject line. That is true of the listing as written today. Nothing
+/// held it there, and the doc comment on [`super::listing_query`] says the query
+/// is built in one place so that a test can ask about the exact string the
+/// application runs rather than a copy that goes stale.
+///
+/// # How the question is asked
+///
+/// By taking the message text out of the database and asking SQLite to prepare
+/// the query. A database is built holding only the tables a listing is allowed
+/// to read, with the two inline body columns dropped from `messages` and no
+/// `message_bodies` table at all, and every query a listing can run is prepared
+/// against it. Name resolution is SQLite's own answer to "what does this read":
+/// a query naming a column that is not there does not prepare, and neither does
+/// one naming a table that is not there, whether it names it directly, in a
+/// subquery, or through a view.
+///
+/// # Why not the query plan
+///
+/// The plan names cursors by their alias. `SEARCH m USING INDEX ...` says `m`,
+/// and turning `m` back into `messages` means reading the query, which is the
+/// copy the doc comment argues against. Worse, a plan is a list of tables, and
+/// the break this is really about is a **column**: message text lived inline in
+/// `messages` and still can, because `body_plain` and `body_html` shipped in the
+/// original `CREATE TABLE` and this project does not drop a shipped column. A
+/// check over table names is green through `SELECT m.body_plain`, which is the
+/// exact edit `guards/guards.toml` records as the break for this guard.
+#[cfg(test)]
+mod a_listing_reads_no_message_text {
+    use crate::presentation::message_columns::{By, MessageColumn, Sort, SortDirection};
+    use rusqlite::Connection;
+
+    /// A database holding only what a folder listing is allowed to read.
+    fn a_database_holding_only_what_a_listing_may_read() -> Connection {
+        todo!("a database holding the allowed tables, with the message text taken out of it")
+    }
+
+    /// Every order the list can be put in.
+    ///
+    /// Built from [`MessageColumn::ALL`] rather than written out, so a column
+    /// added there is a column this asks about without anybody remembering to.
+    /// Both levels, because `Sort`'s fields are public and the second level is
+    /// as much a place a body column could enter as the first.
+    fn every_order_a_list_can_be_put_in() -> Vec<Sort> {
+        let both_ways = |column: MessageColumn| {
+            [SortDirection::Ascending, SortDirection::Descending]
+                .map(|direction| By { column, direction })
+        };
+        let levels: Vec<By> = MessageColumn::ALL
+            .iter()
+            .copied()
+            .flat_map(both_ways)
+            .collect();
+
+        let mut orders = Vec::new();
+        for first in &levels {
+            orders.push(Sort {
+                column: first.column,
+                direction: first.direction,
+                then: None,
+            });
+            for then in &levels {
+                orders.push(Sort {
+                    column: first.column,
+                    direction: first.direction,
+                    then: Some(*then),
+                });
+            }
+        }
+        orders
+    }
+
+    /// Every query a folder listing runs, in every order it can be asked for.
+    fn every_query_a_listing_runs() -> Vec<String> {
+        let mut queries = vec![
+            // What a listing gets when nothing asked for an order, which is the
+            // default `get_message_list_sorted` and `conversations_in` apply.
+            super::listing_query("m.date DESC", " LIMIT 50"),
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
+            // All Inboxes, which is a folder listing that names no folder.
+            super::unified_inbox_query(100),
+        ];
+        for order in every_order_a_list_can_be_put_in() {
+            // Both the page and the whole folder: `limit` is an argument and
+            // `None` is a shape the callers still pass.
+            queries.push(super::listing_query(&order.order_by_clause(), " LIMIT 50"));
+            queries.push(super::listing_query(&order.order_by_clause(), ""));
+            queries.push(super::conversations_query(
+                &order.conversation_order_by_clause(),
+            ));
+        }
+        queries
+    }
+
+    /// The one assertion this module exists for.
+    #[test]
+    fn test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+        let queries = every_query_a_listing_runs();
+
+        let refused: Vec<String> = queries
+            .iter()
+            .filter_map(|query| match stripped.prepare(query) {
+                Ok(_) => None,
+                Err(e) => Some(format!("{e}\n     in: {query}")),
+            })
+            .collect();
+
+        assert!(
+            refused.is_empty(),
+            "{} of the {} queries a folder listing runs read something a \
+             database holding only what a listing may read does not have. A \
+             listing that reads message text is what this is about; a table \
+             that is genuinely needed goes on the allowed list beside a \
+             sentence saying why. The first three:\n   {}",
+            refused.len(),
+            queries.len(),
+            refused
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n   ")
+        );
+    }
+
+    /// The companion the assertion above needs to mean anything.
+    ///
+    /// It passes today and would go on passing against a database that had had
+    /// nothing taken out of it, or against a reader that had stopped reading.
+    /// This is the break `guards/guards.toml` records for this guard, handed to
+    /// the same database.
+    #[test]
+    fn test_a_listing_that_read_the_columns_message_text_used_to_live_in_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        for column in ["body_plain", "body_html"] {
+            let asked = stripped.prepare(&format!(
+                "SELECT m.id, m.{column} FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id"
+            ));
+            assert!(
+                asked.is_err(),
+                "a listing selecting messages.{column} prepared against a \
+                 database that is supposed to hold no message text, so this \
+                 guard would not notice the listing reading it again"
+            );
+        }
+    }
+
+    /// The same, for the table the text was moved to.
+    #[test]
+    fn test_a_listing_that_read_the_table_message_text_moved_to_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        let asked = stripped.prepare(
+            "SELECT m.id, b.body_plain FROM messages m
+             INNER JOIN message_bodies b ON b.message_id = m.id",
+        );
+
+        assert!(
+            asked.is_err(),
+            "a listing joining message_bodies prepared against a database that \
+             is supposed not to have that table"
+        );
+    }
+
+    /// And for a table that is simply not a listing's business.
+    ///
+    /// The allowed set is closed rather than a list of things to avoid, so a
+    /// second body store written later is caught without anybody adding it to
+    /// a list of forbidden names.
+    #[test]
+    fn test_a_listing_that_read_a_table_outside_the_allowed_set_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        let asked = stripped.prepare(
+            "SELECT m.id, t.name FROM messages m
+             INNER JOIN message_tags mt ON mt.message_id = m.id
+             INNER JOIN tags t ON t.id = mt.tag_id",
+        );
+
+        assert!(
+            asked.is_err(),
+            "a listing reading a table outside the allowed set prepared anyway, \
+             so the set is not closed and this guard sees nothing"
+        );
+    }
+}
