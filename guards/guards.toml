@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 373 records have arrived since and have not been through it.
+# 374 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13401,4 +13401,64 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 113 },
+]
+
+# ── A sign-in that stopped going round the helper ────────────────────────────
+#
+# SCALE-02's fourth deliverable. How many places in the main window build their
+# own `MailController` and connect with it used to be a list of line numbers in
+# a requirements document, and it went stale twice: it said eight, by 2026-09-03
+# all eight of those lines had moved and none of them was a connect site any
+# more, and the truth was twelve. The twelve were then written down as line
+# numbers too and seven of them had moved by the next day. So the count lives in
+# a test now, which reads the tree rather than repeating a number.
+#
+# The break is the change the census exists to notice, made for real rather than
+# invented: the site that marks one message read, which is the requirement's own
+# worst case, goes through `application::mail_session::a_session_at` instead of
+# dialling for itself. Eleven where twelve were counted.
+#
+# This record couples the census to `wx_app.rs` for a second reason as well. The
+# census lives under `tests/`, so without a record `scripts/check.sh` would run
+# it only on the commits that change the census itself, which is every commit
+# except the ones that could change the number.
+#
+# Measured by hand on 2026-09-04, against the census target, `tests/house_style`,
+# `tests/wired` and the whole library. One test went red, the one named below.
+# Nothing else did: house_style 64 passed, wired 61 passed, and the library
+# 6,078 passed with none failing. That is the finding rather than an aside. It
+# says this part of `wx_app.rs` had nothing reading it for this property before
+# now, so the whole defence of the count is the single test named here.
+
+[[guard]]
+name = "the count of sign-ins that go round the helper is read from the tree"
+file = "src/presentation/wx_app.rs"
+suite = "one_sign_in_per_piece_of_work"
+before = """        let controller = MailController::new();
+        if let Err(e) = handle.block_on(controller.connect_imap(
+            account.imap_server.clone(),
+            port,
+            account.username.clone(),
+            auth,
+            account.imap_use_tls,
+            &account.id,
+        )) {
+            refuse(e.to_string());
+            return;
+        }"""
+after = """        let controller = match handle
+            .block_on(crate::application::mail_session::a_session_at(&account))
+        {
+            Ok(session) => session,
+            Err(reason) => {
+                refuse(reason);
+                return;
+            }
+        };"""
+red = [
+    "test_the_places_that_sign_in_for_themselves_are_counted_and_named",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_sign_in_per_piece_of_work.rs", tests = 7 },
 ]

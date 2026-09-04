@@ -299,6 +299,14 @@ fn files_a_draft() {
 /// A test fixture that stands up its own controller is not the program signing
 /// in for itself, and counting one would make the census answer a number that
 /// moves when somebody writes a test.
+///
+/// The invented module below carries no test attribute of its own, and that is
+/// deliberate. `how_many_tests_are_in` in `tests/house_style.rs` counts a line
+/// whose whole text is that attribute wherever it appears, so one written inside
+/// a string here would be counted as a test of this file and the guard record's
+/// fingerprint would claim nine where there are seven. What the cut turns on is
+/// the `#[cfg(test)]` line, so leaving the inner attribute out costs the fixture
+/// nothing.
 #[test]
 fn test_a_sign_in_only_a_test_build_compiles_is_not_counted() {
     let invented = "\
@@ -308,8 +316,7 @@ fn ships() {
 
 #[cfg(test)]
 mod tests {
-    #[tokio::test]
-    async fn test_against_a_server() {
+    async fn against_a_server() {
         let controller = MailController::new();
         controller.connect_imap(server, port).await?;
     }
@@ -358,8 +365,7 @@ fn test_a_site_is_named_by_its_line_in_the_file() {
     let invented = "\
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_something() {
+    fn something() {
         let unrelated = 1;
     }
 }
@@ -373,8 +379,8 @@ fn signs_in() {
     assert_eq!(
         the_sign_ins_that_go_round_the_helper(invented),
         vec![SignsInForItself {
-            built_at: 10,
-            connected_at: 11
+            built_at: 9,
+            connected_at: 10
         }],
         "the site was named by where it landed after the cut rather than by \
          where it is in the file"
