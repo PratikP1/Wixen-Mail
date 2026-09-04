@@ -738,6 +738,16 @@ impl MessageCache {
     /// Only for a folder no server numbers. In a folder a server fills, one
     /// past the highest is the next number the SERVER is about to issue, and
     /// [`Self::next_reserved_uid`] is what to ask instead.
+    ///
+    /// # What keeps this from being asked about the wrong folder
+    ///
+    /// [`Self::numbering_in`], and not anything here. It dispatches by folder
+    /// path, and a folder either counts up or counts down and never both, so a
+    /// row filed into a folder a server fills is never given a number from this
+    /// end. The tests holding that dispatch, and the census saying nothing new
+    /// calls this without going through it, are the load-bearing ones. Do not
+    /// read the saturation below as making them unnecessary: it makes one
+    /// impossible answer safer and decides nothing about which folder is asked.
     pub fn next_local_uid(&self, folder_id: i64) -> Result<u32> {
         let highest: Option<i64> = self
             .conn
@@ -749,7 +759,13 @@ impl MessageCache {
             .optional()
             .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))?
             .flatten();
-        Ok(highest.unwrap_or(0).saturating_add(1) as u32)
+        // `saturating_add` guarded the i64 and the cast that followed it
+        // guarded nothing, so a folder holding a row at the top of the range
+        // answered zero: a number no message has, which the next row would be
+        // given as well, so the second would write over the first. The top of
+        // the range is the honest answer to "one past the highest" when the
+        // highest is the top, and it is at least a number a row can hold.
+        Ok(u32::try_from(highest.unwrap_or(0).saturating_add(1)).unwrap_or(u32::MAX))
     }
 
     /// The next number for a row this program writes into a folder a server
@@ -6623,5 +6639,629 @@ mod marking_read_tells_no_server {
             ["crate::service::whatever();"]
         );
         assert!(calls_out_of_this_machine("        let x = 1 + 1;").is_empty());
+    }
+}
+
+/// A folder listing reads no message text, asked of SQLite rather than of the
+/// query.
+///
+/// Criterion 4's first half. `bodies.rs` says message text was moved out of the
+/// `messages` table because every folder listing dragged it through SQLite to
+/// show a subject line. That is true of the listing as written today. Nothing
+/// held it there, and the doc comment on [`super::listing_query`] says the query
+/// is built in one place so that a test can ask about the exact string the
+/// application runs rather than a copy that goes stale.
+///
+/// # How the question is asked
+///
+/// By taking the message text out of the database and asking SQLite to prepare
+/// the query. A database is built holding only the tables a listing is allowed
+/// to read, with the two inline body columns dropped from `messages` and no
+/// `message_bodies` table at all, and every query a listing can run is prepared
+/// against it. Name resolution is SQLite's own answer to "what does this read":
+/// a query naming a column that is not there does not prepare, and neither does
+/// one naming a table that is not there, whether it names it directly, in a
+/// subquery, or through a view.
+///
+/// # Why not the query plan
+///
+/// The plan names cursors by their alias. `SEARCH m USING INDEX ...` says `m`,
+/// and turning `m` back into `messages` means reading the query, which is the
+/// copy the doc comment argues against. Worse, a plan is a list of tables, and
+/// the break this is really about is a **column**: message text lived inline in
+/// `messages` and still can, because `body_plain` and `body_html` shipped in the
+/// original `CREATE TABLE` and this project does not drop a shipped column. A
+/// check over table names is green through `SELECT m.body_plain`, which is the
+/// exact edit `guards/guards.toml` records as the break for this guard.
+#[cfg(test)]
+mod a_listing_reads_no_message_text {
+    use crate::common::temp_home::TempHome;
+    use crate::presentation::message_columns::{By, MessageColumn, Sort, SortDirection};
+    use rusqlite::Connection;
+
+    /// Every table a folder listing may read, and why it needs each.
+    ///
+    /// A closed set rather than a list of tables to avoid. A second place to
+    /// keep message text, written later by somebody who never read this file,
+    /// is caught by a closed set and invisible to a list of forbidden names.
+    /// Widening it is an edit somebody makes on purpose with a sentence to
+    /// write, rather than a test somebody quietens.
+    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 3] = [
+        (
+            "messages",
+            "the rows themselves: the subject, the addresses, the flags and the \
+             snippet, which is kept beside the message rather than inside its \
+             body precisely so a listing never needs the body",
+        ),
+        (
+            "folders",
+            "the join, which is what keeps a listing inside one account and one \
+             folder. Its account and its kind are read; nothing about a folder \
+             is shown on a message row",
+        ),
+        (
+            "attachments",
+            "asked whether any exist, at the EXISTS in listing_query, and never \
+             for their content. A paperclip on a row is a yes or a no, and the \
+             file it stands for lives in attachment_content, which is not on \
+             this list",
+        ),
+    ];
+
+    /// The columns message text has been kept in, taken out of the database
+    /// this guard asks its question against.
+    ///
+    /// Dropping tables is not enough on its own. Both of these shipped in the
+    /// original `CREATE TABLE`, so they are in every database this program has
+    /// ever written and cannot be dropped from one: `migrate_inline_bodies`
+    /// empties them on every open and the columns stay. A listing can therefore
+    /// read message text while naming no table it is not allowed to.
+    const WHERE_MESSAGE_TEXT_HAS_BEEN_KEPT: [(&str, &str); 2] = [
+        (
+            "body_plain",
+            "the plain text, inline, where it lived before bodies.rs moved it",
+        ),
+        ("body_html", "the HTML, inline, beside it"),
+    ];
+
+    /// A database holding only what a folder listing is allowed to read.
+    ///
+    /// Built from a database this program really wrote rather than from a
+    /// schema written out here. A copy of the schema in a test is the copy that
+    /// goes stale, which is the argument [`super::listing_query`]'s own doc
+    /// comment makes about the query and which applies just as well to the
+    /// tables it reads: a column added to `messages` would have to be added
+    /// here too, and the day somebody forgot, this would fail for a reason that
+    /// has nothing to do with message text.
+    fn a_database_holding_only_what_a_listing_may_read() -> Connection {
+        let real = TempHome::named("wixen_listing_reads", |dir| {
+            super::super::MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
+
+        let stripped = Connection::open_in_memory().expect("a database to take the text out of");
+        // The two functions the real connection is taught on the way in.
+        // `conversations_query` calls one of them, and a query naming a
+        // function SQLite has never heard of does not prepare either, so
+        // without these the guard would fail for the wrong reason.
+        super::super::fold_case_the_way_rust_does(&stripped).expect("case folding");
+        super::super::teach_it_what_a_conversation_is_called(&stripped)
+            .expect("what a conversation is called");
+
+        for (table, why) in WHAT_A_LISTING_MAY_READ {
+            let statement: String = real
+                .conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    rusqlite::params![table],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "a listing may read {table}, because {why}, and the schema \
+                         this program writes has no such table: {e}"
+                    )
+                });
+            stripped
+                .execute(&statement, [])
+                .unwrap_or_else(|e| panic!("{table} could not be built here: {e}"));
+        }
+
+        for (column, what) in WHERE_MESSAGE_TEXT_HAS_BEEN_KEPT {
+            // The half that makes this guard able to see anything. A drop that
+            // quietly did nothing would leave the column in place and every
+            // query below would prepare, so it is loud instead.
+            stripped
+                .execute(&format!("ALTER TABLE messages DROP COLUMN {column}"), [])
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "messages.{column}, {what}, could not be taken out, so this \
+                         guard would be asking nothing: {e}"
+                    )
+                });
+        }
+
+        stripped
+    }
+
+    /// Every order the list can be put in.
+    ///
+    /// Built from [`MessageColumn::ALL`] rather than written out, so a column
+    /// added there is a column this asks about without anybody remembering to.
+    /// Both levels, because `Sort`'s fields are public and the second level is
+    /// as much a place a body column could enter as the first.
+    fn every_order_a_list_can_be_put_in() -> Vec<Sort> {
+        let both_ways = |column: MessageColumn| {
+            [SortDirection::Ascending, SortDirection::Descending]
+                .map(|direction| By { column, direction })
+        };
+        let levels: Vec<By> = MessageColumn::ALL
+            .iter()
+            .copied()
+            .flat_map(both_ways)
+            .collect();
+
+        let mut orders = Vec::new();
+        for first in &levels {
+            orders.push(Sort {
+                column: first.column,
+                direction: first.direction,
+                then: None,
+            });
+            for then in &levels {
+                orders.push(Sort {
+                    column: first.column,
+                    direction: first.direction,
+                    then: Some(*then),
+                });
+            }
+        }
+        orders
+    }
+
+    /// Every query a folder listing runs, in every order it can be asked for.
+    fn every_query_a_listing_runs() -> Vec<String> {
+        let mut queries = vec![
+            // What a listing gets when nothing asked for an order, which is the
+            // default `get_message_list_sorted` and `conversations_in` apply.
+            super::listing_query("m.date DESC", " LIMIT 50"),
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
+            // All Inboxes, which is a folder listing that names no folder.
+            super::unified_inbox_query(100),
+        ];
+        for order in every_order_a_list_can_be_put_in() {
+            // Both the page and the whole folder: `limit` is an argument and
+            // `None` is a shape the callers still pass.
+            queries.push(super::listing_query(&order.order_by_clause(), " LIMIT 50"));
+            queries.push(super::listing_query(&order.order_by_clause(), ""));
+            queries.push(super::conversations_query(
+                &order.conversation_order_by_clause(),
+            ));
+        }
+        queries
+    }
+
+    /// The one assertion this module exists for.
+    #[test]
+    fn test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+        let queries = every_query_a_listing_runs();
+
+        let refused: Vec<String> = queries
+            .iter()
+            .filter_map(|query| match stripped.prepare(query) {
+                Ok(_) => None,
+                Err(e) => Some(format!("{e}\n     in: {query}")),
+            })
+            .collect();
+
+        assert!(
+            refused.is_empty(),
+            "{} of the {} queries a folder listing runs read something a \
+             database holding only what a listing may read does not have. A \
+             listing that reads message text is what this is about; a table \
+             that is genuinely needed goes on the allowed list beside a \
+             sentence saying why. The first three:\n   {}",
+            refused.len(),
+            queries.len(),
+            refused
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n   ")
+        );
+    }
+
+    /// The companion the assertion above needs to mean anything.
+    ///
+    /// It passes today and would go on passing against a database that had had
+    /// nothing taken out of it, or against a reader that had stopped reading.
+    /// This is the break `guards/guards.toml` records for this guard, handed to
+    /// the same database.
+    #[test]
+    fn test_a_listing_that_read_the_columns_message_text_used_to_live_in_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        for column in ["body_plain", "body_html"] {
+            let asked = stripped.prepare(&format!(
+                "SELECT m.id, m.{column} FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id"
+            ));
+            assert!(
+                asked.is_err(),
+                "a listing selecting messages.{column} prepared against a \
+                 database that is supposed to hold no message text, so this \
+                 guard would not notice the listing reading it again"
+            );
+        }
+    }
+
+    /// The same, for the table the text was moved to.
+    #[test]
+    fn test_a_listing_that_read_the_table_message_text_moved_to_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        let asked = stripped.prepare(
+            "SELECT m.id, b.body_plain FROM messages m
+             INNER JOIN message_bodies b ON b.message_id = m.id",
+        );
+
+        assert!(
+            asked.is_err(),
+            "a listing joining message_bodies prepared against a database that \
+             is supposed not to have that table"
+        );
+    }
+
+    /// And for a table that is simply not a listing's business.
+    ///
+    /// The allowed set is closed rather than a list of things to avoid, so a
+    /// second body store written later is caught without anybody adding it to
+    /// a list of forbidden names.
+    #[test]
+    fn test_a_listing_that_read_a_table_outside_the_allowed_set_is_caught() {
+        let stripped = a_database_holding_only_what_a_listing_may_read();
+
+        let asked = stripped.prepare(
+            "SELECT m.id, t.name FROM messages m
+             INNER JOIN message_tags mt ON mt.message_id = m.id
+             INNER JOIN tags t ON t.id = mt.tag_id",
+        );
+
+        assert!(
+            asked.is_err(),
+            "a listing reading a table outside the allowed set prepared anyway, \
+             so the set is not closed and this guard sees nothing"
+        );
+    }
+}
+
+/// Which end of a folder's numbering a filed row takes its number from.
+///
+/// Phase 1 deferred this as a defect in [`MessageCache::next_local_uid`]: it
+/// saturates on `i64` and then casts to `u32`, and [`FIRST_RESERVED_UID`] is
+/// `u32::MAX`, so one reserved row in a folder would make the next call answer
+/// zero. The wrap is real. It is also unreachable, and not because of anything
+/// that function does: [`MessageCache::numbering_in`] dispatches by folder
+/// path, and a folder either counts up or counts down, never both.
+///
+/// So the guard belongs on the dispatcher. A fix inside the function would make
+/// the answer safe and leave the thing that actually decides unguarded, while
+/// making the whole question look handled. The answer is made safe as well,
+/// below, and its doc comment says which of the two is load-bearing.
+#[cfg(test)]
+mod the_dispatcher_is_what_keeps_the_two_numberings_apart {
+    use crate::application::importing_messages::WrittenDownAs;
+    use crate::application::local_folders;
+    use crate::common::temp_home::TempHome;
+    use crate::common::types::Protocol;
+    use crate::common::what_ships::what_ships;
+
+    fn a_cache() -> TempHome<super::super::MessageCache> {
+        TempHome::named("wixen_numbering_", |dir| {
+            super::super::MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        })
+    }
+
+    /// A folder stored at this path, and the row it is.
+    fn a_folder_at(cache: &super::super::MessageCache, path: &str) -> i64 {
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (account_id, name, path, folder_type)
+                 VALUES ('acc', ?1, ?1, 'Inbox')",
+                rusqlite::params![path],
+            )
+            .unwrap_or_else(|e| panic!("a folder at {path}: {e}"));
+        cache.conn.last_insert_rowid()
+    }
+
+    /// Every path this program can give a folder that lives on this computer.
+    ///
+    /// Taken from `local_folders` rather than written out, so a folder added
+    /// there is a folder this asks about without anybody remembering to add a
+    /// case. That is the whole difference between a test that stays true and a
+    /// list somebody has to maintain.
+    fn every_path_a_folder_on_this_computer_can_have() -> Vec<String> {
+        let mut paths: Vec<String> = local_folders::SHARED_BY_EVERY_ACCOUNT
+            .iter()
+            .map(local_folders::LocalFolder::path)
+            .collect();
+        for protocol in [Protocol::Pop3, Protocol::Imap] {
+            paths.extend(
+                local_folders::for_account(protocol)
+                    .iter()
+                    .map(local_folders::LocalFolder::path),
+            );
+        }
+        paths.sort();
+        paths.dedup();
+        paths
+    }
+
+    /// Paths a server can hand this program for a mailbox.
+    ///
+    /// The last two are the ones that matter. `LOCAL_PREFIX` opens with a
+    /// control character a mailbox name cannot carry, and the word after it is
+    /// there to be read rather than to tell the two apart: nothing stops a
+    /// server calling a mailbox "Local", and a folder of somebody's real mail
+    /// numbered as though it were on this computer takes the numbers that
+    /// server is about to issue.
+    const EVERY_SHAPE_A_SERVER_CAN_NAME: [&str; 7] = [
+        "INBOX",
+        "INBOX/Receipts",
+        "[Gmail]/All Mail",
+        "Sent",
+        "Trash",
+        "Local",
+        "Local/Sent",
+    ];
+
+    #[test]
+    fn test_a_folder_on_this_computer_counts_up() {
+        let cache = a_cache();
+        for path in every_path_a_folder_on_this_computer_can_have() {
+            let folder = a_folder_at(&cache, &path);
+            assert_eq!(
+                cache.numbering_in(folder).expect("the numbering"),
+                WrittenDownAs::FiledHereCountingUp,
+                "the folder at {path} lives on this computer and was numbered \
+                 from the top of the range"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folder_a_server_names_counts_down_from_the_top() {
+        let cache = a_cache();
+        for path in EVERY_SHAPE_A_SERVER_CAN_NAME {
+            let folder = a_folder_at(&cache, path);
+            assert_eq!(
+                cache.numbering_in(folder).expect("the numbering"),
+                WrittenDownAs::FiledHereCountingDownFromTheTop,
+                "the folder at {path} is one a server fills, and a row filed \
+                 into it was given the number that server is about to issue"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_folder_that_is_not_there_counts_down_from_the_top() {
+        // The move this decides a number for is about to fail on the foreign
+        // key, so all this picks is which number it fails with. Counting down
+        // is the answer that cannot collide with one a server will issue, and
+        // it is the safe answer for the same reason it is the answer for a
+        // folder nobody recognises.
+        let cache = a_cache();
+
+        assert_eq!(
+            cache.numbering_in(4_242).expect("the numbering"),
+            WrittenDownAs::FiledHereCountingDownFromTheTop,
+            "a folder id naming no folder was answered with the numbering that \
+             takes the server's next number"
+        );
+    }
+
+    #[test]
+    fn test_the_next_number_in_a_folder_holding_the_top_of_the_range_is_not_zero() {
+        // Phase 1's third deferred item, stated as a property of the answer
+        // rather than of the arithmetic. Zero is not a number any message has,
+        // so a row given it collides with the next row given it, and the
+        // second overwrites the first.
+        let cache = a_cache();
+        let folder = a_folder_at(&cache, "\u{1}Local/Sent");
+        cache
+            .conn
+            .execute(
+                "INSERT INTO messages (uid, folder_id, message_id, subject, from_addr, to_addr, date)
+                 VALUES (?1, ?2, 'top@example.com', 'At the top', 'a@example.com',
+                         'me@example.com', '2026-07-20T10:00:00+00:00')",
+                rusqlite::params![i64::from(super::FIRST_RESERVED_UID), folder],
+            )
+            .expect("a row at the top of the range");
+
+        assert_ne!(
+            cache.next_local_uid(folder).expect("a number"),
+            0,
+            "the next number after the top of the range came back as zero"
+        );
+    }
+
+    // ── Who asks for the counting-up numbering directly ──────────────────
+    //
+    // The dispatcher is what makes the wrap unreachable, so what has to be
+    // watched is anything that goes round it. One new direct caller pointed at
+    // a folder a server fills makes the wrap reachable with one row rather than
+    // four billion, and does it silently.
+
+    /// How the counting-up numbering is asked for.
+    const ASKING_FOR_IT: &str = "next_local_uid(";
+
+    /// Every place in the shipping half of a file that asks for it directly.
+    ///
+    /// Named by the line of code rather than by where the line is. A position
+    /// is the artefact this phase keeps finding stale: `SCALE-02` carried its
+    /// sites as line numbers and they moved twice in two days. A line of code
+    /// is found by searching for it and says what it does while it is being
+    /// read, and it cannot drift by somebody adding a paragraph above it.
+    ///
+    /// The comment comes off each line before anything is looked for, because a
+    /// census that reads whole lines is answered by the prose explaining the
+    /// code rather than by the code, and the paragraphs above this one name the
+    /// very thing it forbids.
+    fn who_asks_directly_in(source: &str) -> Vec<String> {
+        what_ships(source)
+            .lines()
+            .map(|line| line.split_once("//").map_or(line, |(code, _)| code))
+            .filter(|code| code.contains(ASKING_FOR_IT))
+            .map(|code| code.trim().to_string())
+            .collect()
+    }
+
+    /// The files allowed to ask for it, and why each one is.
+    const WHO_MAY_ASK_DIRECTLY: [(&str, &str); 2] = [
+        (
+            "src/data/message_cache/messages.rs",
+            "the dispatcher itself, which asks numbering_in which end this \
+             folder counts from and then asks for that end",
+        ),
+        (
+            "src/application/pop_sync.rs",
+            "a POP account's own inbox, which lives on this computer under the \
+             reserved prefix, so counting up is what the dispatcher would \
+             answer for it anyway",
+        ),
+    ];
+
+    /// Every Rust file under `src`, so a caller written in a new module is a
+    /// caller this finds.
+    fn every_rust_file_under_src() -> Vec<String> {
+        fn walk(folder: &std::path::Path, into: &mut Vec<String>) {
+            let Ok(listing) = std::fs::read_dir(folder) else {
+                return;
+            };
+            for entry in listing.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().is_some_and(|kind| kind == "rs") {
+                    into.push(path.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(std::path::Path::new("src"), &mut found);
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn test_only_the_dispatcher_and_a_pop_inbox_ask_for_the_counting_up_numbering() {
+        let mut found: Vec<(String, String)> = Vec::new();
+        for file in every_rust_file_under_src() {
+            let Ok(source) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            for line in who_asks_directly_in(&source) {
+                found.push((file.clone(), line));
+            }
+        }
+
+        let unexpected: Vec<String> = found
+            .iter()
+            .filter(|(file, _)| !WHO_MAY_ASK_DIRECTLY.iter().any(|(may, _)| may == file))
+            .map(|(file, line)| format!("{file}: {line}"))
+            .collect();
+        assert!(
+            unexpected.is_empty(),
+            "something asks for the counting-up numbering without going through \
+             the dispatcher. In a folder a server fills that hands out the number \
+             the server is about to issue, which makes a real message invisible \
+             and overwrites the copy filed here. Ask next_uid_for_filing instead, \
+             or add the site here with a sentence saying why it is safe:\n  {}",
+            unexpected.join("\n  ")
+        );
+
+        for (file, why) in WHO_MAY_ASK_DIRECTLY {
+            assert!(
+                found.iter().any(|(where_it_is, _)| where_it_is == file),
+                "{file} is written down here as a place that asks directly, \
+                 because {why}, and nothing there does. Either it stopped, in \
+                 which case take it off this list, or this reading has stopped \
+                 working"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_direct_call_in_invented_source_is_found() {
+        let invented = "\
+fn files_a_message(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    let uid = cache.next_local_uid(folder_id)?;
+    Ok(uid)
+}
+";
+        assert_eq!(
+            who_asks_directly_in(invented),
+            vec!["let uid = cache.next_local_uid(folder_id)?;"],
+            "the census did not find the call written into this test"
+        );
+    }
+
+    #[test]
+    fn test_a_call_through_the_dispatcher_is_not_found() {
+        let invented = "\
+fn files_a_message(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    let uid = cache.next_uid_for_filing(folder_id)?;
+    Ok(uid)
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a call that went through the dispatcher was counted as one that \
+             went round it"
+        );
+    }
+
+    #[test]
+    fn test_a_call_only_a_test_build_compiles_is_not_found() {
+        // The one direct caller outside the two listed above is a test helper
+        // in application::local_delete, and a census that counted it would
+        // answer a number that moves when somebody writes a test.
+        let invented = "\
+fn ships(cache: &MessageCache) {
+    let _ = cache.next_uid_for_filing(1);
+}
+
+#[cfg(test)]
+mod tests {
+    fn a_row(cache: &MessageCache, folder_id: i64) {
+        let uid = cache.next_local_uid(folder_id).expect(\"a number\");
+    }
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a call only a test build compiles was counted as one the program makes"
+        );
+    }
+
+    #[test]
+    fn test_a_comment_naming_the_call_is_not_a_call() {
+        // The lesson of 2026-09-04, which cost a correct commit a red run: a
+        // comment justifying a choice names the alternative it rejected, so the
+        // better the comment the more reliably it answers a census reading whole
+        // lines. `sent_copy.rs` carries exactly such a comment today.
+        let invented = "\
+fn files_a_copy(cache: &MessageCache, folder_id: i64) -> Result<u32> {
+    // Not next_local_uid(folder_id): in a folder a server fills that is the
+    // number the server is about to issue.
+    cache.next_uid_for_filing(folder_id)
+}
+";
+        assert!(
+            who_asks_directly_in(invented).is_empty(),
+            "a comment naming the call was counted as a call"
+        );
     }
 }

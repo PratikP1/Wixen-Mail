@@ -159,6 +159,28 @@ is a weaker answer than this file usually accepts and it is recorded as such.
 **Size:** small to fix the arithmetic, medium to decide and test what exhaustion
 should mean.
 
+**Closed 2026-09-04 by plan 03-03, and the paragraph above was wrong about the
+fixture.** The function reads `MAX(uid)`, so one row inserted at the top of the
+range is the whole fixture, and the test is
+`test_the_next_number_in_a_folder_holding_the_top_of_the_range_is_not_zero`. It
+was red on the answer, not on the arithmetic: `left: 0, right: 0`. Four billion
+rows was never what it would have taken, and believing it was is what kept this
+untested for a phase and a half.
+
+The arithmetic is fixed, by saturating at the top of the range rather than
+casting through it, and that is the smaller half. What has really kept the wrap
+unreachable is `numbering_in` dispatching by folder path, so the guard went
+there: fourteen dispatch cases, six of them folder paths taken from
+`local_folders` rather than written out, and a census over the shipping half of
+`src` saying only the dispatcher and a POP account's own inbox ask for the
+counting-up numbering directly. `03-RESEARCH.md` names one new direct caller as
+what would make the wrap reachable with one row rather than four billion, and
+that caller is now a failing test.
+
+What exhaustion should mean is still not decided, and the answer now is the top
+of the range rather than a number already in use. That is a better wrong answer
+and not a decision.
+
 ---
 
 ## `.planning/intel/context.md` still lists folder management as not working (found in 01-09)

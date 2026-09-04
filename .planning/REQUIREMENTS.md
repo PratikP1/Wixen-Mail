@@ -485,7 +485,7 @@ write path added by this milestone passes through that gate.
   - [D] An empty snippet means "not fetched yet" and the column says so rather than implying
     the message has no body.
 
-- [ ] **SCALE-04**: Split storage into envelope, body cache and attachments.
+- [x] **SCALE-04**: Split storage into envelope, body cache and attachments.
   - Evidence: corrected 2026-09-03. The sentence "the hot, warm and cold split the plan
     describes was not built" was true when written and is not true now, and a requirement
     saying a shipped thing is missing is the defect phase 2.1 existed to remove.
@@ -506,6 +506,30 @@ write path added by this milestone passes through that gate.
     added by `ensure_column_exists`, so they exist in every database ever written and cannot be
     dropped. The migration therefore runs on every open forever, and any path that still writes
     those columns reintroduces the problem.
+    Closed 2026-09-04 by plan 03-03, which proved the three deliverables rather than
+    rebuilding anything, and made one real change. The guard for the first is
+    `data::message_cache::messages::a_listing_reads_no_message_text`, and it does not
+    read the query text: it builds a database holding only the three tables a listing
+    may read, drops the two inline body columns from `messages`, and asks SQLite to
+    prepare every query a listing runs against it. That is stronger than the wording
+    below, which the plan and this requirement both had wrong. A check over the tables
+    a query plan names is green through `SELECT m.body_plain`, because `messages` is a
+    table a listing is allowed to read and a plan names cursors by their alias.
+    The second is closed by a fixture written from the shipped schema directly, with
+    text in the inline columns and no `message_bodies` table, opened through the real
+    `MessageCache::new`. All five of its tests passed on arrival: the migration was
+    already correct and had never been tested against a database it was about.
+    The third is closed with the correction that a sync writes no attachment
+    *description* either, not only no file. `ImapMessage` carries `has_attachments`
+    and no list, because a header fetch does not read a message's structure.
+    The permanent migration is still permanent and no longer costs anything. A partial
+    index over exactly its condition (`idx_messages_inline_body`) turns its opening read
+    from a scan of `messages` into a lookup against an index that is empty on any
+    database that has been opened once: measured on a release build at 200,000 messages
+    with all their text already moved, warm, 32 ms against under 0.1 ms, for 8 KB of
+    index. Nothing records that the migration has been done, deliberately, and the code
+    says why: a marker would have to be trusted, and one wrong in that direction leaves
+    message text inline that nothing else will ever move.
 
   - [S] The SPEC states the tiers: envelope always local at about 1 KB each, roughly 200 MB at
     200,000 messages; body cache fetched on open and evicted least-recently-used against a
@@ -514,14 +538,18 @@ write path added by this milestone passes through that gate.
   - [S] Schema changes are additive: `CREATE TABLE IF NOT EXISTS` and `ensure_column_exists`,
     never dropping or renaming a shipped column.
 
-  - [D] A folder listing query reads no body text, and a test asserts the query text does not
-    touch the body tables.
+  - [x] [D] A folder listing query reads no body text, proved by asking SQLite to resolve
+    every query a listing runs against a database with the message text taken out of it.
+    Not by asserting anything about the query text, and not over a query plan: the first
+    goes stale and the second cannot see a body column in a table the listing may read.
 
-  - [D] An existing user database opens and migrates without losing a message, and the
-    migration has a test over a database written by the previous schema.
+  - [x] [D] An existing user database opens and migrates without losing a message, and the
+    migration has a test over a database written by the previous schema, in
+    `data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline`.
 
-  - [D] The attachment tier is never populated by a sync; attachments arrive only when
-    something asks for one.
+  - [x] [D] The attachment tier is never populated by a sync; attachments arrive only when
+    something asks for one. A sync writes neither the file nor the description, which is
+    more than this line asked for and is all a sync could write either way.
 
 - [ ] **SCALE-05**: Detect network status and offer offline mode rather than only accepting a
   manual toggle.
@@ -1665,7 +1693,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-01 | Phase 3 | Pending |
 | SCALE-02 | Phase 3 | Pending |
 | SCALE-03 | Phase 3 | Pending |
-| SCALE-04 | Phase 3 | Pending |
+| SCALE-04 | Phase 3 | Complete |
 | SCALE-05 | Phase 3 | Pending |
 | SCALE-06 | Phase 3 | Pending |
 | WRITE-01 | Phase 4 | Pending |

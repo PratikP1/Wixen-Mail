@@ -2683,6 +2683,29 @@ impl MessageCache {
             // screen because little of the mail is in an inbox at all, and
             // that is 276 ms against 3.07 ms. Both are worth having.
             "CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC, uid DESC)",
+            // What makes the inline-body migration free on a database that has
+            // already been through it. `migrate_inline_bodies` runs on every
+            // open and can never be retired, because the two columns it empties
+            // shipped in the original CREATE TABLE above and a column that
+            // shipped is never dropped here. Its condition is this index's
+            // condition exactly, which is what lets SQLite answer from it, so a
+            // migrated database reads an index holding nothing instead of every
+            // message in the file.
+            //
+            // Partial for the same reason `idx_attachments_content_digest` is:
+            // the question is about rows that mostly do not exist, and on a
+            // database that has been opened once none of them do. Four
+            // kilobytes while it holds nothing.
+            //
+            // Nothing remembers that the migration has been done, and nothing
+            // should. A marker saying "already migrated" has to be trusted, and
+            // one wrong in that direction is message text left inline that
+            // nothing else will ever move. The question is asked of the
+            // messages themselves on every open; this index is only what makes
+            // asking free. See `bodies::THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE`.
+            "CREATE INDEX IF NOT EXISTS idx_messages_inline_body
+                 ON messages(id)
+                 WHERE body_plain IS NOT NULL OR body_html IS NOT NULL",
             // SQLite indexes the parent side of a foreign key and never the
             // child side, so each of these three was a full table scan every
             // time a parent row was deleted. Measured on attachments, the

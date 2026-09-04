@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 374 records have arrived since and have not been through it.
+# 381 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4050,7 +4050,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4083,7 +4083,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -11124,7 +11124,7 @@ red = [
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -11162,7 +11162,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11184,7 +11184,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11604,7 +11604,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11823,7 +11823,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -11949,7 +11949,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -12053,7 +12053,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
@@ -12088,7 +12088,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12117,7 +12117,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -12386,7 +12386,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 33 },
+    { file = "src/data/message_cache/bodies.rs", tests = 42 },
     { file = "src/data/message_cache/searching.rs", tests = 25 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -13114,7 +13114,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/presentation/message_columns.rs", tests = 37 },
 ]
 
@@ -13147,7 +13147,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -13180,7 +13180,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
 
 [[guard]]
@@ -13204,7 +13204,7 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13400,7 +13400,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -13461,4 +13461,275 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/one_sign_in_per_piece_of_work.rs", tests = 7 },
+]
+
+# ── A folder listing reads no message text ─────────────────────────────────
+#
+# The break is not a body table joined into the listing, because nobody would
+# write that. It is the plausible one: the snippet column falling back to the
+# inline body text when a row has no snippet, which is a change somebody makes
+# to fix an empty preview and which reads every body in the folder to show one
+# screen.
+#
+# It is also the break that shows why this guard reads columns rather than
+# tables. `messages` is a table a listing is allowed to read, so a check over
+# the table names in a query plan is green through this edit. `body_plain`
+# shipped in the original CREATE TABLE and cannot be dropped, so the inline
+# columns are a place message text can be read from for as long as this program
+# exists.
+#
+# Measured by hand on 2026-09-04: the whole library, 6,081 passed and exactly
+# one failed, which is the guard. Nothing else in the tree notices, because the
+# fallback changes no answer for any row that has a snippet and every fixture
+# here has one. That one test is therefore the whole defence.
+
+[[guard]]
+name = "a folder listing reads no message text"
+file = "src/data/message_cache/messages.rs"
+before = """                m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,"""
+after = """                m.to_addr, m.cc, m.reply_to, m.date,
+                COALESCE(m.snippet, m.body_plain), m.size_bytes,"""
+red = [
+    "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
+]
+
+# ── The migration moves every row it found ─────────────────────────────────
+#
+# The break passes over a row whose plain text is there, which is the shape a
+# migration acquires when somebody adds a condition to it: the rows are still
+# found, still counted, and some of them are left where they were. `moved` goes
+# on reporting the number found, so the count is no defence.
+#
+# Measured by hand on 2026-09-04, the whole library, 6,084 passed and four
+# failed: the three tests over a database written from the old schema that read
+# text back, count what is still inline, or say which copy wins, and the older
+# one over a database this program wrote itself.
+#
+# It was five within the hour. The commit after this one added a test asking
+# that text put back inline is moved by the next open however finished the file
+# looks, which reaches the same rule and reddens on the same break, and the
+# count check caught it in the same session it was written. That is the failure
+# mode `CLAUDE.md` describes happening at its shortest possible range, and the
+# name is on the list now.
+#
+# Two of the tests beside them stay green through it, and that is worth writing
+# down. The count of messages does not move, because the break loses text and
+# not rows. And the second-open comparison passes because it compares one
+# broken migration with the same broken migration: both opens leave the same
+# thing behind, so nothing differs. A test that two runs agree cannot see a
+# fault that is the same both times.
+
+[[guard]]
+name = "the inline body migration moves every row it found"
+file = "src/data/message_cache/bodies.rs"
+before = """        let moved = pending.len();
+        for (id, plain, html) in pending {
+            self.save_message_body(id, plain.as_deref(), html.as_deref())?;"""
+after = """        let moved = pending.len();
+        for (id, plain, html) in pending {
+            if plain.is_some() {
+                continue;
+            }
+            self.save_message_body(id, plain.as_deref(), html.as_deref())?;"""
+red = [
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_a_row_holding_text_in_both_places_keeps_the_inline_copy",
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_every_message_that_had_text_still_has_it_after_the_open",
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_the_inline_columns_are_empty_afterwards_so_the_space_is_reclaimed",
+    "data::message_cache::bodies::tests::test_existing_inline_bodies_are_migrated_not_lost",
+    "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+]
+
+# ── A sync brings down no attachment ───────────────────────────────────────
+#
+# SCALE-04's third deliverable. The break is not a file fetched during a sync,
+# because a sync has nothing to fetch one with: a header fetch does not read a
+# message's structure, so `ImapMessage` carries `has_attachments` and no list.
+# It is the other half of the same promise, and a sync really could do it:
+# writing an attachment row from the one bit it does know, for a message nobody
+# has opened. That is a description with no file behind it, in the table the
+# reader reconciles against, on every message in the mailbox.
+#
+# Measured by hand on 2026-09-04: the whole library, 6,087 passed and one
+# failed, which is this guard. Nothing else in the tree asks whether a sync
+# writes attachments, so this one test is the whole of it.
+
+[[guard]]
+name = "a sync writes no attachment for a message nobody has opened"
+file = "src/application/mail_sync.rs"
+before = """    let arrived = cache.upsert_messages(&arriving)?;
+"""
+after = """    let arrived = cache.upsert_messages(&arriving)?;
+    for (row, message) in arrived.iter().zip(arriving.iter()) {
+        if message.has_attachments {
+            cache.replace_attachments(
+                *row,
+                &[crate::data::message_cache::CachedAttachment {
+                    id: 0,
+                    message_id: *row,
+                    filename: "attachment".to_string(),
+                    mime_type: "application/octet-stream".to_string(),
+                    size: message.size_bytes.unwrap_or_default(),
+                    content_id: None,
+                }],
+            )?;
+        }
+    }
+"""
+red = [
+    "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 114 },
+]
+
+# ── The read of every message on every open ────────────────────────────────
+#
+# `migrate_inline_bodies` runs on every open of every database and always will,
+# because the two columns it empties shipped in the original CREATE TABLE and a
+# column that shipped is never dropped here. What makes that free is an index
+# whose condition is the query's condition exactly.
+#
+# The break is the edit somebody makes while tidying: narrowing the index to
+# one of the two columns. It still exists, still has a sensible name, and
+# SQLite can no longer use it, because a query asking "A or B" does not imply
+# an index built for "A". Nothing about the schema looks wrong afterwards and
+# every open is a full read of the messages table again.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,090 passed and two
+# failed, both of them the plan assertions. Nothing else in the tree notices,
+# because the answer is the same either way and only the cost changes. That is
+# the whole reason these two tests exist: a cost is not something the rest of a
+# suite can see.
+
+[[guard]]
+name = "the migration that runs on every open reads an index rather than every message"
+file = "src/data/message_cache/mod.rs"
+before = """            "CREATE INDEX IF NOT EXISTS idx_messages_inline_body
+                 ON messages(id)
+                 WHERE body_plain IS NOT NULL OR body_html IS NOT NULL","""
+after = """            "CREATE INDEX IF NOT EXISTS idx_messages_inline_body
+                 ON messages(id)
+                 WHERE body_plain IS NOT NULL","""
+red = [
+    "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_a_database_with_no_messages_at_all_opens_and_is_asked_the_same_way",
+    "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+# ── Nothing remembers that the migration has been done ─────────────────────
+#
+# The break is the optimisation the next person will reach for, and it is the
+# one the index exists to make unnecessary: take something already in the file
+# as a marker that the work is finished, and stop asking. Here that marker is
+# "the body table holds something", which is true of every database that has
+# been opened once.
+#
+# What it costs is not a slow open. It is message text left in the inline
+# columns that nothing else will ever move, in a file the user believes holds
+# their mail. Which is why the answer to the cost was an index and not a
+# marker: an index makes the question free, and a marker makes it skippable.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,090 passed and two
+# failed. One is the test written for exactly this, and the other is the
+# both-places test from the plan before, which puts a body row and an inline
+# copy on the same message and so trips the same shortcut. Everything else
+# stays green, including every test that migrates a database with no body rows
+# in it yet, because the shortcut does not fire there.
+
+[[guard]]
+name = "nothing remembers that the inline body migration has been done"
+file = "src/data/message_cache/bodies.rs"
+before = """    pub fn migrate_inline_bodies(&self) -> Result<usize> {
+        let mut stmt = self"""
+after = """    pub fn migrate_inline_bodies(&self) -> Result<usize> {
+        // Anything already moved means the rest were too.
+        if self.cached_body_bytes()? > 0 {
+            return Ok(0);
+        }
+        let mut stmt = self"""
+red = [
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_a_row_holding_text_in_both_places_keeps_the_inline_copy",
+    "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+]
+
+# ── Which end of a folder's numbering a filed row takes ────────────────────
+#
+# The dispatch is what makes the `next_local_uid` wrap unreachable, and phase 1
+# deferred that wrap as a defect in the function. It is not one the function can
+# fix: the harm is a row filed into a folder a server fills being given the
+# number that server is about to issue, which hides a real message forever and
+# lets a later sync write over the copy. `next_reserved_uid`'s own doc comment
+# is where that reasoning is written down.
+#
+# The break makes every folder count up, whatever its path. It compiles, it
+# reads as a simplification, and it is the whole defect.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,096 passed and five
+# failed. The dispatch test written for it, and four that were already there
+# and had been holding this rule from four different directions without
+# anything saying so: an import into a folder a server fills, a sent copy filed
+# here, and two in the cache about a message filed into such a folder.
+
+[[guard]]
+name = "which end of a folder's numbering a filed row takes"
+file = "src/data/message_cache/messages.rs"
+before = """        Ok(match path {
+            Some(path) => WrittenDownAs::for_folder(&path),"""
+after = """        Ok(match path {
+            Some(_) => WrittenDownAs::FiledHereCountingUp,"""
+red = [
+    "application::importing_messages::end_to_end::test_a_message_imported_into_a_folder_the_server_fills_leaves_its_numbers_alone",
+    "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
+    "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
+]
+
+# ── Nothing new asks for the counting-up numbering directly ────────────────
+#
+# `03-RESEARCH.md` names the thing that makes the wrap reachable: one new direct
+# caller pointed at a folder a server fills, which brings it within one row
+# rather than four billion. So the break is that caller, written at the most
+# plausible place for it, where a sent copy is filed.
+#
+# Measured by hand on 2026-09-04, the whole library: 6,099 passed and two
+# failed. The census, naming the new site, and the sent-copy test that already
+# asserted the number is one the server will never issue.
+#
+# The second is worth reading before concluding the census is redundant. It
+# covers this one site, by its behaviour, and it is the only such test: the
+# census covers every site there could be, including ones written into modules
+# that do not exist yet, which is what nothing else here can do.
+
+[[guard]]
+name = "nothing new asks for the counting-up numbering without going through the dispatcher"
+file = "src/application/sent_copy.rs"
+before = """    let uid = cache
+        .next_uid_for_filing(row.id)
+        .map_err(|e| e.to_string())?;"""
+after = """    let uid = cache.next_local_uid(row.id).map_err(|e| e.to_string())?;"""
+red = [
+    "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
+    "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_only_the_dispatcher_and_a_pop_inbox_ask_for_the_counting_up_numbering",
+]
+tests_last_seen = [
+    { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/messages.rs", tests = 157 },
 ]
