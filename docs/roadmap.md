@@ -153,8 +153,8 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [x] Tagging system
 - [x] Message flags and markers (read, starred, deleted)
 - [x] Color coding
-- [ ] Folder favorites
-- [ ] Smart folders based on rules
+- [x] Folder favorites
+- [x] Smart folders based on rules
 
 ### Email Rules and Filters
 - [x] Message filtering engine with regex support

@@ -57,15 +57,15 @@ identifier and the handler line that dispatches it.
 | Pin and unpin a folder | `ID_PIN_FOLDER` / `ID_UNPIN_FOLDER` (`wx_app.rs:91` and `92`, items at `6035` and `6040`) | `wx_app.rs:3613` |
 | Thread view | `ID_THREAD_VIEW` (`wx_app.rs:116`, check item at `5696`, `Ctrl+T`) | `wx_app.rs:4037`, calling `switch_the_view` |
 | Edit a saved search's conditions | `ID_EDIT_SEARCH_CONDITIONS` (`wx_app.rs:221`, item at `5904`) | `wx_app.rs:4683`, reaching `show_rule_manager_dialog` at `7052` |
-| Load a 200,000 message sample mailbox | `ID_LOAD_SCALE_SAMPLE` (`wx_app.rs:93`, item at `6283`) | `wx_app.rs:4908` |
+| Load a 200,000 message sample mailbox | `ID_LOAD_SCALE_SAMPLE` (`wx_app.rs:93`, item at `6281`) | `wx_app.rs:4908` |
 | Fetch missing message text | `ID_FETCH_MISSING_TEXT` (`wx_app.rs:156`, item at `5486`) | `wx_app.rs:4220` |
 
 Also in this bucket, without a menu item of their own:
 
 - Nested folders. `folders.parent_id` is written at sync and read by
   `presentation/folder_tree.rs`, whose `TreeRow` carries `depth`
-  (`folder_tree.rs:216`) and deliberately keeps level out of the label
-  (`folder_tree.rs:210`).
+  (`folder_tree.rs:214`) and deliberately keeps level out of the label
+  (`folder_tree.rs:212`).
 - Collapse state across a restart. `set_row_collapsed`
   (`data/message_cache/folders.rs:275`) and `collapsed_rows` (`:309`) write and
   read a `tree_state` table, called from `wx_app.rs:13732`, `10224` and `14909`.
@@ -76,7 +76,7 @@ Also in this bucket, without a menu item of their own:
   (`searching.rs:609`) reaches the search box through `managers.rs:1852` and the
   saved search through `wx_app.rs:6460` and `6671`.
 - Per-field saved search scope. `what_that_answer_looks_at`
-  (`saved_searches.rs:537`) is called by `what_a_typed_search_asks` (`:554`).
+  (`saved_searches.rs:538`) is called by `what_a_typed_search_asks` (`:554`).
 - The English-only date notice. `date_display::ENGLISH_ONLY` (`:93`) is on the
   settings screen at `wx_settings.rs:1251`.
 
@@ -207,7 +207,7 @@ has gone stale again. The defect it describes is fixed.
 
 **What is true now.** `what_a_typed_search_asks`
 (`application/saved_searches.rs:554`, not 350) no longer always writes the three
-questions. It calls `what_that_answer_looks_at` (`:537`), which matches on
+questions. It calls `what_that_answer_looks_at` (`:538`), which matches on
 `WhereToSearch` and returns `["subject"]` for `SubjectOnly`, `["from"]` for
 `SenderOnly`, and `WHAT_A_TYPED_SEARCH_LOOKS_AT` for `EveryFolder` and
 `OneFolder` (`:539` to `:541`). It also writes the folder half from
@@ -235,7 +235,7 @@ Other line numbers that have moved: `what_the_in_box_offers` is at
   - Evidence: rewritten 2026-09-04, having been rewritten once already on
     2026-08-29. Closed. `what_a_typed_search_asks`
     (`src/application/saved_searches.rs:554`) now calls
-    `what_that_answer_looks_at` (line 537), which matches on `WhereToSearch`
+    `what_that_answer_looks_at` (line 538), which matches on `WhereToSearch`
     and returns `["subject"]` for SubjectOnly, `["from"]` for SenderOnly, and
     `WHAT_A_TYPED_SEARCH_LOOKS_AT` for the two that do not narrow a field. Both
     halves of the scope are written from one value: the folder comes from
@@ -308,8 +308,8 @@ refuses a run in which the suite was never once run against a mutant, and
 built, wired, and the decision the requirement asked for in advance was written
 down in advance.
 
-**What is true now.** `src/application/favourites.rs` exists, 219 lines of
-public surface upward, with `Pin` (`:73`), `PinnedBranch` (`:91`),
+**What is true now.** `src/application/favourites.rs` exists, 664 lines, with
+`Pin` (`:73`), `PinnedBranch` (`:91`),
 `what_each_account_has` (`:130`), `in_account_order` (`:154`) and the four
 announcement builders `now_pinned`, `already_pinned`, `now_unpinned` and
 `was_not_pinned` at `183`, `193`, `203` and `208`. `ID_PIN_FOLDER` and
@@ -611,7 +611,7 @@ put there deliberately so a screen reader user can arrow through one.
 `sample_mailbox` at `:9137` builds the rows. Its doc comment says why it is on a
 menu rather than behind a build flag: "the people who most need to test it are
 not the people compiling it". `ID_LOAD_SCALE_SAMPLE` is at `wx_app.rs:93`, the
-item at `6283`, the handler at `4908`.
+item at `6281`, the handler at `4908`.
 
 So the first `[D]` line is half satisfied. The mechanism for exercising 200,000
 synthetic rows exists and is reachable. What is not there is the recorded number
@@ -636,7 +636,7 @@ is still correct and still important.
     means to exercise them ships in the product:
     `src/presentation/wx_app.rs:9125` sets `SAMPLE_MAILBOX_SIZE` to 200,000,
     `sample_mailbox` at 9137 builds the rows, and `ID_LOAD_SCALE_SAMPLE`
-    (line 93, item at 6283, handler at 4908) is on the Help menu deliberately
+    (line 93, item at 6281, handler at 4908) is on the Help menu deliberately
     rather than behind a build flag, because the people who most need to test it
     are not the people compiling it. What is missing is the numbers: nothing in
     the tree records a sort, filter or scroll timing from a sample run. The
@@ -667,8 +667,8 @@ written by an earlier version is not hypothetical.
 Each of the three `[D]` lines:
 
 - **Level from the native control.** `TreeRow` carries `depth`
-  (`folder_tree.rs:216`) and the label deliberately does not
-  (`folder_tree.rs:210`, and the reasoning at `:17` to `:23`). That is the
+  (`folder_tree.rs:214`) and the label deliberately does not
+  (`folder_tree.rs:212`, and the reasoning at `:17` to `:23`). That is the
   correct shape. Whether NVDA and Narrator actually say it has not been heard,
   which is what leaves this row open.
 - **Collapse and expand by keyboard, remembered across a restart.** Built.
@@ -697,7 +697,7 @@ control, which no test here can answer.
     (`src/presentation/folder_tree.rs:9` to 15, decision D-22).
     `src/application/folders_underneath.rs` holds the shared walk, bounded at
     line 45 because a cycle written by an earlier version is not hypothetical.
-    `TreeRow` carries `depth` (`folder_tree.rs:216`) and deliberately keeps
+    `TreeRow` carries `depth` (`folder_tree.rs:214`) and deliberately keeps
     level, expansion and position out of the label (line 210). Collapse survives
     a restart through a `tree_state` table:
     `src/data/message_cache/folders.rs:275` and 309, called from

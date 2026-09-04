@@ -453,7 +453,7 @@ cover the common case. It is carried as a success criterion of phase 8 rather
 than left here as a sentence, for the reason this file keeps giving: a rule that
 lives in a document is one somebody has to notice being broken.
 
-**Know what it costs before starting it.** The whole sweep is 564 records and
+**Know what it costs before starting it.** The whole sweep is 565 records and
 about 15 hours, an overnight job rather than an impossible one since the thread
 setting halved it. Scoped to a single branch it was 63 records of the 536 that
 existed then, about 90 minutes, for plan 02-01. Narrowing that to modules which

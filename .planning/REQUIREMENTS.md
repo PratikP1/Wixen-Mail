@@ -25,6 +25,47 @@ changing an **[S]** line means changing a source document too.
 Each requirement carries an **Evidence** line naming what was actually checked, so a later
 reader can re-run the check rather than trust the conclusion.
 
+### What an Evidence line has to contain. Added 2026-09-04
+
+That sentence was the intention and it did not survive five weeks. An audit on 2026-09-04
+(`.planning/requirements-audit-2026-09-04.md`) found 12 of 18 evidence blocks wrong, and the
+phase research for 4, 5 and 7 found most of the rest. Every wrong one was wrong in the same
+direction: it said something was missing that had since shipped, or named a defect that had
+since been fixed. Nothing over-claimed. Correcting the blocks one at a time does not stop that
+happening again, so the mechanism is written down here.
+
+**A citation's precision and its durability are different things, and a reader mistakes the
+first for the second.** Three ways an evidence line rots while still reading as verified, all
+of them present in this document before 2026-09-04:
+
+- **A line number cannot be re-run.** THREAD-01 said "line 582 calls `item.enable(false)`",
+  which was true when it was written. Line 582 is something else now, and a reader who looks
+  cannot tell whether the document is stale or they mis-counted.
+- **A grep goes blind when the vocabulary moves.** FOLDER-01 searched `create_folder`. The
+  feature shipped as `create_mailbox`, so that command still returns nothing and re-running the
+  evidence reads as confirmation. It is the sharpest case here: five operations ship, and the
+  check written to find them cannot see any of them.
+- **A bare assertion of absence names no method.** "no favourites path in `src/`", "Nothing
+  joins the two", "has never been done". Re-checking one of those means inventing a search and
+  hoping it is the same search.
+
+So: **anything a later reader is expected to re-check carries the literal command, its result
+in one line, and the date it was run.** Cite a symbol rather than a line number, because a
+symbol survives the edit that moves the line. Where the claim is an absence, search the
+concept's several plausible spellings and say which ones were searched, so a reader can see
+that the vocabulary has moved instead of reading a stale nil result as a fresh one. This is the
+rule the project already applies to test counts under PERF-06 and to guard records in
+`guards/guards.toml`.
+
+**How fast this happens, measured on this pass.** Four sentences written into this document on
+2026-09-04, each correctly saying that some other document was stale, were themselves false
+within the hour, because the documents they named were corrected while this pass was running:
+the changelog's "nine events", the changelog's missing "Since closed" marker on threading, and
+two unticked roadmap lines. They were caught only because the working tree was checked again
+before finishing. So a sentence about another document's state expires the moment somebody fixes
+that document, and nothing tells you. Where a claim like that has to be made, write it in the
+past tense with its date, the way those four now are, rather than as a standing "still says".
+
 ## The caveat that binds every criterion
 
 Nothing in Wixen Mail has ever run against a real mail account or a real provider. No
@@ -44,13 +85,30 @@ write path added by this milestone passes through that gate.
 - [x] **FOLDER-01**: Create, rename and delete a mail folder; mark a whole folder read; empty
   a folder.
 
-  - Evidence: `grep -rn "create_folder|rename_folder|delete_folder" src/` finds no mail-folder
-    match (the only hits are the notes module's `btn_delete_folder` and two test names). The
-    public API of `src/service/protocols/imap.rs` runs list_folders, set_subscribed,
-    folder_counts, select_folder, search_uids, all_uids, fetch_headers, fetch_body,
-    fetch_flags, set_flag, mark_as_read, copy_message, move_message, remove_by_message_id,
-    uids_with_message_id, remove_these, append_message, delete_message, logout, stop. There is
-    no CREATE, RENAME or DELETE mailbox command.
+  - Evidence: rewritten 2026-09-04, and the previous evidence is worth reading for how it
+    failed. It ran `grep -rn "create_folder|rename_folder|delete_folder" src/`, found nothing,
+    and concluded the feature was absent. The feature shipped under `create_mailbox`,
+    `rename_mailbox` and `delete_mailbox`, so that command returns nothing today too and reads
+    as confirmation.
+    All five operations are built and reachable from the Action menu. The command that asks the
+    question the old one meant to ask, run 2026-09-04:
+
+    ```
+    grep -n "fn create_mailbox\|fn rename_mailbox\|fn delete_mailbox" src/service/protocols/imap.rs
+    ```
+
+    That returns lines 907, 944 and 976, each function opening with the `may_i` gate.
+    `application/mail_controller.rs` passes all three through at 546, 560 and
+    571 with no logic of its own, and `mark_folder_read` is at
+    `src/data/message_cache/messages.rs:1614`. The menu items are `ID_NEW_FOLDER`,
+    `ID_RENAME_FOLDER`, `ID_MOVE_FOLDER`, `ID_DELETE_FOLDER`, `ID_EMPTY_FOLDER` and
+    `ID_MARK_FOLDER_READ`, declared at `src/presentation/wx_app.rs` lines 83 to 88 and 91 to
+    92, with handlers from line 3576 onward. `src/service/outward.rs:789` records exactly 11
+    outward calls in `imap.rs`, re-measured 2026-08-31.
+    The `Allowed::mail` gate sits inside the session rather than the controller, so no caller
+    can answer it differently, and `local_folders::is_local`
+    (`src/application/local_folders.rs:110`) is still the single decider of local against
+    server. Both `[D]` lines about those are satisfied as written.
 
   - [S] The inventory records this as not built, cited to `docs/IMPLEMENTATION_STATUS.md`,
     `docs/ALPHA_TESTING.md` and roadmap Phase 2.
@@ -79,10 +137,27 @@ write path added by this milestone passes through that gate.
     else. A second answer to that question is how the two would drift.
 
 - [ ] **FOLDER-02**: Nested folder hierarchy in the folder tree.
-  - Evidence: the inventory records the tree as one flat level, so `Archive/2026` reads as its
-    full path. `src/presentation/wx_app.rs` builds the folder tree.
-    `src/service/protocols/imap.rs` already returns `ImapFolder` values from `list_folders`,
-    including SPECIAL-USE, so the delimiter and path information needed to nest is arriving.
+  - Evidence: rewritten 2026-09-04. The previous evidence said the inventory records the tree
+    as one flat level. That was true when written and is not true now: nesting shipped in phase
+    1, and what is left is a screen reader run rather than code. This row stays open for that
+    reason and no other.
+    Nesting is read from `folders.parent_id`, written once at sync by `mail_sync::store_folders`
+    from the separator the server gave for that one mailbox, and nothing splits a path at
+    display time (`src/presentation/folder_tree.rs:9` to 15, decision D-22).
+    `src/application/folders_underneath.rs` holds the shared walk, bounded by
+    `AS_DEEP_AS_A_TREE_GOES` at line 45 because a cycle in `parent_id` written by an earlier
+    version is not hypothetical. `TreeRow.depth` is at `folder_tree.rs:214` and `TreeRow.label`
+    at 212, with the rule in the label's own doc comment at 210: its level, its expanded state
+    and its position "are not in here and must not be put here". Collapse
+    survives a restart through a `tree_state` table: `set_row_collapsed` and `collapsed_rows`
+    at `src/data/message_cache/folders.rs:275` and 309, called from
+    `src/presentation/wx_app.rs:13732`, 10224 and 14909. A collapsed parent's unread count is
+    `unread_here` against `unread_in_all` (`folder_tree.rs:227` and 228), worded by
+    `unread_text` (line 381) under the `UnreadOnAParent` setting
+    (`src/application/folder_settings.rs:34`).
+    What remains is guardrail 2: no screen reader has confirmed that the level is announced
+    from the native `TreeCtrl` rather than from the label text. No test in this repository can
+    answer that.
 
   - [S] Recorded as a known limitation in the `[Unreleased]` section of `docs/changelog.md`.
   - [D] A folder named `Archive/2026` appears as `2026` nested under `Archive`, and a screen
@@ -95,8 +170,22 @@ write path added by this milestone passes through that gate.
     says which of the two numbers it is giving.
 
 - [x] **FOLDER-03**: Pin frequently used folders as favourites.
-  - Evidence: no favourites path in `src/`. The requirements backlog lists it as post-v1.0,
-    priority Low.
+  - Evidence: rewritten 2026-09-04. The previous evidence asserted "no favourites path in
+    `src/`" and named no method, which is the shape of absence claim this document now refuses.
+    It is false and the whole thing is built and wired.
+    `src/application/favourites.rs` holds `Pin` (line 73), `PinnedBranch` (91),
+    `what_each_account_has` (130), `in_account_order` (154) and the four announcement builders
+    `now_pinned`, `already_pinned`, `now_unpinned` and `was_not_pinned` at 183, 193, 203 and
+    208. The menu ids `ID_PIN_FOLDER` and `ID_UNPIN_FOLDER` are at
+    `src/presentation/wx_app.rs:91` and 92 with the handler at 3613, and the group heading
+    `FAVOURITES` is defined once at `favourites.rs:64` and read by
+    `src/presentation/folder_tree.rs`, whose `group_text` is at line 450, which satisfies the
+    last `[D]` line.
+    The pin-versus-subscription decision this requirement asked to have taken in advance was
+    taken in advance and is written at `favourites.rs:9` to 45: a pin is local and never writes
+    a subscription, a subscription never adds or removes a pin, and a pin is stored against
+    `(account_id, path)`, the same pair `imap::set_subscribed` names a mailbox by, so joining
+    them later moves nothing.
 
   - [S] Recorded in `docs/development/requirements-backlog.md` as "Pin frequently used
     folders", not built.
@@ -108,8 +197,9 @@ write path added by this milestone passes through that gate.
     server, and never passes through `Allowed`. That is what this phase builds.
 
   - [D] The stored shape allows IMAP subscription to back it later without a migration.
-    `src/service/protocols/imap.rs` line 840 already has `set_subscribed`, and subscription is
-    what other mail clients mean by marking a folder you care about, so the two will meet.
+    `set_subscribed` is at `src/service/protocols/imap.rs:873` (line 840 when this was written),
+    and subscription is what other mail clients mean by marking a folder you care about, so the
+    two will meet.
 
   - [D] Which wins when they disagree is recorded as a decision before the second half is
     built, not left to whichever code path runs last. A local pin and a server subscription
@@ -121,10 +211,17 @@ write path added by this milestone passes through that gate.
 ### Conversations
 
 - [x] **THREAD-01**: Collapse the message list to one row per conversation.
-  - Evidence: `src/presentation/wx_app.rs` line 102 declares `ID_THREAD_VIEW`, line 5026 adds
-    the menu item, and line 582 calls `item.enable(false)` on it. The command exists and is
-    switched off. Threading itself is built: `src/application/threading.rs` and
-    `src/presentation/wx_thread_view.rs`, reachable by pressing Enter on a message.
+  - Evidence: rewritten 2026-09-04. The previous evidence said the command "exists and is
+    switched off", citing three line numbers, all of which have moved. It is on, it has a
+    keyboard shortcut, and the disabling call is gone.
+    `ID_THREAD_VIEW` is declared at `src/presentation/wx_app.rs:116`, appended as a check item
+    at 5696 with `Ctrl+T`, dispatched at 4037 to `switch_the_view`, and its tick kept in step by
+    `sync_menu_check` at 12323 and 12355. The `item.enable(false)` the previous evidence named
+    is gone: the only occurrence of that string in the file is a test fixture at 25627.
+    The guard over it is documented at 25483 and had to change its anchor, which is worth
+    knowing before trusting it. It was written against `find_item(ID_THREAD_VIEW)`, a call that
+    existed only while the item was disabled, so its own green half deleted what it read and it
+    passed unconditionally for a stretch. It now anchors on the identifier itself (25501).
 
   - [S] Recorded in `docs/IMPLEMENTATION_STATUS.md` under "What does not work" and in roadmap
     Phase 3.
@@ -143,9 +240,20 @@ write path added by this milestone passes through that gate.
     the user was on.
 
 - [x] **THREAD-02**: Rethread incrementally as mail arrives, not only when a folder is opened.
-  - Evidence: `src/application/threading.rs` rethreads on folder open. The mail-at-scale plan
-    specifies incremental assignment: each arriving message looks up its references against an
-    index on `message_id` and joins an existing thread or starts one.
+  - Evidence: rewritten 2026-09-04. Closed by 01-13, and the mechanism moved, so the previous
+    evidence ("`threading.rs` rethreads on folder open") now names the wrong module.
+    A message gets its conversation as it is stored:
+    `src/data/message_cache/messages.rs:834` calls `thread_identity::conversation_root` while
+    writing the row, and lines 966 to 976 handle the late message that connects two trees by way
+    of `thread_identity::identifiers_worth_asking_about` and `thread_identity::rejoin`.
+    `src/application/thread_identity.rs:5` records why it exists: `messages.thread_id` shipped
+    as a column nothing wrote. `backfill_thread_ids` (`messages.rs:1010`) fills it in for
+    databases written before that. `threading.rs` still exists and `thread_messages` still runs
+    in memory for the conversation tree, which `thread_identity.rs:36` states.
+    One document had not kept up and has since been corrected: `docs/changelog.md:8394` carried
+    the old known limitation under `[Unreleased]` with no "Since closed" marker, contradicting
+    line 574 of the same section, while its neighbour at 8392 carried one. It now carries the
+    marker, corrected 2026-09-04.
 
   - [S] Recorded as a known limitation in `docs/changelog.md`; the algorithm is specified in
     `docs/plans/20260726-mail-at-scale.md` under "Threading algorithm".
@@ -178,18 +286,23 @@ write path added by this milestone passes through that gate.
 ### Search
 
 - [x] **SEARCH-01**: A saved search keeps the whole scope it was saved with, not half of it.
-  - Evidence: rewritten 2026-08-29. The previous evidence said the scope selector is read by
-    nothing, quoting a changelog line that has since been corrected as false, and cited two
-    sites building the offered scopes where the second is a test. There is one builder,
-    `what_the_in_box_offers` at `src/presentation/wx_app.rs` line 14776, and the live search
-    honours every scope it offers: `src/data/message_cache/searching.rs` line 393 takes
-    `looking_in: WhereToSearch` and narrows on it, with tests for `OneFolder`, `SubjectOnly`
-    and `SenderOnly` at lines 584, 614 and 639. Saving a search keeps half of that.
-    `SavedSearch` carries `folder: Option<String>` (`src/application/saved_searches.rs` line
-    543) and nothing else about scope, because `what_a_typed_search_asks` at line 350 always
-    writes the three questions in `WHAT_A_TYPED_SEARCH_LOOKS_AT`, which is
-    `["subject", "from", "to"]`. Choose From Only, save it, and it reruns across subject,
-    sender and recipients.
+  - Evidence: rewritten 2026-09-04, having been rewritten once already on 2026-08-29. Closed.
+    The defect the previous evidence described, that `what_a_typed_search_asks` always writes
+    the three questions in `WHAT_A_TYPED_SEARCH_LOOKS_AT`, is fixed, and every line number it
+    gave has moved.
+    `what_a_typed_search_asks` (`src/application/saved_searches.rs:554`) now calls
+    `what_that_answer_looks_at` (line 538), which matches on `WhereToSearch` and returns
+    `["subject"]` for SubjectOnly, `["from"]` for SenderOnly, and `WHAT_A_TYPED_SEARCH_LOOKS_AT`
+    for the two that do not narrow a field. Both halves of the scope are written from one value:
+    the folder comes from `ran.the_folder_looked_in` at line 566, which is what the second `[D]`
+    line asked for.
+    The fourth `[D]` line, about a search saved by an older version, stopped needing an answer
+    rather than being answered: the unnarrowed case returns the shared constant itself rather
+    than a copy, so an old search and a new unnarrowed one cannot be told apart and there is no
+    absent value anywhere. Line 529 says so.
+    The live search side is unchanged and still honours every scope it offers:
+    `search_messages` (`src/data/message_cache/searching.rs:477`) takes
+    `looking_in: WhereToSearch`, with tests at 690, 727 and 758.
 
   - [D] A search saved with Subject Only or From Only reruns with that same restriction rather
     than across all three fields.
@@ -206,10 +319,24 @@ write path added by this milestone passes through that gate.
     the writer's answer for an unrestricted search are the same answer, written once.
 
 - [x] **SEARCH-02**: Save and run a search over message text that eviction has cleared.
-  - Evidence: bodies are split out with a size budget and least-recently-read eviction in
-    `src/data/message_cache/bodies.rs`. The changelog records that an old message may have
-    headers here and no text, and that nothing built into the program saves a search of that
-    kind.
+  - Evidence: rewritten 2026-09-04. Built and wired on both doors. The disclosure this
+    requirement is mostly about was absent when the previous evidence was written and is not
+    absent now.
+    Bodies are still split out with a size budget and least-recently-read eviction in
+    `src/data/message_cache/bodies.rs`, and the coverage is now measured and said:
+    `how_much_message_text_the_index_holds` (`src/data/message_cache/searching.rs:609`) reads
+    the `text_is_in_the_search_index` column named by `THE_INDEX_HOLDS_THE_TEXT` at line 149.
+    The search box asks it at `src/presentation/managers.rs:1852` and words it with
+    `what_the_search_box_covers` (`src/application/saved_searches.rs:780`); a saved search asks
+    it at `src/presentation/wx_app.rs:6455` and words it with `what_a_saved_search_covers`
+    (line 761) and `what_a_search_says_as_it_opens` (line 670, said on open at
+    `wx_app.rs:6671`). Whether a search needs body text at all is answered in one place, by
+    `reads_the_message_text` (`saved_searches.rs:1104` and `searching.rs:85`), so a search about
+    senders and subjects never pays to ask.
+    The offer to fetch the rest is built too: `ID_FETCH_MISSING_TEXT`
+    (`wx_app.rs:156`, item at 5486, handler at 4220), with the list it fetches named at
+    `bodies.rs:541`. Both `[D]` lines are satisfied, and the changelog sentence quoted as `[S]`
+    below is now itself a stale sentence rather than a description of the code.
 
   - [S] `docs/changelog.md`: "Message text is cleared to stay within a size budget, so an old
     message may have headers here and no text. Nothing built into the program saves a search
@@ -228,9 +355,23 @@ write path added by this milestone passes through that gate.
     evicted.
 
 - [x] **SEARCH-03**: Smart folders defined by a rule.
-  - Evidence: saved searches are built (`src/application/saved_searches.rs`) and appear in the
-    folder tree. Filters with regex and rule actions are built
-    (`src/application/filters.rs`). Nothing joins the two into a folder that updates itself.
+  - Evidence: rewritten 2026-09-04. Built, under a shape decided after this requirement was
+    written. "Nothing joins the two into a folder that updates itself" is false, and it is
+    another bare absence claim that named no method.
+    D-2-01 (`.planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md:41`) makes a
+    smart folder a saved search with a fuller editor rather than a second object, so the join
+    the previous evidence said was missing is `Question::as_a_rule`
+    (`src/application/saved_searches.rs:118`), which turns a saved search's condition into the
+    filter engine's own `FilterRule` and runs it through `FilterEngine::matches` at line 1178.
+    One matcher, one storage, two doors onto it. Opening a saved search lists what matches now
+    rather than a snapshot, because the questions are evaluated at open time.
+    The editor is `build_rule_edit_dialog` (`src/presentation/wx_managers.rs:2770`),
+    `show_rule_edit` (2958) and `show_rule_manager_dialog` (3136), reached from
+    `ID_EDIT_SEARCH_CONDITIONS` (`src/presentation/wx_app.rs:221`, item at 5904, handler at
+    4683, call at 7052) and from the folder tree's context menu. `docs/roadmap.md:157` showed
+    `- [ ] Smart folders based on rules` unticked when this was audited, and was ticked on
+    2026-09-04 along with `Folder favorites` on the line above it, which FOLDER-03 had left in
+    the same state.
 
   - [S] `docs/development/requirements-backlog.md`, near-term, priority Low; roadmap Phase 5.
   - [D] A user defines a smart folder from the same rule vocabulary that filters use, and it
@@ -432,9 +573,21 @@ write path added by this milestone passes through that gate.
 ### Writing and reading a message
 
 - [ ] **WRITE-01**: Drag and drop, or paste, a file into a message as an attachment.
-  - Evidence: `grep -rn "DropTarget|OnDropFiles|drop_target" src/` returns nothing. Roadmap
-    Phase 4 leaves it unticked. Attachment handling itself is built in
-    `src/application/attaching.rs`.
+  - Evidence: re-checked 2026-09-04 and still accurate, which makes this the only one of the
+    six in this section that was. `grep -rn "DropTarget|OnDropFiles|drop_target" src/` returns
+    nothing outside two unrelated test names (`bodies.rs:1047`, `wx_app.rs:23408`), and
+    `src/application/attaching.rs` is the attachment model as claimed. Roadmap Phase 4 leaves
+    it unticked.
+    Two things the evidence did not say that bear on the criteria. **The existing attach path
+    takes one file.** `attach_files` (`src/presentation/wx_compose.rs:1408`) builds its picker
+    without `FileDialogStyle::Multiple` and calls `picker.get_path()`, singular, at 1425. A drop
+    hands over many files at once, so the picker widens in the same change or the two paths
+    disagree about how many files an attach is. **The framework has what is needed**, so the
+    risk is where a drop lands rather than whether it can be caught:
+    `FileDropTarget::builder(window).with_on_drop_files(...)` exists in wxdragon 0.9.17, and
+    paste is available through `Clipboard::get_data(&FileDataObject)`. What WebView2 does with a
+    file dropped on the composer's body is untested here and unknown, and it is worth settling
+    with a throwaway build before tasks are planned around it.
 
   - [S] Roadmap Phase 4, unticked.
   - [S] WCAG 2.5.7 forbids drag-only interaction, and the mail-at-scale plan names column
@@ -447,8 +600,28 @@ write path added by this milestone passes through that gate.
     why.
 
 - [ ] **WRITE-02**: Insert an image inline in an HTML message.
-  - Evidence: compose supports HTML and plain modes (`src/application/draft_message.rs`), and
-    no inline image insertion path exists. Roadmap Phase 4, unticked.
+  - Evidence: rewritten 2026-09-04. "No inline image insertion path exists" is false. It is
+    built end to end and reached from a menu, and the first `[D]` line below is already
+    satisfied in the stronger form: alt text is not merely asked for, it is compulsory.
+    `insert_picture` (`src/presentation/wx_compose.rs:2934`) opens a picture picker, reads the
+    file, then asks "Describe the picture, for somebody who cannot see it:" in a
+    `TextEntryDialog` (2972 to 2984). `a_picture_to_send` (`src/application/pictures.rs:349`)
+    refuses an empty description outright (352 to 358) and returns an `<img>` carrying the
+    escaped alt. It is reached from `ID_INSERT_PICTURE` (`wx_compose.rs:46`), a real menu item
+    at 515 to 517, dispatched at 1230. The sanitiser admits exactly that shape and nothing else
+    beginning `data:` (`src/presentation/html_renderer.rs:131` to 150). The send path converts
+    it properly: `smtp.rs:176` to 217 rewrites `data:` pictures into `multipart/related` with
+    `Attachment::new_inline(content_id)`, because Gmail and Outlook both drop `data:` pictures
+    out of a received message, and puts the descriptions into the plain half so it has no silent
+    hole.
+    Two things are genuinely left, and both are smaller than a build. **There is no decorative
+    path**, so criterion 2's "or an explicit mark that the image is decorative" cannot be
+    satisfied today: `pictures.rs:352` refuses an empty description, deliberately and with the
+    argument written at `wx_compose.rs:2926` to 2931. That is a decision for Pratik, not a
+    defect. **Nothing asserts the draft round trip.** The path is `body_from_editor` to
+    `HtmlRenderer::sanitize_html` to the drafts table and back through `editor_document`, and
+    the sanitiser admits the shape at both ends, so it very likely survives; no test says so.
+    That is a red/green pair, not a subsystem.
 
   - [S] Roadmap Phase 4, unticked.
   - [D] Inserting an image asks for alt text and will not insert without either alt text or an
@@ -496,9 +669,30 @@ write path added by this milestone passes through that gate.
     it cannot, the requirement is re-scoped rather than half-built.
 
 - [ ] **READ-01**: Preview an image or a text attachment in the application.
-  - Evidence: `src/service/pdf.rs` is the only in-app reader, using the sibling `pdfpurr`
-    crate. The requirements backlog lists inline preview as post-v1.0, priority Medium.
-    Handing an attachment to Windows to open is declined, so preview is the only path.
+  - Evidence: rewritten 2026-09-04. The previous evidence was true and left the wrong
+    impression. "`src/service/pdf.rs` is the only in-app reader" still holds, and everything
+    around that reader is generic and built, so this is a producer away from done rather than a
+    subsystem away.
+    `read_attachment` (`src/presentation/wx_app.rs:18054`) fetches the bytes on a worker and
+    posts `UIUpdate::AttachmentRead(Box<ReaderDocument>)`, which opens as a tab of its own.
+    `pdf_document` (`src/presentation/reader_text.rs:615`) is the only producer, and nothing
+    about `ReaderDocument` is PDF-shaped: it is a title, text, and `Landmark`s the reader
+    navigates by. The gate is four lines: `can_be_read_here`
+    (`src/presentation/wx_reader.rs:193` to 203) says yes to `application/pdf` or a `.pdf` name
+    and nothing else, and the refusal is already written and already names what to do instead
+    (156 to 166). The bytes are already cached in the digest-keyed `attachment_content` store
+    (`src/data/message_cache/mod.rs:1421` to 1442). So the work is: widen `can_be_read_here`,
+    add a text producer and an image producer beside `pdf_document`, and route them.
+    **The hard half is criterion 4 and it is blocked upstream.** The description a preview would
+    announce is the sender's `Content-Description` header or the `alt` on the `<img>` that
+    references the part, and neither reaches the application: `AttachmentInfo`
+    (`src/service/mime.rs:48` to 52) carries `filename`, `mime_type` and `size` and nothing
+    else. `mail-parser 0.11.5` exposes `content_description`, `content_disposition`,
+    `content_id` and `content_language` on `MimeHeaders`, which `mime.rs` already imports, so
+    this is a widening of one struct and one function rather than a new capability. It has to
+    happen before an image preview can say anything true. Whether real senders supply
+    `Content-Description` at all cannot be measured here, because no account has ever been used
+    with this program.
 
   - [S] `docs/development/requirements-backlog.md`, post-v1.0, Medium.
   - [D] An image attachment previews in the application, and the preview announces any alt
@@ -511,9 +705,35 @@ write path added by this milestone passes through that gate.
     that fails to parse is refused with a message naming the file, not rendered partially.
 
 - [ ] **READ-02**: Full PGP encryption and decryption.
-  - Evidence: `src/service/security.rs` does detection only, and does hold `aes_gcm` primitives
-    for other purposes. `src/service/signed_mail.rs` (6,738 lines) does S/MIME verification.
-    No PGP key handling, encryption or decryption path exists.
+  - Evidence: rewritten 2026-09-04. Accurate about PGP, and it understated what sits beside it
+    by enough to mis-size the work.
+    **PGP is genuinely absent.** The only occurrences in `src/` outside tests are four string
+    checks: `detect_pgp_signed` looks for `-----BEGIN PGP SIGNED MESSAGE-----` and
+    `-----BEGIN PGP SIGNATURE-----` (`src/service/security.rs:269` to 272),
+    `detect_pgp_encrypted` for `-----BEGIN PGP MESSAGE-----` (274 to 276). No key handling, no
+    armor parsing, no crate. Re-confirmed 2026-09-04.
+    **Six of the eight fields of `MessageSecurityReport` are computed and thrown away.** The
+    struct (`security.rs:72` to 83) carries `pgp_signed`, `pgp_encrypted`, `smime_signed`,
+    `smime_encrypted`, `signature_status`, `phishing_risk`, `phishing_score` and
+    `phishing_indicators`. Its only production consumer, `body_safety::from_body`
+    (`src/application/body_safety.rs:45` to 66), reads two of them. So the application already
+    works out "this message is PGP-encrypted" on every message it reads and tells nobody, on a
+    live path reached from `pop_sync.rs:518` and `wx_app.rs:18525`.
+    **S/MIME goes further than "verification", and one part of it is unreached.**
+    `signed_mail.rs` carries a DER reader, a certificate store with a real Windows
+    implementation, revocation and issuer trust, and signature checking that is reached
+    (`wx_app.rs:11181`, surfacing at `reader_text.rs:1023`). `EncryptedMessage`
+    (`signed_mail.rs:3645`) reads the outside of a PKCS #7 `EnvelopedData` and its `spoken()`
+    (3706) already writes the exact sentence the third `[D]` line asks for, including "This
+    computer holds a certificate this message was encrypted to". It has no caller anywhere:
+    `grep -rn "EncryptedMessage" src/ tests/` matches only `signed_mail.rs` itself.
+    **Nothing goes out signed or encrypted**, so the second `[D]` line is untouched in both
+    halves.
+    One correction to how the criteria read: an S/MIME enveloped message and a PGP-encrypted one
+    fail differently and this requirement treats them as one. An enveloped message has no
+    `text/*` part, so `mime::parse`'s `first_of_kind` yields `None` and the message reads as
+    empty, which is the failure the third `[D]` names. A PGP armored block is a text part, so it
+    renders as the armor rather than as nothing.
 
   - [S] `docs/development/requirements-backlog.md`: still detection only, post-v1.0, Medium.
     The same source records that S/MIME signature checking has since been built while PGP has
@@ -530,10 +750,30 @@ write path added by this milestone passes through that gate.
     `message_cache.db`, never logged.
 
 - [ ] **READ-03**: Hook into an external spam classifier.
-  - Evidence: filters with rule actions are built (`src/application/filters.rs`), phishing risk
-    scoring is built (`src/service/security.rs`), Safe Browsing lives in
-    `src/service/safebrowsing/`. No external spam classifier integration exists. Junk folder
-    sync is declined, so the classifier's verdict has to land locally.
+  - Evidence: rewritten 2026-09-04. "No external spam classifier integration exists" is still
+    true and it was the wrong question, because a spam verdict already exists, is stored, listed
+    and shown. What the criteria ask for is one entry in one list.
+    `src/service/safety.rs` reads the verdict a filter upstream already reached, out of the
+    headers `X-Spam-Flag`, `X-Spam-Status`, `X-Forefront-Antispam-Report`, `X-Microsoft-Antispam`
+    and `Authentication-Results` (`from_headers`, lines 150 to 168). Its module header states
+    the design and the reason: the most reliable free detection available is the detection that
+    has already happened, and asking an outside service means handing it links out of private
+    correspondence. It is reached from three non-test paths, IMAP
+    (`src/service/protocols/imap.rs:1788`), POP (`src/application/pop_sync.rs:515`) and message
+    import (`src/data/message_cache/messages.rs:4245`). The verdict is merged with the folder's
+    own signal, worst winning (`mail_sync.rs:454` to 458), stored as the `safety` and
+    `safety_reasons` columns, shown as a message-list column and in the reader's warning bar.
+    **So the first `[D]` line is one addition to one list.** `A_FIELD_A_RULE_MAY_NAME`
+    (`src/application/filters.rs:61` to 71) holds eleven names and `safety` is not among them,
+    while `CachedMessage.safety` is already on the struct the matcher is handed. The comment at
+    `filters.rs:56` to 59 warns that the list and the match arms are held in agreement by a test
+    in both directions, so adding one name touches both plus the spoken-words table.
+    The second `[D]` line, the verdict shown with its source named, is partly done:
+    `Verdict::summary` (`safety.rs:131`) and `safety_reasons` already carry sentences into the
+    warning bar. Whether they name the source per reason wants reading before it is planned.
+    Whether provider spam headers appear as `safety.rs` expects cannot be settled here: every
+    parser in it is tested against hand-written header blocks, and no account has ever been used
+    with this program.
 
   - [S] `docs/development/requirements-backlog.md`, near-term, priority Low; roadmap Phase 5.
   - [D] A classifier verdict is available to the filter rule vocabulary, so a user files spam
@@ -548,11 +788,37 @@ write path added by this milestone passes through that gate.
 ### The other five modules
 
 - [ ] **PIM-01**: Move a task from one list to another.
-  - Evidence: no move-between-lists path in `src/application/tasks_sync.rs`. Task lists and
-    tasks are cached and synced (`src/data/message_cache/`, `tasks_sync.rs`,
-    `src/service/tasks_api.rs`).
+  - Evidence: rewritten 2026-09-04. "No move-between-lists path in
+    `src/application/tasks_sync.rs`" is literally true and misleading: the path is not in
+    `tasks_sync.rs` and never would be. A task made on this computer moves between lists today,
+    from a menu, with a key.
+    `move_item` is at `src/presentation/managers.rs:6257`, dispatched at 2665, raised from
+    `src/presentation/wx_app.rs:3530` to 3531, with the Action menu item carrying
+    `Ctrl+Shift+V` at `wx_app.rs:6126` to 6130 and a context menu entry in every module that
+    accepts it. The destination chooser is `where_it_could_go` (`managers.rs:6346`), the write
+    is `file_under` (6509), and a moved item is marked `pending` so the next sync pushes it.
+    **What is left is the provider half, and the requirement does not say so.** A
+    provider-held task cannot be moved at all, and that is a designed refusal rather than a
+    gap: `moving_can_be_told` (`managers.rs:6464`) asks `tasks_sync::a_provider_holds` and
+    refuses with a sentence explaining that neither Google nor Microsoft is asked to move a
+    task between lists, so doing it means delete-there, create-here, and writing the new
+    identity over the old.
+    Two criteria below need re-aiming because of that. The third is about a path that does not
+    exist: a provider move is refused before anything is written, so "leaves the task in
+    exactly one list" is vacuously satisfied today and stops being satisfied the moment the
+    work is done. The delete-then-create sequence is the whole risk in this requirement. And
+    the second is not true as written: `grep allowed src/presentation/managers.rs` returns
+    nothing, because `Allowed::personal_information` is applied where the HTTP client is built
+    (`tasks_api.rs:835`, `google_api.rs:545`, `microsoft_graph.rs:489`, `caldav.rs:203`). A
+    move is written locally and marked pending whatever the gate says, and the gate bites at
+    the push. Nobody is refused at move time. Whether that is a defect or a mis-worded
+    criterion is a decision, because a local file is arguably not a change at a provider.
 
-  - [S] Recorded as not built in `docs/IMPLEMENTATION_STATUS.md` and `docs/ALPHA_TESTING.md`.
+  - [S] `docs/IMPLEMENTATION_STATUS.md:87` and `docs/ALPHA_TESTING.md:116`, both corrected
+    2026-09-04: what is untrue is narrower than "not built". The move ships and has never
+    reached a provider, because no account has ever been used with this program. Until that
+    correction both documents said moving and copying work for mail only, which is what the
+    previous version of this line quoted.
   - [D] A user moves a task to another list by keyboard, and the task appears in the target
     list and is gone from the source list in one action, not two.
 
@@ -563,13 +829,38 @@ write path added by this milestone passes through that gate.
     and never in neither.
 
 - [ ] **PIM-02**: Move and copy items in the modules that are not mail.
-  - Evidence: `src/service/protocols/imap.rs` has `copy_message` and `move_message` for mail.
-    The inventory records move and copy as missing for everything else.
+  - Evidence: rewritten 2026-09-04. The mail half is right: `copy_message` and `move_message`
+    are at `src/service/protocols/imap.rs:1280` and 1308. "The inventory records move and copy
+    as missing for everything else" is half wrong. **Move ships for three of the five modules**,
+    events, tasks and notes, through `move_item` (`src/presentation/managers.rs:6257`); see
+    PIM-01 for the trail.
+    **Copy is the real work here, and it is not a variant of move.** Nothing in `PimCommand`
+    (`src/application/pim_command.rs:20` to 33) copies. `file_under` (`managers.rs:6509`) does
+    read-change-write on the same row; a copy needs a new id, a new `pending`, and an answer for
+    what happens to a copied provider item. The keyboard half is cheap: `Ctrl+Shift+V` already
+    follows the module you are in, and `Ctrl+Shift+Y` (`wx_app.rs:5830` to 5833) would be routed
+    the same way.
+    **The first `[D]` line contradicts a decision recorded in the code**, which is why it is
+    reworded below rather than left standing. `pim_command.rs:49` to 54 gives the reason inline:
+    a contact is in as many groups as somebody puts it in, so there is no one home to move it
+    out of, and a reminder is filed nowhere because the module sorts by when each is due.
+    `new_item.rs:52` to 62 says the same, and `context_menu.rs:426` to 437 is a test holding the
+    five context menus to exactly `PimCommand::Move.applies_to`, so widening this to contacts
+    and reminders makes that test red. For contacts there is a coherent answer, group
+    membership, which `groups_in` (`managers.rs:6661`) already enumerates. For reminders there
+    is no container in the schema at all: a reminder has an account, a due time and an optional
+    `related_event_id`, and nothing that holds it. Overturning the decision or narrowing the
+    requirement is Pratik's call.
 
-  - [S] Recorded as not built in `docs/IMPLEMENTATION_STATUS.md` and `docs/ALPHA_TESTING.md`.
-  - [D] Contacts, events, notes and reminders each support move and copy between their
-    containers with the same two keyboard commands in every module, because one key means one
-    thing in every module here.
+  - [S] `docs/IMPLEMENTATION_STATUS.md:93` and `docs/ALPHA_TESTING.md:116`, both corrected
+    2026-09-04. Until then both said moving and copying work for mail only, which is what the
+    previous version of this line quoted and what `docs/changelog.md:2152` had already made
+    false.
+
+  - [D] Events, tasks and notes support move and copy between their containers with the same
+    two keyboard commands in every module, because one key means one thing in every module
+    here. Move already does. Whether contacts and reminders join them is the open question
+    above: the code argues they should not, and for reminders there is nothing to move between.
 
   - [D] Copy leaves the original untouched and move does not, and each announces which it did.
   - [D] The Action menu carries move and copy because they act on the selection; File, New
@@ -578,9 +869,20 @@ write path added by this milestone passes through that gate.
 - [ ] **PIM-06**: Week and month calendar views. Reviewed in 2026-08-29: these do not exist,
   and PIM-03 assumed they did.
 
-  - Evidence: `src/presentation/wx_calendar_module.rs` lines 46 to 57 say the views are not
-    built and disable Prev and Next, naming them "Previous period, not built yet". The
-    calendar is one flat event list loaded by account, not by date range.
+  - Evidence: corrected 2026-09-04. The first half was re-checked and is right at the lines it
+    quotes: `src/presentation/wx_calendar_module.rs:46` to 58 says the views are not built,
+    disables Prev and Next at 55 to 56, and gives them the accessible names "Previous period,
+    not built yet" and "Next period, not built yet" at 57 to 58. The last sentence was wrong.
+    **The event list is not loaded by account, it is loaded by a fixed window.**
+    `events_that_could_fall_between` (`src/data/message_cache/calendar.rs:308`) takes a from and
+    a to, and `the_window_now` (`src/presentation/ui_types.rs:1091`) supplies today minus 180 to
+    today plus 365. The load path at `wx_app.rs:10834` to 10861 already passes a range, so a
+    week or a month view is a narrower and movable window over a query that exists rather than a
+    new query, and `the_window_around` (`ui_types.rs:1102`) is already clock-free and is the
+    hook. The expansion is also already per-day: `every_day_shown` (`ui_types.rs:1063`) sorts by
+    moment and each row carries its stored event's identity, so a week view is a filter and a
+    heading over rows that already exist. This makes PIM-06 smaller than the requirement's
+    phrasing implies. The accessibility criterion below is unaffected and stays the hard half.
 
   - [S] `docs/changelog.md` line 1424: "Day, Week and Month, three views this program cannot
     draw".
@@ -596,9 +898,23 @@ write path added by this milestone passes through that gate.
     a real screen reader run to settle, and it is why this is its own requirement.
 
 - [ ] **PIM-03**: Show recurring events across the calendar's date ranges. Depends on PIM-06.
-  - Evidence: `src/application/occurrences.rs` and `repeating.rs` hold the recurrence model;
-    `src/application/calendar.rs` is 11,154 lines. The display this expands into is PIM-06's
-    work, not this one's.
+  - Evidence: rewritten 2026-09-04. The previous evidence was true and understated what ships
+    by enough to mis-size the work. `src/application/occurrences.rs` and `repeating.rs` do hold
+    the recurrence model, and the expansion is already wired into the list the user sees.
+    `falls_on` (`occurrences.rs:62`) expands a rule into every day it falls on and removes the
+    days EXDATE calls off through `days_called_off` (defined at 148, called at 98).
+    `every_day_shown` (`src/presentation/ui_types.rs:1063`) turns that into one list row per
+    day, from two production call sites, `wx_app.rs:10861` and `managers.rs:1187`. **A weekly
+    meeting already appears on every week in the event list**, so the first `[D]` line is
+    already true of the only view that exists.
+    **What is left is the second `[D]` line, a moved occurrence.** An override, a single
+    occurrence moved to another date, is stored as its own row carrying
+    `provider_recurrence_id`, and `falls_on` knows nothing about it: it filters by EXDATE only.
+    So a moved occurrence appears twice, once expanded from the series on its original date and
+    once as its own row on the new one. That was established by reading rather than by running,
+    so it is the first failing test any PIM-03 plan should write: if it turns out to be handled
+    somewhere, this requirement is nearly closed and a plan would otherwise build a second
+    de-duplication beside a working one.
 
   - [S] `docs/changelog.md` line 1448: weeks and months is not built, so both say so and are
     switched off.
@@ -617,9 +933,23 @@ write path added by this milestone passes through that gate.
     user meets them, not left only in the changelog.
 
 - [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
-  - Evidence: notes are cache-only. `src/presentation/wx_notes_module.rs` and the notes tables
-    in `src/data/message_cache/` exist; there is no `notes_sync.rs` beside the other five
-    `*_sync.rs` files.
+  - Evidence: re-checked 2026-09-04 and still accurate. `ls src/application/*sync*.rs` returns
+    `caldav_sync`, `collection_sync`, `contacts_sync`, `mail_sync`, `pop_sync`, `sync_marker`
+    and `tasks_sync`, and no `notes_sync.rs`.
+    **Three of the six criteria below already ship, and the requirement did not know it.** The
+    content model was not invented twice: `long_text.rs` is the shared Markdown reader,
+    `pulldown-cmark` is imported there at line 17, and the notes editor labels its box "Body, in
+    Markdown" (`src/presentation/wx_notes_module.rs:83` to 94). The stored form is the Markdown
+    source: `long_text.rs:13` to 15 states it as the module's rule and `save_note`
+    (`src/data/message_cache/notes.rs:99`) stores the body verbatim. And a screen reader reads
+    the rendered structure: `read_aloud.rs:351` does for a note exactly what `read_aloud.rs:332`
+    does for a contact's notes, which is the precedent this requirement names. What is left of
+    PIM-04 is the three criteria about sync, and those are PIM-07's work.
+    **One loose end inside PIM-04.** The `notes.format` column is written as the literal
+    `"plain"` at six sites and read by no production code, while the editor and the reader both
+    treat the body as Markdown. It is a stored answer nothing asks, which is the shape this
+    project keeps having to remove. Either it becomes meaningful, or it goes, or the phase
+    records why it stays.
 
   - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer.
   - **Decided 2026-08-29 by Pratik.** Not one target. A note has a backend chosen by the
@@ -643,9 +973,21 @@ write path added by this milestone passes through that gate.
     offering a switch that does nothing.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
-  - Evidence: nothing exists for any backend. `src/service/caldav.rs` handles no VJOURNAL and
-    `src/service/microsoft_graph.rs` covers no OneNote, both checked 2026-08-29. The five
-    existing `*_sync.rs` files are the shape to follow.
+  - Evidence: re-checked 2026-09-04 and still accurate. Neither "VJOURNAL" nor "OneNote" occurs
+    anywhere in `src/`. The existing `*_sync.rs` files are the shape to follow, and this is the
+    phase's largest genuine build.
+    Two things the previous evidence did not carry that a plan needs. **The schema work is
+    real.** The `notes` and `note_folders` tables (`src/data/message_cache/mod.rs:2028` to 2056)
+    carry no `pending`, no provider id and no version marker, and `NoteEntry` has nine fields,
+    none of them a sync field. Every other synced kind has all three, and the project's rule is
+    additive columns through `ensure_column_exists`. **A green test asserts the opposite of this
+    requirement and nothing names it.** `test_notes_are_not_offered_a_sync_they_cannot_do`
+    (`src/application/context_menu.rs:611` to 620) asserts the note-folder context menu does not
+    offer `Action::SyncNow`. It is correct today and must be inverted in the same commit that
+    adds a backend.
+    `new_item.rs:16` to 33 is where the "backend chosen by account type" reasoning already
+    lives, in prose, and its `syncs` predicate returns `false` for `Note` today. That predicate
+    is the natural seam.
 
   - [D] One trait or enum decides where a note goes, and the account's protocol picks the
     backend. An account with no notes backend keeps its notes local and says so, rather than
@@ -663,8 +1005,15 @@ write path added by this milestone passes through that gate.
     in this project has.
 
 - [ ] **PIM-08**: The notes seam is ready for a hosted service without a migration.
-  - Evidence: none. This is preparation for a service that does not exist yet, so it is the
-    requirement most at risk of building for an imagined shape.
+  - Evidence: none, which its own line already admitted, and that is still true on 2026-09-04.
+    This is preparation for a service that does not exist yet, so it is the requirement most at
+    risk of building for an imagined shape.
+    One thing found on 2026-09-04 that reduces that risk: the seam to imitate already exists in
+    this tree rather than needing to be invented. `AddressBook`
+    (`src/data/message_cache/mod.rs:423` to 446) is three variants where the third is
+    `Other(String)`, with a doc comment saying it exists so that a word this code does not
+    recognise survives being read and written back. That is a shipped, working example of a seam
+    that does not forbid a later implementation, and it is the model to copy.
 
   - [D] The seam PIM-07 defines takes a hosted backend as one more implementation, with no
     change to the stored form and no migration of existing notes.
@@ -677,10 +1026,33 @@ write path added by this milestone passes through that gate.
     exists. A switch that does nothing is the failure this project has fixed repeatedly.
 
 - [ ] **PIM-05**: CardDAV for contacts.
-  - Evidence: `src/service/caldav.rs` (8,149 lines) covers calendars only.
-    `docs/development/requirements-backlog.md` states CardDAV is not built. Contact CRUD,
-    groups and vCard 3.0 import and export are built in `src/application/contacts_sync.rs` and
-    `importing_contacts.rs`, so the vCard half of CardDAV already exists.
+  - Evidence: corrected 2026-09-04. Right about the gap, wrong about where the vCard code
+    lives, in a way that would send a plan to the wrong file.
+    The gap is real: `src/service/caldav.rs` covers calendars only, and
+    `grep -rni carddav src/` on 2026-09-04 returns five hits, all inside `#[cfg(test)]` blocks.
+    There is no PROPFIND for `addressbook-home-set`, no `discover_address_books` and no
+    address-book URL anywhere.
+    **The vCard reader and writer are in the data layer, not in the two files named.**
+    `importing_contacts.rs` holds one public function, `what_the_card_import_did`, and it builds
+    a sentence. The reader and writer are `import_contacts_from_vcard`
+    (`src/data/message_cache/contacts.rs:312`) and `export_contacts_to_vcard` (line 728). A plan
+    told to reuse them at the old addresses would find a wording helper.
+    Three things that make the build smaller than it reads. The HTTP verbs are already there:
+    `AskWith::{Propfind, Report}` (`src/service/outward.rs:90` to 93), which is what CardDAV
+    needs. Discovery is the same shape as `discover_calendars` (`caldav.rs:228` to 273) against
+    a different namespace. And `AddressBook::Other("carddav")` already round-trips, with the
+    per-address-book `provider_version` column being exactly where a CardDAV ETag belongs, so no
+    schema change is needed to name the new address book.
+    Two things that make it larger. **A new CardDAV file must be added to
+    `FILES_THAT_READ_OR_WRITE_A_DOCUMENT` (`caldav.rs:4702`) or it is unguarded**, because the
+    case-folding guard over `VCARD`, `FN`, `EMAIL` and eighteen other names reads only the files
+    that array lists, and the array's own comment says a name left off it is a name the reading
+    has stopped checking. **And this must not grow its own conflict model.** A CardDAV address
+    book is a third source of contacts flowing into `whose_copy_wins`
+    (`src/application/contacts_sync.rs:988`), and its ETag is the same kind of marker
+    `caldav_sync` uses. Plan 03-09 builds `conflict_choice.rs` in phase 3's last wave; whether
+    PIM-05 waits for it or plugs into it as a consumer is a scheduling decision, and building a
+    second model beside it is the mistake SCALE-06 was corrected to avoid.
 
   - [S] `docs/development/requirements-backlog.md`: "CardDAV not built", post-v1.0, Medium.
   - [D] A user adds a CardDAV address book by its own address, the way a calendar can already
@@ -699,11 +1071,28 @@ write path added by this milestone passes through that gate.
 ### How the application speaks
 
 - [ ] **FEEDBACK-01**: Set feedback channels per event, not only globally.
-  - Evidence: `src/presentation/accessibility/feedback.rs` already holds the model:
-    `FeedbackSettings.per_event: Vec<(Event, BTreeSet<Channel>)>`, `set_event_channels`,
-    `channels_for`, and serialisation through `to_stored` and `from_stored`. Searching
-    `src/presentation/` for `per_event` or `set_event_channels` outside that one file returns
-    nothing, so no screen writes it.
+  - Evidence: re-checked 2026-09-04 and still accurate. It is one of five in the 18-requirement
+    audit that was, and the case is stronger than the previous evidence claimed.
+    `src/presentation/accessibility/feedback.rs` holds the model: `per_event` (line 392) and
+    `set_event_channels` (line 424) are both **private**, `fn` and not `pub fn`, so no screen
+    could write one without changing a visibility. `channels_for` is at 433 and serialisation is
+    `to_stored` (458) and `from_stored` (478). The only shipping caller of `set_event_channels`
+    is `from_stored`, at line 496; every other caller is a test. **So a per-event override can
+    enter this program only by somebody hand-editing the stored config string.** The settings
+    screen goes out of its way to preserve overrides it cannot create and says so at
+    `src/presentation/wx_settings.rs:2123`. The reading half is fully live: `channels_for` is
+    called on the shipping path at `src/presentation/accessibility.rs:213` and 235.
+    **There are now two settings of this shape, not one**, which is the argument for the last
+    `[D]` line below. The second is the per-account Allow Changes answer, recorded at
+    `docs/changelog.md:5296`: still read and still honoured, and nothing writes one and no
+    screen offers it. That one already has its guard,
+    `test_nothing_offers_a_setting_per_account_that_no_screen_writes`
+    (`tests/house_style.rs:152`). This one does not.
+    **One number outside this requirement, found stale and since corrected.** The grid is 16
+    events by 4 channels: `Event::ALL` is `[Event; 16]` at `feedback.rs:114` and all sixteen
+    have a non-test call site. `docs/changelog.md:8393` called it "nine events by four channels"
+    when this was audited and now says sixteen, corrected 2026-09-04 in the same pass that
+    corrected this document.
 
   - [S] `docs/changelog.md` known limitations: per-event feedback overrides exist in the model
     with no interface.
@@ -734,29 +1123,53 @@ write path added by this milestone passes through that gate.
     its own check, and the criterion above is it.
 
 - [ ] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
-  - Evidence: `src/presentation/date_display.rs` holds a hardcoded `MONTHS` array starting
-    "January" at line 101 and formats from it at line 384. `DateOrder` already offers
-    MonthFirst and DayFirst and `DateStyle` offers Absolute and RelativeWithinWeek, so the
-    shape for a locale decision exists; only the strings are English.
+  - Evidence: rewritten 2026-09-04. The core claim holds and half of this is already done.
+    **The order of the day and month, and the clock, already follow the machine.**
+    `DateOrder::from_system` (`src/presentation/date_display.rs:226`) reads the Windows locale
+    through `read_locale` (line 136) and `order_from_locale` (169), and it is the default at
+    line 71; the clock follows through `clock_from_locale` (183). So the first `[D]` line's
+    "`DateOrder` follows it rather than being a separate setting the user has to find" is
+    already true, and what is left is the strings and only the strings.
+    `MONTHS` is a hardcoded English array at line 100 (101 when this was written), formatted
+    from at 384 and 456, and offered as a choice at `src/presentation/wx_item_form.rs:844`.
+    Relative wording such as "2 days ago" is English, built by `plural` and tested at
+    `date_display.rs:860`.
+    **The limitation is already disclosed in the product rather than left to be discovered.**
+    `date_display::ENGLISH_ONLY` (line 93) is on the settings screen
+    (`src/presentation/wx_settings.rs:1251`) and in `docs/accessibility.md`, and the reasoning
+    at lines 80 to 92 says why it matters: an English month name inside a French date, read with
+    French pronunciation, sounds like the screen reader misbehaving.
 
-  - [S] `docs/changelog.md` line 6946: month names and relative wording are English on every
-    machine.
+  - [S] `docs/changelog.md:8005`. The previous citation, line 6946, is now a paragraph about
+    filter rules that move a message to a folder.
 
   - [D] Month names, day names and relative wording ("2 days ago") come from the machine's
     locale, and `DateOrder` follows it rather than being a separate setting the user has to
     find.
 
-  - [D] A locale with no translation falls back to English and says nothing about it in the
-    UI, because a visible fallback notice on every row is worse than the fallback.
+  - [D] Reworded 2026-09-04 to match what shipped, which is better than what this line asked
+    for. A locale with no translation falls back to English. The fallback is said once, where
+    somebody can act on it, and not on every row: that is `date_display::ENGLISH_ONLY` and it
+    already ships. The previous wording asked that the fallback say nothing at all in the UI,
+    "because a visible fallback notice on every row is worse than the fallback", which reads as
+    contradicting the code and does not: the code agreed about the rows and disagreed about
+    saying nothing.
 
   - [D] The existing tests over `date_display` keep passing under a forced English locale, so
     the change is testable without a machine set to another language.
 
 - [ ] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
-  - Evidence: `.github/workflows/accessibility.yml` runs Axe.Windows over UI Automation and
+  - Evidence: re-checked 2026-09-04 and still accurate, every anchor.
+    `.github/workflows/accessibility.yml` runs Axe.Windows over UI Automation and
     `scripts/msaa-names.ps1` over MSAA, per window; `.github/workflows/nvda.yml` drives a real
-    copy of NVDA. `docs/IMPLEMENTATION_STATUS.md` records roughly half of WCAG covered and five
-    findings at the last read, all inside WebView2's own tree.
+    copy of NVDA. `docs/IMPLEMENTATION_STATUS.md:130` records five findings at the last read, on
+    2026-07-26, all inside WebView2's own accessibility tree, and line 136 records roughly half
+    of WCAG covered. None of the three `[D]` lines below has been acted on: nothing in the tree
+    names which WCAG 2.2 AA criteria the scan can and cannot judge, the five findings have not
+    been re-read, and there is no written list of interactions a manual pass has to walk.
+    One thing to add rather than correct: that "last read" is now five and a half weeks old, and
+    the workflow is non-blocking (`docs/IMPLEMENTATION_STATUS.md:112`), so nothing forces a
+    re-read. A scan whose result nobody is made to look at is guardrail 4 waiting to happen.
 
   - [S] Automated checks catch roughly half of accessibility defects and do not replace testing
     with real assistive technology. Structure present is not experience good.
@@ -777,9 +1190,20 @@ write path added by this milestone passes through that gate.
 ### Installing, updating and what is stored
 
 - [ ] **SHIP-01**: A signed installer.
-  - Evidence: `installer/Wixen-Mail-Setup.iss` builds an Inno Setup installer;
-    `scripts/build-installer.sh` appends the commit it built from. `docs/ALPHA_TESTING.md`
-    states the installer is not signed.
+  - Evidence: re-checked 2026-09-04 and accurate about the tree, every clause.
+    `installer/Wixen-Mail-Setup.iss` builds an Inno Setup installer;
+    `scripts/build-installer.sh:29` to 48 appends the commit it built from, and appends nothing
+    at a tag; `docs/ALPHA_TESTING.md:146` states the installer is not signed. The evidence was
+    only ever wrong about Windows, which the SmartScreen paragraph below now covers.
+    **One thing it does not say that changes the size of the work.** The first `[D]` line says
+    "the installer and the executable inside it". There are three signable artefacts inside it
+    (`wixen-mail.exe`, `wixen_mail_search.dll`, `wixen-mail-search-setup.exe`, at
+    `Wixen-Mail-Setup.iss:99` to 121) and three more published beside it by
+    `.github/workflows/release.yml:131` to 135 (the setup, a portable copy of the same binary,
+    and a zip of it), plus the uninstaller, which Inno signs only if `SignedUninstaller` is set.
+    A plan that signs "the installer and the exe" leaves four things unsigned, two of which are
+    executables a user runs. `release.yml:136` sets `fail_on_unmatched_files: false`, so an
+    asset that stops being produced is published silently as an absence.
 
   - [S] `docs/ALPHA_TESTING.md`: "The installer is not signed."
   - [D] The published installer and the executable inside it both carry a valid Authenticode
@@ -816,9 +1240,25 @@ write path added by this milestone passes through that gate.
     requirement stays open and the docs keep saying the installer is unsigned.
 
 - [ ] **SHIP-02**: Check for and apply updates.
-  - Evidence: `grep -rni "check_for_update|auto_update|update_check" src/` returns nothing.
-    `src/common/version.rs` already carries the version and build metadata, and
-    `.github/workflows/release.yml` publishes releases.
+  - Evidence: re-checked and widened 2026-09-04. Confirmed absent, and this is the rare absence
+    claim in this document that survived being searched properly.
+    `grep -rniE "check_for_update|auto_update|update_check"` over `src/`, `search-handler/` and
+    `tests/` returns no source hits. A concept-level search for "newer version", "latest
+    release", "update available" and "self_update" over `src/` and `docs/*.md` returns 30 hits
+    and not one is about program updates: every one is forward compatibility, a saved search, or
+    a column written by a newer version of Wixen Mail. So there is no adjacent thing that could
+    be mistaken for this.
+    **It is cheaper than the requirement implies.** `reqwest` is an unconditional dependency
+    (`Cargo.toml:72`), not Windows-gated, so an HTTPS GET of the releases API needs no new
+    dependency and works on the platforms SHIP-05 is about. There is no SemVer parsing or
+    comparison anywhere, and no `semver` crate in `Cargo.toml`: `src/common/version.rs` only
+    formats, and `describe` already proves the `+build` metadata is separated by a `+` so it can
+    be ignored. Comparing two `0.x.y` strings is the one new piece of logic, and it is a handful
+    of lines with a clear test surface.
+    **One sentence elsewhere expires when this ships.** `docs/privacy.md:7` says there is "no
+    update check that says who you are". An anonymous check keeps that technically true, and a
+    request to GitHub still reveals an IP address and a rough version-to-user mapping. That
+    sentence wants re-reading in the same change, not after it.
 
   - [S] `docs/development/requirements-backlog.md`, platform, priority Medium; roadmap Phase 8.
   - [D] The application can tell the user a newer version exists, and the check is a
@@ -834,22 +1274,61 @@ write path added by this milestone passes through that gate.
 - [ ] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
 
-  - Evidence: `installer/Wixen-Mail-Setup.iss` line 84 declares a `desktopicon` task, and the
-    `[Icons]` block at lines 123 to 125 creates both the Start menu entry and the desktop
-    shortcut. Inno removes both on uninstall. `SetupIconFile=..ssets\icon.ico` is set at
-    line 49 and `assets/icon.ico` exists, but neither `[Icons]` entry sets `IconFilename`, so
-    the shortcuts use whatever icon the executable carries. Inno creates no shortcuts by
-    default; the previous evidence line said it does, inherited from the inventory.
+  - Evidence: re-verified line by line on 2026-09-04 and correct.
+    `installer/Wixen-Mail-Setup.iss` line 84 declares a `desktopicon` task, and the `[Icons]`
+    block at lines 123 to 125 creates both the Start menu entry (line 124) and the desktop
+    shortcut (line 125). Inno removes both on uninstall. `SetupIconFile` at line 49 points at
+    the bundled `assets/icon.ico` and that file exists, but neither `[Icons]` entry sets
+    `IconFilename`, so the shortcuts use whatever icon the executable carries. Inno creates no
+    shortcuts by default; an earlier version of this line said it does, inherited from the
+    inventory.
+    **One correction: the shortcuts are not iconless today.** `build.rs:34` already embeds
+    `assets/icon.ico` into `wixen-mail.exe`, so they inherit the executable's icon. That makes
+    this a smaller correctness fix than "the shortcuts have no icon" would suggest, and it means
+    the test for it cannot be a screenshot. The test that can be written is the one the tree
+    already uses three times: read the `.iss` as text.
+    **A gate hole to decide about first.** A branch commit touching only the `.iss` runs none of
+    the three existing `.iss`-reading tests, because `guards/guards.toml` names the installer
+    nowhere and neither `house_style` nor `wired` reads it. A fourth such test inherits the same
+    hole. The plan either widens `scripts/which-checks.sh` to answer `all` for `installer/*.iss`
+    the way it already does for `Cargo.toml`, or says plainly that it is accepting the gap. It
+    should not add the test and leave the hole unmentioned.
+    (This line also carried a corrupted path for some time: an earlier editing pass turned the
+    backslash-a of the Windows path into a control byte, so it read `SetupIconFile=..ssets`.
+    Rewritten with forward slashes on 2026-09-04 so it cannot happen again.)
 
   - [S] `docs/development/requirements-backlog.md`, platform, priority Medium.
   - [D] Both `[Icons]` entries set `IconFilename` to the bundled icon, so the shortcut a user
     sees in the Start menu and on the desktop is the application's own.
 
 - [ ] **SHIP-04**: Encrypt the local cache, or decide not to and say so once and clearly.
-  - Evidence: `src/data/message_cache/mod.rs` stores mail in plain SQLite.
-    `src/service/security.rs` already uses `aes_gcm` with `Aes256Gcm` at lines 222 and 423, so
-    the primitive is in the tree. `CLAUDE.md` states the cache is not encrypted and that the
-    docs must not claim otherwise.
+  - Evidence: re-checked 2026-09-04 and accurate. `src/data/message_cache/mod.rs` stores mail
+    in plain SQLite; `rusqlite` carries no SQLCipher (`Cargo.toml:81`), so encrypting the cache
+    means SQLCipher or an application-level scheme, which is the build cost `CLAUDE.md` names.
+    `src/service/security.rs:222` and 423 both use `Aes256Gcm::new_from_slice`, so the primitive
+    is in the tree.
+    **The decision is already said in the documents and said nowhere in the product**, which is
+    exactly the split the first `[D]` line below asks about, so it is worth being precise. It
+    ships in `docs/installing.md:75` to 79, in bold and with the drive-removal and BitLocker
+    distinction; in `docs/privacy.md:27` to 30, plus line 38 for attachments and 52 for the
+    byte-for-byte copies of signed mail, which are two more unencrypted things neither the
+    roadmap nor this requirement mentions; in `docs/ALPHA_TESTING.md:143`; and in two installer
+    dialogs. It does not ship in the running program: `grep -i encrypt
+    src/presentation/first_run.rs` returns nothing, and the end of `--help`
+    (`src/presentation/command_line.rs:133` to 137) says everything that writes is experimental
+    and says nothing about the cache.
+    **A caution on where it goes, from the screen's own doc comment.** `first_run.rs:118` to 120
+    says `INTRODUCTION` "is read out in full by a screen reader before the person reaches the
+    buttons, so anything not worth hearing every time does not belong here". Appending a
+    paragraph about disk encryption to that constant makes every first run longer for every
+    user. The screen already has the pattern for this, a `READ_MORE` button that opens a shipped
+    document. Which of the two is a design question for the plan to raise rather than settle by
+    appending.
+    **One accuracy gap in the "what is stored" pages.** `docs/installing.md:61` to 67 and
+    `docs/privacy.md:15` to 21 list four subfolders and omit `security.key`, which
+    `src/common/paths.rs:98` to 100 places in the root. It is a legacy artefact that
+    `security.rs:157` to 163 says is never created any more and is only read to migrate an
+    upgraded machine, so the listing is right for a fresh install and wrong for an upgraded one.
 
   - [S] `CLAUDE.md`: "Encrypting it means encrypting the whole database, which is a decision
     with a build cost, not something to imply in a feature list."
@@ -875,12 +1354,29 @@ write path added by this milestone passes through that gate.
     requirement closes as a recorded decision, not as a silent drop.
 
 - [ ] **SHIP-05**: The crate builds and its tests pass on Linux and on macOS.
-  - Evidence: split from the disclosure below on 2026-08-29, because building on a platform and
-    telling its users what does not work there are different pieces of work with different
-    gates. Roadmap Cross-Platform is unticked. `Cargo.toml` gates Windows dependencies behind
+  - Evidence: corrected 2026-09-04, having been split from the disclosure below on 2026-08-29
+    because building on a platform and telling its users what does not work there are different
+    pieces of work with different gates. Right in substance, wrong on one line number, and it
+    puts the cost in the wrong place. Roadmap Cross-Platform is unticked. `Cargo.toml` gates Windows dependencies behind
     `[target.'cfg(windows)'.dependencies]`. Nothing in CI builds the crate off Windows: every
-    `runs-on:` in `.github/workflows/` is `windows-latest` except one `ubuntu-latest` job at
-    `ci.yml` line 133, which runs `cargo audit` and reads `Cargo.lock` without building.
+    `runs-on:` in `.github/workflows/` is `windows-latest` except one `ubuntu-latest` job, which
+    runs `cargo audit` and reads `Cargo.lock` without building. Ten Windows jobs across five
+    workflow files, one Ubuntu job.
+    Corrected 2026-09-04: that job is the `audit` job at `ci.yml:166`, not line 133. Line 133 is
+    inside a cache step of a Windows job. Drift rather than a substantive error, and it is the
+    reason this document now asks for symbols instead of line numbers.
+    **The cost is not in the CI YAML, and the requirement reads as though it were.**
+    `wxdragon` is pinned at `=0.9.17` with the `aui`, `richtext` and `webview` features
+    (`Cargo.toml:75`), and it vendors and statically builds wxWidgets from source rather than
+    linking a system library. A Linux job is therefore a source build of a C++ GUI toolkit plus
+    a system package install including `libwebkit2gtk-4.1-dev` for the webview, and a macOS job
+    is the same again on a more expensive runner. Whether that is minutes or tens of minutes has
+    not been measured, and it should be before a plan promises "another CI job". If it turns out
+    not to build at all, SHIP-05 is a port rather than a CI change, which is a different phase.
+    **The search handler is a second crate.** `search-handler/` is built separately by
+    `build-installer.sh:170` and linted separately at `ci.yml:150` to 153, and it is a Windows
+    COM server. "The crate builds on Linux" means the main crate only, and the plan should say
+    so rather than leave somebody to find out.
 
   - [S] Roadmap Cross-Platform, unticked.
   - [D] A CI job builds the crate and runs the test suite on Linux, and another on macOS, so a
@@ -891,10 +1387,30 @@ write path added by this milestone passes through that gate.
     there. Building is not the same claim.
 
 - [ ] **SHIP-06**: Off Windows, the application says what its accessibility layer does not do.
-  - Evidence: `CLAUDE.md` records that `wxAccessible` and `UiaRaiseNotificationEvent` exist
-    only on Windows, and that both compile and silently do nothing elsewhere. A build that
-    compiles and announces nothing is the failure mode this project has fixed repeatedly: the
-    switch that does nothing, with no way to tell from the inside.
+  - Evidence: rewritten 2026-09-04. The previous evidence reads as though nothing exists, and
+    almost all of it does. This is "route an existing fact to two places" rather than "build a
+    disclosure".
+    `CLAUDE.md` still records that `wxAccessible` and `UiaRaiseNotificationEvent` exist only on
+    Windows and that both compile and silently do nothing elsewhere. That much is unchanged.
+    **The derivation is built and reached.** `ScreenReaderBridge::default()`
+    (`src/presentation/accessibility/screen_reader.rs:650` to 665) sets `status` to
+    `NativeBridgeStatus::Active` on Windows and `NativeBridgeStatus::Fallback` everywhere else;
+    the enum is at 425 to 431, every call into the native layer is gated, and the tree carries 94
+    `target_os = "windows"` gates in total.
+    **The accessor is built and nothing calls it.** `ScreenReaderBridge::status` is at line 636
+    and `Accessibility::native_bridge_status` wraps it at
+    `src/presentation/accessibility.rs:429`. `grep -rn native_bridge_status src/ tests/` on
+    2026-09-04 returns exactly one hit, its own definition: not one caller, not even a test. It
+    is `pub`, so no `dead_code` warning fires, and `tests/wired.rs` cannot see it because that
+    guard is about command ids raised and handled rather than public functions with no callers.
+    That is guardrails 1 and 3 in the same function.
+    **One caveat on the second `[D]` line below.** It asks that the disclosure be derived from
+    what is compiled in rather than from a hardcoded platform list. `cfg!(target_os = "windows")`
+    is a platform list of one. It is better than a runtime string comparison, and if a macOS
+    bridge is ever written that expression does not change on its own and the warning would keep
+    appearing. Deriving it from whether a bridge function is present is what would actually
+    satisfy the criterion, and that is worth naming in the plan rather than letting the existing
+    expression pass as compliance.
 
   - [S] A macOS or Linux port needs its own bridge for each of those two, not a framework
     change.
@@ -912,8 +1428,11 @@ write path added by this milestone passes through that gate.
 ### Every number the project quotes
 
 - [ ] **PERF-01**: Memory under 150 MB with 1,000 cached messages, measured.
-  - Evidence: no `benches/` directory and no `criterion` or `divan` in `Cargo.toml`, so no
-    target below has a number attached. No memory profiling has been run.
+  - Evidence: re-checked 2026-09-04 and still accurate. No `benches/` directory, no `criterion`,
+    no `divan` and no `[[bench]]` in `Cargo.toml`, and nothing in `src/` reads resident memory,
+    so no target below has a number attached. The source of the target is
+    `docs/development/requirements-backlog.md:81`, "Memory profiling | Target <150MB with 1000
+    cached messages | Medium".
 
   - [S] `docs/development/requirements-backlog.md`, performance and scale, Medium.
   - [D] A repeatable measurement produces a number for resident memory with 1,000 cached
@@ -923,7 +1442,11 @@ write path added by this milestone passes through that gate.
     than the target quietly remaining aspirational.
 
 - [ ] **PERF-02**: Cold start under 2 seconds, measured.
-  - Evidence: startup time optimisation is unticked in roadmap Phase 8; nothing measures it.
+  - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:221` still reads
+    `- [ ] Startup time optimization (<2 seconds)`, unticked, and line 253 repeats it as a
+    success metric; `docs/development/requirements-backlog.md:82` carries it as Medium. Nothing
+    in `src/` times process start against a usable list. The "under 2 seconds" is a target
+    rather than a measurement and is correctly written as one.
   - [S] Roadmap Phase 8; `docs/development/requirements-backlog.md`.
   - [D] Cold start is measured from process start to the message list being usable, not to the
     window appearing, because an empty window is not a usable inbox.
@@ -931,10 +1454,25 @@ write path added by this milestone passes through that gate.
   - [D] The measurement is repeatable and recorded with the date, the machine and the build.
 
 - [ ] **PERF-03**: A real mailbox of 100,000 messages or more, exercised.
-  - Evidence: the design targets 200,000 rows; the largest thing exercised is a loopback
-    server. The mail-at-scale plan requires the virtual text callback to read from an in-memory
-    page cache and never touch SQLite, with pages of 200 rows around the viewport and a
-    placeholder on a cache miss.
+  - Evidence: rewritten 2026-09-04. "The largest thing exercised is a loopback server" is
+    false. A 200,000 row sample mailbox generator ships in the product, on the Help menu, put
+    there deliberately so that a screen reader user can arrow through one.
+    `SAMPLE_MAILBOX_SIZE` is 200,000 at `src/presentation/wx_app.rs:9125`, `sample_mailbox` at
+    9137 builds the rows, and `ID_LOAD_SCALE_SAMPLE` (line 93, item at 6281, handler at 4908) is
+    on the Help menu rather than behind a build flag, because as its doc comment says, the
+    people who most need to test it are not the people compiling it.
+    **So the first `[D]` line is half satisfied: the mechanism exists and is reachable, and the
+    numbers do not.** Nothing in the tree records a sort, filter or scroll timing from a sample
+    run.
+    **The second `[D]` line is not satisfied and is the part to keep.** The virtual text
+    callback at `wx_app.rs:1101` reads the whole loaded list out of `state.messages` in memory
+    and never touches SQLite, which a comment at 1093 states, but no test asserts it. Nor is the
+    mail-at-scale plan's paged design built: there is no page cache of 200 rows around the
+    viewport and no placeholder on a cache miss, because the whole list is held in memory.
+    `message_rows::PLACEHOLDER` exists and is returned only when the row index is past the end
+    of the loaded list.
+    The third `[D]` line, that no criterion here claims a real provider mailbox was used, is
+    still correct and still important.
 
   - [S] Roadmap Phase 8; `docs/plans/20260726-mail-at-scale.md`.
   - [S] Sorting 200,000 rows in memory on a header click is a multi-second freeze, and a freeze
@@ -948,7 +1486,8 @@ write path added by this milestone passes through that gate.
     list question; the provider question waits for a live account.
 
 - [ ] **PERF-04**: Idle memory under 100 MB, measured.
-  - Evidence: listed as a success metric in `docs/roadmap.md` with no measurement.
+  - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:254` reads
+    `- Low memory footprint (< 100MB idle)` under success metrics, with no measurement anywhere.
   - [S] Roadmap success metrics.
   - [D] Idle memory is measured after startup with a cache present and no user activity, and
     recorded with the date, machine and build.
@@ -956,8 +1495,15 @@ write path added by this milestone passes through that gate.
   - [D] The number is either under 100 MB or the target is revised with the reason.
 
 - [ ] **PERF-05**: Line coverage re-measured.
-  - Evidence: 60.4%, measured 2026-07-26 with `cargo llvm-cov --lib --summary-only`, stale
-    since. Roughly 275 commits have landed since.
+  - Evidence: corrected 2026-09-04. The coverage figure and its date are still right and the
+    commit count attached to them was out by a factor of about four.
+    60.4%, measured 2026-07-26 with `cargo llvm-cov --lib --summary-only`, stale since, and
+    still recorded that way at `docs/IMPLEMENTATION_STATUS.md:201`.
+    `git rev-list --count --since="2026-07-26" HEAD` on 2026-09-04 gives **1,195** commits
+    landed since, out of 1,373 in the repository, first commit 2026-02-13. So 87% of this
+    project's history postdates the reading. The "roughly 275" this line used to give was itself
+    a stale count when it was written and had never been re-taken, which is the same defect this
+    requirement is about, in the requirement about it.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [S] Coverage is the cheap wide sweep answering only "what never runs at all", and low
@@ -968,20 +1514,51 @@ write path added by this milestone passes through that gate.
     attributed rather than treated as a number to raise.
 
 - [ ] **PERF-06**: Every document that quotes a test count quotes the same measurement.
-  - Evidence: three documents give three numbers. `docs/IMPLEMENTATION_STATUS.md` line 104 says
-    3,362 (3,282 unit, 80 integration) measured 2026-08-09. `docs/changelog.md` and
-    `docs/integration-guide.md` say 5,269 "that run today".
-    `cargo test --all-targets -- --list` on 2026-08-29 counts 5,430: 5,269 unit and 161
-    integration. So the 5,269 is the unit count wearing the label of the total, and it is the
-    split, not the number, that catches that.
+  - Evidence: rewritten 2026-09-04. The three-way disagreement this evidence described is
+    closed, and the reconciled number has since moved, which is exactly what the third `[D]`
+    line says a check must not treat as a failure.
+    All three documents now agree. `docs/IMPLEMENTATION_STATUS.md:123` reads "5,430 tests pass:
+    5,269 unit and 161 integration, counted 2026-08-29 with
+    `cargo test --all-targets -- --list`", and line 124 names the superseded 3,362 from
+    2026-08-09 as what a number without its command and its date turns into.
+    `docs/changelog.md:1276` and 1280 and `docs/integration-guide.md:5` carry the same figures
+    with the same split. So the first two criteria below, the command with its date and the
+    unit-against-integration split, are already met by all three.
+    Re-measured 2026-09-04:
+
+    ```
+    cargo test --lib -- --list            counts 6,079      2026-09-04
+    cargo test --all-targets -- --list    counts 6,264      2026-09-04
+    ```
+
+    which makes the integration and other-target figure 185. The documents are therefore about
+    810 unit tests and 24 integration tests behind. Under the third criterion below that is a
+    stale measurement to refresh rather than a check to fail, and refreshing it is the remedy.
+    **One number in the documentation was stale in a way that is a defect rather than a drift,
+    and it has since been fixed.** `docs/changelog.md:8393` called the per-event feedback grid
+    "nine events by four channels" when there are sixteen
+    (`src/presentation/accessibility/feedback.rs:114`, `Event::ALL` is `[Event; 16]`). Corrected
+    2026-09-04. See FEEDBACK-01.
+    **On durations.** `CLAUDE.md` says a duration is the same kind of claim as a count, and two
+    inside this milestone carry no conditions. "A whole-tree mutation run is about two days"
+    appears at `docs/IMPLEMENTATION_STATUS.md:156` and `CLAUDE.md:323` with no machine, no date
+    and no thread setting, while `CLAUDE.md:465` gives "about 15 hours" for the 564-record guard
+    sweep after `WIXEN_TEST_THREADS` halved it. Those are two different jobs, and a reader
+    planning phase 8 has no way to tell which conditions either was taken under.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [D] Every count in the documentation carries the command it came from and the date it was
     taken, so a number that has moved reads as a stale measurement rather than as a current
     fact.
 
-  - [D] The count is split unit against integration, which is the distinction the three
-    numbers now in the tree disagree about.
+  - [D] The count is split unit against integration. That was the distinction the three numbers
+    in the tree used to disagree about; as of 2026-09-04 all three carry the split, and this
+    line now says keep it rather than add it.
+
+  - [D] Added 2026-09-04. A duration quoted in the documentation carries its conditions, because
+    `CLAUDE.md` treats a duration as the same kind of claim as a count: the machine, the date,
+    and any setting that changes it, such as `WIXEN_TEST_THREADS`. A figure with no conditions
+    is quoted to somebody planning work as though it transferred, and it does not.
 
   - [D] Nothing asserts that a number written in a document equals what `cargo test` reports.
     Corrected 2026-08-29: that is what this requirement used to ask for, and it is false the
@@ -990,11 +1567,25 @@ write path added by this milestone passes through that gate.
     moved.
 
 - [ ] **PERF-07**: A whole-tree mutation run, once, with a real result.
-  - Evidence: scoped runs only. mime and error on 2026-07-26; filters, due, tagging and
-    signatures on 2026-08-01 with 157 mutants; the four message-disposition modules on
-    2026-08-12 with 66 mutants and 1 survivor. A whole-tree run is about two days and has never
-    been done. `guards/guards.toml` holds 501 records, of which 192 had been hand-verified as
-    of 2026-08-12.
+  - Evidence: rewritten 2026-09-04. "A whole-tree run has never been done" is wrong, and the
+    difference matters to whoever plans one: reading "never been done" plans a first run without
+    knowing what shape of failure to expect.
+    Scoped runs plus one untrustworthy whole-tree run. mime and error on 2026-07-26; filters,
+    due, tagging and signatures on 2026-08-01 with 157 mutants; the four message-disposition
+    modules on 2026-08-12 with 66 mutants and 1 survivor. **A whole-tree run was attempted on
+    2026-08-05** and is recorded at `CLAUDE.md:544`: it marked 595 mutants unviable, of which
+    473 had never reached a compiler, so about a third of it was untested and its summary said
+    so nowhere. That run is why `scripts/mutants.sh` now refuses a partial run, a run whose
+    build failed before anything changed, and a run in which the suite was never once run
+    against a mutant. So what has never happened is a whole-tree run **with a result anybody can
+    trust**, not a whole-tree run.
+    `guards/guards.toml` holds **565** records, counted 2026-09-04 with
+    `grep -c "^\[\[guard\]\]" guards/guards.toml`; the previous evidence said 501, and
+    `CLAUDE.md:474` says 564 and is one behind. The "192 hand-verified as of 2026-08-12" figure
+    has no counterpart in the file today: every record carries a name and a measured red list,
+    so there is no marker separating verified from unverified and nothing for that number to
+    compare against.
+    The two `[S]` claims below about the script are unchanged and still accurate.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md` and `CLAUDE.md`.
   - [S] `scripts/mutants.sh` refuses to summarise a partial or degenerate run: a build that
@@ -1089,9 +1680,20 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 40 total
-- Mapped to phases: 40
+- v1 requirements: 44 total
+- Mapped to phases: 44
 - Unmapped: 0
+
+**Corrected 2026-09-04.** This block said 40 and 40. Counted from the file on 2026-09-04 with
+`grep -c '^- \[[ x]\] \*\*[A-Z]\+-[0-9]\+\*\*' .planning/REQUIREMENTS.md`, which gives 44, and
+the traceability table above has 44 rows. The 40 was right when the section below was written
+and three later splits added four requirements without the total being re-taken: PIM-04 became
+PIM-04, PIM-07 and PIM-08 when Pratik decided on 2026-08-29 that notes have a backend per
+account rather than one target; PIM-06 was cut out of PIM-03 the same day, once week and month
+views turned out not to exist; and SHIP-05 was split from SHIP-06 because building on a platform
+and disclosing what does not work there are different pieces of work with different gates. Each
+of those three splits is recorded in the requirement it came from. Nothing was added or dropped
+without a note, so the count was the only thing that fell behind.
 
 ## Where these came from
 
@@ -1111,6 +1713,12 @@ two sections and no others:
   FEEDBACK-03, placed with the accessibility work rather than with the performance work
   because it measures the same thing that phase is about.
 
+The 32 and the 8 add to 40, which is what this section counted and what the coverage block above
+said until 2026-09-04. There are 44 now. The four extra came from three splits made after this
+section was written, all of them recorded in the requirements they came from, and the totals here
+were never re-taken. Read the arithmetic above as the accounting at the moment of writing rather
+than as a current count.
+
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
 it had just written, and reached the brief without anyone counting the file. All 33 rows are
@@ -1118,4 +1726,17 @@ accounted for above, so nothing was dropped.
 
 ---
 *Requirements defined: 2026-08-29*
-*Last updated: 2026-08-29 after the first roadmap pass. Every [D] line is awaiting Pratik's review.*
+
+*Last updated: 2026-09-04. Thirty-seven of the forty-four Evidence blocks were touched against
+the tree at commit `d3c6c7d`, drawing on four research passes: the audit in
+`.planning/requirements-audit-2026-09-04.md`, covering FOLDER, THREAD, SEARCH, FEEDBACK and
+PERF, and the phase research documents for 4, 5 and 7. Twenty-four of those were wrong and were
+rewritten; the other thirteen were re-checked, found accurate, and given a dated command or
+symbol so that the next reader can tell a verified claim from an unexamined one. Every wrong
+block was wrong in the same direction, saying something was missing that had since shipped or
+naming a defect that had since been fixed. Nothing over-claimed.*
+
+*Not touched: the six SCALE blocks, corrected on 2026-09-03 from phase 3's research, which
+nothing in the later passes contradicts; and WRITE-03, corrected earlier on 2026-09-04. The
+coverage total was also corrected, from 40 to 44. Every [D] line is still awaiting Pratik's
+review.*
