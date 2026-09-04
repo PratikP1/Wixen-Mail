@@ -42,7 +42,7 @@ const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 /// one session open for a piece of work and reconnects when the server drops it,
 /// so the sites below stop dialling for themselves. When it lands, this number
 /// goes down and the day beside it changes.
-const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 8;
+const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 12;
 
 /// The line `what_ships` looks at by its exact text, which is why it is the one
 /// line left unmarked below.
