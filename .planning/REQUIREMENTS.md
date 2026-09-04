@@ -267,26 +267,36 @@ write path added by this milestone passes through that gate.
     rather than left unticked forever.
 
 - [ ] **SCALE-02**: Hold one connection open instead of signing in again per fetch.
-  - Evidence: corrected 2026-08-29, and again 2026-09-03 when every line number in it had
-    moved and the count was half the truth. The claim is right and the citation keeps going
-    stale, which is itself the argument for the counting test below.
+  - Evidence: the count is `tests/one_sign_in_per_piece_of_work.rs` and no longer this
+    paragraph. That test reads the shipping half of `src/presentation/wx_app.rs`, finds every
+    place that builds a `MailController` and connects it to IMAP without going through the
+    sign-in helper, and fails when the total moves, naming each site and the line it is on at
+    the moment it runs. **Twelve** on 2026-09-04.
+    The history is why the test exists, so it is kept rather than tidied away. This line said
+    **eight**, at eight line numbers, when it was written on 2026-08-29. By 2026-09-03 every
+    one of those eight lines had moved and not one of them was a connect site any more, and
+    the real count was twelve. Those twelve were then written down as line numbers too, and by
+    2026-09-04 seven of them had moved again, because the file had grown by twenty-one lines
+    in between. A plan budgeted against the first list would have been wrong twice over, about
+    which sites and by half about how many. Nothing noticed either time, and that is what a
+    test noticing is for.
+    The worst case, named as a case because a line number for it is the mistake above: marking
+    a single message read builds a controller, connects, issues one `set_flag`, and
+    disconnects, so one keystroke is a TLS handshake, a CAPABILITY, a LOGIN and a SELECT. It
+    is in `spawn_server_change` in `src/presentation/wx_app.rs`.
     `src/application/mail_session.rs` line 21, `a_session_at`, is the purpose-built helper that
-    signs in for one piece of work, and it has three production callers:
-    `deleting_at_the_server.rs` line 112, `sent_copy.rs` line 245 and `wx_app.rs` line 13485.
-    **Twelve** further sites in `src/presentation/wx_app.rs` bypass it, each building a
-    `MailController` of its own, calling `connect_imap`, and calling `disconnect_imap` on the
-    way out: lines 7555, 8124, 8405, 8627, 8803, 16289, 16450, 17509, 18249, 18350, 18439 and
-    18713. The earlier eight (11504, 11818, 11978, 12454, 13007, 13747, 13812, 14086) are not
-    connect sites any more, so a plan budgeted against that list would be wrong twice over.
-    The worst case is line 17509: marking one message read builds a controller, connects,
-    issues one `set_flag`, and disconnects.
+    signs in for one piece of work. It has three production callers, checked 2026-09-04:
+    `deleting_at_the_server.rs` line 112, `sent_copy.rs` line 245, and `spawn_draft_append` in
+    `wx_app.rs`.
     `src/application/mail_controller.rs` line 278, `require_imap`, is the single lock a held
     session would live behind, and it does not need replacing. There is no reconnect or retry
     anywhere in `mail_controller.rs`, `imap.rs` or `mail_sync.rs`.
     The budget starts at two rather than one: `watch_folder` (`mail_sync.rs` line 1165) already
-    holds its own connection for IDLE and is reached from `wx_app.rs` line 17212. The
-    mail-at-scale plan budgets one connection for IDLE and two or three for fetching, and notes
-    Gmail allows fifteen per account and punishes more.
+    holds its own connection for IDLE and is called from `spawn_mail_watch` in `wx_app.rs`.
+    That call was cited here as line 17212 and had moved to 17233 by 2026-09-04, which is the
+    same drift again in a citation nobody was watching.
+    The mail-at-scale plan budgets one connection for IDLE and two or three for fetching, and
+    notes Gmail allows fifteen per account and punishes more.
 
   - [S] `docs/changelog.md` known limitations: "Holding one connection open needs reconnect
     handling that is not built."
@@ -301,8 +311,19 @@ write path added by this milestone passes through that gate.
     the bound has a test.
 
   - [D] A test counts the sites that build a `MailController` and connect without going through
-    the sign-in helper. Eight bypasses accumulated behind a helper written to stop exactly
+    the sign-in helper. Twelve bypasses accumulated behind a helper written to stop exactly
     that, and nothing counted them.
+
+  - Partly closed by 03-02, and only the counting deliverable. The count is now
+    `tests/one_sign_in_per_piece_of_work.rs`, which reads the tree rather than asserting a
+    number, names the sites it finds when the total moves, and is coupled to
+    `src/presentation/wx_app.rs` by `guards/guards.toml` so it runs on the commits that could
+    change it. Twelve as of 2026-09-04.
+    The other three deliverables are 03-06's, and none of them is advanced by this. Reusing
+    one authenticated session across several messages, reconnecting once and retrying after a
+    dropped connection, and bounding the connections per account, all need a session with a
+    lifetime, and 03-02 counts rather than holds. The number is expected to fall when 03-06
+    lands, and the test is what will say whether it did and whether it stayed down.
 
 - [ ] **SCALE-03**: Fetch a whole mailbox, not only the newest 500 per folder.
   - Evidence: `src/application/mail_sync.rs` brings the newest 500 per folder on Check Mail;
