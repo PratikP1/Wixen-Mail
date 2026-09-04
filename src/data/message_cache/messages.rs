@@ -5721,6 +5721,251 @@ mod tests {
     }
 
     #[test]
+    fn test_two_messages_with_no_identity_of_their_own_are_two_messages() {
+        // The last arm of `WHICH_MESSAGE_THIS_ROW_IS`, which falls back to the
+        // row. A message carrying neither Gmail's identifier nor a Message-ID
+        // has nothing about it to be recognised by, and the answer has to be
+        // that it is only ever itself. Two of them in a folder holding all mail
+        // are two messages, whatever the count decides about which rows are
+        // copies of which.
+        //
+        // Three rows, one of them outside All Mail, so the set of messages held
+        // elsewhere is not empty. An empty one would answer this by accident.
+        let cache = fresh("all_mail_no_identity");
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+
+        for (uid, folder_id, day) in [(1, inbox, 1), (11, all_mail, 2), (12, all_mail, 3)] {
+            let mut nameless =
+                in_conversation(folder_id, uid, "No identifier", "root@example.com", day);
+            nameless.message_id = String::new();
+            cache.upsert_message(&nameless).unwrap();
+        }
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            3,
+            "two messages with nothing to be recognised by were taken for one"
+        );
+    }
+
+    /// A folder holding all mail on a server that offers no identifier of its
+    /// own, and one message it holds twice.
+    ///
+    /// `\All` is RFC 6154 and `holds_all_mail` is set from that attribute
+    /// whoever sent it, so this arrangement is not hypothetical: a server can
+    /// present every message a second time and never say `X-GM-MSGID`. The two
+    /// rows are one message and the only thing saying so is the `Message-ID`
+    /// the sender wrote.
+    fn a_copy_with_no_gmail_identifier(
+        name: &str,
+    ) -> (TempHome<super::super::MessageCache>, i64, i64, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "Archives/All");
+
+        let mut here = in_conversation(inbox, 1, "Quarterly report", "root@example.com", 1);
+        here.message_id = "<the-one-message@example.com>".to_string();
+        cache.upsert_message(&here).unwrap();
+
+        let mut copy = here.clone();
+        copy.folder_id = all_mail;
+        copy.uid = 11;
+        let copied = cache.upsert_message(&copy).unwrap();
+
+        (cache, inbox, all_mail, copied)
+    }
+
+    #[test]
+    fn test_a_copy_on_a_server_that_gives_no_identifier_of_its_own_is_counted_once() {
+        // The plan for this work said to tell messages apart by
+        // `COALESCE(gmail_msgid, id)`, which `searching.rs` uses. It is not
+        // enough once the folder exclusion is gone: with no Gmail identifier
+        // the two rows fall back to their own ids, so they are two messages and
+        // every conversation on such a server reports twice its size. That is
+        // the harm the folder exclusion existed to prevent, and it would have
+        // been traded for the archived-mail fix rather than fixed alongside it.
+        let (cache, inbox, _all_mail, _copied) =
+            a_copy_with_no_gmail_identifier("all_mail_no_gmail_id");
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            1,
+            "the copy was counted as a second message"
+        );
+    }
+
+    #[test]
+    fn test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy() {
+        // Ledger 8. The column held both spellings until 02.1-06: mail through
+        // `mail_parser` arrives bare and a draft this program files carries the
+        // brackets its header needs. `upsert_message` puts every write through
+        // `thread_identity::bare` now and `backfill_message_identifiers`
+        // corrects the older rows, but that backfill is not fatal when it
+        // fails, so a database it never finished still holds bracketed values.
+        //
+        // Written straight into the row, because that is the only way to have
+        // one: no writer in this build produces it.
+        let (cache, inbox, _all_mail, copied) =
+            a_copy_with_no_gmail_identifier("all_mail_two_spellings");
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET message_id = ?1 WHERE id = ?2",
+                params!["<the-one-message@example.com>", copied],
+            )
+            .unwrap();
+
+        let found = cache
+            .conversations_in(inbox, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(
+            conversation(&found, "root@example.com").messages,
+            1,
+            "a row the backfill never reached stopped being recognised as a copy"
+        );
+    }
+
+    #[test]
+    fn test_the_row_and_the_action_agree_over_every_conversation_fixture_here() {
+        // D-07 as one assertion rather than as two numbers somebody keeps in
+        // step by hand. Over every fixture in this module that builds a
+        // conversation, from every folder somebody can stand in, under both
+        // reaches, and for every conversation the fixture holds including the
+        // ones a folder does not show.
+        //
+        // That last part is what makes this more than the test it generalises.
+        // A conversation absent from the list has to be a conversation the
+        // action reaches nothing of, and a listing and an action that disagreed
+        // about which conversations exist would still agree about the ones both
+        // could see.
+        let split = split_across_two_folders("agreement_split");
+        let copies = a_label_and_its_all_mail_copies("agreement_copies");
+        let archived = archived_without_a_label("agreement_archived");
+
+        for (what, cache, folders, threads) in [
+            (
+                "a conversation split across two folders",
+                &split.0,
+                [split.1, split.2],
+                vec!["root@example.com"],
+            ),
+            (
+                "a label and the copies All Mail holds",
+                &copies.0,
+                [copies.1, copies.2],
+                vec!["root@example.com"],
+            ),
+            (
+                "mail archived with no label",
+                &archived.0,
+                [archived.1, archived.2],
+                vec!["root@example.com", "lunch@example.com"],
+            ),
+        ] {
+            for reach in [TheWholeAccount, ThisFolderOnly] {
+                for standing_in in folders {
+                    let listed = cache
+                        .conversations_in(standing_in, "acc", reach, None)
+                        .unwrap();
+                    for thread in &threads {
+                        let says = listed
+                            .iter()
+                            .find(|row| row.thread_id == *thread)
+                            .map_or(0, |row| row.messages);
+                        let reaching = cache
+                            .messages_in_conversation(thread, "acc", standing_in, reach)
+                            .unwrap();
+                        assert_eq!(
+                            says,
+                            reaching.len() as i64,
+                            "{what}: standing in folder {standing_in} with {reach:?}, \
+                             the row for {thread} says {says} and the action would take {}",
+                            reaching.len()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether two queries were built on the same scope.
+    ///
+    /// A prefix comparison, because the scope is the whole `WITH` and each query
+    /// puts its own `SELECT` after it.
+    ///
+    /// Written as a function over its inputs rather than as an assertion about
+    /// the two real queries, so the companions below can feed it a pair that
+    /// differs and a scope that says nothing. A check written only against the
+    /// real pair passes and cannot show that it would notice anything else.
+    fn built_on_the_same_scope(scope: &str, queries: [&str; 2]) -> bool {
+        !scope.trim().is_empty() && queries.iter().all(|query| query.starts_with(scope))
+    }
+
+    #[test]
+    fn test_both_conversation_queries_are_built_on_one_scope() {
+        // What the doc comment above the two queries has asked for since it was
+        // written, as a test rather than a sentence. D-07 needs the number named
+        // before a deletion to be the number of messages that go, and the only
+        // way to be sure is for both to decide which messages exist with the
+        // same text.
+        let scope = super::conversation_scope();
+        let listing = super::conversations_query(super::NEWEST_CONVERSATION_FIRST);
+        let of_one = super::messages_in_one_conversation();
+        assert!(
+            built_on_the_same_scope(&scope, [listing.as_str(), of_one.as_str()]),
+            "one of the two conversation queries no longer begins with the shared scope.\n\
+             scope:\n{scope}\n\nlisting:\n{listing}\n\nof one:\n{of_one}"
+        );
+    }
+
+    #[test]
+    fn test_the_shared_scope_still_names_the_parts_the_two_queries_share() {
+        // So that "the same scope" cannot quietly become "the same nothing". A
+        // scope that had stopped naming one of its three parts, or one of the
+        // three parameters, would still be a common prefix of both queries and
+        // the check above would still pass.
+        let scope = super::conversation_scope();
+        for part in ["reach AS", "elsewhere AS", "here AS", "?1", "?2", "?3"] {
+            assert!(
+                scope.contains(part),
+                "the scope the two conversation queries share no longer names {part}:\n{scope}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_query_that_went_its_own_way_is_caught() {
+        // The companion `CLAUDE.md` asks for. Invented source, one of the two
+        // queries carrying its own version of the scope, and the reading has to
+        // say no.
+        assert!(!built_on_the_same_scope(
+            "WITH reach AS (SELECT id FROM folders WHERE account_id = ?1)",
+            [
+                "WITH reach AS (SELECT id FROM folders WHERE account_id = ?1) SELECT m.id",
+                "WITH reach AS (SELECT id FROM folders WHERE account_id = ?2) SELECT m.id",
+            ]
+        ));
+    }
+
+    #[test]
+    fn test_an_empty_scope_is_not_two_queries_agreeing() {
+        // Every string begins with the empty string, so a reading that had
+        // stopped reading would answer yes about any two queries at all,
+        // including two with nothing whatever in common.
+        assert!(!built_on_the_same_scope(
+            "",
+            ["SELECT one thing", "SELECT another"]
+        ));
+    }
+
+    #[test]
     fn test_a_delete_reaches_the_message_archived_with_no_label() {
         // D-07: the number named before a deletion is the number of messages
         // that go. The archived message was in neither, so it survived a
