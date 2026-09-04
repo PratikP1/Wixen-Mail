@@ -32,6 +32,25 @@ have to be written before the change rather than after.
 Read this before planning anything, because three requirements describe work as absent that is
 present and reached from a non-test path.
 
+> **Correction, 2026-09-03, found while executing 03-01 task 2.** The
+> assumptions pass behind this document reported that the renumbering fact
+> reaches nothing in `src/presentation/`, and `03-01`'s objective was written
+> on that. This document never repeated the claim, which is why it is recorded
+> here rather than struck out below: the plan carried it and the plan is what
+> somebody executes.
+>
+> It is wrong. `FolderSync.renumbered` predates this phase and
+> `what_the_folder_sync_did` already turns it into the clause "read again after
+> the server renumbered it", sent as `StatusUpdated` from `wx_app.rs:18862`. So
+> the fact did reach somebody: as a clause with no number, at low priority, on
+> the `"status"` topic, where the next line replaces it.
+>
+> What was missing was the count and the channel, not the fact. Acting on the
+> claim as written would have shipped the same event twice a moment apart with
+> nobody having compared the two. The grep behind it looked for readers of
+> `renumbered` and did not follow the value into the struct it is carried on,
+> which is one hop further than "nothing reads this" was checked to.
+
 ### SCALE-01's sync state exists and is in use
 
 `folders.uid_validity` and `folders.highest_modseq` are additive columns at
