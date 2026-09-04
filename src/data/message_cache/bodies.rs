@@ -1622,6 +1622,7 @@ mod tests {
 mod a_database_from_the_schema_that_kept_text_inline {
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::MessageCache;
+    use rusqlite::Connection;
 
     /// `folders` and `messages` exactly as they shipped, before anything was
     /// added to either.
@@ -1675,13 +1676,42 @@ mod a_database_from_the_schema_that_kept_text_inline {
     /// Write a database from the schema above into `dir`, under the name the
     /// cache opens.
     fn write_a_database_from_the_old_schema(dir: &std::path::Path, held: &[HeldInline]) {
-        todo!(
-            "the {} statements of the old schema written into {}, with {} messages \
-             holding their text inline",
-            THE_SCHEMA_THAT_KEPT_TEXT_INLINE.len(),
-            dir.display(),
-            held.len()
+        let old = Connection::open(dir.join("message_cache.db"))
+            .unwrap_or_else(|e| panic!("a database at {}: {e}", dir.display()));
+
+        for statement in THE_SCHEMA_THAT_KEPT_TEXT_INLINE {
+            old.execute(statement, [])
+                .unwrap_or_else(|e| panic!("a table from the old schema: {e}"));
+        }
+        old.execute(
+            "INSERT INTO folders (id, account_id, name, path, folder_type)
+             VALUES (1, 'acc', 'INBOX', 'INBOX', 'Inbox')",
+            [],
         )
+        .expect("a folder for the messages to be in");
+
+        for message in held {
+            old.execute(
+                "INSERT INTO messages
+                     (uid, folder_id, message_id, subject, from_addr, to_addr, date,
+                      body_plain, body_html)
+                 VALUES (?1, 1, ?2, ?3, 'ada@example.com', 'me@example.com',
+                         '2026-07-20T10:00:00+00:00', ?4, ?5)",
+                rusqlite::params![
+                    message.uid,
+                    format!("<{}@example.com>", message.uid),
+                    message.subject,
+                    message.body_plain,
+                    message.body_html,
+                ],
+            )
+            .unwrap_or_else(|e| panic!("the message numbered {}: {e}", message.uid));
+        }
+
+        // Closed before the cache is given the same file, which is the order a
+        // real one arrives in: this database was written by a version that has
+        // exited.
+        drop(old);
     }
 
     /// That database, opened through the real cache, which is what migrates it.

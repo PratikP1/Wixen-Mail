@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 375 records have arrived since and have not been through it.
+# 377 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4050,7 +4050,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4083,7 +4083,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -12386,7 +12386,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 33 },
+    { file = "src/data/message_cache/bodies.rs", tests = 38 },
     { file = "src/data/message_cache/searching.rs", tests = 25 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -13400,7 +13400,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 113 },
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -13494,4 +13494,88 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 148 },
+]
+
+# ── The migration moves every row it found ─────────────────────────────────
+#
+# The break passes over a row whose plain text is there, which is the shape a
+# migration acquires when somebody adds a condition to it: the rows are still
+# found, still counted, and some of them are left where they were. `moved` goes
+# on reporting the number found, so the count is no defence.
+#
+# Measured by hand on 2026-09-04, the whole library, 6,084 passed and four
+# failed: the three tests over a database written from the old schema that read
+# text back, count what is still inline, or say which copy wins, and the older
+# one over a database this program wrote itself.
+#
+# Two of the tests beside them stay green through it, and that is worth writing
+# down. The count of messages does not move, because the break loses text and
+# not rows. And the second-open comparison passes because it compares one
+# broken migration with the same broken migration: both opens leave the same
+# thing behind, so nothing differs. A test that two runs agree cannot see a
+# fault that is the same both times.
+
+[[guard]]
+name = "the inline body migration moves every row it found"
+file = "src/data/message_cache/bodies.rs"
+before = """        let moved = pending.len();
+        for (id, plain, html) in pending {
+            self.save_message_body(id, plain.as_deref(), html.as_deref())?;"""
+after = """        let moved = pending.len();
+        for (id, plain, html) in pending {
+            if plain.is_some() {
+                continue;
+            }
+            self.save_message_body(id, plain.as_deref(), html.as_deref())?;"""
+red = [
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_a_row_holding_text_in_both_places_keeps_the_inline_copy",
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_every_message_that_had_text_still_has_it_after_the_open",
+    "data::message_cache::bodies::a_database_from_the_schema_that_kept_text_inline::test_the_inline_columns_are_empty_afterwards_so_the_space_is_reclaimed",
+    "data::message_cache::bodies::tests::test_existing_inline_bodies_are_migrated_not_lost",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 38 },
+]
+
+# ── A sync brings down no attachment ───────────────────────────────────────
+#
+# SCALE-04's third deliverable. The break is not a file fetched during a sync,
+# because a sync has nothing to fetch one with: a header fetch does not read a
+# message's structure, so `ImapMessage` carries `has_attachments` and no list.
+# It is the other half of the same promise, and a sync really could do it:
+# writing an attachment row from the one bit it does know, for a message nobody
+# has opened. That is a description with no file behind it, in the table the
+# reader reconciles against, on every message in the mailbox.
+#
+# Measured by hand on 2026-09-04: the whole library, 6,087 passed and one
+# failed, which is this guard. Nothing else in the tree asks whether a sync
+# writes attachments, so this one test is the whole of it.
+
+[[guard]]
+name = "a sync writes no attachment for a message nobody has opened"
+file = "src/application/mail_sync.rs"
+before = """    let arrived = cache.upsert_messages(&arriving)?;
+"""
+after = """    let arrived = cache.upsert_messages(&arriving)?;
+    for (row, message) in arrived.iter().zip(arriving.iter()) {
+        if message.has_attachments {
+            cache.replace_attachments(
+                *row,
+                &[crate::data::message_cache::CachedAttachment {
+                    id: 0,
+                    message_id: *row,
+                    filename: "attachment".to_string(),
+                    mime_type: "application/octet-stream".to_string(),
+                    size: message.size_bytes.unwrap_or_default(),
+                    content_id: None,
+                }],
+            )?;
+        }
+    }
+"""
+red = [
+    "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 114 },
 ]
