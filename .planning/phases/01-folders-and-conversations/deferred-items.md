@@ -266,6 +266,41 @@ a real window.
 
 ## Gmail mail that is archived with no label disappears from a conversation count
 
+**Closed by plan 03-04 on 2026-09-04.** The count no longer excludes a folder.
+It excludes a row whose message some other folder in reach already holds, by
+`WHICH_MESSAGE_THIS_ROW_IS`: Gmail's `X-GM-MSGID`, else the sender's
+`Message-ID` with its brackets trimmed, else the row itself. Both queries
+changed together, because they are one text now.
+
+Three things this entry got wrong, all of them the sort a later reader would
+have inherited.
+
+**The column is `messages.gmail_msgid`, not `gmail_message_id`.** The second is
+the field name on `ImapMessage`; the stored column has never been called that.
+
+**Choosing between the Gmail identifier and `Message-ID` was not the decision.**
+Both are needed. `\All` is RFC 6154 and `holds_all_mail` is set from that
+attribute whoever sent it, so a server that is not Gmail can hold a copy of every
+message and answer no `X-GM-MSGID` at all. With only the Gmail identifier and a
+fallback to the row, taking the folder exclusion out doubles every conversation
+on such a server, which is the harm the exclusion was there to prevent. What
+really was a decision is the third arm: a message carrying neither identifier
+falls back to its own row, so two copies of it count as two. A count that is too
+high is visible and a conversation that has vanished is not.
+
+**"One extra predicate in one query" is wrong three ways**, and `03-RESEARCH.md`
+had already found two of them. There are two queries and they must change
+together. The `here` CTE had no join to `folders`, so the rule needed one. And
+the predicate cannot be per-row on its own: knowing whether a row is a redundant
+copy needs the set of messages held elsewhere, which is a third CTE. The
+realised change is about 90 lines of SQL and doc comment rather than a predicate.
+
+**And this entry's fixture claim was the fourth.**
+`test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one` is
+named here as pinning the half that works. Its fixture held four different
+messages and called them copies, which the folder exclusion made impossible to
+notice. It pinned nothing until 03-04 re-fixtured it.
+
 **Found during:** 01-11, task 2, while implementing D-08's all-mail exclusion.
 
 D-08 says folders whose `holds_all_mail` server fact is true are excluded from a

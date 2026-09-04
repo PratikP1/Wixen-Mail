@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 44
+open_count: 48
 waived_count: 0
 fixed_count: 11
-total_count: 55
-last_updated: 2026-09-04T10:00:24.498Z
+total_count: 59
+last_updated: 2026-09-04T13:45:47.023Z
 ---
 
 # Broken Windows Ledger
@@ -70,6 +70,10 @@ last_updated: 2026-09-04T10:00:24.498Z
 | 53 | 03 | deviation | Cargo.toml |  | wxdragon is pinned at =0.9.17 and 0.9.21 is out. Checked 2026-09-03 while reporting the two defects this project had recorded as unreported. Ledger 28, ListCtrl::get_item_text losing the last character of every cell, was already reported by somebody else as AllenDang/wxDragon#205 against 0.9.19 and is fixed on master: the fix allocates needed_len + 1 and its comment names that issue and the same mechanism this project diagnosed. So 28 wants an upgrade rather than a report, and the workaround helper in tests/manager_dialog_labels.rs comes out when the upgrade lands. Ledger 41, TreeCtrl::cleanup_all_custom_data walking the tree and removing nothing, is still present on master and is now reported as AllenDang/wxDragon#214 with a suggested fix. Upgrading four minor versions of the UI framework is its own piece of work and is not phase 3's. | open |  | 2026-09-04T04:36:43.729Z |  |
 | 54 | 03 | deviation | src/presentation/wx_app.rs |  | A source-reading check reports findings as {path}:{at + 1} where the index comes from what_ships(text).lines().enumerate(), over every Rust file under src. That is the file's own line number only while nothing was cut above the finding: for any file with a #[cfg(test)] item above a send_status line the reported position is short by however many lines were deleted, silently and with a well-formed message pointing at the wrong line. Correct today for the files it reports on, which is why it reads as blessed practice and is the precedent a new source-reading check would copy. Found 2026-09-04 while writing tests/one_sign_in_per_piece_of_work.rs, which carries line numbers through the cut instead. Out of 03-02's scope. | open |  | 2026-09-04T05:46:15.242Z |  |
 | 55 | 03 | deviation | src/data/message_cache/mod.rs |  | Plan 03-03's must_have truth 'a marker that is wrong in the dangerous direction cannot lose a body, because a cheap probe that the marker never skips is what re-checks it' is unmet as written, and met more strongly in substance. No marker was built. Following the plan's own ordering through, a marker that never gates the question decides nothing: the probe answers in both branches and the marker is written and never read. What shipped is a partial index (idx_messages_inline_body) over exactly migrate_inline_bodies's condition, which makes the question free rather than making a wrong answer harmless, so there is no state that can be wrong at all. The reason not to add a marker later is a comment in mod.rs beside the index and in bodies.rs on THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE, and a guard record whose break is the marker the next person would reach for. Recorded so an audit comparing the plan's truths against the summary is not left guessing. | open |  | 2026-09-04T10:00:24.498Z |  |
+| 56 | 03 | unrun-verify | src/data/message_cache/messages.rs |  | Nothing in plan 03-04 has run against a real Gmail account, because this program has never been used with an account at all. The archived-with-no-label fix is proved against a mail cache built inside a test: real evidence about the SQL, no evidence about what Gmail sends. Specifically unverified: that a message archived without a label really appears in All Mail and nowhere else on a live account; that X-GM-MSGID really comes back on the same message under a label and in All Mail; that holds_all_mail is really set for Gmail's All Mail by a live LIST response. Closes only against a real account. | open |  | 2026-09-04T13:45:10.738Z |  |
+| 57 | 03 | deviation | src/data/message_cache/messages.rs |  | A message is still counted twice in a conversation if a server holds it in two places and gives it neither a Gmail identifier nor a Message-ID. WHICH_MESSAGE_THIS_ROW_IS falls back to the row id, so two such rows are two messages. Chosen deliberately over merging by row position: a count that is too high is visible, a conversation that has vanished is not. Also unfixed and pre-existing: a Gmail message under two labels counts twice, because both label rows are real rows outside All Mail and nothing says which label should lose. Fixing that needs the count and the delete list to become different questions, which is an architectural change rather than a predicate. | open |  | 2026-09-04T13:45:22.582Z |  |
+| 58 | 03 | deviation | src/data/message_cache/messages.rs |  | Measured cost of the identity filter, release build, warm, 200,000 rows in 10,000 conversations. On an account with a folder holding all mail the conversation listing goes from about 0.75s to about 1.2s, roughly 60 percent more, of which about 300ms is the filter and about 150ms the extra rows now in reach. On an account with no such folder there is no measurable difference, 0.86s against 0.85s, so the short-circuit claim in conversation_scope's doc comment was measured rather than assumed. Neither number is acceptable on its own terms: conversations_query has no LIMIT and groups the whole account on every listing, which is SCALE-03's subject and was true before this change. | open |  | 2026-09-04T13:45:35.198Z |  |
+| 59 | 03 | deviation | src/data/message_cache/searching.rs |  | searching.rs:539 groups search results by COALESCE(m.gmail_msgid, m.id), which is the identity plan 03-04 found insufficient for the conversation count. On a server that advertises the RFC 6154 All attribute and gives no Gmail identifier, a search shows the same message twice, once per copy. Same class of defect, same remedy available (the Message-ID arm of WHICH_MESSAGE_THIS_ROW_IS), pre-existing and outside 03-04's scope. test_one_gmail_message_under_two_labels_is_found_once covers the Gmail case only. | open |  | 2026-09-04T13:45:47.023Z |  |
 
 ````json
 [
@@ -731,6 +735,54 @@ last_updated: 2026-09-04T10:00:24.498Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-04T10:00:24.498Z",
+    "resolved_at": null
+  },
+  {
+    "id": 56,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "Nothing in plan 03-04 has run against a real Gmail account, because this program has never been used with an account at all. The archived-with-no-label fix is proved against a mail cache built inside a test: real evidence about the SQL, no evidence about what Gmail sends. Specifically unverified: that a message archived without a label really appears in All Mail and nowhere else on a live account; that X-GM-MSGID really comes back on the same message under a label and in All Mail; that holds_all_mail is really set for Gmail's All Mail by a live LIST response. Closes only against a real account.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T13:45:10.738Z",
+    "resolved_at": null
+  },
+  {
+    "id": 57,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "A message is still counted twice in a conversation if a server holds it in two places and gives it neither a Gmail identifier nor a Message-ID. WHICH_MESSAGE_THIS_ROW_IS falls back to the row id, so two such rows are two messages. Chosen deliberately over merging by row position: a count that is too high is visible, a conversation that has vanished is not. Also unfixed and pre-existing: a Gmail message under two labels counts twice, because both label rows are real rows outside All Mail and nothing says which label should lose. Fixing that needs the count and the delete list to become different questions, which is an architectural change rather than a predicate.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T13:45:22.582Z",
+    "resolved_at": null
+  },
+  {
+    "id": 58,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "Measured cost of the identity filter, release build, warm, 200,000 rows in 10,000 conversations. On an account with a folder holding all mail the conversation listing goes from about 0.75s to about 1.2s, roughly 60 percent more, of which about 300ms is the filter and about 150ms the extra rows now in reach. On an account with no such folder there is no measurable difference, 0.86s against 0.85s, so the short-circuit claim in conversation_scope's doc comment was measured rather than assumed. Neither number is acceptable on its own terms: conversations_query has no LIMIT and groups the whole account on every listing, which is SCALE-03's subject and was true before this change.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T13:45:35.198Z",
+    "resolved_at": null
+  },
+  {
+    "id": 59,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/data/message_cache/searching.rs",
+    "line": null,
+    "description": "searching.rs:539 groups search results by COALESCE(m.gmail_msgid, m.id), which is the identity plan 03-04 found insufficient for the conversation count. On a server that advertises the RFC 6154 All attribute and gives no Gmail identifier, a search shows the same message twice, once per copy. Same class of defect, same remedy available (the Message-ID arm of WHICH_MESSAGE_THIS_ROW_IS), pre-existing and outside 03-04's scope. test_one_gmail_message_under_two_labels_is_found_once covers the Gmail case only.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T13:45:47.023Z",
     "resolved_at": null
   }
 ]
