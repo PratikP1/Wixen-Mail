@@ -132,11 +132,31 @@ pub fn what_the_folder_sync_did(result: &FolderSync) -> String {
 
 /// What to say when the server renumbered a folder, or nothing when it did not.
 ///
-/// Not yet built. The stub is here so the tests below can name it and so the
-/// count it is supposed to carry is a failing assertion rather than a
-/// compiler error.
-pub fn what_the_renumbering_discarded(_result: &FolderSync) -> Option<String> {
-    None
+/// Its own sentence rather than a clause in the folder's summary, because it
+/// is a different kind of fact. The summary says what a sync did; this says
+/// that mail was deleted from this computer, which is the one thing in a sync
+/// somebody would want to be told about afterwards. It goes out on its own
+/// announcement topic for the same reason, and the arm in `wx_app` that sends
+/// it says so beside the call.
+///
+/// No protocol word in it. The server calls this UIDVALIDITY and nobody
+/// outside this codebase has any reason to know that; what a person needs is
+/// which folder, that the numbering changed, and how much it cost them.
+///
+/// Worded so the count is a noun phrase at the end and no verb has to agree
+/// with it. "1 message have been discarded" is what the obvious ordering
+/// produces, and a second wording for the singular is the thing
+/// [`crate::service::caldav::how_many`] exists to avoid.
+pub fn what_the_renumbering_discarded(result: &FolderSync) -> Option<String> {
+    if !result.renumbered {
+        return None;
+    }
+    Some(format!(
+        "The mail server gave {} new numbers, so what this computer held for it no longer \
+         matches. It has been discarded and is being read again: {}.",
+        result.folder,
+        crate::service::caldav::how_many(result.discarded_after_renumbering, "message")
+    ))
 }
 
 /// Add what the rules did to a summary, in one place.
@@ -1069,14 +1089,19 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         (status.uid_validity, cache.folder_uid_validity(folder_id)?),
         (Some(now), Some(before)) if now != before
     );
-    if renumbered {
+    // Said as well as logged. The log line stays because a log is where
+    // somebody looks after the fact; the count leaves here because nobody
+    // watching the program run ever sees a log line.
+    let discarded_after_renumbering = if renumbered {
         // Every UID we hold now names a different message, or none.
         tracing::info!(
             "{} was renumbered by the server; re-reading it",
             folder.name
         );
-        cache.forget_folder_messages(folder_id)?;
-    }
+        cache.forget_folder_messages(folder_id)?
+    } else {
+        0
+    };
     if let Some(validity) = status.uid_validity {
         cache.set_folder_uid_validity(folder_id, validity)?;
     }
@@ -1226,9 +1251,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             .map(|held| held.len())
             .unwrap_or(0),
         renumbered,
-        // Not carried out of the branch that knows it yet, which is what the
-        // failing test below says.
-        discarded_after_renumbering: 0,
+        discarded_after_renumbering,
         filtered,
     })
 }

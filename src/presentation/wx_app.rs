@@ -15226,6 +15226,27 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // they cannot be left to miss.
             let _ = a11y.announce_topic(why, Priority::High, "refusal");
         }
+        UIUpdate::FolderWasRenumbered(said) => {
+            // Its own topic rather than "status", and the precedent is the
+            // "message text" topic in the WhatCouldBeFetched arm above: it was
+            // split off for exactly this. "status" carries every steady sync
+            // line, the queue keeps only the newest of a topic, and this
+            // arrives in the middle of a sync, so announced there it would be
+            // replaced by the next "Checking Sent..." before anybody heard it.
+            //
+            // Normal rather than Low. Low is where progress belongs, and this
+            // is not progress: mail this computer was holding has been deleted
+            // and is being fetched again. Not High either, which is where the
+            // answer to a key somebody just pressed belongs; nobody pressed
+            // anything to cause this.
+            //
+            // Nothing written to the status bar. The folder's own summary line
+            // arrives a moment later on `StatusUpdated` and already carries
+            // "read again after the server renumbered it", so that is the
+            // visible half; writing here as well would only overwrite it with
+            // a longer sentence about the same event.
+            let _ = a11y.announce_topic(said, Priority::Normal, "renumbered");
+        }
         UIUpdate::OutboxSendResult {
             queue_id,
             success,
@@ -18858,6 +18879,17 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                     // The words are worked out where they can be tested. Built
                     // here, they were inside this closure with its own cache on
                     // a background thread, which nothing could reach.
+                    // Ahead of the summary, because it is the reason for it:
+                    // the summary's own "read again after the server
+                    // renumbered it" is the short form of this. Sent only when
+                    // it happened, and the words decide that, so this cannot
+                    // start announcing ordinary syncs by reading a flag the
+                    // wrong way round here.
+                    if let Some(said) =
+                        crate::application::mail_sync::what_the_renumbering_discarded(&result)
+                    {
+                        say(UIUpdate::FolderWasRenumbered(said));
+                    }
                     say(UIUpdate::StatusUpdated(
                         crate::application::mail_sync::what_the_folder_sync_did(&result),
                     ));
@@ -22927,6 +22959,21 @@ mod what_the_status_line_says {
         after[..end].to_string()
     }
 
+    /// The one `announce_topic` call in an arm, its arguments and nothing else.
+    ///
+    /// The arm around it is mostly prose, and the prose beside a topic
+    /// argument is where the choice of topic gets explained, so it names the
+    /// topics that were not chosen. A check reading the whole arm reads those
+    /// too and answers about the comment.
+    fn the_announcement_in(arm: &str) -> String {
+        let after = arm
+            .split_once("a11y.announce_topic(")
+            .expect("an arm that announces anything at all")
+            .1;
+        let end = after.find(");").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
     /// What an arm that writes to the status bar gets wrong.
     ///
     /// The status bar is a line at the bottom of a window, which is not
@@ -23095,12 +23142,17 @@ mod what_the_status_line_says {
             arm.contains("a11y.announce_topic("),
             "a folder discard that reaches only the status bar was written to nobody"
         );
+        // The call and not the arm. Written against the arm, every assertion
+        // below passed or failed on the comment beside the call, which quotes
+        // both "status" and the priorities it is choosing between: the first
+        // run of this reported an arm announcing on "status" that does not.
+        let call = the_announcement_in(&arm);
         assert!(
-            !arm.contains("\"status\""),
+            !call.contains("\"status\""),
             "on \"status\" the next sync line replaces this where it stands"
         );
         assert!(
-            arm.contains("Priority::Normal"),
+            call.contains("Priority::Normal"),
             "this happened to somebody's mail, so it is not progress"
         );
 
@@ -23112,6 +23164,36 @@ mod what_the_status_line_says {
             source.matches("UIUpdate::FolderWasRenumbered").count()
                 > handler.matches("UIUpdate::FolderWasRenumbered").count(),
             "nothing outside the update handler sends this, so the arm is unreachable"
+        );
+    }
+
+    #[test]
+    fn test_reading_an_announcement_can_tell_the_topic_from_the_talk_about_it() {
+        // Proving the measurement above, because the defect it was written
+        // against is one a source read produces rather than one it finds: an
+        // arm whose comment names "status" while its call names something else
+        // was reported as announcing on "status".
+        let with_a_comment = "\n            // Its own topic rather than \"status\", because the\n\
+            \x20           // queue keeps only the newest of a topic.\n\
+            \x20           let _ = a11y.announce_topic(said, Priority::Normal, \"renumbered\");\n\
+            \x20       }\n";
+        let call = the_announcement_in(with_a_comment);
+        assert!(
+            !call.contains("\"status\""),
+            "the reading took the comment's words for the call's"
+        );
+        assert!(
+            call.contains("\"renumbered\""),
+            "the reading did not reach the topic at all"
+        );
+
+        // And it still fails an arm that really does announce on "status",
+        // which is the whole point of being able to tell them apart.
+        let really_on_status =
+            "\n            let _ = a11y.announce_topic(said, Priority::Normal, \"status\");\n";
+        assert!(
+            the_announcement_in(really_on_status).contains("\"status\""),
+            "an arm that really announces on \"status\" was read as though it did not"
         );
     }
 

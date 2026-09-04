@@ -405,6 +405,23 @@ pub enum UIUpdate {
     /// and the answer to a key somebody just pressed can be the one that is
     /// dropped.
     CommandAnswered(String),
+    /// A folder was renumbered by its server, so what was held for it here was
+    /// thrown away and is being fetched again.
+    ///
+    /// Separate from [`Self::StatusUpdated`] for the reason
+    /// [`Self::CommandAnswered`] is: status is announced at low priority under
+    /// one shared topic, so a sync's own steady traffic replaces it where it
+    /// stands. A folder's summary line already carries a clause saying it was
+    /// read again, and that clause is what the next "Checking Sent..." drops.
+    /// This is mail deleted from somebody's computer, so it is not something
+    /// to lose to a progress line.
+    ///
+    /// Carries the finished sentence, not the count, because the words are
+    /// worked out by `mail_sync::what_the_renumbering_discarded`, where they
+    /// can be argued about in a test. Building them here would put them inside
+    /// a closure on a background thread, which is where the folder summary
+    /// used to be built and where nothing could reach it.
+    FolderWasRenumbered(String),
     /// A folder that was open has gone, so nothing should still name it.
     ///
     /// Sent by a worker that took a folder off the server, before the tree is
