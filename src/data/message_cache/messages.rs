@@ -3333,6 +3333,187 @@ mod tests {
         );
     }
 
+    /// The three messages the split-conversation fixture writes: the uid, the
+    /// message identifier, the chain, and the conversation an older version of
+    /// this program filed it under.
+    ///
+    /// What arrival order `a@x`, `x@x`, `c@x` left behind before there was a
+    /// table recording what a message names. `x@x` names both roots, so the
+    /// three are one conversation and nothing stored could see it.
+    const THE_SPLIT_CONVERSATION: [(u32, &str, Option<&str>, &str); 3] = [
+        (1, "a@x", None, "a@x"),
+        (2, "c@x", None, "c@x"),
+        (3, "x@x", Some("a@x c@x"), "a@x"),
+    ];
+
+    /// Write that split conversation into a database at `dir`.
+    ///
+    /// The rows go in directly rather than through `upsert_message`, because
+    /// that path records what each message names and a fixture built with it
+    /// would arrive already merged, so it could never be red. This is what a
+    /// database written before this change looks like the moment its schema
+    /// has been brought up to date: the messages, the conversations an older
+    /// version put them in, and an empty identifier table.
+    fn write_a_split_conversation(dir: &std::path::Path) {
+        let older = super::super::MessageCache::new(dir.to_path_buf(), None)
+            .expect("a cache to write the schema");
+        let inbox = folder(&older, "INBOX");
+        for (uid, message_id, chain, conversation) in THE_SPLIT_CONVERSATION {
+            older
+                .conn
+                .execute(
+                    "INSERT INTO messages
+                         (uid, folder_id, message_id, subject, from_addr, to_addr, date,
+                          refs_header, thread_id)
+                     VALUES (?1, ?2, ?3, 'A message', 'ada@example.com', 'me@example.com',
+                             '2026-07-20T10:00:00+00:00', ?4, ?5)",
+                    params![uid, inbox, message_id, chain, conversation],
+                )
+                .expect("a message written the way an older version wrote one");
+        }
+        assert_eq!(
+            how_many_identifiers_recorded(&older),
+            0,
+            "the fixture has to leave the identifier table empty, or it is not a \
+             database written before there was one"
+        );
+        // Closed before the same file is handed to another cache, which is the
+        // order a real one arrives in: this database was written by a version
+        // that has exited.
+        drop(older);
+    }
+
+    /// That database, opened through the real cache, which is what fills it.
+    fn a_split_conversation_opened_again() -> TempHome<super::super::MessageCache> {
+        TempHome::named("wixen_split_conversation_", |dir| {
+            write_a_split_conversation(dir);
+            super::super::MessageCache::new(dir.to_path_buf(), None)
+                .expect("a database holding a split conversation opens")
+        })
+    }
+
+    /// How much mail the cache holds, and how many conversations it is in.
+    ///
+    /// Both, because either on its own can be satisfied the wrong way: one
+    /// conversation is what a merge looks like and it is also what deleting
+    /// two of the three messages looks like.
+    fn how_much_mail_and_how_many_conversations(
+        cache: &super::super::MessageCache,
+    ) -> (usize, usize) {
+        let mail = cache
+            .conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("the messages to be countable");
+        let conversations = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(DISTINCT thread_id) FROM messages
+                 WHERE thread_id IS NOT NULL AND thread_id != ''",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("the conversations to be countable");
+        (mail as usize, conversations as usize)
+    }
+
+    /// How many identifiers the cache has recorded, over every message.
+    fn how_many_identifiers_recorded(cache: &super::super::MessageCache) -> usize {
+        cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM identifiers_a_message_names",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("the recorded identifiers to be countable") as usize
+    }
+
+    #[test]
+    fn test_a_conversation_split_before_there_was_an_identifier_table_joins_when_opened() {
+        // The backfill's whole reason. A table that starts empty makes this
+        // change invisible to every conversation already stored, so the merges
+        // it enables would apply only to mail that has not arrived yet. To
+        // somebody who has been using this program, a fix that leaves their
+        // split conversations split is a fix that does not work.
+        let cache = a_split_conversation_opened_again();
+
+        assert_eq!(
+            how_much_mail_and_how_many_conversations(&cache).1,
+            1,
+            "the two halves of one conversation were still apart after opening"
+        );
+    }
+
+    #[test]
+    fn test_the_backfill_moves_conversations_and_not_mail() {
+        // The assertion that catches a backfill which merges by deleting.
+        // Three messages in one conversation and one message in one
+        // conversation both read as merged, so the count of mail is the only
+        // thing that tells them apart.
+        let cache = a_split_conversation_opened_again();
+
+        assert_eq!(
+            how_much_mail_and_how_many_conversations(&cache),
+            (THE_SPLIT_CONVERSATION.len(), 1),
+            "the fixture wrote {} messages in two conversations, and afterwards \
+             it must be the same messages in one",
+            THE_SPLIT_CONVERSATION.len()
+        );
+        assert_eq!(
+            how_many_identifiers_recorded(&cache),
+            // a@x names itself; c@x names itself; x@x names a@x, c@x and
+            // itself. Written out rather than counted from the fixture,
+            // because a body recording nothing would satisfy a count it
+            // derived from itself.
+            5,
+            "every identifier every stored message names is recorded against it"
+        );
+    }
+
+    #[test]
+    fn test_opening_a_database_that_has_already_been_filled_changes_nothing() {
+        // The second open, which is every open after the first for as long as
+        // somebody uses this program, so it is the one that must not walk the
+        // whole mailbox. What it can be asked here is the half a test can see:
+        // that it writes nothing and moves nothing.
+        //
+        // The first assertion is what stops the rest being satisfied by a
+        // backfill that never does anything at all.
+        let cache = a_split_conversation_opened_again();
+        let after_the_first = how_much_mail_and_how_many_conversations(&cache);
+        let recorded = how_many_identifiers_recorded(&cache);
+        assert_eq!(
+            after_the_first.1, 1,
+            "the first open has to have joined the conversation, or a second \
+             one changing nothing says only that nothing ever happens"
+        );
+
+        let again = super::super::MessageCache::new(cache.path().to_path_buf(), None)
+            .expect("the same database opens a second time");
+
+        assert_eq!(
+            how_much_mail_and_how_many_conversations(&again),
+            after_the_first
+        );
+        assert_eq!(
+            how_many_identifiers_recorded(&again),
+            recorded,
+            "the second open recorded what a message names all over again"
+        );
+    }
+
+    #[test]
+    fn test_a_database_with_no_messages_at_all_opens_and_records_nothing() {
+        // A new account, or a first run. The backfill walks nothing and must
+        // neither fail nor write.
+        let cache = fresh("backfill_over_nothing");
+
+        assert_eq!(how_much_mail_and_how_many_conversations(&cache), (0, 0));
+        assert_eq!(how_many_identifiers_recorded(&cache), 0);
+    }
+
     #[test]
     fn test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names() {
         // The ordinary case, and the positive half the absence assertions
