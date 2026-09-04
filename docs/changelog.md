@@ -6,6 +6,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **Wixen Mail no longer reads every message you have each time it starts.**
+  Older versions kept the text of a message in the same place as its subject
+  line and its date. Newer ones keep it separately, and every start looks for
+  text left over from an older version so it can move it across. That search
+  read every message in your cache, every time, before anything appeared on
+  screen.
+
+  It now goes straight to the messages that still have text in the old place,
+  which on a cache that has been opened once is none of them. Measured on a
+  cache holding two hundred thousand messages with all of their text already
+  moved: 32 milliseconds before, and under a tenth of a millisecond after. What
+  makes that possible is a small list inside the cache file, and it costs eight
+  kilobytes while it is empty.
+
+  Nothing about the move itself changed, and nothing was made conditional on
+  anything remembered. Wixen Mail still asks, on every start, whether any
+  message text is left in the old place, and still moves it when there is. It
+  deliberately does not keep a note saying the job is finished: a note like that
+  would have to be believed, and one that was wrong would leave your message
+  text somewhere nothing would ever look again.
+
 ### Fixed
 
 - **A first run no longer sets your spelling to English when Windows could not

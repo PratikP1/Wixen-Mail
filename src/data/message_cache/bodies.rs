@@ -73,7 +73,11 @@ const PACKING_EFFORT: flate2::Compression = flate2::Compression::new(6);
 /// left to move it.
 ///
 /// The cost is what gets attacked instead. Without an index this is a full read
-/// of the messages table on the way in, before anything is shown.
+/// of the messages table on the way in, before anything is shown. Measured on a
+/// release build at two hundred thousand messages, every one of them already
+/// migrated, warm: 32 ms reading every message against under a tenth of a
+/// millisecond reading an index that holds none of them. The index costs eight
+/// kilobytes while it holds nothing.
 ///
 /// `idx_messages_inline_body` is that index. Its `WHERE` is this `WHERE`
 /// exactly, which is what lets SQLite answer from it; change one and change the
@@ -2035,6 +2039,11 @@ mod the_migration_that_runs_on_every_open {
 
     #[test]
     fn test_the_migration_reads_an_index_rather_than_every_message_in_the_file() {
+        // What it is worth, measured on a release build at two hundred thousand
+        // messages all of them already migrated, warm: 32 ms against under a
+        // tenth of a millisecond, for eight kilobytes of index. Cold it is
+        // worse than that, because the read goes through the whole file and the
+        // lookup touches two pages.
         let cache = fresh("inline_migration_plan");
 
         let plan = how_it_will_be_answered(
