@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 374 records have arrived since and have not been through it.
+# 375 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11124,7 +11124,7 @@ red = [
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -11162,7 +11162,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -11184,7 +11184,7 @@ red = [
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -11604,7 +11604,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11823,7 +11823,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -11949,7 +11949,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -12053,7 +12053,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
         let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
@@ -12088,7 +12088,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12117,7 +12117,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13114,7 +13114,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
     { file = "src/presentation/message_columns.rs", tests = 37 },
 ]
 
@@ -13147,7 +13147,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -13180,7 +13180,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]
 
 [[guard]]
@@ -13204,7 +13204,7 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 144 },
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13461,4 +13461,37 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/one_sign_in_per_piece_of_work.rs", tests = 7 },
+]
+
+# ── A folder listing reads no message text ─────────────────────────────────
+#
+# The break is not a body table joined into the listing, because nobody would
+# write that. It is the plausible one: the snippet column falling back to the
+# inline body text when a row has no snippet, which is a change somebody makes
+# to fix an empty preview and which reads every body in the folder to show one
+# screen.
+#
+# It is also the break that shows why this guard reads columns rather than
+# tables. `messages` is a table a listing is allowed to read, so a check over
+# the table names in a query plan is green through this edit. `body_plain`
+# shipped in the original CREATE TABLE and cannot be dropped, so the inline
+# columns are a place message text can be read from for as long as this program
+# exists.
+#
+# Measured by hand on 2026-09-04: the whole library, 6,081 passed and exactly
+# one failed, which is the guard. Nothing else in the tree notices, because the
+# fallback changes no answer for any row that has a snippet and every fixture
+# here has one. That one test is therefore the whole defence.
+
+[[guard]]
+name = "a folder listing reads no message text"
+file = "src/data/message_cache/messages.rs"
+before = """                m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,"""
+after = """                m.to_addr, m.cc, m.reply_to, m.date,
+                COALESCE(m.snippet, m.body_plain), m.size_bytes,"""
+red = [
+    "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 148 },
 ]

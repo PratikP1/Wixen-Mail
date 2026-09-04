@@ -6659,12 +6659,112 @@ mod marking_read_tells_no_server {
 /// exact edit `guards/guards.toml` records as the break for this guard.
 #[cfg(test)]
 mod a_listing_reads_no_message_text {
+    use crate::common::temp_home::TempHome;
     use crate::presentation::message_columns::{By, MessageColumn, Sort, SortDirection};
     use rusqlite::Connection;
 
+    /// Every table a folder listing may read, and why it needs each.
+    ///
+    /// A closed set rather than a list of tables to avoid. A second place to
+    /// keep message text, written later by somebody who never read this file,
+    /// is caught by a closed set and invisible to a list of forbidden names.
+    /// Widening it is an edit somebody makes on purpose with a sentence to
+    /// write, rather than a test somebody quietens.
+    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 3] = [
+        (
+            "messages",
+            "the rows themselves: the subject, the addresses, the flags and the \
+             snippet, which is kept beside the message rather than inside its \
+             body precisely so a listing never needs the body",
+        ),
+        (
+            "folders",
+            "the join, which is what keeps a listing inside one account and one \
+             folder. Its account and its kind are read; nothing about a folder \
+             is shown on a message row",
+        ),
+        (
+            "attachments",
+            "asked whether any exist, at the EXISTS in listing_query, and never \
+             for their content. A paperclip on a row is a yes or a no, and the \
+             file it stands for lives in attachment_content, which is not on \
+             this list",
+        ),
+    ];
+
+    /// The columns message text has been kept in, taken out of the database
+    /// this guard asks its question against.
+    ///
+    /// Dropping tables is not enough on its own. Both of these shipped in the
+    /// original `CREATE TABLE`, so they are in every database this program has
+    /// ever written and cannot be dropped from one: `migrate_inline_bodies`
+    /// empties them on every open and the columns stay. A listing can therefore
+    /// read message text while naming no table it is not allowed to.
+    const WHERE_MESSAGE_TEXT_HAS_BEEN_KEPT: [(&str, &str); 2] = [
+        (
+            "body_plain",
+            "the plain text, inline, where it lived before bodies.rs moved it",
+        ),
+        ("body_html", "the HTML, inline, beside it"),
+    ];
+
     /// A database holding only what a folder listing is allowed to read.
+    ///
+    /// Built from a database this program really wrote rather than from a
+    /// schema written out here. A copy of the schema in a test is the copy that
+    /// goes stale, which is the argument [`super::listing_query`]'s own doc
+    /// comment makes about the query and which applies just as well to the
+    /// tables it reads: a column added to `messages` would have to be added
+    /// here too, and the day somebody forgot, this would fail for a reason that
+    /// has nothing to do with message text.
     fn a_database_holding_only_what_a_listing_may_read() -> Connection {
-        todo!("a database holding the allowed tables, with the message text taken out of it")
+        let real = TempHome::named("wixen_listing_reads", |dir| {
+            super::super::MessageCache::new(dir.to_path_buf(), None).expect("a cache")
+        });
+
+        let stripped = Connection::open_in_memory().expect("a database to take the text out of");
+        // The two functions the real connection is taught on the way in.
+        // `conversations_query` calls one of them, and a query naming a
+        // function SQLite has never heard of does not prepare either, so
+        // without these the guard would fail for the wrong reason.
+        super::super::fold_case_the_way_rust_does(&stripped).expect("case folding");
+        super::super::teach_it_what_a_conversation_is_called(&stripped)
+            .expect("what a conversation is called");
+
+        for (table, why) in WHAT_A_LISTING_MAY_READ {
+            let statement: String = real
+                .conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    rusqlite::params![table],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "a listing may read {table}, because {why}, and the schema \
+                         this program writes has no such table: {e}"
+                    )
+                });
+            stripped
+                .execute(&statement, [])
+                .unwrap_or_else(|e| panic!("{table} could not be built here: {e}"));
+        }
+
+        for (column, what) in WHERE_MESSAGE_TEXT_HAS_BEEN_KEPT {
+            // The half that makes this guard able to see anything. A drop that
+            // quietly did nothing would leave the column in place and every
+            // query below would prepare, so it is loud instead.
+            stripped
+                .execute(&format!("ALTER TABLE messages DROP COLUMN {column}"), [])
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "messages.{column}, {what}, could not be taken out, so this \
+                         guard would be asking nothing: {e}"
+                    )
+                });
+        }
+
+        stripped
     }
 
     /// Every order the list can be put in.
