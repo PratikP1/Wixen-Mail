@@ -459,9 +459,27 @@ write path added by this milestone passes through that gate.
     rather than the application quietly inserting an unlabelled image.
 
 - [ ] **WRITE-03**: Spell check while typing, with jumps between misspellings.
-  - Evidence: `src/application/spell_session.rs` checks on send only. Roadmap Phase 4 records
-    this as partial and notes it waits on a rich editor control. wxdragon is pinned at 0.9.17
-    with the `richtext` feature already enabled in `Cargo.toml`.
+  - Evidence: corrected 2026-09-04, and this one was dangerous rather than merely stale.
+    **Both halves of the old evidence were wrong.** It said spell check runs on send only and
+    that the feature waits on a rich editor control, helpfully noting that wxdragon ships with
+    `richtext` already enabled.
+    It ships. The composer's body carries `spellcheck` (`src/presentation/editor_document.rs`
+    lines 111 and 164), an earcon sounds at the end of a word the dictionary does not have
+    (`src/presentation/wx_compose.rs:2031-2037`), F7 walks between them
+    (`wx_compose.rs:2448`), and two settings control it, both defaulting on
+    (`src/data/config.rs:581` and `:594`).
+    The prescription was worse than the claim. `editor_document.rs:1-13` records that the body
+    is a `contenteditable` in a web view **rather than** a `wxRichTextCtrl`, that the reason is
+    accessibility rather than formatting, and that `wxRichTextCtrl` is drawn by wxWidgets on
+    every platform so it exposes no per-range accessibility attributes anywhere, which means
+    "no misspelling can ever be marked". A web view gets native spelling annotations from the
+    engine on all three platforms and each screen reader announces them itself.
+    So acting on this requirement would have swapped the control chosen for this product's
+    reason to exist for the one refused on exactly those grounds, and it would have looked like
+    clearing a known blocker while doing it.
+    What is genuinely missing is narrower and belongs in the deliverables below rather than
+    here: whether landing on a marked word offers its suggestions through the announcement
+    channel, and whether the walk reaches backwards as well as forwards.
 
   - [S] Roadmap Phase 4, marked partial: "Spell check while typing, jumping between
     misspellings, native screen reader announcement. Waits on a rich editor control."
@@ -768,12 +786,21 @@ write path added by this milestone passes through that gate.
     signature, with a timestamp countersignature, so the signature stays valid after the
     certificate expires.
 
-  - [D] What SmartScreen does is stated, not promised. Corrected 2026-08-29: this used to
-    require that the unknown-publisher warning stop appearing, which a valid signature does not
-    buy. Only an EV certificate carries reputation from the first download, and EV is the last
-    resort here, behind SignPath Foundation and Azure Trusted Signing. A correctly signed
-    installer from either of those still shows the warning until reputation accrues, so the
-    requirement would have failed on the right decision.
+  - [D] What SmartScreen does is stated, not promised. Corrected twice. On 2026-08-29 this
+    stopped requiring that the unknown-publisher warning disappear, which a valid signature
+    does not buy. On 2026-09-04 the replacement turned out to be wrong as well: it said only
+    an EV certificate carries reputation from the first download. Microsoft's own page, at
+    https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation
+    and updated 2026-08-17, says the opposite in as many words: "EV certificates no longer
+    bypass SmartScreen... this behavior no longer exists", and its table gives OV and EV the
+    same first-download outcome, a warning until reputation accumulates.
+    So **no certificate available to this project removes the warning immediately**. Only the
+    Microsoft Store does. What signing buys is the publisher's name in the box instead of an
+    unknown one, protection against Smart App Control on Windows 11, and reputation that
+    carries from one release to the next when the same identity signs them.
+    Worth noting how this stayed wrong: the 2026-08-29 correction narrowed the claim rather
+    than rechecking its source, and the source had changed underneath it. An external fact in
+    a project document goes false with no commit to this repository.
 
   - [D] While the warning remains, `docs/installing.md` keeps its walkthrough, including that
     the Run button does not exist until More info is activated and that the button focus lands

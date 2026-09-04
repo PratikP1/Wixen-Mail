@@ -21,9 +21,21 @@ anyway** and press Enter. Do not press the button you land on first: that is
 **Don't run**.
 
 This is not a fault in the download and it is not a virus warning. It means
-nobody has paid a certificate authority to vouch for the publisher yet, which
-is being sorted out during testing. Once the setup file is signed, this box
-stops appearing.
+Windows has not seen this particular file downloaded enough times yet to have
+formed an opinion about it.
+
+**Signing the setup file will not make this box go away**, and an earlier
+version of this page said it would. Microsoft's own guidance is plain about it:
+a signed application still gets the warning until enough people have downloaded
+it, and Extended Validation certificates stopped being an exception to that in
+2024. What signing does change is the name in the box. Instead of an unknown
+publisher, you see who actually made it, which is the thing worth checking
+before you press anything.
+
+What makes the box stop appearing is time and downloads. Windows watches how
+often a file is fetched and whether it behaves, and the warning fades once
+enough clean installs have accumulated. For a program at this stage, expect to
+keep seeing it.
 
 ## Choosing how to install
 
