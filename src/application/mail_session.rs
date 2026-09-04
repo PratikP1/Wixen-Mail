@@ -62,6 +62,30 @@ use tokio::sync::Mutex;
 use crate::application::mail_controller::MailController;
 use crate::data::account::Account;
 
+/// How many connections this program opens to one account's mail server.
+///
+/// Two, and the first of them is open before any mail is fetched.
+///
+/// One is held by [`crate::application::mail_sync::watch_folder`], which opens a
+/// client and a session of its own to sit in IDLE on the inbox and is dispatched
+/// at the end of every mail check. It is long-lived by design: that is what
+/// being told about new mail without asking costs.
+///
+/// One is the session this file hands out, shared by every piece of work for
+/// that account: marking read, flagging, moving, emptying, fetching a body,
+/// making a folder, the sync itself. That is one rather than one per command,
+/// which is what this number used to be and why it needed writing down.
+///
+/// Chosen with headroom rather than at anybody's limit. Gmail allows fifteen
+/// connections per account and punishes an account that opens more, so two per
+/// account leaves room for the several accounts somebody may have set up on the
+/// same provider before anything is near it.
+///
+/// Public because it is a stated fact about the program rather than an internal
+/// detail: the number of connections a mail client opens is something a person
+/// running one, and a provider counting them, are entitled to be told.
+pub const THE_CONNECTIONS_ONE_ACCOUNT_OPENS: usize = 2;
+
 /// One account's held session, behind the lock that makes signing in for it
 /// happen once.
 type TheSessionForOneAccount = Arc<Mutex<Option<Arc<MailController>>>>;
@@ -647,6 +671,58 @@ mod tests {
             "a connection that keeps dropping was dialled more than twice"
         );
 
+        no_longer_signed_in_to(&account.id).await;
+    }
+
+    #[tokio::test]
+    async fn test_the_connections_open_for_one_account_stay_within_the_budget() {
+        // Counted at the server, with the watched folder's connection in the
+        // count. A budget that left it out would be wrong by one before any
+        // mail was fetched, and that one is the long-lived one.
+        let _one_at_a_time = one_test_at_a_time().await;
+        let server = a_server_that_can("").await;
+        let account = an_account_at(&server, "the-budget");
+        let auth = crate::application::mail_auth::for_account(&account)
+            .await
+            .expect("the account's own sign-in");
+
+        let (_events, watching) = crate::application::mail_sync::watch_folder(
+            &account.imap_server,
+            server.port(),
+            &account.username,
+            &auth,
+            false,
+            "INBOX",
+        )
+        .await
+        .expect("the inbox to be watched");
+
+        assert!(
+            server.connections() >= 1,
+            "a watched folder holds a connection and none was counted, so this \
+             is a test that counted nothing rather than one that stayed within \
+             a budget"
+        );
+
+        let first = the_session_at(&account).await.expect("the server answered");
+        first
+            .select_folder("INBOX")
+            .await
+            .expect("the folder to open");
+        let second = the_session_at(&account).await.expect("the server answered");
+        second
+            .select_folder("INBOX")
+            .await
+            .expect("the folder to open");
+
+        assert!(
+            server.connections() <= THE_CONNECTIONS_ONE_ACCOUNT_OPENS,
+            "one account opened {} connections and the budget is {}",
+            server.connections(),
+            THE_CONNECTIONS_ONE_ACCOUNT_OPENS
+        );
+
+        let _ = watching.stop().await;
         no_longer_signed_in_to(&account.id).await;
     }
 }
