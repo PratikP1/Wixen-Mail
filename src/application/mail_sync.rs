@@ -436,6 +436,9 @@ pub(crate) const fn what_to_ask_for(
     if stored != now {
         return WhatToAskFor::EveryUid;
     }
+    let (Some(_), Some(_)) = (held.modseq, reported.highest_modseq) else {
+        return WhatToAskFor::EveryUid;
+    };
     match held.highest_uid {
         Some(highest) => WhatToAskFor::TheUidsAbove(highest),
         None => WhatToAskFor::EveryUid,

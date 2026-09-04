@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 389 records have arrived since and have not been through it.
+# 390 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 126 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4025,6 +4025,51 @@ tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 91 },
 ]
 
+# ── A folder that was synced before, asked what it holds all over again ──────
+#
+# SCALE-01. `sync_folder` listed every uid in a folder on every sync, so opening
+# a mailbox of forty thousand messages asked the server for forty thousand
+# numbers to find the three that had arrived. The state that makes the narrow
+# question possible had been stored and read back for a phase and a half, and
+# nothing acted on it.
+#
+# The break makes the decision never resume, by narrowing the arm that answers
+# the narrow question to a uid no message can have. Written that way rather than
+# as "always answer EveryUid" because a variant nothing constructs is dead code
+# and `-D warnings` refuses the build, so a break that deletes the resume cannot
+# be measured at all. That constraint is also why the flagship test below passed
+# at its own red commit: this record is the measurement standing in for it.
+#
+# Measured by hand on 2026-09-04, whole library, 6,147 tests. Two went red and
+# nothing else did.
+#
+# The opposite direction was taken by hand too, because a bound that can be
+# widened without a test failing is the defect this is about. Dropping the two
+# CONDSTORE conditions, so every folder with a matching numbering resumes,
+# reddens three: the two tests written for those conditions, and
+# `test_a_message_the_server_no_longer_has_leaves_the_list`, which is the
+# deletion detection saying it has stopped working. That third one is the whole
+# reason task 2's bounded comparison exists.
+
+[[guard]]
+name = "a folder that was synced before is not asked what it holds all over again"
+file = "src/application/mail_sync.rs"
+before = """    match held.highest_uid {
+        Some(highest) => WhatToAskFor::TheUidsAbove(highest),
+        None => WhatToAskFor::EveryUid,
+    }"""
+after = """    match held.highest_uid {
+        Some(highest) if highest == 0 => WhatToAskFor::TheUidsAbove(highest),
+        _ => WhatToAskFor::EveryUid,
+    }"""
+red = [
+    "application::mail_sync::tests::test_a_folder_that_was_synced_before_is_not_listed_again",
+    "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 126 },
+]
+
 # ── A mailbox counted full and then listed empty ─────────────────────────────
 #
 # Two commands ask about one mailbox in every sync and only one of them was
@@ -4034,25 +4079,51 @@ tests_last_seen = [
 # noticed the two disagreeing before the rows were deleted.
 #
 # The read side is fixed. This is the belt that does not depend on it.
+#
+# Re-pointed on 2026-09-04 by plan 03-07, which narrowed the check rather than
+# moving it: it takes the listing now instead of its length, because only a
+# listing claiming the whole mailbox can contradict a count of it. A resumed
+# sync asks about the uids above the highest one held and is answered with none
+# on every folder nothing has arrived in, so the old shape would have refused
+# the ordinary sync of every quiet mailbox.
+#
+# Worth knowing about the two checks that watch this file, because this change
+# slipped past one of them. Changing the call left the record's before-text
+# absent and its after-text present, which is exactly what a `scripts/guards.sh`
+# run in progress looks like, so `test_every_guard_record_still_names_one_place`
+# took the mid-measurement exemption and said nothing. The count check next door
+# is what named this record, and only because the same commit happened to change
+# the number of tests in the file.
+#
+# It is anchored on the function rather than on the call site now, and that is
+# the second half of the same lesson. The old anchor quoted the call and the
+# `uids_to_forget` line under it, so every plan that touches either of those
+# lines knocks this record over, and the next one to do so is the plan sitting
+# beside this one: task 2 replaces that call with the seam. The function's own
+# body is the thing this guard is really about and nothing else has a reason to
+# move it.
+#
+# Measured by hand on 2026-09-04, twice. Deleting the call site reddens one
+# test. Making the function always answer no, which is the anchor written down
+# here, reddens two: that test and the unit test for the rule itself, out of a
+# library of 6,147.
 
 [[guard]]
 name = "a mailbox the server counted and then would not list is not one that emptied"
 file = "src/application/mail_sync.rs"
-before = """    if listing_contradicts_the_count(on_server.uids().len(), counts.total) {
-        let counted = crate::service::caldav::how_many(counts.total as usize, "message");
-        let name = &folder.name;
-        return Err(Error::Protocol(format!(
-            "The mail server says {name} holds {counted}, then listed none of them. Nothing has been removed from this computer."
-        )));
-    }
-
-    let forgotten = uids_to_forget(&on_server, &stored);"""
-after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
+before = """fn listing_contradicts_the_count(listed: &ServerListing, counted: u32) -> bool {
+    matches!(listed, ServerListing::TheWholeMailbox(uids) if uids.is_empty()) && counted > 0
+}"""
+after = """fn listing_contradicts_the_count(listed: &ServerListing, counted: u32) -> bool {
+    let _ = (listed, counted);
+    false
+}"""
 red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
+    "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 126 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4085,7 +4156,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 126 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -13571,7 +13642,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 126 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -13868,7 +13939,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 126 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
