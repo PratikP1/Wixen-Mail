@@ -229,6 +229,43 @@ mod tests {
         .await
     }
 
+    /// A mail server that drops the connection the first `opens` times it is
+    /// asked to open a folder, and answers every one after that.
+    ///
+    /// What a provider does to a session that has been sitting idle, which is
+    /// the case this whole reconnect exists for: nothing is said, the socket
+    /// simply goes away, and the client finds out when it next speaks.
+    async fn a_server_that_hangs_up_on_the_first_folder_opens(opens: usize) -> Conversation {
+        let dropped = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            match said.split_whitespace().nth(1).unwrap_or_default() {
+                "CAPABILITY" => Turn::Say(format!("* CAPABILITY IMAP4rev1\r\n{tag} OK done\r\n")),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "SELECT" | "EXAMINE" => {
+                    let so_far = dropped.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if so_far < opens {
+                        Turn::HangUp
+                    } else {
+                        Turn::Say(format!(
+                            "* 0 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] valid\r\n\
+                             {tag} OK [READ-WRITE] open\r\n"
+                        ))
+                    }
+                }
+                "LOGOUT" => Turn::Say(format!("* BYE signing off\r\n{tag} OK done\r\n")),
+                _ => Turn::Say(format!("{tag} OK done\r\n")),
+            }
+        })
+        .await
+    }
+
+    /// The same server, dropping the connection every time a folder is opened.
+    async fn a_server_that_hangs_up_on_every_folder_open() -> Conversation {
+        a_server_that_hangs_up_on_the_first_folder_opens(usize::MAX).await
+    }
+
     /// An account whose mail server is the loopback one this test is holding.
     ///
     /// The id is the test's own, because the held sessions are keyed by it and
@@ -515,5 +552,119 @@ mod tests {
         waiting.abort();
         no_longer_signed_in_to(&answering.id).await;
         no_longer_signed_in_to("stalled").await;
+    }
+
+    #[tokio::test]
+    async fn test_one_sign_in_is_one_connection() {
+        // What says the connection count is a reading rather than a number this
+        // test file agrees with. Nought before anything is dialled, one after a
+        // sign-in, and the budget test below counts two: no constant answers
+        // all three.
+        let _one_at_a_time = one_test_at_a_time().await;
+        let server = a_server_that_can("").await;
+        let account = an_account_at(&server, "one-connection");
+
+        assert_eq!(
+            server.connections(),
+            0,
+            "something was dialled before anything asked for a session"
+        );
+
+        let _session = the_session_at(&account).await.expect("the server answered");
+
+        assert_eq!(
+            server.connections(),
+            1,
+            "one sign-in opened more than one connection"
+        );
+
+        no_longer_signed_in_to(&account.id).await;
+    }
+
+    #[tokio::test]
+    async fn test_a_connection_the_server_dropped_is_signed_in_again_and_the_work_finishes() {
+        // The connection goes away between one piece of work and the next, and
+        // the caller does not have to know: it asked for a folder and gets one.
+        let _one_at_a_time = one_test_at_a_time().await;
+        let server = a_server_that_hangs_up_on_the_first_folder_opens(1).await;
+        let account = an_account_at(&server, "dropped-once");
+
+        let session = the_session_at(&account).await.expect("the server answered");
+        session
+            .select_folder("INBOX")
+            .await
+            .expect("the folder to open after the connection was made again");
+
+        assert_eq!(
+            how_many_sign_ins(&server).await,
+            2,
+            "the dropped connection was not signed in again: {:?}",
+            server.transcript().await
+        );
+
+        no_longer_signed_in_to(&account.id).await;
+    }
+
+    #[tokio::test]
+    async fn test_a_reconnect_that_fails_too_is_refused_in_plain_words() {
+        // Nobody can act on "connection lost". The sentence says what happened,
+        // that a second attempt was made, and what to do next.
+        let _one_at_a_time = one_test_at_a_time().await;
+        let server = a_server_that_hangs_up_on_every_folder_open().await;
+        let account = an_account_at(&server, "dropped-always-words");
+
+        let session = the_session_at(&account).await.expect("the server answered");
+        let refused = session.select_folder("INBOX").await;
+
+        let Err(why) = refused else {
+            panic!("a server that hangs up on every folder open opened one");
+        };
+        let said = why.to_string();
+        assert!(
+            said.contains("connection to the mail server was lost"),
+            "the refusal does not say what happened: {said}"
+        );
+        assert!(
+            said.contains("tried once more"),
+            "the refusal does not say a second attempt was made: {said}"
+        );
+        assert!(
+            said.contains("try again"),
+            "the refusal does not say what to do next: {said}"
+        );
+        assert!(
+            !said.contains("Network error") && !said.contains("Protocol error"),
+            "the refusal reaches somebody with the layer's name in front of it: {said}"
+        );
+
+        no_longer_signed_in_to(&account.id).await;
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more() {
+        // Once means once. A loop that kept trying against a server that keeps
+        // dropping is what gets an account rate-limited, and Gmail punishes an
+        // account that opens more than fifteen connections.
+        let _one_at_a_time = one_test_at_a_time().await;
+        let server = a_server_that_hangs_up_on_every_folder_open().await;
+        let account = an_account_at(&server, "dropped-always-once");
+
+        let session = the_session_at(&account).await.expect("the server answered");
+        let _refused = session.select_folder("INBOX").await;
+
+        assert_eq!(
+            how_many_sign_ins(&server).await,
+            2,
+            "the first sign-in and exactly one more is what a dropped \
+             connection costs: {:?}",
+            server.transcript().await
+        );
+        assert_eq!(
+            server.connections(),
+            2,
+            "a connection that keeps dropping was dialled more than twice"
+        );
+
+        no_longer_signed_in_to(&account.id).await;
     }
 }
