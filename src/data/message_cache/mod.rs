@@ -2315,6 +2315,13 @@ impl MessageCache {
         // server with CONDSTORE. Holding it is what lets the next sync ask
         // what changed rather than re-reading every flag in the folder.
         self.ensure_column_exists("folders", "highest_modseq", "INTEGER")?;
+        // When this folder was last compared against the whole mailbox, which
+        // is how a message deleted on another device is noticed. Null means
+        // never, and never means the next sync compares: a bound whose unset
+        // value read as "recently" would be a way of never noticing a deletion
+        // at all. Every row in an existing database reads as never, which is
+        // the truthful answer, since nothing has ever written this.
+        self.ensure_column_exists("folders", "last_fully_compared", "TEXT")?;
         // Two facts the server reported about the folder, kept so the window
         // that asks somebody about it shows the same default the sync would
         // use. Working them out from the folder's name instead only holds for

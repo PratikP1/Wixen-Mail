@@ -702,6 +702,55 @@ impl MessageCache {
         Ok(())
     }
 
+    /// When this folder was last compared against the whole mailbox.
+    ///
+    /// `None` on a folder that never has been, which is every folder in a
+    /// database written before this column existed and every folder on an
+    /// account somebody has just added. That answer means "compare it now",
+    /// and the rule saying so is
+    /// [`crate::application::finding_what_was_deleted::whether_a_full_comparison_is_due`].
+    ///
+    /// A time that cannot be read back as one is `None` as well, for the same
+    /// reason: a comparison this program cannot date is one it cannot say is
+    /// recent, and the safe answer to that is to compare again.
+    pub fn folder_last_fully_compared(
+        &self,
+        folder_id: i64,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+        let written: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT last_fully_compared FROM folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read the folder state: {}", e)))?
+            .flatten();
+        Ok(written
+            .and_then(|at| chrono::DateTime::parse_from_rfc3339(&at).ok())
+            .map(|at| at.with_timezone(&chrono::Utc)))
+    }
+
+    /// Record that this folder has just been compared against the whole
+    /// mailbox.
+    ///
+    /// RFC 3339 in UTC, which sorts correctly as text and reads the same
+    /// wherever the computer is.
+    pub fn set_folder_last_fully_compared(
+        &self,
+        folder_id: i64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE folders SET last_fully_compared = ?1 WHERE id = ?2",
+                params![at.to_rfc3339(), folder_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record the folder state: {}", e)))?;
+        Ok(())
+    }
+
     /// What kind of folder this is, by its identifier.
     ///
     /// Asked before a folder is listed, because the Outbox is not read from the

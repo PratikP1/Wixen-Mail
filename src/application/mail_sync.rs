@@ -454,7 +454,7 @@ pub(crate) const fn what_to_ask_for(
 /// Comparing against a page would delete everything outside it. That was the
 /// whole of the rule and it was written here in prose. [`ServerListing`] is what
 /// enforces it now, and this paragraph is the reason rather than the rule.
-fn uids_to_forget(on_server: &ServerListing, stored: &[u32]) -> Vec<u32> {
+pub(crate) fn uids_to_forget(on_server: &ServerListing, stored: &[u32]) -> Vec<u32> {
     // A listing of part of a folder says nothing about the messages outside
     // it. Every uid held and not named is one this listing never asked about,
     // not one the server has lost, and the empty page is the case that would
@@ -4507,6 +4507,197 @@ mod tests {
             cache.stored_uids(id).expect("what is held").len(),
             before + 1,
             "a resume that added one message did not leave the other four alone"
+        );
+    }
+
+    /// Every line of the shipping half of `src/application` that names the uid
+    /// comparison, with the file it is in.
+    fn where_the_uid_comparison_is_named() -> Vec<String> {
+        let mut found = Vec::new();
+        let mut looking = vec![std::path::PathBuf::from("src/application")];
+        while let Some(here) = looking.pop() {
+            let Ok(entries) = std::fs::read_dir(&here) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    looking.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|kind| kind != "rs") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                found.extend(
+                    crate::common::what_ships::what_ships(&text)
+                        .lines()
+                        .filter(|line| line.contains("uids_to_forget("))
+                        // Its own definition is not a call of it.
+                        .filter(|line| !line.contains("fn uids_to_forget("))
+                        .map(|line| format!("{}: {}", path.display(), line.trim())),
+                );
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison() {
+        // The seam, held to. A `sync_folder` that still calls the comparison
+        // directly has a seam in name only: the comparison could not be
+        // swapped for VANISHED without editing the sync, which is the whole
+        // property the seam was built to buy.
+        let found = where_the_uid_comparison_is_named();
+
+        assert_eq!(
+            found.len(),
+            1,
+            "{} places name the uid comparison:\n  {}\n\
+             One of them is the seam's own implementor and the rest are the \
+             sync reaching past it.",
+            found.len(),
+            found.join("\n  ")
+        );
+        assert!(
+            found[0].contains("finding_what_was_deleted"),
+            "the one place that names the comparison is not the seam's \
+             implementor: {}",
+            found[0]
+        );
+    }
+
+    #[test]
+    fn test_the_census_of_the_comparison_would_see_the_sync_naming_it() {
+        // Proving the reading. A walk that had stopped finding anything passes
+        // the assertion above by finding one thing less than it should, and
+        // nothing tells that apart from a tidy tree.
+        let found = where_the_uid_comparison_is_named();
+
+        assert!(
+            !found.is_empty(),
+            "the walk over src/application found no call at all, so it is \
+             reading nothing rather than finding one"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_due_a_comparison_is_listed_in_full_and_forgets_what_went() {
+        // The bound's whole reason. A folder that only ever resumes is asked
+        // about the uids above the highest one held, so a message deleted on
+        // another device is never in a listing this can compare against, and
+        // it stays here for good.
+        let (cache, id, folder) = a_cache();
+        a_folder_synced_against_a_server_that_answers_what_changed(&cache, id, &folder, 4, 1);
+        cache
+            .set_folder_last_fully_compared(
+                id,
+                chrono::Utc::now()
+                    - chrono::Duration::hours(
+                        crate::application::finding_what_was_deleted::A_FOLDER_IS_FULLY_COMPARED_EVERY,
+                    )
+                    - chrono::Duration::minutes(1),
+            )
+            .expect("a comparison time");
+
+        let server = Scripted {
+            on_server: vec![1, 2, 4],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 3,
+                unread: 0,
+            },
+            uid_validity: Some(1),
+            highest_modseq: Some(200),
+            ..Default::default()
+        };
+        let done = run(&server, &cache, id, &folder);
+
+        assert!(
+            what_it_was_asked(&server)
+                .iter()
+                .any(|line| line == LISTED_EVERY_UID),
+            "a folder that was due a comparison resumed instead"
+        );
+        assert_eq!(
+            done.forgotten, 1,
+            "the message deleted elsewhere is still here"
+        );
+        assert_eq!(cache.stored_uids(id).expect("what is held"), vec![1, 2, 4]);
+    }
+
+    #[test]
+    fn test_a_folder_compared_recently_is_not_listed_and_forgets_nothing() {
+        // The other half of the bound, and the saving. Between comparisons a
+        // folder resumes, which is what stops a forty thousand message mailbox
+        // being listed in full on every open.
+        let (cache, id, folder) = a_cache();
+        a_folder_synced_against_a_server_that_answers_what_changed(&cache, id, &folder, 4, 1);
+        cache
+            .set_folder_last_fully_compared(id, chrono::Utc::now())
+            .expect("a comparison time");
+
+        let server = Scripted {
+            on_server: vec![1, 2, 4],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 3,
+                unread: 0,
+            },
+            uid_validity: Some(1),
+            highest_modseq: Some(200),
+            ..Default::default()
+        };
+        let done = run(&server, &cache, id, &folder);
+
+        assert!(
+            !what_it_was_asked(&server)
+                .iter()
+                .any(|line| line == LISTED_EVERY_UID),
+            "a folder compared a moment ago was listed in full again"
+        );
+        assert_eq!(done.forgotten, 0);
+        assert_eq!(cache.stored_uids(id).expect("what is held").len(), 4);
+    }
+
+    #[test]
+    fn test_a_sync_that_compared_the_whole_folder_writes_down_when() {
+        // Without this the bound has nothing to measure from, so every sync
+        // reads "never compared" and compares, and the saving is never taken.
+        // Read back through a second cache on the same file, because the claim
+        // is that it survives the program closing rather than that it is in
+        // memory.
+        let (cache, id, folder) = a_cache();
+        assert_eq!(
+            cache.folder_last_fully_compared(id).expect("the state"),
+            None,
+            "a folder nothing has synced already claims a comparison"
+        );
+
+        run(
+            &Scripted {
+                on_server: vec![1, 2],
+                headers: vec![message(1), message(2)],
+                counts: crate::service::protocols::imap::FolderCounts {
+                    total: 2,
+                    unread: 0,
+                },
+                uid_validity: Some(1),
+                highest_modseq: Some(200),
+                ..Default::default()
+            },
+            &cache,
+            id,
+            &folder,
+        );
+
+        let reopened = MessageCache::new(cache.path().to_path_buf(), None).expect("a second cache");
+        assert!(
+            reopened
+                .folder_last_fully_compared(id)
+                .expect("the state")
+                .is_some(),
+            "a sync that listed the whole folder did not write down when"
         );
     }
 

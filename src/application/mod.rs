@@ -34,6 +34,7 @@ pub mod export_tree;
 pub mod favourites;
 pub mod filing;
 pub mod filters;
+pub mod finding_what_was_deleted;
 pub mod folder_settings;
 pub mod folders_underneath;
 pub mod font_choice;
