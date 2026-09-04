@@ -127,11 +127,32 @@ responses until the stream ends and hands back whatever it collected, so a
 socket closed before the tagged line comes back as `Ok(Mailbox::default())`:
 no UIDVALIDITY, nought messages.
 
-`mail_sync` reads an absent UIDVALIDITY as the server having renumbered the
-folder and calls `forget_folder_messages`, which is the arm 03-01's own guard
-record calls the one that would delete mail. So a connection dropping during a
-SELECT would have deleted a folder's cached copy and reported a sync that
-worked.
+**Corrected on review, 2026-09-04.** This passage said `mail_sync` reads an
+absent UIDVALIDITY as a renumbering and calls `forget_folder_messages`, and
+that this is the arm 03-01's guard record calls the one that would delete mail.
+That is not what happens, and it reads as though 03-01's protection failed. It
+held. The test is `matches!((status.uid_validity, stored), (Some(now),
+Some(before)) if now != before)`, so an absent value does not match and nothing
+is discarded. `Mailbox::default()` gives `uid_validity: None`, which is exactly
+the arm 03-01 made safe.
+
+The real chain is worse, because the safety check and the hazard share a cause.
+On a dead connection all three commands truncate together. `folder_counts`
+comes back with nought messages, the SELECT comes back as an empty folder, and
+`list_uids` comes back empty. `sync_folder` claims that empty listing as
+`ServerListing::TheWholeMailbox`, honestly, because it really did ask for the
+whole folder. Every uid held is then absent from it, so `uids_to_forget` names
+all of them and `forget_messages` empties the cache.
+
+`listing_contradicts_the_count` exists to catch precisely that, and it is
+`listed == 0 && counted > 0`. The count is nought, so it does not fire. **The
+same failure that empties the listing disarms the only check standing in front
+of it.**
+
+So a connection dropping across a folder sync would have deleted that folder's
+cached copy and reported a sync that worked. The fix below is right either way,
+because it stops a command that never completed being reported as one that did,
+which is the defect underneath both readings.
 
 `select_folder` is written as a command line now and goes through
 `read_command`, which raises a stream that ends before the tagged line as a
