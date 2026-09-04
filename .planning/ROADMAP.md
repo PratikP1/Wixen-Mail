@@ -281,7 +281,7 @@ announcement topic a whole-folder fetch belongs on.
 - [ ] `03-02-PLAN.md` — Count, in a test, the sign-ins that go round the helper, so the number stops going stale in a document
 - [ ] `03-03-PLAN.md` — Prove the storage split that already ships, stop a migrated database paying for the migration on every open, and pin the numbering rule a dispatcher currently holds
 - [ ] `03-04-PLAN.md` — Gmail mail archived with no label counts toward its conversation, by identity rather than by folder
-- [ ] `03-05-PLAN.md` — A conversation root that arrives late merges, and the backfill that makes the fix visible on mail already stored
+- [x] `03-05-PLAN.md` — A conversation root that arrives late merges, and the backfill that makes the fix visible on mail already stored
 - [ ] `03-06-PLAN.md` — One session held open per account, one reconnect, and a budget with a number
 - [ ] `03-07-PLAN.md` — Resume a folder instead of re-listing it, behind a seam over how deletions are found, and let somebody ask for a whole one
 - [ ] `03-08-PLAN.md` — Offline mode does what it says, the network is noticed, and coming back is offered rather than done
@@ -290,8 +290,8 @@ announcement topic a whole-folder fetch belongs on.
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
 
 - ~~Gmail mail archived with no label vanishes from a conversation count, because D-08 excludes All Mail by folder rather than by message identity.~~ Closed by `03-04`. "One extra predicate in one query" was wrong three ways: there are two queries and they must change together, the `here` CTE had no join to `folders`, and a per-row rule needs the set of messages held elsewhere, which is a third CTE. About 90 lines of SQL.
-- A conversation root arriving after a message that already names it is not merged, so three of six arrival orders over such a set merge. One table, one index, one writer.
-- `next_local_uid` hands out 0 after the number range wraps, because it saturates on `i64` and then casts to `u32`. Not reachable in any database this program can currently produce.
+- ~~A conversation root arriving after a message that already names it is not merged, so three of six arrival orders over such a set merge. One table, one index, one writer.~~ Closed by `03-05`. "One table, one index, one writer" left out two things that cost more than the table: a backfill, without which the fix reaches only mail that has not arrived yet, and the winner rule, which made the arriving message's conversation win and so gave the same three messages different names depending on which arrived last.
+- ~~`next_local_uid` hands out 0 after the number range wraps, because it saturates on `i64` and then casts to `u32`. Not reachable in any database this program can currently produce.~~ Closed by `03-03`. Struck here by `03-05` rather than by `03-03`'s own docs commit, which updated `REQUIREMENTS.md` and `deferred-items.md` and missed this line; `03-04` found it and left it alone rather than edit another branch's record, and this branch holds both.
 
 ### Phase 4: Writing and reading a message in full
 

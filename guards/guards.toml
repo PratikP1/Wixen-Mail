@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 385 records have arrived since and have not been through it.
+# 387 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11108,6 +11108,30 @@ file = "src/data/message_cache/messages.rs"
 # also the plainest argument this file has for putting all of a plan's tests in
 # one commit: the second measurement cost the same as the first and found the
 # same kind of thing.
+#
+# And an eighth time on 2026-09-04, after plan 03-05 added ten tests to this
+# file. Forty-one became forty-two, and the arithmetic hides what happened: the
+# first run of it reported one new test red and one NAMED test green, and only
+# the second direction was the finding.
+#
+# The new one asks that a row still holding the older bracketed spelling names
+# its conversation, which a column nothing fills cannot answer.
+#
+# The named one that had gone green is `test_the_same_message_arriving_twice
+# _moves_nothing_the_second_time`, and it went green because 03-05 rewrote it.
+# The merge now records what a message named against the message, so it needs a
+# row that exists, and the test was changed to store the connector through the
+# real path and ask again. Its new first assertion counted distinct
+# conversations, which is one when every row holds the same conversation AND one
+# when every row holds nothing, so under this break it passed. A test weakened
+# by an edit nobody would have called risky, caught by this record and by
+# nothing else. It names the conversation it expects now, and is red under the
+# break again, which is why the list grew by one rather than swapping a member.
+#
+# That is the argument for asking in both directions, in one measurement. A run
+# that only asked "did the named tests go red" would have reported the new test
+# as an unnamed failure and said nothing about the weakened one. A count check
+# would have flagged the record and neither.
 before = """                    &conversation,"""
 after = """                    None::<String>,"""
 red = [
@@ -11133,6 +11157,7 @@ red = [
     "data::message_cache::messages::tests::test_a_reply_arriving_into_an_open_folder_joins_the_conversation_it_names",
     "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
     "data::message_cache::messages::tests::test_a_second_sort_level_is_taken_over_the_conversation_too",
+    "data::message_cache::messages::tests::test_a_stored_row_holding_the_bracketed_spelling_still_names_its_conversation",
     "data::message_cache::messages::tests::test_an_identifier_nothing_holds_names_no_conversation",
     "data::message_cache::messages::tests::test_an_older_message_arriving_renames_the_conversation",
     "data::message_cache::messages::tests::test_both_views_of_the_safety_column_rank_the_verdicts_the_same_way",
@@ -11154,7 +11179,7 @@ red = [
     "presentation::wx_app::tests::test_mail_arriving_into_an_open_folder_showing_conversations_rereads_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -11192,7 +11217,7 @@ red = [
     "data::message_cache::messages::tests::test_the_same_message_downloaded_and_filed_carries_one_conversation_id",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -11207,14 +11232,24 @@ file = "src/data/message_cache/messages.rs"
 # stays green under this break, because a backfill that fills everything still
 # fills those. A record measured by expectation rather than by hand would
 # probably have named it, and it would have been wrong.
+#
+# Measured a second time on 2026-09-04, prompted by the count check after plan
+# 03-05 added ten tests to this file. Two became three, and the third is not
+# about this backfill at all: it opens a database twice and asks that the second
+# open changes nothing. A backfill that fills every row rather than the empty
+# ones rewrites, on the second open, every conversation id the first open's
+# merges settled on, so the second open changes plenty. Two backfills that run
+# one after the other on the same open are coupled by the column they share, and
+# nobody would have filtered for this record while writing that test.
 before = """                 WHERE thread_id IS NULL","""
 after = """                 WHERE 1 = 1","""
 red = [
+    "data::message_cache::messages::tests::test_opening_a_database_that_has_already_been_filled_changes_nothing",
     "data::message_cache::messages::tests::test_the_backfill_never_writes_over_an_id_that_is_there_already",
     "data::message_cache::messages::tests::test_the_backfill_run_again_fills_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -11634,7 +11669,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
 ]
 
@@ -11853,7 +11888,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -11951,7 +11986,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_is_the_unread_messages_by_the_same_reach",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -12000,7 +12035,7 @@ red = [
     "data::message_cache::messages::tests::test_the_unread_count_holds_a_message_archived_with_no_label",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -12065,52 +12100,65 @@ tests_last_seen = [
 ]
 
 [[guard]]
-name = "an arriving message and the conversation rule agree, because one of them is not consulted"
-file = "src/data/message_cache/messages.rs"
-# Pitfall 6 and D-39, which is the decision this whole module was built to
-# make unavailable to get wrong. The defect is an incremental join that adopts
-# the conversation id it happened to find, rather than the one the arriving
-# message's own chain names. Adoption disagrees with the derivation, so the
-# same set of messages comes out under different names depending on which
-# arrived first, and anything keyed on a conversation id is silently orphaned.
+name = "a merged conversation settles on the same name whatever order its messages arrived in"
+file = "src/application/thread_identity.rs"
+# Pitfall 6 and D-39, moved here on 2026-09-04 because the break it used to
+# carry stopped discriminating that day, and the reason is worth the whole of
+# this comment.
 #
-# The break is adoption, written the way somebody would write it: take the
-# conversation the lookup found and use that. It has to name a found one
-# deterministically to be worth recording, which is why the lookup orders its
-# answer, and `last` rather than `first` because a chain names its root first
-# and first would be right here by luck rather than by rule.
+# It used to live in `merge_what_this_message_connects` and read: the defect is
+# an incremental join that adopts the conversation id it happened to find,
+# rather than the one the arriving message's own chain names, because adoption
+# disagrees with the derivation and the same set of messages then comes out
+# under different names depending on which arrived first. Its break was that
+# adoption, written as `found.last().map_or(conversation, ...)`. Measured on
+# 2026-08-31 it reddened three tests.
 #
-# Note what is NOT broken: `rejoin` still runs and still merges. This break
-# only changes which conversation wins, which is the point. A break that
-# stopped the merge altogether would prove the merge happens, not that it
-# agrees with the rule, and the record below already covers the merge.
+# Plan 03-05 changed the winner from the arriving message's own conversation to
+# the earliest identifier among all of them, because the old rule had no answer
+# for a chain naming only its parent and gave a different one depending on
+# arrival order. That makes adoption harmless: the winner is now a function of
+# the SET of conversations being merged, the arriving message's own is always in
+# that set because its row is written before the lookup is asked, and adopting
+# any member of a set does not change the set. Measured, not assumed: run
+# against the tree of 2026-09-04 the old break left all three of its named tests
+# green.
 #
-# Measured by hand on 2026-08-31 against the whole library, which passes 5803
-# at 0 failed with 1 ignored on `cargo test --lib`:
-# three tests. Two of them are the ones worth having, and neither is about a merge
-# failing to happen. The batch one fails because a conversation stored as one
-# batch and the same messages stored one at a time settle on different names,
-# which is Pitfall 6 exactly: the answer depends on what else was in hand. The
-# cross-folder one fails because the conversation that wins is the wrong one,
-# so the rewrite moves the surviving tree instead of the losing one.
+# So the defect it guarded is not unguarded, it is impossible, and what replaced
+# it is the property below: the answer depends on the set and not on the order.
+# The record is repointed rather than deleted, so the file keeps the reason.
 #
-# A fourth test went red and is deliberately not named: the spellcheck test in
-# `data::config`, which fails about one whole-library run in five through a
-# Windows COM call made twice. It is recorded in this phase's deferred items
-# and it is not this break.
+# The break puts the old rule back, which is the most plausible way somebody
+# would undo this: take the first of the list, which is the arriving message's
+# own conversation, instead of the earliest.
+#
+# Measured by hand on 2026-09-04 against the whole library, which passes 6124 at
+# 0 failed with 1 ignored on `cargo test --lib`: three tests, and each one is a
+# different reason. The chain naming only its parent disagrees across arrival
+# orders, which is the case the old rule could not answer. The root arriving
+# late disagrees across arrival orders, which is the case that only became
+# reachable when the identifier table arrived. And the winner test asserts the
+# rule directly.
+#
+# Nothing in `data::message_cache` reddens, which is the same finding from the
+# other side: the storing path cannot tell the two rules apart, because both are
+# asked the same set.
 red = [
-    "data::message_cache::messages::tests::test_a_conversation_gets_the_same_id_stored_as_a_batch_or_one_at_a_time",
-    "data::message_cache::messages::tests::test_a_late_message_naming_two_conversations_merges_them_into_one",
-    "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
+    "application::thread_identity::tests::a_chain_naming_only_its_parent_agrees_in_every_arrival_order",
+    "application::thread_identity::tests::a_late_message_merging_two_conversations_agrees_in_every_arrival_order",
+    "application::thread_identity::tests::the_winner_is_the_earliest_identifier_the_merging_conversations_know_between_them",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/application/thread_identity.rs", tests = 31 },
 ]
-before = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
-        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
-after = """        let found = self.threads_holding_any_of(&account_id, &asking)?;
-        let conversation = found.last().map_or(conversation, String::as_str);
-        let Some(merge) = crate::application::thread_identity::rejoin(conversation, &found) else {"""
+before = """    let winning_root = merging
+        .iter()
+        .copied()
+        .min()"""
+after = """    let winning_root = merging
+        .iter()
+        .copied()
+        .next()"""
 
 [[guard]]
 name = "a merge reaches the losing conversation in every folder it is filed in"
@@ -12139,7 +12187,7 @@ red = [
     "data::message_cache::messages::tests::test_the_merge_reaches_the_losing_conversation_wherever_it_is_filed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ? LIMIT 1)\""""
@@ -12168,7 +12216,7 @@ red = [
     "data::message_cache::messages::tests::test_a_conversation_in_another_account_is_never_merged_into_this_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 before = """               AND folder_id IN (SELECT id FROM folders WHERE account_id = ?)\""""
 after = """               AND ? IS NOT NULL\""""
@@ -13165,7 +13213,7 @@ red = [
     "presentation::message_columns::tests::test_a_safety_sort_is_a_ranking_with_a_direction_on_the_end_of_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
     { file = "src/presentation/message_columns.rs", tests = 37 },
 ]
 
@@ -13198,7 +13246,7 @@ red = [
     "data::message_cache::messages::tests::test_the_identifier_a_filed_draft_is_listed_under_is_the_one_a_reader_hands_over",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -13231,7 +13279,7 @@ red = [
     "data::message_cache::messages::tests::test_the_rows_the_backfill_selects_are_exactly_the_rows_that_change",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 [[guard]]
@@ -13255,7 +13303,77 @@ red = [
     "data::message_cache::messages::tests::test_a_database_holding_bracketed_identifiers_is_corrected_when_it_is_opened",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+[[guard]]
+# THREAD-02's remaining half, and broken windows ledger 7. A merge could only
+# ask whether some stored message's own identifier was one of the arriving
+# message's, so a conversation root arriving after a message that already named
+# it was invisible: the knowledge sat in that message's stored `refs_header`,
+# and no index over a header can answer a question about a name inside it.
+# `identifiers_a_message_names` is that knowledge written down, and the second
+# half of the lookup is what reads it.
+#
+# The break narrows the new question back to the old one: a recorded name
+# counts only when it is that message's own identifier, which is exactly what
+# the message column already answered. It keeps the shape of the statement and
+# every bound value, so the parameter arithmetic is untouched and nothing
+# reddens for a second reason.
+#
+# Measured by hand on 2026-09-04 against the whole library, which passes 6123
+# at 0 failed with 1 ignored on `cargo test --lib`: one test, and one is right,
+# because the six arrival orders are the defect and that test is all six.
+#
+# What stays green is the finding. The three backfill tests do not redden,
+# because the backfill walks every stored message and asks about each one in
+# turn, so the connector's own chain names both roots and the old question is
+# enough there. The table is what an ARRIVAL needs, since an arrival asks about
+# one message and nothing ever re-asks the ones already stored. This record and
+# the one below therefore cover two different halves and neither stands in for
+# the other.
+name = "the conversation lookup asks what a message named, not only what it is called"
+file = "src/data/message_cache/messages.rs"
+before = """                   AND n.identifier IN ({named_placeholders})"""
+after = """                   AND n.identifier IN ({named_placeholders}) AND n.identifier = m.message_id"""
+red = [
+    "data::message_cache::messages::tests::test_a_root_arriving_after_the_message_that_names_it_joins_its_conversation",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
+]
+
+[[guard]]
+# Guardrail 1: a feature is done when a non-test path reaches it. A table that
+# starts empty makes this change invisible to every conversation already
+# stored, so the backfill is the half somebody who has been using this program
+# actually sees. It is reached from `MessageCache::new` and from nowhere else,
+# so a test calling it by hand says only that it works, never that it runs.
+#
+# The break is the same shape as the record above it: the `if let` stays, it is
+# given a result the backfill never produced, everything still compiles, and
+# the only thing that changes is that opening a database joins nothing. That is
+# the state this project keeps finding, and `bodies.rs`'s module header records
+# what it cost the last time: a function with no non-test caller while the
+# cache grew without limit.
+#
+# Measured by hand on 2026-09-04 against the whole library, which passes 6123
+# at 0 failed with 1 ignored on `cargo test --lib`: three tests, which is every
+# test that opens a database holding a split conversation. The second-open one
+# is among them, and that is what its first assertion is for: without it, "a
+# second open changes nothing" is satisfied by a first open that did nothing.
+name = "the conversations stored apart are joined when the database is opened"
+file = "src/data/message_cache/mod.rs"
+before = """        if let Err(e) = cache.backfill_identifiers_a_message_names() {"""
+after = """        if let Err(e) = Result::<usize>::Ok(0) {"""
+red = [
+    "data::message_cache::messages::tests::test_a_conversation_split_before_there_was_an_identifier_table_joins_when_opened",
+    "data::message_cache::messages::tests::test_opening_a_database_that_has_already_been_filled_changes_nothing",
+    "data::message_cache::messages::tests::test_the_backfill_moves_conversations_and_not_mail",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13544,7 +13662,7 @@ red = [
     "data::message_cache::messages::a_listing_reads_no_message_text::test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── The migration moves every row it found ─────────────────────────────────
@@ -13750,7 +13868,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 37 },
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── Nothing new asks for the counting-up numbering directly ────────────────
@@ -13782,7 +13900,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/sent_copy.rs", tests = 22 },
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── Mail archived with no label counts toward its conversation ─────────────
@@ -13831,7 +13949,7 @@ red = [
     "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── The two conversation queries decide which messages exist with one text ──
@@ -13894,7 +14012,7 @@ red = [
     "data::message_cache::messages::tests::test_the_row_and_the_action_agree_over_every_conversation_fixture_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── A message with no identity of its own is only ever itself ───────────────
@@ -13922,7 +14040,7 @@ red = [
     "data::message_cache::messages::tests::test_two_messages_with_no_identity_of_their_own_are_two_messages",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
 
 # ── A copy is recognised by the sender's message identifier when the server
@@ -13958,5 +14076,5 @@ red = [
     "data::message_cache::messages::tests::test_a_row_still_holding_the_bracketed_spelling_is_the_same_message_as_its_copy",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/messages.rs", tests = 169 },
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]

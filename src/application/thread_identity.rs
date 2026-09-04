@@ -155,7 +155,8 @@ pub fn identifiers_worth_asking_about(message_id: &str, refs_header: Option<&str
 /// it. Never empty, and never holds the winner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rerooting {
-    /// The conversation the arriving message names, which is the one that wins.
+    /// The earliest identifier among the conversations being merged, which is
+    /// the one they all settle under.
     pub winning_root: String,
     /// The conversations revealed to be the same one, to be rewritten onto it.
     pub roots_to_rewrite: Vec<String>,
@@ -180,10 +181,42 @@ pub struct Rerooting {
 /// same reason: a property the signature enforces is not one somebody has to
 /// remember.
 ///
-/// The chain is oldest first, so the conversation the arriving message names is
-/// the chain's earliest identifier, and the earliest is the winner. Merging is
-/// therefore not a new rule; it is [`conversation_root`]'s rule applied where
-/// more than one candidate turns out to exist.
+/// # Which of them wins
+///
+/// The earliest identifier among the conversations being merged, counting the
+/// arriving message's own.
+///
+/// This used to be the arriving message's conversation, unconditionally, and
+/// the argument for that was written here: the chain is oldest first, so the
+/// conversation an arriving message names is the chain's earliest identifier,
+/// and merging is therefore [`conversation_root`]'s rule applied where more
+/// than one candidate exists. That sentence is true of a message carrying a
+/// full `References` chain, which is the common case and is why it went
+/// unquestioned. It is not true of a message naming only its parent, which is
+/// what a client sending `In-Reply-To` and nothing else produces: there the
+/// arriving conversation is a message somewhere in the middle. The old rule was
+/// right about the common case, had no answer for the other one, and gave a
+/// different answer depending on which message arrived first.
+///
+/// Earliest is an ordinary comparison of the two strings, and it is worth
+/// saying what that is and is not. It is not archaeology: it does not find the
+/// older message, and the conversation can settle under an identifier that is
+/// nobody's root. Nothing here could find the older one, because two
+/// conversations an arrival has just proved to be one carry no ordering between
+/// their names, and no rule available to this function invents one. What
+/// earliest buys is the only thing left that matters once the merge is decided,
+/// which is that the answer does not depend on the order the mail arrived in.
+/// The same set of messages ends under the same name every time, so nothing
+/// keyed on a conversation id is silently orphaned by a resync.
+///
+/// **This is not the rejected batch rule.** That one re-derived a
+/// conversation's name from whatever happened to be in hand, so a smaller
+/// identifier turning up renamed a conversation nobody had learned anything new
+/// about. Earliest here is applied only among conversations an arrival has
+/// PROVED to be one, and the guard below is untouched: when everything found is
+/// the conversation the message already names, there is nothing to rewrite and
+/// nothing is renamed, whatever the arriving message's own identifier sorts
+/// like.
 ///
 /// # What a merge costs, said plainly
 ///
@@ -202,18 +235,39 @@ pub fn rejoin(
         return None;
     }
 
-    let mut roots_to_rewrite: Vec<String> = Vec::new();
+    // Every conversation this arrival says is one conversation, named once
+    // each, with the arriving message's own first. The arriving one belongs in
+    // here rather than beside it, because when a chain names only its parent it
+    // is no more the root than any of the others and has no claim to win.
+    let mut merging: Vec<&str> = vec![the_arriving_conversation];
     for found in conversations_found {
-        let worth_rewriting = !found.is_empty()
-            && found != the_arriving_conversation
-            && !roots_to_rewrite.iter().any(|held| held == found);
-        if worth_rewriting {
-            roots_to_rewrite.push(found.clone());
+        let worth_merging = !found.is_empty() && !merging.contains(&found.as_str());
+        if worth_merging {
+            merging.push(found);
         }
     }
 
+    let winning_root = merging
+        .iter()
+        .copied()
+        .min()
+        // `merging` always holds the arriving conversation, which the guard
+        // above has already shown is not empty, so this never answers. Written
+        // out because nothing in this crate unwraps outside a test.
+        .unwrap_or(the_arriving_conversation);
+
+    // Order kept from the list above, so the conversations move in the order
+    // they were named and a guard over this cannot pass or fail by luck.
+    let roots_to_rewrite: Vec<String> = merging
+        .iter()
+        .filter(|root| **root != winning_root)
+        .map(|root| (*root).to_string())
+        .collect();
+
+    // Nothing but the conversation this message is already in, so nothing has
+    // been revealed. D-39.
     (!roots_to_rewrite.is_empty()).then(|| Rerooting {
-        winning_root: the_arriving_conversation.to_string(),
+        winning_root: winning_root.to_string(),
         roots_to_rewrite,
     })
 }
@@ -478,14 +532,20 @@ mod tests {
     }
 
     #[test]
-    fn the_winner_is_the_conversation_the_chain_names_not_the_one_that_sorts_first() {
-        // The rejected batch rule's failure, in the merge. Under "least
-        // Message-ID", `aaa@x` would win and the conversation somebody is
-        // reading would be renamed. Here the chain decides and `m@x` holds.
+    fn the_winner_is_the_earliest_identifier_the_merging_conversations_know_between_them() {
+        // This asserted the opposite until 03-05: that the arriving message's
+        // own conversation wins whatever it is merged with. The argument for
+        // that was that a chain is oldest first, so the conversation an
+        // arriving message names is the chain's earliest identifier. True of a
+        // message carrying a full chain, and not true of one naming only its
+        // parent, where the arriving conversation is a message in the middle.
+        // The old rule was therefore right about the common case, had no answer
+        // for the other, and gave different answers depending on which message
+        // arrived first. See `rejoin`'s comment.
         let merged = rejoin("m@x", &["aaa@x".to_string(), "m@x".to_string()])
             .expect("two conversations named, so one moves");
-        assert_eq!(merged.winning_root, "m@x");
-        assert_eq!(merged.roots_to_rewrite, vec!["aaa@x"]);
+        assert_eq!(merged.winning_root, "aaa@x");
+        assert_eq!(merged.roots_to_rewrite, vec!["m@x"]);
     }
 
     #[test]
@@ -536,38 +596,50 @@ mod tests {
     // ── Order independence ──────────────────────────────────────────────────
 
     /// The storage path, in memory: store each message in turn, giving it
-    /// [`conversation_root`]'s answer and applying [`rejoin`] against what is
-    /// already held.
+    /// [`conversation_root`]'s answer, writing down every identifier it names,
+    /// and applying [`rejoin`] against the conversations those names are held
+    /// under.
     ///
     /// Deliberately the same shape as
     /// [`crate::data::message_cache::MessageCache::upsert_message`], including
-    /// what it can and cannot see: a lookup by identifier, never a search of
-    /// other messages' chains.
+    /// what it can and cannot see. The third field is
+    /// `identifiers_a_message_names`: without it the only question that could
+    /// be asked was whether a stored message's own identifier was one of these,
+    /// which is what left a conversation root arriving late out of the merge.
+    ///
+    /// The row is pushed before the lookup, which is the order the real path
+    /// runs in: the message is inserted, its names are recorded, and only then
+    /// is the cache asked.
     fn assign_in_this_order(
         conversation: &[(&str, Option<&str>)],
         order: &[usize],
     ) -> Vec<(String, String)> {
-        let mut held: Vec<(String, String)> = Vec::new();
+        // The message, the conversation it is in, and every identifier it named.
+        let mut held: Vec<(String, String, Vec<String>)> = Vec::new();
         for &i in order {
             let (message_id, refs_header) = conversation[i];
             let mine = conversation_root(message_id, refs_header);
             let asking = identifiers_worth_asking_about(message_id, refs_header);
+            held.push((message_id.trim().to_string(), mine.clone(), asking.clone()));
             let found: Vec<String> = held
                 .iter()
-                .filter(|(id, _)| asking.iter().any(|wanted| wanted == id))
-                .map(|(_, thread)| thread.clone())
+                .filter(|(_, _, named)| named.iter().any(|name| asking.contains(name)))
+                .map(|(_, thread, _)| thread.clone())
                 .collect();
-            held.push((message_id.trim().to_string(), mine.clone()));
             if let Some(merge) = rejoin(&mine, &found) {
-                for (_, thread) in held.iter_mut() {
+                for (_, thread, _) in held.iter_mut() {
                     if merge.roots_to_rewrite.iter().any(|old| old == thread) {
                         *thread = merge.winning_root.clone();
                     }
                 }
             }
         }
-        held.sort();
-        held
+        let mut rows: Vec<(String, String)> = held
+            .into_iter()
+            .map(|(message, thread, _)| (message, thread))
+            .collect();
+        rows.sort();
+        rows
     }
 
     #[test]
@@ -605,52 +677,106 @@ mod tests {
     }
 
     #[test]
-    fn a_late_message_merging_two_conversations_agrees_in_every_order_that_can_see_it() {
-        // THREAD-02's merge: `a@x` and `c@x` each started a conversation and
-        // `x@x` says they are one. Every order in which the connector arrives
-        // last, or in which the roots follow it having named it, ends merged.
+    fn a_late_message_merging_two_conversations_agrees_in_every_arrival_order() {
+        // THREAD-02's merge and the gap phase 1 deferred, in one test. `a@x`
+        // and `c@x` each started a conversation and `x@x` says they are one.
+        //
+        // Three of these six used to end with the conversation still split,
+        // because nothing recorded what a message named and the only question
+        // that could be asked was what a stored message was called. The other
+        // three merged, and then settled under two different names depending on
+        // which message arrived last, so this used to be written as the three
+        // orders that could see it and a companion pinning the gap.
         let conversation = [("a@x", None), ("c@x", None), ("x@x", Some("a@x c@x"))];
+        let orders = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
 
-        for order in [[0, 1, 2], [1, 0, 2], [1, 2, 0]] {
-            let held = assign_in_this_order(&conversation, &order);
-            assert_eq!(held.len(), 3);
-            for (message, thread) in &held {
-                assert_eq!(
-                    thread, "a@x",
-                    "{message} was left out of the merged conversation in order {order:?}"
-                );
-            }
+        let first = assign_in_this_order(&conversation, &orders[0]);
+        assert_eq!(first.len(), 3);
+        for (message, thread) in &first {
+            assert_eq!(
+                thread, "a@x",
+                "{message} was left out of the merged conversation"
+            );
+        }
+        for order in &orders[1..] {
+            assert_eq!(
+                assign_in_this_order(&conversation, order),
+                first,
+                "arrival order {order:?} disagreed with {:?}",
+                orders[0]
+            );
         }
     }
 
     #[test]
-    fn a_root_arriving_after_the_message_that_names_it_is_left_out_of_the_merge() {
-        // A gap, pinned rather than hidden, and the reason THREAD-02's
-        // agreement criterion is not fully met by this design.
+    fn a_chain_naming_only_its_parent_agrees_in_every_arrival_order() {
+        // The case the old winner rule had no answer for, and the reason it had
+        // to change. `r@x` started a conversation, `p@x` answered it carrying
+        // the whole chain, and `n@x` answers `p@x` naming only its parent,
+        // which is what a client sending `In-Reply-To` and no `References`
+        // produces.
         //
-        // `x@x` names `a@x` and `c@x`. Stored first, it takes `a@x`, because
-        // that is what its chain names. `c@x` then arrives with no chain of its
-        // own, so nothing it can be asked about names `a@x`, and it starts a
-        // conversation of its own instead of joining the one `x@x` already
-        // proved it belongs to.
-        //
-        // The knowledge exists and is unreachable: it lives in `x@x`'s stored
-        // `refs_header`, and finding it means searching every message's chain
-        // for `c@x`, which no index can serve. Closing it needs an identifier
-        // to conversation table, which is a schema decision this plan did not
-        // carry. Written up in `deferred-items.md`.
-        let conversation = [("a@x", None), ("c@x", None), ("x@x", Some("a@x c@x"))];
+        // So `n@x`'s own root is `p@x`, a message in the middle rather than the
+        // conversation's head. Under "the arriving message's conversation
+        // wins", `n@x` arriving last renamed the whole conversation to `p@x`
+        // and `n@x` arriving first left it as `r@x`, and both are the same
+        // three messages.
+        let conversation = [("r@x", None), ("p@x", Some("r@x")), ("n@x", Some("p@x"))];
+        let orders = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
 
-        let held = assign_in_this_order(&conversation, &[2, 0, 1]);
+        let first = assign_in_this_order(&conversation, &orders[0]);
+        assert_eq!(first.len(), 3);
+        let names: std::collections::BTreeSet<&str> =
+            first.iter().map(|(_, thread)| thread.as_str()).collect();
         assert_eq!(
-            held,
+            names.len(),
+            1,
+            "the three belong in one conversation and are in {names:?}"
+        );
+        for order in &orders[1..] {
+            assert_eq!(
+                assign_in_this_order(&conversation, order),
+                first,
+                "arrival order {order:?} disagreed with {:?}",
+                orders[0]
+            );
+        }
+    }
+
+    #[test]
+    fn an_arrival_that_reveals_nothing_renames_nothing_however_its_identifier_sorts() {
+        // D-39, and what stops the winner rule being the rejected batch rule
+        // wearing a different hat. `aaa@x` answers `m@x` and sorts before it,
+        // so a rule applying "earliest" to anything other than conversations an
+        // arrival has PROVED to be one would rename a conversation somebody is
+        // reading and reveal nothing by doing it.
+        assert_eq!(conversation_root("aaa@x", Some("m@x")), "m@x");
+        assert_eq!(rejoin("m@x", &["m@x".to_string()]), None);
+
+        // The same thing through the storing path, which is where it would
+        // really happen.
+        let conversation = [("m@x", None), ("aaa@x", Some("m@x"))];
+        assert_eq!(
+            assign_in_this_order(&conversation, &[0, 1]),
             vec![
-                ("a@x".to_string(), "a@x".to_string()),
-                ("c@x".to_string(), "c@x".to_string()),
-                ("x@x".to_string(), "a@x".to_string()),
+                ("aaa@x".to_string(), "m@x".to_string()),
+                ("m@x".to_string(), "m@x".to_string()),
             ],
-            "if this has started merging, the gap has been closed and this test \
-             should become the sixth order of the test above"
+            "an arrival naming the conversation it is already in renamed it"
         );
     }
 }

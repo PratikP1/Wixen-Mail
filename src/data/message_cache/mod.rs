@@ -1269,6 +1269,22 @@ impl MessageCache {
             );
         }
 
+        // Databases written before there was a table recording what each
+        // message names hold conversations that were left split, because the
+        // only question a merge could ask was about a message's own
+        // identifier. Record what they name and apply the merges that reveals,
+        // once, on the first open after this arrives. Not fatal for the same
+        // reason as above: the conversations are no worse than they were, and
+        // the next open tries again.
+        //
+        // After the two above, and that ordering is load-bearing. This reads
+        // `thread_id`, which `backfill_thread_ids` fills for a database that
+        // has none, and it matches identifiers, which
+        // `backfill_message_identifiers` brings to one spelling.
+        if let Err(e) = cache.backfill_identifiers_a_message_names() {
+            tracing::warn!("Could not join the conversations stored apart: {}", e);
+        }
+
         // A database held before there was a search index has to have one
         // built, once. Ordinarily this compares two counts and stops. A
         // failure is not fatal for the same reason the line above is not:
@@ -2068,6 +2084,45 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create message_bodies table: {}", e)))?;
 
+        // Which message identifiers each stored message names: its own, and
+        // every one of its References chain.
+        //
+        // THREAD-02's remaining half, and broken windows ledger 7. Without
+        // this, the only question a merge could ask was whether some stored
+        // message's own identifier was one of the arriving message's, so a
+        // conversation root arriving after a message that already named it was
+        // invisible: the knowledge sat in that message's `refs_header` and no
+        // index over a header can answer a question about a name inside it.
+        //
+        // **It holds no conversation, deliberately.** A table mapping an
+        // identifier straight to a conversation would be one indexed probe
+        // rather than a join, and it would be a second copy of which
+        // conversation a message is in, which `reroot_threads` rewrites in the
+        // first. Two places able to come to differ is the failure
+        // `thread_identity`'s module comment opens with. So a row here says
+        // only what a message named, and which conversation that is stays in
+        // `messages.thread_id`, reached through the join at the moment it is
+        // asked.
+        //
+        // Identifiers are held bare, the one spelling
+        // `thread_identity::bare` produces, because every writer goes through
+        // `identifiers_worth_asking_about`, which applies it.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS identifiers_a_message_names (
+                message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                identifier TEXT NOT NULL,
+                PRIMARY KEY (message_id, identifier)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create the message identifiers table: {}",
+                    e
+                ))
+            })?;
+
         // What the folder tree remembers between one run and the next.
         //
         // Keyed on `presentation::folder_tree::WhichRow::stored`, which is a
@@ -2641,6 +2696,19 @@ impl MessageCache {
             // exactly the column an account-wide question does not name.
             "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
             "CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)",
+            // The half of the conversation lookup that reads
+            // `identifiers_a_message_names`. That table's primary key begins
+            // with the message, which is the direction a cascade deletes in
+            // and the wrong end for a question that knows only a name, so
+            // without this the lookup reads the whole table once per arriving
+            // message.
+            //
+            // Both columns, so the index answers on its own: the query wants
+            // the message an identifier belongs to and nothing else from the
+            // row, and a one-column index would find the entry and then read
+            // the row to learn what it already could have carried.
+            "CREATE INDEX IF NOT EXISTS idx_identifiers_a_message_names
+                 ON identifiers_a_message_names(identifier, message_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_tag_id ON message_tags(tag_id)",
             "CREATE INDEX IF NOT EXISTS idx_message_tags_message_id ON message_tags(message_id)",
             // Not unique any more: an address is no longer what tells two

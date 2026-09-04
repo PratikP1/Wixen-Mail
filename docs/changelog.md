@@ -31,6 +31,49 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A reply no longer sits in a separate conversation from the message it
+  answers, when the message that ties the two together arrived first.**
+
+  Wixen Mail works out which conversation a message belongs to from the message
+  itself. A sender lists the messages theirs descends from, and the first of
+  those names the conversation. So a message arriving and naming two earlier
+  ones proves those two are one conversation, and Wixen Mail joined them.
+
+  What it could not do was the same thing backwards. If the message naming them
+  both was stored first, the ones it named started conversations of their own
+  when they arrived later. The only question Wixen Mail could ask was whether
+  some message it already held was *called* that, and the message that knew
+  better was called something else. Of the six orders in which three messages
+  like that can arrive, three ended as one conversation and three did not, and
+  which you got depended on nothing you could see.
+
+  Wixen Mail now writes down every message a message names, and not only what
+  each one is called, so it can ask the question the other way round too. All
+  six orders end as one conversation.
+
+  They also end under the same name. Which message a joined conversation was
+  filed under used to depend on which of its messages arrived last, so reading
+  the same mailbox twice could file the same conversation two different ways,
+  and anything Wixen Mail remembered against the old name was left behind. The
+  name is now taken from the conversations being joined rather than from
+  whichever message happened to do the joining.
+
+  **Conversations already on this computer are joined as well**, the first time
+  Wixen Mail opens after this change. Without that the fix would reach only
+  mail that has not arrived yet, and everything already split would stay split.
+  On a cache holding two hundred thousand messages that first start takes about
+  six seconds longer. Every start after it is as fast as before, because
+  finding out the work is done is one question rather than a walk through your
+  mail.
+
+  Joining two conversations means one of them is filed under the other's name.
+  So a conversation you have been reading may change which message it is filed
+  under when this happens. There is no way to join two without that.
+
+  Known limitation. None of this has run against a real mail account, because
+  this program has never been used with one. It is proved against a mail cache
+  built inside a test, and against timings taken on this computer.
+
 - **Gmail: a conversation no longer disappears from the list because its mail
   was archived without a label.** Gmail keeps a copy of everything in All Mail
   as well as under each label, so counting a conversation across your whole
