@@ -5474,32 +5474,51 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count() {
-        // On Gmail a label is a mailbox and All Mail holds a copy of
-        // everything, so without the exclusion every conversation on the
-        // largest provider there is reports twice its size. A plausible wrong
-        // number is worse than an obviously wrong one.
-        let cache = fresh("conversation_all_mail");
+    /// Two messages under a label, and the copy of each that All Mail holds.
+    ///
+    /// Four rows for two messages. Each copy carries its original's
+    /// `Message-ID` and its original's Gmail identifier, and differs only in
+    /// the folder it is in and the number that folder gave it, because that is
+    /// what a server really presents when a label and All Mail both hold a
+    /// message.
+    ///
+    /// The fixture used to be four calls to `in_conversation` with four UIDs,
+    /// which gave four different `Message-ID`s: four separate messages, two of
+    /// them in All Mail and nowhere else. Under a count that excludes All Mail
+    /// by folder that arrangement answers two either way, so the test passed
+    /// while its fixture said the opposite of its name. Under a count that
+    /// asks which message a row is, the difference decides the answer, and
+    /// only the fixture that really holds copies asserts what the name claims.
+    fn a_label_and_its_all_mail_copies(
+        name: &str,
+    ) -> (TempHome<super::super::MessageCache>, i64, i64) {
+        let cache = fresh(name);
         let inbox = folder(&cache, "INBOX");
         let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
 
-        for (uid, folder_id, day) in [
-            (1, inbox, 1),
-            (2, inbox, 3),
-            (11, all_mail, 1),
-            (12, all_mail, 3),
-        ] {
-            cache
-                .upsert_message(&in_conversation(
-                    folder_id,
-                    uid,
-                    "Quarterly report",
-                    "root@example.com",
-                    day,
-                ))
-                .unwrap();
+        for (uid, in_all_mail, day) in [(1u32, 11u32, 1), (2, 12, 3)] {
+            let mut labelled =
+                in_conversation(inbox, uid, "Quarterly report", "root@example.com", day);
+            labelled.message_id = format!("<labelled-{uid}@example.com>");
+            labelled.gmail_message_id = Some(17_000_000_000_000_000 + u64::from(uid));
+            cache.upsert_message(&labelled).unwrap();
+
+            let mut copy = labelled.clone();
+            copy.folder_id = all_mail;
+            copy.uid = in_all_mail;
+            cache.upsert_message(&copy).unwrap();
         }
+
+        (cache, inbox, all_mail)
+    }
+
+    #[test]
+    fn test_a_folder_holding_a_copy_of_every_message_does_not_double_the_count() {
+        // On Gmail a label is a mailbox and All Mail holds a copy of
+        // everything, so counting both copies makes every conversation on the
+        // largest provider there is report twice its size. A plausible wrong
+        // number is worse than an obviously wrong one.
+        let (cache, inbox, _all_mail) = a_label_and_its_all_mail_copies("conversation_all_mail");
 
         let found = cache
             .conversations_in(inbox, "acc", TheWholeAccount, None)
@@ -5513,33 +5532,126 @@ mod tests {
 
     #[test]
     fn test_the_row_is_still_there_when_the_folder_being_read_is_the_all_mail_one() {
-        // The exclusion is about counting, not about what is listed. Standing
-        // in All Mail still shows the conversations it holds; they are counted
-        // through the labels that hold them.
-        let cache = fresh("conversation_standing_in_all_mail");
-        let inbox = folder(&cache, "INBOX");
-        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
-        for (uid, folder_id, day) in [
-            (1, inbox, 1),
-            (2, inbox, 3),
-            (11, all_mail, 1),
-            (12, all_mail, 3),
-        ] {
-            cache
-                .upsert_message(&in_conversation(
-                    folder_id,
-                    uid,
-                    "Quarterly report",
-                    "root@example.com",
-                    day,
-                ))
-                .unwrap();
-        }
+        // Standing in All Mail shows the conversations it holds, counted once
+        // each, whichever folder each message's other copy is under.
+        let (cache, _inbox, all_mail) =
+            a_label_and_its_all_mail_copies("conversation_standing_in_all_mail");
 
         let found = cache
             .conversations_in(all_mail, "acc", TheWholeAccount, None)
             .unwrap();
         assert_eq!(conversation(&found, "root@example.com").messages, 2);
+    }
+
+    /// A label, a folder holding all mail, and mail archived without a label.
+    ///
+    /// Five rows for four messages, and the arrangement Gmail really leaves
+    /// behind. `labelled-1` is in the inbox and All Mail holds its copy.
+    /// `archived-1` is in All Mail and nowhere else, which is what archiving
+    /// with no label does, and it belongs to the same conversation as
+    /// `labelled-1`. `lunch-1` is a conversation every one of whose messages
+    /// was archived that way, so nothing outside All Mail holds any part of it.
+    fn archived_without_a_label(name: &str) -> (TempHome<super::super::MessageCache>, i64, i64) {
+        let cache = fresh(name);
+        let inbox = folder(&cache, "INBOX");
+        let all_mail = all_mail_folder(&cache, "[Gmail]/All Mail");
+
+        let mut labelled = in_conversation(inbox, 1, "Quarterly report", "root@example.com", 1);
+        labelled.message_id = "<labelled-1@example.com>".to_string();
+        labelled.gmail_message_id = Some(17_000_000_000_000_001);
+        cache.upsert_message(&labelled).unwrap();
+
+        let mut its_copy = labelled.clone();
+        its_copy.folder_id = all_mail;
+        its_copy.uid = 101;
+        cache.upsert_message(&its_copy).unwrap();
+
+        let mut archived =
+            in_conversation(all_mail, 102, "Re: Quarterly report", "root@example.com", 3);
+        archived.message_id = "<archived-1@example.com>".to_string();
+        archived.gmail_message_id = Some(17_000_000_000_000_002);
+        cache.upsert_message(&archived).unwrap();
+
+        let mut alone = in_conversation(all_mail, 103, "Lunch on Friday", "lunch@example.com", 4);
+        alone.message_id = "<lunch-1@example.com>".to_string();
+        alone.gmail_message_id = Some(17_000_000_000_000_003);
+        cache.upsert_message(&alone).unwrap();
+
+        (cache, inbox, all_mail)
+    }
+
+    #[test]
+    fn test_a_conversation_archived_with_no_label_is_still_in_the_list() {
+        // The failure this is about cannot be seen: a conversation missing
+        // from a list is not something anybody can notice is missing. Standing
+        // in All Mail, counting across the account, a conversation every one of
+        // whose messages had been archived without a label had no row at all.
+        // The count excluded All Mail by folder, so it drew no rows for that
+        // conversation, while the list qualified the conversation by whether
+        // All Mail held it, so it was asked for and answered with nothing.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_alone");
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert!(
+            found.iter().any(|row| row.thread_id == "lunch@example.com"),
+            "the conversation whose every message was archived without a label \
+             is missing from {found:#?}"
+        );
+        assert_eq!(conversation(&found, "lunch@example.com").messages, 1);
+    }
+
+    #[test]
+    fn test_a_message_archived_with_no_label_counts_toward_its_conversation() {
+        // The same defect where it only takes a number off rather than a whole
+        // row: one message under a label, one archived with none, and the
+        // second counted for nothing from wherever somebody stood.
+        let (cache, inbox, all_mail) = archived_without_a_label("all_mail_archived_counts");
+
+        for (standing_in, where_that_is) in [(inbox, "the inbox"), (all_mail, "All Mail")] {
+            let found = cache
+                .conversations_in(standing_in, "acc", TheWholeAccount, None)
+                .unwrap();
+            assert_eq!(
+                conversation(&found, "root@example.com").messages,
+                2,
+                "counted from {where_that_is}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_unread_count_holds_a_message_archived_with_no_label() {
+        // The second number the Thread column says, which is the one that
+        // decides whether a conversation reads as unread at all. A message
+        // nothing counts is a message whose unread state nothing counts
+        // either, so the row says read when it is not.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_unread");
+
+        let found = cache
+            .conversations_in(all_mail, "acc", TheWholeAccount, None)
+            .unwrap();
+        assert_eq!(conversation(&found, "root@example.com").unread, 2);
+    }
+
+    #[test]
+    fn test_a_delete_reaches_the_message_archived_with_no_label() {
+        // D-07: the number named before a deletion is the number of messages
+        // that go. The archived message was in neither, so it survived a
+        // deletion of the conversation it belongs to and was never counted in
+        // the question either.
+        let (cache, _inbox, all_mail) = archived_without_a_label("all_mail_archived_delete");
+
+        let reaching = cache
+            .messages_in_conversation("root@example.com", "acc", all_mail, TheWholeAccount)
+            .unwrap();
+        assert_eq!(
+            reaching.len(),
+            2,
+            "the delete would take {} of the 2 messages in the conversation",
+            reaching.len()
+        );
     }
 
     #[test]
