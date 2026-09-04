@@ -4690,7 +4690,7 @@ impl WxMailApp {
                             delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
                         _ if id == ID_ACCOUNT_MGR => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
                         }
                         _ if id == ID_NEW_CONTACT => managers::new_contact(
                             &state,
@@ -4701,7 +4701,7 @@ impl WxMailApp {
                             &a11y,
                         ),
                         _ if id == ID_NEW_ACCOUNT => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y)
+                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
                         }
                         _ if id == ID_SAVE => {
                             send_refusal(&ui_tx, &runtime, "No active draft to save")
@@ -5008,6 +5008,7 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let really_quitting = really_quitting.clone();
                 let tray = tray.clone();
+                let runtime = runtime.clone();
                 let said_it_once = std::rc::Rc::new(std::cell::Cell::new(false));
                 move |event| {
                     use crate::application::closing::{Asked, Closing, what_closing_should_do};
@@ -5042,6 +5043,14 @@ impl WxMailApp {
                         }
                         Closing::LetItClose => {
                             tracing::info!("Frame on_close fired, window is closing");
+                            // Signed out of rather than dropped. A session this
+                            // program was holding stays open at the provider
+                            // until it times it out, and counts against the
+                            // account for as long as it does.
+                            signing_off(
+                                &runtime,
+                                crate::application::mail_session::no_longer_signed_in_to_anything(),
+                            );
                             // Taken away first. An icon left in the notification
                             // area after the program has gone is one somebody
                             // clicks and nothing answers.
@@ -14358,12 +14367,28 @@ fn owner_of(
         .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
 }
 
+/// Sign out of a mail session without letting a silent server hold the window.
+///
+/// A sign-off is a round trip, and both places that make one are on the thread
+/// the window is drawn on. A server that has taken the connection and then gone
+/// quiet would otherwise hold the window still for the two minutes a command is
+/// given, which somebody navigating by ear cannot tell from a crash. Past the
+/// bound the socket goes the way every session went before any of this existed,
+/// which is dropped and left for the server to time out.
+fn signing_off(rt: &Arc<Runtime>, ending: impl std::future::Future<Output = ()>) {
+    const LONG_ENOUGH_TO_SIGN_OFF: std::time::Duration = std::time::Duration::from_secs(3);
+    rt.block_on(async {
+        let _ = tokio::time::timeout(LONG_ENOUGH_TO_SIGN_OFF, ending).await;
+    });
+}
+
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
+    rt: &Arc<Runtime>,
 ) {
     let (accounts, active_id, default_id) = {
         let s = lock_state(state);
@@ -14384,6 +14409,14 @@ fn handle_account_mgr(
         default_id.as_deref(),
         a11y,
     ) {
+        // An account that has gone is signed out of rather than left holding a
+        // session. Worked out before the list is replaced, because afterwards
+        // there is nothing left to compare against.
+        let removed: Vec<String> = accounts
+            .iter()
+            .filter(|held| !new.iter().any(|kept| kept.id == held.id))
+            .map(|held| held.id.clone())
+            .collect();
         let mut s = lock_state(state);
         // What Set Active chose, when it named an account that is still
         // there. This used to be dropped on the way out of the dialog and
@@ -14434,6 +14467,15 @@ fn handle_account_mgr(
             );
         }
         s.accounts = new;
+        // Let go before anything is said to a server. This lock is the window's
+        // own, and a sign-off is a round trip.
+        drop(s);
+        for id in removed {
+            signing_off(
+                rt,
+                crate::application::mail_session::no_longer_signed_in_to(&id),
+            );
+        }
     }
 }
 
@@ -17428,10 +17470,6 @@ fn spawn_server_change(
             refuse("no account is set up".to_string());
             return;
         };
-        let Ok(port) = account.imap_port.trim().parse::<u16>() else {
-            refuse(format!("{} has no usable IMAP port", account.name));
-            return;
-        };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
             refuse("there is no cache directory".to_string());
             return;
@@ -17518,26 +17556,23 @@ fn spawn_server_change(
             ServerChange::Flag(flag) => flag,
         };
 
-        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
-            Ok(auth) => auth,
-            Err(e) => {
-                refuse(e.to_string());
-                return;
-            }
-        };
-
-        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
-            account.imap_server.clone(),
-            port,
-            account.username.clone(),
-            auth,
-            account.imap_use_tls,
-            &account.id,
-        )) {
-            refuse(e.to_string());
-            return;
-        }
+        // The session this account is already signed in with, and a sign-in
+        // only if there is not one. This is the case SCALE-02 is named for:
+        // marking three messages read in a row used to be three TLS
+        // handshakes, three CAPABILITYs, three LOGINs and three SELECTs.
+        //
+        // The unusable-port refusal that used to be spelled out above is gone
+        // rather than kept. `a_session_at`, underneath this, refuses the same
+        // account in the same words, and it did even while this checked first,
+        // so the check here was a second answer to the same question.
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    refuse(why);
+                    return;
+                }
+            };
 
         let outcome = match flag {
             FlagChange::Read(read) => handle.block_on(controller.set_flag(
@@ -17553,7 +17588,9 @@ fn spawn_server_change(
                 handle.block_on(controller.set_flag(&folder_path, uid, keyword, *on))
             }
         };
-        let _ = handle.block_on(controller.disconnect_imap());
+        // Nothing is disconnected here. The session belongs to the account
+        // rather than to this piece of work, and closing it would end one that
+        // a sync or another flag is part way through using.
 
         match outcome {
             Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),

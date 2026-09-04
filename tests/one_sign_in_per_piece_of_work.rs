@@ -34,15 +34,18 @@ const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 
 /// How many places build their own connection instead of asking the helper.
 ///
-/// Counted on 2026-09-04. Twelve is not a target, it is a measurement: the
-/// requirement said eight and was wrong by half, twice, which is why it is
-/// written here beside the code that re-derives it rather than in a document.
+/// Counted on 2026-09-04, twelve, and eleven later the same day. Neither is a
+/// target, both are measurements: the requirement said eight and was wrong by
+/// half, twice, which is why the number is written here beside the code that
+/// re-derives it rather than in a document.
 ///
-/// It is expected to fall, and plan 03-06 is what makes it fall. That plan holds
-/// one session open for a piece of work and reconnects when the server drops it,
-/// so the sites below stop dialling for themselves. When it lands, this number
-/// goes down and the day beside it changes.
-const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 12;
+/// It is expected to fall the rest of the way, and plan 03-06 is what makes it
+/// fall. That plan holds one session open for an account rather than for one
+/// piece of work, and signs in again when the server drops it, so the sites
+/// below stop dialling for themselves. The first to go was the one the
+/// requirement names, marking a message read. When the last goes this is nought
+/// and the comment above it says so.
+const SIGN_INS_THAT_GO_ROUND_THE_HELPER: usize = 11;
 
 /// The line `what_ships` looks at by its exact text, which is why it is the one
 /// line left unmarked below.

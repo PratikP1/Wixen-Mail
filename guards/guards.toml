@@ -13582,48 +13582,66 @@ tests_last_seen = [
 # numbers too and seven of them had moved by the next day. So the count lives in
 # a test now, which reads the tree rather than repeating a number.
 #
-# The break is the change the census exists to notice, made for real rather than
-# invented: the site that marks one message read, which is the requirement's own
-# worst case, goes through `application::mail_session::a_session_at` instead of
-# dialling for itself. Eleven where twelve were counted.
+# The break used to be the change the census exists to notice: the site that
+# marks one message read going through `application::mail_session::a_session_at`
+# instead of dialling for itself. Plan 03-06 made that change for real, so the
+# text the record named stopped being in the file and the record became
+# unmeasurable, which the commit gate refused before anything else could happen.
+#
+# It is turned round rather than moved to another site, because moving it would
+# only have to be turned round later anyway. Once every site goes through the
+# helper there is nothing left to convert, and the change worth noticing is the
+# opposite one: somewhere new dialling for itself. So the break puts the old
+# sign-in back at that same site, and the census answers one more than it was
+# told. That is the break the record keeps for good: it discriminates while the
+# count is eleven and it still discriminates when it is nought.
 #
 # This record couples the census to `wx_app.rs` for a second reason as well. The
 # census lives under `tests/`, so without a record `scripts/check.sh` would run
 # it only on the commits that change the census itself, which is every commit
 # except the ones that could change the number.
 #
-# Measured by hand on 2026-09-04, against the census target, `tests/house_style`,
-# `tests/wired` and the whole library. One test went red, the one named below.
-# Nothing else did: house_style 64 passed, wired 61 passed, and the library
-# 6,078 passed with none failing. That is the finding rather than an aside. It
-# says this part of `wx_app.rs` had nothing reading it for this property before
-# now, so the whole defence of the count is the single test named here.
+# Measured by hand twice, both times on 2026-09-04. First against the break that
+# converted the site, and then again against the break that puts it back, which
+# is what the record now carries. Both runs covered the census target,
+# `tests/house_style`, `tests/wired` and the whole library, and both gave the
+# same answer: one test went red, the one named below, and nothing else did.
+# house_style 64 passed and wired 61 passed in each.
+#
+# The second run's library was 6,127 passed with 3 failed, and those three are
+# not this break. They are 03-06's own red half, still red at the commit this
+# was measured at, and they fail identically with the break applied and taken
+# away again.
+#
+# That one test is the finding rather than an aside. It says this part of
+# `wx_app.rs` has nothing else reading it for this property, so the whole
+# defence of the count is the single test named here.
 
 [[guard]]
 name = "the count of sign-ins that go round the helper is read from the tree"
 file = "src/presentation/wx_app.rs"
 suite = "one_sign_in_per_piece_of_work"
-before = """        let controller = MailController::new();
-        if let Err(e) = handle.block_on(controller.connect_imap(
+before = """        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    refuse(why);
+                    return;
+                }
+            };
+
+        let outcome = match flag {"""
+after = """        let controller = MailController::new();
+        let _ = handle.block_on(controller.connect_imap(
             account.imap_server.clone(),
-            port,
+            143,
             account.username.clone(),
-            auth,
+            crate::service::protocols::MailAuth::Password(String::new()),
             account.imap_use_tls,
             &account.id,
-        )) {
-            refuse(e.to_string());
-            return;
-        }"""
-after = """        let controller = match handle
-            .block_on(crate::application::mail_session::a_session_at(&account))
-        {
-            Ok(session) => session,
-            Err(reason) => {
-                refuse(reason);
-                return;
-            }
-        };"""
+        ));
+
+        let outcome = match flag {"""
 red = [
     "test_the_places_that_sign_in_for_themselves_are_counted_and_named",
 ]
