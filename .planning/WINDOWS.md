@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 41
+open_count: 42
 waived_count: 0
 fixed_count: 11
-total_count: 52
-last_updated: 2026-09-03T22:56:29.517Z
+total_count: 53
+last_updated: 2026-09-04T04:36:43.729Z
 ---
 
 # Broken Windows Ledger
@@ -67,6 +67,7 @@ last_updated: 2026-09-03T22:56:29.517Z
 | 50 | 03 | deviation | src/service/signed_mail.rs |  | Two certificate tests fail on GitHub's Windows runners and pass on a real machine: one of the runner's root authorities is genuinely reported withdrawn by Windows, and its three authorities produce no per-certificate answer because nothing local holds a withdrawal list. Checked 2026-09-03 and deferred by Pratik on the ground that it does not change how the application behaves: what_windows_found maps only CERT_TRUST_IS_REVOKED and CRYPT_E_REVOKED to Withdrawn, while offline, no list held, and no revocation information each map to CouldNotFindOut with a reason, so the code never reads could-not-check as revoked. CI stays red on these two until a runner with a representative certificate store exists, or the tests take their certificates as an argument. | open |  | 2026-09-03T20:58:51.850Z |  |
 | 51 | 03 | deviation | src/service/spellcheck/windows_speller.rs | 166 | supported_languages returns an empty list both when this machine has no spell checkers and when the COM call failed, with nothing logged: CoCreateInstance's error is discarded by a let-else that returns the empty vec. available_languages then reports no languages, best_available_match answers None, and default_language at data/config.rs:466 falls back to en, so a transient COM failure at first run sets a French user's fresh install to English and marks every word of their mail wrong. Found 2026-09-03 while investigating the one-in-five test flake the phase 1 deferred list records; the flake is this defect seen through a test that asks the same question twice. The codebase already has the right shape for the fix in Withdrawal, which distinguishes NotWithdrawn from CouldNotFindOut with a reason. Not yet routed to a phase. | fixed |  | 2026-09-03T20:59:03.743Z | 2026-09-03T22:56:29.517Z |
 | 52 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Criterion 1's announcement half is structure only. The renumbering sentence is built in mail_sync::what_the_renumbering_discarded, sent as UIUpdate::FolderWasRenumbered, and announced by handle_update on its own topic "renumbered" at Priority::Normal, and a source-reading test holds all three. No screen reader has heard it. Three things only an NVDA or Narrator run settles: whether the sentence is spoken at all when a folder is renumbered mid-sync; whether a topic of its own is the right choice against "status", since the reason for splitting it off is that the queue coalesces same-topic announcements and the next "Checking Sent..." would replace it, which is reasoning about the queue rather than an observation of it; and whether a Normal-priority announcement arriving in the middle of a sync cuts across something the person was reading, which is guardrail 5's bounded-and-distinct question and cannot be answered by reading source. Compounded by the fact that no real server has ever renumbered a folder for this program, because it has never been used with an account, so the whole path has only run against a scripted server. | open |  | 2026-09-03T22:40:54.889Z |  |
+| 53 | 03 | deviation | Cargo.toml |  | wxdragon is pinned at =0.9.17 and 0.9.21 is out. Checked 2026-09-03 while reporting the two defects this project had recorded as unreported. Ledger 28, ListCtrl::get_item_text losing the last character of every cell, was already reported by somebody else as AllenDang/wxDragon#205 against 0.9.19 and is fixed on master: the fix allocates needed_len + 1 and its comment names that issue and the same mechanism this project diagnosed. So 28 wants an upgrade rather than a report, and the workaround helper in tests/manager_dialog_labels.rs comes out when the upgrade lands. Ledger 41, TreeCtrl::cleanup_all_custom_data walking the tree and removing nothing, is still present on master and is now reported as AllenDang/wxDragon#214 with a suggested fix. Upgrading four minor versions of the UI framework is its own piece of work and is not phase 3's. | open |  | 2026-09-04T04:36:43.729Z |  |
 
 ````json
 [
@@ -692,6 +693,18 @@ last_updated: 2026-09-03T22:56:29.517Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-03T22:40:54.889Z",
+    "resolved_at": null
+  },
+  {
+    "id": 53,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "Cargo.toml",
+    "line": null,
+    "description": "wxdragon is pinned at =0.9.17 and 0.9.21 is out. Checked 2026-09-03 while reporting the two defects this project had recorded as unreported. Ledger 28, ListCtrl::get_item_text losing the last character of every cell, was already reported by somebody else as AllenDang/wxDragon#205 against 0.9.19 and is fixed on master: the fix allocates needed_len + 1 and its comment names that issue and the same mechanism this project diagnosed. So 28 wants an upgrade rather than a report, and the workaround helper in tests/manager_dialog_labels.rs comes out when the upgrade lands. Ledger 41, TreeCtrl::cleanup_all_custom_data walking the tree and removing nothing, is still present on master and is now reported as AllenDang/wxDragon#214 with a suggested fix. Upgrading four minor versions of the UI framework is its own piece of work and is not phase 3's.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T04:36:43.729Z",
     "resolved_at": null
   }
 ]
