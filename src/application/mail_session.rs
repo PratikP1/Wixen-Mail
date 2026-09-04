@@ -54,10 +54,29 @@
 //! `MailController` takes turns on it. That is not a lock held too long, it is
 //! the shape of IMAP.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+
+use tokio::sync::Mutex;
 
 use crate::application::mail_controller::MailController;
 use crate::data::account::Account;
+
+/// One account's held session, behind the lock that makes signing in for it
+/// happen once.
+type TheSessionForOneAccount = Arc<Mutex<Option<Arc<MailController>>>>;
+
+/// Every account's held session, by the account's own id.
+///
+/// One for the program rather than one per window or per worker, because the
+/// pieces of work that share a session run on different threads: each is a
+/// `spawn_blocking` closure carrying the account and little else, and a session
+/// threaded through all of them as an argument would be a session each in every
+/// place that forgot to.
+fn the_sessions_being_held() -> &'static Mutex<HashMap<String, TheSessionForOneAccount>> {
+    static HELD: OnceLock<Mutex<HashMap<String, TheSessionForOneAccount>>> = OnceLock::new();
+    HELD.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Sign in to the account's mail server.
 ///
@@ -105,20 +124,71 @@ pub(crate) async fn a_session_at(
 pub(crate) async fn the_session_at(
     account: &Account,
 ) -> std::result::Result<Arc<MailController>, String> {
-    Ok(Arc::new(a_session_at(account).await?))
+    // The map is let go before anything is dialled. Held across a sign-in it
+    // would make every other account wait out a server that has taken the
+    // connection and then gone quiet, which is two minutes.
+    let held = {
+        let mut sessions = the_sessions_being_held().lock().await;
+        sessions.entry(account.id.clone()).or_default().clone()
+    };
+    // This one is held across the sign-in on purpose, and it is what makes two
+    // pieces of work arriving together sign in once rather than twice. It
+    // belongs to this account alone, so no other account waits on it, and it is
+    // let go as soon as the session is handed back.
+    let mut holding = held.lock().await;
+    if let Some(session) = holding.as_ref() {
+        return Ok(session.clone());
+    }
+    // A sign-in the server turns down writes nothing, so the entry stays empty
+    // and the next piece of work signs in rather than waiting on a session that
+    // was never made.
+    let session = Arc::new(a_session_at(account).await?);
+    *holding = Some(session.clone());
+    Ok(session)
 }
 
 /// Close this account's session and forget it.
-pub(crate) async fn no_longer_signed_in_to(_account_id: &str) {}
+///
+/// Forgotten as well as closed, so an account added later under the same id,
+/// which is a different account, gets a session of its own.
+pub(crate) async fn no_longer_signed_in_to(account_id: &str) {
+    let held = the_sessions_being_held().lock().await.remove(account_id);
+    let Some(held) = held else {
+        return;
+    };
+    let ending = held.lock().await.take();
+    if let Some(session) = ending
+        && let Err(why) = session.disconnect_imap().await
+    {
+        // Logged rather than said out loud. Nobody asked for this: it happens
+        // because an account was removed, and the removal itself worked.
+        tracing::warn!("A removed account's session could not be closed: {why}");
+    }
+}
 
 /// Close every account's session.
-pub(crate) async fn no_longer_signed_in_to_anything() {}
+///
+/// What the program does on its way out. One at a time rather than all at once,
+/// because the caller bounds the whole of it and a bound spent on a server that
+/// has stopped answering is spent whichever order they go in.
+pub(crate) async fn no_longer_signed_in_to_anything() {
+    let all: Vec<TheSessionForOneAccount> = {
+        let mut sessions = the_sessions_being_held().lock().await;
+        sessions.drain().map(|(_, held)| held).collect()
+    };
+    for held in all {
+        let ending = held.lock().await.take();
+        if let Some(session) = ending
+            && let Err(why) = session.disconnect_imap().await
+        {
+            tracing::warn!("A session could not be closed on the way out: {why}");
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::Mutex;
-
     use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
     use crate::service::protocols::imap::against_a_server_that_answers::a_server_that_can;
 
