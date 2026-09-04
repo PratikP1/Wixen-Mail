@@ -499,6 +499,19 @@ impl MailController {
         })
     }
 
+    /// The UIDs in a folder above `after`, oldest first.
+    ///
+    /// `UID {after}:*` rather than `ALL`, which is the difference between a
+    /// handful of numbers and every number in a mailbox of forty thousand.
+    /// A resumed sync asks this one; the whole-folder question is asked only
+    /// when the deletion comparison is due.
+    pub async fn list_uids_above(&self, folder: &str, after: u32) -> Result<Vec<u32>> {
+        once_more_if_the_connection_went!(self, session, {
+            session.select_folder(folder).await?;
+            session.uids_above(after).await
+        })
+    }
+
     /// Fetch headers for the UIDs given.
     ///
     /// Takes UIDs rather than fetching a whole folder, so the caller can ask

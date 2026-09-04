@@ -1096,6 +1096,25 @@ impl ImapSession {
         self.search_uids("ALL").await
     }
 
+    /// The UIDs above `after` in the selected mailbox, oldest first.
+    ///
+    /// `UID n:*` is an open-ended range, and the server answers it with the
+    /// messages numbered above `n` and nothing about the ones below. That is
+    /// the whole saving a resumed sync gets: a mailbox of forty thousand
+    /// answers with however many arrived since the last sync.
+    ///
+    /// One subtlety of the range, worth knowing before somebody reads an
+    /// answer of one message as an answer of none: `n:*` on a mailbox whose
+    /// highest uid is below `n` is not empty, because the specification says a
+    /// range whose ends are the wrong way round is read the other way round.
+    /// So this can answer with the highest message in the mailbox even when
+    /// nothing new has arrived. Harmless here: that message is already held,
+    /// so the sync's own fetch list leaves it out, and the answer never
+    /// reaches the forget path.
+    pub async fn uids_above(&mut self, after: u32) -> Result<Vec<u32>> {
+        self.search_uids(&format!("UID {after}:*")).await
+    }
+
     /// Fetch the header fields the message list shows.
     ///
     /// Asked for in batches, so a mailbox of a hundred thousand messages costs
