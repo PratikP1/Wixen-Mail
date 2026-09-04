@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 48
+open_count: 50
 waived_count: 0
-fixed_count: 11
-total_count: 59
-last_updated: 2026-09-04T13:45:47.023Z
+fixed_count: 13
+total_count: 63
+last_updated: 2026-09-04T18:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -21,9 +21,9 @@ last_updated: 2026-09-04T13:45:47.023Z
 | 4 | 01 | stub | src/presentation/message_columns.rs |  | Sort::conversation_order_by_clause is written and tested and has no non-test caller; 01-12 passes the user's chosen sort | fixed |  | 2026-08-31T01:12:21.927Z | 2026-09-02T07:09:55.366Z |
 | 5 | 01 | deviation | src/application/conversations.rs |  | Hungarian's one-letter I: forward marker is read as a reply marker, because mail_parser's trim_trailing_fwd ignores a parenthesised word of one character | fixed |  | 2026-08-31T01:12:22.334Z | 2026-09-02T18:18:48.506Z |
 | 6 | 01 | unrun-verify | src/presentation/wx_app.rs |  | Rethreading on arrival repaints one row and does not touch the selection; no screen reader has confirmed that a repainted row is silent to somebody not on it | open |  | 2026-08-31T05:13:47.847Z |  |
-| 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | open |  | 2026-08-31T05:13:49.247Z |  |
+| 7 | 01 | stub | src/application/thread_identity.rs |  | A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table | fixed |  | 2026-08-31T05:13:49.247Z | 2026-09-04T18:30:00.000Z |
 | 8 | 01 | deviation | src/data/message_cache/messages.rs |  | messages.message_id holds two formats (bare from mail_parser, angle-bracketed from draft_message::message_id_for) while thread_id holds one; the lookup asks for both rather than rewriting a shipped column | fixed |  | 2026-08-31T05:13:50.314Z | 2026-09-03T09:36:22.242Z |
-| 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | open |  | 2026-08-31T05:13:51.507Z |  |
+| 9 | 01 | deviation | .planning/phases/01-folders-and-conversations/01-13-PLAN.md |  | Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one | fixed |  | 2026-09-04T18:30:00.000Z |
 | 10 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The coverage sentence before a saved search is announced as a low-priority status topic and has not been heard under a screen reader; it also coalesces with the Running this saved search line, which is by design and unverified by ear | open |  | 2026-09-01T02:14:56.334Z |  |
 | 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names | open |  | 2026-09-01T03:56:05.356Z |  |
 | 12 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear | open |  | 2026-09-01T03:56:05.812Z |  |
@@ -74,6 +74,10 @@ last_updated: 2026-09-04T13:45:47.023Z
 | 57 | 03 | deviation | src/data/message_cache/messages.rs |  | A message is still counted twice in a conversation if a server holds it in two places and gives it neither a Gmail identifier nor a Message-ID. WHICH_MESSAGE_THIS_ROW_IS falls back to the row id, so two such rows are two messages. Chosen deliberately over merging by row position: a count that is too high is visible, a conversation that has vanished is not. Also unfixed and pre-existing: a Gmail message under two labels counts twice, because both label rows are real rows outside All Mail and nothing says which label should lose. Fixing that needs the count and the delete list to become different questions, which is an architectural change rather than a predicate. | open |  | 2026-09-04T13:45:22.582Z |  |
 | 58 | 03 | deviation | src/data/message_cache/messages.rs |  | Measured cost of the identity filter, release build, warm, 200,000 rows in 10,000 conversations. On an account with a folder holding all mail the conversation listing goes from about 0.75s to about 1.2s, roughly 60 percent more, of which about 300ms is the filter and about 150ms the extra rows now in reach. On an account with no such folder there is no measurable difference, 0.86s against 0.85s, so the short-circuit claim in conversation_scope's doc comment was measured rather than assumed. Neither number is acceptable on its own terms: conversations_query has no LIMIT and groups the whole account on every listing, which is SCALE-03's subject and was true before this change. | open |  | 2026-09-04T13:45:35.198Z |  |
 | 59 | 03 | deviation | src/data/message_cache/searching.rs |  | searching.rs:539 groups search results by COALESCE(m.gmail_msgid, m.id), which is the identity plan 03-04 found insufficient for the conversation count. On a server that advertises the RFC 6154 All attribute and gives no Gmail identifier, a search shows the same message twice, once per copy. Same class of defect, same remedy available (the Message-ID arm of WHICH_MESSAGE_THIS_ROW_IS), pre-existing and outside 03-04's scope. test_one_gmail_message_under_two_labels_is_found_once covers the Gmail case only. | open |  | 2026-09-04T13:45:47.023Z |  |
+| 60 | 03 | unrun-verify | src/data/message_cache/messages.rs |  | Nothing in this plan has run against a real account. That a real client sends In-Reply-To without References, that a conversation root really does arrive after a message naming it during a live sync, and that the first open after this change is bearable on somebody's real mailbox are all unverified: the merge, the backfill and every timing here are measured against a cache built inside a test on this computer. | open |  | 2026-09-04T18:30:00.000Z |  |
+| 61 | 03 | deviation | src/application/thread_identity.rs |  | A merged conversation can settle under an identifier that is nobody's root. Two conversations an arrival has proved to be one carry no ordering between their names, so the winner is the least of them by ordinary string comparison, which is stable and arbitrary. Stability is what was needed and finding the older message is not available to rejoin. Recorded rather than glossed, because for a chain naming only its parent the conversation is then filed under a message in the middle. | open |  | 2026-09-04T18:30:00.000Z |  |
+| 62 | 03 | unrun-verify | src/data/message_cache/messages.rs |  | A merge renames one of the two conversations and nothing in the running program says so. The changelog says a conversation may change which message it is filed under; the interface does not, and whether somebody reading a conversation notices it move under a screen reader is unverified by ear. | open |  | 2026-09-04T18:30:00.000Z |  |
+| 63 | 03 | deviation | src/data/message_cache/mod.rs |  | The first open after this change walks every stored message and reports nothing while it does. Measured at 5.66 seconds with nothing to join and 6.45 with every conversation split in two, over two hundred thousand messages on this computer. It happens once, it is gated on a probe rather than a marker, and a larger mailbox pays more with the window showing nothing. | open |  | 2026-09-04T18:30:00.000Z |  |
 
 ````json
 [
@@ -156,10 +160,10 @@ last_updated: 2026-09-04T13:45:47.023Z
     "file": "src/application/thread_identity.rs",
     "line": null,
     "description": "A conversation root arriving after a message that names it is not merged: the link lives only in the other message's stored refs_header, which no index can search. Needs an identifier-to-conversation table",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T05:13:49.247Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-04T18:30:00.000Z"
   },
   {
     "id": 8,
@@ -180,10 +184,10 @@ last_updated: 2026-09-04T13:45:47.023Z
     "file": ".planning/phases/01-folders-and-conversations/01-13-PLAN.md",
     "line": null,
     "description": "Task 1's order-independence criterion is unsatisfiable with the signature the same task mandates: the lookup cannot see messages that name the arriving one",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T05:13:51.507Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-04T18:30:00.000Z"
   },
   {
     "id": 10,
@@ -783,6 +787,54 @@ last_updated: 2026-09-04T13:45:47.023Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-04T13:45:47.023Z",
+    "resolved_at": null
+  },
+  {
+    "id": 60,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "Nothing in this plan has run against a real account. That a real client sends In-Reply-To without References, that a conversation root really does arrive after a message naming it during a live sync, and that the first open after this change is bearable on somebody's real mailbox are all unverified: the merge, the backfill and every timing here are measured against a cache built inside a test on this computer.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 61,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/application/thread_identity.rs",
+    "line": null,
+    "description": "A merged conversation can settle under an identifier that is nobody's root. Two conversations an arrival has proved to be one carry no ordering between their names, so the winner is the least of them by ordinary string comparison, which is stable and arbitrary. Stability is what was needed and finding the older message is not available to rejoin. Recorded rather than glossed, because for a chain naming only its parent the conversation is then filed under a message in the middle.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 62,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "A merge renames one of the two conversations and nothing in the running program says so. The changelog says a conversation may change which message it is filed under; the interface does not, and whether somebody reading a conversation notices it move under a screen reader is unverified by ear.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T18:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 63,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/data/message_cache/mod.rs",
+    "line": null,
+    "description": "The first open after this change walks every stored message and reports nothing while it does. Measured at 5.66 seconds with nothing to join and 6.45 with every conversation split in two, over two hundred thousand messages on this computer. It happens once, it is gated on a probe rather than a marker, and a larger mailbox pays more with the window showing nothing.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-04T18:30:00.000Z",
     "resolved_at": null
   }
 ]

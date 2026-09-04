@@ -408,6 +408,42 @@ mean and re-sort the file against that.
 
 ## A conversation root arriving after a message that names it is not merged (found in 01-13)
 
+**Closed by plan 03-05 on 2026-09-04.** `identifiers_a_message_names` holds one
+row per identifier a message uses, its own and each of its chain, and
+`threads_holding_any_of` asks it as a second question beside the message column.
+All six arrival orders end as one conversation.
+
+This entry got the shape of the fix right and left two things out, and both cost
+more than the table did.
+
+**It holds no conversation, and that was not obvious.** The entry says a table
+"mapping every identifier a message names to the conversation that message is
+in", which is one indexed probe rather than a join and is the faster answer. It
+is also a second copy of which conversation a message is in, which
+`reroot_threads` rewrites in the first, and two places able to come to differ is
+the failure `thread_identity`'s own module comment opens with. A row says only
+what a message named; which conversation that is stays in `messages.thread_id`.
+
+**The winner rule had to change with it, and the entry does not mention that.**
+`rejoin` made the arriving message's own conversation the winner, on the
+argument that a chain is oldest first. That holds for a full `References` chain
+and not for one naming only its parent, where the arriving conversation is a
+message in the middle, so the same three messages settled under different names
+depending on which arrived last. More merges firing is what made it matter. The
+winner is the earliest identifier among the conversations being merged now, and
+`a_chain_naming_only_its_parent_agrees_in_every_arrival_order` is the test.
+
+**The backfill was named here and its size was not.** "A backfill for mail
+already held" is one clause of the size estimate. Measured on a release build
+over two hundred thousand messages, the first open after this change costs 5.66
+seconds with nothing to join and 6.45 with every conversation split in two.
+Every open after it is 70 microseconds, because the gate is one probe.
+
+**The test named under "how it stays visible" is gone**, which is what its own
+comment asked for: it said that if it started failing the gap had been closed
+and it should become another case of the test above it, and it is now two of
+the six orders there.
+
 **Found during:** 01-13, task 1, by writing the order-independence test as a
 simulation of the storage path rather than as a property of the pure function.
 
@@ -446,6 +482,11 @@ existing one, a reader in the merge, and a backfill for mail already held.
 
 
 ## The plan's order-independence criterion could not be met as written (found in 01-13)
+
+**Closed by plan 03-05 on 2026-09-04**, by changing the signature this is about.
+`threads_holding_any_of` no longer asks only what a stored message is called, so
+the criterion 01-13 could not meet is met: six arrival orders, one conversation,
+one name.
 
 **Found during:** 01-13, task 1.
 
