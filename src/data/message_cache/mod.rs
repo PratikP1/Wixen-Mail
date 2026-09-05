@@ -1803,6 +1803,7 @@ impl MessageCache {
                 what_it_is_called TEXT NOT NULL,
                 here_json TEXT NOT NULL,
                 theirs_json TEXT NOT NULL,
+                their_version TEXT,
                 held_at TEXT NOT NULL
             )",
                 [],

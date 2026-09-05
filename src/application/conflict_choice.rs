@@ -227,6 +227,34 @@ pub enum WhatChoosingCallsFor {
     TakeTheirsAndSendNothing,
 }
 
+/// What somebody did with the window that asked.
+///
+/// Named rather than a bare identifier, so the arm that means "they did not
+/// answer" cannot be reached by falling off the end of a match on numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatWasPressed {
+    /// The button for this computer's copy.
+    KeepWhatIsHere,
+    /// The button for the provider's copy.
+    KeepTheirs,
+    /// Escape, the close box, or the button that says so. Anything that is not
+    /// one of the two answers is this.
+    LeftWithoutChoosing,
+}
+
+/// Which copy that means to keep, where it means one at all.
+///
+/// `None` is a real answer and the important one: somebody who closed the
+/// window has not chosen, the hold stays, and nothing is written or sent. A
+/// closed window read as either copy winning is a choice made by whoever wrote
+/// the match rather than by the person.
+pub fn what_that_means(pressed: WhatWasPressed) -> Option<WhichCopy> {
+    // Stub reproducing today's behaviour: the provider's copy wins whatever
+    // anybody did, because nobody was asked.
+    let _ = pressed;
+    Some(WhichCopy::TheProviders)
+}
+
 /// What choosing that copy calls for.
 pub fn choosing(which: WhichCopy) -> WhatChoosingCallsFor {
     match which {
@@ -402,6 +430,28 @@ mod tests {
         assert!(
             took_theirs.contains("change made here is gone"),
             "losing work is said plainly rather than implied: {took_theirs}"
+        );
+    }
+
+    #[test]
+    fn test_leaving_without_choosing_chooses_nothing() {
+        assert_eq!(
+            what_that_means(WhatWasPressed::LeftWithoutChoosing),
+            None,
+            "a window somebody closed was read as an answer, so the hold went \
+             and one of the two copies with it"
+        );
+    }
+
+    #[test]
+    fn test_each_button_means_the_copy_it_names() {
+        assert_eq!(
+            what_that_means(WhatWasPressed::KeepWhatIsHere),
+            Some(WhichCopy::Here)
+        );
+        assert_eq!(
+            what_that_means(WhatWasPressed::KeepTheirs),
+            Some(WhichCopy::TheProviders)
         );
     }
 

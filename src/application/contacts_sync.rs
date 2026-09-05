@@ -1205,9 +1205,11 @@ fn hold_both_copies_of(
     the_copy_here: &ContactEntry,
     the_arriving_copy: &ContactEntry,
     address_book: &AddressBook,
+    their_version: Option<&str>,
     result: &mut SyncResult,
 ) -> Result<()> {
     cache.hold_a_conflict(&AHeldConflict {
+        their_version: their_version.map(str::to_string),
         id: the_copy_here.id.clone(),
         account_id: the_copy_here.account_id.clone(),
         at: address_book.as_stored().to_string(),
@@ -2427,6 +2429,7 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                         local,
                         &remote_contact,
                         &AddressBook::Google,
+                        arrived_at.as_deref(),
                         &mut result,
                     )?;
                     continue;
@@ -2642,6 +2645,7 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                         local,
                         &remote_contact,
                         &AddressBook::Microsoft,
+                        arrived_at,
                         &mut result,
                     )?;
                     continue;

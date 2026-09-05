@@ -801,13 +801,15 @@ before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverA
                         cache,
                         local,
                         &remote_contact,
-                        &AddressBook::Google,"""
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),"""
 after = """                if false {
                     hold_both_copies_of(
                         cache,
                         local,
                         &remote_contact,
-                        &AddressBook::Google,"""
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),"""
 red = [
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
     "application::contacts_sync::tests::test_a_contact_changed_at_google_and_here_is_held_rather_than_written_over",
@@ -839,6 +841,7 @@ before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverA
                         local,
                         &remote_contact,
                         &AddressBook::Google,
+                        arrived_at.as_deref(),
                         &mut result,
                     )?;
                     continue;
@@ -850,6 +853,7 @@ after = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAC
                         local,
                         &remote_contact,
                         &AddressBook::Google,
+                        arrived_at.as_deref(),
                         &mut result,
                     )?;
                     continue;
