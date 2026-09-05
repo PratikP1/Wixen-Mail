@@ -938,12 +938,22 @@ mod tests {
 
     #[test]
     fn test_everything_else_is_not_pretended_to_be_readable() {
-        // Opening a spreadsheet in a text control produces a screenful of
-        // nonsense, which is worse than saying it cannot be read.
+        // What the gate admits is three readings and no more: a PDF, a text
+        // file, and a picture. Everything here is outside all three and stays
+        // outside. An epub and a spreadsheet are documents this cannot turn
+        // into text, and opening one in a text control produces a screenful of
+        // nonsense, which is worse than saying it cannot be read. A zip is a
+        // container and there is nothing in the tab that could show what is in
+        // it.
+        //
+        // A JPEG used to be on this list, and it is the row that went red when
+        // the gate learned to describe a picture. It was taken out with that
+        // change rather than after it, so nothing here ever asserted a fact the
+        // code had stopped agreeing with. The three that remain are what says
+        // the gate was widened rather than opened.
         for (name, mime_type) in [
             ("book.epub", "application/epub+zip"),
             ("sheet.xlsx", "application/vnd.ms-excel"),
-            ("photo.jpg", "image/jpeg"),
             ("archive.zip", "application/zip"),
         ] {
             let mut file = attachment(name);

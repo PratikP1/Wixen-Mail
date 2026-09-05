@@ -756,16 +756,79 @@ pub const NO_PICTURE_TO_SHOW: &str =
 
 /// Compose a picture attachment for the reader.
 ///
-/// RED half. The real composition arrives with the green commit.
+/// Ordered by what decides what to do next. What the sender said about the
+/// picture comes first, because for a reader who cannot see it that is the only
+/// thing that can say what is in it, and its absence is the fact that decides
+/// whether the rest is worth listening to. Then whether there is a picture in
+/// the tab, so nobody is left believing one failed to load. Then the kind and
+/// the size, which are the two facts the attachment row already gave and are
+/// here so the tab reads on its own.
+///
+/// Takes the bytes although nothing here reads them. That is where a decode
+/// belongs when there is one, and putting the parameter in now means adding it
+/// changes this function rather than every caller.
 pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocument {
     let _ = bytes;
+    let title = match attachment.name.trim() {
+        "" => "Attachment".to_string(),
+        named => named.to_string(),
+    };
+
+    let said = what_the_sender_said_about_the_picture(&attachment.description);
+    let kind = describe_kind(&attachment.mime_type, &attachment.name);
+    let size = human_size(attachment.size);
+
     ReaderDocument {
-        title: attachment.name.clone(),
-        text: String::new(),
-        landmarks: Vec::new(),
+        text: format!("{title}\n{said}\n{NO_PICTURE_TO_SHOW}\n{kind}, {size}\n"),
+        // The only landmark there is. A picture has no structure to move by, and
+        // an empty list would leave a reader who presses the jump-to-heading key
+        // with no way back to the top of the tab.
+        landmarks: vec![Landmark {
+            offset: 0,
+            level: 1,
+            label: title.clone(),
+        }],
+        title,
+        // Nothing here has looked at the file. The bytes are carried past
+        // untouched, no decoder has been handed them, and what is in the tab is
+        // the sender's own words plus two facts this program already knew from
+        // the message's structure. So there is nothing for this to be a verdict
+        // on. That answer changes the moment something decodes: a decoder is a
+        // parser over a stranger's file, and the task that adds one has to
+        // decide this again rather than inherit it.
+        looks_unsafe: false,
         warning: None,
         attachments: Vec::new(),
-        looks_unsafe: false,
+    }
+}
+
+/// The first line of a picture preview: what the sender said it is.
+///
+/// Not cut at [`LONGEST_DESCRIPTION_SPOKEN`] the way the attachment row is. A
+/// row is announced every time focus reaches it and has to stay short enough to
+/// listen to; a tab is opened on purpose, once, by somebody who wants the whole
+/// of it. The absence is worded from
+/// [`crate::application::long_text::NO_DESCRIPTION`] rather than written again,
+/// so a reader who meets it on a picture inside a note, on an attachment row and
+/// here hears the same words for the same fact.
+fn what_the_sender_said_about_the_picture(said: &WhatTheSenderSaid) -> String {
+    match said {
+        WhatTheSenderSaid::Nothing => format!(
+            "This picture came with {}, so nothing here can say what is in it.",
+            crate::application::long_text::NO_DESCRIPTION
+        ),
+        // Not the same sentence as silence, for the reason
+        // `ReaderAttachment::what_the_sender_said` already gives: the sender did
+        // write something and it arrived as bytes that are not writing, which is
+        // their client's fault rather than theirs. Guardrail 9.
+        WhatTheSenderSaid::SomethingUnreadable => {
+            "The sender wrote a description with nothing readable in it, so \
+             nothing here can say what is in this picture."
+                .to_string()
+        }
+        WhatTheSenderSaid::InWords(said) => {
+            format!("The sender described this picture: {}", said.trim())
+        }
     }
 }
 
@@ -3486,6 +3549,29 @@ mod picture_preview_tests {
             "{}",
             document.text
         );
+    }
+
+    #[test]
+    fn test_the_two_halves_of_what_counts_as_a_picture_agree() {
+        // One list of kinds, and a name table that stands for the same kinds.
+        // Two lists of image types is how two lists come to disagree, so each
+        // entry in the table has to name a kind the carrying list really holds,
+        // and every kind on that list has to be reachable by a name as well as
+        // by a type. Otherwise a sender whose client labels a WebP
+        // application/octet-stream is refused for a reason nobody wrote down.
+        use crate::application::pictures::KINDS_WORTH_CARRYING;
+
+        for (named, kind) in READS_AS_A_PICTURE {
+            assert!(KINDS_WORTH_CARRYING.contains(&kind), "{named} names {kind}");
+        }
+        for kind in KINDS_WORTH_CARRYING {
+            assert!(
+                READS_AS_A_PICTURE
+                    .iter()
+                    .any(|(_, stands_for)| *stands_for == kind),
+                "no file name reaches {kind}"
+            );
+        }
     }
 
     #[test]

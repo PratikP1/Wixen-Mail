@@ -8,6 +8,31 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **An image attachment now opens and says what is known about the picture.**
+
+  Choose a PNG, JPEG, GIF or WebP in the attachment list and press Enter, and it
+  opens in a tab of its own. The first line is what the sender said the picture
+  is, in their own words. Where they said nothing, which is the ordinary case,
+  the tab says that in the first line rather than leaving a gap: "This picture
+  came with no description, so nothing here can say what is in it." That is the
+  fact which decides whether the rest is worth listening to, so it is said
+  first, and a gap where those words would be is indistinguishable from this
+  program having dropped them.
+
+  After that the tab says whether there is a picture in it to look at, then the
+  kind and the size in the same words the attachment row already uses.
+
+  Known limitations:
+
+  - **Nothing is drawn yet.** The tab says so plainly rather than leaving a
+    blank space somebody could read as a picture that failed to load.
+  - **The description is the sender's and nothing checks it.** If it does not
+    match the picture, nothing here can tell.
+  - **Whether senders write one at all is unmeasured.** No mail account has ever
+    been used with this program. If most senders write nothing, most previews
+    will say so, which is the honest answer and still better than the silence
+    there is today.
+
 - **A text attachment now opens and can be read here.**
 
   Until now the reader could open a PDF and nothing else. Choose a `.txt`, a
