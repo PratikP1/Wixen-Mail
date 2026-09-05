@@ -60,7 +60,7 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -370,7 +370,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
             .map(str::to_string)
             .collect(),
         receipt_to: row.get(20)?,
-        list_unsubscribe: None,
+        list_unsubscribe: row.get(21)?,
     })
 }
 
@@ -391,7 +391,7 @@ pub(super) fn unified_inbox_query(limit: usize) -> String {
                 m.size_bytes, m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE f.folder_type = 'Inbox' AND m.deleted = 0
@@ -960,15 +960,16 @@ impl MessageCache {
                      (uid, folder_id, message_id, subject, from_addr, to_addr, cc, date,
                       size_bytes, refs_header, read, starred, deleted, has_attachments,
                       internaldate, answered, draft, reply_to, safety, safety_reasons,
-                      gmail_msgid, labels, receipt_to, pop_uidl, downloaded_at,
-                      thread_id)
+                      gmail_msgid, labels, receipt_to, list_unsubscribe, pop_uidl,
+                      downloaded_at, thread_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+                         ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
                  ON CONFLICT(folder_id, uid) DO UPDATE SET
                      pop_uidl = excluded.pop_uidl,
                      gmail_msgid = excluded.gmail_msgid,
                      labels = excluded.labels,
                      receipt_to = excluded.receipt_to,
+                     list_unsubscribe = excluded.list_unsubscribe,
                      message_id = excluded.message_id,
                      subject = excluded.subject,
                      from_addr = excluded.from_addr,
@@ -1023,6 +1024,7 @@ impl MessageCache {
                     incoming.gmail_message_id.map(|id| id as i64),
                     incoming.labels,
                     incoming.receipt_to,
+                    incoming.list_unsubscribe,
                     incoming.pop_uidl,
                     // Set once, when the row is first written. The update above
                     // leaves it alone, because the removal policy counts from

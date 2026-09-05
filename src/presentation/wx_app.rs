@@ -25391,7 +25391,10 @@ fn block_the_sender(
     let known = blocking::WhatIsAlreadyTrue {
         their_own_addresses: &their_own,
         rules_already_there: &rules,
-        how_to_leave_the_list: None,
+        // From the row this handler already holds, rather than from a query: a
+        // query on the interface thread inside a key handler is a window that
+        // cannot repaint, and a window that cannot repaint cannot speak.
+        how_to_leave_the_list: message.list_unsubscribe.as_deref(),
         the_message_was_from: Some(&message.from),
     };
     match blocking::may_block(&account, &block, &known) {

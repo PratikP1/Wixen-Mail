@@ -8257,7 +8257,7 @@ tests_last_seen = [
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # A week-start day other than Monday used to be refused on every rule that
@@ -14868,7 +14868,7 @@ red = [
     "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # The accessible half of the same feature, and the half likelier to be tidied
@@ -14913,7 +14913,7 @@ red = [
     "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # The other half of the same lookup, and the worse failure of the two. Matching
@@ -14937,5 +14937,5 @@ red = [
     "service::mime::tests::test_markup_too_broken_to_read_leaves_the_part_undescribed_rather_than_guessed_at",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]

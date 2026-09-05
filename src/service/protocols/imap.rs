@@ -86,13 +86,22 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// signatures and a long Received chain runs to several kilobytes, and over a
 /// hundred thousand messages that is the difference between a first sync that
 /// finishes and one that does not.
-/// The last five are the verdict the provider's own filter already reached.
-/// They are short, unlike the DKIM signatures and Received chain deliberately
-/// left out, and they are the difference between telling somebody a message is
-/// a phishing attempt and having no idea.
+/// The five before the last are the verdict the provider's own filter already
+/// reached. They are short, unlike the DKIM signatures and Received chain
+/// deliberately left out, and they are the difference between telling somebody
+/// a message is a phishing attempt and having no idea.
+///
+/// `LIST-UNSUBSCRIBE` is last, and it is on this list because a header that is
+/// not never arrives. The warning shown before somebody blocks a mailing list
+/// is built entirely on it, so leaving it off leaves every hop after it correct
+/// and operating on nothing, which is what it did until 2026-09-05. About
+/// twenty bytes a message, on the same reasoning as the receipt headers above
+/// it. `tests/the_list_warning_reads_the_message.rs` reads this constant and
+/// says so, because nothing else would notice it going.
 const HEADER_FIELDS: &str = "SUBJECT FROM TO CC REPLY-TO DATE MESSAGE-ID IN-REPLY-TO REFERENCES \
      AUTHENTICATION-RESULTS X-SPAM-FLAG X-SPAM-STATUS X-FOREFRONT-ANTISPAM-REPORT \
-     X-MICROSOFT-ANTISPAM DISPOSITION-NOTIFICATION-TO RETURN-RECEIPT-TO";
+     X-MICROSOFT-ANTISPAM DISPOSITION-NOTIFICATION-TO RETURN-RECEIPT-TO \
+     LIST-UNSUBSCRIBE";
 
 /// What Gmail knows about a message that nobody else does.
 ///

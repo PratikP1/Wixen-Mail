@@ -331,8 +331,42 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         }),
         attachments,
         receipt_to: receipt_request(&message),
-        list_unsubscribe: None,
+        list_unsubscribe: how_to_leave_the_list(&message),
     })
+}
+
+/// What the message said about leaving the mailing list it came from.
+///
+/// Read from the raw header bytes rather than through [`header_text`], and that
+/// is the whole of why this is not [`receipt_request`] under another name.
+/// `mail-parser` sends `List-Unsubscribe` to its address parser, which strips
+/// the angle brackets RFC 2369 puts round each entry: `<mailto:x@y>` comes back
+/// as `mailto:x@y`. `application::blocking::where_to_write_to_leave` looks for
+/// those brackets and finds nothing without them, so the parsed form would
+/// report every mailing list on earth as one that gave no way out. Probed
+/// against `mail-parser 0.11.5` before this was written.
+///
+/// Presence is asked separately from the value because
+/// [`mail_parser::Message::header_raw`] answers `None` twice over: for a header
+/// that is not there, and for one whose bytes are not UTF-8. Those are
+/// different facts about the message, and the second is still a mailing list.
+/// So a header this cannot read reads as one that gave no way out, which is
+/// what it is, rather than as a message from a person.
+///
+/// The value is a stranger's on its way to being said aloud, so two things
+/// happen to it. Anything that is not writing becomes a space, through the same
+/// [`as_text_and_nothing_else`] a sender's attachment description goes through,
+/// which also folds a header split across lines back into one. And it is cut at
+/// [`A_WAY_OUT_AT_MOST`], which fails closed: an entry sliced in half has lost
+/// its closing bracket, so no address is read out of it at all.
+fn how_to_leave_the_list(message: &Message<'_>) -> Option<String> {
+    // The header being there at all is the fact that matters: it is what says
+    // this message came from a list. Some lists send it empty, and that is
+    // still a list, so an empty value must not arrive looking like an absent
+    // one.
+    message.header("List-Unsubscribe")?;
+    let said = as_text_and_nothing_else(message.header_raw("List-Unsubscribe").unwrap_or_default());
+    Some(said.chars().take(A_WAY_OUT_AT_MOST).collect())
 }
 
 /// Give every undescribed picture the description on the `img` that names it.
