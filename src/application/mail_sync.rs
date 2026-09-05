@@ -387,6 +387,27 @@ pub(crate) struct WhatTheServerReports {
     pub highest_modseq: Option<u64>,
 }
 
+/// What the caller is asking this sync to do.
+///
+/// Two different questions that used to be one, and telling them apart is what
+/// keeps the resume from breaking the command it sits next to.
+///
+/// Bringing a folder up to date means asking what arrived and what changed, and
+/// everything that arrived is numbered above the highest uid already held, so
+/// the narrow question answers it completely. Reaching further back means the
+/// opposite: the mail somebody is asking for is *below* the highest uid held,
+/// which is exactly the half a resumed listing says nothing about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum WhatThisSyncIsFor {
+    /// Bringing the folder up to date, which is every sync on a timer and
+    /// every one a folder being opened starts.
+    #[default]
+    WhateverHasChanged,
+    /// Reaching further back into a folder that is only partly here, which is
+    /// Get Older Messages and every chunk of a whole-folder request.
+    MoreOfWhatIsAlreadyThere,
+}
+
 /// What a sync has to ask the server before it can bring a folder up to date.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WhatToAskFor {
@@ -437,7 +458,12 @@ pub(crate) const fn what_to_ask_for(
     held: WhatThisComputerHolds,
     reported: WhatTheServerReports,
     comparison: finding_what_was_deleted::WhetherAFullComparisonIsDue,
+    wanted: WhatThisSyncIsFor,
 ) -> WhatToAskFor {
+    // Not read yet. The green half is the arm that answers with the whole
+    // folder for a caller reaching further back; taken and dropped here so the
+    // tests are red on the answer rather than on a build that never happened.
+    let _ = wanted;
     if matches!(
         comparison,
         finding_what_was_deleted::WhetherAFullComparisonIsDue::Due
@@ -1207,6 +1233,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     folder_id: i64,
     limit: usize,
     filtering: Option<&Filtering<'_>>,
+    wanted: WhatThisSyncIsFor,
 ) -> Result<FolderSync> {
     if !folder.selectable {
         // A container such as Gmail's `[Gmail]`. Selecting it fails.
@@ -1278,6 +1305,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             highest_modseq: status.highest_modseq,
         },
         comparison,
+        wanted,
     );
     let on_server = match asking {
         // Asks the server about the whole folder and gets the whole folder
@@ -2866,10 +2894,29 @@ mod tests {
         folder: &ImapFolder,
         limit: usize,
     ) -> Result<FolderSync> {
+        for_a_sync_that(
+            server,
+            cache,
+            id,
+            folder,
+            limit,
+            WhatThisSyncIsFor::WhateverHasChanged,
+        )
+    }
+
+    /// The same sync, told what the caller is asking it for.
+    fn for_a_sync_that<M: Mailbox>(
+        server: &M,
+        cache: &MessageCache,
+        id: i64,
+        folder: &ImapFolder,
+        limit: usize,
+        wanted: WhatThisSyncIsFor,
+    ) -> Result<FolderSync> {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
-            .block_on(sync_folder(server, cache, folder, id, limit, None))
+            .block_on(sync_folder(server, cache, folder, id, limit, None, wanted))
     }
 
     #[test]
@@ -3060,6 +3107,7 @@ mod tests {
                 inbox,
                 50,
                 Some(&filtering),
+                WhatThisSyncIsFor::WhateverHasChanged,
             ))
             .expect("the sync to finish");
 
@@ -3191,6 +3239,7 @@ mod tests {
                 folder_id,
                 50,
                 Some(&filtering),
+                WhatThisSyncIsFor::WhateverHasChanged,
             ))
             .expect("the sync to finish")
     }
@@ -4309,6 +4358,7 @@ mod tests {
                     highest_modseq: Some(4300),
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::TheUidsAbove(39_998)
         );
@@ -4332,9 +4382,87 @@ mod tests {
                     highest_modseq: Some(4300),
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::Due,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::EveryUid
         );
+    }
+
+    #[test]
+    fn test_a_sync_reaching_further_back_is_read_out_in_full_however_much_is_stored() {
+        // The resume answers "what arrived", and everything that arrived is
+        // numbered above the highest uid held, so the narrow question answers
+        // that completely. It answers "what else is there" with nothing at all,
+        // because the mail somebody is reaching back for is below that uid,
+        // which is the half a narrow listing says nothing about.
+        assert_eq!(
+            what_to_ask_for(
+                WhatThisComputerHolds {
+                    uid_validity: Some(7),
+                    modseq: Some(4200),
+                    highest_uid: Some(39_998),
+                },
+                WhatTheServerReports {
+                    uid_validity: Some(7),
+                    highest_modseq: Some(4300),
+                },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+            ),
+            WhatToAskFor::EveryUid
+        );
+    }
+
+    #[test]
+    fn test_asking_for_more_of_a_folder_that_can_resume_still_reaches_the_older_mail() {
+        // Get Older Messages, and every chunk of a whole-folder request after
+        // the first one. Both were answered with nothing the moment the resume
+        // landed: a folder that can resume is asked for the uids above the
+        // highest one held, the older mail is below it, and `uids_to_fetch` is
+        // then choosing from a list that does not contain it.
+        //
+        // What that looks like from outside is a key that does nothing, and a
+        // whole-folder request that stops after one chunk saying the server
+        // stopped sending.
+        let (cache, id, folder) = a_cache();
+        let whole: Vec<u32> = (1..=6).collect();
+        let a_server_holding_all_six = || Scripted {
+            on_server: whole.clone(),
+            headers: whole.iter().copied().map(message).collect(),
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 6,
+                unread: 0,
+            },
+            uid_validity: Some(1),
+            highest_modseq: Some(100),
+            ..Default::default()
+        };
+
+        // A first sync bounded at three, so the newest half is here and the
+        // older half is on the server. That is the state Get Older Messages
+        // exists for.
+        run_limited(&a_server_holding_all_six(), &cache, id, &folder, 3);
+        assert_eq!(
+            cache.stored_uids(id).expect("what is held"),
+            vec![4, 5, 6],
+            "the fixture did not leave older mail on the server"
+        );
+
+        let done = for_a_sync_that(
+            &a_server_holding_all_six(),
+            &cache,
+            id,
+            &folder,
+            3,
+            WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+        )
+        .expect("the sync runs");
+
+        assert_eq!(
+            done.fetched, 3,
+            "asking for more of the folder brought nothing down"
+        );
+        assert_eq!(cache.stored_uids(id).expect("what is held"), whole);
     }
 
     #[test]
@@ -4349,6 +4477,7 @@ mod tests {
                     highest_modseq: Some(4300),
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4371,6 +4500,7 @@ mod tests {
                     highest_modseq: Some(4300),
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4394,6 +4524,7 @@ mod tests {
                     highest_modseq: None,
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4415,6 +4546,7 @@ mod tests {
                     highest_modseq: Some(4300),
                 },
                 finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
+                WhatThisSyncIsFor::WhateverHasChanged,
             ),
             WhatToAskFor::EveryUid
         );

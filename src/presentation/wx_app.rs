@@ -4212,7 +4212,11 @@ impl WxMailApp {
                         }
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
-                            spawn_mail_sync(app, None);
+                            spawn_mail_sync(
+                                app,
+                                None,
+                                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+                            );
                         }
                         // The same command the button above the message list
                         // runs, reached by its own id rather than by a second
@@ -4326,7 +4330,18 @@ impl WxMailApp {
                                         );
                                     }
                                     send_status(&ui_tx, &runtime, "Getting older messages...");
-                                    spawn_mail_sync(app, Some(path));
+                                    // Reaching further back, not bringing
+                                    // the folder up to date. A folder that can
+                                    // resume is asked for the uids above the
+                                    // highest one held, and the older mail this
+                                    // key exists to fetch is below it, so a
+                                    // sync told the other thing answers this
+                                    // with nothing at all.
+                                    spawn_mail_sync(
+                                        app,
+                                        Some(path),
+                                        crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+                                    );
                                 }
                                 // A saved search is not a mailbox, and neither
                                 // is a branch or a label. There is nothing on a
@@ -15634,7 +15649,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
-            spawn_mail_sync(AppHandles { state, tx, rt }, Some(folder.clone()));
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                Some(folder.clone()),
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
         }
         UIUpdate::FolderMessagesArrived(folder_id) => {
             reread_folder_if_open(state, message_cache, *folder_id, tx);
@@ -18691,6 +18710,13 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
                 folder_id,
                 crate::application::mail_sync::INITIAL_FETCH_LIMIT,
                 None,
+                // Reaching further back, not bringing the folder up to date.
+                // A sync told the other thing resumes, and a resumed listing
+                // covers only the uids above the highest one held, which is
+                // the opposite end of the folder from the mail this request is
+                // asking for. It would answer every chunk after the first with
+                // nothing and the request would stop saying the server had.
+                crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
             ))?;
             // The other bound, moved for every chunk. Sent rather than done
             // here because the view's limit lives on the interface thread.
@@ -18718,7 +18744,11 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
 /// of a large mailbox takes a while, and silence for a minute is
 /// indistinguishable from the application having stopped for somebody who
 /// cannot see that anything is happening.
-fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
+fn spawn_mail_sync(
+    app: AppHandles<'_>,
+    only: Option<String>,
+    wanted: crate::application::mail_sync::WhatThisSyncIsFor,
+) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
@@ -18932,6 +18962,7 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                 *folder_id,
                 crate::application::mail_sync::INITIAL_FETCH_LIMIT,
                 filtering.as_ref(),
+                wanted,
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
