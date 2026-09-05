@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 413 records have arrived since and have not been through it.
+# 416 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -14891,7 +14891,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 81 },
+    { file = "src/presentation/reader_text.rs", tests = 93 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -15071,4 +15071,101 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 49 },
+]
+
+# ── What a message says about its own form, and who is told ──────────────────
+#
+# `analyze_message_security` answers eight things about every message read and
+# `body_safety::from_body` read two of them. So the program worked out that a
+# message was PGP-encrypted on every read and told nobody, and opening one gave
+# a screenful of armour with no explanation beside it.
+#
+# The break is the state the tree was in until 2026-09-05, written as the
+# question answering "nothing about its form" whatever the body holds. Measured
+# against the whole library with --no-fail-fast, because a stopping point
+# under-reports and always in the direction that makes a record look right.
+[[guard]]
+name = "what a message says about its own form is read from the message rather than answered ordinary"
+file = "src/application/body_safety.rs"
+before = """    if SecurityService::detect_pgp_encrypted(&whole) {
+        return WhatTheFormSays::EncryptedWithPgp;
+    }
+    if SecurityService::detect_pgp_signed(&whole) {
+        return WhatTheFormSays::SignedWithPgp;
+    }
+    WhatTheFormSays::Nothing"""
+after = """    let _ = &whole;
+    WhatTheFormSays::Nothing"""
+# Measured by hand with --no-fail-fast: 6280 passed, 11 failed, 1 ignored.
+red = [
+    "application::body_safety::tests::test_an_armoured_message_says_it_is_encrypted",
+    "application::body_safety::tests::test_a_signature_block_alone_says_the_message_is_signed",
+    "application::body_safety::tests::test_a_message_carrying_both_is_reported_as_the_one_that_cannot_be_read",
+    "application::body_safety::tests::test_the_formatted_half_alone_is_read_for_armour",
+    "application::body_safety::tests::test_a_signed_message_is_not_mistaken_for_an_encrypted_one",
+    "presentation::reader_text::encryption_tests::test_an_encrypted_message_explains_its_armour_instead_of_leaving_it_there",
+    "presentation::reader_text::encryption_tests::test_a_signed_message_says_so_without_saying_the_signature_was_checked",
+    "presentation::reader_text::encryption_tests::test_an_encrypted_message_is_not_reported_as_an_unsafe_one",
+    "presentation::reader_text::encryption_tests::test_a_filters_warning_keeps_the_top_of_the_bar_and_the_form_goes_under_it",
+    "presentation::reader_text::encryption_tests::test_the_form_is_said_before_the_message_even_when_a_signature_verdict_follows",
+    "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_says_it_too",
+]
+tests_last_seen = [
+    { file = "src/application/body_safety.rs", tests = 20 },
+    { file = "src/presentation/reader_text.rs", tests = 93 },
+]
+
+# The half-fix, which is the one a check for the question alone cannot see. The
+# break leaves the question asked and drops the answer, so the composer still
+# names the call and nothing reaches the bar.
+#
+# This is not hypothetical. The first version of the census asked only whether
+# the question was asked, and passed against this exact break when it was
+# measured. The census was widened, and this record is what holds it to the
+# wider reading.
+#
+# Measured against the census rather than the library on purpose: the library
+# sees this too, and the census is what would see a third composer arriving with
+# neither half.
+[[guard]]
+name = "the reader folds what a message said about its form into the bar rather than dropping it"
+file = "src/presentation/reader_text.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = """    // by `read_whole`.
+    .with_encryption(form)
+}"""
+after = """}"""
+# Measured by hand with --no-fail-fast: 9 passed, 1 failed.
+red = [
+    "test_every_composer_asks_what_form_the_message_is_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
+]
+
+# The other half-fix, and the one that reads best in a diff. The question is
+# asked, the fold is written, and the fold is handed a named variant, so the
+# question decides nothing and every test of the fold itself still passes.
+#
+# The break spells the type by its full path on purpose, because that is how the
+# composers spell it, and a check anchored on the short spelling would be
+# answered by whichever one somebody happened to write.
+[[guard]]
+name = "the fold is handed what the message said rather than a named variant"
+file = "src/presentation/reader_text.rs"
+suite = "an_encrypted_message_is_not_left_unexplained"
+before = """    // by `read_whole`.
+    .with_encryption(form)
+}"""
+after = """    // by `read_whole`.
+    .with_encryption(crate::application::body_safety::WhatTheFormSays::Nothing)
+}"""
+# Measured by hand with --no-fail-fast: 9 passed, 1 failed.
+red = [
+    "test_every_composer_asks_what_form_the_message_is_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]

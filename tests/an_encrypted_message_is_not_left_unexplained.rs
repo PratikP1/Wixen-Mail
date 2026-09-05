@@ -51,6 +51,28 @@ const THE_QUESTION: &str = "what_the_form_says(";
 /// somewhere would go on passing after every caller had gone.
 const WHERE_IT_IS_DECLARED: &str = "pub fn what_the_form_says(";
 
+/// The fold that puts the answer into the bar.
+///
+/// Asking is half of it. A composer that asks and drops the answer is the
+/// half-fix a check for the question alone cannot see, and that is not
+/// hypothetical: the first version of this file asked only whether the question
+/// was asked, and stayed green through its own break, because the break took the
+/// fold out and left the question. Plan 03-08's summary is about exactly this
+/// shape, a break that is the half-fix rather than the absent one.
+const THE_FOLD: &str = ".with_encryption(";
+
+/// A variant named where the answer should be.
+///
+/// The other half-fix, and the one that reads best in a diff: the fold is there,
+/// the question is there, and the fold is handed a constant, so the question
+/// decides nothing.
+///
+/// Looked for anywhere after the fold on the same line rather than immediately
+/// inside its bracket, because the composers name the type by its full path and
+/// a check anchored on the short spelling would be answered by whichever one
+/// somebody happened to write.
+const A_CONSTANT_INSTEAD_OF_THE_ANSWER: &str = "WhatTheFormSays::";
+
 /// The setting that decides whether a message's *contents* are read.
 ///
 /// Right for the phishing scan and wrong for this. A file that both asks this
@@ -152,6 +174,28 @@ fn where_the_question_is_asked(lines: &[(usize, String)]) -> Vec<usize> {
         .collect()
 }
 
+/// Every line of shipping code in `lines` that folds the answer into the bar.
+fn where_the_answer_is_folded_in(lines: &[(usize, String)]) -> Vec<usize> {
+    lines
+        .iter()
+        .filter(|(_, line)| code_of(line).contains(THE_FOLD))
+        .map(|(at, _)| *at)
+        .collect()
+}
+
+/// Every line of shipping code in `lines` that folds a constant in instead.
+fn where_a_constant_is_folded_in(lines: &[(usize, String)]) -> Vec<usize> {
+    lines
+        .iter()
+        .filter(|(_, line)| {
+            code_of(line)
+                .split_once(THE_FOLD)
+                .is_some_and(|(_, handed)| handed.contains(A_CONSTANT_INSTEAD_OF_THE_ANSWER))
+        })
+        .map(|(at, _)| *at)
+        .collect()
+}
+
 fn the_composers() -> String {
     fs::read_to_string(THE_COMPOSERS)
         .expect("the composers to be readable")
@@ -192,14 +236,28 @@ fn test_every_composer_asks_what_form_the_message_is_in() {
 
     for opening in THE_COMPOSER_OPENINGS {
         let body = the_body_of(&lines, opening);
-        let asked = where_the_question_is_asked(body);
         assert!(
-            !asked.is_empty(),
+            !where_the_question_is_asked(body).is_empty(),
             "the composer opening `{opening}` in {THE_COMPOSERS} never asks \
              `{THE_QUESTION}`, so a message opened through it shows its armour with \
              nothing said about why. The other composer may still ask, which is what \
              makes this quiet: the feature works when a message is opened one way and \
              not the other."
+        );
+        assert!(
+            !where_the_answer_is_folded_in(body).is_empty(),
+            "the composer opening `{opening}` in {THE_COMPOSERS} asks `{THE_QUESTION}` \
+             and never folds the answer in with `{THE_FOLD}`, so the question is \
+             answered and thrown away. That is what a check for the question alone \
+             cannot see, and it is how this file first passed against its own break."
+        );
+        let constant = where_a_constant_is_folded_in(body);
+        assert!(
+            constant.is_empty(),
+            "the composer opening `{opening}` in {THE_COMPOSERS} folds a named variant \
+             into the bar at lines {constant:?} rather than what the message said. The \
+             call is there, the question decides nothing, and every test of the fold \
+             still passes."
         );
     }
 }
@@ -294,6 +352,68 @@ fn test_a_question_asked_only_in_a_comment_or_a_fixture_does_not_count() {
     assert!(
         where_the_question_is_asked(&lines).is_empty(),
         "a comment or a test fixture was counted as a call site"
+    );
+}
+
+#[test]
+fn test_a_composer_that_asks_and_throws_the_answer_away_is_found() {
+    // The break this file first passed against. The question is still asked, so
+    // a check for the question alone says the feature is there; the answer goes
+    // nowhere, so nothing reaches the bar.
+    let made_up = "pub fn single_message(a: u8) -> u8 {\n    \
+                       let _form = what_the_form_says(Some(a), None);\n    \
+                       a\n\
+                   }\n";
+    let lines = the_shipping_lines_of(made_up);
+    let body = the_body_of(&lines, "pub fn single_message(");
+
+    assert!(
+        !where_the_question_is_asked(body).is_empty(),
+        "the question is written on that line and was not found"
+    );
+    assert!(
+        where_the_answer_is_folded_in(body).is_empty(),
+        "a composer that folds nothing in was reported as folding something in"
+    );
+}
+
+#[test]
+fn test_a_fold_handed_a_named_variant_is_found() {
+    // The other half-fix: everything is present and the question decides
+    // nothing.
+    let made_up = "pub fn single_message(a: u8) -> u8 {\n    \
+                       let form = what_the_form_says(Some(a), None);\n    \
+                       let _ = form;\n    \
+                       thing.with_encryption(crate::a::b::WhatTheFormSays::Nothing)\n\
+                   }\n";
+    let lines = the_shipping_lines_of(made_up);
+    let body = the_body_of(&lines, "pub fn single_message(");
+
+    assert_eq!(
+        where_a_constant_is_folded_in(body),
+        vec![4],
+        "a fold handed a named variant was not found at the line it is on"
+    );
+}
+
+#[test]
+fn test_a_fold_handed_the_answer_is_not_reported_as_a_constant() {
+    // The other direction, so the constant check is a reading rather than
+    // something that fires on every fold.
+    let made_up = "pub fn single_message(a: u8) -> u8 {\n    \
+                       let form = what_the_form_says(Some(a), None);\n    \
+                       thing.with_encryption(form)\n\
+                   }\n";
+    let lines = the_shipping_lines_of(made_up);
+    let body = the_body_of(&lines, "pub fn single_message(");
+
+    assert!(
+        where_a_constant_is_folded_in(body).is_empty(),
+        "an honest fold was reported as folding in a constant"
+    );
+    assert!(
+        !where_the_answer_is_folded_in(body).is_empty(),
+        "an honest fold was not found at all"
     );
 }
 

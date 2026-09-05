@@ -6,6 +6,54 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **A message you cannot open now says why, instead of showing you a block of
+  gibberish.**
+
+  Open a PGP-encrypted message today and you get several screens of letters and
+  numbers with nothing said about them. The program had already worked out that
+  the message was encrypted, three lines before it drew that screen, and told
+  nobody. It says so now, in the bar above the message and in what the screen
+  reader speaks when the message opens:
+
+  "This message is encrypted. Wixen Mail cannot open it, so what is shown below
+  is the encrypted form rather than the message."
+
+  A message carrying a PGP signature says that too, and says plainly that
+  nothing checked it: "This message carries a PGP signature, which Wixen Mail
+  cannot check, so nothing here says whether it is genuine." That sentence is
+  worded the way it is on purpose. Being told a message is signed is easily
+  heard as being told it is genuine, and nothing here has looked.
+
+  Ordinary mail is unchanged. There is no new bar, and no extra line to listen
+  past.
+
+  This does not sound the unsafe-message cue. An encrypted message is not a
+  dangerous one, it is one this build cannot open, and a cue that sounds on
+  ordinary mail is a cue nobody hears on the message where it mattered.
+
+  Turning off "read each message on this computer" does not turn this off.
+  That setting is about reading what a message says, and this is about what
+  form the message arrived in.
+
+  Known limitations, four worth reading:
+
+  - **It still cannot open the message.** Nothing here decrypts anything. The
+    sentence explains the gibberish; it does not remove it.
+  - **This has never met a real account.** No mail account has ever been used
+    with this program. A PGP message is recognised by the armour markers in its
+    text, which is how PGP mail written inline arrives. Mail sent as
+    `multipart/encrypted`, with the armour in a part of its own, does not reach
+    this and would still open with nothing said. Which of the two real senders
+    use is not measurable here.
+  - **Encrypted S/MIME mail is not covered.** That kind carries no text part at
+    all, so it opens as an empty message rather than as gibberish, and it is
+    detected somewhere this cannot see.
+  - **A conversation read as one document says nothing about one message's
+    form.** One bar over five messages cannot say which of them it is about.
+    Opening that message on its own says it.
+
 ### Fixed
 
 - **Marking a message read, or starring it, while the mail server cannot be

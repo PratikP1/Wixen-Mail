@@ -254,6 +254,17 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
 /// that forgot them would quietly get machine defaults and a date written a way
 /// nobody chose.
 pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -> ReaderDocument {
+    // Asked here rather than left to each caller. There are three surfaces that
+    // open a message and only one of them would have been remembered, and a
+    // fact that reaches one door and not another is one that appears and
+    // disappears depending on which way somebody came in.
+    //
+    // Asked at all, whatever the content-scanning setting says. That setting is
+    // about reading what a message *says*, which is a judgement about a
+    // stranger's writing, and this is about what form the message arrived in.
+    // Somebody who has turned content scanning off still meets the armour.
+    let form =
+        crate::application::body_safety::what_the_form_says(Some(body.as_plain()), body.as_html());
     let title = if message.subject.trim().is_empty() {
         "No subject".to_string()
     } else {
@@ -282,10 +293,17 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         landmarks,
         warning: warning_for(message.safety, &message.safety_reasons),
         // The bar this builds is the safety verdict, so it is there because
-        // something is wrong. A signature folded in later never sets this.
+        // something is wrong. Neither of the two folds below it, a signature
+        // verdict and what the message says about its own form, ever sets this.
         looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
         attachments: attachments_of(message),
     }
+    // Before a caller folds in a signature verdict, and that ordering is
+    // load-bearing rather than tidy. A signature verdict puts
+    // `HOW_IT_WAS_CHECKED` into the bar, and `said_before_the_message` cuts
+    // there, so anything folded in after one is never spoken by the reader or
+    // by `read_whole`.
+    .with_encryption(form)
 }
 
 /// The whole message as one passage to be read aloud, headings and all.
@@ -751,6 +769,26 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         text.push('\n');
     }
 
+    // What the message says about its own form, and only when this document is
+    // one message. That is the case that matters most, because it is how a
+    // message opens by default: `show_conversation_as_page` composes one part
+    // when somebody opens a single message formatted.
+    //
+    // A thread of several is left alone, for the reason `with_signature` gives
+    // for staying off one. There is a form per message and one bar over all of
+    // them, so "this message is encrypted" said over a thread of five is heard
+    // as covering all five. What it costs is named in the changelog rather than
+    // left to be discovered: an encrypted message inside a thread read as one
+    // document still shows its armour with nothing said, and opening that
+    // message on its own is where the sentence is.
+    let form = match parts {
+        [only] => crate::application::body_safety::what_the_form_says(
+            Some(only.body.as_plain()),
+            only.body.as_html(),
+        ),
+        _ => crate::application::body_safety::WhatTheFormSays::Nothing,
+    };
+
     // The worst verdict in the conversation. One reply being a phishing
     // attempt makes the whole thread worth a warning, and burying that under
     // "the first message is fine" is how somebody misses it. The worst
@@ -772,8 +810,8 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         //
         // `false` here would only be right if a bar on a conversation could
         // exist for some reason other than something being wrong, and today it
-        // cannot: a signature verdict is folded in afterwards by
-        // `with_signature`, which never sets this.
+        // cannot: the two folds that come afterwards, `with_signature` and
+        // `with_encryption`, never set this.
         looks_unsafe: warning.is_some(),
         landmarks,
         warning,
@@ -785,6 +823,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
             .flat_map(|part| attachments_of(&part.message))
             .collect(),
     }
+    .with_encryption(form)
 }
 
 /// One attachment in the reader, and enough to fetch it again.

@@ -122,8 +122,23 @@ pub enum WhatTheFormSays {
 /// So the two answered here are the two that can fire through a body and have
 /// no other answer anywhere in the tree.
 pub fn what_the_form_says(body_plain: Option<&str>, body_html: Option<&str>) -> WhatTheFormSays {
-    let _whole =
+    use crate::service::security::SecurityService;
+
+    let whole =
         crate::service::security::both_halves_of_a_body(body_plain.unwrap_or_default(), body_html);
+
+    // Encryption is asked first, and the order is the answer rather than an
+    // implementation detail. A message can carry both blocks, and the two facts
+    // are not equally useful: "signed" is a note about a message somebody can
+    // read, and "encrypted" is the reason there is nothing to read. Reporting
+    // such a message as signed says something true and leaves the armour
+    // unexplained, which is the whole of what this exists to fix.
+    if SecurityService::detect_pgp_encrypted(&whole) {
+        return WhatTheFormSays::EncryptedWithPgp;
+    }
+    if SecurityService::detect_pgp_signed(&whole) {
+        return WhatTheFormSays::SignedWithPgp;
+    }
     WhatTheFormSays::Nothing
 }
 
