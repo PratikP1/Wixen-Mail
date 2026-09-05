@@ -997,7 +997,7 @@ pub fn whose_copy_wins(
     version_now: Option<&str>,
     version_last_seen: Option<&str>,
 ) -> WhoseCopyWins {
-    let moved_there = the_address_book_moved(version_now, version_last_seen);
+    let moved_there = the_marker_moved(version_now, version_last_seen);
     match (work_here_nobody_has_sent, moved_there) {
         (false, false) => WhoseCopyWins::NeitherCopyMoved,
         (false, true) => WhoseCopyWins::TakeTheAddressBooks,
@@ -1006,14 +1006,19 @@ pub fn whose_copy_wins(
     }
 }
 
-/// Whether the address book has moved its own copy since this computer last
-/// looked, as far as anything here can tell.
+/// Whether the provider has moved its own copy since this computer last looked,
+/// as far as anything here can tell.
+///
+/// Shared with the calendar rather than written out twice. An etag and a
+/// contact version marker are the same kind of fact and the same comparison,
+/// and two copies of it would come to disagree about what a missing marker
+/// means the first time either was touched.
 ///
 /// Both markers or nothing. A marker missing on either side is not evidence
 /// that a copy stayed still, it is no evidence at all, so it reads as moved.
 /// Reading it the other way would freeze a contact here for ever against an
 /// address book that gives no markers, and both of these give one.
-fn the_address_book_moved(version_now: Option<&str>, version_last_seen: Option<&str>) -> bool {
+pub(crate) fn the_marker_moved(version_now: Option<&str>, version_last_seen: Option<&str>) -> bool {
     match (version_now, version_last_seen) {
         (Some(now), Some(last_seen)) => now != last_seen,
         _ => true,

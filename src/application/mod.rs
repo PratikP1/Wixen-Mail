@@ -14,6 +14,7 @@ pub mod blocking;
 pub mod body_safety;
 pub mod caldav_sync;
 pub mod calendar;
+pub mod calendar_conflict;
 pub mod calendar_source;
 pub mod categories;
 pub mod checking_signatures;

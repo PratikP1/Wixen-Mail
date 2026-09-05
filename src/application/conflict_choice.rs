@@ -227,6 +227,25 @@ pub enum WhatChoosingCallsFor {
     TakeTheirsAndSendNothing,
 }
 
+/// What a sync says at the end about the disagreements it found.
+///
+/// One sentence for both syncs, with a hole for what kind of thing and whose
+/// copy, so the address book's version and the calendar's cannot come to
+/// differ. `allowed::changes_waiting_here` is shared between the two syncs for
+/// the same reason, and its own comment records that two copies of it drifted
+/// and only one was corrected.
+///
+/// It names the menu item rather than a module, because a sentence saying
+/// something is waiting and not saying where it is waiting sends somebody
+/// looking. Whether the count is useful or is a sentence somebody stops
+/// hearing is unverified by ear.
+pub fn how_many_are_waiting_to_be_chosen(count: usize, other: TheOtherCopy) -> String {
+    // Stub reproducing today's sentence: it reports a loss rather than asking
+    // for a decision, and says nothing about where to make one.
+    let _ = other;
+    format!("{count} of your changes replaced")
+}
+
 /// What somebody did with the window that asked.
 ///
 /// Named rather than a bare identifier, so the arm that means "they did not
@@ -432,6 +451,42 @@ mod tests {
             took_theirs.contains("change made here is gone"),
             "losing work is said plainly rather than implied: {took_theirs}"
         );
+    }
+
+    #[test]
+    fn test_the_sync_sentence_says_where_the_choice_is_made() {
+        let said = how_many_are_waiting_to_be_chosen(1, TheOtherCopy::AnAddressBook);
+        assert!(
+            said.contains("Choose Which Copy to Keep"),
+            "a sentence saying something is waiting and not saying where sends \
+             somebody looking: {said}"
+        );
+        assert!(
+            said.contains("nothing is sent until you do"),
+            "somebody has to be told their change is not going anywhere while \
+             they decide: {said}"
+        );
+    }
+
+    #[test]
+    fn test_the_sync_sentence_names_the_kind_of_thing_and_whose_copy() {
+        let contacts = how_many_are_waiting_to_be_chosen(2, TheOtherCopy::AnAddressBook);
+        assert!(contacts.contains("2 contacts"), "{contacts}");
+        assert!(contacts.contains("your address book"), "{contacts}");
+        let calendar = how_many_are_waiting_to_be_chosen(2, TheOtherCopy::ACalendar);
+        assert!(calendar.contains("2 calendar items"), "{calendar}");
+        assert!(calendar.contains("your calendar"), "{calendar}");
+        assert!(
+            !calendar.contains("address book"),
+            "a calendar item read out under the address book's words: {calendar}"
+        );
+    }
+
+    #[test]
+    fn test_one_thing_waiting_is_not_said_in_the_plural() {
+        let said = how_many_are_waiting_to_be_chosen(1, TheOtherCopy::ACalendar);
+        assert!(said.contains("1 calendar item changed"), "{said}");
+        assert!(!said.contains("items"), "{said}");
     }
 
     #[test]
