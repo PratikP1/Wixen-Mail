@@ -328,21 +328,40 @@ checkpoints and are not autonomous.
 - [ ] `04-01-PLAN.md` — An attachment's own description arrives and is spoken, and an image with none borrows the alt on the `<img>` that names it
 - [ ] `04-02-PLAN.md` — `List-Unsubscribe` arrives, so the mailing-list warning that ships and has never fired reaches somebody
 - [ ] `04-03-PLAN.md` — The encryption facts computed on every message read stop being thrown away, so armour has an explanation beside it
-- [ ] `04-04-PLAN.md` — A text attachment opens as text and an image attachment is described rather than drawn
+- [ ] `04-04-PLAN.md` — A text attachment opens as text, and a picture says what is known about it and is then shown
 - [ ] `04-05-PLAN.md` — A filter rule may name the safety verdict, and every sentence in the warning bar says who said it
 - [ ] `04-06-PLAN.md` — A key moves between misspellings in both directions without a dialog, and says what a word could be instead
 - [ ] `04-07-PLAN.md` — Several files at once by dropping, pasting or picking, with an honest answer about whether a drop on a web view lands
 - [ ] `04-08-PLAN.md` — The inline picture draft round trip is proved, and whether a picture may be decorative is put to a decision
-- [ ] `04-09-PLAN.md` — An S/MIME encrypted message says why it cannot be read instead of opening blank, and OpenPGP is a decision rather than a guess
+- [ ] `04-09-PLAN.md` — An S/MIME encrypted message says why it cannot be read instead of opening blank, then an OpenPGP crate is chosen and PGP reading is built on it
 
-Two decisions from `04-RESEARCH.md` are still open and the plans are built round
-them rather than assuming answers. READ-02's scope is decided in `04-09`'s second
-task, which stops before choosing an OpenPGP crate; `04-09`'s first task is the
-S/MIME half and stands whichever way that goes. Whether a picture may be
-decorative is decided in `04-08`'s second task. `04-04` assumes an image preview
-describes rather than decodes, states the whole argument, and says what changes
-if that is overruled. `04-02` assumes `List-Unsubscribe` is in scope and lifts
-out whole if it is not.
+Two of the four decisions from `04-RESEARCH.md` were answered on 2026-09-05 and
+are built in rather than assumed.
+
+**READ-02 takes on OpenPGP as well as the S/MIME half**, so `04-09` no longer
+asks whether. Its first task wires the S/MIME sentence that already exists and
+stops a message opening blank; its second chooses a crate, runs the package
+legitimacy check and names the credential store entry, which is permanent once
+written because the code that erases secrets must name what the code that wrote
+them named; its third builds against the interface so a different choice costs
+one adapter. Criterion 5 will not close in this phase: reading a real PGP
+message needs a real key and real mail, and a key and a message made by the same
+crate in the same test prove only that the crate agrees with itself.
+
+**An image previews, which means described and shown.** Accessibility first is
+not accessibility only. `04-04` says what is known about a picture first, so the
+accessible half is not hostage to the decoding, and then shows it. That ordering
+is for robustness and is not a ranking. The decoding turned out far smaller than
+feared: `image` is already a direct dependency and already decodes ICO, PNG and
+BMP in this binary, so JPEG is a feature flag rather than a new adoption, and
+only the transitive crates the flags add are audited.
+
+Two remain open. Whether a picture may be marked decorative is decided in
+`04-08`'s second task, which now states the trade rather than only the options:
+a decorative mark buys silence where silence is right, and is also the fastest
+way past a prompt, so a photograph gets marked decorative and the reader is told
+nothing at all. `04-02` assumes `List-Unsubscribe` is in scope and lifts out
+whole if it is not.
 
 **UI hint**: yes
 
