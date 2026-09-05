@@ -454,6 +454,18 @@ pub enum UIUpdate {
         success: bool,
         error: Option<String>,
     },
+    /// The network went or came back, in the words somebody is given.
+    ///
+    /// The sentence rather than the fact, and worked out by
+    /// `the_network_coming_and_going::what_to_say_about_the_network`, where it
+    /// can be argued about in a test. One string reaches the status bar and the
+    /// announcement queue from this one arm, so the words somebody reads and
+    /// the words somebody hears cannot come apart.
+    ///
+    /// Carrying words rather than a flag is also what stops this becoming a
+    /// second decision. Whether there is anything to say at all was settled
+    /// before this was sent.
+    TheNetworkChanged(String),
     /// Offline mode was toggled on/off
     OfflineModeChanged(bool),
     /// Number of messages in the outbox queue

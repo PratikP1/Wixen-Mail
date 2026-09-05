@@ -4895,7 +4895,10 @@ impl WxMailApp {
                                 s.offline_mode = !s.offline_mode;
                                 s.offline_mode
                             };
-                            sync_menu_check(&frame, ID_OFFLINE_MODE, new_mode);
+                            // The tick moved into the OfflineModeChanged arm,
+                            // because the network going sets this mode too and
+                            // a tick set here alone would be right only for the
+                            // half somebody chose.
                             let label = if new_mode {
                                 "Offline mode enabled - outgoing mail will be queued"
                             } else {
@@ -5151,6 +5154,15 @@ impl WxMailApp {
                 // is the event loop's business, and counting ticks to a minute
                 // was tried and never got there.
                 let looked_at = std::cell::Cell::new(std::time::Instant::now());
+                // What the program believes about the network, and when it last
+                // asked. The first look is not a change, so a program opened
+                // where there has never been a signal says nothing about the
+                // network having gone.
+                let the_network = RefCell::new(
+                    crate::application::the_network_coming_and_going::WhatTheProgramBelieves::
+                        to_begin_with(crate::service::network::whether_there_is_a_network()),
+                );
+                let asked_the_network_at = std::cell::Cell::new(std::time::Instant::now());
                 let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
                 // The same layout the menu handler and the paint callback hold,
                 // not a copy of it. An arriving conversation listing decides
@@ -5231,6 +5243,28 @@ impl WxMailApp {
                         rt: &runtime,
                     };
                     mark_the_open_one_read(app, &a11y, &opened_at, marks_read);
+
+                    // Whether this computer still has a network. On this timer
+                    // and on its own interval, for the same reason the
+                    // reminders are here: a timer event reaches every handler
+                    // on the window it belongs to, so a second timer would run
+                    // this one as well.
+                    //
+                    // It has to be here rather than at the end of a mail check,
+                    // which is where a check of this kind would naturally go.
+                    // Nothing in this program checks mail on a schedule: a sync
+                    // starts because somebody asked for one, or because the
+                    // watch on a folder fired. Both of those stop when the
+                    // network goes, so a check that only ran there would notice
+                    // the network leaving and could never notice it coming
+                    // back.
+                    if asked_the_network_at.get().elapsed() >= HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK {
+                        asked_the_network_at.set(std::time::Instant::now());
+                        let news = the_network
+                            .borrow_mut()
+                            .told(crate::service::network::whether_there_is_a_network());
+                        act_on_what_the_network_did(news, &ui_tx, &runtime);
+                    }
 
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
@@ -9393,6 +9427,63 @@ fn mark_the_open_one_read(
 /// a database what is due. A reminder is set to the minute, so a minute is as
 /// often as the answer can change.
 const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How often this computer is asked whether it still has a network.
+///
+/// Ten seconds, and both ends of that are a choice about somebody's attention
+/// rather than about cost. The call is a local one that reads what Windows
+/// already knows, so asking is nearly free and the number is not a budget.
+///
+/// The short end: this is how long a laptop carried out of range keeps saying
+/// it is online, and how long mail written in that gap keeps saying it has been
+/// sent. Ten seconds is short enough that the sentence arrives while somebody
+/// still connects it to what they just did.
+///
+/// The long end: nothing is announced unless the answer changed, so a flapping
+/// connection cannot flood by being asked more often. What a shorter interval
+/// would really buy is more chances to catch a wifi that drops and returns
+/// inside one interval, and being told about that is worth less than not being
+/// told about it.
+const HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Say what the network did, and go offline when it has gone.
+///
+/// The sentence first and the mode second, in that order and never the other
+/// way round. The `OfflineModeChanged` arm is registered as quiet on the
+/// strength of a whole sentence going out ahead of it, so a mode change sent
+/// first would be a mode change nobody was told about.
+///
+/// Nothing here sends mail, and that is the point rather than an omission. The
+/// network coming back is the moment it would be easiest to flush the Outbox
+/// and the moment it would be most wrong to: mail leaving this computer is
+/// publishing, and guardrail 7 says publishing happens because somebody asked.
+/// What the network returning gets is a sentence saying the Outbox is untouched
+/// and, once plan 03-08's third task lands, a button somebody can press.
+fn act_on_what_the_network_did(
+    news: crate::application::the_network_coming_and_going::WhatToDoAboutIt,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::the_network_coming_and_going::{
+        WhatToDoAboutIt, what_to_say_about_the_network,
+    };
+
+    let Some(said) = what_to_say_about_the_network(news) else {
+        return;
+    };
+    let tx = tx.clone();
+    let words = said.to_string();
+    let go_offline = news == WhatToDoAboutIt::SayItWentAndGoOffline;
+    // One task rather than two, so the order really is the order. Two spawned
+    // sends race, and the race this one would lose is the mode arriving first
+    // and changing the indicator with nothing having said why.
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::TheNetworkChanged(words)).await;
+        if go_offline {
+            let _ = tx.send(UIUpdate::OfflineModeChanged(true)).await;
+        }
+    });
+}
 
 /// Raise anything that has come due, one window at a time.
 ///
@@ -15357,6 +15448,29 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.signal(FeedbackEvent::SendFailed, err);
             }
         }
+        UIUpdate::TheNetworkChanged(said) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // The same string to the eye and to the ear, which is the whole
+            // point of the sentence being worked out in one place: a deaf user
+            // reading the status bar and a blind user hearing it are told the
+            // same thing about the same event.
+            //
+            // Its own topic rather than "status", and the precedent is
+            // "renumbered" and "message text" above. "status" carries every
+            // steady sync line, the queue keeps only the newest of a topic, and
+            // a network that has gone arrives in the middle of a sync failing
+            // its way through several folders, so announced there it would be
+            // replaced before anybody heard it.
+            //
+            // Normal rather than Low, because this is not progress, and not
+            // High, because nobody pressed anything to cause it. Same reasoning
+            // as FolderWasRenumbered.
+            let _ = a11y.announce_topic(said, Priority::Normal, "network");
+        }
         UIUpdate::OfflineModeChanged(enabled) => {
             {
                 let mut s = lock_state(state);
@@ -15364,6 +15478,12 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             let msg = if *enabled { "Offline mode" } else { "Online" };
             frame.set_status_text(msg, 1);
+            // The tick on the View menu, here rather than where the change is
+            // decided, because there are two places that decide now: somebody
+            // choosing the menu item, and the network going. A tick set at one
+            // of them and not the other is a menu that disagrees with the
+            // program about which mode it is in.
+            sync_menu_check(frame, ID_OFFLINE_MODE, *enabled);
         }
         UIUpdate::OutboxQueueCount(count) => {
             {
@@ -22695,11 +22815,12 @@ mod what_the_status_line_says {
         &[
             (
                 "OfflineModeChanged",
-                "Keeps the mode indicator, which stays on screen. The one place that \
-                 sends this already sends the whole sentence, offline mode enabled and \
-                 outgoing mail will be queued, and the status arm shows and says that. \
-                 Saying the one word here as well would say the same change twice, a \
-                 moment apart.",
+                "Keeps the mode indicator and the tick on the View menu, both of which \
+                 stay on screen. Both places that send this send a whole sentence first: \
+                 the menu item sends offline mode enabled and outgoing mail will be \
+                 queued, and the network going sends TheNetworkChanged, whose arm shows \
+                 and says the sentence. Saying the one word here as well would say the \
+                 same change twice, a moment apart.",
             ),
             (
                 "OutboxQueueCount",
@@ -22982,15 +23103,29 @@ mod what_the_status_line_says {
         // Offline mode is safe only while the whole sentence goes out ahead of
         // it. A second sender added without one would be silent and nothing
         // else would notice.
+        //
+        // `send(` rather than `try_send(`, and that is not tidying. There are
+        // two senders now: the menu item, which is on the interface thread and
+        // uses `try_send`, and the network going, which is inside a spawned
+        // task and awaits an ordinary `send`. The longer pattern matched only
+        // the first, so the second arrived unwatched, which is exactly the
+        // "a second sender added without one" this paragraph warns about
+        // happening to the check rather than to the code. The shorter pattern
+        // is a substring of the longer one, so it finds both.
         let senders: Vec<_> = source
-            .match_indices("try_send(UIUpdate::OfflineModeChanged(")
+            .match_indices("send(UIUpdate::OfflineModeChanged(")
             .map(|(at, _)| at)
             .collect();
         assert!(!senders.is_empty(), "nothing sends the offline mode update");
         for at in &senders {
             let before = &source[at.saturating_sub(400)..*at];
             assert!(
-                before.contains("send_status("),
+                // Either sentence will do, and both are whole sentences that
+                // are shown and said. `send_status` is the menu item's, and
+                // `TheNetworkChanged` is the one the network going sends,
+                // which carries the words worked out in
+                // `the_network_coming_and_going`.
+                before.contains("send_status(") || before.contains("UIUpdate::TheNetworkChanged("),
                 "the offline mode update is sent with no sentence in front of it, so \
                  the change is now silent"
             );

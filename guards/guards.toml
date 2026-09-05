@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 394 records have arrived since and have not been through it.
+# 395 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -14429,4 +14429,53 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 5 },
+]
+
+# ── A network loss is said once, because it is a change and not an answer ───
+#
+# SCALE-05 and guardrail 5. One unplugged cable is many failures: a sync walks
+# several folders and each one asks a server, and a watch loop is sitting on a
+# connection that has gone. Said per failure, that is a screen reader saying
+# the same sentence eight times over somebody trying to read a message.
+#
+# The break is the shape that gets this wrong, and it is the shape somebody
+# reaches for first: answer from the observation rather than from the change.
+# It is also what the red half of this task was written against.
+#
+# Measured by hand on 2026-09-05, every target with --no-fail-fast, against a
+# tree with nothing else red: 6,189 tests passed and four failed. The counting,
+# the laptop opened where there has never been a signal, the repeat while
+# nothing has changed, and the two round trips.
+#
+# --no-fail-fast matters and is not decoration. Without it the runner stops at
+# the first failing target and the list that comes out is a prefix, which reads
+# exactly like a complete answer and is wrong in the direction this file exists
+# to catch.
+#
+# What this cannot see: whether the sentence is heard once. It says the state
+# hands out one answer, not that the queue speaks it once, and not that a
+# person hears it as a state rather than as an error. That is ledger 78.
+
+[[guard]]
+name = "the network is spoken about when it changes, not when it is asked"
+file = "src/application/the_network_coming_and_going.rs"
+before = """        let was = std::mem::replace(&mut self.there_is_a_network, there_is_a_network);
+        match (was, there_is_a_network) {
+            (true, false) => WhatToDoAboutIt::SayItWentAndGoOffline,
+            (false, true) => WhatToDoAboutIt::OfferToGoBackOnline,
+            _ => WhatToDoAboutIt::Nothing,
+        }"""
+after = """        self.there_is_a_network = there_is_a_network;
+        match there_is_a_network {
+            false => WhatToDoAboutIt::SayItWentAndGoOffline,
+            true => WhatToDoAboutIt::OfferToGoBackOnline,
+        }"""
+red = [
+    "application::the_network_coming_and_going::tests::test_a_network_that_was_already_gone_at_the_start_is_not_a_change",
+    "application::the_network_coming_and_going::tests::test_asking_again_while_the_network_is_still_there_says_nothing",
+    "application::the_network_coming_and_going::tests::test_ten_failures_from_one_loss_are_announced_once",
+    "application::the_network_coming_and_going::tests::test_the_network_coming_back_and_going_again_is_one_of_each_each_time",
+]
+tests_last_seen = [
+    { file = "src/application/the_network_coming_and_going.rs", tests = 8 },
 ]

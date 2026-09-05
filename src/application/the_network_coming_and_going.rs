@@ -79,11 +79,11 @@ impl WhatTheProgramBelieves {
     /// answers is one change and then nothing.
     pub fn told(&mut self, found: WhetherThereIsANetwork) -> WhatToDoAboutIt {
         let there_is_a_network = matches!(found, WhetherThereIsANetwork::ThereIsOne);
-        let _ = self.there_is_a_network;
-        self.there_is_a_network = there_is_a_network;
-        match there_is_a_network {
-            false => WhatToDoAboutIt::SayItWentAndGoOffline,
-            true => WhatToDoAboutIt::OfferToGoBackOnline,
+        let was = std::mem::replace(&mut self.there_is_a_network, there_is_a_network);
+        match (was, there_is_a_network) {
+            (true, false) => WhatToDoAboutIt::SayItWentAndGoOffline,
+            (false, true) => WhatToDoAboutIt::OfferToGoBackOnline,
+            _ => WhatToDoAboutIt::Nothing,
         }
     }
 

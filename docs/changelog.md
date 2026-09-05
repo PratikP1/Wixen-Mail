@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail notices when the network goes, switches itself to offline mode,
+  and says so once.**
+
+  Pull out the cable, close the laptop and open it somewhere with no signal, or
+  lose the wifi, and Wixen Mail now puts itself into offline mode without you
+  having to find the View menu. It says, in the status bar and out loud: "The
+  network has gone, so Wixen Mail is now offline. Mail you send waits in the
+  Outbox until you go back online." Mail you write after that waits in the
+  Outbox instead of being thrown at a server that is not there.
+
+  It is said once, not once per thing that failed. Losing the network while mail
+  is being checked makes every folder fail and the watch on your inbox fail as
+  well, and each of those could prompt another look. What is spoken is the
+  network changing, so ten failures from one cable are one sentence.
+
+  When the network comes back it says so, and stops there: "The network is back.
+  Wixen Mail is still offline, and nothing in the Outbox has been sent. Go back
+  online when you are ready." Nothing is sent. Turn offline mode off from the
+  View menu when you want your queued mail to go.
+
+  Known limitations, all three worth reading:
+
+  - This is Windows only. On any other platform Wixen Mail behaves exactly as it
+    did before: offline mode is a switch you set yourself and nothing sets it
+    for you.
+  - It notices a computer with no connection at all. It does not notice a
+    network that is up but cannot reach your mail server, because that is a
+    different question and only asking the server answers it.
+  - No account has ever been used with this program, and no real network has
+    ever gone while it was running. All of this has been driven by tests.
+
 - **You can ask for a whole folder once, instead of pressing Get Older Messages
   eighty times.**
 
