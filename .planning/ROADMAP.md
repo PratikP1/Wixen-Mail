@@ -319,7 +319,18 @@ announcement topic a whole-folder fetch belongs on.
   5. A user reads a PGP-encrypted message they hold the key for, and a message that cannot be decrypted says why instead of reading as empty.
   6. A spam classifier verdict is available to the filter rules that already exist, shown with its source named, never as a silent deletion.
 
-**Plans**: 9 plans, one per wave. Three shared files, `guards/guards.toml`,
+**Plans**: 1/9 plans executed, one per wave. Three shared files, `guards/guards.toml`,
+
+- [x] 04-01-PLAN.md
+- [ ] 04-02-PLAN.md
+- [ ] 04-03-PLAN.md
+- [ ] 04-04-PLAN.md
+- [ ] 04-05-PLAN.md
+- [ ] 04-06-PLAN.md
+- [ ] 04-07-PLAN.md
+- [ ] 04-08-PLAN.md
+- [ ] 04-09-PLAN.md
+
 `docs/changelog.md` and `Cargo.toml`, are touched by most plans under the
 same-commit rules, and `src/presentation/wx_app.rs` by six of them, so the plans
 are ordered rather than run in parallel. Plans 07, 08 and 09 carry blocking
@@ -446,7 +457,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 8/9 | In progress, none merged | - |
-| 4. Writing and reading a message in full | 0/TBD | Not started | - |
+| 4. Writing and reading a message in full | 1/9 | In Progress|  |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
 | 6. How the application speaks | 0/TBD | Not started | - |
 | 7. Installing, updating and what is stored | 0/TBD | Not started | - |
@@ -470,6 +481,7 @@ joined the feedback phase instead of the measurement phase.
   PIM-04, PIM-07 and PIM-08; `.planning/REQUIREMENTS.md` carries it. What is
   still open is only which backend goes first, costed in
   `.planning/phases/05-the-other-five-modules-keep-up/05-RESEARCH.md`.
+
 - SHIP-04 is a decision before it is an implementation.
 - SCALE-01 depends on what async-imap 0.11.3 actually exposes; the fallback is already
   specified in the mail-at-scale plan.

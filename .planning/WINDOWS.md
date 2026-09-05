@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 75
+open_count: 80
 waived_count: 0
 fixed_count: 13
-total_count: 88
-last_updated: 2026-09-05T09:47:46.593Z
+total_count: 93
+last_updated: 2026-09-05T14:09:51.446Z
 ---
 
 # Broken Windows Ledger
@@ -103,6 +103,11 @@ last_updated: 2026-09-05T09:47:46.593Z
 | 86 | 03 | unrun-verify | src/application/flag_changes_waiting.rs |  | Whether the two sentences about a flag change are distinguishable by ear. One says the server could not be reached and the change is saved here; the other says the server refused it and it has been put back. They share no opening clause and no verb, and a test holds them to that, but whether somebody hearing one in the middle of a syncing mailbox knows which they heard is a judgement only a screen reader run settles. Three things a run would settle: whether the two are told apart at speed, whether announcing them on their own topic rather than the status line means they are heard at all, and whether the count in the plural form is understood as a number of changes rather than as a number of servers or messages. | open |  | 2026-09-05T09:47:34.277Z |  |
 | 87 | 03 | deviation | src/presentation/wx_app.rs |  | A label added or removed still puts itself back when the push fails, whatever the reason. The waiting queue models two flags, read and starred, because those are the two a message row carries as its own state and the two the window puts back by sending the opposite update. A label is a keyword, of which a message can have many, and replaying one needs the keyword as well as the value. Left out rather than half-built: the arm names the case, says why, and takes the path it always took. The changelog says so under Known limitations. | open |  | 2026-09-05T09:47:46.170Z |  |
 | 88 | 03 | unrun-verify | src/application/flag_changes_waiting.rs |  | Whether Authentication counting as the server never having been asked is the right call against a real provider. A sign-in the server turned down means the change was never put to it and a token that has expired is fixed by signing in again, so the change is kept. Against a provider that answers Authentication for something that does not clear on its own, a wrong password nobody corrects, the change waits for ever and is offered on every sync. Nothing here has met a provider, so which errors a real one raises for an expired token against a wrong password is unknown, and that is the fact the decision rests on. | open |  | 2026-09-05T09:47:46.593Z |  |
+| 89 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Whether the sender's description is heard at the right moment in an attachment row. It is the fourth and last clause, after the name, the kind and the size, on the reasoning that the first three are what somebody decides to open a file on and the sender's words are what they want if they are still listening. That is a judgement about what a person wants to hear first, not a measurement, and only a real NVDA or Narrator run through a message with several attachments settles it. The row is announced every time focus reaches it, so getting the order wrong costs a moment on every arrow press. | open |  | 2026-09-05T14:09:25.832Z |  |
+| 90 | 04 | unrun-verify | src/service/mime.rs |  | Whether a description borrowed from the alt on the img that names a part reads as the sender's own words or as something the program made up. The row says the text with nothing marking it as borrowed, on the grounds that the alt is the sender's writing about that picture as much as a Content-Description would be. Nobody has heard it. If a borrowed description reads as an assertion by Wixen Mail rather than by the sender, that is a wording problem the tests cannot see, and it matters more here than for the header because the borrow really is a guess about which element meant which part. | open |  | 2026-09-05T14:09:33.628Z |  |
+| 91 | 04 | unrun-verify | src/service/mime.rs |  | Whether real senders supply Content-Description at all, and how often. If they mostly do not, this feature mostly says 'no description' on the header route and leans entirely on the alt borrowed from the markup. No mail account has ever been used with this program, so it cannot be measured here, and the changelog says so rather than implying the feature does more. It decides whether the header route was worth building or whether the markup route is the whole of it. | open |  | 2026-09-05T14:09:39.886Z |  |
+| 92 | 04 | deviation | src/application/pop_sync.rs |  | A POP account records no attachment rows at all, so nothing this plan built reaches one. The plan's premise that the IMAP path and the POP path are two writers of the attachments table is wrong: the only production writer is wx_app::spawn_body_fetch, which returns early when the account has no IMAP server, and pop_sync sets has_attachments and stores nothing else. So a POP message says it carries an attachment and lists none, which predates this plan and is not made worse by it. Left alone rather than half-fixed: adding a writer to the POP sync is a new path through the cache, not a widening of this one. | open |  | 2026-09-05T14:09:51.050Z |  |
+| 93 | 04 | deviation | src/service/mime.rs |  | The record 'a description the sender gave survives the boundary' went stale inside the session that wrote it. Written in the morning naming one test, it named too few by the afternoon, because the alt lookup added later gives a part whose header is dropped somewhere else to fall through to. Corrected by hand and re-measured. Recorded because CLAUDE.md predicts this shape and the only reason it was caught is that the second task re-ran --remeasure rather than trusting the first task's measurement; nothing would have failed if it had not. | open |  | 2026-09-05T14:09:51.446Z |  |
 
 ````json
 [
@@ -1160,6 +1165,66 @@ last_updated: 2026-09-05T09:47:46.593Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T09:47:46.593Z",
+    "resolved_at": null
+  },
+  {
+    "id": 89,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Whether the sender's description is heard at the right moment in an attachment row. It is the fourth and last clause, after the name, the kind and the size, on the reasoning that the first three are what somebody decides to open a file on and the sender's words are what they want if they are still listening. That is a judgement about what a person wants to hear first, not a measurement, and only a real NVDA or Narrator run through a message with several attachments settles it. The row is announced every time focus reaches it, so getting the order wrong costs a moment on every arrow press.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T14:09:25.832Z",
+    "resolved_at": null
+  },
+  {
+    "id": 90,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/mime.rs",
+    "line": null,
+    "description": "Whether a description borrowed from the alt on the img that names a part reads as the sender's own words or as something the program made up. The row says the text with nothing marking it as borrowed, on the grounds that the alt is the sender's writing about that picture as much as a Content-Description would be. Nobody has heard it. If a borrowed description reads as an assertion by Wixen Mail rather than by the sender, that is a wording problem the tests cannot see, and it matters more here than for the header because the borrow really is a guess about which element meant which part.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T14:09:33.628Z",
+    "resolved_at": null
+  },
+  {
+    "id": 91,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/mime.rs",
+    "line": null,
+    "description": "Whether real senders supply Content-Description at all, and how often. If they mostly do not, this feature mostly says 'no description' on the header route and leans entirely on the alt borrowed from the markup. No mail account has ever been used with this program, so it cannot be measured here, and the changelog says so rather than implying the feature does more. It decides whether the header route was worth building or whether the markup route is the whole of it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T14:09:39.886Z",
+    "resolved_at": null
+  },
+  {
+    "id": 92,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/application/pop_sync.rs",
+    "line": null,
+    "description": "A POP account records no attachment rows at all, so nothing this plan built reaches one. The plan's premise that the IMAP path and the POP path are two writers of the attachments table is wrong: the only production writer is wx_app::spawn_body_fetch, which returns early when the account has no IMAP server, and pop_sync sets has_attachments and stores nothing else. So a POP message says it carries an attachment and lists none, which predates this plan and is not made worse by it. Left alone rather than half-fixed: adding a writer to the POP sync is a new path through the cache, not a widening of this one.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T14:09:51.050Z",
+    "resolved_at": null
+  },
+  {
+    "id": 93,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/service/mime.rs",
+    "line": null,
+    "description": "The record 'a description the sender gave survives the boundary' went stale inside the session that wrote it. Written in the morning naming one test, it named too few by the afternoon, because the alt lookup added later gives a part whose header is dropped somewhere else to fall through to. Corrected by hand and re-measured. Recorded because CLAUDE.md predicts this shape and the only reason it was caught is that the second task re-ran --remeasure rather than trusting the first task's measurement; nothing would have failed if it had not.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T14:09:51.446Z",
     "resolved_at": null
   }
 ]
