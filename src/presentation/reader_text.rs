@@ -740,6 +740,35 @@ pub fn text_document(
     }
 }
 
+/// What a picture preview says when the tab has no picture in it to show.
+///
+/// A fact about what arrived rather than a fault: this build does not draw
+/// pictures of this kind, so there was never one here to be missing. Named
+/// rather than written where it is used, because a second state joins it and
+/// the two must not be confusable. A file this could not decode is a fault, of
+/// the file or of this program, and somebody told the wrong one of the two
+/// either goes looking for a damaged file that is fine or shrugs at one that is
+/// not. This program has paid for collapsing an answer into a failure to ask
+/// before: `spellcheck::WhatThisMachineOffers` exists because a French user got
+/// English on a first run where the call happened to fail.
+pub const NO_PICTURE_TO_SHOW: &str =
+    "Wixen Mail does not draw pictures of this kind, so there is none in this tab.";
+
+/// Compose a picture attachment for the reader.
+///
+/// RED half. The real composition arrives with the green commit.
+pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocument {
+    let _ = bytes;
+    ReaderDocument {
+        title: attachment.name.clone(),
+        text: String::new(),
+        landmarks: Vec::new(),
+        warning: None,
+        attachments: Vec::new(),
+        looks_unsafe: false,
+    }
+}
+
 /// Which reading this application can give an attachment, of the kinds it has.
 ///
 /// One answer for two callers. The reader window asks it to decide whether to
@@ -752,7 +781,25 @@ pub enum HowItReads {
     Pdf,
     /// Through [`crate::service::plain_text::read`].
     Text,
+    /// A picture, described by [`image_document`].
+    Picture,
 }
+
+/// File names read as pictures when the type does not say so.
+///
+/// The kinds themselves are [`crate::application::pictures::KINDS_WORTH_CARRYING`]
+/// and are deliberately not repeated here. This is the other half of the same
+/// question, which that list cannot answer: a MIME type is not a file name, and
+/// `jpg` and `jpeg` are both `image/jpeg`. Each entry names the kind it stands
+/// for, and a test holds every one of them to being a kind that list really
+/// carries, so the two cannot drift into disagreeing.
+const READS_AS_A_PICTURE: [(&str, &str); 5] = [
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+];
 
 /// File names read as text when the type does not say so.
 ///
@@ -976,6 +1023,13 @@ impl ReaderAttachment {
         }
         if kind == "text/plain" || READS_AS_TEXT.contains(&extension.as_str()) {
             return Some(HowItReads::Text);
+        }
+        if crate::application::pictures::KINDS_WORTH_CARRYING.contains(&kind.as_str())
+            || READS_AS_A_PICTURE
+                .iter()
+                .any(|(named, _)| *named == extension)
+        {
+            return Some(HowItReads::Picture);
         }
         None
     }
@@ -3310,5 +3364,144 @@ mod attachment_preview_tests {
         assert!(document.warning.is_none());
         assert!(document.attachments.is_empty());
         assert!(!document.looks_unsafe);
+    }
+}
+
+/// What a picture attachment's tab says about the picture.
+#[cfg(test)]
+mod picture_preview_tests {
+    use super::*;
+    use crate::service::mime::WhatTheSenderSaid;
+
+    fn picture(name: &str, kind: &str, said: WhatTheSenderSaid) -> ReaderAttachment {
+        ReaderAttachment {
+            message_row_id: 1,
+            uid: 1,
+            index: 0,
+            name: name.to_string(),
+            mime_type: kind.to_string(),
+            size: 240 * 1024,
+            description: said,
+        }
+    }
+
+    /// The lines of the tab, without the title.
+    fn said_about(document: &ReaderDocument) -> Vec<String> {
+        document
+            .text
+            .lines()
+            .skip(1)
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn test_an_image_preview_says_what_the_sender_said_about_the_picture() {
+        // The one fact about a picture that a person wrote, and for a reader
+        // who cannot see it the only thing that can say what is in it.
+        let document = image_document(
+            &picture(
+                "bicycle.jpg",
+                "image/jpeg",
+                WhatTheSenderSaid::InWords("A red bicycle against a brick wall".to_string()),
+            ),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        assert!(
+            lines
+                .first()
+                .is_some_and(|first| first.contains("A red bicycle against a brick wall")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_the_sender_described_with_nothing_says_so_before_anything_else() {
+        // That is the fact which decides whether the rest is worth listening
+        // to, so somebody who hears the first line and stops has heard it.
+        let document = image_document(
+            &picture("IMG_4021.jpg", "image/jpeg", WhatTheSenderSaid::Nothing),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        let first = lines.first().map(String::as_str).unwrap_or_default();
+        assert!(
+            first.contains(crate::application::long_text::NO_DESCRIPTION),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_description_that_arrived_unreadable_is_not_reported_as_silence() {
+        // The sender did write something. It arrived as bytes that are not
+        // writing, which is their client's fault rather than theirs, and the
+        // attachment row already keeps the two apart.
+        let document = image_document(
+            &picture(
+                "photo.png",
+                "image/png",
+                WhatTheSenderSaid::SomethingUnreadable,
+            ),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        let first = lines.first().map(String::as_str).unwrap_or_default();
+        assert!(first.contains("nothing readable"), "{lines:?}");
+        assert!(
+            !first.contains(crate::application::long_text::NO_DESCRIPTION),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_preview_says_whether_there_is_a_picture_in_the_tab() {
+        // Otherwise somebody is left believing the tab failed to load one.
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            b"",
+        );
+
+        assert!(
+            document.text.contains(NO_PICTURE_TO_SHOW),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_picture_preview_says_the_kind_and_the_size_in_the_words_the_row_uses() {
+        // The same words as the attachment row, so somebody who heard the row
+        // and then opened it is not told the same thing twice in two ways.
+        let attachment = picture("photo.png", "image/png", WhatTheSenderSaid::Nothing);
+        let document = image_document(&attachment, b"");
+
+        assert!(document.text.contains("PNG image"), "{}", document.text);
+        assert!(
+            document.text.contains(&human_size(attachment.size)),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_picture_preview_has_no_landmarks_beyond_its_title() {
+        // There is no structure in it to move by, and an empty landmark list
+        // is not the same as a missing one: the title is how a reader gets
+        // back to the top of the tab.
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            b"",
+        );
+
+        assert_eq!(document.landmarks.len(), 1);
+        assert_eq!(
+            document.landmarks.first().map(|l| l.label.as_str()),
+            Some("photo.png")
+        );
     }
 }

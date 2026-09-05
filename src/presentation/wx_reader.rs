@@ -873,6 +873,12 @@ impl ReaderWindow {
 mod tests {
     use super::*;
 
+    fn picture_named(name: &str) -> ReaderAttachment {
+        let mut file = attachment(name);
+        file.mime_type = "image/jpeg".to_string();
+        file
+    }
+
     fn attachment(name: &str) -> ReaderAttachment {
         ReaderAttachment {
             message_row_id: 1,
@@ -909,6 +915,21 @@ mod tests {
         let mut by_type = attachment("notes");
         by_type.mime_type = "text/plain".to_string();
         let mut by_name = attachment("notes.TXT");
+        by_name.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_name));
+    }
+
+    #[test]
+    fn test_a_picture_can_be_read_here_whichever_way_it_says_so() {
+        // The kinds this program already treats as pictures, and the same
+        // either-one-is-enough rule the other two readings get. A camera that
+        // names a file `IMG_4021.JPG` and a client that labels it
+        // application/octet-stream are both ordinary.
+        let mut by_type = picture_named("scan");
+        by_type.mime_type = "image/png".to_string();
+        let mut by_name = picture_named("IMG_4021.JPG");
         by_name.mime_type = "application/octet-stream".to_string();
 
         assert!(can_be_read_here(&by_type));

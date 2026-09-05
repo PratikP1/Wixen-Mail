@@ -18757,6 +18757,7 @@ fn document_of(
             &attachment.name,
             &crate::service::plain_text::read(bytes)?,
         )),
+        Some(HowItReads::Picture) => Ok(reader_text::image_document(attachment, bytes)),
         None => Err(crate::common::Error::Other(
             "Wixen Mail cannot read a file of this kind".to_string(),
         )),
