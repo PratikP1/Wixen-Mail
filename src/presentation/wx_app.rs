@@ -15794,6 +15794,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             sent,
             waiting_on_the_setting,
             days_that_may_be_shown_twice,
+            held_for_you_to_choose,
             changes_that_cannot_be_saved,
             errors,
         } => {
@@ -15805,6 +15806,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     sent: *sent,
                     waiting_on_the_setting: *waiting_on_the_setting,
                     days_that_may_be_shown_twice: *days_that_may_be_shown_twice,
+                    held_for_you_to_choose: *held_for_you_to_choose,
                     changes_that_cannot_be_saved: changes_that_cannot_be_saved.clone(),
                     errors: errors.clone(),
                 },
@@ -19687,6 +19689,7 @@ pub(crate) fn spawn_calendar_sync(
         let mut total_sent = 0usize;
         let mut total_waiting = 0usize;
         let mut total_shown_twice = 0usize;
+        let mut total_held_for_a_choice = 0usize;
         // A calendar that can only be read holds a change made here. Carried
         // as sentences rather than a count, because the calendar's name and
         // what to do instead are the useful part, and spoken rather than
@@ -19719,6 +19722,8 @@ pub(crate) fn spawn_calendar_sync(
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
                             total_shown_twice += result.days_that_may_be_shown_twice;
+                            total_held_for_a_choice += result.held_for_you_to_choose;
+                            total_held_for_a_choice += result.held_for_you_to_choose;
                             total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
@@ -19750,6 +19755,8 @@ pub(crate) fn spawn_calendar_sync(
                             total_sent += result.sent;
                             total_waiting += result.waiting_on_the_setting;
                             total_shown_twice += result.days_that_may_be_shown_twice;
+                            total_held_for_a_choice += result.held_for_you_to_choose;
+                            total_held_for_a_choice += result.held_for_you_to_choose;
                             total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                             total_errors.extend(result.errors);
                         }
@@ -19796,6 +19803,7 @@ pub(crate) fn spawn_calendar_sync(
                     total_sent += result.sent;
                     total_waiting += result.waiting_on_the_setting;
                     total_shown_twice += result.days_that_may_be_shown_twice;
+                    total_held_for_a_choice += result.held_for_you_to_choose;
                     total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
                     total_errors.extend(result.errors);
                 }
@@ -19849,6 +19857,7 @@ pub(crate) fn spawn_calendar_sync(
                     sent: total_sent,
                     waiting_on_the_setting: total_waiting,
                     days_that_may_be_shown_twice: total_shown_twice,
+                    held_for_you_to_choose: total_held_for_a_choice,
                     changes_that_cannot_be_saved: total_cannot_be_saved,
                     errors: total_errors,
                 })

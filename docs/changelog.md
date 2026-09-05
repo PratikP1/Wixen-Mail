@@ -8,6 +8,52 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **When a contact or a calendar item has been changed both here and at your
+  provider, Wixen Mail keeps both copies and asks which one you want.**
+
+  Edit a contact on your phone and edit the same contact here before the next
+  sync, and one of those two versions used to disappear. For contacts, your
+  address book won and Wixen Mail told you afterwards that a change of yours had
+  been replaced. For calendar items it was the other way round and quieter
+  still: the copy here won, the server's copy was dropped, and nothing was said
+  at all.
+
+  Neither copy is written over now. Both are kept, and the sync says how many
+  are waiting: "1 contact changed here and in your address book as well. Use
+  Choose Which Copy to Keep, on the Tools menu, to say which copy to keep;
+  nothing is sent until you do."
+
+  That menu item opens a window showing both versions, each headed and named by
+  which copy it is, "What is on this computer" and "What your address book has",
+  with a sentence at the top saying how many fields differ and naming them.
+  Everything in it is reachable by keyboard and no step needs a mouse. Nothing
+  is the default answer: the focus opens on Decide later, so pressing Enter by
+  reflex does not choose for you. Closing the window leaves both copies exactly
+  where they were.
+
+  Nothing goes to your provider while you are deciding, and nothing goes because
+  you closed the window. Keeping what is on this computer leaves your change
+  waiting, and the next ordinary sync sends it. Keeping their copy stops your
+  change waiting, and the next ordinary sync brings their copy down.
+
+  Known limitations, both worth reading:
+
+  - **None of this has ever run against a real account or a real calendar
+    server.** No provider has ever been used with this program. Everything above
+    is proved by driving two divergent copies through the same code the sync
+    uses, which is the strongest proof available here and is not the same as
+    having done it.
+  - **Nobody has heard it.** Whether hearing both versions read out as a
+    labelled pair is understood, and whether the list of differing fields helps
+    or is a sentence you stop hearing, has not been checked with a screen
+    reader.
+
+  Mail is a different case and is not covered by this. A message flag, read or
+  starred, is applied here and pushed straight away rather than queued, so the
+  state where both copies have moved apart between syncs largely cannot arise
+  for one. What mail gets wrong is something else, and it has its own entry
+  below.
+
 - **Wixen Mail notices when the network goes, switches itself to offline mode,
   and says so once.**
 

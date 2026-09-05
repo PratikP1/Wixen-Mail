@@ -240,10 +240,25 @@ pub enum WhatChoosingCallsFor {
 /// looking. Whether the count is useful or is a sentence somebody stops
 /// hearing is unverified by ear.
 pub fn how_many_are_waiting_to_be_chosen(count: usize, other: TheOtherCopy) -> String {
-    // Stub reproducing today's sentence: it reports a loss rather than asking
-    // for a decision, and says nothing about where to make one.
-    let _ = other;
-    format!("{count} of your changes replaced")
+    let provider = other.called();
+    // Written out both ways rather than built from parts, because three words
+    // have to agree in number and a sentence assembled from fragments reads
+    // like one. `allowed::changes_waiting_here` says the same thing about
+    // itself.
+    match count {
+        1 => format!(
+            "1 {} changed here and in {provider} as well. Use Choose Which Copy \
+             to Keep, on the Tools menu, to say which copy to keep; nothing is \
+             sent until you do",
+            other.the_thing()
+        ),
+        many => format!(
+            "{many} {}s changed here and in {provider} as well. Use Choose Which \
+             Copy to Keep, on the Tools menu, to say which copy to keep; nothing \
+             is sent until you do",
+            other.the_thing()
+        ),
+    }
 }
 
 /// What somebody did with the window that asked.

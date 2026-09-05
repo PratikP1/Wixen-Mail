@@ -129,6 +129,14 @@ pub struct CalendarSyncResult {
     /// showing a meeting twice looks like a fault in this program rather than
     /// a limit of what the provider says.
     pub days_that_may_be_shown_twice: usize,
+    /// Calendar items changed here and changed at the server as well, kept
+    /// whole and waiting for somebody to choose between the two copies.
+    ///
+    /// Until 2026-09-05 this state was resolved silently and in this
+    /// computer's favour: the read skipped any event with a change waiting, so
+    /// the server's copy was dropped with nothing said. Both copies are kept
+    /// now. `application::calendar_conflict` raises them.
+    pub held_for_you_to_choose: usize,
     pub errors: Vec<String>,
 }
 
@@ -180,6 +188,16 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
     // provider says, and this used to be a line in a log.
     if result.days_that_may_be_shown_twice > 0 {
         said.sentence(a_day_moved_in_outlook(result.days_that_may_be_shown_twice));
+    }
+    // Said in one place for both syncs, the way the setting's sentence above
+    // is, so the calendar's version and the address book's cannot drift.
+    if result.held_for_you_to_choose > 0 {
+        said.sentence(
+            crate::application::conflict_choice::how_many_are_waiting_to_be_chosen(
+                result.held_for_you_to_choose,
+                crate::application::conflict_choice::TheOtherCopy::ACalendar,
+            ),
+        );
     }
     said.spoken()
 }
@@ -11033,6 +11051,7 @@ mod tests {
             sent: 2,
             waiting_on_the_setting: 3,
             days_that_may_be_shown_twice: 0,
+            held_for_you_to_choose: 1,
             changes_that_cannot_be_saved: vec![
                 "Term dates: 1 change made here cannot be saved, because this \
                  is a calendar this program can only read."
@@ -11049,7 +11068,10 @@ mod tests {
             "Calendar sync: 1 created, 1 updated, 0 deleted, 2 sent, 1 error. \
              3 changes are waiting here: turn on Allow Changes in Settings \
              to send them. Term dates: 1 change made here cannot be saved, \
-             because this is a calendar this program can only read."
+             because this is a calendar this program can only read. \
+             1 calendar item changed here and in your calendar as well. Use \
+             Choose Which Copy to Keep, on the Tools menu, to say which copy \
+             to keep; nothing is sent until you do."
         );
 
         // And with nothing wrong, so the two sentences meet each other rather
@@ -11134,6 +11156,7 @@ mod a_day_moved_in_outlook_is_said_rather_than_logged {
         let said = what_the_calendar_sync_did(&CalendarSyncResult {
             created: 1,
             days_that_may_be_shown_twice: 2,
+            held_for_you_to_choose: 0,
             ..CalendarSyncResult::default()
         });
 

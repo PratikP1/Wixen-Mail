@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 401 records have arrived since and have not been through it.
+# 402 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -5175,11 +5175,13 @@ file = "src/application/caldav_sync.rs"
 before = """            let (cut_out, everything_else): (Vec<_>, Vec<_>) = waiting
                 .into_iter()
                 .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .filter(|event| !waiting_on_a_choice.iter().any(|id| id == &event.id))
                 .partition(|event| event.cut_from_event_id.is_some());
             cut_out.into_iter().chain(everything_else).collect()"""
 after = """            waiting
                 .into_iter()
                 .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .filter(|event| !waiting_on_a_choice.iter().any(|id| id == &event.id))
                 .collect()"""
 red = [
     "application::caldav_sync::tests::test_a_day_cut_out_of_a_series_goes_up_before_the_day_is_taken_off_the_series",
@@ -14716,4 +14718,34 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_conflict_choice_can_be_heard.rs", tests = 5 },
+]
+
+# ── The calendar asks the same question ─────────────────────────────────────
+#
+# SCALE-06. A calendar item changed here and changed at the server had its
+# disagreement resolved in this computer's favour and shown to nobody: the read
+# skipped any event with a change waiting, so the server's copy was dropped on
+# the floor. The opposite direction from the contacts defect and the same
+# failure, which is that nobody was asked.
+#
+# Measured by hand on 2026-09-05, the whole library with --no-fail-fast.
+
+[[guard]]
+# The break is the skip as it was written before this branch: any event with a
+# change waiting is passed over whatever the server's etag says. One test, and
+# it is the sync-path one rather than any of the pure ones, because the pure
+# decision is still right when nothing consults it.
+name = "a calendar item both sides changed is held rather than dropped"
+file = "src/application/caldav_sync.rs"
+before = """            if crate::application::calendar_conflict::both_copies_moved(
+                held,
+                remote.etag.as_deref(),
+            ) {"""
+after = """            if false {"""
+red = [
+    "application::calendar_conflict::tests::test_a_calendar_item_changed_here_and_at_the_server_is_held_rather_than_dropped",
+]
+tests_last_seen = [
+    { file = "src/application/calendar_conflict.rs", tests = 5 },
+    { file = "src/application/caldav_sync.rs", tests = 67 },
 ]

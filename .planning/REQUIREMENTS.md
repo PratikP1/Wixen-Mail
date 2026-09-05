@@ -587,24 +587,44 @@ write path added by this milestone passes through that gate.
   - Evidence: corrected 2026-09-03. "No conflict resolution path in `src/`" is wrong, and
     getting it wrong would have had this phase write a second conflict model beside a working
     one, with the two disagreeing about who wins.
-    Contacts already resolves. `whose_copy_wins` (`src/application/contacts_sync.rs` line 988)
-    returns a four-armed `WhoseCopyWins` (lines 949 to 974) built from whether local work is
-    unsent and whether the address book's version marker moved, comparing markers rather than
-    clocks on purpose (lines 977 to 982). It has two production call sites (lines 2289 and
-    2485), reached from `wx_app.rs` lines 18959 and 18986, and the losing case is counted and
-    spoken rather than silent: `sent_over_a_newer_copy` (line 335) becomes a sentence at lines
-    1674 to 1690 and reaches the user at `wx_app.rs` line 15289.
-    CalDAV has the markers and not the choice: `etag` and `If-Match` at `caldav_sync.rs` lines
-    870, 1028, 3424 and 3716, resolved automatically, showing the user nothing.
+    Contacts already resolves. `whose_copy_wins` (`src/application/contacts_sync.rs`)
+    returns a four-armed `WhoseCopyWins` built from whether local work is unsent and whether
+    the address book's version marker moved, comparing markers rather than clocks on purpose.
+    It has two production call sites reached from `wx_app.rs`, and the losing case was counted
+    and spoken rather than silent.
+    CalDAV has the markers and not the choice: `etag` and `If-Match` in `caldav_sync.rs`.
     Mail is a third case and is not last-write-wins. A flag change is applied locally, pushed
-    on a fresh connection (`wx_app.rs` lines 17509 to 17534), and reverted per flag kind with a
-    sentence if the push fails (lines 17381 to 17404). Nothing queues a mail flag change, so
-    the "both changed" state this requirement describes largely cannot arise there. The real
-    mail defect is adjacent: a change made while the server is unreachable is silently reverted
-    rather than queued.
+    on a connection, and reverted per flag kind with a sentence if the push fails. Nothing
+    queues a mail flag change, so the "both changed" state this requirement describes largely
+    cannot arise there.
     So the deliverables below want aiming at contacts and CalDAV, where the state exists, and
-    the mail case wants restating. Roadmap Phase 7 leaves it unticked. The five `*_sync.rs`
-    files total over 38,000 lines and none has met a live account.
+    the mail case wants restating. The five `*_sync.rs` files total over 38,000 lines and none
+    has met a live account.
+
+  - Corrected again 2026-09-05, while executing plan 03-09, and three things in the paragraph
+    above turned out to be wrong or misleading.
+    **The losing case was told, not asked, and it was told through the wrong counter.** The
+    evidence named `sent_over_a_newer_copy` as the telling. That counter is the other
+    direction: it counts a change made here that the push re-sent *over* the address book's
+    newer copy after a stale-marker refusal, which is a second both-changed state resolved in
+    this computer's favour, at the provider, with a sentence afterwards. The losing case's
+    counter was `replaced`, and it is `held_for_you_to_choose` now.
+    **CalDAV did not resolve in the server's favour, it resolved in this computer's.** The
+    read skipped any event with a change waiting, so the server's copy was dropped with
+    nothing said at all. Opposite direction, same failure.
+    **Mail's real defect is now fixed rather than only named.** A flag change made while the
+    server could not be reached was silently reverted; it is kept and sent later. A change the
+    server answered and refused is still put back, because a server that answered is a
+    different fact from a server that was not there. Task 4 of plan 03-09 is that work.
+    What is still not built, deliberately: a mail conflict chooser. Mail flags are
+    optimistic-local with revert-on-failure and the both-changed state this requirement
+    describes largely cannot arise for them, so a chooser there would be a surface for a state
+    that does not occur. That reasoning is kept here rather than dropped, because it is what
+    stops somebody building one later.
+    Still open after plan 03-09: the push retry described above. A change typed here is still
+    sent over the address book's newer copy when a stale marker is refused, which is the one
+    remaining both-changed state that resolves without asking. It is guarded and deliberate,
+    and it is recorded in the broken windows ledger rather than fixed here.
 
   - [S] Roadmap Phase 7, unticked.
   - [D] When the local copy and the server copy of an item have both changed, the user is

@@ -565,11 +565,20 @@ fn changes_waiting(
     account_id: &str,
     result: &mut CalendarSyncResult,
 ) -> Vec<CalendarEventEntry> {
+    // An event waiting on somebody's choice is offered to nobody. Without this
+    // the very next push sends this computer's copy over the one they have not
+    // yet chosen to give up, which is the conflict resolving itself at the
+    // server while the question is still on the screen.
+    let waiting_on_a_choice: Vec<String> = cache
+        .conflicts_held_for(account_id)
+        .map(|held| held.into_iter().map(|one| one.id).collect())
+        .unwrap_or_default();
     match cache.pending_calendar_events(account_id) {
         Ok(waiting) => {
             let (cut_out, everything_else): (Vec<_>, Vec<_>) = waiting
                 .into_iter()
                 .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .filter(|event| !waiting_on_a_choice.iter().any(|id| id == &event.id))
                 .partition(|event| event.cut_from_event_id.is_some());
             cut_out.into_iter().chain(everything_else).collect()
         }
@@ -871,7 +880,33 @@ pub async fn sync_caldav_calendar(
         // the server's is not written over it. Doing that destroys the edit the
         // next push was going to send, which turns "waiting to be sent" into
         // waiting for ever to send the server's own words back to it.
-        if already.is_some_and(|held| held.pending) {
+        //
+        // Unless the server has moved its copy too, in which case neither is
+        // anybody's to drop. Skipping here was the calendar's version of the
+        // defect this plan is about: it resolved the disagreement in this
+        // computer's favour and showed nobody anything. Both copies are kept
+        // now and somebody is asked, through the same module and the same words
+        // the address books use.
+        if let Some(held) = already
+            && held.pending
+        {
+            if crate::application::calendar_conflict::both_copies_moved(
+                held,
+                remote.etag.as_deref(),
+            ) {
+                // Already waiting on somebody's choice: leave it exactly as it
+                // is rather than raising the question a second time.
+                if !cache.is_held_for_a_choice(&held.id)? {
+                    crate::application::calendar_conflict::hold_both_copies_of_the_event(
+                        cache,
+                        held,
+                        &caldav_event_to_local(remote, account_id, &calendar.id),
+                        "caldav",
+                        remote.etag.as_deref(),
+                    )?;
+                    result.held_for_you_to_choose += 1;
+                }
+            }
             continue;
         }
 

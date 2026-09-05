@@ -514,6 +514,9 @@ pub enum UIUpdate {
         waiting_on_the_setting: usize,
         /// Days of a repeating Outlook meeting that may now be listed twice.
         days_that_may_be_shown_twice: usize,
+        /// Calendar items changed here and at the server as well, kept whole
+        /// and waiting for somebody to choose between the two copies.
+        held_for_you_to_choose: usize,
         /// Calendars that can only be read and hold a change made here, one
         /// sentence each. Spoken, not logged: nothing else in the sync
         /// mentions them and nothing will ever send them.

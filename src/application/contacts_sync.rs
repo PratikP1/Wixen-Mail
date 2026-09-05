@@ -1725,17 +1725,15 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         // copies are kept now, so there is nothing to apologise for and
         // something to do instead. Two sentences written out rather than one
         // built from parts, because three words have to agree in number.
-        said.sentence(if result.held_for_you_to_choose.count() == 1 {
-            "1 contact changed here and in your address book as well. Open \
-             Contacts to choose which copy to keep; nothing is sent until you do"
-                .to_string()
-        } else {
-            format!(
-                "{} contacts changed here and in your address book as well. Open \
-                 Contacts to choose which copy to keep; nothing is sent until you do",
-                result.held_for_you_to_choose.count()
-            )
-        });
+        // Said in one place for both syncs, the way
+        // `allowed::changes_waiting_here` is, so the address book's version and
+        // the calendar's cannot come to differ.
+        said.sentence(
+            crate::application::conflict_choice::how_many_are_waiting_to_be_chosen(
+                result.held_for_you_to_choose.count(),
+                TheOtherCopy::AnAddressBook,
+            ),
+        );
     }
     if !result.errors.is_empty() {
         said.count(crate::service::caldav::how_many(
@@ -7704,8 +7702,9 @@ mod tests {
             said,
             "Contacts sync: 1 created, 2 updated, 2 deleted, 1 sent, 1 unchanged, \
              1 error. \
-             1 contact changed here and in your address book as well. Open \
-             Contacts to choose which copy to keep; nothing is sent until you do. \
+             1 contact changed here and in your address book as well. Use Choose \
+             Which Copy to Keep, on the Tools menu, to say which copy to keep; \
+             nothing is sent until you do. \
              1 change is not going to your other address book: turn on sending a \
              change to every address book that has the contact. \
              2 contacts you had changed were deleted in your address book, and \
@@ -9186,7 +9185,7 @@ mod tests {
 
         assert!(said.contains('2'), "{said}");
         assert!(
-            said.contains("choose which copy to keep"),
+            said.contains("say which copy to keep"),
             "a hold nobody is asked about is a decision made on their behalf \
              with extra steps: {said}"
         );
@@ -9217,7 +9216,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(!what_the_contacts_sync_did(&result).contains("choose"));
+        assert!(!what_the_contacts_sync_did(&result).contains("copy to keep"));
     }
 
     // Pins each sync's counting, through a whole run.
@@ -9595,7 +9594,7 @@ mod tests {
             "the words somebody typed were not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
+            what_the_contacts_sync_did(&result).contains("say which copy to keep"),
             "the word this test is named for: a hold nobody is asked about is a \
              hold nobody answers: {}",
             what_the_contacts_sync_did(&result)
@@ -9806,7 +9805,7 @@ mod tests {
             "the edit Outlook was still owed was not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
+            what_the_contacts_sync_did(&result).contains("say which copy to keep"),
             "{}",
             what_the_contacts_sync_did(&result)
         );
@@ -9926,7 +9925,7 @@ mod tests {
             "the edit Google was still owed was not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
+            what_the_contacts_sync_did(&result).contains("say which copy to keep"),
             "{}",
             what_the_contacts_sync_did(&result)
         );
@@ -10109,8 +10108,9 @@ mod tests {
         assert_eq!(
             what_the_contacts_sync_did(&total),
             "Contacts sync: 0 created, 0 updated, 0 deleted, 1 error. \
-             1 contact changed here and in your address book as well. Open \
-             Contacts to choose which copy to keep; nothing is sent until you do."
+             1 contact changed here and in your address book as well. Use Choose \
+             Which Copy to Keep, on the Tools menu, to say which copy to keep; \
+             nothing is sent until you do."
         );
     }
 
@@ -10424,7 +10424,7 @@ mod tests {
             "choosing what is on this computer has to have something left to send"
         );
         assert!(
-            what_the_contacts_sync_did(&second).contains("choose which copy to keep"),
+            what_the_contacts_sync_did(&second).contains("say which copy to keep"),
             "the edit was held with nobody asked: {}",
             what_the_contacts_sync_did(&second)
         );
