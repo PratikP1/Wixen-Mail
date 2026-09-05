@@ -49,6 +49,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Blocking a mailing list now warns you first that blocking will not stop the
+  list, and tells you where to write to leave it.**
+
+  Blocking the sender of a newsletter feels like the way to stop it arriving. It
+  is not. The rule files the mail into Junk on this computer, and the list goes
+  on sending, because nothing about a rule here reaches the list. Junk fills up,
+  the address you signed up with is still on the list, and it can take weeks to
+  notice.
+
+  Wixen Mail now says so before the block is made, not after: "This message came
+  from a mailing list. Blocking files it into Junk and the list carries on
+  sending it. To stop it at the source, unsubscribe by writing to
+  birds-leave@lists.example." Then it makes the block, because you asked for it.
+  When the message gave no address to write to, it says to look for a link to
+  leave the list at the bottom of the message instead.
+
+  What used to happen is worth saying plainly: nothing. Not a shorter warning, a
+  quieter warning, or a warning in the wrong place. The sentence above has been
+  written and tested since blocking was built, and no build of Wixen Mail has
+  ever said it, because the header it is built on was thrown away when the
+  message was decoded. Every block of every mailing list went through in silence.
+
+  Only an address you can write to is ever named. A message can offer a web page
+  instead, or something stranger, and Wixen Mail names none of those: it tells
+  you to look for the link. Nothing here opens anything or writes to anybody. The
+  warning is a sentence, and what happens next is yours.
+
+  Blocking somebody who is not a mailing list is unchanged. No warning, nothing
+  extra to listen past.
+
+  Known limitations, two worth reading:
+
+  - **No mail account has ever been used with this program**, so whether real
+    lists write this header in the shape Wixen Mail reads has not been measured.
+    The shapes it handles were checked against the library that decodes mail,
+    not against mail.
+  - **Nobody has heard this said by a screen reader.** Whether an address read
+    aloud in the middle of a warning is understood at speed, and whether the
+    warning lands before the block rather than after, are things only a real
+    screen reader run settles.
+
 - **An attachment row now says what the sender said the file is, and says
   plainly when the sender said nothing.**
 

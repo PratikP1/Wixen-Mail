@@ -109,6 +109,14 @@ pub struct MessageItem {
     /// without fetching anything, and so the answer does not depend on a body
     /// the cache may have evicted.
     pub receipt_to: Option<String>,
+    /// What the message said about leaving the mailing list it came from.
+    ///
+    /// The same precedent as [`MessageItem::receipt_to`], and for the same
+    /// reason. Blocking a sender is a key handler holding this row, and a query
+    /// on the interface thread inside one is a window that cannot repaint. A
+    /// window that cannot repaint cannot speak, and speaking is the whole of
+    /// what this field is for.
+    pub list_unsubscribe: Option<String>,
     /// Which account this message is in.
     ///
     /// Taken from the row rather than from whichever account is open, because
@@ -179,6 +187,7 @@ impl MessageItem {
             safety: row.safety,
             safety_reasons: row.safety_reasons.clone(),
             receipt_to: row.receipt_to.clone(),
+            list_unsubscribe: row.list_unsubscribe.clone(),
             account_id: row.account_id.clone(),
             // Filled by the caller, which has the cache. A row comes out of
             // one query and its labels are in another table; asking here would
@@ -1313,6 +1322,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
         };
 
         let item = MessageItem::from_row(&row);
@@ -2326,6 +2336,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         }

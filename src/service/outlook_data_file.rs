@@ -1685,6 +1685,14 @@ fn mail_written_from(item: &TheItem<'_>, went_to: &WhoItWentTo) -> Vec<u8> {
 /// One message, in the shape the rest of this program reads a message in.
 fn a_message_from(item: &TheItem<'_>, went_to: &WhoItWentTo) -> ParsedMessage {
     ParsedMessage {
+        // A data file holds a message in pieces and this puts them back
+        // together; the transport headers are not among the pieces read here,
+        // so there is nothing to say about a mailing list. Saying nothing is
+        // the truthful answer rather than a gap being papered over: a message
+        // imported from Outlook loses the warning it would have had, and
+        // getting it back means reading the header property out of the file
+        // and writing it into the bytes below, which is its own change.
+        list_unsubscribe: None,
         subject: item
             .words(SUBJECT)
             .map(without_the_subject_marker)

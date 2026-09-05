@@ -320,6 +320,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message")

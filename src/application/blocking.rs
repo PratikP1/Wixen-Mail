@@ -1269,6 +1269,124 @@ mod tests {
     }
 
     #[test]
+    fn test_a_mailing_list_header_does_not_soften_a_refusal() {
+        // T-04-06. The header is a stranger's, and once it is really parsed a
+        // sender who wants to can put one on any message. `YesButFirst` is a
+        // weaker answer than `No`, so a phishing message carrying the header
+        // would be worth sending if it could turn a refusal into advice.
+        //
+        // It cannot, because `may_block` asks the two refusals first. That was
+        // true before this was written and nothing asserted it, which is the
+        // gap: the ordering is three lines and nothing would have failed if
+        // they moved.
+        let own = mine(&["me@work.example"]);
+        let themselves = just_this_sender("me@work.example").expect("an address");
+        let already = just_this_sender("spam@example.com").expect("an address");
+        let rules = [a_rule_that_blocks("acct", &already, "Junk", "t")];
+        let pretending = "<mailto:leave@phish.example>";
+
+        assert!(
+            matches!(
+                may_block(
+                    "acct",
+                    &themselves,
+                    &WhatIsAlreadyTrue {
+                        how_to_leave_the_list: Some(pretending),
+                        ..nothing_known(&own)
+                    }
+                ),
+                MayBlock::No(_)
+            ),
+            "a mailing list header turned blocking your own address into advice"
+        );
+        assert!(
+            matches!(
+                may_block(
+                    "acct",
+                    &already,
+                    &WhatIsAlreadyTrue {
+                        how_to_leave_the_list: Some(pretending),
+                        rules_already_there: &rules,
+                        ..nothing_known(&own)
+                    }
+                ),
+                MayBlock::No(_)
+            ),
+            "a mailing list header turned an already covered block into advice"
+        );
+    }
+
+    #[test]
+    fn test_only_an_address_to_write_to_is_ever_named_out_of_the_header() {
+        // T-04-07, and the reason nothing here acts on the header. The value is
+        // a stranger's and can name any scheme at all; only the `mailto:` form
+        // is something a person can act on by writing a message, and the
+        // sentence names nothing else. Nothing in this program opens any of
+        // them, so nobody is ever one keystroke from a stranger.
+        //
+        // Asserted rather than assumed. The second half matters as much as the
+        // first: a value with nothing nameable in it is reported as absent, and
+        // the sentence then says where to look instead of reading junk aloud.
+        let own = mine(&["me@work.example"]);
+        let block = just_this_sender("birds@lists.example").expect("an address");
+        let nothing_to_name = [
+            // A web page. Real, common, and nothing this can name.
+            "<https://lists.example/leave>",
+            "<javascript:alert(1)>",
+            "<file:///c:/windows/system32/calc.exe>",
+            "<data:text/html,hello>",
+            // Not a URI at all. A broken sender, or somebody trying.
+            "leave the list by asking",
+            "<>",
+            "<mailto:>",
+        ];
+
+        for header in nothing_to_name {
+            let MayBlock::YesButFirst(said) = may_block(
+                "acct",
+                &block,
+                &WhatIsAlreadyTrue {
+                    how_to_leave_the_list: Some(header),
+                    ..nothing_known(&own)
+                },
+            ) else {
+                panic!("{header}: a message from a list gave no warning");
+            };
+            assert!(
+                !said.contains(header),
+                "{header}: the header itself was read out: {said}"
+            );
+            assert!(
+                said.contains("look for a link"),
+                "{header}: the sentence did not say where to look instead: {said}"
+            );
+        }
+
+        // The one shape that is named, so the loop above is not passing because
+        // nothing is ever named.
+        let MayBlock::YesButFirst(named) = may_block(
+            "acct",
+            &block,
+            &WhatIsAlreadyTrue {
+                how_to_leave_the_list: Some(
+                    "<https://lists.example/leave>, <mailto:birds-leave@lists.example>",
+                ),
+                ..nothing_known(&own)
+            },
+        ) else {
+            panic!("a message from a list gave no warning");
+        };
+        assert!(
+            named.contains("birds-leave@lists.example"),
+            "the one shape that can be named was not: {named}"
+        );
+        assert!(
+            !named.contains("https://"),
+            "the web page was read out beside the address: {named}"
+        );
+    }
+
+    #[test]
     fn test_a_rule_from_another_account_does_not_count_as_a_block_here() {
         // Rules are per account, and reading another account's blocks would
         // say somebody is already blocked when they are not.

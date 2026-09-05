@@ -87,6 +87,12 @@ pub fn a_row_filed_here(
         // message read out of an archive it is a stranger's request from years
         // ago, and answering it now would tell them the address is still live.
         receipt_to: None,
+        // Carried, unlike the receipt request above, and the difference is
+        // worth saying because the two look alike. Nothing ever acts on this
+        // one: it decides what a warning says before a block is made and
+        // nothing else, so a message read out of an archive years later can
+        // still tell somebody that blocking a list leaves the list sending.
+        list_unsubscribe: parsed.list_unsubscribe.clone(),
         pop_uidl: None,
     }
 }

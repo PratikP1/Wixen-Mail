@@ -527,6 +527,7 @@ fn to_incoming(
         gmail_message_id: None,
         labels: None,
         receipt_to: parsed.receipt_to.clone(),
+        list_unsubscribe: parsed.list_unsubscribe.clone(),
         pop_uidl: Some(uidl.to_string()),
     }
 }
@@ -1155,6 +1156,35 @@ Subject: Weekly roundup",
 
         assert_eq!(stored.cc.as_deref(), Some("bob@example.com"));
         assert_eq!(stored.reply_to.as_deref(), Some("list@example.com"));
+    }
+
+    #[test]
+    fn test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop() {
+        // The other arrival path, and it needs its own test for the reason
+        // every field on this row does: a fact carried by one writer only is a
+        // fact that depends on which protocol the account happens to speak,
+        // and nothing in the shape of either conversion says the other exists.
+        //
+        // Both halves, as with the copy recipients above. A test for the
+        // absent case alone passes against a conversion that drops the field
+        // always.
+        let from_a_list = crate::service::mime::ParsedMessage {
+            list_unsubscribe: Some("<mailto:birds-leave@lists.example>".to_string()),
+            ..plain()
+        };
+
+        assert_eq!(
+            to_incoming(&from_a_list, &arrival(b""))
+                .list_unsubscribe
+                .as_deref(),
+            Some("<mailto:birds-leave@lists.example>"),
+            "the way out of the list did not reach the row"
+        );
+        assert_eq!(
+            to_incoming(&plain(), &arrival(b"")).list_unsubscribe,
+            None,
+            "a message from a person was stored as one from a mailing list"
+        );
     }
 
     #[test]

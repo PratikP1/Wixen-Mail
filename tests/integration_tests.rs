@@ -744,3 +744,267 @@ fn test_a_reply_reaches_the_outgoing_message_naming_what_it_answers() {
     assert_eq!(email.from, "ada@example.com");
     assert_eq!(email.from_name.as_deref(), Some("Ada Lovelace"));
 }
+
+/// The whole way from a raw message to the sentence somebody hears before a
+/// mailing list is blocked.
+///
+/// Nine handoffs, and a fact dropped at any one of them is invisible: the block
+/// is still made, the message list still reads correctly, and the person is
+/// simply never warned. That is exactly what happened to
+/// `blocking::MayBlock::YesButFirst`, which existed and was tested and had
+/// never once been returned by a shipped build, because the one production
+/// construction of `WhatIsAlreadyTrue` wrote a literal `None`.
+///
+/// Written here rather than beside the code because it crosses four layers and
+/// because the two files that hold the storage half, `messages.rs` and
+/// `mod.rs`, are named by 22 and 11 guard records between them. A test function
+/// added to either flags all 33 for re-measurement, which is hours, and this
+/// test asserts nothing that needs to be inside them.
+///
+/// It stops at `may_block` rather than at the announcement, because the handler
+/// that says the sentence needs a window and a running application. What
+/// carries the value from the row into `may_block` is read as source by
+/// `tests/the_list_warning_reads_the_message.rs`.
+#[test]
+fn test_what_a_mailing_list_said_about_leaving_reaches_the_warning() {
+    use wixen_mail::application::blocking::{
+        Block, MayBlock, WhatIsAlreadyTrue, just_this_sender, may_block,
+    };
+    use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage};
+    use wixen_mail::presentation::ui_types::MessageItem;
+    use wixen_mail::service::mime;
+
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let folder = cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: "acct".to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("a folder");
+
+    // Three messages, and the three states this fact has: a list that said
+    // where to write, a list that said nothing, and a message that is not from
+    // a list at all. Written as whole messages and put through the real parse,
+    // because what can go wrong is the header being dropped at the parse and a
+    // test handed a value directly would not see that.
+    let messages = [
+        (
+            10,
+            "birds@lists.example",
+            "List-Unsubscribe: <mailto:birds-leave@lists.example>\r\n",
+        ),
+        (11, "quiet@lists.example", "List-Unsubscribe:\r\n"),
+        (12, "ada@example.com", ""),
+    ];
+
+    for (uid, from, header) in messages {
+        let raw = format!(
+            "From: {from}\r\n\
+             To: me@work.example\r\n\
+             Subject: Sightings\r\n\
+             Message-ID: <{uid}@example.com>\r\n\
+             {header}\
+             \r\n\
+             A wren was seen.\r\n"
+        );
+        let parsed = mime::parse(raw.as_bytes()).expect("the message parses");
+
+        cache
+            .upsert_message(&IncomingMessage {
+                folder_id: folder,
+                uid,
+                message_id: format!("<{uid}@example.com>"),
+                subject: parsed.subject.clone(),
+                from_addr: from.to_string(),
+                to_addr: "me@work.example".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-09-05T10:00:00+00:00".to_string(),
+                internal_date: None,
+                size_bytes: Some(512),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: wixen_mail::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: parsed.receipt_to.clone(),
+                list_unsubscribe: parsed.list_unsubscribe.clone(),
+                pop_uidl: None,
+            })
+            .expect("the message stores");
+    }
+
+    let rows = cache
+        .get_message_list_sorted(folder, "acct", None, None)
+        .expect("the folder lists");
+    let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+    let of = |uid: u32| {
+        items
+            .iter()
+            .find(|item| item.uid == uid)
+            .unwrap_or_else(|| panic!("no row for {uid}"))
+            .clone()
+    };
+
+    // The store and the read back, all three states. A header that was there
+    // and empty has to stay apart from one that was never there, because the
+    // first is a mailing list and the second is not, and NULL against the empty
+    // string is what a TEXT column has to tell them apart with.
+    assert_eq!(
+        of(10).list_unsubscribe.as_deref(),
+        Some("<mailto:birds-leave@lists.example>"),
+        "the way out did not survive the database"
+    );
+    assert_eq!(
+        of(11).list_unsubscribe.as_deref(),
+        Some(""),
+        "a list that gave no way out came back looking like a message from a person"
+    );
+    assert_eq!(
+        of(12).list_unsubscribe,
+        None,
+        "a message from a person came back looking like a mailing list"
+    );
+
+    // And the sentence, decided from what the row carried rather than from a
+    // fixture written next to the assertion.
+    let own = vec!["me@work.example".to_string()];
+    let asked = |item: &MessageItem, block: &Block| {
+        may_block(
+            "acct",
+            block,
+            &WhatIsAlreadyTrue {
+                their_own_addresses: &own,
+                rules_already_there: &[],
+                how_to_leave_the_list: item.list_unsubscribe.as_deref(),
+                the_message_was_from: Some(&item.from),
+            },
+        )
+    };
+
+    let birds = just_this_sender("birds@lists.example").expect("an address");
+    let MayBlock::YesButFirst(warned) = asked(&of(10), &birds) else {
+        panic!("blocking a mailing list gave no warning");
+    };
+    assert!(
+        warned.contains("birds-leave@lists.example"),
+        "the warning did not name where to write: {warned}"
+    );
+
+    let quiet = just_this_sender("quiet@lists.example").expect("an address");
+    let MayBlock::YesButFirst(no_way_out) = asked(&of(11), &quiet) else {
+        panic!("a list that gave no way out gave no warning either");
+    };
+    assert!(
+        !no_way_out.contains('@'),
+        "a list that named no address had one named for it: {no_way_out}"
+    );
+
+    let ada = just_this_sender("ada@example.com").expect("an address");
+    assert_eq!(
+        asked(&of(12), &ada),
+        MayBlock::Yes,
+        "blocking an ordinary sender said something extra"
+    );
+}
+
+/// A database written before this program read the header opens, and every
+/// message already in it reports the truth about itself.
+///
+/// The upgrade half, kept apart from the round trip above so a failure says
+/// which of the two broke. Schema changes here are additive and `MessageCache`
+/// opens databases people already have. A row written before the column existed
+/// carried no header, and NULL is the honest answer for it: the empty string
+/// would report every message anybody already has as a mailing list that gave
+/// no way out, which is a warning on every block anybody makes.
+#[test]
+fn test_mail_stored_before_the_header_was_read_reports_no_mailing_list() {
+    use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage};
+
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let store = |cache: &MessageCache, uid: u32, list: Option<&str>| -> i64 {
+        let folder = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        cache
+            .upsert_message(&IncomingMessage {
+                folder_id: folder,
+                uid,
+                message_id: format!("<{uid}@example.com>"),
+                subject: "Sightings".to_string(),
+                from_addr: "birds@lists.example".to_string(),
+                to_addr: "me@work.example".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-09-05T10:00:00+00:00".to_string(),
+                internal_date: None,
+                size_bytes: Some(512),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: wixen_mail::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: list.map(str::to_string),
+                pop_uidl: None,
+            })
+            .expect("the message stores");
+        folder
+    };
+
+    // Written, closed, opened again. The second open is where a database that
+    // already exists meets the new column.
+    let folder = {
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        store(&cache, 20, None)
+    };
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("the same cache again");
+    store(&cache, 21, Some("<mailto:birds-leave@lists.example>"));
+
+    let rows = cache
+        .get_message_list_sorted(folder, "acct", None, None)
+        .expect("the folder lists");
+    let of = |uid: u32| {
+        rows.iter()
+            .find(|row| row.uid == uid)
+            .unwrap_or_else(|| panic!("no row for {uid}"))
+    };
+
+    assert_eq!(
+        of(20).list_unsubscribe,
+        None,
+        "a message stored before the header was read reports a mailing list it never said it was"
+    );
+    // The second half is what stops this passing against code that stores
+    // nothing at all: a row written into the same database afterwards keeps
+    // what it was given.
+    assert_eq!(
+        of(21).list_unsubscribe.as_deref(),
+        Some("<mailto:birds-leave@lists.example>"),
+        "a row written after the upgrade lost its way out"
+    );
+}

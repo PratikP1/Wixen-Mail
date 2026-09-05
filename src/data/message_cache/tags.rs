@@ -292,7 +292,7 @@ impl MessageCache {
                     m.read, m.starred, m.answered, m.draft,
                     (m.has_attachments = 1
                      OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                    m.safety, m.safety_reasons, m.receipt_to
+                    m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
              FROM messages m
              INNER JOIN message_tags mt ON m.id = mt.message_id
              INNER JOIN folders f ON m.folder_id = f.id
@@ -360,6 +360,7 @@ mod keyword_tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message")

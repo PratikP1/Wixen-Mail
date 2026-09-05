@@ -9266,6 +9266,7 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         })
@@ -11440,6 +11441,11 @@ fn conversation_parts(
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
                     receipt_to: None,
+                    // A thread node carries neither this nor the receipt
+                    // request above, so there is nothing in hand to put here.
+                    // Nothing is lost: blocking reads the selected row of the
+                    // message list, not a conversation part.
+                    list_unsubscribe: None,
                     account_id: String::new(),
                     labels: Vec::new(),
                 },
@@ -13858,6 +13864,8 @@ fn replace_local_draft(
         gmail_message_id: None,
         labels: None,
         receipt_to: None,
+        // A draft is written here, so there is no list behind it.
+        list_unsubscribe: None,
         pop_uidl: None,
     })?;
     cache.save_message_body(stored, Some(&draft.body), None)?;
@@ -14079,6 +14087,7 @@ fn open_for_scanning(
                     safety: crate::service::safety::Safety::Suspicious,
                     safety_reasons: vec!["This message is a scan fixture".to_string()],
                     receipt_to: None,
+                    list_unsubscribe: None,
                     account_id: String::new(),
                     labels: Vec::new(),
                 },
@@ -21033,6 +21042,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         }
@@ -22019,6 +22029,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         }
@@ -22145,6 +22156,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         };
@@ -22196,6 +22208,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         };
@@ -22803,6 +22816,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             };
             arriving.refs_header = chain.map(str::to_string);
@@ -25163,6 +25177,7 @@ mod showing_the_mail_with_a_label {
             gmail_message_id: None,
             labels: None,
             receipt_to: None,
+            list_unsubscribe: None,
             pop_uidl: None,
         }
     }
@@ -25376,7 +25391,10 @@ fn block_the_sender(
     let known = blocking::WhatIsAlreadyTrue {
         their_own_addresses: &their_own,
         rules_already_there: &rules,
-        how_to_leave_the_list: None,
+        // From the row this handler already holds, rather than from a query: a
+        // query on the interface thread inside a key handler is a window that
+        // cannot repaint, and a window that cannot repaint cannot speak.
+        how_to_leave_the_list: message.list_unsubscribe.as_deref(),
         the_message_was_from: Some(&message.from),
     };
     match blocking::may_block(&account, &block, &known) {

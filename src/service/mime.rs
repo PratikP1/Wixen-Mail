@@ -15,6 +15,21 @@ use crate::common::{Error, Result};
 use mail_parser::parsers::MessageStream;
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 
+/// The longest a way out of a mailing list may be before it is cut.
+///
+/// 998 characters, which is the most RFC 5322 allows on one header line. A
+/// value longer than that was folded to get here, and a list needing more than
+/// a full line to say where to leave is not saying it to a person.
+///
+/// The bound is here rather than at the sentence because this is the boundary
+/// the value crosses: `List-Unsubscribe` is a stranger's text that ends up
+/// announced at high priority, and
+/// `application::blocking::where_to_write_to_leave` hands back whatever sits
+/// between `<mailto:` and `>` however long that is. Cutting fails closed: an
+/// entry sliced in half has lost its closing bracket, so no address is read out
+/// of it at all.
+pub const A_WAY_OUT_AT_MOST: usize = 998;
+
 /// A message, decoded far enough to display.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ParsedMessage {
@@ -41,6 +56,21 @@ pub struct ParsedMessage {
     /// `Return-Receipt-To`. Whether anything is sent is
     /// [`crate::application::receipts`]'s decision, and the default is nothing.
     pub receipt_to: Option<String>,
+    /// What `List-Unsubscribe` said, when the message carried one.
+    ///
+    /// **Presence is the fact, and the value is only advice.** A header that is
+    /// there says this message came from a mailing list, which is what
+    /// [`crate::application::blocking::WhatIsAlreadyTrue::how_to_leave_the_list`]
+    /// reads it for; some lists send the header with nothing in it, and that is
+    /// still a list. So a header present and empty arrives here as
+    /// `Some(String::new())` and only an absent one as `None`. Collapsing the
+    /// two would lose the warning for exactly the senders who gave no way out.
+    ///
+    /// The value is a stranger's, it is never acted on, and nothing in this
+    /// program opens it. It reaches one place: a sentence said before a block
+    /// is made, which names the `mailto:` address if the header carried one and
+    /// says there was none otherwise.
+    pub list_unsubscribe: Option<String>,
 }
 
 /// What the sender said an attachment is, in their own words.
@@ -301,7 +331,42 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         }),
         attachments,
         receipt_to: receipt_request(&message),
+        list_unsubscribe: how_to_leave_the_list(&message),
     })
+}
+
+/// What the message said about leaving the mailing list it came from.
+///
+/// Read from the raw header bytes rather than through [`header_text`], and that
+/// is the whole of why this is not [`receipt_request`] under another name.
+/// `mail-parser` sends `List-Unsubscribe` to its address parser, which strips
+/// the angle brackets RFC 2369 puts round each entry: `<mailto:x@y>` comes back
+/// as `mailto:x@y`. `application::blocking::where_to_write_to_leave` looks for
+/// those brackets and finds nothing without them, so the parsed form would
+/// report every mailing list on earth as one that gave no way out. Probed
+/// against `mail-parser 0.11.5` before this was written.
+///
+/// Presence is asked separately from the value because
+/// [`mail_parser::Message::header_raw`] answers `None` twice over: for a header
+/// that is not there, and for one whose bytes are not UTF-8. Those are
+/// different facts about the message, and the second is still a mailing list.
+/// So a header this cannot read reads as one that gave no way out, which is
+/// what it is, rather than as a message from a person.
+///
+/// The value is a stranger's on its way to being said aloud, so two things
+/// happen to it. Anything that is not writing becomes a space, through the same
+/// [`as_text_and_nothing_else`] a sender's attachment description goes through,
+/// which also folds a header split across lines back into one. And it is cut at
+/// [`A_WAY_OUT_AT_MOST`], which fails closed: an entry sliced in half has lost
+/// its closing bracket, so no address is read out of it at all.
+fn how_to_leave_the_list(message: &Message<'_>) -> Option<String> {
+    // The header being there at all is the fact that matters: it is what says
+    // this message came from a list. Some lists send it empty, and that is
+    // still a list, so an empty value must not arrive looking like an absent
+    // one.
+    message.header("List-Unsubscribe")?;
+    let said = as_text_and_nothing_else(message.header_raw("List-Unsubscribe").unwrap_or_default());
+    Some(said.chars().take(A_WAY_OUT_AT_MOST).collect())
 }
 
 /// Give every undescribed picture the description on the `img` that names it.
@@ -744,6 +809,177 @@ mod tests {
         assert_eq!(
             parsed.receipt_to.as_deref(),
             Some("tracker@elsewhere.example")
+        );
+    }
+
+    /// A message from a list, with `extra` sitting among its headers.
+    fn a_message_headed(extra: &str) -> String {
+        format!(
+            "From: Birds List <birds@lists.example>\r\n\
+             To: charles@example.com\r\n\
+             Subject: This week's sightings\r\n\
+             {extra}\
+             \r\n\
+             A wren was seen.\r\n"
+        )
+    }
+
+    #[test]
+    fn test_what_a_message_said_about_leaving_the_list_arrives_with_its_brackets_on() {
+        // The whole of why this is not `receipt_request` under another name.
+        // `mail-parser` sends `List-Unsubscribe` to its address parser, which
+        // takes the angle brackets off, so the parsed form of `<mailto:x@y>` is
+        // `mailto:x@y`. `blocking::where_to_write_to_leave` looks for those
+        // brackets and finds nothing without them, which would make every
+        // mailing list on earth look like one that gave no way out.
+        //
+        // Every row was probed against mail-parser 0.11.5 before it was
+        // written down, so each says what really arrives rather than what the
+        // header was written as.
+        let shapes: &[(&str, &str)] = &[
+            (
+                "List-Unsubscribe: <mailto:leave@lists.example>\r\n",
+                "<mailto:leave@lists.example>",
+            ),
+            // A list offering both. Kept in the order the sender wrote them,
+            // because which comes first is theirs to decide.
+            (
+                "List-Unsubscribe: <https://lists.example/leave>, <mailto:leave@lists.example>\r\n",
+                "<https://lists.example/leave>, <mailto:leave@lists.example>",
+            ),
+            (
+                "List-Unsubscribe: <https://lists.example/leave>\r\n",
+                "<https://lists.example/leave>",
+            ),
+            // Folded across two lines, which is ordinary for a header this
+            // long. A fold is whitespace, so the two lines arrive as one value
+            // rather than as a value with a line break in the middle of it.
+            (
+                "List-Unsubscribe: <https://lists.example/leave>,\r\n <mailto:leave@lists.example>\r\n",
+                "<https://lists.example/leave>, <mailto:leave@lists.example>",
+            ),
+            // Written without the brackets RFC 2369 asks for. Kept as it
+            // stands: correcting a sender's header here would be guessing, and
+            // the sentence that reads it then names no address, which is true.
+            (
+                "List-Unsubscribe: mailto:bare@lists.example\r\n",
+                "mailto:bare@lists.example",
+            ),
+        ];
+
+        for (header, expected) in shapes {
+            let parsed = parse(a_message_headed(header).as_bytes()).expect("should parse");
+
+            assert_eq!(
+                parsed.list_unsubscribe.as_deref(),
+                Some(*expected),
+                "{header:?} did not survive the parse"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_way_out_that_is_there_and_empty_is_not_a_way_out_that_is_absent() {
+        // Presence is what says "this came from a mailing list", and a list
+        // that sends the header with nothing in it is still a list. The two
+        // produce different sentences: an absent header means no warning at
+        // all, and an empty one means the warning without an address in it.
+        assert_eq!(
+            parse(a_message_headed("").as_bytes())
+                .expect("should parse")
+                .list_unsubscribe,
+            None,
+            "a message with no such header reported one"
+        );
+
+        for header in ["List-Unsubscribe:\r\n", "List-Unsubscribe:    \r\n"] {
+            assert_eq!(
+                parse(a_message_headed(header).as_bytes())
+                    .expect("should parse")
+                    .list_unsubscribe
+                    .as_deref(),
+                Some(""),
+                "{header:?} arrived looking like a header that was never there"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_way_out_carrying_things_that_are_not_writing_arrives_as_writing() {
+        // Guardrail 6. This is a stranger's text on its way to being said
+        // aloud in a room, and a bell character or a bidirectional override in
+        // it is not something to hand a screen reader. The same scrub the
+        // sender's attachment descriptions go through, in the same place,
+        // rather than a second rule that could come to disagree with it.
+        //
+        // Turned into a space rather than deleted, which matters more here
+        // than it does for a description: a character hidden inside an address
+        // to make it read as a different address leaves a visible gap instead
+        // of closing up into the address it was pretending to be.
+        let hidden = "List-Unsubscribe: <mailto:leave\u{7}@lists.example>\r\n";
+
+        let said = parse(a_message_headed(hidden).as_bytes())
+            .expect("should parse")
+            .list_unsubscribe
+            .expect("the header is there, so something has to come back");
+
+        assert!(
+            !said.chars().any(char::is_control),
+            "something that is not writing reached the sentence: {said:?}"
+        );
+        assert_eq!(
+            said, "<mailto:leave @lists.example>",
+            "the scrub did more or less than turn what is not writing into a space"
+        );
+    }
+
+    #[test]
+    fn test_a_way_out_too_long_to_be_one_is_cut_rather_than_read_out() {
+        // Guardrail 6 again, and the bound the warning itself does not have.
+        // `blocking::where_to_write_to_leave` hands back whatever sits between
+        // `<mailto:` and `>`, however long, and that goes to a screen reader at
+        // high priority. A sender who wants to can put a megabyte there.
+        //
+        // Cut here rather than at the sentence, because this is the boundary
+        // the value crosses and every reader downstream would otherwise need a
+        // limit of its own. The cut fails closed, which is what the second
+        // assertion is about: an entry sliced in half loses its closing
+        // bracket, so nothing downstream can read an address out of it.
+        let enormous = format!(
+            "List-Unsubscribe: <mailto:{}@lists.example>\r\n",
+            "a".repeat(A_WAY_OUT_AT_MOST * 2)
+        );
+
+        let said = parse(a_message_headed(&enormous).as_bytes())
+            .expect("should parse")
+            .list_unsubscribe
+            .expect("the header is there");
+
+        assert!(
+            said.chars().count() <= A_WAY_OUT_AT_MOST,
+            "a way out of {} characters was carried whole",
+            said.chars().count()
+        );
+        assert!(
+            !said.ends_with('>'),
+            "a value cut in half still closed its bracket, so half an address \
+             can still be read out of it: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_way_out_of_ordinary_length_is_not_cut() {
+        // The other half of the bound. A limit that cut everything would pass
+        // the test above and lose the feature, and every list there is would
+        // be reported as one that gave no way out.
+        let ordinary = "List-Unsubscribe: <mailto:birds-leave@lists.example>\r\n";
+
+        assert_eq!(
+            parse(a_message_headed(ordinary).as_bytes())
+                .expect("should parse")
+                .list_unsubscribe
+                .as_deref(),
+            Some("<mailto:birds-leave@lists.example>"),
         );
     }
 

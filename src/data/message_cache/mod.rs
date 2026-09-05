@@ -2460,6 +2460,20 @@ impl MessageCache {
         // so the reader can say so without fetching the message again, and so
         // the answer does not depend on a body that may have been evicted.
         self.ensure_column_exists("messages", "receipt_to", "TEXT")?;
+        // What the message said about leaving the mailing list it came from,
+        // its `List-Unsubscribe` header with the brackets on. Stored for the
+        // same reason as the receipt request above it: blocking a sender is
+        // decided from the list row, in a key handler, and the warning it shows
+        // cannot wait on a query.
+        //
+        // NULL is the truthful answer for every row written before this column
+        // existed, and it means "this message carried no such header", which is
+        // what all of them really did. It has to stay apart from the empty
+        // string, which means the header was there and said nothing: the first
+        // is a message from a person and the second is a mailing list that gave
+        // no way out, and reading the second as the first loses the warning for
+        // exactly the senders who need it most.
+        self.ensure_column_exists("messages", "list_unsubscribe", "TEXT")?;
         // The identifier a POP server gives a message, and when this computer
         // downloaded it. POP3 message numbers shift between sessions, so the
         // identifier is the only thing that says whether a message is already

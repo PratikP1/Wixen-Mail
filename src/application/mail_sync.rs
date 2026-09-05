@@ -598,6 +598,7 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
         // telling two rows apart, not for handing back to the server.
         labels: Some(message.labels.join(" ")).filter(|labels| !labels.is_empty()),
         receipt_to: message.receipt_to.clone(),
+        list_unsubscribe: message.list_unsubscribe.clone(),
         // IMAP has UIDs of its own; this is the POP identifier and there is none.
         pop_uidl: None,
     }
@@ -2003,6 +2004,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2067,6 +2069,7 @@ mod tests {
             gmail_message_id: None,
             labels: None,
             receipt_to: None,
+            list_unsubscribe: None,
             pop_uidl: None,
         }
     }
@@ -2183,6 +2186,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2267,6 +2271,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2559,6 +2564,7 @@ mod tests {
                     gmail_message_id: None,
                     labels: None,
                     receipt_to: None,
+                    list_unsubscribe: None,
                     pop_uidl: None,
                 })
                 .expect("a message");
@@ -2990,6 +2996,7 @@ mod tests {
                     gmail_message_id: None,
                     labels: None,
                     receipt_to: None,
+                    list_unsubscribe: None,
                     pop_uidl: None,
                 })
                 .expect("a message");
@@ -3910,6 +3917,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("the only copy");
@@ -6050,6 +6058,32 @@ mod tests {
         assert_eq!(row.cc.as_deref(), Some("bob@example.com"));
         assert_eq!(row.reply_to.as_deref(), Some("list@example.com"));
         assert_eq!(row.labels.as_deref(), Some("Work Urgent"));
+    }
+
+    #[test]
+    fn test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores() {
+        // This conversion is a struct literal with thirty fields in it, and a
+        // field written `None` compiles exactly like a field carried across.
+        // 04-01 found that shape at the one site recording attachments, where
+        // a content id the parse had in hand had been written over for the
+        // whole life of the code. Both halves are here for the reason the Cc
+        // pair above gives: a test for the absent case alone passes against a
+        // conversion that drops the field always.
+        let mut from_a_list = message(1);
+        from_a_list.list_unsubscribe = Some("<mailto:birds-leave@lists.example>".to_string());
+
+        assert_eq!(
+            to_incoming(&from_a_list, 1, false)
+                .list_unsubscribe
+                .as_deref(),
+            Some("<mailto:birds-leave@lists.example>"),
+            "the way out of the list did not reach the row"
+        );
+        assert_eq!(
+            to_incoming(&message(1), 1, false).list_unsubscribe,
+            None,
+            "a message from a person was stored as one from a mailing list"
+        );
     }
 
     #[test]

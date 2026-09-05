@@ -322,7 +322,7 @@ announcement topic a whole-folder fetch belongs on.
 **Plans**: 1/9 plans executed, one per wave. Three shared files, `guards/guards.toml`,
 
 - [x] 04-01-PLAN.md
-- [ ] 04-02-PLAN.md
+- [x] 04-02-PLAN.md
 - [ ] 04-03-PLAN.md
 - [ ] 04-04-PLAN.md
 - [ ] 04-05-PLAN.md
@@ -457,7 +457,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 8/9 | In progress, none merged | - |
-| 4. Writing and reading a message in full | 1/9 | In Progress|  |
+| 4. Writing and reading a message in full | 2/9 | In Progress|  |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
 | 6. How the application speaks | 0/TBD | Not started | - |
 | 7. Installing, updating and what is stored | 0/TBD | Not started | - |

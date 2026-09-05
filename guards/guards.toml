@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 408 records have arrived since and have not been through it.
+# 413 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -565,6 +565,7 @@ red = [
     "application::contact_groups::tests::test_the_sidebar_selection_is_named_when_the_list_changes_to_match_it",
     "application::contacts_sync::tests::test_a_deletion_that_landed_and_one_that_had_nowhere_to_land_are_said_apart",
     "application::contacts_sync::tests::test_every_clause_one_sync_can_say_is_still_read_as_sentences",
+    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
     "application::contacts_sync::tests::test_one_thing_going_wrong_is_not_read_out_as_one_errors",
     "application::contacts_sync::tests::test_the_summary_says_a_deletion_reached_the_address_book",
     "application::mail_sync::tests::test_a_folder_holding_one_message_does_not_say_one_messages",
@@ -581,7 +582,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4252,7 +4253,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -4289,7 +4290,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -4341,7 +4342,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -4397,7 +4398,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4430,7 +4431,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -4556,7 +4557,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 48 },
+    { file = "src/application/pop_sync.rs", tests = 49 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -8257,7 +8258,7 @@ tests_last_seen = [
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # A week-start day other than Monday used to be refused on every rule that
@@ -11154,7 +11155,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 37 },
-    { file = "src/application/pop_sync.rs", tests = 48 },
+    { file = "src/application/pop_sync.rs", tests = 49 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
@@ -13918,7 +13919,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -14206,6 +14207,7 @@ after = """    let arrived = cache.upsert_messages(&arriving)?;
                     mime_type: "application/octet-stream".to_string(),
                     size: message.size_bytes.unwrap_or_default(),
                     content_id: None,
+                    description: crate::service::mime::WhatTheSenderSaid::Nothing,
                 }],
             )?;
         }
@@ -14215,7 +14217,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 134 },
+    { file = "src/application/mail_sync.rs", tests = 135 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -14868,7 +14870,7 @@ red = [
     "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # The accessible half of the same feature, and the half likelier to be tidied
@@ -14913,7 +14915,7 @@ red = [
     "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
 ]
 
 # The other half of the same lookup, and the worse failure of the two. Matching
@@ -14937,5 +14939,136 @@ red = [
     "service::mime::tests::test_markup_too_broken_to_read_leaves_the_part_undescribed_rather_than_guessed_at",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 47 },
+    { file = "src/service/mime.rs", tests = 52 },
+]
+
+# ── The mailing-list warning, and the three ways it can go back to silence ──
+#
+# `blocking::MayBlock::YesButFirst` had a written sentence, three fixtures and
+# an arm of `may_block` from the day blocking was built, and no shipped build
+# ever returned it. `List-Unsubscribe` was never parsed, so the one production
+# construction of `WhatIsAlreadyTrue` passed `None`, and the arm was unreachable
+# through 344 commits with everything green.
+#
+# Three records because the value crosses three places where it can be dropped
+# without anything failing, and each of the three is a different kind of
+# silence. The parse can stop reading the header. The fetch can stop asking a
+# server for it. And the handler can go back to its literal. Each of the other
+# two stays correct while any one of them goes, which is exactly why it lasted.
+#
+# All three were measured by hand with `--no-fail-fast` on 2026-09-05, and the
+# passing totals are recorded beside each.
+
+[[guard]]
+name = "what a message said about leaving a list survives the parse"
+file = "src/service/mime.rs"
+before = """        list_unsubscribe: how_to_leave_the_list(&message),"""
+after = """        list_unsubscribe: None,"""
+# Measured by hand: 6265 passed, 5 failed, 1 ignored.
+red = [
+    "service::mime::tests::test_what_a_message_said_about_leaving_the_list_arrives_with_its_brackets_on",
+    "service::mime::tests::test_a_way_out_that_is_there_and_empty_is_not_a_way_out_that_is_absent",
+    "service::mime::tests::test_a_way_out_carrying_things_that_are_not_writing_arrives_as_writing",
+    "service::mime::tests::test_a_way_out_too_long_to_be_one_is_cut_rather_than_read_out",
+    "service::mime::tests::test_a_way_out_of_ordinary_length_is_not_cut",
+]
+tests_last_seen = [
+    { file = "src/service/mime.rs", tests = 52 },
+]
+
+# The far end, and the quietest of the three. `HEADER_FIELDS` names the headers
+# an IMAP fetch asks a server for, one at a time, because a whole header block
+# carries DKIM signatures and a Received chain. A header that is not on it never
+# arrives, so every hop after the fetch can be correct and operating on nothing,
+# and no test on either side of that hop can see it: the parse parses the header
+# when it is there, and the column stores it when it is given.
+#
+# The break is the state the tree was in until 2026-09-05, which is the header
+# simply absent from the list.
+#
+# Measured against the census rather than the library on purpose. The whole
+# library was run against this break as well and stayed green, 166 passed and
+# nothing failed under `--lib service::protocols::imap::`, which is the finding
+# rather than an aside: nothing in the library can see this at all.
+[[guard]]
+name = "the header fetch asks a server for the header the warning is built on"
+file = "src/service/protocols/imap.rs"
+suite = "the_list_warning_reads_the_message"
+before = """     X-MICROSOFT-ANTISPAM DISPOSITION-NOTIFICATION-TO RETURN-RECEIPT-TO \\
+     LIST-UNSUBSCRIBE";"""
+after = """     X-MICROSOFT-ANTISPAM DISPOSITION-NOTIFICATION-TO RETURN-RECEIPT-TO";"""
+# Measured by hand: 7 passed, 1 failed.
+red = [
+    "test_the_header_fetch_asks_for_the_header_the_warning_is_built_on",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "tests/the_list_warning_reads_the_message.rs", tests = 8 },
+]
+
+# The near end, and the defect itself. The break is the line the shipped build
+# really carried: a field handed a literal instead of the row's own value.
+#
+# The same measurement as above and the same finding, one file along: the whole
+# of `--lib presentation::wx_app::` was run against this break and 199 tests
+# passed. A struct literal spelled out inside a key handler cannot be reached
+# from a test without standing up a window, and a field set to nothing compiles
+# exactly like a field set correctly. That is why this needs a source read at
+# all, and why the read has three companions of its own saying it can tell a
+# literal from a value and does not count a fixture below the `#[cfg(test)]`.
+[[guard]]
+name = "the block handler asks the message rather than a constant"
+file = "src/presentation/wx_app.rs"
+suite = "the_list_warning_reads_the_message"
+before = """        how_to_leave_the_list: message.list_unsubscribe.as_deref(),"""
+after = """        how_to_leave_the_list: None,"""
+# Measured by hand: 7 passed, 1 failed.
+red = [
+    "test_the_block_handler_reads_the_message_rather_than_a_constant",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_list_warning_reads_the_message.rs", tests = 8 },
+]
+
+# ── The two arrival paths, which are two struct literals a field can vanish in ─
+#
+# Written after the feature, and the tests were green on arrival, which is said
+# here rather than left to be inferred. Both breaks were taken by hand
+# afterwards and are the whole of the evidence that either test would notice.
+#
+# The shape is the one 04-01 found in `content_id`: a conversion spelled out as
+# a struct literal with thirty fields, where a field written `None` compiles
+# exactly like a field carried across, and the site that records attachments had
+# written over a content id the parse held for the whole life of that code. Two
+# writers rather than one because a fact carried by only one of them is a fact
+# that depends on which protocol the account speaks.
+#
+# Measured by hand on 2026-09-05, each with `--no-fail-fast` over the whole
+# library.
+
+[[guard]]
+name = "a mailing list found over IMAP reaches the row with its way out on"
+file = "src/application/mail_sync.rs"
+before = """        list_unsubscribe: message.list_unsubscribe.clone(),"""
+after = """        list_unsubscribe: None,"""
+# Measured by hand: 6271 passed, 1 failed, 1 ignored.
+red = [
+    "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 135 },
+]
+
+[[guard]]
+name = "a mailing list downloaded over POP reaches the row with its way out on"
+file = "src/application/pop_sync.rs"
+before = """        list_unsubscribe: parsed.list_unsubscribe.clone(),"""
+after = """        list_unsubscribe: None,"""
+# Measured by hand: 6271 passed, 1 failed, 1 ignored.
+red = [
+    "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
+]
+tests_last_seen = [
+    { file = "src/application/pop_sync.rs", tests = 49 },
 ]
