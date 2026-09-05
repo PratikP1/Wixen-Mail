@@ -183,6 +183,18 @@
 # been given.
 
 [[guard]]
+# Re-measured on 2026-09-05, because plan 03-09 renamed a test this record
+# names and a rename can change what a break reddens. It had.
+#
+# `test_a_held_contact_is_not_resolved_by_the_next_sync`, which was
+# `test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync`,
+# stayed green with this break applied and is taken out of the list. Its subject
+# moved with its name: it used to be about a loss being said once and is now
+# about a second sync leaving a held contact alone, and a held contact is
+# skipped before this question is asked at all.
+#
+# The other four still redden, so the guard still discriminates. Four rather
+# than five, measured rather than assumed.
 name = "the Google merge asks what the whole contact is owed"
 file = "src/application/contacts_sync.rs"
 before = """                        the_copy_here_holds_work_nobody_has_sent(local),
@@ -193,7 +205,6 @@ red = [
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
-    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 tests_last_seen = [
