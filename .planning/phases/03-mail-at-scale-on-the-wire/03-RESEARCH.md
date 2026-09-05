@@ -143,14 +143,28 @@ guardrail 9 and the alpha-marking rule both cover: a person is told something th
 
 The outbox itself is complete: `queue_outbox_message` (`outbox.rs:38`),
 `outbox_messages_that_may_go_now` (`:95`), `when_a_queued_message_may_go` (`:112`),
-`cancel_queued` (`:256`), `update_outbox_failure` (`:287`). `flush_outbox` (`wx_app.rs:15883`) has
-exactly one caller, the menu item at `:4877`, and never consults `offline_mode`. It correctly asks
-only for messages that may go now, so undo-send holds and scheduled sends are respected
-(`:15925-15935`).
+`cancel_queued` (`:256`), `update_outbox_failure` (`:287`). It is in the data layer, at
+`src/data/message_cache/outbox.rs`, and `03-08`'s plan sent an executor to
+`src/application/outbox.rs`, which does not exist.
+
+**Corrected 2026-09-05, found while executing `03-08`.** This said `flush_outbox` has exactly one
+caller, the menu item. **It had two.** The composer's Send queues the message and then flushes on
+the very next line, at `wx_app.rs:13423`, and that is the caller the whole guardrail-7 argument is
+about. Neither this document nor the plan built on it had checked. There are three now, the third
+being the button `03-08` added.
+
+`flush_outbox` never consulted `offline_mode`, and correctly asks only for messages that may go
+now, so scheduled sends are respected.
 
 **Criterion 5's "rather than flushing the outbox unasked" is satisfied today by accident**, and
 wiring "the network came back" straight to `flush_outbox` would break it and send mail nobody
 asked to send. That is guardrail 7.
+
+One thing that argument leaned on is also false, and it matters more than the miscount. Undo Send
+holds nothing: `Hold`, `GoAfter::held` and `queue_outbox_message_to_go` have no caller outside
+their own module, every composer Send queues as `AsSoonAsPossible`, and `take_back` therefore
+answers `TooLate` at once. So "undo-send holds are respected" describes a hold that never happens.
+Ledger 81.
 
 ### SCALE-03 has two 500s, and the requirement names one
 
