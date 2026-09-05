@@ -6,6 +6,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **Marking a message read, or starring it, while the mail server cannot be
+  reached now keeps the change instead of quietly undoing it.**
+
+  Star a message on a train and it used to star, un-star itself a moment later,
+  and tell you the change did not reach the server. Nobody had refused it. It
+  had never been put to anybody: the connection was gone, and every kind of
+  failure took the same path back.
+
+  The change stays now. Wixen Mail says: "The mail server could not be reached,
+  so your change is saved here and goes the next time Wixen Mail talks to it."
+  When you next check mail, on the connection that check opens, the waiting
+  changes go with it.
+
+  Star and un-star the same message with no server and one change is waiting,
+  the later one, not two to be replayed in whatever order they happened to be
+  written.
+
+  A change the server actually refuses is still put back, and that is
+  deliberate. It says something different: "The mail server refused your change,
+  so it has been put back", followed by the reason. A server that answered and
+  said no is a different fact from a server that was not there, and only one of
+  them means your change was rejected.
+
+  Twenty messages failing in one sync say one thing with a count rather than
+  twenty things.
+
+  Known limitations, three worth reading:
+
+  - **This has never run against a real account.** No mail server has ever been
+    used with this program. The two failures are proved against a loopback
+    server that can be made to drop a connection or answer no, which is closer
+    than a made-up error and is not a real mail server.
+  - **Nothing sends a waiting change because the network came back.** They go
+    when you check mail, which is something you did. Mail and changes leaving
+    your computer should happen because you asked.
+  - **Labels are not covered.** Adding or removing a label still puts itself
+    back when the push fails, whatever the reason. Only read and starred are
+    kept.
+
 ### Added
 
 - **When a contact or a calendar item has been changed both here and at your

@@ -113,12 +113,9 @@ fn the_sessions_being_held() -> &'static Mutex<HashMap<String, TheSessionForOneA
 /// permission the rest of that account's writing does: an account that may not
 /// change anything at its server gets a session that refuses each command
 /// rather than one that carries it out.
-pub(crate) async fn a_session_at(account: &Account) -> std::result::Result<MailController, String> {
+pub(crate) async fn a_session_at(account: &Account) -> crate::common::Result<MailController> {
     let controller = MailController::new();
-    controller
-        .sign_in_for(account)
-        .await
-        .map_err(|e| e.to_string())?;
+    controller.sign_in_for(account).await?;
     Ok(controller)
 }
 
@@ -129,7 +126,7 @@ pub(crate) async fn a_session_at(account: &Account) -> std::result::Result<MailC
 /// it lives and what closes it.
 pub(crate) async fn the_session_at(
     account: &Account,
-) -> std::result::Result<Arc<MailController>, String> {
+) -> crate::common::Result<Arc<MailController>> {
     // The map is let go before anything is dialled. Held across a sign-in it
     // would make every other account wait out a server that has taken the
     // connection and then gone quiet, which is two minutes.
@@ -385,6 +382,11 @@ mod tests {
         let Err(reason) = refused else {
             panic!("an account with no usable port signed in");
         };
+        // Read as words rather than as a variant, because what is asserted is
+        // the sentence somebody is shown. The helper hands back a typed error
+        // now, so that a failed push can tell a server that refused from one
+        // that was never reached; the words it carries are unchanged.
+        let reason = reason.to_string();
         assert!(reason.contains("Work"), "{reason}");
         assert!(reason.contains("port"), "{reason}");
         assert!(

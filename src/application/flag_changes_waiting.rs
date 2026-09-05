@@ -124,10 +124,15 @@ pub enum WhyThePushFailed {
 /// so the change can still go. Putting a star back because a token expired
 /// loses work over something that clears on its own.
 pub fn why_the_push_failed(error: &Error) -> WhyThePushFailed {
-    // Stub reproducing today's behaviour: every failure takes the same path
-    // back, including the one where the server was never reached.
-    let _ = error;
-    WhyThePushFailed::TheServerSaidNo
+    match error {
+        Error::Network(_) | Error::Authentication(_) => WhyThePushFailed::TheServerWasNeverAsked,
+        Error::Security(_) => WhyThePushFailed::ThisComputerRefusedIt,
+        Error::Config(_)
+        | Error::Protocol(_)
+        | Error::Api { .. }
+        | Error::Other(_)
+        | Error::InPlainWords(_) => WhyThePushFailed::TheServerSaidNo,
+    }
 }
 
 /// What a failed push calls for.
@@ -201,10 +206,15 @@ pub const WHAT_HAPPENED_TO_A_CHANGE: &str = "flag change";
 /// Written out both ways rather than built from parts, because three words have
 /// to agree in number.
 pub fn kept_because_the_server_was_not_there(count: usize) -> String {
-    // Stub reproducing today's sentence, which is the same one for both
-    // failures and says the change was put back whether it was or not.
-    let _ = count;
-    "The change did not reach the server, so it has been undone here".to_string()
+    match count {
+        1 => "The mail server could not be reached, so your change is saved here \
+              and goes the next time Wixen Mail talks to it"
+            .to_string(),
+        many => format!(
+            "The mail server could not be reached, so {many} changes are saved here \
+             and go the next time Wixen Mail talks to it"
+        ),
+    }
 }
 
 /// What is said when the server answered and said no.
@@ -214,16 +224,17 @@ pub fn kept_because_the_server_was_not_there(count: usize) -> String {
 /// says the change is kept; this one says it is gone. They share no opening
 /// clause and no verb.
 pub fn put_back_because_the_server_refused(count: usize, reason: &str) -> String {
-    // Stub: today's one sentence for both failures, so the two are not
-    // distinguishable by ear because they are the same words.
-    let _ = count;
-    format!("The change did not reach the server, so it has been undone here: {reason}")
+    match count {
+        1 => format!("The mail server refused your change, so it has been put back: {reason}"),
+        many => {
+            format!("The mail server refused {many} changes, so they have been put back: {reason}")
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::mail_controller::MailController;
     use crate::common::answering::Turn;
 
     #[test]
@@ -357,30 +368,42 @@ mod tests {
         assert!(!said.contains("changes"), "{said}");
     }
 
-    /// A controller signed in to the server given.
-    async fn signed_in_to(server: &crate::common::answering::Conversation) -> MailController {
-        let controller = MailController::new();
-        controller
-            .connect_imap(
-                "127.0.0.1".to_string(),
-                server.port(),
-                "someone".to_string(),
-                crate::service::protocols::MailAuth::Password("hunter2".to_string()),
-                false,
-                "a1",
-            )
+    /// A session signed in to that server with the write gate open, and a
+    /// mailbox already selected.
+    ///
+    /// Below the controller rather than through it, and that is a finding
+    /// rather than a shortcut. `MailController::connect_imap` opens the write
+    /// gate only when `allowed_for` says the account may change things, which
+    /// is a setting on the machine running the tests. Through the controller
+    /// both servers below answered `Error::Security` before either was asked
+    /// anything, so the tests proved that the gate works and nothing at all
+    /// about the distinction they are named for. `mail_controller.rs`'s own
+    /// tests record the same thing about themselves and assert on what reached
+    /// the server for exactly this reason.
+    ///
+    /// What is skipped is the gate. What is exercised is the socket, the
+    /// library's own error and this project's mapping of it, which is where
+    /// the distinction really has to hold.
+    async fn a_session_with_the_inbox_open(
+        server: &crate::common::answering::Conversation,
+    ) -> crate::service::protocols::imap::ImapSession {
+        let mut session =
+            crate::service::protocols::imap::against_a_server_that_answers::signed_in_to(server)
+                .await;
+        session
+            .select_folder("INBOX")
             .await
-            .expect("the server answered, so signing in should work");
-        controller
+            .expect("the folder to open");
+        session
     }
 
     #[tokio::test]
     async fn test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked() {
         // Against a real server rather than a mocked error, because the whole
         // point of the distinction is where it is drawn: it has to survive the
-        // library's own error type, this project's mapping of it, and the
-        // controller's retry. A test that builds an `Error::Network` by hand
-        // proves only that the match arm below matches.
+        // library's own error type and this project's mapping of it. A test
+        // that builds an `Error::Network` by hand proves only that the match
+        // arm below matches.
         //
         // The server takes the sign-in and the SELECT and then hangs up on the
         // command that would change the message. That is what a connection
@@ -399,9 +422,11 @@ mod tests {
             }
         })
         .await;
-        let controller = signed_in_to(&server).await;
+        let mut session = a_session_with_the_inbox_open(&server).await;
 
-        let outcome = controller.set_starred("INBOX", 1, true).await;
+        let outcome = session
+            .set_flag(1, crate::service::protocols::imap::flag::FLAGGED, true)
+            .await;
 
         let why = outcome.expect_err("the connection went, so this cannot have worked");
         assert_eq!(
@@ -428,9 +453,11 @@ mod tests {
                 "UID STORE",
             )
             .await;
-        let controller = signed_in_to(&server).await;
+        let mut session = a_session_with_the_inbox_open(&server).await;
 
-        let outcome = controller.set_starred("INBOX", 1, true).await;
+        let outcome = session
+            .set_flag(1, crate::service::protocols::imap::flag::FLAGGED, true)
+            .await;
 
         let why = outcome.expect_err("the server said no");
         assert_eq!(
@@ -442,6 +469,55 @@ mod tests {
         assert_eq!(
             what_to_do_about_it(why_the_push_failed(&why)),
             WhatAFailedPushCallsFor::PutItBack
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_waiting_change_still_meets_the_write_gate_when_it_finally_goes() {
+        // An account open for reading only must not accumulate changes that
+        // are written later. The gate is met at the session, so a waiting
+        // change offered on one is refused there rather than sent, and the
+        // refusal is a gate refusal: the change goes on waiting rather than
+        // being lost or put back.
+        let server =
+            crate::service::protocols::imap::against_a_server_that_answers::a_server_that_can("")
+                .await;
+        let mut session =
+            crate::service::protocols::imap::against_a_server_that_answers::reading_only_on(
+                &server,
+            )
+            .await;
+        // The folder opens: reading is allowed. Only the change is refused.
+        session
+            .select_folder("INBOX")
+            .await
+            .expect("the folder to open");
+
+        let outcome = session
+            .set_flag(1, crate::service::protocols::imap::flag::FLAGGED, true)
+            .await;
+
+        let why = outcome.expect_err("an account open for reading only changed a message");
+        assert_eq!(
+            why_the_push_failed(&why),
+            WhyThePushFailed::ThisComputerRefusedIt,
+            "{why}"
+        );
+        assert_eq!(
+            what_became_of_it(&Err(why)),
+            WhatToDoWithAWaitingChange::GoOnWaiting,
+            "a change the setting refused was either sent or thrown away, and \
+             both are wrong: turning the setting on is what clears it"
+        );
+        assert!(
+            !server
+                .transcript()
+                .await
+                .iter()
+                .any(|line| line.to_uppercase().contains("STORE")),
+            "the change reached the server on an account open for reading \
+             only: {:?}",
+            server.transcript().await
         );
     }
 

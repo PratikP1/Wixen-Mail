@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 402 records have arrived since and have not been through it.
+# 404 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13963,7 +13963,7 @@ before = """        let controller =
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
                 Err(why) => {
-                    refuse(why);
+                    answer_a_failed_push(why);
                     return;
                 }
             };
@@ -14748,4 +14748,79 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar_conflict.rs", tests = 5 },
     { file = "src/application/caldav_sync.rs", tests = 67 },
+]
+
+# ── A flag change made with no server ───────────────────────────────────────
+#
+# SCALE-06's mail half, and guardrail 7. Marking a message read or starring it
+# is applied here at once and pushed straight after; every failure used to take
+# the same path back, so starring a message on a train starred it, un-starred
+# it a moment later, and said why. Nobody had refused the change. Nobody had
+# been asked.
+#
+# Measured by hand on 2026-09-05, each break applied on its own.
+
+[[guard]]
+# The distinction, and the break is the version somebody would write reaching
+# for a wildcard: everything that is not this computer's own gate is the server
+# having answered. Four tests, and two of them drive a loopback server rather
+# than a built error, which is the half that proves the mapping holds through
+# the library's own error type.
+name = "a lost connection is told apart from a server that said no"
+file = "src/application/flag_changes_waiting.rs"
+before = """        Error::Network(_) | Error::Authentication(_) => WhyThePushFailed::TheServerWasNeverAsked,
+        Error::Security(_) => WhyThePushFailed::ThisComputerRefusedIt,
+        Error::Config(_)
+        | Error::Protocol(_)
+        | Error::Api { .. }
+        | Error::Other(_)
+        | Error::InPlainWords(_) => WhyThePushFailed::TheServerSaidNo,"""
+after = """        Error::Security(_) => WhyThePushFailed::ThisComputerRefusedIt,
+        _ => WhyThePushFailed::TheServerSaidNo,"""
+red = [
+    "application::flag_changes_waiting::tests::test_a_lost_connection_is_the_server_never_having_been_asked",
+    "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
+    "application::flag_changes_waiting::tests::test_a_sign_in_that_did_not_happen_leaves_the_change_worth_keeping",
+    "application::flag_changes_waiting::tests::test_a_waiting_change_the_server_still_cannot_be_asked_about_goes_on_waiting",
+]
+tests_last_seen = [
+    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+]
+
+[[guard]]
+# Guardrail 7. The break is the wiring somebody actually writes, and finding
+# that out took two goes.
+#
+# The first version of this test asked only whether the arm called the sending
+# itself, and it stayed green against the break below. Nobody wires the
+# network's return straight to a flag change; what they write is a mail check,
+# because a check when the network returns sounds obviously useful, and a check
+# now sends the waiting changes on the session it opens. The test reads a list
+# of everything that ends at a server now.
+#
+# The second version stayed green too, for a different reason: it searched for
+# the bare variant name and found the line that *sends* the update, hundreds of
+# lines above the arm that handles it, so it read nine hundred characters of an
+# unrelated function. It matches the arm's own opening now.
+#
+# Both were measured by putting the break in and watching the file stay green.
+# A test that cannot fail proves nothing, and this one could not fail twice.
+name = "the network coming back starts nothing that reaches a server"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = """        UIUpdate::TheNetworkIsBack => {
+            back_online_offer.panel.show(true);"""
+after = """        UIUpdate::TheNetworkIsBack => {
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                None,
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
+            back_online_offer.panel.show(true);"""
+red = [
+    "test_the_network_coming_back_starts_nothing_that_reaches_a_server",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 3 },
 ]

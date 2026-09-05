@@ -68,28 +68,48 @@ fn test_the_places_that_send_a_waiting_flag_change_are_the_ones_counted() {
     );
 }
 
+/// Everything in this window that ends with something reaching a server.
+///
+/// The sending itself, a mail check, and the Outbox flush. Named as a list
+/// rather than as the one call this file is about, and that is the finding
+/// this test was rewritten for: asking only about the sending let the real
+/// mistake through. Nobody wires the network's return straight to a flag
+/// change. What somebody writes is `spawn_mail_sync`, because a check that
+/// runs when the network returns sounds obviously useful, and a check now
+/// sends the waiting changes on the session it opens.
+///
+/// Measured on 2026-09-05 by putting exactly that in the arm and watching this
+/// file stay green when it read only the sending.
+const EVERYTHING_THAT_REACHES_A_SERVER: [&str; 3] =
+    [THE_SENDING, "spawn_mail_sync(", "flush_outbox("];
+
 #[test]
-fn test_the_network_coming_back_sends_no_flag_change() {
-    // The specific wiring this exists to refuse. The arm that runs when the
-    // network returns raises an offer and sends nothing; a call to the sending
-    // inside it would empty the queue at somebody's server because a cable went
-    // back in.
+fn test_the_network_coming_back_starts_nothing_that_reaches_a_server() {
+    // The wiring this exists to refuse. The arm that runs when the network
+    // returns raises an offer and starts nothing; anything in it that ends at a
+    // server empties the queue because a cable went back in, and closing a
+    // laptop on a train and opening it in an office is then a write at
+    // somebody's mail server with nobody having asked.
     let source = the_window();
-    let arm = "UIDUpdate::TheNetworkIsBack";
-    let arm = if source.contains(arm) {
-        arm
-    } else {
-        "UIUpdate::TheNetworkIsBack"
-    };
+    // The arm, not the first mention. Written as the bare variant name this
+    // found the line that *sends* the update, hundreds of lines above the arm
+    // that handles it, and read nine hundred characters of an unrelated
+    // function. It passed with a mail check wired into the real arm. Measured
+    // on 2026-09-05 by doing exactly that.
+    let arm = "UIUpdate::TheNetworkIsBack => {";
     let at = source
         .find(arm)
         .unwrap_or_else(|| panic!("the arm for the network coming back is gone"));
     let body = &source[at..(at + 900).min(source.len())];
+    let reached: Vec<&str> = EVERYTHING_THAT_REACHES_A_SERVER
+        .iter()
+        .copied()
+        .filter(|call| body.contains(call))
+        .collect();
     assert!(
-        !body.contains(THE_SENDING),
-        "the network coming back sends waiting flag changes. Nobody asked, and \
-         a flag reaching a server is a write at somebody else's service. What \
-         follows the arm:\n{body}"
+        reached.is_empty(),
+        "the network coming back starts {reached:?}, and each of those ends at \
+         a server. Nobody asked. What follows the arm:\n{body}"
     );
 }
 

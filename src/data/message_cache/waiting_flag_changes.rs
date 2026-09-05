@@ -38,9 +38,23 @@ impl MessageCache {
     /// one. That falls out of the primary key rather than out of a read before
     /// the write, so nothing has to remember it.
     pub fn keep_a_flag_change_waiting(&self, waiting: &AWaitingFlagChange) -> Result<()> {
-        // Stub reproducing today's behaviour: nothing queues a mail flag
-        // change, so nothing is kept.
-        let _ = waiting;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO waiting_flag_changes
+                 (message_row_id, account_id, folder_path, uid, which_flag,
+                  changed_to, changed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    waiting.message_row_id,
+                    waiting.account_id,
+                    waiting.folder_path,
+                    waiting.uid,
+                    waiting.which_flag.as_stored(),
+                    waiting.changed_to,
+                    waiting.changed_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("A flag change could not be kept: {e}")))?;
         Ok(())
     }
 

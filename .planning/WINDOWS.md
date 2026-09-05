@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 72
+open_count: 75
 waived_count: 0
 fixed_count: 13
-total_count: 85
-last_updated: 2026-09-05T08:50:31.713Z
+total_count: 88
+last_updated: 2026-09-05T09:47:46.593Z
 ---
 
 # Broken Windows Ledger
@@ -100,6 +100,9 @@ last_updated: 2026-09-05T08:50:31.713Z
 | 83 | 03 | unrun-verify | src/application/conflict_choice.rs |  | Whether the count of waiting choices is useful or is a sentence somebody stops hearing. Every sync that found a disagreement ends with a whole sentence naming how many are waiting and where to make the choice, on top of the counts the sync already reads out. Phase 2 entries 26 and 33 are the precedent and asked the same question about a tally read aloud. What a run would settle: whether a sentence arriving after five counts is still heard, and whether somebody who hears it on every sync until they act finds it a reminder or a nag. | open |  | 2026-09-05T08:50:14.084Z |  |
 | 84 | 03 | unrun-verify | src/application/contacts_sync.rs |  | The push still sends a change typed here over the address book's newer copy, and nobody is asked. When a push is refused for carrying a version marker the address book has moved past, and the copy here was typed here, the push reads the address book's current marker and sends the change again on top of it. That is a second both-changed state, resolved in this computer's favour, at the provider, with a sentence afterwards. It is the same shape as the defect plan 03-09 fixed on the read side and it was left alone: it is guarded by two records, its behaviour is deliberate and argued for in guards.toml, and changing it means changing what those guards are about. Found while executing 03-09, whose own key link named the counter for this path as the model for how the losing case was told, which it is not. | open |  | 2026-09-05T08:50:23.245Z |  |
 | 85 | 03 | deviation | src/application/calendar_conflict.rs |  | Two files hold tests about code that lives elsewhere, and both are a deliberate trade for guard re-measurement time. The CalDAV sync-path test lives in calendar_conflict.rs because 23 records fingerprint caldav_sync.rs's test count, and the choosing window's assertions live in tests/the_conflict_choice_can_be_heard.rs because 37 fingerprint wx_app.rs. What that costs: a test about the CalDAV sync sits one file away from the sync, and the window's own behaviour is asserted by reading source rather than by building a window. What is therefore not guarded from inside caldav_sync.rs is that the read consults calendar_conflict at all, and from inside wx_conflict_choice.rs that the dialog builds what the source says it builds. Both are covered by the new records instead, coupled through guards.toml so they run on the commits that could break them. | open |  | 2026-09-05T08:50:31.713Z |  |
+| 86 | 03 | unrun-verify | src/application/flag_changes_waiting.rs |  | Whether the two sentences about a flag change are distinguishable by ear. One says the server could not be reached and the change is saved here; the other says the server refused it and it has been put back. They share no opening clause and no verb, and a test holds them to that, but whether somebody hearing one in the middle of a syncing mailbox knows which they heard is a judgement only a screen reader run settles. Three things a run would settle: whether the two are told apart at speed, whether announcing them on their own topic rather than the status line means they are heard at all, and whether the count in the plural form is understood as a number of changes rather than as a number of servers or messages. | open |  | 2026-09-05T09:47:34.277Z |  |
+| 87 | 03 | deviation | src/presentation/wx_app.rs |  | A label added or removed still puts itself back when the push fails, whatever the reason. The waiting queue models two flags, read and starred, because those are the two a message row carries as its own state and the two the window puts back by sending the opposite update. A label is a keyword, of which a message can have many, and replaying one needs the keyword as well as the value. Left out rather than half-built: the arm names the case, says why, and takes the path it always took. The changelog says so under Known limitations. | open |  | 2026-09-05T09:47:46.170Z |  |
+| 88 | 03 | unrun-verify | src/application/flag_changes_waiting.rs |  | Whether Authentication counting as the server never having been asked is the right call against a real provider. A sign-in the server turned down means the change was never put to it and a token that has expired is fixed by signing in again, so the change is kept. Against a provider that answers Authentication for something that does not clear on its own, a wrong password nobody corrects, the change waits for ever and is offered on every sync. Nothing here has met a provider, so which errors a real one raises for an expired token against a wrong password is unknown, and that is the fact the decision rests on. | open |  | 2026-09-05T09:47:46.593Z |  |
 
 ````json
 [
@@ -1121,6 +1124,42 @@ last_updated: 2026-09-05T08:50:31.713Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T08:50:31.713Z",
+    "resolved_at": null
+  },
+  {
+    "id": 86,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/flag_changes_waiting.rs",
+    "line": null,
+    "description": "Whether the two sentences about a flag change are distinguishable by ear. One says the server could not be reached and the change is saved here; the other says the server refused it and it has been put back. They share no opening clause and no verb, and a test holds them to that, but whether somebody hearing one in the middle of a syncing mailbox knows which they heard is a judgement only a screen reader run settles. Three things a run would settle: whether the two are told apart at speed, whether announcing them on their own topic rather than the status line means they are heard at all, and whether the count in the plural form is understood as a number of changes rather than as a number of servers or messages.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T09:47:34.277Z",
+    "resolved_at": null
+  },
+  {
+    "id": 87,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "A label added or removed still puts itself back when the push fails, whatever the reason. The waiting queue models two flags, read and starred, because those are the two a message row carries as its own state and the two the window puts back by sending the opposite update. A label is a keyword, of which a message can have many, and replaying one needs the keyword as well as the value. Left out rather than half-built: the arm names the case, says why, and takes the path it always took. The changelog says so under Known limitations.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T09:47:46.170Z",
+    "resolved_at": null
+  },
+  {
+    "id": 88,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/flag_changes_waiting.rs",
+    "line": null,
+    "description": "Whether Authentication counting as the server never having been asked is the right call against a real provider. A sign-in the server turned down means the change was never put to it and a token that has expired is fixed by signing in again, so the change is kept. Against a provider that answers Authentication for something that does not clear on its own, a wrong password nobody corrects, the change waits for ever and is offered on every sync. Nothing here has met a provider, so which errors a real one raises for an expired token against a wrong password is unknown, and that is the fact the decision rests on.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T09:47:46.593Z",
     "resolved_at": null
   }
 ]

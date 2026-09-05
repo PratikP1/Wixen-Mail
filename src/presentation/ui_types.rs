@@ -523,6 +523,14 @@ pub enum UIUpdate {
         changes_that_cannot_be_saved: Vec<String>,
         errors: Vec<String>,
     },
+    /// A flag change that could not go, kept rather than undone.
+    ///
+    /// Its own update rather than a status line, because it is said on its own
+    /// announcement topic. A folder sync failing on twenty messages must say
+    /// this once with a count rather than twenty times, and the queue's topic
+    /// superseding is what makes that fall out of the arrangement rather than
+    /// out of code somebody has to remember.
+    AFlagChangeIsWaiting(String),
     /// Active PIM module changed
     ModuleChanged(PimModule),
     /// Calendar containers loaded

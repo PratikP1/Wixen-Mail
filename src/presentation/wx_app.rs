@@ -12935,6 +12935,90 @@ pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) 
     });
 }
 
+/// Offer the flag changes that have been waiting, on a session that is already
+/// open.
+///
+/// **Nothing calls this because the network came back.** A flag change reaching
+/// the server is a write at somebody else's service, so it happens on purpose,
+/// and `tests/nothing_sends_a_flag_change_unasked.rs` counts every place that
+/// calls it and names what asked at each. The one caller is a mail check, which
+/// runs because somebody pressed Check Mail, opened a folder, or the watch on
+/// their inbox woke: in every case a person's own action is what put this
+/// program in front of that server, and the connection is already open.
+///
+/// The write gate is met at the session rather than here. A session signed in
+/// for an account that may not change anything refuses each command, so a
+/// waiting change on such an account is refused as a gate refusal and goes on
+/// waiting rather than being sent or lost.
+///
+/// A change the server refuses when it finally goes is put back and stops
+/// waiting, because sending the same thing again meets the same answer. One the
+/// server still cannot be asked about goes on waiting.
+fn send_the_flag_changes_that_were_waiting(
+    cache: &crate::data::message_cache::MessageCache,
+    controller: &crate::application::mail_controller::MailController,
+    account_id: &str,
+    handle: &tokio::runtime::Handle,
+    say: &dyn Fn(UIUpdate),
+) {
+    use crate::application::flag_changes_waiting::{
+        WhatToDoWithAWaitingChange, WhichFlag, put_back_because_the_server_refused,
+        what_became_of_it,
+    };
+    let waiting = cache
+        .flag_changes_waiting_for(account_id)
+        .unwrap_or_default();
+    let mut put_back = 0usize;
+    let mut last_refusal = String::new();
+    for change in &waiting {
+        let offered = match change.which_flag {
+            WhichFlag::Read => handle.block_on(controller.set_flag(
+                &change.folder_path,
+                change.uid,
+                crate::service::protocols::imap::flag::SEEN,
+                change.changed_to,
+            )),
+            WhichFlag::Starred => handle.block_on(controller.set_starred(
+                &change.folder_path,
+                change.uid,
+                change.changed_to,
+            )),
+        };
+        match what_became_of_it(&offered) {
+            WhatToDoWithAWaitingChange::ItWent => {
+                let _ = cache
+                    .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);
+            }
+            WhatToDoWithAWaitingChange::PutItBackAndStopWaiting => {
+                match change.which_flag {
+                    WhichFlag::Read => say(UIUpdate::MessageReadToggled(
+                        change.message_row_id,
+                        !change.changed_to,
+                    )),
+                    WhichFlag::Starred => say(UIUpdate::MessageStarredToggled(
+                        change.message_row_id,
+                        !change.changed_to,
+                    )),
+                }
+                let _ = cache
+                    .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);
+                put_back += 1;
+                if let Err(why) = &offered {
+                    last_refusal = why.to_string();
+                }
+            }
+            WhatToDoWithAWaitingChange::GoOnWaiting => {}
+        }
+    }
+    // One sentence carrying a count, rather than one per change. Twenty
+    // refusals from one sync are one thing to say.
+    if put_back > 0 {
+        say(UIUpdate::AFlagChangeIsWaiting(
+            put_back_because_the_server_refused(put_back, &last_refusal),
+        ));
+    }
+}
+
 /// Work through the contacts waiting on somebody's choice, one window each.
 ///
 /// The door the contacts sync's own sentence names. A sync that says "open
@@ -13814,7 +13898,9 @@ fn spawn_draft_append(
             }
             // Nothing was learnt about what the server holds, so the answer is
             // the one that claims least: whatever copy it has is untouched.
-            Err(reason) => draft_copy::Filed::NotFiledAndTheOlderOneIsStillThere(reason),
+            Err(reason) => {
+                draft_copy::Filed::NotFiledAndTheOlderOneIsStillThere(reason.to_string())
+            }
         };
         if filed.needs_saying() {
             handle.block_on(async {
@@ -15671,6 +15757,27 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // as FolderWasRenumbered.
             let _ = a11y.announce_topic(said, Priority::Normal, "network");
         }
+        UIUpdate::AFlagChangeIsWaiting(said) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // Its own topic, and the whole reason it has one: a folder sync
+            // that fails on twenty messages sends this twenty times, and the
+            // queue keeps only the newest of a topic, so what is heard is one
+            // sentence. The count in it is what says how many, rather than
+            // twenty sentences saying it once each.
+            //
+            // Normal rather than Low, because a change that is waiting is not
+            // progress, and not High, because the change is safe and nobody
+            // has to act.
+            let _ = a11y.announce_topic(
+                said,
+                Priority::Normal,
+                crate::application::flag_changes_waiting::WHAT_HAPPENED_TO_A_CHANGE,
+            );
+        }
         UIUpdate::TheNetworkIsBack => {
             back_online_offer.panel.show(true);
             // The list below it has changed size.
@@ -16782,7 +16889,7 @@ fn spawn_folder_move(
         let controller =
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
-                Err(why) => return fail(why),
+                Err(why) => return fail(why.to_string()),
             };
 
         // What happens to the row and what is said are one decision, made in
@@ -17979,11 +18086,78 @@ fn spawn_server_change(
         // rather than kept. `a_session_at`, underneath this, refuses the same
         // account in the same words, and it did even while this checked first,
         // so the check here was a second answer to the same question.
+        // The two failures, told apart in one place and nowhere else.
+        //
+        // A server that answered and said no is a different fact from a server
+        // that was never reached, and until 2026-09-05 both took the same path
+        // back: starring a message with no network starred it, un-starred it a
+        // moment later, and said why. Nobody had refused the change. Nobody had
+        // been asked.
+        //
+        // `why_the_push_failed` reads `common::Error`'s own variants, never a
+        // message's text, and this is its only caller on this path. The early
+        // failures above do not come here, and that is right rather than an
+        // omission: without a cache directory there is nowhere to keep a
+        // waiting change, so the honest answer to those is still to put the
+        // local change back.
+        let answer_a_failed_push = |error: crate::common::Error| {
+            use crate::application::flag_changes_waiting::{
+                WhatAFailedPushCallsFor, WhichFlag, kept_because_the_server_was_not_there,
+                put_back_because_the_server_refused, what_to_do_about_it, why_the_push_failed,
+            };
+            let which_flag = match flag {
+                FlagChange::Read(_) => Some(WhichFlag::Read),
+                FlagChange::Flagged(_) => Some(WhichFlag::Starred),
+                // A label is a keyword rather than one of the two flags the
+                // waiting queue models, so there is nothing to keep it as. It
+                // takes the path it always took, and the changelog says so.
+                FlagChange::Labelled { .. } => None,
+            };
+            let changed_to = match flag {
+                FlagChange::Read(to) | FlagChange::Flagged(to) => *to,
+                FlagChange::Labelled { on, .. } => *on,
+            };
+            let keeping = match (what_to_do_about_it(why_the_push_failed(&error)), which_flag) {
+                (WhatAFailedPushCallsFor::KeepItAndWait, Some(which_flag)) => Some(which_flag),
+                _ => None,
+            };
+            let Some(which_flag) = keeping else {
+                refuse(put_back_because_the_server_refused(1, &error.to_string()));
+                return;
+            };
+            let waiting = crate::data::message_cache::waiting_flag_changes::AWaitingFlagChange {
+                message_row_id,
+                account_id: account.id.clone(),
+                folder_path: folder_path.clone(),
+                uid,
+                which_flag,
+                changed_to,
+                changed_at: chrono::Utc::now().to_rfc3339(),
+            };
+            if let Err(unwritable) = cache.keep_a_flag_change_waiting(&waiting) {
+                // The change cannot be kept, so keeping it is not an option and
+                // the local state would be a lie. Put it back rather than leave
+                // a star that will never reach anybody.
+                refuse(put_back_because_the_server_refused(
+                    1,
+                    &unwritable.to_string(),
+                ));
+                return;
+            }
+            // The local change stays exactly as it is. Said on its own topic
+            // so that a folder sync failing on twenty messages says this once
+            // with a count rather than twenty times: the queue keeps only the
+            // newest of a topic, and the count is what carries the rest.
+            say(UIUpdate::AFlagChangeIsWaiting(
+                kept_because_the_server_was_not_there(1),
+            ));
+        };
+
         let controller =
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
                 Err(why) => {
-                    refuse(why);
+                    answer_a_failed_push(why);
                     return;
                 }
             };
@@ -18008,10 +18182,10 @@ fn spawn_server_change(
 
         match outcome {
             Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),
-            // A failure now means nothing on the server changed, so the one
-            // sentence for that covers a delete as well. There used to be a
-            // second one here saying it differently.
-            Err(e) => refuse(e.to_string()),
+            // Two endings now rather than one. A server that answered and said
+            // no still puts the change back; a server that was never reached
+            // keeps it and says something different.
+            Err(e) => answer_a_failed_push(e),
         }
     });
 }
@@ -18711,9 +18885,7 @@ fn bytes_of_the_attachment(
         .folder_path_for_message(attachment.message_row_id)?
         .ok_or_else(|| Error::Other("The message is no longer in the folder list".into()))?;
 
-    let controller = handle
-        .block_on(crate::application::mail_session::the_session_at(&account))
-        .map_err(Error::Other)?;
+    let controller = handle.block_on(crate::application::mail_session::the_session_at(&account))?;
     let raw = handle.block_on(controller.fetch_message_body(&folder, attachment.uid))?;
 
     crate::service::mime::attachment_bytes(&raw, attachment.index)
@@ -19116,7 +19288,7 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
                 Err(why) => {
-                    say(UIUpdate::CommandRefused(why));
+                    say(UIUpdate::CommandRefused(why.to_string()));
                     return;
                 }
             };
@@ -19260,13 +19432,20 @@ fn spawn_mail_sync(
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
                 Err(why) => {
-                    fail(why);
+                    fail(why.to_string());
                     return;
                 }
             };
         say(UIUpdate::ConnectionStatusChanged(
             ConnectionStatus::Connected,
         ));
+
+        // The changes that were waiting, on the session this check has just
+        // opened. Here rather than anywhere that watches the network, because
+        // a flag reaching the server is a write at somebody else's service:
+        // this program is in front of that server because somebody pressed
+        // Check Mail, opened a folder, or the watch on their inbox woke.
+        send_the_flag_changes_that_were_waiting(&cache, &controller, &account.id, &handle, &say);
 
         let folders = match handle.block_on(controller.fetch_folders()) {
             Ok(folders) => folders,

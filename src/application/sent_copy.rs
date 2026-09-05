@@ -244,7 +244,7 @@ pub(crate) async fn a_session_for(goes_to: &Destination, account: &Account) -> F
     }
     match crate::application::mail_session::a_session_at(account).await {
         Ok(session) => FilingSession::Open(session),
-        Err(reason) => FilingSession::CouldNotSignIn(reason),
+        Err(reason) => FilingSession::CouldNotSignIn(reason.to_string()),
     }
 }
 
