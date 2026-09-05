@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 396 records have arrived since and have not been through it.
+# 404 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -183,6 +183,18 @@
 # been given.
 
 [[guard]]
+# Re-measured on 2026-09-05, because plan 03-09 renamed a test this record
+# names and a rename can change what a break reddens. It had.
+#
+# `test_a_held_contact_is_not_resolved_by_the_next_sync`, which was
+# `test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync`,
+# stayed green with this break applied and is taken out of the list. Its subject
+# moved with its name: it used to be about a loss being said once and is now
+# about a second sync leaving a held contact alone, and a held contact is
+# skipped before this question is asked at all.
+#
+# The other four still redden, so the guard still discriminates. Four rather
+# than five, measured rather than assumed.
 name = "the Google merge asks what the whole contact is owed"
 file = "src/application/contacts_sync.rs"
 before = """                        the_copy_here_holds_work_nobody_has_sent(local),
@@ -193,7 +205,6 @@ red = [
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_survives_a_google_read_that_moved_nothing",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
-    "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 tests_last_seen = [
@@ -766,18 +777,150 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
 
+# ── Both copies of a contact both sides changed ─────────────────────────────
+#
+# SCALE-06. A contact changed here and changed in the address book between two
+# syncs has two copies and one of them is about to go. Until 2026-09-05 the
+# address book's copy won, the edit went, and a sentence said so afterwards.
+# Being told is not being asked, and an edit that disappeared with a sentence
+# about it in a summary nobody heard is an edit that disappeared.
+#
+# Who wins is still decided in one place, `whose_copy_wins`, and these records
+# are about what happens in one of its four arms rather than about how the arm
+# is chosen. A second decision about who wins would disagree with the first the
+# moment either changed.
+#
+# The record this pair replaces was "a lost edit is said once, not on every
+# later sync", whose break was the gate on counting a loss. There is no loss to
+# count now, so the code it named is gone rather than moved.
+#
+# Measured by hand on 2026-09-05, the whole library with --no-fail-fast on a
+# quiet machine, each break applied on its own.
+
 [[guard]]
-name = "a lost edit is said once, not on every later sync"
+# The break is the arm falling through to the write, which is exactly what it
+# did before this branch. Seven tests, and the last of them is the one nobody
+# working on this feature would have filtered for: it is about a setting being
+# named while the change is somebody's own work, and it reaches this arm to set
+# that up.
+name = "a contact changed in both places is held rather than written over"
 file = "src/application/contacts_sync.rs"
-before = """    if the_copy_here_was_written_here(the_copy_it_replaces) {
-        result.replaced.note(&merged.id);
-    }"""
-after = """    result.replaced.note(&merged.id);"""
+before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),"""
+after = """                if false {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),"""
 red = [
-    "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
-    "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
+    "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
+    "application::contacts_sync::tests::test_a_contact_changed_at_google_and_here_is_held_rather_than_written_over",
+    "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
+    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# Only somebody's own work is worth asking about. Once an address book's copy
+# has replaced an edit, what is waiting is that address book's own words on
+# their way to the other one, and asking somebody to choose between two copies
+# neither of which is theirs is a question with no right answer.
+#
+# One test, measured rather than expected, and it is the push retry's own test
+# rather than anything named for holding.
+name = "only work typed here is held for a choice"
+file = "src/application/contacts_sync.rs"
+before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),
+                        &mut result,
+                    )?;
+                    continue;
+                }
+                // Google adds itself to the address books that know this"""
+after = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        arrived_at.as_deref(),
+                        &mut result,
+                    )?;
+                    continue;
+                }
+                // Google adds itself to the address books that know this"""
+red = [
     "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
-    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# The half that keeps an unresolved conflict from becoming a silent overwrite
+# at the provider. The change is still owed while somebody decides, so without
+# this the very next push sends this computer's copy over the one they have not
+# chosen to give up.
+#
+# The fixture for the third test had to be fixed before this measurement meant
+# anything, and that is the finding rather than an aside. Written first with an
+# account open for reading only, the write gate refused the push before
+# anything was offered; written next with an address book that took the change,
+# the flag cleared and the second sync owed nothing. Both versions asserted
+# that nothing was offered and both passed with this filter removed. It turns
+# the change down now, so the address book is still owed it and this filter is
+# the only thing that can stop the offer.
+name = "a contact held for a choice is offered to nobody"
+file = "src/application/contacts_sync.rs"
+before = """            if waiting_on_a_choice.iter().any(|id| id == &contact.id) {
+                return None;
+            }"""
+after = """            if false && waiting_on_a_choice.iter().any(|id| id == &contact.id) {
+                return None;
+            }"""
+red = [
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
+    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# The other half. A sync that reads over a held contact answers the question
+# the person has not, and holding both copies then buys nothing but a slower
+# overwrite. Broken at the Google read only, because the break has to name one
+# place in the tree and the Outlook one is the same two lines.
+name = "a contact held for a choice is left alone by a later read"
+file = "src/application/contacts_sync.rs"
+before = """                // keeping both copies buys nothing but a slower overwrite.
+                if cache.is_held_for_a_choice(&local.id)? {"""
+after = """                // keeping both copies buys nothing but a slower overwrite.
+                if false && cache.is_held_for_a_choice(&local.id)? {"""
+red = [
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
@@ -799,19 +942,19 @@ after = """fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
 red = [
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
-    "application::contacts_sync::tests::test_a_change_google_replaced_is_counted_as_a_loss_as_well_as_stored",
+    "application::contacts_sync::tests::test_a_contact_changed_at_google_and_here_is_held_rather_than_written_over",
     "application::contacts_sync::tests::test_a_change_held_from_the_other_address_book_by_the_setting_is_said",
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_is_not_written_over_quietly_by_outlook",
     "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
     "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
-    "application::contacts_sync::tests::test_a_change_outlook_replaced_is_counted_as_a_loss_as_well_as_stored",
+    "application::contacts_sync::tests::test_a_contact_changed_at_outlook_and_here_is_held_rather_than_written_over",
     "application::contacts_sync::tests::test_a_change_that_cannot_be_sent_again_is_kept_rather_than_replaced_by_the_read",
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
-    "application::contacts_sync::tests::test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
@@ -895,7 +1038,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
@@ -940,7 +1083,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
@@ -5043,11 +5186,13 @@ file = "src/application/caldav_sync.rs"
 before = """            let (cut_out, everything_else): (Vec<_>, Vec<_>) = waiting
                 .into_iter()
                 .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .filter(|event| !waiting_on_a_choice.iter().any(|id| id == &event.id))
                 .partition(|event| event.cut_from_event_id.is_some());
             cut_out.into_iter().chain(everything_else).collect()"""
 after = """            waiting
                 .into_iter()
                 .filter(|event| event.calendar_id.as_deref() == Some(calendar.id.as_str()))
+                .filter(|event| !waiting_on_a_choice.iter().any(|id| id == &event.id))
                 .collect()"""
 red = [
     "application::caldav_sync::tests::test_a_day_cut_out_of_a_series_goes_up_before_the_day_is_taken_off_the_series",
@@ -13829,7 +13974,7 @@ before = """        let controller =
             match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
                 Ok(session) => session,
                 Err(why) => {
-                    refuse(why);
+                    answer_a_failed_push(why);
                     return;
                 }
             };
@@ -14520,4 +14665,173 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 7 },
+]
+
+# ── The window that asks which copy to keep ─────────────────────────────────
+#
+# SCALE-06 and guardrail 2. Both records are measured against
+# `tests/the_conflict_choice_can_be_heard.rs`, which reads the source, because
+# building that window needs a display and a running application and nothing in
+# the library reaches it. The `suite` coupling is what makes the target run on
+# the commits that could break it rather than only on the ones that change it.
+#
+# Measured by hand on 2026-09-05, each break applied on its own.
+
+[[guard]]
+# The defect `CLAUDE.md` records as having compiled and passed 324 tests.
+# `set_name` sets an internal wxWidgets identifier and reaches neither MSAA nor
+# UI Automation, so a control named that way is read out as its type and
+# nothing else. Sixteen widgets were once named that way here.
+#
+# The break is one control swapped to the call that names nothing, which is
+# what somebody reaching for the obvious method would write. Two tests: the
+# count of controls against the count of names, and the refusal of `set_name`
+# outright.
+name = "every control in the choosing window is named where a screen reader reads"
+file = "src/presentation/wx_conflict_choice.rs"
+suite = "the_conflict_choice_can_be_heard"
+before = """    set_accessible_name(&keep_here, KEEP_WHAT_IS_HERE);"""
+after = """    keep_here.set_name(KEEP_WHAT_IS_HERE);"""
+red = [
+    "test_every_control_in_the_choosing_window_is_named_where_a_screen_reader_reads",
+    "test_the_choosing_window_never_reaches_for_the_call_that_names_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_conflict_choice.rs", tests = 0 },
+    { file = "tests/the_conflict_choice_can_be_heard.rs", tests = 5 },
+]
+
+[[guard]]
+# A window nothing opens is a window nobody has, which is guardrail 1 and the
+# defect this project keeps finding. The sync's own sentence says to open
+# Contacts and choose, so an emptied menu arm turns that sentence into a
+# direction to nowhere.
+#
+# The first measurement of this reddened nothing, and that is the finding. The
+# check read the whole file for a mention of `ask_which_copy_to_keep`, and the
+# mention survived the break because it lives in the function the arm used to
+# call. It reads what follows the arm now. Measured again after that and it
+# reddens.
+name = "the choosing window can be reached from the menu"
+file = "src/presentation/wx_app.rs"
+suite = "the_conflict_choice_can_be_heard"
+before = """                            choose_which_copy_to_keep(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );"""
+after = """                            let _ = &message_cache;"""
+red = [
+    "test_the_window_can_be_reached_from_the_menu",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conflict_choice_can_be_heard.rs", tests = 5 },
+]
+
+# ── The calendar asks the same question ─────────────────────────────────────
+#
+# SCALE-06. A calendar item changed here and changed at the server had its
+# disagreement resolved in this computer's favour and shown to nobody: the read
+# skipped any event with a change waiting, so the server's copy was dropped on
+# the floor. The opposite direction from the contacts defect and the same
+# failure, which is that nobody was asked.
+#
+# Measured by hand on 2026-09-05, the whole library with --no-fail-fast.
+
+[[guard]]
+# The break is the skip as it was written before this branch: any event with a
+# change waiting is passed over whatever the server's etag says. One test, and
+# it is the sync-path one rather than any of the pure ones, because the pure
+# decision is still right when nothing consults it.
+name = "a calendar item both sides changed is held rather than dropped"
+file = "src/application/caldav_sync.rs"
+before = """            if crate::application::calendar_conflict::both_copies_moved(
+                held,
+                remote.etag.as_deref(),
+            ) {"""
+after = """            if false {"""
+red = [
+    "application::calendar_conflict::tests::test_a_calendar_item_changed_here_and_at_the_server_is_held_rather_than_dropped",
+]
+tests_last_seen = [
+    { file = "src/application/calendar_conflict.rs", tests = 5 },
+    { file = "src/application/caldav_sync.rs", tests = 67 },
+]
+
+# ── A flag change made with no server ───────────────────────────────────────
+#
+# SCALE-06's mail half, and guardrail 7. Marking a message read or starring it
+# is applied here at once and pushed straight after; every failure used to take
+# the same path back, so starring a message on a train starred it, un-starred
+# it a moment later, and said why. Nobody had refused the change. Nobody had
+# been asked.
+#
+# Measured by hand on 2026-09-05, each break applied on its own.
+
+[[guard]]
+# The distinction, and the break is the version somebody would write reaching
+# for a wildcard: everything that is not this computer's own gate is the server
+# having answered. Four tests, and two of them drive a loopback server rather
+# than a built error, which is the half that proves the mapping holds through
+# the library's own error type.
+name = "a lost connection is told apart from a server that said no"
+file = "src/application/flag_changes_waiting.rs"
+before = """        Error::Network(_) | Error::Authentication(_) => WhyThePushFailed::TheServerWasNeverAsked,
+        Error::Security(_) => WhyThePushFailed::ThisComputerRefusedIt,
+        Error::Config(_)
+        | Error::Protocol(_)
+        | Error::Api { .. }
+        | Error::Other(_)
+        | Error::InPlainWords(_) => WhyThePushFailed::TheServerSaidNo,"""
+after = """        Error::Security(_) => WhyThePushFailed::ThisComputerRefusedIt,
+        _ => WhyThePushFailed::TheServerSaidNo,"""
+red = [
+    "application::flag_changes_waiting::tests::test_a_lost_connection_is_the_server_never_having_been_asked",
+    "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
+    "application::flag_changes_waiting::tests::test_a_sign_in_that_did_not_happen_leaves_the_change_worth_keeping",
+    "application::flag_changes_waiting::tests::test_a_waiting_change_the_server_still_cannot_be_asked_about_goes_on_waiting",
+]
+tests_last_seen = [
+    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+]
+
+[[guard]]
+# Guardrail 7. The break is the wiring somebody actually writes, and finding
+# that out took two goes.
+#
+# The first version of this test asked only whether the arm called the sending
+# itself, and it stayed green against the break below. Nobody wires the
+# network's return straight to a flag change; what they write is a mail check,
+# because a check when the network returns sounds obviously useful, and a check
+# now sends the waiting changes on the session it opens. The test reads a list
+# of everything that ends at a server now.
+#
+# The second version stayed green too, for a different reason: it searched for
+# the bare variant name and found the line that *sends* the update, hundreds of
+# lines above the arm that handles it, so it read nine hundred characters of an
+# unrelated function. It matches the arm's own opening now.
+#
+# Both were measured by putting the break in and watching the file stay green.
+# A test that cannot fail proves nothing, and this one could not fail twice.
+name = "the network coming back starts nothing that reaches a server"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = """        UIUpdate::TheNetworkIsBack => {
+            back_online_offer.panel.show(true);"""
+after = """        UIUpdate::TheNetworkIsBack => {
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                None,
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
+            back_online_offer.panel.show(true);"""
+red = [
+    "test_the_network_coming_back_starts_nothing_that_reaches_a_server",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 3 },
 ]

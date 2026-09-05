@@ -109,7 +109,9 @@ impl DeletesAMessage for TheAccountsServer<'_> {
         uid: u32,
         trash: Option<&str>,
     ) -> std::result::Result<Deletion, String> {
-        let session = crate::application::mail_session::a_session_at(self.account).await?;
+        let session = crate::application::mail_session::a_session_at(self.account)
+            .await
+            .map_err(|why| why.to_string())?;
         let outcome = session
             .delete_message(folder, uid, trash)
             .await

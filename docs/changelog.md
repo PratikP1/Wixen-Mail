@@ -6,7 +6,94 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **Marking a message read, or starring it, while the mail server cannot be
+  reached now keeps the change instead of quietly undoing it.**
+
+  Star a message on a train and it used to star, un-star itself a moment later,
+  and tell you the change did not reach the server. Nobody had refused it. It
+  had never been put to anybody: the connection was gone, and every kind of
+  failure took the same path back.
+
+  The change stays now. Wixen Mail says: "The mail server could not be reached,
+  so your change is saved here and goes the next time Wixen Mail talks to it."
+  When you next check mail, on the connection that check opens, the waiting
+  changes go with it.
+
+  Star and un-star the same message with no server and one change is waiting,
+  the later one, not two to be replayed in whatever order they happened to be
+  written.
+
+  A change the server actually refuses is still put back, and that is
+  deliberate. It says something different: "The mail server refused your change,
+  so it has been put back", followed by the reason. A server that answered and
+  said no is a different fact from a server that was not there, and only one of
+  them means your change was rejected.
+
+  Twenty messages failing in one sync say one thing with a count rather than
+  twenty things.
+
+  Known limitations, three worth reading:
+
+  - **This has never run against a real account.** No mail server has ever been
+    used with this program. The two failures are proved against a loopback
+    server that can be made to drop a connection or answer no, which is closer
+    than a made-up error and is not a real mail server.
+  - **Nothing sends a waiting change because the network came back.** They go
+    when you check mail, which is something you did. Mail and changes leaving
+    your computer should happen because you asked.
+  - **Labels are not covered.** Adding or removing a label still puts itself
+    back when the push fails, whatever the reason. Only read and starred are
+    kept.
+
 ### Added
+
+- **When a contact or a calendar item has been changed both here and at your
+  provider, Wixen Mail keeps both copies and asks which one you want.**
+
+  Edit a contact on your phone and edit the same contact here before the next
+  sync, and one of those two versions used to disappear. For contacts, your
+  address book won and Wixen Mail told you afterwards that a change of yours had
+  been replaced. For calendar items it was the other way round and quieter
+  still: the copy here won, the server's copy was dropped, and nothing was said
+  at all.
+
+  Neither copy is written over now. Both are kept, and the sync says how many
+  are waiting: "1 contact changed here and in your address book as well. Use
+  Choose Which Copy to Keep, on the Tools menu, to say which copy to keep;
+  nothing is sent until you do."
+
+  That menu item opens a window showing both versions, each headed and named by
+  which copy it is, "What is on this computer" and "What your address book has",
+  with a sentence at the top saying how many fields differ and naming them.
+  Everything in it is reachable by keyboard and no step needs a mouse. Nothing
+  is the default answer: the focus opens on Decide later, so pressing Enter by
+  reflex does not choose for you. Closing the window leaves both copies exactly
+  where they were.
+
+  Nothing goes to your provider while you are deciding, and nothing goes because
+  you closed the window. Keeping what is on this computer leaves your change
+  waiting, and the next ordinary sync sends it. Keeping their copy stops your
+  change waiting, and the next ordinary sync brings their copy down.
+
+  Known limitations, both worth reading:
+
+  - **None of this has ever run against a real account or a real calendar
+    server.** No provider has ever been used with this program. Everything above
+    is proved by driving two divergent copies through the same code the sync
+    uses, which is the strongest proof available here and is not the same as
+    having done it.
+  - **Nobody has heard it.** Whether hearing both versions read out as a
+    labelled pair is understood, and whether the list of differing fields helps
+    or is a sentence you stop hearing, has not been checked with a screen
+    reader.
+
+  Mail is a different case and is not covered by this. A message flag, read or
+  starred, is applied here and pushed straight away rather than queued, so the
+  state where both copies have moved apart between syncs largely cannot arise
+  for one. What mail gets wrong is something else, and it has its own entry
+  below.
 
 - **Wixen Mail notices when the network goes, switches itself to offline mode,
   and says so once.**

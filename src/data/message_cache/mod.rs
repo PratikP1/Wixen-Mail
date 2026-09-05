@@ -12,6 +12,7 @@ mod contacts;
 mod drafts;
 mod filters;
 mod folders;
+pub mod held_conflicts;
 mod messages;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
@@ -28,6 +29,7 @@ mod signatures;
 pub mod signed_original;
 mod tags;
 pub mod tasks;
+pub mod waiting_flag_changes;
 
 use crate::common::{Error, Result};
 use crate::service::security::SecurityService;
@@ -1775,6 +1777,83 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create outbox_queue table: {}", e)))?;
+
+        // Both copies of one thing, kept because they disagree and nobody has
+        // chosen yet. One row per thing on this computer, so a second sync
+        // meeting the same disagreement replaces the hold rather than asking
+        // somebody the same question twice.
+        //
+        // Its own table rather than a column on `contacts` or
+        // `calendar_events`, because the provider's copy is a whole second
+        // version of a row and a row cannot hold two of itself. A hold is also
+        // shorter-lived than either: it goes the moment somebody chooses,
+        // and deleting a row is cheaper to reason about than clearing six
+        // columns and hoping nothing reads them half-cleared.
+        //
+        // `held_at` is when the disagreement was noticed here, not a clock
+        // either side is compared by. Who wins is decided from version markers
+        // in `application::contacts_sync::whose_copy_wins`, deliberately, and
+        // nothing in this table is ever compared with a timestamp.
+        // Flag changes made here that could not go yet, kept until they can.
+        //
+        // Its own table rather than a row in `outbox_queue`, and the reading
+        // behind that is worth writing down because merging the two for
+        // tidiness is the obvious next move.
+        //
+        // `outbox_queue` has `to_addr`, `subject` and `body`, all NOT NULL. A
+        // flag change has none of the three. Reusing that table means either
+        // writing values that are not true into three required columns, which
+        // puts a message that is not a message in front of the sender, or
+        // adding three nullable columns that mean nothing for a message and
+        // then teaching `flush_outbox` to skip rows that are not messages.
+        //
+        // They also mean different things, and that is the half that decides
+        // it. An outbox row is a thing to send once. A waiting flag change is a
+        // state to reconcile: starring a message and un-starring it leaves one
+        // change to send, the later one, while two messages never collapse into
+        // one. The unique constraint below is what makes that fall out of the
+        // schema rather than out of code somebody has to remember to write.
+        //
+        // `changed_to` is what the flag was set to here, not what the server
+        // holds. Replaying it is setting the flag to that value, which is
+        // idempotent, so a change offered twice is not two changes.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS waiting_flag_changes (
+                message_row_id INTEGER NOT NULL,
+                account_id TEXT NOT NULL,
+                folder_path TEXT NOT NULL,
+                uid INTEGER NOT NULL,
+                which_flag TEXT NOT NULL,
+                changed_to INTEGER NOT NULL,
+                changed_at TEXT NOT NULL,
+                PRIMARY KEY (message_row_id, which_flag)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create waiting_flag_changes table: {}",
+                    e
+                ))
+            })?;
+
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS held_conflicts (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                at_the_provider TEXT NOT NULL,
+                what_it_is_called TEXT NOT NULL,
+                here_json TEXT NOT NULL,
+                theirs_json TEXT NOT NULL,
+                their_version TEXT,
+                held_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create held_conflicts table: {}", e)))?;
 
         self.conn
             .execute(
