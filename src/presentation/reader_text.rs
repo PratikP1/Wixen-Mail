@@ -701,19 +701,42 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
 
 /// Compose a text attachment for the reader.
 ///
-/// RED half. The real composition arrives with the green commit.
+/// The note goes first, before a word of the file, for the reason
+/// [`pdf_document`] gives: what it says changes how the rest should be taken,
+/// and a file that was cut or that would not entirely decode is a file somebody
+/// needs to know about before they start relying on what is in it, not after.
 pub fn text_document(
     name: &str,
     reading: &crate::service::plain_text::TextReading,
 ) -> ReaderDocument {
-    let _ = reading;
+    let title = match name.trim() {
+        "" => "Attachment".to_string(),
+        named => named.to_string(),
+    };
+
     ReaderDocument {
-        title: name.to_string(),
-        text: String::new(),
-        landmarks: Vec::new(),
-        warning: None,
-        attachments: Vec::new(),
+        text: format!("{title}\n{}\n\n{}", reading.note, reading.text),
+        // The one landmark there is. A text file has no structure to jump by,
+        // and an empty landmark list would leave a reader who presses the
+        // jump-to-heading key with no way back to the top of the tab.
+        landmarks: vec![Landmark {
+            offset: 0,
+            level: 1,
+            label: title.clone(),
+        }],
+        title,
+        // Nothing here interprets this file. `plain_text::read` already took
+        // out the control characters that could have made a reading window do
+        // something, and what is left is characters in a read-only control:
+        // there is nothing in it to run, to follow or to submit. The bar is for
+        // what the mail provider's filter made of the message this arrived in,
+        // and that verdict belongs to the message's own tab, which is still
+        // open behind this one.
         looks_unsafe: false,
+        warning: None,
+        // Nothing hangs off a text file, so no list and nothing extra to tab
+        // past.
+        attachments: Vec::new(),
     }
 }
 
@@ -730,6 +753,14 @@ pub enum HowItReads {
     /// Through [`crate::service::plain_text::read`].
     Text,
 }
+
+/// File names read as text when the type does not say so.
+///
+/// Not the whole of `text/*`, and that is a decision rather than an oversight.
+/// An HTML attachment is a document whose source is not what anybody asked to
+/// read, and `text/calendar` already means something else here. These are the
+/// extensions whose whole content is the words in them.
+const READS_AS_TEXT: [&str; 6] = ["txt", "text", "log", "md", "markdown", "csv"];
 
 /// One message of a conversation, with the body already fetched.
 #[derive(Debug, Clone)]
@@ -942,6 +973,9 @@ impl ReaderAttachment {
         let extension = extension_of(&self.name).unwrap_or_default();
         if kind == "application/pdf" || extension == "pdf" {
             return Some(HowItReads::Pdf);
+        }
+        if kind == "text/plain" || READS_AS_TEXT.contains(&extension.as_str()) {
+            return Some(HowItReads::Text);
         }
         None
     }

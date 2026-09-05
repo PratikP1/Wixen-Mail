@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 416 records have arrived since and have not been through it.
+# 417 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -14891,7 +14891,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 97 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -15112,7 +15112,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 97 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -15140,7 +15140,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 97 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15166,6 +15166,37 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 97 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
+]
+
+# ── A reading gate that admits everything ───────────────────────────────────
+#
+# `how_it_reads` is the one answer the reader window's gate and the worker's
+# routing both read, so widening it too far is a spreadsheet opened in a text
+# control rather than a sentence saying it cannot be read. The failure has no
+# other symptom: everything still builds, the tab still opens, and what is in
+# it is a screenful a screen reader reads out character by character.
+#
+# Measured by hand 2026-09-05 with `cargo test --all-targets --no-fail-fast`.
+# One test went red. `test_every_guard_record_says_how_many_tests_the_files_it_names_held`
+# was red in that run as well and is not listed, because it was already red
+# before the break was applied: four records were carrying counts from before
+# this task added tests, and they were re-measured afterwards.
+
+[[guard]]
+name = "the reading gate admits text and still refuses what it cannot read"
+file = "src/presentation/reader_text.rs"
+before = """            return Some(HowItReads::Text);
+        }
+        None"""
+after = """            return Some(HowItReads::Text);
+        }
+        Some(HowItReads::Text)"""
+red = [
+    "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 97 },
+    { file = "src/presentation/wx_reader.rs", tests = 13 },
 ]

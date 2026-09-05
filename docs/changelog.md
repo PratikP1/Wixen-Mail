@@ -8,6 +8,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A text attachment now opens and can be read here.**
+
+  Until now the reader could open a PDF and nothing else. Choose a `.txt`, a
+  `.log`, a `.md` or a `.csv` in the attachment list and press Enter, and it
+  opens in a tab of its own as text you can move through by line, search and
+  copy from, the same as any other reading in this program.
+
+  The tab starts with the file's name and then a note saying how much of the
+  file is really below. That note comes first, before a word of the file,
+  because it changes how the rest should be taken. It says one of three things:
+  that the whole file was read as text; that the file was longer than one
+  preview shows and was cut, and where; or that parts of it would not decode
+  and are shown as a replacement character, so a word that looks wrong is one
+  this could not read rather than one the sender wrote.
+
+  A file that is not text at all is refused by name rather than rendered. A
+  sender can label anything as text, and a compiled program shown in a reading
+  window is a screenful of nonsense a screen reader will read out character by
+  character. The refusal is the one that was already there: "Wixen Mail cannot
+  read a ZIP file. Control S saves it."
+
+  Control characters are taken out before anything is shown. Tabs and newlines
+  stay, because that is how a text file is laid out; an escape sequence does
+  not, because that is a stranger deciding what your window does.
+
+  Known limitations:
+
+  - **One megabyte at a time.** A longer file is cut and the note says so. The
+    whole of it is still there to save with Control S.
+  - **UTF-8 only.** A file written in an older encoding is shown with the parts
+    that would not decode replaced, and the note says so. Nothing here guesses
+    at an encoding, because a guess dressed as a reading is worse than a reading
+    that admits what it could not do.
+  - **This has never met a real account.** No mail account has ever been used
+    with this program, so what a real sender's attachment does here is untested.
+
 - **A message you cannot open now says why, instead of showing you a block of
   gibberish.**
 
