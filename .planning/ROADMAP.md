@@ -268,7 +268,19 @@ Planning on 2026-09-02 re-checked every criterion against the tree again and fou
   5. Losing the network puts the application offline and announces it once; regaining it offers to go back online rather than flushing the outbox unasked.
   6. When a local copy and a server copy have both changed, the user is shown both and chooses, and nothing is pushed until they do.
 
-**Plans**: 9 plans, one per wave. The four decisions `03-RESEARCH.md` left for
+**Plans**: 9 plans, one per wave, of which 8 are executed and none merged.
+
+- [x] 03-01-PLAN.md
+- [x] 03-02-PLAN.md
+- [x] 03-03-PLAN.md
+- [x] 03-04-PLAN.md
+- [x] 03-05-PLAN.md
+- [x] 03-06-PLAN.md
+- [x] 03-07-PLAN.md
+- [x] 03-08-PLAN.md
+- [ ] 03-09-PLAN.md
+
+The four decisions `03-RESEARCH.md` left for
 Pratik were answered on 2026-09-03 and the plans carry the answers: build a seam
 over how deletions are found and take the UID comparison behind it rather than
 QRESYNC, leave the offline false promise until plan 03-08 rather than fixing it
@@ -390,7 +402,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 1. Folders and conversations | 14/14 | Executed, verification human_needed | - |
 | 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
-| 3. Mail at scale on the wire | 0/TBD | Not started | - |
+| 3. Mail at scale on the wire | 8/9 | In progress, none merged | - |
 | 4. Writing and reading a message in full | 0/TBD | Not started | - |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
 | 6. How the application speaks | 0/TBD | Not started | - |
