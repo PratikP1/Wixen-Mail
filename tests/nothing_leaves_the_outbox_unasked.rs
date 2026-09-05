@@ -42,17 +42,19 @@ const THE_LINE_NUMBER: &str = " //line ";
 
 /// Every place mail is handed to a server, and what asked for it.
 ///
-/// Two, as of 2026-09-05. Each one has to be something a person did:
+/// Three, as of 2026-09-05. Each one has to be something a person did:
 ///
 /// 1. Outbox then Send Queued Mail, the menu item.
 /// 2. The composer's Send, which queues and then flushes, and only when the
 ///    decision in `application::sending_later::when_it_goes` says the message
 ///    goes now.
+/// 3. The button offered when the network comes back, which sends nothing until
+///    somebody presses it and whose own label says that pressing it sends.
 ///
-/// A third appearing is not automatically wrong, and it is automatically worth
+/// A fourth appearing is not automatically wrong, and it is automatically worth
 /// reading: the question to ask of it is whether a person asked, or whether an
 /// event did.
-const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 2;
+const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 3;
 
 /// The declaration, which is not a call site.
 const WHERE_IT_IS_DECLARED: &str = "fn flush_outbox(";
@@ -190,6 +192,76 @@ fn test_the_send_path_asks_whether_the_message_goes_before_it_flushes() {
         flushes > goes_now,
         "the Send arm flushes the outbox before it reads the decision, so a message \
          sent while offline mode is on goes to a server anyway"
+    );
+}
+
+/// A function or match arm, from its opening line to the closing brace that
+/// sits at the given indentation.
+///
+/// Cut by indentation rather than by counting brackets, because counting them
+/// is a parser and this only has to find the end of one item whose shape is
+/// known: a top level function ends at a brace in the first column, and an arm
+/// of the update handler ends at a brace eight spaces in.
+fn from_here_to_the_closing_brace(source: &str, opens_with: &str, indent: &str) -> String {
+    let after = source
+        .split_once(opens_with)
+        .unwrap_or_else(|| panic!("{opens_with} was not found in the main window"))
+        .1;
+    let ends = format!("\n{indent}}}\n");
+    let end = after.find(&ends).unwrap_or(after.len());
+    after[..end].to_string()
+}
+
+#[test]
+fn test_the_network_coming_back_sends_nothing() {
+    // Guardrail 7, and the whole reason the deliverable is an offer. The
+    // network returning is the moment it is easiest to empty the Outbox and
+    // the moment it is most wrong to: nobody asked, and mail that has gone
+    // cannot be brought back. Wired straight to the flush, closing a laptop on
+    // a train and opening it in an office would send whatever was written in
+    // between.
+    let source = the_main_window();
+
+    let acting = from_here_to_the_closing_brace(&source, "fn act_on_what_the_network_did(", "");
+    let acting: String = acting.lines().map(code_of).collect::<Vec<_>>().join("\n");
+    assert!(
+        !acting.contains(THE_FLUSH),
+        "the code that acts on the network changing hands the Outbox to a server, so \
+         a laptop opened somewhere with a signal sends whatever was written before it \
+         lost one"
+    );
+
+    let raising =
+        from_here_to_the_closing_brace(&source, "UIUpdate::TheNetworkIsBack => {", "        ");
+    let raising: String = raising.lines().map(code_of).collect::<Vec<_>>().join("\n");
+    assert!(
+        !raising.contains(THE_FLUSH),
+        "the arm that raises the offer sends the mail as well, so the offer is a \
+         description of something that already happened"
+    );
+}
+
+#[test]
+fn test_the_button_that_empties_the_outbox_is_named_from_one_string_that_says_it_sends() {
+    // Both channels from one binding. The label is what Windows falls back to
+    // on MSAA, which NVDA reads, and the accessible name is what a UI
+    // Automation scan reports, so two strings is how somebody seeing the button
+    // and somebody hearing it come to be told different things about what
+    // pressing it does.
+    //
+    // What the string itself has to say is asserted where it lives, in
+    // application::the_network_coming_and_going, because that is a fact about
+    // the words rather than about the wiring.
+    let source = the_main_window();
+    let squashed: String = source.split_whitespace().collect();
+
+    assert!(
+        squashed.contains(".with_label(WHAT_THE_OFFER_SAYS)"),
+        "the offer button's visible label is not the shared string"
+    );
+    assert!(
+        squashed.contains("set_accessible_name(&back_online_button,WHAT_THE_OFFER_SAYS)"),
+        "the offer button's accessible name is not the same string as its label"
     );
 }
 

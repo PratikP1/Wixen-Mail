@@ -110,10 +110,26 @@ pub fn what_to_say_about_the_network(news: WhatToDoAboutIt) -> Option<&'static s
         ),
         WhatToDoAboutIt::OfferToGoBackOnline => Some(
             "The network is back. Wixen Mail is still offline, and nothing in \
-             the Outbox has been sent. Go back online when you are ready.",
+             the Outbox has been sent. There is a Go Back Online button above \
+             the message list, or you can turn offline mode off from the View \
+             menu.",
         ),
     }
 }
+
+/// What the button offered when the network comes back says.
+///
+/// Its visible label and its accessible name are set from this one string, so
+/// the words somebody sees and the words a screen reader reads cannot come
+/// apart. Same rule as the offer to fetch missing message text, and the same
+/// reason.
+///
+/// It says that pressing it sends, because it does. A button called "Go back
+/// online" that also emptied the Outbox would be sending mail somebody did not
+/// know they were asking for, which is guardrail 7 with an extra step rather
+/// than guardrail 7 satisfied. What makes an act deliberate is knowing what the
+/// act is.
+pub const WHAT_THE_OFFER_SAYS: &str = "Go back online and send the mail waiting in the Outbox";
 
 #[cfg(test)]
 mod tests {
@@ -244,6 +260,44 @@ mod tests {
             went.contains("Outbox"),
             "the sentence about the network going does not say where mail is \
              waiting: {went}"
+        );
+    }
+
+    #[test]
+    fn test_the_offer_says_that_pressing_it_sends() {
+        // Guardrail 7 is not satisfied by a person pressing something. It is
+        // satisfied by a person pressing something knowing what it does. A
+        // button called "Go back online" that also emptied the Outbox would be
+        // sending mail they did not know they were asking for.
+        assert!(
+            WHAT_THE_OFFER_SAYS.to_lowercase().contains("send"),
+            "the button that empties the Outbox does not say it sends: \
+             {WHAT_THE_OFFER_SAYS}"
+        );
+        assert!(
+            WHAT_THE_OFFER_SAYS.to_lowercase().contains("outbox"),
+            "the button does not say what it sends: {WHAT_THE_OFFER_SAYS}"
+        );
+    }
+
+    #[test]
+    fn test_the_sentence_names_both_ways_back_online() {
+        // Somebody who never finds the button, or who lets it go by, still has
+        // to have a way back. The View menu is that way, and a sentence that
+        // named only the button would leave anybody who missed it stuck in a
+        // mode they did not choose.
+        let back = what_to_say_about_the_network(WhatToDoAboutIt::OfferToGoBackOnline)
+            .expect("a sentence about the network coming back");
+
+        assert!(
+            back.contains("button"),
+            "the sentence does not mention the offer, so a screen reader user \
+             has nothing telling them it is there: {back}"
+        );
+        assert!(
+            back.contains("View menu"),
+            "the sentence names no way back that survives the offer being \
+             ignored: {back}"
         );
     }
 }
