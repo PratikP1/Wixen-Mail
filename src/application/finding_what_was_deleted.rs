@@ -304,18 +304,25 @@ mod tests {
     }
 
     #[test]
-    fn test_a_folder_compared_longer_ago_than_the_interval_is_due() {
+    fn test_a_folder_nobody_has_compared_for_a_day_is_due() {
         // Driven by the stored time rather than by waiting. A test that slept
         // for the interval would take six hours and would still be a test about
         // the clock rather than about the rule.
+        //
+        // A day written out, rather than the interval plus a minute, and that
+        // is the difference between a test and a tautology. An offset derived
+        // from the constant moves with it, so widening the interval to a
+        // hundred years leaves the fixture a hundred years stale and still due,
+        // and the test passes through the exact break it exists to catch.
+        // Measured on 2026-09-04: written the derived way, widening the
+        // interval to a million hours reddened nothing here at all.
         let now = chrono::Utc::now();
-        let long_enough = now
-            - chrono::Duration::hours(A_FOLDER_IS_FULLY_COMPARED_EVERY)
-            - chrono::Duration::minutes(1);
 
         assert_eq!(
-            whether_a_full_comparison_is_due(Some(long_enough), now),
-            WhetherAFullComparisonIsDue::Due
+            whether_a_full_comparison_is_due(Some(now - chrono::Duration::hours(24)), now),
+            WhetherAFullComparisonIsDue::Due,
+            "a folder nobody has compared for a day is not being compared, so a \
+             message deleted yesterday on another device is still listed here"
         );
     }
 

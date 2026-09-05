@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Opening a folder Wixen Mail has synced before asks the server what changed,
+  instead of asking it to list everything the folder holds.**
+
+  A folder can hold forty thousand messages. Until now, every sync of it asked
+  the server to name all forty thousand uids, so that the three that had arrived
+  since last time could be picked out. Wixen Mail now remembers where it got to
+  and asks only for what is numbered above that.
+
+  Messages you delete somewhere else are still noticed. Finding them needs the
+  full list, so it happens on a schedule instead of on every folder open: every
+  six hours per folder, and always on the first sync of a folder Wixen Mail has
+  never compared. Between those, a message you deleted on your phone can stay
+  listed here for a few hours.
+
+  Two honest limits. **Gmail sees no change at all**: resuming this way needs a
+  feature called CONDSTORE, Gmail has never offered it, and so a Gmail account
+  takes the old path every time. And none of this has run against a real mail
+  server, because no account has ever been used with this program, so whether
+  any provider grants CONDSTORE in practice is unknown.
+
 - **A connection to the mail server that drops is made again once, and if that
   does not work Wixen Mail says so in words rather than in an error code.**
 

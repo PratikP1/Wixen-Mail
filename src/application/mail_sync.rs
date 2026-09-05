@@ -10,12 +10,14 @@
 //! What gets fetched is decided by the pure functions at the top of this file,
 //! which is where the tests are. The driver underneath moves bytes.
 
+use crate::application::finding_what_was_deleted;
 use crate::application::mail_controller::MailController;
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{
     CachedFolder, CachedMessage, IncomingMessage, MessageCache, WhatTheServerSaid,
 };
+use crate::service::protocols::imap::abilities::Abilities;
 use crate::service::protocols::imap::{
     ImapClient, ImapConfig, ImapFolder, ImapIdleEvent, ImapIdleHandle, ImapMessage,
 };
@@ -422,14 +424,26 @@ pub(crate) enum WhatToAskFor {
 /// - a highest uid held, which is where the narrow question starts. A folder
 ///   holding nothing has nowhere to resume from and is cheap to list anyway.
 ///
+/// There is a fifth thing, and it overrules the other four. A folder due a full
+/// comparison is read out in full whatever its stored state says, because the
+/// comparison needs a listing of the whole mailbox to compare against. The
+/// resume is a saving on the syncs in between, not instead of ever looking.
+///
 /// Its own function rather than a condition inside [`sync_folder`], following
 /// [`uids_to_fetch`] and [`listing_contradicts_the_count`] above: a decision
-/// with four inputs and two answers is testable without a server only if it
+/// with five inputs and two answers is testable without a server only if it
 /// can be called without one.
 pub(crate) const fn what_to_ask_for(
     held: WhatThisComputerHolds,
     reported: WhatTheServerReports,
+    comparison: finding_what_was_deleted::WhetherAFullComparisonIsDue,
 ) -> WhatToAskFor {
+    if matches!(
+        comparison,
+        finding_what_was_deleted::WhetherAFullComparisonIsDue::Due
+    ) {
+        return WhatToAskFor::EveryUid;
+    }
     let (Some(stored), Some(now)) = (held.uid_validity, reported.uid_validity) else {
         return WhatToAskFor::EveryUid;
     };
@@ -779,6 +793,16 @@ pub(crate) trait Mailbox {
         folder: &str,
     ) -> Result<crate::service::protocols::imap::MailboxStatus>;
 
+    /// What this server said it can do, as read at sign-in.
+    ///
+    /// On the trait because the way a folder finds its deletions is chosen
+    /// from it, by
+    /// [`crate::application::finding_what_was_deleted::the_way_this_server_offers`].
+    /// A sync that could not ask this would have to assume an answer, and an
+    /// assumed capability list is the shape of bug that works everywhere
+    /// except on the servers it is wrong about.
+    async fn what_this_server_can_do(&self) -> Abilities;
+
     /// Every message the folder holds, by uid.
     ///
     /// The whole folder rather than a page: it is what says which stored
@@ -852,6 +876,10 @@ impl Mailbox for MailController {
         folder: &str,
     ) -> Result<crate::service::protocols::imap::MailboxStatus> {
         MailController::select_folder(self, folder).await
+    }
+
+    async fn what_this_server_can_do(&self) -> Abilities {
+        MailController::what_this_server_can_do(self).await
     }
 
     async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
@@ -1221,8 +1249,19 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     }
 
     // Read before the question is asked rather than after, because the highest
-    // uid held is one of the four facts that decide which question it is.
+    // uid held is one of the facts that decide which question it is.
     let stored = cache.stored_uids(folder_id)?;
+
+    // Whether this is the sync that compares the whole folder against what is
+    // held, which is how a message deleted on another device is noticed. A
+    // resumed sync never sees the messages below the highest uid held, so
+    // without this the saving would have been bought by turning the deletion
+    // detection off.
+    let compared_at = chrono::Utc::now();
+    let comparison = finding_what_was_deleted::whether_a_full_comparison_is_due(
+        cache.folder_last_fully_compared(folder_id)?,
+        compared_at,
+    );
 
     // The narrowing plan 03-01's type was built to make safe. Each arm makes
     // its own claim about how much of the folder the answer covers, on the one
@@ -1238,6 +1277,7 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             uid_validity: status.uid_validity,
             highest_modseq: status.highest_modseq,
         },
+        comparison,
     );
     let on_server = match asking {
         // Asks the server about the whole folder and gets the whole folder
@@ -1253,6 +1293,13 @@ pub(crate) async fn sync_folder<M: Mailbox>(
             ServerListing::PartOfIt(controller.list_uids_above(&folder.path, highest).await?)
         }
     };
+    // Written down only when the whole folder really was listed, and only
+    // after the contradiction check below has let it through. A sync that
+    // asked a narrow question, or one that asked a wide one and got an answer
+    // it will not act on, has not compared anything, and dating it as though
+    // it had would put the next comparison six hours away for a comparison
+    // that never happened.
+    let compared_the_whole_folder = matches!(on_server, ServerListing::TheWholeMailbox(_));
 
     if listing_contradicts_the_count(&on_server, counts.total) {
         let counted = crate::service::caldav::how_many(counts.total as usize, "message");
@@ -1262,8 +1309,20 @@ pub(crate) async fn sync_folder<M: Mailbox>(
         )));
     }
 
-    let forgotten = uids_to_forget(&on_server, &stored);
+    // Asked of whichever way this server offers, rather than of the comparison
+    // by name. That is the seam: swapping the comparison for VANISHED is an
+    // implementor and a probe arm, and nothing on this line changes.
+    let forgotten = finding_what_was_deleted::what_the_server_no_longer_has(
+        finding_what_was_deleted::the_way_this_server_offers(
+            controller.what_this_server_can_do().await,
+        ),
+        &on_server,
+        &stored,
+    )?;
     cache.forget_messages(folder_id, &forgotten)?;
+    if compared_the_whole_folder {
+        cache.set_folder_last_fully_compared(folder_id, compared_at)?;
+    }
 
     let wanted = uids_to_fetch(on_server.uids(), &stored, limit);
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
@@ -2257,6 +2316,10 @@ mod tests {
         asked_for: std::cell::RefCell<Vec<u32>>,
         /// A server that will not say which messages a mailbox holds.
         refuse_list_uids: bool,
+        /// What this server advertised at sign-in. The default is the floor:
+        /// a server offering nothing beyond IMAP4rev1, which is what most of
+        /// these tests are about.
+        abilities: Abilities,
         /// How this server answers a request for a whole message, by uid.
         ///
         /// A uid with no entry is answered with an ordinary message, so a test
@@ -2296,6 +2359,7 @@ mod tests {
                 highest_modseq: None,
                 asked_for: std::cell::RefCell::new(Vec::new()),
                 refuse_list_uids: false,
+                abilities: Abilities::default(),
                 answers_a_move_with: crate::service::protocols::imap::Moved::Moved,
                 bodies: std::collections::HashMap::new(),
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
@@ -2331,6 +2395,10 @@ mod tests {
                 uid_validity: self.uid_validity,
                 highest_modseq: self.highest_modseq,
             })
+        }
+
+        async fn what_this_server_can_do(&self) -> Abilities {
+            self.abilities
         }
 
         async fn list_uids(&self, _folder: &str) -> Result<Vec<u32>> {
@@ -4240,8 +4308,32 @@ mod tests {
                     uid_validity: Some(7),
                     highest_modseq: Some(4300),
                 },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
             ),
             WhatToAskFor::TheUidsAbove(39_998)
+        );
+    }
+
+    #[test]
+    fn test_a_folder_due_a_comparison_is_read_out_in_full_however_much_is_stored() {
+        // The bound overrules the resume, and it has to: the comparison needs a
+        // listing of the whole mailbox to compare against, so a folder that
+        // resumed on this sync as well would never find a deletion. The resume
+        // is a saving on the syncs in between, not instead of ever looking.
+        assert_eq!(
+            what_to_ask_for(
+                WhatThisComputerHolds {
+                    uid_validity: Some(7),
+                    modseq: Some(4200),
+                    highest_uid: Some(39_998),
+                },
+                WhatTheServerReports {
+                    uid_validity: Some(7),
+                    highest_modseq: Some(4300),
+                },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::Due,
+            ),
+            WhatToAskFor::EveryUid
         );
     }
 
@@ -4256,6 +4348,7 @@ mod tests {
                     uid_validity: Some(7),
                     highest_modseq: Some(4300),
                 },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4277,6 +4370,7 @@ mod tests {
                     uid_validity: Some(8),
                     highest_modseq: Some(4300),
                 },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4299,6 +4393,7 @@ mod tests {
                     uid_validity: Some(7),
                     highest_modseq: None,
                 },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4319,6 +4414,7 @@ mod tests {
                     uid_validity: Some(7),
                     highest_modseq: Some(4300),
                 },
+                finding_what_was_deleted::WhetherAFullComparisonIsDue::NotYet,
             ),
             WhatToAskFor::EveryUid
         );
@@ -4589,17 +4685,15 @@ mod tests {
         // about the uids above the highest one held, so a message deleted on
         // another device is never in a listing this can compare against, and
         // it stays here for good.
+        //
+        // A day written out rather than the interval plus a minute. An offset
+        // taken from the constant moves with it, so widening the interval to a
+        // hundred years would leave this fixture a hundred years stale and
+        // still due, and this would pass through the break it exists to catch.
         let (cache, id, folder) = a_cache();
         a_folder_synced_against_a_server_that_answers_what_changed(&cache, id, &folder, 4, 1);
         cache
-            .set_folder_last_fully_compared(
-                id,
-                chrono::Utc::now()
-                    - chrono::Duration::hours(
-                        crate::application::finding_what_was_deleted::A_FOLDER_IS_FULLY_COMPARED_EVERY,
-                    )
-                    - chrono::Duration::minutes(1),
-            )
+            .set_folder_last_fully_compared(id, chrono::Utc::now() - chrono::Duration::hours(24))
             .expect("a comparison time");
 
         let server = Scripted {

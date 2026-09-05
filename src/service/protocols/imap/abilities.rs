@@ -79,6 +79,8 @@ impl Abilities {
                 abilities.move_command = true;
             } else if name.eq_ignore_ascii_case("CONDSTORE") {
                 abilities.condstore = true;
+            } else if name.eq_ignore_ascii_case("QRESYNC") {
+                abilities.qresync = true;
             } else if name.eq_ignore_ascii_case("ID") {
                 abilities.id = true;
             } else if name.eq_ignore_ascii_case("IDLE") {
