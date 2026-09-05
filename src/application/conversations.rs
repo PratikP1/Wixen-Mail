@@ -214,8 +214,14 @@ pub struct ConversationItem {
     pub newest_received: String,
     /// The newest sender date in it.
     pub newest_sent: String,
-    /// The newest message's first line.
-    pub snippet: String,
+    /// The newest message's first line, when there is any.
+    ///
+    /// The same three states as [`crate::presentation::ui_types::MessageItem`]
+    /// and for the same reason: `None` is text nobody has fetched and
+    /// `Some("")` is a message whose text was fetched and holds nothing. A
+    /// conversation row said the same thing about both until this was an
+    /// option, and one of the two things it said was untrue.
+    pub snippet: Option<String>,
     /// Every distinct sender, as stored.
     pub senders: String,
     /// Every distinct addressee.

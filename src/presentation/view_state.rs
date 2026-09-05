@@ -456,7 +456,7 @@ mod tests {
             unread: 0,
             newest_received: String::new(),
             newest_sent: String::new(),
-            snippet: String::new(),
+            snippet: None,
             senders: String::new(),
             to: String::new(),
             cc: String::new(),

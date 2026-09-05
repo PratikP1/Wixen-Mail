@@ -911,6 +911,37 @@ mod tests {
     }
 
     #[test]
+    fn test_a_body_that_was_fetched_and_holds_no_text_is_written_down_as_empty() {
+        // The distinction the list column depends on. A message whose text has
+        // never been fetched and a message whose text was fetched and holds
+        // nothing both used to leave the column null, so the list said the same
+        // thing about both and one of the two things it said was untrue.
+        //
+        // Null now means nobody has fetched it. An empty string means somebody
+        // did and there was nothing in it.
+        let cache = body_test_cache();
+        let id = cache
+            .save_message(&cached(3, "Just an attachment"))
+            .unwrap();
+        cache.save_message_body(id, Some("   "), None).unwrap();
+
+        let snippet: Option<String> = cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            snippet.as_deref(),
+            Some(""),
+            "a message whose text was fetched and holds nothing is stored as \
+             one nobody has fetched"
+        );
+    }
+
+    #[test]
     fn test_a_snippet_is_one_line_and_bounded() {
         // It is read aloud on every row while arrowing, so it cannot be a
         // paragraph and it cannot contain newlines that the list would

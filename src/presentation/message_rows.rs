@@ -14,6 +14,25 @@ use super::message_columns::MessageColumn;
 use super::ui_types::MessageItem;
 use crate::application::conversations::ConversationItem;
 
+/// Shown in a cell whose snippet is absent because nobody has fetched it.
+///
+/// A blank cell here reads as a message with nothing in it, which is a claim
+/// about somebody's mail rather than about this program, and it was wrong for
+/// most of a large mailbox: a folder that has not been through the message text
+/// fetch has no snippet for any of its rows.
+///
+/// Words rather than a placeholder character, because this is read aloud on
+/// every row somebody arrows onto and a dash says nothing at all.
+pub const TEXT_NOT_DOWNLOADED: &str = "Message text not downloaded";
+
+/// Shown in a cell for a message whose text really is empty.
+///
+/// A calendar invitation, or a message that is nothing but an attachment. Kept
+/// apart from [`TEXT_NOT_DOWNLOADED`] because they ask different things of the
+/// person hearing them: one is worth fetching and the other is not there to
+/// fetch.
+pub const NO_MESSAGE_TEXT: &str = "No message text";
+
 /// Shown in a cell whose page has not been loaded yet.
 ///
 /// Virtual mode asks for rows the instant they scroll into view, and the answer
@@ -55,7 +74,7 @@ pub fn cell_text(
         }
         MessageColumn::Correspondent => display_address(&message.from),
         MessageColumn::Received | MessageColumn::Sent => format_for_list(&message.date, now, dates),
-        MessageColumn::Snippet => message.snippet.clone(),
+        MessageColumn::Snippet => message.snippet.clone().unwrap_or_default(),
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
         MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
@@ -124,7 +143,7 @@ pub fn conversation_cell_text(
         MessageColumn::Correspondent => everyone_in(&conversation.senders),
         MessageColumn::Received => format_for_list(&conversation.newest_received, now, dates),
         MessageColumn::Sent => format_for_list(&conversation.newest_sent, now, dates),
-        MessageColumn::Snippet => conversation.snippet.clone(),
+        MessageColumn::Snippet => conversation.snippet.clone().unwrap_or_default(),
         // D-03. A conversation identifier is a mail server's angle-bracketed
         // nonsense and no use at all to anybody hearing it, and there is no
         // per-item accessible name on this control, so the cell text is exactly
@@ -316,6 +335,73 @@ mod tests {
     }
 
     #[test]
+    fn test_a_row_whose_text_has_not_been_fetched_says_so_rather_than_looking_empty() {
+        // The column said the same thing about two different situations, and
+        // one of the two things it said was untrue. A row whose text is not on
+        // this computer read as a message with nothing in it, on every row of
+        // every folder that has not been through the message text fetch, which
+        // is most of a large mailbox.
+        let mut not_fetched = message();
+        not_fetched.snippet = None;
+
+        assert_eq!(
+            cell_text(
+                &not_fetched,
+                MessageColumn::Snippet,
+                DateSettings::default(),
+                chrono::Local::now()
+            ),
+            TEXT_NOT_DOWNLOADED
+        );
+    }
+
+    #[test]
+    fn test_a_message_that_really_has_no_text_is_not_said_the_same_way() {
+        // The other half, and the half that makes the first one worth
+        // anything. A calendar invitation or a message that is nothing but an
+        // attachment really has no text, and telling somebody it has not been
+        // downloaded would send them to fetch something that is not there.
+        let mut nothing_in_it = message();
+        nothing_in_it.snippet = Some(String::new());
+
+        let said = cell_text(
+            &nothing_in_it,
+            MessageColumn::Snippet,
+            DateSettings::default(),
+            chrono::Local::now(),
+        );
+
+        assert_eq!(said, NO_MESSAGE_TEXT);
+        assert_ne!(
+            said, TEXT_NOT_DOWNLOADED,
+            "a message with no text is described as one nobody has fetched"
+        );
+    }
+
+    #[test]
+    fn test_a_conversation_row_tells_the_two_apart_as_well() {
+        // The same column in the other view, and the same lie until now. A
+        // conversation whose newest message has not been fetched is not a
+        // conversation about nothing.
+        let mut not_fetched = conversation();
+        not_fetched.snippet = None;
+        let mut nothing_in_it = conversation();
+        nothing_in_it.snippet = Some(String::new());
+
+        let says = |item: &ConversationItem| {
+            conversation_cell_text(
+                item,
+                MessageColumn::Snippet,
+                DateSettings::default(),
+                chrono::Local::now(),
+            )
+        };
+
+        assert_eq!(says(&not_fetched), TEXT_NOT_DOWNLOADED);
+        assert_eq!(says(&nothing_in_it), NO_MESSAGE_TEXT);
+    }
+
+    #[test]
     fn test_size_is_spoken_in_units_not_raw_bytes() {
         // "2 KB" is one word to hear; "2048" is four digits to assemble.
         let mut m = message();
@@ -455,7 +541,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: "The numbers are attached.".to_string(),
+            snippet: Some("The numbers are attached.".to_string()),
             size_bytes: Some(2048),
             to: "me@example.com".to_string(),
             cc: String::new(),
@@ -811,7 +897,7 @@ mod tests {
             unread: 2,
             newest_received: "2026-07-26T10:00:05+00:00".to_string(),
             newest_sent: "2026-07-26T10:00:00+00:00".to_string(),
-            snippet: "The figures are attached".to_string(),
+            snippet: Some("The figures are attached".to_string()),
             senders: "\nAda Lovelace <ada@example.com>\nBob <bob@example.com>".to_string(),
             to: "\nme@example.com".to_string(),
             cc: "\nChris <chris@example.com>".to_string(),
@@ -841,7 +927,7 @@ mod tests {
         let newest = ConversationItem {
             newest_received: "2026-07-28T09:00:00+00:00".to_string(),
             newest_sent: "2026-07-28T08:00:00+00:00".to_string(),
-            snippet: "One more thing".to_string(),
+            snippet: Some("One more thing".to_string()),
             ..conversation.clone()
         };
 

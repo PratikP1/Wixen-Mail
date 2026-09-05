@@ -9091,7 +9091,10 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             thread_depth: i % 5,
             is_thread_parent: i % 5 == 0,
             thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
-            snippet: format!("Sample message {} for testing the list at scale.", i + 1),
+            snippet: Some(format!(
+                "Sample message {} for testing the list at scale.",
+                i + 1
+            )),
             size_bytes: Some(((i % 40) as i64 + 1) * 1024),
             to: "me@example.com".to_string(),
             cc: String::new(),
@@ -11178,7 +11181,7 @@ fn conversation_parts(
                     thread_depth: node.depth,
                     is_thread_parent: node.depth == 0,
                     thread_id: None,
-                    snippet: String::new(),
+                    snippet: None,
                     size_bytes: None,
                     to: String::new(),
                     cc: String::new(),
@@ -13571,7 +13574,7 @@ fn open_for_scanning(
                     thread_depth: 0,
                     is_thread_parent: true,
                     thread_id: None,
-                    snippet: String::new(),
+                    snippet: None,
                     size_bytes: Some(1024),
                     to: "me@example.com".to_string(),
                     cc: String::new(),
@@ -15594,6 +15597,22 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::FolderMessagesArrived(folder_id) => {
             reread_folder_if_open(state, message_cache, *folder_id, tx);
+        }
+        UIUpdate::MoreOfTheFolderArrived(folder_id) => {
+            // Both bounds move together, and this is the second of them. The
+            // first is `mail_sync::INITIAL_FETCH_LIMIT`, which the request
+            // hands the sync to bring the next chunk down; without this line
+            // that chunk arrives in the cache and stays hidden behind the
+            // limit the list reads through, which looks exactly like a request
+            // that did nothing.
+            {
+                let mut s = lock_state(state);
+                s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
+            }
+            reread_folder_if_open(state, message_cache, *folder_id, tx);
+        }
+        UIUpdate::WholeFolderProgress(said) => {
+            frame.set_status_text(said, 0);
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -20191,7 +20210,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: "me@example.com".to_string(),
             cc: String::new(),
@@ -21177,7 +21196,7 @@ mod tests {
             thread_depth: depth,
             is_thread_parent: depth == 0,
             thread_id: Some(thread.to_string()),
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
@@ -21303,7 +21322,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
@@ -21354,7 +21373,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
