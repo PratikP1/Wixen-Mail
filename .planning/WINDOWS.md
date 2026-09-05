@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 62
+open_count: 68
 waived_count: 0
 fixed_count: 13
-total_count: 75
-last_updated: 2026-09-05T01:36:20.285Z
+total_count: 81
+last_updated: 2026-09-05T05:20:01.525Z
 ---
 
 # Broken Windows Ledger
@@ -90,6 +90,12 @@ last_updated: 2026-09-05T01:36:20.285Z
 | 73 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Three things about the whole-folder request that only a screen reader settles, on the pattern of phase 2's entries 10, 33 and 34. Whether a fetch of eighty chunks on a topic of its own is heard rather than lost: the topic keeps only its newest announcement, so the claim is that somebody hears a handful of sentences, and nothing here has listened. Whether the final count is heard as an ending rather than as another progress line; the words differ and the topic does not. And whether the choice of a topic of its own is right at all against putting it on 'status', which is the one open question in plan 03-07 and is a listening judgement: the argument for splitting is reasoning about how the queue coalesces rather than an observation of it, and the constant THE_PROGRESS_TOPIC is the one line that moves it. | open |  | 2026-09-05T01:36:08.578Z |  |
 | 74 | 03 | unrun-verify | src/presentation/message_rows.rs |  | Whether the snippet column reads well when a screen reader crosses a column of rows that all say 'Message text not downloaded'. That is every row of a folder nobody has fetched text for, which is most of a large mailbox, and four words per row is four words more than the blank it replaced. The blank was a lie and the words are true, so this is a question about whether the true answer is worth what it costs to hear, not about whether to go back. If it is too much, the shorter answer is to say it once for the column rather than once per row, and there is nowhere on a virtual list to put that today. | open |  | 2026-09-05T01:36:19.878Z |  |
 | 75 | 03 | deviation | src/data/message_cache/bodies.rs |  | The snippet column tells 'nobody fetched this text' from 'this message has no text' by whether the stored snippet is null or empty, and only rows written after this change carry the distinction. A message whose body was fetched before 2026-09-04 and held no text was stored as null, so it reads as one nobody has fetched, and the row says so until its text is fetched again. There is no backfill: the fact is not recoverable from anything the database still holds, because an evicted body leaves no row and message_bodies answers 'is the text here now' rather than 'was it ever fetched'. | open |  | 2026-09-05T01:36:20.285Z |  |
+| 76 | 03 | unrun-verify | src/application/the_network_coming_and_going.rs |  | Whether the sentence about the network going is heard once and understood as a state rather than as an error. The state hands out one answer per change and a test drives ten failures and counts one, which is the structure. What that cannot say is what reaches somebody: the announcement goes out on a topic of its own at normal priority while a sync is failing its way through several folders on the status topic underneath it, and whether the one that matters is the one heard needs NVDA and a cable pulled out. Whether a sentence beginning 'The network has gone' reads as information rather than as something broken is the same kind of question. Nothing here has ever met a real network loss. | open |  | 2026-09-05T05:19:21.804Z |  |
+| 77 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether the offer to go back online is announced with its full label, and whether a screen reader user learns it is there at all. The panel is shown by an arm that says nothing, on purpose: the sentence sent immediately before it names the button, and announcing again would be two announcements a moment apart about one event. That argument is about repetition and it does not settle discovery. A button appearing above the message list moves nothing and takes no focus, so what tells somebody it exists is one clause in one sentence, and whether that clause survives being heard in the middle of a mailbox is an NVDA question. Its label and its accessible name come from one string, which a test reads from the source, and whether Windows really speaks that string for this control is the MSAA and UI Automation question scripts/msaa-names.ps1 exists for and which has not been run against this window. | open |  | 2026-09-05T05:19:37.963Z |  |
+| 78 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether the status bar and the announcement being the same words reads as a repetition when somebody meets both. The network sentence is written once and handed to status field 0 and to the announcement queue, which is what stops a deaf user and a blind user being told different things. A deaf-blind user reading the status bar on a braille display and then hearing the queue speak, or a low vision user with speech on, meets the same sentence twice within a second. Whether that is reassuring or is noise is not something a test can ask. | open |  | 2026-09-05T05:19:48.464Z |  |
+| 79 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether somebody who lets the offer go by can find their way back. Two routes exist and neither has been used by a person. The offer panel stays on screen until the mode changes some other way, so it is still there to be tabbed to, and the sentence names the View menu as the other way. What is unknown is whether either is reachable in practice for somebody who heard the sentence once, was reading a message at the time, and comes back to it twenty minutes later with nothing repeating it. There is nothing that says the offer again. | open |  | 2026-09-05T05:19:48.844Z |  |
+| 80 | 03 | unrun-verify | src/service/network.rs |  | Whether InternetGetConnectedState answers usefully on a real machine losing a real network. It reports whether this computer has a connection at all, which is what makes it right for a cable pulled out and a wifi dropped, and it says nothing about whether a mail server can be reached, so a network that is up and cannot route leaves the program believing it is online. It has never been run against a machine that lost its network while Wixen Mail was open. Two things a run would settle: how long Windows takes to change its answer after the cable goes, which is the real delay before somebody is told rather than the ten second interval this asks on, and whether a wifi that flaps produces a run of changes the queue then speaks. | open |  | 2026-09-05T05:20:01.150Z |  |
+| 81 | 03 | deviation | src/application/sending_later.rs |  | The ten second Undo Send hold is never applied to anything. Hold, GoAfter::held and queue_outbox_message_to_go have no caller outside sending_later.rs and its tests: the composer's Send queues through queue_outbox_message, which writes GoAfter::AsSoonAsPossible, so readiness answers MayGoNow at once and take_back answers TooLate for every message somebody has just sent. The module doc says all of it runs. Undo Send is on the Tools menu and can never catch a message from the composer. Found while wiring offline mode into the same decision and left alone as out of scope: it is a behaviour change of its own with its own countdown to show and its own version bump. | open |  | 2026-09-05T05:20:01.525Z |  |
 
 ````json
 [
@@ -991,6 +997,78 @@ last_updated: 2026-09-05T01:36:20.285Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T01:36:20.285Z",
+    "resolved_at": null
+  },
+  {
+    "id": 76,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/the_network_coming_and_going.rs",
+    "line": null,
+    "description": "Whether the sentence about the network going is heard once and understood as a state rather than as an error. The state hands out one answer per change and a test drives ten failures and counts one, which is the structure. What that cannot say is what reaches somebody: the announcement goes out on a topic of its own at normal priority while a sync is failing its way through several folders on the status topic underneath it, and whether the one that matters is the one heard needs NVDA and a cable pulled out. Whether a sentence beginning 'The network has gone' reads as information rather than as something broken is the same kind of question. Nothing here has ever met a real network loss.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:19:21.804Z",
+    "resolved_at": null
+  },
+  {
+    "id": 77,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the offer to go back online is announced with its full label, and whether a screen reader user learns it is there at all. The panel is shown by an arm that says nothing, on purpose: the sentence sent immediately before it names the button, and announcing again would be two announcements a moment apart about one event. That argument is about repetition and it does not settle discovery. A button appearing above the message list moves nothing and takes no focus, so what tells somebody it exists is one clause in one sentence, and whether that clause survives being heard in the middle of a mailbox is an NVDA question. Its label and its accessible name come from one string, which a test reads from the source, and whether Windows really speaks that string for this control is the MSAA and UI Automation question scripts/msaa-names.ps1 exists for and which has not been run against this window.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:19:37.963Z",
+    "resolved_at": null
+  },
+  {
+    "id": 78,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the status bar and the announcement being the same words reads as a repetition when somebody meets both. The network sentence is written once and handed to status field 0 and to the announcement queue, which is what stops a deaf user and a blind user being told different things. A deaf-blind user reading the status bar on a braille display and then hearing the queue speak, or a low vision user with speech on, meets the same sentence twice within a second. Whether that is reassuring or is noise is not something a test can ask.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:19:48.464Z",
+    "resolved_at": null
+  },
+  {
+    "id": 79,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether somebody who lets the offer go by can find their way back. Two routes exist and neither has been used by a person. The offer panel stays on screen until the mode changes some other way, so it is still there to be tabbed to, and the sentence names the View menu as the other way. What is unknown is whether either is reachable in practice for somebody who heard the sentence once, was reading a message at the time, and comes back to it twenty minutes later with nothing repeating it. There is nothing that says the offer again.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:19:48.844Z",
+    "resolved_at": null
+  },
+  {
+    "id": 80,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/service/network.rs",
+    "line": null,
+    "description": "Whether InternetGetConnectedState answers usefully on a real machine losing a real network. It reports whether this computer has a connection at all, which is what makes it right for a cable pulled out and a wifi dropped, and it says nothing about whether a mail server can be reached, so a network that is up and cannot route leaves the program believing it is online. It has never been run against a machine that lost its network while Wixen Mail was open. Two things a run would settle: how long Windows takes to change its answer after the cable goes, which is the real delay before somebody is told rather than the ten second interval this asks on, and whether a wifi that flaps produces a run of changes the queue then speaks.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:20:01.150Z",
+    "resolved_at": null
+  },
+  {
+    "id": 81,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/application/sending_later.rs",
+    "line": null,
+    "description": "The ten second Undo Send hold is never applied to anything. Hold, GoAfter::held and queue_outbox_message_to_go have no caller outside sending_later.rs and its tests: the composer's Send queues through queue_outbox_message, which writes GoAfter::AsSoonAsPossible, so readiness answers MayGoNow at once and take_back answers TooLate for every message somebody has just sent. The module doc says all of it runs. Undo Send is on the Tools menu and can never catch a message from the composer. Found while wiring offline mode into the same decision and left alone as out of scope: it is a behaviour change of its own with its own countdown to show and its own version bump.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T05:20:01.525Z",
     "resolved_at": null
   }
 ]
