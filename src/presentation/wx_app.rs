@@ -18682,11 +18682,12 @@ fn spawn_threat_list_refresh(rt: &Arc<Runtime>) {
 
 /// Fetch an attachment and open it as a tab of its own.
 ///
-/// Only PDFs so far, and the reader window refuses anything else before it gets
-/// here, so this does not have to guess. The fetch and the parse both happen on
-/// a worker: a hundred page PDF takes real time to read, and doing it on the UI
-/// thread would freeze the window, which a screen reader reports as the
-/// application having stopped responding.
+/// Which reading it gets is [`reader_text::ReaderAttachment::how_it_reads`],
+/// the same answer the reader window's own gate is, so a file the window
+/// admitted always has a producer waiting here. The fetch and the parse both
+/// happen on a worker: a hundred page PDF takes real time to read, and doing it
+/// on the UI thread would freeze the window, which a screen reader reports as
+/// the application having stopped responding.
 fn read_attachment(
     app: AppHandles<'_>,
     a11y: &Arc<Accessibility>,
@@ -18720,16 +18721,46 @@ fn read_attachment(
 
     rt.spawn_blocking(move || {
         let outcome = fetch_attachment_bytes(&handle, account, &attachment)
-            .and_then(|bytes| crate::service::pdf::read(&bytes));
+            .and_then(|bytes| document_of(&attachment, &bytes));
         let _ = match outcome {
-            Ok(reading) => tx.try_send(UIUpdate::AttachmentRead(Box::new(
-                reader_text::pdf_document(&attachment.name, &reading),
-            ))),
+            Ok(document) => tx.try_send(UIUpdate::AttachmentRead(Box::new(document))),
+            // Named, because "the attachment" is whichever one they asked for
+            // and a person who asked for two is told nothing by that. The
+            // producer's own sentence follows it and says what went wrong.
             Err(e) => tx.try_send(UIUpdate::ErrorOccurred(format!(
-                "Could not open the attachment: {e}"
+                "{} could not be opened: {e}",
+                attachment.suggested_file_name()
             ))),
         };
     });
+}
+
+/// Turn an attachment's bytes into the document its kind gets.
+///
+/// The kind is asked once, by the one function the reader window's gate is also
+/// asked, so this cannot be handed something it has no reading for. `None` is
+/// still answered rather than assumed away: the gate and this run on different
+/// threads at different moments, and a document that has been closed and
+/// reopened in between is not worth a panic.
+fn document_of(
+    attachment: &reader_text::ReaderAttachment,
+    bytes: &[u8],
+) -> crate::common::Result<reader_text::ReaderDocument> {
+    use reader_text::HowItReads;
+
+    match attachment.how_it_reads() {
+        Some(HowItReads::Pdf) => Ok(reader_text::pdf_document(
+            &attachment.name,
+            &crate::service::pdf::read(bytes)?,
+        )),
+        Some(HowItReads::Text) => Ok(reader_text::text_document(
+            &attachment.name,
+            &crate::service::plain_text::read(bytes)?,
+        )),
+        None => Err(crate::common::Error::Other(
+            "Wixen Mail cannot read a file of this kind".to_string(),
+        )),
+    }
 }
 
 /// Ask where to put an attachment, then go and get it.

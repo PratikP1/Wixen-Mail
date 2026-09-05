@@ -699,6 +699,38 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
     }
 }
 
+/// Compose a text attachment for the reader.
+///
+/// RED half. The real composition arrives with the green commit.
+pub fn text_document(
+    name: &str,
+    reading: &crate::service::plain_text::TextReading,
+) -> ReaderDocument {
+    let _ = reading;
+    ReaderDocument {
+        title: name.to_string(),
+        text: String::new(),
+        landmarks: Vec::new(),
+        warning: None,
+        attachments: Vec::new(),
+        looks_unsafe: false,
+    }
+}
+
+/// Which reading this application can give an attachment, of the kinds it has.
+///
+/// One answer for two callers. The reader window asks it to decide whether to
+/// refuse, and the worker asks it to decide which producer to call. Two matches
+/// over the same two facts is how a `.txt` comes to be admitted by the window
+/// and dropped by the worker, with everything green and a tab that never opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HowItReads {
+    /// Through [`crate::service::pdf::read`].
+    Pdf,
+    /// Through [`crate::service::plain_text::read`].
+    Text,
+}
+
 /// One message of a conversation, with the body already fetched.
 #[derive(Debug, Clone)]
 pub struct ConversationPart {
@@ -898,6 +930,20 @@ impl ReaderAttachment {
             }
             WhatTheSenderSaid::InWords(said) => cut_at_a_word(said, LONGEST_DESCRIPTION_SPOKEN),
         }
+    }
+
+    /// Which reading this attachment gets here, or `None` when there is none.
+    ///
+    /// Either the type or the name is enough, the way a PDF has always been
+    /// admitted: refusing to read a file somebody was sent because their client
+    /// labelled it sloppily helps nobody.
+    pub fn how_it_reads(&self) -> Option<HowItReads> {
+        let kind = self.mime_type.trim().to_ascii_lowercase();
+        let extension = extension_of(&self.name).unwrap_or_default();
+        if kind == "application/pdf" || extension == "pdf" {
+            return Some(HowItReads::Pdf);
+        }
+        None
     }
 
     /// Whether Windows would run this rather than open it.
@@ -3159,5 +3205,76 @@ mod encryption_tests {
         for sentence in [ENCRYPTED_AND_NOT_OPENED_HERE, SIGNED_AND_NOT_CHECKED_HERE] {
             assert!(!sentence.contains("  "), "{sentence}");
         }
+    }
+}
+
+/// What a text attachment's tab is made of.
+#[cfg(test)]
+mod attachment_preview_tests {
+    use super::*;
+    use crate::service::plain_text::TextReading;
+
+    fn reading(text: &str, note: &str) -> TextReading {
+        TextReading {
+            text: text.to_string(),
+            note: note.to_string(),
+            bytes: text.len(),
+            bytes_read: text.len(),
+            entirely_text: true,
+        }
+    }
+
+    #[test]
+    fn test_a_text_attachments_note_comes_before_its_words() {
+        // What the note says changes how the rest should be taken. Putting it
+        // at the end tells somebody after they have already relied on it, and
+        // `pdf_document` orders itself the same way for the same reason.
+        let document = text_document(
+            "notes.txt",
+            &reading("The first line of the file.", "Read as text."),
+        );
+
+        assert!(
+            document
+                .text
+                .starts_with("notes.txt\nRead as text.\n\nThe first line of the file."),
+            "{:?}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_text_attachment_is_its_own_first_landmark() {
+        // The tab is reached by jumping between landmarks, and a tab whose
+        // first landmark is somewhere in the middle of the file opens on a
+        // reader who cannot get back to the top by structure.
+        let document = text_document("notes.txt", &reading("Words.", "Read as text."));
+
+        let first = document.landmarks.first();
+        assert_eq!(first.map(|l| l.label.as_str()), Some("notes.txt"));
+        assert_eq!(first.map(|l| l.offset), Some(0));
+        assert_eq!(first.map(|l| l.level), Some(1));
+    }
+
+    #[test]
+    fn test_a_text_attachment_with_no_name_still_gets_a_title() {
+        // A blank tab label and a control named nothing are both things a
+        // screen reader reports as an unnamed window.
+        let document = text_document("   ", &reading("Words.", "Read as text."));
+
+        assert!(!document.title.trim().is_empty());
+    }
+
+    #[test]
+    fn test_a_text_attachment_carries_no_warning_bar_and_nothing_hanging_off_it() {
+        // Passed at its own red, and kept anyway: it is the regression guard
+        // for the `looks_unsafe` decision, which is a claim rather than a
+        // default. The bar says what the provider's filter made of the
+        // message, and that verdict belongs to the message's own tab.
+        let document = text_document("notes.txt", &reading("Words.", "Read as text."));
+
+        assert!(document.warning.is_none());
+        assert!(document.attachments.is_empty());
+        assert!(!document.looks_unsafe);
     }
 }

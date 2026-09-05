@@ -188,17 +188,14 @@ enum Doing {
 
 /// Whether this is something the reader can turn into text.
 ///
-/// PDF, and nothing else yet. A message body arrives as text or HTML and is
-/// already handled; everything else is a file for another application.
+/// The whole of the answer is [`ReaderAttachment::how_it_reads`], and this is
+/// deliberately not a second look at the same two facts. The worker routes on
+/// that same answer to decide which producer to call, and a gate with a table
+/// of its own is a gate that can come to admit a file the worker then has no
+/// reading for: the tab never opens and nothing says why. One function makes
+/// that disagreement impossible rather than merely tested for.
 fn can_be_read_here(attachment: &ReaderAttachment) -> bool {
-    attachment
-        .mime_type
-        .trim()
-        .eq_ignore_ascii_case("application/pdf")
-        || attachment
-            .name
-            .rsplit_once('.')
-            .is_some_and(|(_, extension)| extension.trim().eq_ignore_ascii_case("pdf"))
+    attachment.how_it_reads().is_some()
 }
 
 /// What to call the thing that cannot be read, for the sentence that says so.
@@ -897,6 +894,21 @@ mod tests {
         let mut by_type = attachment("report");
         by_type.mime_type = "application/pdf".to_string();
         let mut by_name = attachment("report.PDF");
+        by_name.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_name));
+    }
+
+    #[test]
+    fn test_a_text_file_can_be_read_here_whichever_way_it_says_so() {
+        // The same either-one-is-enough rule a PDF already gets. A sender's
+        // client that labels a `.txt` application/octet-stream has not made
+        // the file unreadable, and a plain text part with no filename at all
+        // is ordinary.
+        let mut by_type = attachment("notes");
+        by_type.mime_type = "text/plain".to_string();
+        let mut by_name = attachment("notes.TXT");
         by_name.mime_type = "application/octet-stream".to_string();
 
         assert!(can_be_read_here(&by_type));
