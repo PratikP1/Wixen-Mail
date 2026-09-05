@@ -271,7 +271,13 @@ impl ReadAloud for MessageItem {
         } else {
             self.subject.trim()
         };
-        spoken(&[("", subject), ("From", &self.from), ("", &self.snippet)])
+        // Nothing rather than the words a list column uses for text nobody
+        // has fetched. A row says "Message text not downloaded" because a
+        // blank cell there would read as a message with nothing in it; a
+        // reading aloud that has already said the subject and the sender does
+        // not need to be told that the part it does not have is not there.
+        let first_line = self.snippet.as_deref().unwrap_or_default();
+        spoken(&[("", subject), ("From", &self.from), ("", first_line)])
     }
 
     fn read_full(&self, out: Reading) -> String {
@@ -295,7 +301,7 @@ impl ReadAloud for MessageItem {
             // colour swatch is not a thing everybody can read.
             ("", &state),
             ("", &attachments),
-            ("", &self.snippet),
+            ("", self.snippet.as_deref().unwrap_or_default()),
         ])
     }
 }
@@ -527,7 +533,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: "The numbers are attached.".to_string(),
+            snippet: Some("The numbers are attached.".to_string()),
             size_bytes: Some(2048),
             to: "me@example.com".to_string(),
             cc: String::new(),

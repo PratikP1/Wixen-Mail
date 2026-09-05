@@ -385,17 +385,16 @@ impl MessageCache {
             .map(str::to_string)
             .or_else(|| body.body_html.as_deref().map(strip_markup));
         let snippet = source.as_deref().map(snippet_from).unwrap_or_default();
+        // Written even when it is empty, and that is the difference between
+        // the two things a blank column used to mean. Null is text nobody has
+        // fetched; an empty string is a message somebody fetched and there was
+        // nothing in it. A calendar invitation and a message that is nothing
+        // but an attachment are the second, and telling somebody to download
+        // text that is not there is the answer the column used to give.
         self.conn
             .execute(
                 "UPDATE messages SET snippet = ?1 WHERE id = ?2",
-                rusqlite::params![
-                    if snippet.is_empty() {
-                        None
-                    } else {
-                        Some(snippet)
-                    },
-                    message_id
-                ],
+                rusqlite::params![snippet, message_id],
             )
             .map_err(|e| Error::Other(format!("Failed to save message snippet: {}", e)))?;
 
@@ -908,6 +907,37 @@ mod tests {
             )
             .unwrap();
         assert_eq!(snippet.as_deref(), Some("The numbers are attached. Ada"));
+    }
+
+    #[test]
+    fn test_a_body_that_was_fetched_and_holds_no_text_is_written_down_as_empty() {
+        // The distinction the list column depends on. A message whose text has
+        // never been fetched and a message whose text was fetched and holds
+        // nothing both used to leave the column null, so the list said the same
+        // thing about both and one of the two things it said was untrue.
+        //
+        // Null now means nobody has fetched it. An empty string means somebody
+        // did and there was nothing in it.
+        let cache = body_test_cache();
+        let id = cache
+            .save_message(&cached(3, "Just an attachment"))
+            .unwrap();
+        cache.save_message_body(id, Some("   "), None).unwrap();
+
+        let snippet: Option<String> = cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            snippet.as_deref(),
+            Some(""),
+            "a message whose text was fetched and holds nothing is stored as \
+             one nobody has fetched"
+        );
     }
 
     #[test]

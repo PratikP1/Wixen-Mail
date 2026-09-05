@@ -6,7 +6,68 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **You can ask for a whole folder once, instead of pressing Get Older Messages
+  eighty times.**
+
+  A folder view holds five hundred messages and a sync brings down five hundred,
+  so getting all of a forty thousand message inbox meant pressing a key eighty
+  times. Folder then Download This Whole Folder asks once. The request carries on
+  by itself, five hundred at a time, and the list grows as each part arrives, so
+  you can read the first page while the rest comes down.
+
+  While it runs it says how far it has got, and the last thing it says is how
+  many messages are on this computer. Those go out under a heading of their own,
+  so a fetch that takes minutes does not silence the other things Wixen Mail
+  would tell you in the meantime.
+
+  It is marked experimental where you choose it, and for two reasons. Asking a
+  provider for a large folder page after page without stopping is something they
+  are entitled to refuse or slow down, and no account has ever been used with
+  this program, so which yours does is unknown. And there is no way to stop it
+  once it starts: it runs until the folder is here or the server stops sending.
+  Nothing is changed at the server and nothing is sent.
+
 ### Changed
+
+- **A message list no longer says a message is empty when it has not been
+  downloaded.**
+
+  The column that shows the first line of a message was blank in two different
+  situations: when the message text has not been fetched to this computer, and
+  when the message genuinely has no text, such as a calendar invitation or a
+  message that is only an attachment. A blank column reads as the second, so the
+  list has been describing mail it does not have as mail with nothing in it,
+  which is most of a folder nobody has fetched text for.
+
+  The two now read differently: "Message text not downloaded" and "No message
+  text". Both the message list and the conversation list say it.
+
+  Known limitation: the difference is recorded when a message's text is fetched,
+  so it is right for anything fetched from now on. A message fetched before this
+  that had no text reads as one nobody has fetched, and there is no way to work
+  out which it was from what the cache still holds.
+
+- **Opening a folder Wixen Mail has synced before asks the server what changed,
+  instead of asking it to list everything the folder holds.**
+
+  A folder can hold forty thousand messages. Until now, every sync of it asked
+  the server to name all forty thousand uids, so that the three that had arrived
+  since last time could be picked out. Wixen Mail now remembers where it got to
+  and asks only for what is numbered above that.
+
+  Messages you delete somewhere else are still noticed. Finding them needs the
+  full list, so it happens on a schedule instead of on every folder open: every
+  six hours per folder, and always on the first sync of a folder Wixen Mail has
+  never compared. Between those, a message you deleted on your phone can stay
+  listed here for a few hours.
+
+  Two honest limits. **Gmail sees no change at all**: resuming this way needs a
+  feature called CONDSTORE, Gmail has never offered it, and so a Gmail account
+  takes the old path every time. And none of this has run against a real mail
+  server, because no account has ever been used with this program, so whether
+  any provider grants CONDSTORE in practice is unknown.
 
 - **A connection to the mail server that drops is made again once, and if that
   does not work Wixen Mail says so in words rather than in an error code.**

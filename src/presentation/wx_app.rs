@@ -98,6 +98,7 @@ menu_ids!(
     ID_IMPORT_MESSAGES,
     ID_EXPORT_MESSAGES,
     ID_GET_OLDER,
+    ID_GET_WHOLE_FOLDER,
     ID_QUIT,
     ID_SEARCH,
     ID_REPLY,
@@ -4211,7 +4212,11 @@ impl WxMailApp {
                         }
                         _ if id == ID_CHECK_MAIL => {
                             send_status(&ui_tx, &runtime, "Checking for new mail...");
-                            spawn_mail_sync(app, None);
+                            spawn_mail_sync(
+                                app,
+                                None,
+                                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+                            );
                         }
                         // The same command the button above the message list
                         // runs, reached by its own id rather than by a second
@@ -4325,13 +4330,46 @@ impl WxMailApp {
                                         );
                                     }
                                     send_status(&ui_tx, &runtime, "Getting older messages...");
-                                    spawn_mail_sync(app, Some(path));
+                                    // Reaching further back, not bringing
+                                    // the folder up to date. A folder that can
+                                    // resume is asked for the uids above the
+                                    // highest one held, and the older mail this
+                                    // key exists to fetch is below it, so a
+                                    // sync told the other thing answers this
+                                    // with nothing at all.
+                                    spawn_mail_sync(
+                                        app,
+                                        Some(path),
+                                        crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+                                    );
                                 }
                                 // A saved search is not a mailbox, and neither
                                 // is a branch or a label. There is nothing on a
                                 // server to select and nothing older to fetch.
                                 Some(_) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
                                 None => send_refusal(&ui_tx, &runtime, "Choose a folder first"),
+                            }
+                        }
+                        // Get Older Messages asking for all of it. The request
+                        // carries on by itself once it starts, so this hands
+                        // over and says nothing else: the loop's own progress
+                        // lines are what somebody hears from here on.
+                        _ if id == ID_GET_WHOLE_FOLDER => {
+                            let (open, folder_id) = {
+                                let s = lock_state(&state);
+                                (s.selected_folder.clone(), folder_on_screen(&s))
+                            };
+                            match (open, folder_id) {
+                                (Some(folder_tree::WhichRow::Folder { path, .. }), Some(id)) => {
+                                    spawn_whole_folder_fetch(app, path, id);
+                                }
+                                // A saved search is not a mailbox, and neither
+                                // is a branch or a label. There is nothing on a
+                                // server to select and nothing to download.
+                                (Some(_), _) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
+                                (None, _) => {
+                                    send_refusal(&ui_tx, &runtime, "Choose a folder first");
+                                }
                             }
                         }
                         _ if id == ID_OPEN_DRAFT => {
@@ -5938,6 +5976,24 @@ impl WxMailApp {
                 ID_GET_OLDER,
                 "Get &Older Messages\tShift+F9",
                 "Fetch the next page of older messages in this folder",
+            )
+            // The same action asking for all of it rather than one page more.
+            //
+            // Marked experimental on the label as well as in the description,
+            // for the reason the missing message text item gives: a menu has
+            // nowhere to put the line of static text that carries the warning
+            // beside a button, the description is what Windows shows in the
+            // status bar and hands over as the accessible description, and the
+            // label is read whatever anybody's settings say.
+            //
+            // A mnemonic and no chord. A new accelerator needs a line in
+            // docs/KEYBOARD_SHORTCUTS.md in the same commit, and this is a run
+            // somebody starts once and waits for rather than a key they press
+            // daily.
+            .append_item(
+                ID_GET_WHOLE_FOLDER,
+                "Down&load This Whole Folder (experimental)",
+                crate::application::allowed::DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL,
             )
             .append_separator()
             .append_item(
@@ -9091,7 +9147,10 @@ fn sample_mailbox(count: usize) -> Vec<MessageItem> {
             thread_depth: i % 5,
             is_thread_parent: i % 5 == 0,
             thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
-            snippet: format!("Sample message {} for testing the list at scale.", i + 1),
+            snippet: Some(format!(
+                "Sample message {} for testing the list at scale.",
+                i + 1
+            )),
             size_bytes: Some(((i % 40) as i64 + 1) * 1024),
             to: "me@example.com".to_string(),
             cc: String::new(),
@@ -11178,7 +11237,7 @@ fn conversation_parts(
                     thread_depth: node.depth,
                     is_thread_parent: node.depth == 0,
                     thread_id: None,
-                    snippet: String::new(),
+                    snippet: None,
                     size_bytes: None,
                     to: String::new(),
                     cc: String::new(),
@@ -13571,7 +13630,7 @@ fn open_for_scanning(
                     thread_depth: 0,
                     is_thread_parent: true,
                     thread_id: None,
-                    snippet: String::new(),
+                    snippet: None,
                     size_bytes: Some(1024),
                     to: "me@example.com".to_string(),
                     cc: String::new(),
@@ -15590,10 +15649,41 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
-            spawn_mail_sync(AppHandles { state, tx, rt }, Some(folder.clone()));
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                Some(folder.clone()),
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
         }
         UIUpdate::FolderMessagesArrived(folder_id) => {
             reread_folder_if_open(state, message_cache, *folder_id, tx);
+        }
+        UIUpdate::MoreOfTheFolderArrived(folder_id) => {
+            // Both bounds move together, and this is the second of them. The
+            // first is `mail_sync::INITIAL_FETCH_LIMIT`, which the request
+            // hands the sync to bring the next chunk down; without this line
+            // that chunk arrives in the cache and stays hidden behind the
+            // limit the list reads through, which looks exactly like a request
+            // that did nothing.
+            {
+                let mut s = lock_state(state);
+                s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
+            }
+            reread_folder_if_open(state, message_cache, *folder_id, tx);
+        }
+        UIUpdate::WholeFolderProgress(said) => {
+            frame.set_status_text(said, 0);
+            // Its own topic rather than the one every steady sync line shares,
+            // and the constant comes from the loop so the words and the topic
+            // cannot come apart. Low, because this is progress: it arrives
+            // every few seconds for as long as the request runs, and the queue
+            // keeping only the newest of a topic is what makes that a handful
+            // of sentences rather than one per chunk.
+            let _ = a11y.announce_topic(
+                said,
+                Priority::Low,
+                crate::application::asking_for_a_whole_folder::THE_PROGRESS_TOPIC,
+            );
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -18529,6 +18619,122 @@ fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
     (fetched > 0).then_some(UIUpdate::FolderMessagesArrived(folder_id))
 }
 
+/// Bring a whole folder down, chunk after chunk, without being asked again.
+///
+/// SCALE-03. A folder view holds `FOLDER_LIST_PAGE_SIZE` messages and a sync
+/// brings down `mail_sync::INITIAL_FETCH_LIMIT`, so somebody with a forty
+/// thousand message inbox who wants all of it presses Get Older Messages eighty
+/// times. This asks once.
+///
+/// **Both bounds move together, and they are two separate numbers.**
+/// `INITIAL_FETCH_LIMIT` is handed to each sync below and bounds what comes
+/// down from the server. `FOLDER_LIST_PAGE_SIZE` bounds what is read out of the
+/// cache into the list, and it is moved by the `MoreOfTheFolderArrived` arm of
+/// the update handler, once per chunk. Moving one alone appears to do nothing,
+/// because the other still binds: either mail arrives and is never shown, or
+/// the list asks for rows that were never fetched.
+///
+/// The loop itself is in `application::asking_for_a_whole_folder`, where it can
+/// be run without a window. What is here is the two bounds, the connection and
+/// the sending.
+///
+/// Runs on a blocking thread for the same reason the other syncs do: the cache
+/// holds a SQLite connection that is not `Sync`.
+fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let (accounts, account_id) = {
+        let s = lock_state(state);
+        (s.accounts.clone(), s.active_account_id.clone())
+    };
+    let account = account_id
+        .as_ref()
+        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
+        .or_else(|| accounts.first().cloned());
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+
+        let Some(account) = account else {
+            say(UIUpdate::CommandRefused(
+                "Add an account before downloading a folder".to_string(),
+            ));
+            return;
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            say(UIUpdate::CommandRefused(
+                "No cache directory available".to_string(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                say(UIUpdate::CommandRefused(format!("Cache error: {e}")));
+                return;
+            }
+        };
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    say(UIUpdate::CommandRefused(why));
+                    return;
+                }
+            };
+        let folders = match handle.block_on(controller.fetch_folders()) {
+            Ok(folders) => folders,
+            Err(e) => {
+                say(UIUpdate::CommandRefused(e.to_string()));
+                return;
+            }
+        };
+        let Some(folder) = folders.into_iter().find(|f| f.path == path) else {
+            say(UIUpdate::CommandRefused(format!(
+                "{} is not a folder this account has any more",
+                path
+            )));
+            return;
+        };
+
+        let mut ask_for_another_chunk = || {
+            let done = handle.block_on(crate::application::mail_sync::sync_folder(
+                controller.as_ref(),
+                &cache,
+                &folder,
+                folder_id,
+                crate::application::mail_sync::INITIAL_FETCH_LIMIT,
+                None,
+                // Reaching further back, not bringing the folder up to date.
+                // A sync told the other thing resumes, and a resumed listing
+                // covers only the uids above the highest one held, which is
+                // the opposite end of the folder from the mail this request is
+                // asking for. It would answer every chunk after the first with
+                // nothing and the request would stop saying the server had.
+                crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+            ))?;
+            // The other bound, moved for every chunk. Sent rather than done
+            // here because the view's limit lives on the interface thread.
+            say(UIUpdate::MoreOfTheFolderArrived(folder_id));
+            Ok(
+                crate::application::asking_for_a_whole_folder::HowMuchIsHere {
+                    held: done.held,
+                    total_on_server: done.total_on_server,
+                },
+            )
+        };
+        crate::application::asking_for_a_whole_folder::until_the_whole_folder_is_here(
+            &mut ask_for_another_chunk,
+            &mut |line| say(UIUpdate::WholeFolderProgress(line.to_string())),
+        );
+    });
+}
+
 /// Fetch mail from the account's IMAP server into the cache.
 ///
 /// Runs on a blocking thread because the cache holds a SQLite connection that
@@ -18538,7 +18744,11 @@ fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
 /// of a large mailbox takes a while, and silence for a minute is
 /// indistinguishable from the application having stopped for somebody who
 /// cannot see that anything is happening.
-fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
+fn spawn_mail_sync(
+    app: AppHandles<'_>,
+    only: Option<String>,
+    wanted: crate::application::mail_sync::WhatThisSyncIsFor,
+) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
@@ -18752,6 +18962,7 @@ fn spawn_mail_sync(app: AppHandles<'_>, only: Option<String>) {
                 *folder_id,
                 crate::application::mail_sync::INITIAL_FETCH_LIMIT,
                 filtering.as_ref(),
+                wanted,
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
@@ -20191,7 +20402,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: "me@example.com".to_string(),
             cc: String::new(),
@@ -21177,7 +21388,7 @@ mod tests {
             thread_depth: depth,
             is_thread_parent: depth == 0,
             thread_id: Some(thread.to_string()),
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
@@ -21303,7 +21514,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),
@@ -21354,7 +21565,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),

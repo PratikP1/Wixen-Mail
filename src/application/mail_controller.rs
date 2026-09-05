@@ -491,11 +491,44 @@ impl MailController {
         once_more_if_the_connection_went!(self, session, { session.select_folder(folder).await })
     }
 
+    /// What the server said it can do, as read at sign-in.
+    ///
+    /// The default when no session is open, which is the floor every path here
+    /// already has to work at: a capability that is absent is never an error,
+    /// and reading absence off a connection that is not there is the same
+    /// answer as reading it off a server that offers nothing.
+    ///
+    /// Does not sign in to find out, and does not go through the retry. A
+    /// question about what a connection could do is not worth opening one for.
+    pub async fn what_this_server_can_do(
+        &self,
+    ) -> crate::service::protocols::imap::abilities::Abilities {
+        self.imap_session
+            .lock()
+            .await
+            .as_ref()
+            .map(ImapSession::abilities)
+            .unwrap_or_default()
+    }
+
     /// Every UID in a folder, oldest first.
     pub async fn list_uids(&self, folder: &str) -> Result<Vec<u32>> {
         once_more_if_the_connection_went!(self, session, {
             session.select_folder(folder).await?;
             session.all_uids().await
+        })
+    }
+
+    /// The UIDs in a folder above `after`, oldest first.
+    ///
+    /// `UID {after}:*` rather than `ALL`, which is the difference between a
+    /// handful of numbers and every number in a mailbox of forty thousand.
+    /// A resumed sync asks this one; the whole-folder question is asked only
+    /// when the deletion comparison is due.
+    pub async fn list_uids_above(&self, folder: &str, after: u32) -> Result<Vec<u32>> {
+        once_more_if_the_connection_went!(self, session, {
+            session.select_folder(folder).await?;
+            session.uids_above(after).await
         })
     }
 

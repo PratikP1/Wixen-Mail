@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 56
+open_count: 62
 waived_count: 0
 fixed_count: 13
-total_count: 69
-last_updated: 2026-09-04T21:04:03.565Z
+total_count: 75
+last_updated: 2026-09-05T01:36:20.285Z
 ---
 
 # Broken Windows Ledger
@@ -84,6 +84,12 @@ last_updated: 2026-09-04T21:04:03.565Z
 | 67 | 03 | unrun-verify | src/application/mail_session.rs |  | The connection budget of two per account is counted against a loopback server and has never been counted against a provider. Whether two per account is welcome, what a provider counts as a connection when several accounts sit on the same one, and whether the IDLE connection and the working session are counted together, are all unknown. Gmail's limit of fifteen per account is the number the requirement's evidence records rather than one this program has ever approached. | open |  | 2026-09-04T21:03:43.871Z |  |
 | 68 | 03 | deviation | src/service/protocols/imap.rs |  | folder_counts has the same shape select_folder was fixed for and is not fixed. It calls async-imap's session.status, whose parser reads responses until the stream ends and hands back what it collected, so a connection dropping mid-command comes back as Ok with nought messages and nought unread. Corrected on review 2026-09-04: this said a wrong number rather than a deletion, and that understates it. A count of nought is what disarms listing_contradicts_the_count, which is listed == 0 && counted > 0 and is the only check between a truncated listing and an emptied folder. select_folder erroring now aborts the sync before list_uids is reached, which closes the path, so this is latent rather than live; it would become live again if anything ever reads the count without the SELECT in front of it. Same defect underneath: a command that never completed reported as one that did. Fixing it means writing STATUS as a command line through read_command, the way select_folder now is. | open |  | 2026-09-04T21:03:53.498Z |  |
 | 69 | 03 | deviation | src/presentation/wx_app.rs |  | Checking for mail used to refuse an unusable port with the value it could not read, 'has an IMAP port that is not a number: 14 3'. All twelve sites lost their own port check when they went through the held session, because a_session_at asks the same question and answers it in the same words, so each was a second answer to one question. Eleven lost nothing by that; this one lost the offending value, which is the part somebody fixing it needs. The value is visible in the account settings screen. | open |  | 2026-09-04T21:04:03.565Z |  |
+| 70 | 03 | unrun-verify | src/application/finding_what_was_deleted.rs |  | Whether any provider grants CONDSTORE, which is what the resume needs. imap/abilities.rs asserts that Gmail never has. Fastmail and current Dovecot advertise it in the capability lists this project models them on, and no capability list has ever been read off a real server here. If none of the providers people use grants it, SCALE-01's saving applies to nobody and every folder is read out in full on every sync, which is what happens today anyway. | open |  | 2026-09-05T01:35:34.235Z |  |
+| 71 | 03 | unrun-verify | src/application/finding_what_was_deleted.rs |  | Whether a hand-built SELECT with QRESYNC parses back at all, which is what the declared and unbuilt VANISHED member would need. async-imap 0.11.3 has no ENABLE and no select_qresync, so it goes through run_command, and the mailbox response that comes back is one async-imap's own select parses. imap-proto already parses Response::Vanished. Whether the raw select parses and whether VANISHED reaches the closure has never been run against a server, and it is the whole cost of the second implementor. | open |  | 2026-09-05T01:35:52.234Z |  |
+| 72 | 03 | unrun-verify | src/application/asking_for_a_whole_folder.rs |  | Whether a provider tolerates a whole-folder request. It asks for a folder five hundred messages at a time, without stopping, until the folder is here. Ledger 11 records the same gap for the bulk body fetch and this is the same shape at a different granularity: a provider is entitled to refuse, throttle, or disconnect, and nothing on this side can find out which. Two things follow that no test here can settle: how many chunks a provider allows before it slows down, and whether a disconnect part way is reported as the request stopping short rather than as the folder being finished. Marked experimental on the menu item and in its description. | open |  | 2026-09-05T01:36:00.334Z |  |
+| 73 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Three things about the whole-folder request that only a screen reader settles, on the pattern of phase 2's entries 10, 33 and 34. Whether a fetch of eighty chunks on a topic of its own is heard rather than lost: the topic keeps only its newest announcement, so the claim is that somebody hears a handful of sentences, and nothing here has listened. Whether the final count is heard as an ending rather than as another progress line; the words differ and the topic does not. And whether the choice of a topic of its own is right at all against putting it on 'status', which is the one open question in plan 03-07 and is a listening judgement: the argument for splitting is reasoning about how the queue coalesces rather than an observation of it, and the constant THE_PROGRESS_TOPIC is the one line that moves it. | open |  | 2026-09-05T01:36:08.578Z |  |
+| 74 | 03 | unrun-verify | src/presentation/message_rows.rs |  | Whether the snippet column reads well when a screen reader crosses a column of rows that all say 'Message text not downloaded'. That is every row of a folder nobody has fetched text for, which is most of a large mailbox, and four words per row is four words more than the blank it replaced. The blank was a lie and the words are true, so this is a question about whether the true answer is worth what it costs to hear, not about whether to go back. If it is too much, the shorter answer is to say it once for the column rather than once per row, and there is nowhere on a virtual list to put that today. | open |  | 2026-09-05T01:36:19.878Z |  |
+| 75 | 03 | deviation | src/data/message_cache/bodies.rs |  | The snippet column tells 'nobody fetched this text' from 'this message has no text' by whether the stored snippet is null or empty, and only rows written after this change carry the distinction. A message whose body was fetched before 2026-09-04 and held no text was stored as null, so it reads as one nobody has fetched, and the row says so until its text is fetched again. There is no backfill: the fact is not recoverable from anything the database still holds, because an evicted body leaves no row and message_bodies answers 'is the text here now' rather than 'was it ever fetched'. | open |  | 2026-09-05T01:36:20.285Z |  |
 
 ````json
 [
@@ -913,6 +919,78 @@ last_updated: 2026-09-04T21:04:03.565Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-04T21:04:03.565Z",
+    "resolved_at": null
+  },
+  {
+    "id": 70,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/finding_what_was_deleted.rs",
+    "line": null,
+    "description": "Whether any provider grants CONDSTORE, which is what the resume needs. imap/abilities.rs asserts that Gmail never has. Fastmail and current Dovecot advertise it in the capability lists this project models them on, and no capability list has ever been read off a real server here. If none of the providers people use grants it, SCALE-01's saving applies to nobody and every folder is read out in full on every sync, which is what happens today anyway.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:35:34.235Z",
+    "resolved_at": null
+  },
+  {
+    "id": 71,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/finding_what_was_deleted.rs",
+    "line": null,
+    "description": "Whether a hand-built SELECT with QRESYNC parses back at all, which is what the declared and unbuilt VANISHED member would need. async-imap 0.11.3 has no ENABLE and no select_qresync, so it goes through run_command, and the mailbox response that comes back is one async-imap's own select parses. imap-proto already parses Response::Vanished. Whether the raw select parses and whether VANISHED reaches the closure has never been run against a server, and it is the whole cost of the second implementor.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:35:52.234Z",
+    "resolved_at": null
+  },
+  {
+    "id": 72,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/application/asking_for_a_whole_folder.rs",
+    "line": null,
+    "description": "Whether a provider tolerates a whole-folder request. It asks for a folder five hundred messages at a time, without stopping, until the folder is here. Ledger 11 records the same gap for the bulk body fetch and this is the same shape at a different granularity: a provider is entitled to refuse, throttle, or disconnect, and nothing on this side can find out which. Two things follow that no test here can settle: how many chunks a provider allows before it slows down, and whether a disconnect part way is reported as the request stopping short rather than as the folder being finished. Marked experimental on the menu item and in its description.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:36:00.334Z",
+    "resolved_at": null
+  },
+  {
+    "id": 73,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Three things about the whole-folder request that only a screen reader settles, on the pattern of phase 2's entries 10, 33 and 34. Whether a fetch of eighty chunks on a topic of its own is heard rather than lost: the topic keeps only its newest announcement, so the claim is that somebody hears a handful of sentences, and nothing here has listened. Whether the final count is heard as an ending rather than as another progress line; the words differ and the topic does not. And whether the choice of a topic of its own is right at all against putting it on 'status', which is the one open question in plan 03-07 and is a listening judgement: the argument for splitting is reasoning about how the queue coalesces rather than an observation of it, and the constant THE_PROGRESS_TOPIC is the one line that moves it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:36:08.578Z",
+    "resolved_at": null
+  },
+  {
+    "id": 74,
+    "kind": "unrun-verify",
+    "phase": "03",
+    "file": "src/presentation/message_rows.rs",
+    "line": null,
+    "description": "Whether the snippet column reads well when a screen reader crosses a column of rows that all say 'Message text not downloaded'. That is every row of a folder nobody has fetched text for, which is most of a large mailbox, and four words per row is four words more than the blank it replaced. The blank was a lie and the words are true, so this is a question about whether the true answer is worth what it costs to hear, not about whether to go back. If it is too much, the shorter answer is to say it once for the column rather than once per row, and there is nowhere on a virtual list to put that today.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:36:19.878Z",
+    "resolved_at": null
+  },
+  {
+    "id": 75,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "src/data/message_cache/bodies.rs",
+    "line": null,
+    "description": "The snippet column tells 'nobody fetched this text' from 'this message has no text' by whether the stored snippet is null or empty, and only rows written after this change carry the distinction. A message whose body was fetched before 2026-09-04 and held no text was stored as null, so it reads as one nobody has fetched, and the row says so until its text is fetched again. There is no backfill: the fact is not recoverable from anything the database still holds, because an evicted body leaves no row and message_bodies answers 'is the text here now' rather than 'was it ever fetched'.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T01:36:20.285Z",
     "resolved_at": null
   }
 ]

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 389 records have arrived since and have not been through it.
+# 393 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4025,6 +4025,182 @@ tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 91 },
 ]
 
+# ── A whole-folder request that moves one bound and not the other ────────────
+#
+# SCALE-03. There are two five hundreds and they are separate decisions.
+# `mail_sync::INITIAL_FETCH_LIMIT` bounds what comes down from the server and
+# `wx_app::FOLDER_LIST_PAGE_SIZE` bounds what is read out of the cache into the
+# list. Moving one alone appears to do nothing, because the other still binds:
+# either mail arrives and is never shown, or the list asks for rows that were
+# never fetched. That is written into the phase research as the thing the next
+# person will hit, so it gets a record rather than a comment.
+#
+# The break takes the view bound out of the arm the request sends once per
+# chunk, leaving the fetch to bring mail down that nothing shows. One test goes
+# red out of the six in this target.
+#
+# This record does the second job as well: it is what couples the target to
+# `wx_app.rs`, so a census living under `tests/` runs on the commits that could
+# change the answer rather than only on the commits that change the census. The
+# target is under `tests/` rather than beside the code for a cost reason. The
+# handler needs a window, a frame and a running event loop to reach, so it is a
+# source read either way, and thirty-four guard records fingerprint the number
+# of tests in `wx_app.rs`, which at one build and one full library run each is
+# hours for one test.
+#
+# Measured by hand on 2026-09-04.
+
+[[guard]]
+name = "a whole-folder request moves both of the bounds and not one of them"
+file = "src/presentation/wx_app.rs"
+suite = "a_whole_folder_moves_both_bounds"
+before = """            {
+                let mut s = lock_state(state);
+                s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
+            }
+            reread_folder_if_open(state, message_cache, *folder_id, tx);"""
+after = """            reread_folder_if_open(state, message_cache, *folder_id, tx);"""
+red = [
+    "test_the_whole_folder_request_moves_the_bound_on_what_the_list_shows",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_whole_folder_moves_both_bounds.rs", tests = 7 },
+]
+
+# ── A deletion that stops being noticed because nobody looks any more ────────
+#
+# The resume above buys its saving by asking about the uids above the highest
+# one held, and a listing like that says nothing about the messages below it.
+# So a folder that only ever resumes never sees a deletion: a message somebody
+# removed on their phone stays listed here for good, and pressing Enter on it
+# gets an error instead of mail.
+#
+# The bound is what stops that. Every six hours a folder is asked for the whole
+# mailbox and compared, and a folder nothing has ever compared is compared on
+# its next sync, so the bound cannot quietly mean "never".
+#
+# The break widens the interval to a hundred and fourteen years. Three tests go
+# red out of a library of 6,163: the rule, the sync that acts on it, and the
+# range assertion beside the constant.
+#
+# **The first measurement of this reddened one test, and that was the finding.**
+# Both behaviour tests set their fixture to the interval plus a minute, so an
+# offset taken from the constant moved with it: widen the interval and the
+# fixture is a hundred and fourteen years stale and still due. Only the range
+# assertion spoke, which is a check about the number rather than about the rule,
+# so a widened bound would have shipped with the tests green. Both fixtures say
+# twenty-four hours now, written out, and both go red.
+#
+# The other direction was taken by hand too, on 2026-09-04. Narrowing the
+# interval to nought, so every sync compares and the saving is given back,
+# reddens four: the two tests that say a folder compared a moment ago is not
+# compared again, the flagship resume test, and the same range assertion.
+
+[[guard]]
+name = "a folder is compared against the whole mailbox often enough to notice a deletion"
+file = "src/application/finding_what_was_deleted.rs"
+before = """pub const A_FOLDER_IS_FULLY_COMPARED_EVERY: i64 = 6;"""
+after = """pub const A_FOLDER_IS_FULLY_COMPARED_EVERY: i64 = 1_000_000;"""
+red = [
+    "application::finding_what_was_deleted::tests::test_a_folder_nobody_has_compared_for_a_day_is_due",
+    "application::finding_what_was_deleted::tests::test_the_interval_is_hours_rather_than_days_or_minutes",
+    "application::mail_sync::tests::test_a_folder_due_a_comparison_is_listed_in_full_and_forgets_what_went",
+]
+tests_last_seen = [
+    { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
+]
+
+# ── A seam the sync reaches past ─────────────────────────────────────────────
+#
+# How a folder learns what the server no longer has is a named set of ways with
+# two members, one built and one declared. The property that is worth anything
+# is that adding the second one is an implementor and a probe arm and touches
+# nothing else, and that property is only real while `sync_folder` asks the
+# chosen way rather than calling the comparison by name. A sync that names the
+# comparison has a seam in name only, and the next person to add QRESYNC finds
+# it out then rather than now.
+#
+# The break puts the direct call back. One test goes red out of a library of
+# 6,162: the census that walks the shipping half of `src/application` looking
+# for places that name the comparison and asks that the one place is the seam's
+# own implementor.
+#
+# Measured by hand on 2026-09-04. It lives against `mail_sync.rs` rather than
+# against the seam module because the change worth noticing is the sync reaching
+# past the seam, and that is an edit to the sync.
+
+[[guard]]
+name = "the sync asks the chosen way rather than naming the comparison"
+file = "src/application/mail_sync.rs"
+before = """    let forgotten = finding_what_was_deleted::what_the_server_no_longer_has(
+        finding_what_was_deleted::the_way_this_server_offers(
+            controller.what_this_server_can_do().await,
+        ),
+        &on_server,
+        &stored,
+    )?;"""
+after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
+red = [
+    "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 134 },
+]
+
+# ── A folder that was synced before, asked what it holds all over again ──────
+#
+# SCALE-01. `sync_folder` listed every uid in a folder on every sync, so opening
+# a mailbox of forty thousand messages asked the server for forty thousand
+# numbers to find the three that had arrived. The state that makes the narrow
+# question possible had been stored and read back for a phase and a half, and
+# nothing acted on it.
+#
+# The break makes the decision never resume, by narrowing the arm that answers
+# the narrow question to a uid no message can have. Written that way rather than
+# as "always answer EveryUid" because a variant nothing constructs is dead code
+# and `-D warnings` refuses the build, so a break that deletes the resume cannot
+# be measured at all. That constraint is also why the flagship test below passed
+# at its own red commit: this record is the measurement standing in for it.
+#
+# Measured by hand on 2026-09-04, whole library, 6,147 tests. Two went red and
+# nothing else did.
+#
+# Measured again the same day, one commit later, and it had already fallen
+# behind: the bound below added a test that resumes a folder, so the break
+# reddens three now rather than two. That is the "a record is a measurement with
+# a date" failure inside one plan, and it was caught by the re-measure the count
+# check asked for rather than by anybody thinking to look.
+#
+# The opposite direction was taken by hand too, because a bound that can be
+# widened without a test failing is the defect this is about. Dropping the two
+# CONDSTORE conditions, so every folder with a matching numbering resumes,
+# reddens three: the two tests written for those conditions, and
+# `test_a_message_the_server_no_longer_has_leaves_the_list`, which is the
+# deletion detection saying it has stopped working. That third one is the whole
+# reason task 2's bounded comparison exists.
+
+[[guard]]
+name = "a folder that was synced before is not asked what it holds all over again"
+file = "src/application/mail_sync.rs"
+before = """    match held.highest_uid {
+        Some(highest) => WhatToAskFor::TheUidsAbove(highest),
+        None => WhatToAskFor::EveryUid,
+    }"""
+after = """    match held.highest_uid {
+        Some(highest) if highest == 0 => WhatToAskFor::TheUidsAbove(highest),
+        _ => WhatToAskFor::EveryUid,
+    }"""
+red = [
+    "application::mail_sync::tests::test_a_folder_compared_recently_is_not_listed_and_forgets_nothing",
+    "application::mail_sync::tests::test_a_folder_that_was_synced_before_is_not_listed_again",
+    "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 134 },
+]
+
 # ── A mailbox counted full and then listed empty ─────────────────────────────
 #
 # Two commands ask about one mailbox in every sync and only one of them was
@@ -4034,25 +4210,51 @@ tests_last_seen = [
 # noticed the two disagreeing before the rows were deleted.
 #
 # The read side is fixed. This is the belt that does not depend on it.
+#
+# Re-pointed on 2026-09-04 by plan 03-07, which narrowed the check rather than
+# moving it: it takes the listing now instead of its length, because only a
+# listing claiming the whole mailbox can contradict a count of it. A resumed
+# sync asks about the uids above the highest one held and is answered with none
+# on every folder nothing has arrived in, so the old shape would have refused
+# the ordinary sync of every quiet mailbox.
+#
+# Worth knowing about the two checks that watch this file, because this change
+# slipped past one of them. Changing the call left the record's before-text
+# absent and its after-text present, which is exactly what a `scripts/guards.sh`
+# run in progress looks like, so `test_every_guard_record_still_names_one_place`
+# took the mid-measurement exemption and said nothing. The count check next door
+# is what named this record, and only because the same commit happened to change
+# the number of tests in the file.
+#
+# It is anchored on the function rather than on the call site now, and that is
+# the second half of the same lesson. The old anchor quoted the call and the
+# `uids_to_forget` line under it, so every plan that touches either of those
+# lines knocks this record over, and the next one to do so is the plan sitting
+# beside this one: task 2 replaces that call with the seam. The function's own
+# body is the thing this guard is really about and nothing else has a reason to
+# move it.
+#
+# Measured by hand on 2026-09-04, twice. Deleting the call site reddens one
+# test. Making the function always answer no, which is the anchor written down
+# here, reddens two: that test and the unit test for the rule itself, out of a
+# library of 6,147.
 
 [[guard]]
 name = "a mailbox the server counted and then would not list is not one that emptied"
 file = "src/application/mail_sync.rs"
-before = """    if listing_contradicts_the_count(on_server.uids().len(), counts.total) {
-        let counted = crate::service::caldav::how_many(counts.total as usize, "message");
-        let name = &folder.name;
-        return Err(Error::Protocol(format!(
-            "The mail server says {name} holds {counted}, then listed none of them. Nothing has been removed from this computer."
-        )));
-    }
-
-    let forgotten = uids_to_forget(&on_server, &stored);"""
-after = """    let forgotten = uids_to_forget(&on_server, &stored);"""
+before = """fn listing_contradicts_the_count(listed: &ServerListing, counted: u32) -> bool {
+    matches!(listed, ServerListing::TheWholeMailbox(uids) if uids.is_empty()) && counted > 0
+}"""
+after = """fn listing_contradicts_the_count(listed: &ServerListing, counted: u32) -> bool {
+    let _ = (listed, counted);
+    false
+}"""
 red = [
     "application::mail_sync::tests::test_a_server_that_counts_a_full_mailbox_and_then_lists_none_of_it_removes_nothing",
+    "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4085,7 +4287,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -7908,7 +8110,7 @@ tests_last_seen = [
     { file = "src/application/message_files.rs", tests = 51 },
     { file = "src/application/reply.rs", tests = 28 },
     { file = "src/common/types.rs", tests = 30 },
-    { file = "src/presentation/message_rows.rs", tests = 38 },
+    { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/mime.rs", tests = 37 },
 ]
@@ -12487,7 +12689,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+    { file = "src/data/message_cache/bodies.rs", tests = 43 },
     { file = "src/data/message_cache/searching.rs", tests = 25 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -13571,7 +13773,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -13825,7 +14027,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+    { file = "src/data/message_cache/bodies.rs", tests = 43 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -13868,7 +14070,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 114 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -13904,7 +14106,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+    { file = "src/data/message_cache/bodies.rs", tests = 43 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -13944,7 +14146,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 42 },
+    { file = "src/data/message_cache/bodies.rs", tests = 43 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────

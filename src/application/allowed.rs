@@ -343,6 +343,26 @@ pub const FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL: &str = "Fetching text in bulk i
      at the server and nothing is sent, so the worst that happens is that it stops part way and \
      says so. You can start it again.";
 
+/// The warning shown beside the command that downloads a whole folder.
+///
+/// The same kind of experimental as
+/// [`FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL`] rather than the kind
+/// [`EXPERIMENTAL_WARNING`] is about, and it says which. Nothing is changed at
+/// the server and nothing is sent. What is unknown is what a provider does when
+/// a client asks for a forty thousand message folder a page at a time without
+/// stopping, and that is the provider's decision to make.
+///
+/// It carries the second thing somebody should know before they start it, which
+/// the bulk text warning does not have to: there is no way to stop it. It runs
+/// until the folder is here or the server stops sending, the same as the
+/// message text fetch, and on a large mailbox that is a long time.
+pub const DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL: &str = "Downloading a whole folder is experimental and has never been run against a real account. \
+     Asking your provider for a large folder a page at a time, without stopping, is something \
+     they are entitled to refuse, to slow down, or to disconnect you for, and nothing here can \
+     find out which yours will do. There is no way to stop it once it starts: it runs until the \
+     folder is here or the server stops sending, which on a large mailbox is a long time. \
+     Nothing is changed at the server and nothing is sent.";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every

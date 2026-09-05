@@ -65,7 +65,18 @@ pub struct MessageItem {
     pub thread_id: Option<String>,
     /// First line of the body, stored beside the message rather than derived
     /// from it, so the column keeps reading after the body cache evicts.
-    pub snippet: String,
+    /// The first line of the message text, when there is any.
+    ///
+    /// Three states rather than two, and the third is why this is an option. A
+    /// row whose text has never been fetched and a message that genuinely has
+    /// no text both used to arrive here as an empty string, so the list said
+    /// the same thing about both and one of the two things it said was untrue.
+    ///
+    /// `None` is text nobody has fetched. `Some("")` is a message whose text
+    /// was fetched and holds nothing. Written when the body is saved, and kept
+    /// beside the message rather than inside it so the column keeps reading
+    /// after the body cache evicts.
+    pub snippet: Option<String>,
     /// Size on the server, where it is known. `None` reads as blank rather
     /// than as "0 bytes", which would be a claim we cannot make.
     pub size_bytes: Option<i64>,
@@ -158,7 +169,7 @@ impl MessageItem {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: row.snippet.clone().unwrap_or_default(),
+            snippet: row.snippet.clone(),
             size_bytes: row.size_bytes,
             to: row.to_addr.clone(),
             cc: row.cc.clone().unwrap_or_default(),
@@ -583,6 +594,23 @@ pub enum UIUpdate {
     /// in the same sync; re-reading its message list as well would be work
     /// with nothing to show for it.
     FolderMessagesArrived(i64),
+    /// Another chunk of a whole-folder request landed, so the list may show
+    /// more of the folder than it did.
+    ///
+    /// Apart from [`UIUpdate::FolderMessagesArrived`] because it moves the
+    /// bound as well as re-reading. There are two five hundreds and they are
+    /// separate decisions: one bounds what comes down from the server and the
+    /// other bounds what is read out of the cache into the list, and a request
+    /// that moves one alone appears to do nothing because the other still
+    /// binds. This is the update that moves the second.
+    MoreOfTheFolderArrived(i64),
+    /// How far a whole-folder request has got, in the words the loop chose.
+    ///
+    /// Announced under a topic of its own rather than as a status line. The
+    /// queue keeps only the newest announcement of a topic, and `"status"`
+    /// carries every other line a sync produces, so a fetch running for minutes
+    /// there would silence all of them for as long as it ran.
+    WholeFolderProgress(String),
     /// A message's flagged state changed (cache_id, new_flagged_state)
     ///
     /// Sent when the server accepts the change, and again with the opposite
@@ -2248,7 +2276,7 @@ mod tests {
             thread_depth: 0,
             is_thread_parent: false,
             thread_id: None,
-            snippet: String::new(),
+            snippet: None,
             size_bytes: None,
             to: String::new(),
             cc: String::new(),

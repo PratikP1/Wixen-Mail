@@ -37,6 +37,19 @@ pub struct Abilities {
     pub move_command: bool,
     /// RFC 7162. Lets flags be read back by what changed rather than in full.
     pub condstore: bool,
+    /// RFC 7162's other half. Lets a server name the messages that vanished,
+    /// so a folder can find its deletions without listing every uid in it.
+    ///
+    /// Read by
+    /// [`crate::application::finding_what_was_deleted::the_way_this_server_offers`],
+    /// which today answers the uid comparison whatever this says, because the
+    /// VANISHED implementor is declared and not built. Detected anyway rather
+    /// than assumed absent: a probe reading a constant is a probe that says
+    /// nothing on the day somebody builds the other half.
+    ///
+    /// Requires CONDSTORE, so a server offering this and not that is offering
+    /// something it cannot carry out. Gmail offers neither.
+    pub qresync: bool,
     /// RFC 2971. Client and server say who they are.
     ///
     /// Politeness everywhere except on NetEase, where a client that does not
@@ -66,6 +79,8 @@ impl Abilities {
                 abilities.move_command = true;
             } else if name.eq_ignore_ascii_case("CONDSTORE") {
                 abilities.condstore = true;
+            } else if name.eq_ignore_ascii_case("QRESYNC") {
+                abilities.qresync = true;
             } else if name.eq_ignore_ascii_case("ID") {
                 abilities.id = true;
             } else if name.eq_ignore_ascii_case("IDLE") {
@@ -156,6 +171,10 @@ mod tests {
         assert!(modern.uid_expunge);
         assert!(modern.move_command);
         assert!(modern.condstore);
+        assert!(
+            modern.qresync,
+            "this list has said QRESYNC since it was written and nothing read it"
+        );
         assert!(modern.id);
         assert!(modern.idle);
         assert!(!modern.gmail);

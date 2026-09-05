@@ -306,7 +306,7 @@ pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<Conversa
         unread: row.get(3)?,
         newest_received: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
         newest_sent: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-        snippet: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        snippet: row.get::<_, Option<String>>(6)?,
         senders: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         to: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
         cc: row.get::<_, Option<String>>(9)?.unwrap_or_default(),

@@ -460,7 +460,7 @@ Five submenus hold the rest:
 | Label | The ten labels, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
-| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), Folders to Keep Up to Date |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), Download This Whole Folder, Folders to Keep Up to Date |
 | Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
 
 ### Account Management
