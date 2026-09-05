@@ -120,6 +120,8 @@ pub struct ReaderTabHandles {
     pub warning: Option<TextCtrl>,
     /// `None` for a message with nothing attached, which has no list at all.
     pub attachments: Option<ListBox>,
+    /// `None` for every tab but a picture that was decoded.
+    pub picture: Option<StaticBitmap>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -477,6 +479,36 @@ impl ReaderWindow {
         text.set_insertion_point(0);
         sizer.add(&text, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
+        // After the words and before the attachment list. The words come first
+        // because they are what a reader who cannot see the picture is given,
+        // and putting the bitmap above them would make a stray graphic the
+        // first thing a screen reader reaches on every picture that opens.
+        //
+        // It exists only when a picture was really decoded. A bitmap of nothing
+        // is another stop in the tab order announcing that there is nothing
+        // here, which the text already said in a sentence.
+        let picture = document.picture.as_ref().and_then(|shown| {
+            let bitmap = Bitmap::from_rgba(&shown.pixels, shown.width, shown.height)?;
+            let view = StaticBitmap::builder(&panel)
+                .with_bitmap(Some(bitmap))
+                // The tab is as wide as the window and a photograph is wider
+                // than that, so a picture drawn at its own size pushes the
+                // attachment list off the bottom and out of reach.
+                .with_scale_mode(Some(ScaleMode::AspectFit))
+                .build();
+            // `set_accessible_name`, not `set_name`. The second sets an internal
+            // wxWidgets identifier that never reaches the accessibility tree,
+            // and sixteen widgets in this program were once "named" that way.
+            // Without this a reader that reaches the picture is told "graphic",
+            // which says one is there and nothing else.
+            set_accessible_name(&view, &shown.described);
+            if let Some(palette) = self.palette.get() {
+                theme::paint(&view, palette.main_surface());
+            }
+            sizer.add(&view, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            Some(view)
+        });
+
         // Below the message and therefore after it in the tab order, because
         // an attachment is something you deal with once you know what the
         // message says. It exists only when there is something in it: an empty
@@ -578,6 +610,7 @@ impl ReaderWindow {
             panel,
             text,
             warning,
+            picture,
             attachments,
         }
     }

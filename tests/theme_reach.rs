@@ -40,7 +40,7 @@ use wixen_mail::application::words::{TextNode, words_in};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind};
-use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument};
+use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument, ReaderPicture};
 use wixen_mail::presentation::theme::{self, Theme};
 use wixen_mail::presentation::{
     wx_account_manager, wx_add_calendar, wx_app, wx_calendar, wx_calendar_module, wx_columns,
@@ -846,6 +846,16 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
         warning: Some("This message could not be verified.".to_string()),
         // The bar in this fixture is a real warning, which is what makes it
         // exercise the warning styling this test is about.
+        // A real picture, one pixel of it, because this fixture exists to make
+        // every optional widget in a tab, and a tab with no picture builds no
+        // bitmap. Four bytes for the one pixel, which is what
+        // `Bitmap::from_rgba` reads it as.
+        picture: Some(ReaderPicture {
+            pixels: vec![0, 0, 0, 255],
+            width: 1,
+            height: 1,
+            described: "A test picture".to_string(),
+        }),
         looks_unsafe: true,
         attachments: vec![ReaderAttachment {
             message_row_id: 1,
@@ -906,6 +916,14 @@ fn check_reader(parent: &Frame, a11y: &Arc<Accessibility>, into: &mut Vec<SiteRe
                     "reader tab warning",
                     false,
                     "no warning bar was built for a document with a warning".to_string(),
+                )),
+            }
+            match &handles.picture {
+                Some(view) => check("reader tab picture", view, palette.main_surface(), into),
+                None => into.push((
+                    "reader tab picture",
+                    false,
+                    "no bitmap was built for a document carrying a picture".to_string(),
                 )),
             }
             match &handles.attachments {
