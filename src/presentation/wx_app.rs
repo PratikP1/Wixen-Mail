@@ -11380,7 +11380,7 @@ fn attachments_of(cache: &Option<Arc<MessageCache>>, message_id: i64) -> Vec<Att
             filename: record.filename,
             mime_type: record.mime_type,
             size: record.size.max(0) as usize,
-            description: crate::service::mime::WhatTheSenderSaid::Nothing,
+            description: record.description,
         })
         .collect()
 }
@@ -19169,22 +19169,21 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
                 .iter()
                 .enumerate()
                 .map(|(at, attachment)| {
-                    crate::data::message_cache::attachment_content::AttachmentWithContent {
-                        described: crate::data::message_cache::CachedAttachment {
-                            id: 0,
-                            message_id: message_row_id,
-                            filename: attachment.display_name(),
-                            mime_type: attachment.mime_type.clone(),
-                            size: attachment.size as i64,
-                            content_id: None,
-                            description: crate::service::mime::WhatTheSenderSaid::Nothing,
-                        },
-                        // By position, which both lists are in: the walk that reads
-                        // the files and the parse that names them go through the
-                        // message the same way round. A file missing here is a file
-                        // the walk could not read, and the attachment still lists.
-                        content: files.get(at).map(|file| file.bytes.clone()),
-                    }
+                    // The conversion is a function with a test on it rather
+                    // than a struct literal here. It used to be a literal, and
+                    // it wrote `content_id: None` over a content id the parse
+                    // had in hand: a field set to nothing compiles exactly like
+                    // a field set correctly, and nothing could tell them apart.
+                    //
+                    // By position, which both lists are in: the walk that reads
+                    // the files and the parse that names them go through the
+                    // message the same way round. A file missing here is a file
+                    // the walk could not read, and the attachment still lists.
+                    crate::data::message_cache::attachment_content::AttachmentWithContent::from_a_parsed_part(
+                        message_row_id,
+                        attachment,
+                        files.get(at).map(|file| file.bytes.clone()),
+                    )
                 })
                 .collect();
         if let Err(e) = cache.replace_attachments_with_content(message_row_id, &records) {

@@ -112,8 +112,8 @@ impl AttachmentWithContent {
                 filename: part.display_name(),
                 mime_type: part.mime_type.clone(),
                 size: i64::try_from(part.size).unwrap_or(i64::MAX),
-                content_id: None,
-                description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                content_id: part.content_id.clone(),
+                description: part.description.clone(),
             },
             content: file,
         }
@@ -306,7 +306,7 @@ impl MessageCache {
             .conn
             .prepare_cached(
                 "SELECT a.id, a.message_id, a.filename, a.mime_type, a.size, a.content_id,
-                        c.content
+                        a.description, c.content
                  FROM attachments a
                  LEFT JOIN attachment_content c ON c.digest = a.content_digest
                  WHERE a.message_id = ?1 ORDER BY a.id",
@@ -323,9 +323,11 @@ impl MessageCache {
                         mime_type: row.get(3)?,
                         size: row.get(4)?,
                         content_id: row.get(5)?,
-                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                        description: crate::service::mime::WhatTheSenderSaid::from_stored(
+                            row.get(6)?,
+                        ),
                     },
-                    content: row.get(6)?,
+                    content: row.get(7)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query attachments: {}", e)))?

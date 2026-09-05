@@ -250,16 +250,11 @@ fn tab_label(title: &str) -> String {
     if trimmed.is_empty() {
         return "No subject".to_string();
     }
-    if trimmed.chars().count() <= LIMIT {
-        return trimmed.to_string();
-    }
-    let kept: String = trimmed.chars().take(LIMIT - 1).collect();
     // Cut on a word boundary where there is one nearby, so the label does not
-    // end mid-word and get read as a nonsense syllable.
-    match kept.rsplit_once(' ') {
-        Some((head, _)) if head.chars().count() >= LIMIT / 2 => format!("{}\u{2026}", head),
-        _ => format!("{}\u{2026}", kept.trim_end()),
-    }
+    // end mid-word and get read as a nonsense syllable. The cut itself lives in
+    // `reader_text` because an attachment's description is bounded the same way
+    // and the two must not come to different ideas of what "nearby" means.
+    crate::presentation::reader_text::cut_at_a_word(trimmed, LIMIT)
 }
 
 impl ReaderWindow {

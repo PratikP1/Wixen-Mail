@@ -1462,6 +1462,17 @@ impl MessageCache {
         // file is not here.
         self.ensure_column_exists("attachments", "content_digest", "TEXT")?;
 
+        // What the sender said this file is, from its `Content-Description`.
+        // NULL for every attachment in a database written before the header was
+        // read, which is the truthful answer for all of them: the fact was
+        // dropped at the parse and there is nothing to recover.
+        //
+        // The empty string is not the same as NULL here. It means the sender
+        // wrote something and none of it survived as readable text, which
+        // `service::mime::WhatTheSenderSaid` keeps apart from silence on
+        // purpose. Nothing else can write an empty string into this column.
+        self.ensure_column_exists("attachments", "description", "TEXT")?;
+
         // The files themselves, keyed by a digest of the file rather than by
         // the message that carried it, so a spreadsheet sent round a thread a
         // dozen times is held once.

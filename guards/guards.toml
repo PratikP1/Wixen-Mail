@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 404 records have arrived since and have not been through it.
+# 406 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8257,7 +8257,7 @@ tests_last_seen = [
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/mime.rs", tests = 37 },
+    { file = "src/service/mime.rs", tests = 39 },
 ]
 
 # A week-start day other than Monday used to be refused on every rule that
@@ -14834,4 +14834,52 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 3 },
+]
+
+# ── What the sender said an attachment is ───────────────────────────────────
+#
+# `Content-Description` is the one fact about an attachment that a person wrote
+# rather than a file system, and for a picture it is the only thing that can say
+# what is in it. It reached this program on every message that carried one and
+# was dropped at `described`, which built an `AttachmentInfo` out of three
+# accessors and ignored the rest of the part.
+#
+# The break below reddens exactly one test in the whole library, which is worth
+# saying plainly rather than leaving to be discovered: the reading happens at
+# one boundary and one table test covers it. Measured with `--no-fail-fast` over
+# all 6,255 tests on 2026-09-05.
+
+[[guard]]
+name = "a description the sender gave survives the boundary"
+file = "src/service/mime.rs"
+before = """        size: part.contents().len(),
+        description: WhatTheSenderSaid::read(part.content_description()),"""
+after = """        size: part.contents().len(),
+        description: WhatTheSenderSaid::Nothing,"""
+red = [
+    "service::mime::tests::test_what_a_sender_writes_in_content_description_becomes",
+]
+tests_last_seen = [
+    { file = "src/service/mime.rs", tests = 39 },
+]
+
+# The accessible half of the same feature, and the half likelier to be tidied
+# away. An attachment row ends with a clause about the description whether or
+# not there is one, because a row that stops after the size reads exactly like
+# a row whose description this program dropped, and the reader cannot tell an
+# undescribed picture from a broken one.
+#
+# The break is the tidy-up: answer nothing where there is nothing to say.
+
+[[guard]]
+name = "an attachment nobody described says so rather than trailing off"
+file = "src/presentation/reader_text.rs"
+before = """            WhatTheSenderSaid::Nothing => crate::application::long_text::NO_DESCRIPTION.to_string(),"""
+after = """            WhatTheSenderSaid::Nothing => String::new(),"""
+red = [
+    "presentation::reader_text::tests::test_an_attachment_reads_as_a_name_a_kind_a_size_and_what_the_sender_said",
+    "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 81 },
 ]

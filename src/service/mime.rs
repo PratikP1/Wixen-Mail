@@ -87,9 +87,78 @@ impl WhatTheSenderSaid {
     /// saying a space, so it answers [`Self::Nothing`]. Bytes that are not
     /// writing are the sender saying something this could not read, which is a
     /// different fact and answers [`Self::SomethingUnreadable`].
-    pub fn read(_raw: Option<&str>) -> Self {
-        Self::Nothing
+    pub fn read(raw: Option<&str>) -> Self {
+        let Some(raw) = raw else {
+            return Self::Nothing;
+        };
+        let readable = as_text_and_nothing_else(raw);
+        if !readable.is_empty() {
+            return Self::InWords(readable);
+        }
+        // Whitespace on its own is the sender pressing space, which is
+        // silence. Anything else that left nothing behind was writing this
+        // could not read, and saying the sender was silent would put their
+        // client's fault on them.
+        if raw.trim().is_empty() {
+            Self::Nothing
+        } else {
+            Self::SomethingUnreadable
+        }
     }
+
+    /// What goes in the database column, and what comes back out of it.
+    ///
+    /// NULL is [`Self::Nothing`], which is what every row written before the
+    /// column existed holds. The empty string is [`Self::SomethingUnreadable`],
+    /// and no [`Self::InWords`] can ever be mistaken for it because
+    /// [`Self::read`] is the only thing that builds one from a message and it
+    /// never builds an empty one. So the three states reach the column without
+    /// a magic word a sender could write for themselves.
+    pub fn as_stored(&self) -> Option<&str> {
+        match self {
+            Self::Nothing => None,
+            Self::SomethingUnreadable => Some(""),
+            Self::InWords(said) => Some(said),
+        }
+    }
+
+    /// The other half of [`Self::as_stored`].
+    pub fn from_stored(column: Option<String>) -> Self {
+        match column {
+            None => Self::Nothing,
+            Some(said) if said.is_empty() => Self::SomethingUnreadable,
+            Some(said) => Self::InWords(said),
+        }
+    }
+}
+
+/// A stranger's text with everything that is not writing taken out of it.
+///
+/// Three things come off. Control characters, because this reaches a list row
+/// and a screen reader, and a carriage return inside a one-line label breaks
+/// the row rather than being read out. The characters that reorder what is
+/// displayed, for the same reason `application::export_tree` already refuses
+/// them in a file name: they make text read as something it is not. And runs of
+/// whitespace, so a description folded across header lines arrives as one
+/// sentence.
+///
+/// Taken out as spaces rather than deleted, so the words either side of one
+/// stay two words rather than being run together into a third.
+fn as_text_and_nothing_else(raw: &str) -> String {
+    raw.chars()
+        .map(|letter| {
+            if letter.is_control()
+                || matches!(letter, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+            {
+                ' '
+            } else {
+                letter
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// One attachment, described without being downloaded twice.
@@ -176,7 +245,9 @@ fn described(part: &mail_parser::MessagePart<'_>) -> AttachmentInfo {
         mime_type: content_type_of(part),
         size: part.contents().len(),
         description: WhatTheSenderSaid::read(part.content_description()),
-        content_id: None,
+        content_id: part
+            .content_id()
+            .map(crate::application::pictures::plain_content_id),
     }
 }
 

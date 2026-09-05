@@ -367,7 +367,7 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             name: item.filename.clone(),
             mime_type: item.mime_type.clone(),
             size: item.size,
-            description: WhatTheSenderSaid::Nothing,
+            description: item.description.clone(),
         })
         .collect()
 }
@@ -790,20 +790,44 @@ pub struct ReaderAttachment {
 impl ReaderAttachment {
     /// The single sentence a screen reader says when this row is reached.
     ///
-    /// Name, kind and size, because that is the whole of what somebody needs
-    /// to decide whether to open it and there is nowhere else for them to
-    /// look.
+    /// Name, kind, size, and then what the sender said it is. The first three
+    /// come from the file and are the same shape they have always been; the
+    /// sender's words go last, so somebody who has heard enough to decide can
+    /// stop listening before they start.
+    ///
+    /// It always ends with something about the description, including when
+    /// there is none. A gap where the sender's words would be is
+    /// indistinguishable from this program having dropped them, and telling
+    /// somebody plainly that a picture came with nothing to say what is in it
+    /// is the accessible half of the feature. The wording is
+    /// [`crate::application::long_text::NO_DESCRIPTION`], which is what this
+    /// program already says about an undescribed picture inside a note.
     pub fn label(&self) -> String {
         let name = match self.name.trim() {
             "" => "Attachment with no name",
             named => named,
         };
         format!(
-            "{}, {}, {}",
+            "{}, {}, {}, {}",
             name,
             describe_kind(&self.mime_type, &self.name),
-            human_size(self.size)
+            human_size(self.size),
+            self.what_the_sender_said()
         )
+    }
+
+    /// The last clause of [`Self::label`].
+    fn what_the_sender_said(&self) -> String {
+        match &self.description {
+            WhatTheSenderSaid::Nothing => crate::application::long_text::NO_DESCRIPTION.to_string(),
+            // Not the same sentence as silence, on purpose. The sender did
+            // write something; it arrived as bytes that are not writing, and
+            // that is their client's fault rather than theirs. Guardrail 9.
+            WhatTheSenderSaid::SomethingUnreadable => {
+                "a description with nothing readable in it".to_string()
+            }
+            WhatTheSenderSaid::InWords(said) => cut_at_a_word(said, LONGEST_DESCRIPTION_SPOKEN),
+        }
     }
 
     /// Whether Windows would run this rather than open it.
@@ -817,6 +841,40 @@ impl ReaderAttachment {
     /// file dialog handed something that looks like a path will use it as one.
     pub fn suggested_file_name(&self) -> String {
         crate::service::attachment_name::safe_file_name(&self.name)
+    }
+}
+
+/// How much of a sender's description an attachment row says.
+///
+/// The description is a stranger's text and there is no length a sender cannot
+/// write. A row is announced every time focus reaches it, so an unbounded one
+/// is a screen reader somebody has to interrupt rather than listen to, and the
+/// row already carries the name, the kind and the size before this starts.
+///
+/// A hundred characters is about a sentence. It is a judgement rather than a
+/// measurement, and the full text is stored, so a surface with room to show all
+/// of it can.
+const LONGEST_DESCRIPTION_SPOKEN: usize = 100;
+
+/// Cut a run of text to a length somebody can listen to, on a word boundary.
+///
+/// Shorter than the limit comes back untouched. Longer is cut back to the last
+/// space, when there is one far enough in that the result is still a phrase
+/// rather than a fragment, and an ellipsis says it was cut. Ending mid-word
+/// gets read as a nonsense syllable, which is worse than the words that were
+/// lost.
+///
+/// One rule with two limits rather than two rules: this is what
+/// `wx_reader::tab_label` already did for a tab's subject, moved here so an
+/// attachment description is cut the same way and neither can drift.
+pub(super) fn cut_at_a_word(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(limit - 1).collect();
+    match kept.rsplit_once(' ') {
+        Some((head, _)) if head.chars().count() >= limit / 2 => format!("{head}\u{2026}"),
+        _ => format!("{}\u{2026}", kept.trim_end()),
     }
 }
 
@@ -1067,13 +1125,16 @@ mod tests {
     }
 
     #[test]
-    fn test_an_attachment_reads_as_a_name_a_kind_and_a_size() {
+    fn test_an_attachment_reads_as_a_name_a_kind_a_size_and_what_the_sender_said() {
         // One row, arrowed onto, spoken once. Everything somebody needs to
         // decide whether to open it has to be in that sentence, because there
-        // is nowhere else to look.
+        // is nowhere else to look. The description is the fourth clause and it
+        // is always there, including when the sender wrote nothing: a row that
+        // just stops is one where the reader cannot tell an undescribed file
+        // from a description this program dropped.
         let row = attachment("Report.pdf", "application/pdf", 245_760).label();
 
-        assert_eq!(row, "Report.pdf, PDF document, 240 KB");
+        assert_eq!(row, "Report.pdf, PDF document, 240 KB, no description");
     }
 
     // ── What the sender said, and saying so when they said nothing ──────
