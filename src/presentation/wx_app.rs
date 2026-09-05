@@ -12751,6 +12751,40 @@ pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     });
 }
 
+/// The answer to a key somebody just pressed, shown and said.
+///
+/// The companion to [`send_refusal`]: a refusal says a command did not happen,
+/// and this says what a command did. Above the ordinary run of status and on a
+/// topic of its own, so a sync saying "Checking Sent..." underneath cannot
+/// coalesce it away before anybody hears it.
+pub(crate) fn send_answer(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, said: &str) {
+    let tx = tx.clone();
+    let said = said.to_string();
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::CommandAnswered(said)).await;
+    });
+}
+
+/// What the window believes about handing anything to a server.
+///
+/// One place, because a bool read at the call site is a line nobody can check
+/// by eye and because this is the fact plan 03-08 gave the program a second way
+/// to set: somebody's switch on the View menu, or the network going.
+fn reachability_of(
+    state: &Arc<StdMutex<WxUIState>>,
+) -> crate::application::sending_later::Reachability {
+    use crate::application::sending_later::Reachability;
+    // Read out before the match rather than in its head. A lock held as the
+    // thing being matched on lives until the match ends, and this is called
+    // from the interface thread while a sync on another thread wants the same
+    // lock.
+    let offline = lock_state(state).offline_mode;
+    match offline {
+        true => Reachability::Offline,
+        false => Reachability::Online,
+    }
+}
+
 /// Open a reply to the selected message.
 ///
 /// The three reply keys differ by a modifier, and the cost of the wrong one is
@@ -13179,11 +13213,17 @@ fn open_compose(
         saver,
     ) {
         ComposeResult::Send(data) => {
-            // Queue first, then flush. Nothing used to reach the outbox at all,
-            // so pressing Send only ever produced a status line. Queueing also
-            // means a send that fails is retried rather than lost.
+            // Queue first, then ask whether it goes. Nothing used to reach the
+            // outbox at all, so pressing Send only ever produced a status line.
+            // Queueing also means a send that fails is retried rather than lost.
+            //
+            // That order is the safe one and it is why the decision sits here
+            // rather than in front of the queue: the message is written down
+            // before anything decides whether to hand it to a server, so a
+            // decision to wait leaves a row somebody can see, arrow onto and
+            // act on rather than leaving nothing at all.
             match queue_for_sending(state, cache, &data) {
-                Ok(recipient) => {
+                Ok((recipient, waiting_on)) => {
                     // The draft this was written in is finished with. Nothing
                     // removed one: sending did not, and the Open Draft dialog
                     // only opens, so every draft ever saved stayed in the list
@@ -13199,8 +13239,32 @@ fn open_compose(
                         tracing::warn!("The sent draft {id} could not be removed: {why}");
                     }
                     *draft_id.borrow_mut() = None;
-                    send_status(tx, rt, &format!("Sending to {}...", recipient));
-                    flush_outbox(app);
+                    // The line whose absence was the whole defect. Offline mode
+                    // was declared, initialised, toggled and mirrored, and read
+                    // by nothing that decided anything, so the View menu's
+                    // promise that outgoing mail would be queued was false and
+                    // a message sent with the switch on went to a server like
+                    // any other.
+                    let goes = crate::application::sending_later::when_it_goes(
+                        reachability_of(state),
+                        &waiting_on,
+                        chrono::Local::now(),
+                    );
+                    let said = crate::application::sending_later::what_send_did(goes, &recipient);
+                    match goes {
+                        crate::application::sending_later::WhenItGoes::Now => {
+                            send_status(tx, rt, &said);
+                            flush_outbox(app);
+                        }
+                        // Nothing is handed to a server, and the sentence goes
+                        // out above the ordinary run of status. Somebody who
+                        // pressed a key called Send and heard the steady sync
+                        // line instead believes their mail has gone.
+                        crate::application::sending_later::WhenItGoes::WhenThereIsANetworkAgain
+                        | crate::application::sending_later::WhenItGoes::WhenItsTimeComes => {
+                            send_answer(tx, rt, &said);
+                        }
+                    }
                 }
                 Err(reason) => {
                     let tx = tx.clone();
@@ -13492,11 +13556,20 @@ fn spawn_draft_append(
     });
 }
 
+/// Put a composed message in the queue, and hand back who it is for and what
+/// the row it wrote says it is waiting for.
+///
+/// The second half is returned rather than assumed, because the caller then
+/// decides whether to hand the queue to a server and that decision reads the
+/// row's own schedule. Written as a constant at the call site instead, the two
+/// would drift the first time this queued anything with a time on it, and the
+/// way that would show is a scheduled message going out the moment Send was
+/// pressed.
 fn queue_for_sending(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     data: &wx_compose::ComposeData,
-) -> std::result::Result<String, String> {
+) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let Some(cache) = cache.as_ref() else {
         return Err("No message store is available, so the message cannot be queued".to_string());
     };
@@ -13532,10 +13605,15 @@ fn queue_for_sending(
         created_at: chrono::Local::now().to_rfc3339(),
     };
 
+    // What the row is waiting for, named where it is written rather than read
+    // back out of the database a moment later. `queue_outbox_message` is the
+    // shorthand for this one, and it is the only thing the composer's Send has
+    // ever written.
+    let waiting_on = crate::application::sending_later::GoAfter::AsSoonAsPossible;
     cache
         .queue_outbox_message(&queued)
         .map_err(|e| format!("Could not queue the message: {}", e))?;
-    Ok(recipient.to_string())
+    Ok((recipient.to_string(), waiting_on))
 }
 
 /// Open one window so the accessibility scan has something to look at.

@@ -271,10 +271,10 @@ pub fn when_it_goes(
     when: &GoAfter,
     now: DateTime<Local>,
 ) -> WhenItGoes {
-    let _ = reachability;
-    match readiness(when, now) {
-        Readiness::MayGoNow => WhenItGoes::Now,
-        _ => WhenItGoes::WhenItsTimeComes,
+    match (reachability, readiness(when, now)) {
+        (Reachability::Offline, _) => WhenItGoes::WhenThereIsANetworkAgain,
+        (Reachability::Online, Readiness::MayGoNow) => WhenItGoes::Now,
+        (Reachability::Online, _) => WhenItGoes::WhenItsTimeComes,
     }
 }
 
@@ -288,8 +288,18 @@ pub fn when_it_goes(
 /// pressed Send and heard nothing about the Outbox believes their mail has
 /// gone, which is the defect this whole decision exists to end.
 pub fn what_send_did(goes: WhenItGoes, recipient: &str) -> String {
-    let _ = goes;
-    format!("Sending to {recipient}...")
+    match goes {
+        // Unchanged, because every message sent today gets this and there is
+        // nothing wrong with it.
+        WhenItGoes::Now => format!("Sending to {recipient}..."),
+        WhenItGoes::WhenThereIsANetworkAgain => format!(
+            "Offline mode is on, so the message to {recipient} is waiting in the Outbox. \
+             It goes when you go back online."
+        ),
+        WhenItGoes::WhenItsTimeComes => {
+            format!("The message to {recipient} is waiting in the Outbox until the time set on it.")
+        }
+    }
 }
 
 /// How far past a chosen time still counts as that time.

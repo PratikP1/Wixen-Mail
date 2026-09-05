@@ -130,6 +130,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Offline mode now queues your outgoing mail. It said it did, and it did
+  not.**
+
+  Turning offline mode on said, in the status bar and out loud, "Offline mode
+  enabled - outgoing mail will be queued". Nothing was queued. The switch was
+  recorded and nothing read it, so pressing Send with offline mode on handed the
+  message to a mail server exactly as if the switch had been off. Anyone who
+  read that sentence and then wrote mail on a train believed it was being held
+  for them. It was not, and if it went out, it went out.
+
+  Pressing Send with offline mode on now leaves the message in the Outbox and
+  says so: "Offline mode is on, so the message to kim@example.com is waiting in
+  the Outbox. It goes when you go back online." Nothing is handed to a server.
+  Turn offline mode off, then choose Outbox and Send Queued Mail, and it goes.
+
+  That sentence is said as well as shown, and it is said above the run of
+  sync progress rather than among it, because a message that did not go is the
+  answer to a key you just pressed and must not be talked over.
+
+  With offline mode off, Send behaves exactly as it did before.
+
 - **A connection that dropped while a folder was being opened could delete the
   mail Wixen Mail had stored for that folder.**
 

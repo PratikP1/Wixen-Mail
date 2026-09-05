@@ -171,6 +171,14 @@ fn test_the_send_path_asks_whether_the_message_goes_before_it_flushes() {
          the message goes, so offline mode decides nothing on the one path that \
          sends mail"
     );
+    // Asking the decision is half of it. Asking it with a constant is the same
+    // defect wearing the answer's clothes: the call is there, the switch is
+    // still read by nothing, and the promise on the View menu is still false.
+    assert!(
+        code.contains("reachability_of("),
+        "the Send arm asks when_it_goes something other than what the window \
+         believes about the network, so the switch on the View menu decides nothing"
+    );
 
     let goes_now = code
         .find("WhenItGoes::Now")

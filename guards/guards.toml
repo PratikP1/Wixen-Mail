@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 393 records have arrived since and have not been through it.
+# 394 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2106,7 +2106,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/due.rs", tests = 23 },
     { file = "src/application/repeating.rs", tests = 27 },
-    { file = "src/application/sending_later.rs", tests = 32 },
+    { file = "src/application/sending_later.rs", tests = 40 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
     { file = "src/presentation/date_display.rs", tests = 37 },
@@ -14393,4 +14393,40 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
+]
+
+# ── The send path reads the switch, rather than only calling the decision ───
+#
+# SCALE-05, and the live defect it starts from. `offline_mode` was declared,
+# initialised, toggled and mirrored on an update, and read by nothing that
+# decided anything. The View menu said "Offline mode enabled - outgoing mail
+# will be queued" and the composer's Send queued the message and handed the
+# whole queue to a server in the next line, whatever the switch said.
+#
+# The break is the half-fix, not the absent one: the decision is called, with a
+# constant instead of what the window believes. The call is there, the promise
+# is still false, and a check that only asked whether `when_it_goes` is named
+# would pass on it. That is why the census asks about `reachability_of` as
+# well.
+#
+# Measured by hand on 2026-09-05, every target with --no-fail-fast: 6,183
+# library tests passed and one test failed in the whole tree.
+#
+# That one test is the finding rather than an aside. Reaching this arm needs a
+# window, a frame and a composer, so nothing in the library reads it, and the
+# whole defence of the switch being read is the single source-reading test
+# named below. The same shape 03-02 found for the sign-in census.
+
+[[guard]]
+name = "the send path reads what the window believes about the network"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_leaves_the_outbox_unasked"
+before = """                        reachability_of(state),"""
+after = """                        crate::application::sending_later::Reachability::Online,"""
+red = [
+    "test_the_send_path_asks_whether_the_message_goes_before_it_flushes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 5 },
 ]
