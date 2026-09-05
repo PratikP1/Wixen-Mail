@@ -120,6 +120,8 @@ pub struct ReaderTabHandles {
     pub warning: Option<TextCtrl>,
     /// `None` for a message with nothing attached, which has no list at all.
     pub attachments: Option<ListBox>,
+    /// `None` for every tab but a picture that was decoded.
+    pub picture: Option<StaticBitmap>,
 }
 
 /// Hand one attachment to whatever the application said to do with it.
@@ -188,17 +190,14 @@ enum Doing {
 
 /// Whether this is something the reader can turn into text.
 ///
-/// PDF, and nothing else yet. A message body arrives as text or HTML and is
-/// already handled; everything else is a file for another application.
+/// The whole of the answer is [`ReaderAttachment::how_it_reads`], and this is
+/// deliberately not a second look at the same two facts. The worker routes on
+/// that same answer to decide which producer to call, and a gate with a table
+/// of its own is a gate that can come to admit a file the worker then has no
+/// reading for: the tab never opens and nothing says why. One function makes
+/// that disagreement impossible rather than merely tested for.
 fn can_be_read_here(attachment: &ReaderAttachment) -> bool {
-    attachment
-        .mime_type
-        .trim()
-        .eq_ignore_ascii_case("application/pdf")
-        || attachment
-            .name
-            .rsplit_once('.')
-            .is_some_and(|(_, extension)| extension.trim().eq_ignore_ascii_case("pdf"))
+    attachment.how_it_reads().is_some()
 }
 
 /// What to call the thing that cannot be read, for the sentence that says so.
@@ -480,6 +479,36 @@ impl ReaderWindow {
         text.set_insertion_point(0);
         sizer.add(&text, 1, SizerFlag::Expand | SizerFlag::All, 4);
 
+        // After the words and before the attachment list. The words come first
+        // because they are what a reader who cannot see the picture is given,
+        // and putting the bitmap above them would make a stray graphic the
+        // first thing a screen reader reaches on every picture that opens.
+        //
+        // It exists only when a picture was really decoded. A bitmap of nothing
+        // is another stop in the tab order announcing that there is nothing
+        // here, which the text already said in a sentence.
+        let picture = document.picture.as_ref().and_then(|shown| {
+            let bitmap = Bitmap::from_rgba(&shown.pixels, shown.width, shown.height)?;
+            let view = StaticBitmap::builder(&panel)
+                .with_bitmap(Some(bitmap))
+                // The tab is as wide as the window and a photograph is wider
+                // than that, so a picture drawn at its own size pushes the
+                // attachment list off the bottom and out of reach.
+                .with_scale_mode(Some(ScaleMode::AspectFit))
+                .build();
+            // `set_accessible_name`, not `set_name`. The second sets an internal
+            // wxWidgets identifier that never reaches the accessibility tree,
+            // and sixteen widgets in this program were once "named" that way.
+            // Without this a reader that reaches the picture is told "graphic",
+            // which says one is there and nothing else.
+            set_accessible_name(&view, &shown.described);
+            if let Some(palette) = self.palette.get() {
+                theme::paint(&view, palette.main_surface());
+            }
+            sizer.add(&view, 0, SizerFlag::Expand | SizerFlag::All, 4);
+            Some(view)
+        });
+
         // Below the message and therefore after it in the tab order, because
         // an attachment is something you deal with once you know what the
         // message says. It exists only when there is something in it: an empty
@@ -581,6 +610,7 @@ impl ReaderWindow {
             panel,
             text,
             warning,
+            picture,
             attachments,
         }
     }
@@ -876,6 +906,12 @@ impl ReaderWindow {
 mod tests {
     use super::*;
 
+    fn picture_named(name: &str) -> ReaderAttachment {
+        let mut file = attachment(name);
+        file.mime_type = "image/jpeg".to_string();
+        file
+    }
+
     fn attachment(name: &str) -> ReaderAttachment {
         ReaderAttachment {
             message_row_id: 1,
@@ -904,13 +940,53 @@ mod tests {
     }
 
     #[test]
+    fn test_a_text_file_can_be_read_here_whichever_way_it_says_so() {
+        // The same either-one-is-enough rule a PDF already gets. A sender's
+        // client that labels a `.txt` application/octet-stream has not made
+        // the file unreadable, and a plain text part with no filename at all
+        // is ordinary.
+        let mut by_type = attachment("notes");
+        by_type.mime_type = "text/plain".to_string();
+        let mut by_name = attachment("notes.TXT");
+        by_name.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_name));
+    }
+
+    #[test]
+    fn test_a_picture_can_be_read_here_whichever_way_it_says_so() {
+        // The kinds this program already treats as pictures, and the same
+        // either-one-is-enough rule the other two readings get. A camera that
+        // names a file `IMG_4021.JPG` and a client that labels it
+        // application/octet-stream are both ordinary.
+        let mut by_type = picture_named("scan");
+        by_type.mime_type = "image/png".to_string();
+        let mut by_name = picture_named("IMG_4021.JPG");
+        by_name.mime_type = "application/octet-stream".to_string();
+
+        assert!(can_be_read_here(&by_type));
+        assert!(can_be_read_here(&by_name));
+    }
+
+    #[test]
     fn test_everything_else_is_not_pretended_to_be_readable() {
-        // Opening a spreadsheet in a text control produces a screenful of
-        // nonsense, which is worse than saying it cannot be read.
+        // What the gate admits is three readings and no more: a PDF, a text
+        // file, and a picture. Everything here is outside all three and stays
+        // outside. An epub and a spreadsheet are documents this cannot turn
+        // into text, and opening one in a text control produces a screenful of
+        // nonsense, which is worse than saying it cannot be read. A zip is a
+        // container and there is nothing in the tab that could show what is in
+        // it.
+        //
+        // A JPEG used to be on this list, and it is the row that went red when
+        // the gate learned to describe a picture. It was taken out with that
+        // change rather than after it, so nothing here ever asserted a fact the
+        // code had stopped agreeing with. The three that remain are what says
+        // the gate was widened rather than opened.
         for (name, mime_type) in [
             ("book.epub", "application/epub+zip"),
             ("sheet.xlsx", "application/vnd.ms-excel"),
-            ("photo.jpg", "image/jpeg"),
             ("archive.zip", "application/zip"),
         ] {
             let mut file = attachment(name);

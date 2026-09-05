@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 416 records have arrived since and have not been through it.
+# 420 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -14891,7 +14891,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 110 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -15112,7 +15112,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 110 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -15140,7 +15140,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 110 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15166,6 +15166,132 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 93 },
+    { file = "src/presentation/reader_text.rs", tests = 110 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
+]
+
+# ── A reading gate that admits everything ───────────────────────────────────
+#
+# `how_it_reads` is the one answer the reader window's gate and the worker's
+# routing both read, so widening it too far is a spreadsheet opened in a text
+# control rather than a sentence saying it cannot be read. The failure has no
+# other symptom: everything still builds, the tab still opens, and what is in
+# it is a screenful a screen reader reads out character by character.
+#
+# Measured by hand 2026-09-05 with `cargo test --all-targets --no-fail-fast`.
+# One test went red. `test_every_guard_record_says_how_many_tests_the_files_it_names_held`
+# was red in that run as well and is not listed, because it was already red
+# before the break was applied: four records were carrying counts from before
+# this task added tests, and they were re-measured afterwards.
+
+[[guard]]
+name = "the reading gate admits text and still refuses what it cannot read"
+file = "src/presentation/reader_text.rs"
+before = """            return Some(HowItReads::Picture);
+        }
+        None"""
+after = """            return Some(HowItReads::Picture);
+        }
+        Some(HowItReads::Text)"""
+red = [
+    "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+]
+
+# ── A picture whose sender said nothing, and a preview that says nothing ────
+#
+# The whole of what a reader who cannot see a picture is given is what the
+# sender wrote about it, and the commonest case by a wide margin is that they
+# wrote nothing. Saying so is the accessible half of the feature: a gap where
+# those words would be is indistinguishable from this program having dropped
+# them, and the reader is left unsure whether to go looking. It fails silently,
+# because a preview with a blank line in it still opens, still reads, and still
+# says the kind and the size.
+#
+# Measured by hand 2026-09-05 with `cargo test --all-targets --no-fail-fast`,
+# against a tree with no other failure in it. One test went red.
+
+[[guard]]
+name = "a picture nobody described says so rather than leaving the line blank"
+file = "src/presentation/reader_text.rs"
+before = """        WhatTheSenderSaid::Nothing => format!(
+            "This picture came with {}, so nothing here can say what is in it.",
+            crate::application::long_text::NO_DESCRIPTION
+        ),"""
+after = """        WhatTheSenderSaid::Nothing => String::new(),"""
+red = [
+    "presentation::reader_text::picture_preview_tests::test_a_picture_the_sender_described_with_nothing_says_so_before_anything_else",
+    # Arrived one commit after this record was written, and the record was one
+    # commit stale as a result. The picture's accessible name is composed from
+    # the same sentence, so emptying that sentence leaves the bitmap announced
+    # as "graphic", which is the same defect reaching a different surface.
+    "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 110 },
+]
+
+# ── A bound that is asked after the thing it was supposed to prevent ────────
+#
+# The declared size is what a picture claims about itself before anything reads
+# it, and refusing on it is the only refusal that costs nothing. Taking it away
+# does not obviously break anything: the strict width and height limits handed
+# to the decoder still refuse the same file, a little later and with somebody
+# else's sentence, and every other test stays green. That is what makes it worth
+# a record. A bound that has quietly become a comment looks exactly like a bound
+# that works.
+#
+# Measured by hand 2026-09-05 with `cargo test --all-targets --no-fail-fast`
+# against a tree with no other failure in it. One test went red.
+
+[[guard]]
+name = "a picture is refused on the size it declares, before anything decodes it"
+file = "src/service/picture.rs"
+before = """    refuse_what_the_header_declares(bytes)?;"""
+after = """    // the declared size is not looked at"""
+red = [
+    "service::picture::tests::test_a_picture_declaring_more_than_the_bound_is_refused_on_its_declaration",
+]
+tests_last_seen = [
+    { file = "src/service/picture.rs", tests = 10 },
+]
+
+# ── A fault and a fact that sound the same ──────────────────────────────────
+#
+# Three things can be true of a picture in a preview: it is shown, it could not
+# be read, or this build draws none of that kind. The middle one is a fault, of
+# the file or of this program; the last is a statement about the build. Somebody
+# told the wrong one goes looking for damage that is not there, or shrugs at
+# damage that is.
+#
+# It fails silently in the worst way: the tab still opens, still describes the
+# picture, still says its kind and size, and reads perfectly well. Only somebody
+# who knew which of the two had happened would notice.
+#
+# This program has paid for collapsing an answer into a failure to ask twice
+# before, in `spellcheck::WhatThisMachineOffers` and in the certificate answer.
+#
+# Measured by hand 2026-09-05 with `cargo test --all-targets --no-fail-fast`
+# against a tree with no other failure in it. One test went red.
+#
+# The break is at the place that chooses, not at the constant. Breaking the
+# constant was tried first and reddens two tests rather than one, because the
+# census over the three sentences sees them become equal. That is a weaker
+# record: it would go on passing if somebody left the constants alone and
+# returned the wrong one of them, which is the likelier mistake by far. This
+# break is the likelier mistake.
+
+[[guard]]
+name = "a picture that could not be read does not say there was never one"
+file = "src/presentation/reader_text.rs"
+before = """            (None, THE_PICTURE_COULD_NOT_BE_READ)"""
+after = """            (None, NO_PICTURE_TO_SHOW)"""
+red = [
+    "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 110 },
 ]

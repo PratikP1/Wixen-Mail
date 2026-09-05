@@ -8,6 +8,90 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **An image attachment now previews. It is described, and it is shown.**
+
+  Choose a PNG, JPEG, GIF or WebP in the attachment list and press Enter, and it
+  opens in a tab of its own. The first line is what the sender said the picture
+  is, in their own words. Where they said nothing, which is the ordinary case,
+  the tab says that in the first line rather than leaving a gap: "This picture
+  came with no description, so nothing here can say what is in it." That is the
+  fact which decides whether the rest is worth listening to, so it is said
+  first, and a gap where those words would be is indistinguishable from this
+  program having dropped them.
+
+  Then the picture itself, drawn below those words. A sighted or partly sighted
+  reader sees it; a screen reader reaching it hears the sender's description as
+  its name, or this program's wording for an undescribed picture where there is
+  none, rather than the word "graphic". The words come first in the tab order so
+  nothing about drawing the picture changes what is reached first.
+
+  The tab always says which of three things happened, in three sentences nobody
+  can confuse: the picture is shown, the picture could not be read, or this
+  build does not draw pictures of that kind. A damaged file and an ordinary one
+  do not sound the same.
+
+  **PNG and JPEG are drawn. GIF and WebP are not, in this build.** A GIF or a
+  WebP still opens and is still described, and says plainly that there is no
+  picture in the tab, so a reader can tell that from a file that would not read.
+  Drawing them would mean adding two more image decoders that a stranger's
+  attachment can reach, and PNG and JPEG cover almost every picture that arrives
+  in mail.
+
+  Known limitations:
+
+  - **Nothing is scaled, rotated or colour-managed.** A picture wider than the
+    tab is fitted to it, keeping its shape, so it cannot push the attachment
+    list out of reach. Nothing else is done to it.
+  - **Very large pictures are refused rather than drawn.** A preview will not
+    spend more than about forty-eight megabytes on one picture, which is a
+    twelve megapixel photograph. Past that the tab says the picture could not be
+    read. That bound is what stops a small file that decodes to something
+    enormous.
+  - **The description is the sender's and nothing checks it.** If it does not
+    match the picture, nothing here can tell. Now that the picture is shown, a
+    sighted reader can see the disagreement and a blind one still cannot, which
+    is the honest limit and is the same limit every mail client has.
+  - **Whether senders write a description at all is unmeasured.** No mail
+    account has ever been used with this program. If most senders write nothing,
+    most previews will say so, which is the honest answer and still better than
+    the silence there is today.
+
+- **A text attachment now opens and can be read here.**
+
+  Until now the reader could open a PDF and nothing else. Choose a `.txt`, a
+  `.log`, a `.md` or a `.csv` in the attachment list and press Enter, and it
+  opens in a tab of its own as text you can move through by line, search and
+  copy from, the same as any other reading in this program.
+
+  The tab starts with the file's name and then a note saying how much of the
+  file is really below. That note comes first, before a word of the file,
+  because it changes how the rest should be taken. It says one of three things:
+  that the whole file was read as text; that the file was longer than one
+  preview shows and was cut, and where; or that parts of it would not decode
+  and are shown as a replacement character, so a word that looks wrong is one
+  this could not read rather than one the sender wrote.
+
+  A file that is not text at all is refused by name rather than rendered. A
+  sender can label anything as text, and a compiled program shown in a reading
+  window is a screenful of nonsense a screen reader will read out character by
+  character. The refusal is the one that was already there: "Wixen Mail cannot
+  read a ZIP file. Control S saves it."
+
+  Control characters are taken out before anything is shown. Tabs and newlines
+  stay, because that is how a text file is laid out; an escape sequence does
+  not, because that is a stranger deciding what your window does.
+
+  Known limitations:
+
+  - **One megabyte at a time.** A longer file is cut and the note says so. The
+    whole of it is still there to save with Control S.
+  - **UTF-8 only.** A file written in an older encoding is shown with the parts
+    that would not decode replaced, and the note says so. Nothing here guesses
+    at an encoding, because a guess dressed as a reading is worse than a reading
+    that admits what it could not do.
+  - **This has never met a real account.** No mail account has ever been used
+    with this program, so what a real sender's attachment does here is untested.
+
 - **A message you cannot open now says why, instead of showing you a block of
   gibberish.**
 

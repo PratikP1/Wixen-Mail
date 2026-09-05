@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 94
+open_count: 100
 waived_count: 0
 fixed_count: 13
-total_count: 107
-last_updated: 2026-09-05T18:22:42.866Z
+total_count: 113
+last_updated: 2026-09-05T23:22:21.828Z
 ---
 
 # Broken Windows Ledger
@@ -122,6 +122,12 @@ last_updated: 2026-09-05T18:22:42.866Z
 | 105 | 04 | deviation | src/presentation/reader_text.rs |  | A conversation of several messages read as one document says nothing about any one message's form, so an encrypted message inside a thread still shows its armour with nothing said. reader_text::conversation folds the sentence in only when the document holds exactly one part. The reason is the one with_signature already gives for staying off a thread: there is a form per message and one bar over all of them, so 'This message is encrypted' over a thread of five is heard as covering five. Closing it properly means a sentence naming which message, which is its own wording question. Opening that message on its own does say it, and that is how somebody reads a particular message. | open |  | 2026-09-05T18:22:28.728Z |  |
 | 106 | 04 | deviation | tests/an_encrypted_message_is_not_left_unexplained.rs |  | The census written for this plan passed against its own break the first time it was measured, and the fix is worth remembering as a class. It asserted that each composer asks the encryption question. The break took out the fold that puts the answer into the bar and left the question in place, bound to an unused name, so the composer still named the call and nothing reached the reader. A call site has three independent ways to be hollow: the call absent, the result discarded, and the argument a constant that makes the call decide nothing. The census now asserts all three and has a companion per shape. Found only by applying the break by hand; reading the census had already declared it sufficient. | open |  | 2026-09-05T18:22:42.457Z |  |
 | 107 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-03-PLAN.md |  | Three of this plan's premises were wrong. It says to reach the fact from the message-open path outside the look_at_message_contents gate and to write a census anchored on that setting's arm; the gate runs on a worker at body-fetch time and writes a verdict into a column, the bar is built later from the stored row, and nothing on the display path reads the setting, so the prescribed census would have read an unrelated function. It says to fold the sentence in under whatever the bar already says; said_before_the_message cuts at HOW_IT_WAS_CHECKED, which a signature verdict inserts, so an appended sentence is in the bar and spoken by nothing. And its guard-record table says reader_text.rs is fingerprinted by no record and holds 76 tests, where one record names it and it held 81, both figures true before 04-01 landed hours earlier. Third plan running in this phase whose record table expired against a same-day sibling. | open |  | 2026-09-05T18:22:42.866Z |  |
+| 108 | 04 | unrun-verify | src/presentation/wx_reader.rs |  | Whether a StaticBitmap in a reader tab is reachable by a screen reader at all is the question this feature rests on and no test here can ask. A bitmap is not focusable by default on Windows, so NVDA may meet it only in browse mode or not at all, and the accessible name set through set_accessible_name may never be spoken. If it is not reached, the picture serves a sighted reader and is silent for everybody else, which is the half of the feature Pratik ordered first. Only a real NVDA and Narrator run settles it. Tab order is now warning bar, text, picture, attachment list. | open |  | 2026-09-05T23:21:54.325Z |  |
+| 109 | 04 | unrun-verify | src/presentation/wx_reader.rs |  | Nothing in this repository has ever checked that a decoded attachment is drawn at a sensible size, is legible against either theme, or that a very wide picture does not push the attachment list off the tab. The bitmap is set to AspectFit for exactly that reason and the reasoning has never met a window. The theme sweep checks its background and foreground colours, which is not the same as somebody looking at it. A picture shown badly is not the same as a picture shown. Only an eye settles it. | open |  | 2026-09-05T23:22:20.234Z |  |
+| 110 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Whether the first lines of a preview tab are announced at the moment it opens, or whether somebody has to go looking for them, is untested. The whole design rests on the description being heard first: it is the first line of the text control and the caret starts at the top, and the opening announcement says the title and the attachment summary rather than the note. So somebody who hears the announcement and does not read on may never meet the sentence that says whether the picture came with a description. The same question applies to a text attachment's note, which says whether the file was cut. Only a listener settles it. | open |  | 2026-09-05T23:22:20.648Z |  |
+| 111 | 04 | unrun-verify | src/service/plain_text.rs |  | Whether real senders' text attachments are UTF-8 has never been measured and it decides how often the not-entirely-text sentence fires. A log or a CSV written on a Windows machine in an older code page decodes as mostly replacement characters, and this refuses to guess at an encoding on purpose. If most real text attachments are not UTF-8, most previews will be a screenful of replacement characters with an honest sentence above them, which is worse than it sounds and would argue for encoding detection. No mail account has ever been used with this program, so it cannot be answered here. | open |  | 2026-09-05T23:22:21.063Z |  |
+| 112 | 04 | unrun-verify | src/service/picture.rs |  | Whether real senders put Content-Description on image parts at all decides whether an image preview usually says what is in the picture or usually says nothing is known about it. Unmeasurable here, and unchanged since the research raised it as assumption A5. Now that the picture is also drawn, the cost of the answer being no falls on a blind reader alone rather than on everybody, which makes it more worth measuring rather than less. | open |  | 2026-09-05T23:22:21.453Z |  |
+| 113 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-04-PLAN.md |  | Two of this plan's premises could not be followed as written. Its guard table says reader_text.rs is fingerprinted by no record and theme_reach.rs by three; four records name the first and none name the second, both wrong within hours of the plan being written, which is the fourth phase-04 plan whose record table expired against a same-day sibling. And it asks the task 2 RED commit to name both a new test saying a picture can be read here and the existing test saying it cannot; those are opposite assertions about one function, so exactly one can be red and the gate holds a red commit to every named test really failing. The gate was widened at the red instead, which makes the existing assertion the red one, and the commit says so. | open |  | 2026-09-05T23:22:21.828Z |  |
 
 ````json
 [
@@ -1407,6 +1413,78 @@ last_updated: 2026-09-05T18:22:42.866Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T18:22:42.866Z",
+    "resolved_at": null
+  },
+  {
+    "id": 108,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_reader.rs",
+    "line": null,
+    "description": "Whether a StaticBitmap in a reader tab is reachable by a screen reader at all is the question this feature rests on and no test here can ask. A bitmap is not focusable by default on Windows, so NVDA may meet it only in browse mode or not at all, and the accessible name set through set_accessible_name may never be spoken. If it is not reached, the picture serves a sighted reader and is silent for everybody else, which is the half of the feature Pratik ordered first. Only a real NVDA and Narrator run settles it. Tab order is now warning bar, text, picture, attachment list.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:21:54.325Z",
+    "resolved_at": null
+  },
+  {
+    "id": 109,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_reader.rs",
+    "line": null,
+    "description": "Nothing in this repository has ever checked that a decoded attachment is drawn at a sensible size, is legible against either theme, or that a very wide picture does not push the attachment list off the tab. The bitmap is set to AspectFit for exactly that reason and the reasoning has never met a window. The theme sweep checks its background and foreground colours, which is not the same as somebody looking at it. A picture shown badly is not the same as a picture shown. Only an eye settles it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:22:20.234Z",
+    "resolved_at": null
+  },
+  {
+    "id": 110,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Whether the first lines of a preview tab are announced at the moment it opens, or whether somebody has to go looking for them, is untested. The whole design rests on the description being heard first: it is the first line of the text control and the caret starts at the top, and the opening announcement says the title and the attachment summary rather than the note. So somebody who hears the announcement and does not read on may never meet the sentence that says whether the picture came with a description. The same question applies to a text attachment's note, which says whether the file was cut. Only a listener settles it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:22:20.648Z",
+    "resolved_at": null
+  },
+  {
+    "id": 111,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/plain_text.rs",
+    "line": null,
+    "description": "Whether real senders' text attachments are UTF-8 has never been measured and it decides how often the not-entirely-text sentence fires. A log or a CSV written on a Windows machine in an older code page decodes as mostly replacement characters, and this refuses to guess at an encoding on purpose. If most real text attachments are not UTF-8, most previews will be a screenful of replacement characters with an honest sentence above them, which is worse than it sounds and would argue for encoding detection. No mail account has ever been used with this program, so it cannot be answered here.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:22:21.063Z",
+    "resolved_at": null
+  },
+  {
+    "id": 112,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/picture.rs",
+    "line": null,
+    "description": "Whether real senders put Content-Description on image parts at all decides whether an image preview usually says what is in the picture or usually says nothing is known about it. Unmeasurable here, and unchanged since the research raised it as assumption A5. Now that the picture is also drawn, the cost of the answer being no falls on a blind reader alone rather than on everybody, which makes it more worth measuring rather than less.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:22:21.453Z",
+    "resolved_at": null
+  },
+  {
+    "id": 113,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-04-PLAN.md",
+    "line": null,
+    "description": "Two of this plan's premises could not be followed as written. Its guard table says reader_text.rs is fingerprinted by no record and theme_reach.rs by three; four records name the first and none name the second, both wrong within hours of the plan being written, which is the fourth phase-04 plan whose record table expired against a same-day sibling. And it asks the task 2 RED commit to name both a new test saying a picture can be read here and the existing test saying it cannot; those are opposite assertions about one function, so exactly one can be red and the gate holds a red commit to every named test really failing. The gate was widened at the red instead, which makes the existing assertion the red one, and the commit says so.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T23:22:21.828Z",
     "resolved_at": null
   }
 ]

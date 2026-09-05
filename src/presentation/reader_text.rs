@@ -54,6 +54,20 @@ pub struct ReaderDocument {
     /// Empty for a message with no attachments, and then the reader has no
     /// list at all rather than an empty one in the tab order of every message.
     pub attachments: Vec<ReaderAttachment>,
+    /// The picture this tab draws, when there is one to draw.
+    ///
+    /// `None` for every reading that is not a picture, and for a picture this
+    /// build does not draw or could not read, and then the tab has no bitmap in
+    /// it at all rather than an empty one to tab past.
+    ///
+    /// The pixels ride here because the decode belongs on the worker: it is the
+    /// expensive half and the untrusted half, and `UIUpdate::AttachmentRead` is
+    /// how a worker's result reaches the window. That is what makes
+    /// [`crate::service::picture::MOST_A_PICTURE_MAY_COST`] load-bearing rather
+    /// than tidy. This document is cloned into the window's own record of every
+    /// open tab, so an unbounded buffer here is an unbounded buffer kept for as
+    /// long as the tab is open.
+    pub picture: Option<ReaderPicture>,
     /// Whether the bar is there because something is wrong with this message.
     ///
     /// Told apart from the bar merely existing, because the bar now also holds
@@ -63,6 +77,22 @@ pub struct ReaderDocument {
     /// that the cue means nothing, and then it means nothing on the message
     /// where it mattered.
     pub looks_unsafe: bool,
+}
+
+/// A decoded picture, ready for a window to draw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReaderPicture {
+    /// RGBA, four bytes a pixel, `width * height * 4` bytes long.
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// What a screen reader says when it reaches the picture.
+    ///
+    /// The sender's own words where there are any, and this program's wording
+    /// for an undescribed picture where there are not. Never left empty: a
+    /// bitmap with no name is announced as "graphic", which tells somebody a
+    /// picture is there and nothing else.
+    pub described: String,
 }
 
 /// The header block shown above a body.
@@ -295,6 +325,7 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         // The bar this builds is the safety verdict, so it is there because
         // something is wrong. Neither of the two folds below it, a signature
         // verdict and what the message says about its own form, ever sets this.
+        picture: None,
         looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
         attachments: attachments_of(message),
     }
@@ -687,6 +718,7 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
         title,
         text: format!("{heading}{}", reading.text),
         // A document read out of a file, which nothing has judged.
+        picture: None,
         looks_unsafe: false,
         landmarks,
         // A PDF gets no warning bar of its own. The bar says what the mail
@@ -698,6 +730,279 @@ pub fn pdf_document(name: &str, reading: &crate::service::pdf::PdfReading) -> Re
         attachments: Vec::new(),
     }
 }
+
+/// Compose a text attachment for the reader.
+///
+/// The note goes first, before a word of the file, for the reason
+/// [`pdf_document`] gives: what it says changes how the rest should be taken,
+/// and a file that was cut or that would not entirely decode is a file somebody
+/// needs to know about before they start relying on what is in it, not after.
+pub fn text_document(
+    name: &str,
+    reading: &crate::service::plain_text::TextReading,
+) -> ReaderDocument {
+    let title = match name.trim() {
+        "" => "Attachment".to_string(),
+        named => named.to_string(),
+    };
+
+    ReaderDocument {
+        text: format!("{title}\n{}\n\n{}", reading.note, reading.text),
+        // The one landmark there is. A text file has no structure to jump by,
+        // and an empty landmark list would leave a reader who presses the
+        // jump-to-heading key with no way back to the top of the tab.
+        landmarks: vec![Landmark {
+            offset: 0,
+            level: 1,
+            label: title.clone(),
+        }],
+        title,
+        // Nothing here interprets this file. `plain_text::read` already took
+        // out the control characters that could have made a reading window do
+        // something, and what is left is characters in a read-only control:
+        // there is nothing in it to run, to follow or to submit. The bar is for
+        // what the mail provider's filter made of the message this arrived in,
+        // and that verdict belongs to the message's own tab, which is still
+        // open behind this one.
+        picture: None,
+        looks_unsafe: false,
+        warning: None,
+        // Nothing hangs off a text file, so no list and nothing extra to tab
+        // past.
+        attachments: Vec::new(),
+    }
+}
+
+/// What a picture preview says when the tab has no picture in it to show.
+///
+/// A fact about what arrived rather than a fault: this build does not draw
+/// pictures of this kind, so there was never one here to be missing. Named
+/// rather than written where it is used, because a second state joins it and
+/// the two must not be confusable. A file this could not decode is a fault, of
+/// the file or of this program, and somebody told the wrong one of the two
+/// either goes looking for a damaged file that is fine or shrugs at one that is
+/// not. This program has paid for collapsing an answer into a failure to ask
+/// before: `spellcheck::WhatThisMachineOffers` exists because a French user got
+/// English on a first run where the call happened to fail.
+pub const NO_PICTURE_TO_SHOW: &str =
+    "Wixen Mail does not draw pictures of this kind, so there is none in this tab.";
+
+/// What a picture preview says when the picture could not be read.
+///
+/// A fault rather than a fact about the message: the file is damaged, or it is
+/// not the kind of picture it says it is, or it asked for more memory than a
+/// preview may spend. Kept apart from [`NO_PICTURE_TO_SHOW`] in words, because
+/// somebody told the wrong one of the two either goes looking for damage that
+/// is not there or shrugs at damage that is.
+pub const THE_PICTURE_COULD_NOT_BE_READ: &str = "This picture could not be read, so there is nothing below to look at. The \
+     file may be damaged, or it may not be the kind of picture it says it is.";
+
+/// What a picture preview says when the picture is there to look at.
+///
+/// Said even though a sighted reader can see it, because the tab is read aloud
+/// to somebody who cannot, and "there is a picture here" is different from both
+/// of the other two things this can say.
+pub const THE_PICTURE_IS_SHOWN: &str = "The picture is shown below these words.";
+
+/// The picture kinds this build really draws.
+///
+/// A subset of what [`ReaderAttachment::how_it_reads`] admits, and deliberately
+/// so. The gate admits every kind this program treats as a picture, because all
+/// of them get a preview that says what the sender said about them; this is the
+/// shorter list of the ones a decoder in this binary can turn into pixels. The
+/// reasoning for the difference is in `Cargo.toml` beside the `image` entry: a
+/// GIF and a WebP would each add a parser reachable by a stranger's file, for a
+/// case neither common nor cheap.
+///
+/// A kind that is not here says [`NO_PICTURE_TO_SHOW`], which is a statement
+/// about this build rather than about the file.
+const KINDS_DRAWN_HERE: [&str; 2] = ["image/png", "image/jpeg"];
+
+/// Compose a picture attachment for the reader.
+///
+/// Ordered by what decides what to do next. What the sender said about the
+/// picture comes first, because for a reader who cannot see it that is the only
+/// thing that can say what is in it, and its absence is the fact that decides
+/// whether the rest is worth listening to. Then whether there is a picture in
+/// the tab, so nobody is left believing one failed to load. Then the kind and
+/// the size, which are the two facts the attachment row already gave and are
+/// here so the tab reads on its own.
+///
+/// Takes the bytes although nothing here reads them. That is where a decode
+/// belongs when there is one, and putting the parameter in now means adding it
+/// changes this function rather than every caller.
+pub fn image_document(attachment: &ReaderAttachment, bytes: &[u8]) -> ReaderDocument {
+    let _ = bytes;
+    let title = match attachment.name.trim() {
+        "" => "Attachment".to_string(),
+        named => named.to_string(),
+    };
+
+    let said = what_the_sender_said_about_the_picture(&attachment.description);
+    let kind = describe_kind(&attachment.mime_type, &attachment.name);
+    let size = human_size(attachment.size);
+    let (picture, about_the_picture) = the_picture_itself(attachment, bytes, &said);
+
+    ReaderDocument {
+        text: format!("{title}\n{said}\n{about_the_picture}\n{kind}, {size}\n"),
+        // The only landmark there is. A picture has no structure to move by, and
+        // an empty list would leave a reader who presses the jump-to-heading key
+        // with no way back to the top of the tab.
+        landmarks: vec![Landmark {
+            offset: 0,
+            level: 1,
+            label: title.clone(),
+        }],
+        title,
+        // Decided again now that something parses these bytes, which is what
+        // changed since this preview only described them. Still false, and for
+        // a different reason than before rather than by inheritance. Handing a
+        // decoder a stranger's file is a risk this program chose to take, and it
+        // is bounded before the decode starts, bounded again while it runs, and
+        // fails closed: what comes out is pixels or a refusal, never anything
+        // that runs, follows or submits. Nothing about that is a verdict to hand
+        // the reader. The bar carries what the mail provider's filter made of
+        // the message, and that verdict is on the message's own tab. Sounding
+        // the unsafe cue because a picture was decoded would teach somebody the
+        // cue means nothing, and then it means nothing on the message where it
+        // mattered.
+        looks_unsafe: false,
+        warning: None,
+        picture,
+        attachments: Vec::new(),
+    }
+}
+
+/// The picture, if there is one, and the sentence saying which of three things
+/// happened.
+///
+/// The three stay apart in words on purpose, and a test asserts that no two of
+/// them are the same sentence. Shown, could not be read, and there was never one
+/// to draw are three different facts: the second is a fault of the file or of
+/// this program and the third is a statement about this build, and somebody
+/// told the wrong one acts on the wrong thing. This program has drawn the same
+/// distinction twice before, in `spellcheck::WhatThisMachineOffers` and in the
+/// certificate answer, and wrote down what collapsing it cost.
+fn the_picture_itself(
+    attachment: &ReaderAttachment,
+    bytes: &[u8],
+    described: &str,
+) -> (Option<ReaderPicture>, &'static str) {
+    let Some(kind) = the_kind_of_picture(&attachment.mime_type, &attachment.name) else {
+        return (None, NO_PICTURE_TO_SHOW);
+    };
+    if !KINDS_DRAWN_HERE.contains(&kind) {
+        return (None, NO_PICTURE_TO_SHOW);
+    }
+    match crate::service::picture::read(bytes) {
+        Ok(read) => (
+            Some(ReaderPicture {
+                pixels: read.pixels,
+                width: read.width,
+                height: read.height,
+                described: described.to_string(),
+            }),
+            THE_PICTURE_IS_SHOWN,
+        ),
+        // Said, not swallowed. A decode that fails silently is a blank space
+        // where a picture should be, and a sighted reader sees nothing while a
+        // blind one is told nothing.
+        Err(why) => {
+            tracing::debug!("an attachment could not be decoded as a picture: {why}");
+            (None, THE_PICTURE_COULD_NOT_BE_READ)
+        }
+    }
+}
+
+/// The first line of a picture preview: what the sender said it is.
+///
+/// Not cut at [`LONGEST_DESCRIPTION_SPOKEN`] the way the attachment row is. A
+/// row is announced every time focus reaches it and has to stay short enough to
+/// listen to; a tab is opened on purpose, once, by somebody who wants the whole
+/// of it. The absence is worded from
+/// [`crate::application::long_text::NO_DESCRIPTION`] rather than written again,
+/// so a reader who meets it on a picture inside a note, on an attachment row and
+/// here hears the same words for the same fact.
+fn what_the_sender_said_about_the_picture(said: &WhatTheSenderSaid) -> String {
+    match said {
+        WhatTheSenderSaid::Nothing => format!(
+            "This picture came with {}, so nothing here can say what is in it.",
+            crate::application::long_text::NO_DESCRIPTION
+        ),
+        // Not the same sentence as silence, for the reason
+        // `ReaderAttachment::what_the_sender_said` already gives: the sender did
+        // write something and it arrived as bytes that are not writing, which is
+        // their client's fault rather than theirs. Guardrail 9.
+        WhatTheSenderSaid::SomethingUnreadable => {
+            "The sender wrote a description with nothing readable in it, so \
+             nothing here can say what is in this picture."
+                .to_string()
+        }
+        WhatTheSenderSaid::InWords(said) => {
+            format!("The sender described this picture: {}", said.trim())
+        }
+    }
+}
+
+/// Which reading this application can give an attachment, of the kinds it has.
+///
+/// One answer for two callers. The reader window asks it to decide whether to
+/// refuse, and the worker asks it to decide which producer to call. Two matches
+/// over the same two facts is how a `.txt` comes to be admitted by the window
+/// and dropped by the worker, with everything green and a tab that never opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HowItReads {
+    /// Through [`crate::service::pdf::read`].
+    Pdf,
+    /// Through [`crate::service::plain_text::read`].
+    Text,
+    /// A picture, described by [`image_document`].
+    Picture,
+}
+
+/// File names read as pictures when the type does not say so.
+///
+/// The kinds themselves are [`crate::application::pictures::KINDS_WORTH_CARRYING`]
+/// and are deliberately not repeated here. This is the other half of the same
+/// question, which that list cannot answer: a MIME type is not a file name, and
+/// `jpg` and `jpeg` are both `image/jpeg`. Each entry names the kind it stands
+/// for, and a test holds every one of them to being a kind that list really
+/// carries, so the two cannot drift into disagreeing.
+/// Which picture kind this attachment is, by either of the two things that can
+/// say so.
+///
+/// One answer, so the gate that admits a picture and the preview that decides
+/// whether it can be drawn cannot come to disagree about what kind it is.
+fn the_kind_of_picture(mime_type: &str, name: &str) -> Option<&'static str> {
+    let kind = mime_type.trim().to_ascii_lowercase();
+    if let Some(known) = crate::application::pictures::KINDS_WORTH_CARRYING
+        .into_iter()
+        .find(|carried| *carried == kind)
+    {
+        return Some(known);
+    }
+    let extension = extension_of(name).unwrap_or_default();
+    READS_AS_A_PICTURE
+        .iter()
+        .find(|(named, _)| *named == extension)
+        .map(|(_, stands_for)| *stands_for)
+}
+
+const READS_AS_A_PICTURE: [(&str, &str); 5] = [
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+];
+
+/// File names read as text when the type does not say so.
+///
+/// Not the whole of `text/*`, and that is a decision rather than an oversight.
+/// An HTML attachment is a document whose source is not what anybody asked to
+/// read, and `text/calendar` already means something else here. These are the
+/// extensions whose whole content is the words in them.
+const READS_AS_TEXT: [&str; 6] = ["txt", "text", "log", "md", "markdown", "csv"];
 
 /// One message of a conversation, with the body already fetched.
 #[derive(Debug, Clone)]
@@ -812,6 +1117,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         // exist for some reason other than something being wrong, and today it
         // cannot: the two folds that come afterwards, `with_signature` and
         // `with_encryption`, never set this.
+        picture: None,
         looks_unsafe: warning.is_some(),
         landmarks,
         warning,
@@ -898,6 +1204,26 @@ impl ReaderAttachment {
             }
             WhatTheSenderSaid::InWords(said) => cut_at_a_word(said, LONGEST_DESCRIPTION_SPOKEN),
         }
+    }
+
+    /// Which reading this attachment gets here, or `None` when there is none.
+    ///
+    /// Either the type or the name is enough, the way a PDF has always been
+    /// admitted: refusing to read a file somebody was sent because their client
+    /// labelled it sloppily helps nobody.
+    pub fn how_it_reads(&self) -> Option<HowItReads> {
+        let kind = self.mime_type.trim().to_ascii_lowercase();
+        let extension = extension_of(&self.name).unwrap_or_default();
+        if kind == "application/pdf" || extension == "pdf" {
+            return Some(HowItReads::Pdf);
+        }
+        if kind == "text/plain" || READS_AS_TEXT.contains(&extension.as_str()) {
+            return Some(HowItReads::Text);
+        }
+        if the_kind_of_picture(&self.mime_type, &self.name).is_some() {
+            return Some(HowItReads::Picture);
+        }
+        None
     }
 
     /// Whether Windows would run this rather than open it.
@@ -2488,6 +2814,7 @@ mod warning_tests {
             landmarks: Vec::new(),
             warning: None,
             attachments: Vec::new(),
+            picture: None,
             looks_unsafe: false,
         }
     }
@@ -3159,5 +3486,425 @@ mod encryption_tests {
         for sentence in [ENCRYPTED_AND_NOT_OPENED_HERE, SIGNED_AND_NOT_CHECKED_HERE] {
             assert!(!sentence.contains("  "), "{sentence}");
         }
+    }
+}
+
+/// What a text attachment's tab is made of.
+#[cfg(test)]
+mod attachment_preview_tests {
+    use super::*;
+    use crate::service::plain_text::TextReading;
+
+    fn reading(text: &str, note: &str) -> TextReading {
+        TextReading {
+            text: text.to_string(),
+            note: note.to_string(),
+            bytes: text.len(),
+            bytes_read: text.len(),
+            entirely_text: true,
+        }
+    }
+
+    #[test]
+    fn test_a_text_attachments_note_comes_before_its_words() {
+        // What the note says changes how the rest should be taken. Putting it
+        // at the end tells somebody after they have already relied on it, and
+        // `pdf_document` orders itself the same way for the same reason.
+        let document = text_document(
+            "notes.txt",
+            &reading("The first line of the file.", "Read as text."),
+        );
+
+        assert!(
+            document
+                .text
+                .starts_with("notes.txt\nRead as text.\n\nThe first line of the file."),
+            "{:?}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_text_attachment_is_its_own_first_landmark() {
+        // The tab is reached by jumping between landmarks, and a tab whose
+        // first landmark is somewhere in the middle of the file opens on a
+        // reader who cannot get back to the top by structure.
+        let document = text_document("notes.txt", &reading("Words.", "Read as text."));
+
+        let first = document.landmarks.first();
+        assert_eq!(first.map(|l| l.label.as_str()), Some("notes.txt"));
+        assert_eq!(first.map(|l| l.offset), Some(0));
+        assert_eq!(first.map(|l| l.level), Some(1));
+    }
+
+    #[test]
+    fn test_a_text_attachment_with_no_name_still_gets_a_title() {
+        // A blank tab label and a control named nothing are both things a
+        // screen reader reports as an unnamed window.
+        let document = text_document("   ", &reading("Words.", "Read as text."));
+
+        assert!(!document.title.trim().is_empty());
+    }
+
+    #[test]
+    fn test_a_text_attachment_carries_no_warning_bar_and_nothing_hanging_off_it() {
+        // Passed at its own red, and kept anyway: it is the regression guard
+        // for the `looks_unsafe` decision, which is a claim rather than a
+        // default. The bar says what the provider's filter made of the
+        // message, and that verdict belongs to the message's own tab.
+        let document = text_document("notes.txt", &reading("Words.", "Read as text."));
+
+        assert!(document.warning.is_none());
+        assert!(document.attachments.is_empty());
+        assert!(!document.looks_unsafe);
+    }
+}
+
+/// What a picture attachment's tab says about the picture.
+#[cfg(test)]
+mod picture_preview_tests {
+    use super::*;
+    use crate::service::mime::WhatTheSenderSaid;
+
+    fn picture(name: &str, kind: &str, said: WhatTheSenderSaid) -> ReaderAttachment {
+        ReaderAttachment {
+            message_row_id: 1,
+            uid: 1,
+            index: 0,
+            name: name.to_string(),
+            mime_type: kind.to_string(),
+            size: 240 * 1024,
+            description: said,
+        }
+    }
+
+    /// The lines of the tab, without the title.
+    fn said_about(document: &ReaderDocument) -> Vec<String> {
+        document
+            .text
+            .lines()
+            .skip(1)
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn test_an_image_preview_says_what_the_sender_said_about_the_picture() {
+        // The one fact about a picture that a person wrote, and for a reader
+        // who cannot see it the only thing that can say what is in it.
+        let document = image_document(
+            &picture(
+                "bicycle.jpg",
+                "image/jpeg",
+                WhatTheSenderSaid::InWords("A red bicycle against a brick wall".to_string()),
+            ),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        assert!(
+            lines
+                .first()
+                .is_some_and(|first| first.contains("A red bicycle against a brick wall")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_the_sender_described_with_nothing_says_so_before_anything_else() {
+        // That is the fact which decides whether the rest is worth listening
+        // to, so somebody who hears the first line and stops has heard it.
+        let document = image_document(
+            &picture("IMG_4021.jpg", "image/jpeg", WhatTheSenderSaid::Nothing),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        let first = lines.first().map(String::as_str).unwrap_or_default();
+        assert!(
+            first.contains(crate::application::long_text::NO_DESCRIPTION),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_description_that_arrived_unreadable_is_not_reported_as_silence() {
+        // The sender did write something. It arrived as bytes that are not
+        // writing, which is their client's fault rather than theirs, and the
+        // attachment row already keeps the two apart.
+        let document = image_document(
+            &picture(
+                "photo.png",
+                "image/png",
+                WhatTheSenderSaid::SomethingUnreadable,
+            ),
+            b"",
+        );
+
+        let lines = said_about(&document);
+        let first = lines.first().map(String::as_str).unwrap_or_default();
+        assert!(first.contains("nothing readable"), "{lines:?}");
+        assert!(
+            !first.contains(crate::application::long_text::NO_DESCRIPTION),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_preview_always_says_which_of_three_things_happened() {
+        // Otherwise somebody is left believing the tab failed to load one.
+        // Exactly one of the three, never none and never two: a preview saying
+        // both that a picture is shown and that there is none is worse than one
+        // saying neither, because the reader has to guess which is the lie.
+        //
+        // This was written one task earlier asserting only the third sentence,
+        // when nothing decoded and every picture got it. Drawing a PNG made that
+        // assertion false for a real reason, and it was widened here rather than
+        // deleted: the property it was reaching for was always that the preview
+        // says which, not that it says that one.
+        for (name, kind, bytes) in [
+            ("photo.png", "image/png", a_readable_png()),
+            ("photo.png", "image/png", b"not a picture at all".to_vec()),
+            ("animation.gif", "image/gif", b"GIF89a and no more".to_vec()),
+        ] {
+            let document = image_document(&picture(name, kind, WhatTheSenderSaid::Nothing), &bytes);
+
+            let said = [
+                THE_PICTURE_IS_SHOWN,
+                THE_PICTURE_COULD_NOT_BE_READ,
+                NO_PICTURE_TO_SHOW,
+            ]
+            .iter()
+            .filter(|sentence| document.text.contains(*sentence))
+            .count();
+
+            assert_eq!(said, 1, "{name}, {kind}: {}", document.text);
+        }
+    }
+
+    /// A PNG small enough that making one costs nothing.
+    fn a_readable_png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(8, 8))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("a PNG this test made");
+        bytes
+    }
+
+    #[test]
+    fn test_a_picture_preview_says_the_kind_and_the_size_in_the_words_the_row_uses() {
+        // The same words as the attachment row, so somebody who heard the row
+        // and then opened it is not told the same thing twice in two ways.
+        let attachment = picture("photo.png", "image/png", WhatTheSenderSaid::Nothing);
+        let document = image_document(&attachment, b"");
+
+        assert!(document.text.contains("PNG image"), "{}", document.text);
+        assert!(
+            document.text.contains(&human_size(attachment.size)),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_the_two_halves_of_what_counts_as_a_picture_agree() {
+        // One list of kinds, and a name table that stands for the same kinds.
+        // Two lists of image types is how two lists come to disagree, so each
+        // entry in the table has to name a kind the carrying list really holds,
+        // and every kind on that list has to be reachable by a name as well as
+        // by a type. Otherwise a sender whose client labels a WebP
+        // application/octet-stream is refused for a reason nobody wrote down.
+        use crate::application::pictures::KINDS_WORTH_CARRYING;
+
+        for (named, kind) in READS_AS_A_PICTURE {
+            assert!(KINDS_WORTH_CARRYING.contains(&kind), "{named} names {kind}");
+        }
+        for kind in KINDS_WORTH_CARRYING {
+            assert!(
+                READS_AS_A_PICTURE
+                    .iter()
+                    .any(|(_, stands_for)| *stands_for == kind),
+                "no file name reaches {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_picture_preview_has_no_landmarks_beyond_its_title() {
+        // There is no structure in it to move by, and an empty landmark list
+        // is not the same as a missing one: the title is how a reader gets
+        // back to the top of the tab.
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            b"",
+        );
+
+        assert_eq!(document.landmarks.len(), 1);
+        assert_eq!(
+            document.landmarks.first().map(|l| l.label.as_str()),
+            Some("photo.png")
+        );
+    }
+}
+
+/// Whether a picture is drawn, and which of three things the tab says about it.
+#[cfg(test)]
+mod picture_shown_tests {
+    use super::*;
+    use crate::service::mime::WhatTheSenderSaid;
+
+    fn picture(name: &str, kind: &str, said: WhatTheSenderSaid) -> ReaderAttachment {
+        ReaderAttachment {
+            message_row_id: 1,
+            uid: 1,
+            index: 0,
+            name: name.to_string(),
+            mime_type: kind.to_string(),
+            size: 4096,
+            description: said,
+        }
+    }
+
+    fn a_png(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("a PNG this test made");
+        bytes
+    }
+
+    #[test]
+    fn test_a_picture_this_build_draws_is_drawn_and_the_tab_says_so() {
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            &a_png(40, 25),
+        );
+
+        let shown = document.picture.as_ref().expect("a decoded picture");
+        assert_eq!((shown.width, shown.height), (40, 25));
+        assert_eq!(shown.pixels.len() as u32, shown.width * shown.height * 4);
+        assert!(
+            document.text.contains(THE_PICTURE_IS_SHOWN),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_picture_that_could_not_be_read_says_so_and_draws_nothing() {
+        // A PNG header and then nothing a decoder can use, which is what a
+        // truncated fetch or a damaged file looks like.
+        let mut damaged = b"\x89PNG\r\n\x1a\n".to_vec();
+        damaged.extend_from_slice(b"and then nothing a decoder can use");
+
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            &damaged,
+        );
+
+        assert!(document.picture.is_none());
+        assert!(
+            document.text.contains(THE_PICTURE_COULD_NOT_BE_READ),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_a_kind_this_build_does_not_draw_says_there_is_none_rather_than_a_fault() {
+        // A GIF opens, is described, and says plainly that this build does not
+        // draw one. That is a statement about the build, and a reader can tell
+        // it from a file that could not be read.
+        let document = image_document(
+            &picture("animation.gif", "image/gif", WhatTheSenderSaid::Nothing),
+            b"GIF89a and whatever else",
+        );
+
+        assert!(document.picture.is_none());
+        assert!(
+            document.text.contains(NO_PICTURE_TO_SHOW),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_the_three_things_a_preview_can_say_about_a_picture_are_three_different_things() {
+        // A fault and a fact must not sound the same. Pairwise different, and
+        // no one of them a part of another, because an edit that makes one of
+        // them a longer version of its neighbour leaves a reader unable to tell
+        // which they heard.
+        let three = [
+            THE_PICTURE_IS_SHOWN,
+            THE_PICTURE_COULD_NOT_BE_READ,
+            NO_PICTURE_TO_SHOW,
+        ];
+
+        for (at, one) in three.iter().enumerate() {
+            assert!(!one.trim().is_empty());
+            for other in three.iter().skip(at + 1) {
+                assert_ne!(one, other);
+                assert!(!one.contains(*other), "{one} holds {other}");
+                assert!(!other.contains(*one), "{other} holds {one}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_picture_is_named_from_what_the_sender_said() {
+        // A bitmap with no name is announced as "graphic", which says a picture
+        // is there and nothing else.
+        let described = image_document(
+            &picture(
+                "bicycle.png",
+                "image/png",
+                WhatTheSenderSaid::InWords("A red bicycle against a brick wall".to_string()),
+            ),
+            &a_png(8, 8),
+        );
+        let undescribed = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            &a_png(8, 8),
+        );
+
+        assert!(
+            described
+                .picture
+                .as_ref()
+                .is_some_and(|shown| shown.described.contains("A red bicycle")),
+            "{:?}",
+            described.picture.as_ref().map(|shown| &shown.described)
+        );
+        assert!(
+            undescribed.picture.as_ref().is_some_and(|shown| shown
+                .described
+                .contains(crate::application::long_text::NO_DESCRIPTION)),
+            "{:?}",
+            undescribed.picture.as_ref().map(|shown| &shown.described)
+        );
+    }
+
+    #[test]
+    fn test_the_words_come_before_the_picture_in_the_tab() {
+        // The sentence about the picture is in the text, above it, so a reader
+        // who never reaches the bitmap has already been told what is there.
+        let document = image_document(
+            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
+            &a_png(8, 8),
+        );
+
+        let said = document
+            .text
+            .find(THE_PICTURE_IS_SHOWN)
+            .expect("the sentence saying the picture is shown");
+        let kind = document.text.find("PNG image").expect("the kind");
+        assert!(said < kind, "{}", document.text);
     }
 }

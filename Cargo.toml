@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.62.0"
+version = "0.65.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -155,16 +155,86 @@ zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
 # arriving as somebody else's implementation detail.
 flate2 = "1.1.9"
 
-# Reading this application's own icon so the notification area can wear it.
-# wxWidgets takes a bitmap as raw pixels and the icon is an `.ico` file, so
-# something has to decode it, and nothing else in the tree had ever needed to
-# read an image.
+# Reading this application's own icon so the notification area can wear it, and
+# since 0.65.0 reading a picture somebody was sent so a preview can show it.
+# wxWidgets takes a bitmap as raw pixels and neither an `.ico` nor a JPEG is
+# that, so something has to decode them.
 #
-# Three formats and no more: `ico` is the container, and `png` and `bmp` are the
-# two things an `.ico` holds. The rest of what this crate can decode is a
-# decoder somebody else's file could reach, which is attack surface for a
-# feature that reads one file this project ships itself.
-image = { version = "0.25", default-features = false, features = ["ico", "png", "bmp"] }
+# The list used to be three formats and no more, on the reasoning that anything
+# beyond `ico` and the `png` and `bmp` an `.ico` holds was a decoder somebody
+# else's file could reach, and that was attack surface for a feature reading one
+# file this project ships itself. That reasoning was right for that feature. It
+# does not decide this one, where reaching a stranger's file is the whole point,
+# so the question is asked again below rather than inherited.
+#
+# `jpeg` is added. What follows is why, and what it really costs.
+#
+# WHICH CRATE, AND IS IT ALREADY HERE. `image`, already a direct dependency,
+# locked at 0.25.9, already used by `src/presentation/art.rs`, which already
+# decodes to RGBA and already hands the result to `Bitmap::from_rgba`. Checked
+# on 2026-09-05 with `grep -n -A 4 '^name = "image"' Cargo.lock`, which answers
+# 0.25.9. So PNG and BMP decode in this binary today and this is a feature flag
+# on a crate already trusted, not the adoption of a new one. A research note
+# saying "nothing in Cargo.toml decodes PNG/JPEG" was half true, and a half-true
+# absence reads as a whole one.
+#
+# WHAT THE WIDENING REALLY ADDS. Read out of the feature table in the vendored
+# `image-0.25.9/Cargo.toml` on 2026-09-05 rather than quoted from a plan:
+# `jpeg = ["dep:zune-core", "dep:zune-jpeg"]`, `gif = ["dep:gif",
+# "dep:color_quant"]`, `webp = ["dep:image-webp"]`. `png` and `bmp` need no
+# crate of their own beyond what is already on. Each of those five was then
+# checked against `Cargo.lock`: none of them was in the tree for another reason.
+# So `jpeg` adds exactly two crates and the wider set would have added five.
+#
+# WHETHER THEY ARE REAL. Asked of the crates the widening adds, not of `image`,
+# which is established. `zune-jpeg`: 104 million downloads, first published
+# 2022-05-09, 58 versions, owned by `etemesi254`, repository
+# `github.com/etemesi254/zune-image`. `zune-core`: 101 million downloads, first
+# published 2023-02-25, same owner, same repository. They are the crates `image`
+# itself chose for its JPEG decoding, so using them is using what `image` uses
+# rather than a second opinion about JPEG. Both fine. For the record, the three
+# the wider set would have added are fine too: `gif` (128M, image-rs),
+# `color_quant` (120M, image-rs), `image-webp` (70M, image-rs).
+#
+# THE SMALLER OPTION, AND WHY IT WAS TAKEN. Legitimacy does not separate these
+# five; all are real and widely used. What separates them is decode surface. A
+# picture attachment is a stranger's file, and every format enabled is another
+# parser reachable by one. PNG already decodes, so `jpeg` alone covers the two
+# kinds almost every picture in mail is, for two new crates. GIF's LZW and
+# WebP's VP8 are the two largest parsers of the three that were left out, and
+# neither buys a common case. A GIF or a WebP attachment still opens, still says
+# what the sender said about it and still says its kind and size; it says
+# plainly that there is no picture in the tab, which a reader can tell from a
+# picture that could not be read. That is a stated scope rather than a silent
+# gap, and `docs/changelog.md` says which kinds are drawn.
+#
+# WHAT WRITING IT BY HAND WOULD COST. A JPEG decoder for a stranger's bytes:
+# entropy decoding, dequantisation, an inverse DCT, chroma upsampling, and the
+# progressive mode on top. It is exactly the kind of code the `ring` comment
+# below refuses to write twice, and it is not a serious option. Said out loud
+# because a dependency justification that does not name the alternative is not
+# one.
+#
+# TWO THINGS THAT LOOK AVAILABLE AND ARE NOT, so nobody proposes them again.
+# Both re-checked against the tree on 2026-09-05. wxWidgets can decode images
+# itself, but `wxdragon 0.9.17` exposes no loader: `src/bitmap.rs` has
+# `from_rgba`, `new`, `null_bitmap` and `get_rgba_data`, and nothing that reads
+# a file or a byte slice. A `Bitmap::new_from_file` appears in a doc-comment
+# example in `widgets/generic_static_bitmap.rs` and exists nowhere in the crate.
+# That is why `art.rs` decodes with `image` first. Separately, `jpeg-decoder`
+# 0.3.2 is already in `Cargo.lock`, pulled in by `pdfpurr`, so a JPEG decoder is
+# already compiled into this binary. Calling it would mean naming it as a direct
+# dependency and then writing this project's own bounds and its own conversion
+# from `jpeg-decoder`'s Rgb24, L8 and Cmyk32 output into RGBA, alongside `image`
+# for PNG. Two decode paths for two formats, each with its own idea of what a
+# limit is, to save two crates from the same ecosystem. Not taken, and the
+# reason is written here rather than left to be rediscovered.
+image = { version = "0.25", default-features = false, features = [
+    "ico",
+    "png",
+    "bmp",
+    "jpeg",
+] }
 # Reading an Outlook data file, which is what somebody moving off Outlook has
 # in their hands: one file holding their mail, calendar, contacts, tasks and
 # notes together. The format is Microsoft's, undocumented for most of its life,
