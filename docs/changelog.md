@@ -61,6 +61,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   An attachment row now ends with the sender's own words. "Figures.pdf, PDF
   document, 240 KB, Quarterly figures for the board."
 
+  A picture sent inside a message is described the same way, and it has a
+  second place to look. Most people who describe a picture at all do it in the
+  message itself, on the picture, because that is what their mail program asks
+  them for. So a picture with no description of its own now takes the one
+  written on it in the message. Only that picture's own: the description is
+  matched to the file it belongs to, never to whichever picture happens to be
+  nearest, because a wrong description in the sender's voice is worse than
+  none.
+
+  A description the sender wrote as a description wins. If they wrote one and
+  also described the picture in the message, you get the one they wrote.
+
   When the sender described nothing, the row says "no description" rather than
   stopping after the size. That is the half that matters most. A row that just
   stops is one where you cannot tell an undescribed picture from a description

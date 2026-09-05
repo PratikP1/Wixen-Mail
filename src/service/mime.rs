@@ -261,7 +261,18 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         .parse(raw)
         .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
 
-    let attachments = attachment_parts(&message).map(described).collect();
+    // The markup as the sender wrote it, before the pictures are written into
+    // it below. Held here rather than read twice, because the two readings
+    // would not be of the same document: `carry_the_pictures` rewrites every
+    // `cid:` address into the picture itself, and the `cid:` is the only thing
+    // tying an `img` to the part it names.
+    let as_it_arrived = first_of_kind(message.html_bodies(), |body| match body {
+        PartType::Html(html) => Some(html.as_ref().to_string()),
+        _ => None,
+    });
+
+    let mut attachments: Vec<AttachmentInfo> = attachment_parts(&message).map(described).collect();
+    borrow_descriptions_from_the_markup(&mut attachments, as_it_arrived.as_deref());
 
     Ok(ParsedMessage {
         subject: message.subject().unwrap_or_default().to_string(),
@@ -285,16 +296,109 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         // nothing to a browser, so without this a picture the message already
         // holds cannot be drawn at all, while the ones it merely points at
         // would be the only ones that appeared.
-        body_html: first_of_kind(message.html_bodies(), |body| match body {
-            PartType::Html(html) => Some(html.as_ref().to_string()),
-            _ => None,
-        })
-        .map(|html| {
+        body_html: as_it_arrived.map(|html| {
             crate::application::pictures::carry_the_pictures(&html, &pictures_carried(&message))
         }),
         attachments,
         receipt_to: receipt_request(&message),
     })
+}
+
+/// Give every undescribed picture the description on the `img` that names it.
+///
+/// A sender who describes a picture usually does it in the markup rather than
+/// in a `Content-Description` header, because that is where a composer asks
+/// them for it; this program's own composer refuses to insert one without an
+/// answer. So without this, the commoner of the two places a description lives
+/// reaches the attachment list as silence.
+///
+/// **The header wins where there is one**, and the markup is not consulted at
+/// all for that part. A borrowed description is a guess about which picture an
+/// element meant; an explicit one is the sender saying it. That includes the
+/// case where the header arrived as something unreadable, which stays
+/// unreadable rather than being quietly replaced: it names a fault in the
+/// sender's program, and the reader still meets the alt when they read the body.
+///
+/// Called from inside [`parse`], against the markup as it arrived. See the
+/// comment there for why it cannot happen afterwards.
+fn borrow_descriptions_from_the_markup(attachments: &mut [AttachmentInfo], html: Option<&str>) {
+    let wanting = |one: &AttachmentInfo| {
+        one.content_id.is_some() && one.description == WhatTheSenderSaid::Nothing
+    };
+    let Some(html) = html else {
+        return;
+    };
+    // Reading the markup means building a document out of it, which is not free
+    // on a long newsletter and is wasted on every message that has nothing to
+    // gain. Most mail has no attachment at all.
+    if !attachments.iter().any(wanting) {
+        return;
+    }
+
+    let called = what_each_picture_is_called(html);
+    for attachment in attachments.iter_mut().filter(|one| wanting(one)) {
+        let Some(named) = attachment.content_id.as_deref() else {
+            continue;
+        };
+        // Through the same reading as the header, so an alt of nothing but
+        // spaces is silence and an alt carrying control characters is scrubbed,
+        // by one rule rather than two. An empty `alt` is the author marking a
+        // picture decorative, which answers `Nothing` and leaves the row saying
+        // the sender described nothing, which is true.
+        if let Some(alt) = called.get(named) {
+            attachment.description = WhatTheSenderSaid::read(Some(alt));
+        }
+    }
+}
+
+/// What each picture in a body is called by the element that shows it.
+///
+/// Keyed by content id, normalised through
+/// [`crate::application::pictures::plain_content_id`] so both ends of the
+/// comparison are made by one rule: the header writes it in angle brackets and
+/// the address does not, and neither is written by us.
+///
+/// The markup is a stranger's and is read rather than trusted. This asks an
+/// HTML parser for the value of an attribute: nothing is fetched, nothing is
+/// run, and a document too malformed to mean anything comes back as whatever
+/// the parser recovered rather than as an error. A message that will not parse
+/// is a message nobody can read at all, which is a worse failure than a missing
+/// description.
+///
+/// The first `img` naming a content id wins, so a body that names one twice
+/// with two different descriptions gets one answer rather than the last one to
+/// be walked over.
+fn what_each_picture_is_called(html: &str) -> std::collections::HashMap<String, String> {
+    use crate::application::pictures::plain_content_id;
+
+    let mut called = std::collections::HashMap::new();
+    let document = scraper::Html::parse_document(html);
+    let Ok(pictures) = scraper::Selector::parse("img") else {
+        return called;
+    };
+    for picture in document.select(&pictures) {
+        let Some(source) = picture.value().attr("src") else {
+            continue;
+        };
+        let source = source.trim();
+        // Only the addresses that name a part of this message. A `data:` or
+        // `https:` picture is not a part and has nothing here to be tied to.
+        let Some(rest) = source
+            .get(..4)
+            .filter(|scheme| scheme.eq_ignore_ascii_case("cid:"))
+            .and_then(|_| source.get(4..))
+        else {
+            continue;
+        };
+        let named = plain_content_id(rest);
+        if named.is_empty() {
+            continue;
+        }
+        called
+            .entry(named)
+            .or_insert_with(|| picture.value().attr("alt").unwrap_or_default().to_string());
+    }
+    called
 }
 
 /// Where the sender asked a read receipt to go, if anywhere.
@@ -1364,18 +1468,45 @@ mod tests {
     fn test_a_malformed_markup_body_leaves_the_message_readable() {
         // A message that will not parse is a message nobody can read at all,
         // which is a worse failure than a missing description. So the reading
-        // of the markup recovers rather than refusing, and the description it
-        // finds in the wreckage is still the sender's.
-        let parsed = related_message(
+        // recovers rather than refusing, and a description it can still find in
+        // the wreckage is still the sender's.
+        let recoverable = related_message(
+            "<p><b>unclosed <img src=\"cid:pic\" alt=\"A cat on a wall\">",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(recoverable.attachments.len(), 1);
+        assert_eq!(
+            recoverable.attachments[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+    }
+
+    #[test]
+    fn test_markup_too_broken_to_read_leaves_the_part_undescribed_rather_than_guessed_at() {
+        // The other half, and the one worth having. This body's first `src` is
+        // never closed, so the parser welds the two elements into one and hands
+        // back a picture whose content id is `pic alt=unclosed <img src=` with
+        // the second element's alt on it. Measured rather than expected: the
+        // first version of this test asserted the alt was recovered here and
+        // could never have gone green.
+        //
+        // No part has that content id, so the part keeps its silence. That is
+        // the whole value of matching on the id: a lookup that took the nearest
+        // alt, or matched loosely, would put a description on a part it never
+        // really matched, which is worse than none because it is a wrong one
+        // said in the sender's voice.
+        let wreckage = related_message(
             "<p><div><img src=\"cid:pic alt=unclosed <img src=\"cid:pic\" \
              alt=\"A cat on a wall\"><<</p",
             &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
         );
 
-        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(wreckage.attachments.len(), 1, "{:?}", wreckage.attachments);
         assert_eq!(
-            parsed.attachments[0].description,
-            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+            wreckage.attachments[0].description,
+            WhatTheSenderSaid::Nothing,
+            "a description was taken from an element that names a different part"
         );
     }
 

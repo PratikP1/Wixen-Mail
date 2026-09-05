@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 406 records have arrived since and have not been through it.
+# 408 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8257,7 +8257,7 @@ tests_last_seen = [
     { file = "src/common/types.rs", tests = 30 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/mime.rs", tests = 39 },
+    { file = "src/service/mime.rs", tests = 47 },
 ]
 
 # A week-start day other than Monday used to be refused on every rule that
@@ -14844,10 +14844,17 @@ tests_last_seen = [
 # was dropped at `described`, which built an `AttachmentInfo` out of three
 # accessors and ignored the rest of the part.
 #
-# The break below reddens exactly one test in the whole library, which is worth
-# saying plainly rather than leaving to be discovered: the reading happens at
-# one boundary and one table test covers it. Measured with `--no-fail-fast` over
-# all 6,255 tests on 2026-09-05.
+# Measured with `--no-fail-fast` over the whole library on 2026-09-05, twice.
+# The first measurement reddened one test, because the reading happens at one
+# boundary and one table test covered it. The second reddened two: the same
+# afternoon added the lookup that borrows a description off the `img` naming
+# the part, and a part whose header is dropped now falls through to that lookup
+# and comes back with the picture's words instead. The precedence test sees it.
+#
+# Worth leaving written down. This record went stale inside the session that
+# wrote it, which is the shape `CLAUDE.md` says is the common one and never
+# announces itself; the only reason it was caught is that the second task
+# re-ran `--remeasure` rather than assuming the first task's record still held.
 
 [[guard]]
 name = "a description the sender gave survives the boundary"
@@ -14858,9 +14865,10 @@ after = """        size: part.contents().len(),
         description: WhatTheSenderSaid::Nothing,"""
 red = [
     "service::mime::tests::test_what_a_sender_writes_in_content_description_becomes",
+    "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
 ]
 tests_last_seen = [
-    { file = "src/service/mime.rs", tests = 39 },
+    { file = "src/service/mime.rs", tests = 47 },
 ]
 
 # The accessible half of the same feature, and the half likelier to be tidied
@@ -14882,4 +14890,52 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 81 },
+]
+
+# ── Borrowing a description off the picture that names the part ─────────────
+#
+# An image with no `Content-Description` of its own takes the `alt` on the
+# `img` that names it, which is where most senders who describe a picture at
+# all put it. The plausible future mistake is letting the borrowed one win: it
+# is a guess about which element meant which part, and an explicit header is
+# the sender saying it outright.
+#
+# The break lets the lookup overwrite a description the sender wrote. Measured
+# with `--no-fail-fast` over all 6,263 tests on 2026-09-05: one test reddens,
+# and it is the one this is about.
+
+[[guard]]
+name = "the sender's own description of a picture outranks a borrowed one"
+file = "src/service/mime.rs"
+before = """        one.content_id.is_some() && one.description == WhatTheSenderSaid::Nothing"""
+after = """        one.content_id.is_some()"""
+red = [
+    "service::mime::tests::test_the_description_the_sender_wrote_outranks_the_one_on_the_markup",
+]
+tests_last_seen = [
+    { file = "src/service/mime.rs", tests = 47 },
+]
+
+# The other half of the same lookup, and the worse failure of the two. Matching
+# by content id is what stops one picture's description landing on another
+# part: a description said in the sender's voice about the wrong file is worse
+# than no description, because nothing about it reads as a guess.
+#
+# The break takes the first alt in the body whatever it names, which is the
+# shape a "close enough" version of this would have. Measured with
+# `--no-fail-fast` over all 6,263 tests on 2026-09-05: two tests redden, and
+# the second is the malformed-markup one, because a body the parser welds into
+# one element yields a content id no part has.
+
+[[guard]]
+name = "a borrowed description comes from the picture that names that part"
+file = "src/service/mime.rs"
+before = """        if let Some(alt) = called.get(named) {"""
+after = """        if let Some(alt) = called.values().next() {"""
+red = [
+    "service::mime::tests::test_a_part_no_picture_in_the_markup_names_stays_undescribed",
+    "service::mime::tests::test_markup_too_broken_to_read_leaves_the_part_undescribed_rather_than_guessed_at",
+]
+tests_last_seen = [
+    { file = "src/service/mime.rs", tests = 47 },
 ]
