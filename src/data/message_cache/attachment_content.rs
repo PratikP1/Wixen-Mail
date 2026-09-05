@@ -90,6 +90,34 @@ impl AttachmentWithContent {
             content: None,
         }
     }
+
+    /// The row for an attachment the parser has just described.
+    ///
+    /// A function rather than a struct literal at the one place that records
+    /// attachments, because a literal makes writing nothing over a fact look
+    /// exactly like carrying it: `content_id: None` sat in that literal with
+    /// the content id in hand beside it, and nothing could say so. Here the
+    /// conversion is one thing with a test on it.
+    pub fn from_a_parsed_part(
+        message_id: i64,
+        part: &crate::service::mime::AttachmentInfo,
+        file: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            described: CachedAttachment {
+                id: 0,
+                message_id,
+                // The sender's name when there is one, and the honest stand-in
+                // when there is not, so no row arrives blank.
+                filename: part.display_name(),
+                mime_type: part.mime_type.clone(),
+                size: i64::try_from(part.size).unwrap_or(i64::MAX),
+                content_id: part.content_id.clone(),
+                description: part.description.clone(),
+            },
+            content: file,
+        }
+    }
 }
 
 /// What names one file in the store.
@@ -278,7 +306,7 @@ impl MessageCache {
             .conn
             .prepare_cached(
                 "SELECT a.id, a.message_id, a.filename, a.mime_type, a.size, a.content_id,
-                        c.content
+                        a.description, c.content
                  FROM attachments a
                  LEFT JOIN attachment_content c ON c.digest = a.content_digest
                  WHERE a.message_id = ?1 ORDER BY a.id",
@@ -295,8 +323,11 @@ impl MessageCache {
                         mime_type: row.get(3)?,
                         size: row.get(4)?,
                         content_id: row.get(5)?,
+                        description: crate::service::mime::WhatTheSenderSaid::from_stored(
+                            row.get(6)?,
+                        ),
                     },
-                    content: row.get(6)?,
+                    content: row.get(7)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query attachments: {}", e)))?
@@ -450,6 +481,7 @@ mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use crate::service::mime::WhatTheSenderSaid;
 
     fn attachment_cache() -> TempHome<MessageCache> {
         TempHome::named("wixen_attachments_", |dir| {
@@ -499,6 +531,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: file.len() as i64,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             content: Some(file.to_vec()),
         }
@@ -592,6 +625,7 @@ mod tests {
                 mime_type: "video/quicktime".to_string(),
                 size: over_the_limit as i64,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             content: Some(vec![b'x'; over_the_limit]),
         };
@@ -644,6 +678,7 @@ mod tests {
                     mime_type: "application/pdf".to_string(),
                     size: 4096,
                     content_id: None,
+                    description: crate::service::mime::WhatTheSenderSaid::Nothing,
                 }],
             )
             .expect("to store");
@@ -711,6 +746,177 @@ mod tests {
             "invented a file for an attachment that never had one stored"
         );
         assert_eq!(cache.cached_attachment_bytes().expect("a total"), 0);
+    }
+
+    // ── What the sender said the file is ────────────────────────────────
+
+    #[test]
+    fn test_what_the_sender_said_survives_being_written_down_and_read_back() {
+        // Both readers of the attachments table, because the reader is composed
+        // from one of them and writing a message out uses the other, and a
+        // column one knows about and the other does not is a fact that appears
+        // and disappears depending on which door somebody came in through.
+        //
+        // All three states, because the empty string is how the column carries
+        // the one in the middle, and nothing else says that it comes back as
+        // itself rather than as words the sender never wrote.
+        let cache = attachment_cache();
+        let message = a_message(&cache, 71);
+        let said = |name: &str, description| AttachmentWithContent {
+            described: CachedAttachment {
+                description,
+                ..carrying(message, name, b"the file").described
+            },
+            content: Some(b"the file".to_vec()),
+        };
+
+        cache
+            .replace_attachments_with_content(
+                message,
+                &[
+                    said(
+                        "figures.pdf",
+                        WhatTheSenderSaid::InWords("Quarterly figures".to_string()),
+                    ),
+                    said("silent.pdf", WhatTheSenderSaid::Nothing),
+                    said("broken.pdf", WhatTheSenderSaid::SomethingUnreadable),
+                ],
+            )
+            .expect("to store");
+
+        let expected = [
+            WhatTheSenderSaid::InWords("Quarterly figures".to_string()),
+            WhatTheSenderSaid::Nothing,
+            WhatTheSenderSaid::SomethingUnreadable,
+        ];
+
+        let with_files = cache.attachments_with_content(message).expect("to read");
+        assert_eq!(
+            with_files
+                .iter()
+                .map(|one| one.described.description.clone())
+                .collect::<Vec<_>>(),
+            expected,
+            "attachments_with_content lost what the sender said"
+        );
+
+        let listed = cache
+            .get_attachments_for_message(message)
+            .expect("to list them");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|one| one.description.clone())
+                .collect::<Vec<_>>(),
+            expected,
+            "get_attachments_for_message lost what the sender said"
+        );
+    }
+
+    #[test]
+    fn test_a_database_written_before_descriptions_says_every_row_has_none() {
+        // The upgrade, and the honest default. Every attachment stored before
+        // this column existed really does have no description here, so NULL is
+        // the truthful answer for all of them rather than a gap to guess at.
+        //
+        // The second half is what makes this a test rather than a tautology: a
+        // row written after the upgrade, in the same database, keeps what the
+        // sender said. Without it this would pass against code that never
+        // stored a description at all.
+        let older = TempHome::new(|dir| dir.to_path_buf());
+        {
+            let conn = rusqlite::Connection::open(older.path().join("message_cache.db"))
+                .expect("an older database");
+            conn.execute_batch(
+                "CREATE TABLE folders (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL,
+                     name TEXT NOT NULL, path TEXT NOT NULL, folder_type TEXT NOT NULL,
+                     unread_count INTEGER DEFAULT 0, total_count INTEGER DEFAULT 0,
+                     UNIQUE(account_id, path));
+                 CREATE TABLE messages (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL,
+                     folder_id INTEGER NOT NULL, message_id TEXT NOT NULL,
+                     subject TEXT NOT NULL, from_addr TEXT NOT NULL, to_addr TEXT NOT NULL,
+                     cc TEXT, date TEXT NOT NULL, body_plain TEXT, body_html TEXT,
+                     read BOOLEAN DEFAULT 0, starred BOOLEAN DEFAULT 0,
+                     deleted BOOLEAN DEFAULT 0, UNIQUE(folder_id, uid));
+                 CREATE TABLE attachments (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER NOT NULL,
+                     filename TEXT NOT NULL, mime_type TEXT NOT NULL, size INTEGER NOT NULL,
+                     content_id TEXT,
+                     FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE);
+                 INSERT INTO folders (id, account_id, name, path, folder_type)
+                     VALUES (1, 'acc-1', 'INBOX', 'INBOX', 'inbox');
+                 INSERT INTO messages (id, uid, folder_id, message_id, subject, from_addr,
+                     to_addr, date) VALUES (1, 7, 1, '<7@example.com>', 'Report',
+                     'ada@example.com', 'me@example.com', '2026-08-24');
+                 INSERT INTO attachments (message_id, filename, mime_type, size)
+                     VALUES (1, 'from-before.pdf', 'application/pdf', 2048);",
+            )
+            .expect("the older shape");
+        }
+
+        let cache = MessageCache::new(older.path().to_path_buf(), None)
+            .expect("to open the older database");
+
+        let from_before = cache.attachments_with_content(1).expect("to read");
+        assert_eq!(from_before.len(), 1, "the older row was lost");
+        assert_eq!(
+            from_before[0].described.description,
+            WhatTheSenderSaid::Nothing,
+            "invented a description for a row that never had one"
+        );
+
+        let now = a_message(&cache, 8);
+        cache
+            .replace_attachments_with_content(
+                now,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        description: WhatTheSenderSaid::InWords("A cat on a wall".to_string()),
+                        ..carrying(now, "cat.jpg", b"JFIF").described
+                    },
+                    content: Some(b"JFIF".to_vec()),
+                }],
+            )
+            .expect("to store into the upgraded database");
+
+        assert_eq!(
+            cache.attachments_with_content(now).expect("to read")[0]
+                .described
+                .description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string()),
+            "the column was added but nothing was written through it"
+        );
+    }
+
+    #[test]
+    fn test_a_record_built_from_a_parsed_part_carries_what_arrived_on_it() {
+        // The one hop between the parse and the row, in a function rather than
+        // spelled out where it is called, because it was spelled out and it
+        // wrote `content_id: None` over a content id the parse had in hand.
+        // A field set to nothing by a struct literal compiles exactly like a
+        // field set correctly.
+        let part = crate::service::mime::AttachmentInfo {
+            filename: Some("cat.jpg".to_string()),
+            mime_type: "image/jpeg".to_string(),
+            size: 4,
+            description: WhatTheSenderSaid::InWords("A cat on a wall".to_string()),
+            content_id: Some("pic".to_string()),
+        };
+
+        let record = AttachmentWithContent::from_a_parsed_part(9, &part, Some(b"JFIF".to_vec()));
+
+        assert_eq!(record.described.message_id, 9);
+        assert_eq!(record.described.filename, "cat.jpg");
+        assert_eq!(record.described.mime_type, "image/jpeg");
+        assert_eq!(record.described.size, 4);
+        assert_eq!(
+            record.described.description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+        assert_eq!(record.described.content_id.as_deref(), Some("pic"));
+        assert_eq!(record.content.as_deref(), Some(&b"JFIF"[..]));
     }
 
     // ── A stored copy that cannot be trusted ────────────────────────────

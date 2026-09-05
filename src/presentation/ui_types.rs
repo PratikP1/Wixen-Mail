@@ -194,6 +194,12 @@ pub struct AttachmentItem {
     pub filename: String,
     pub mime_type: String,
     pub size: usize,
+    /// What the sender said this file is, carried up from the stored row.
+    ///
+    /// The same precedent as [`MessageItem::receipt_to`]: a fact the message
+    /// arrived carrying, kept on the row so the surface that speaks it does
+    /// not have to go back to the message for it.
+    pub description: crate::service::mime::WhatTheSenderSaid,
 }
 
 /// Mail list sort options

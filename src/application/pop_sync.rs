@@ -1169,6 +1169,8 @@ Subject: Weekly roundup",
                 filename: Some("figures.pdf".to_string()),
                 mime_type: "application/pdf".to_string(),
                 size: 1024,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
+                content_id: None,
             }],
             ..plain()
         };

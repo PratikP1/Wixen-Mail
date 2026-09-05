@@ -43,6 +43,124 @@ pub struct ParsedMessage {
     pub receipt_to: Option<String>,
 }
 
+/// What the sender said an attachment is, in their own words.
+///
+/// Three states rather than two, and the third is why this is not an
+/// `Option<String>`. A sender who wrote nothing and a sender whose description
+/// arrived as bytes that are not writing are different facts about the message,
+/// and collapsing them tells the reader the sender was silent when the sender
+/// was not. `CLAUDE.md`'s ninth guardrail is about exactly that: where this
+/// papers over a provider's broken MIME, it should say so rather than absorb it.
+///
+/// The text in [`Self::InWords`] is never empty and never carries anything that
+/// is not writing, because [`Self::read`] is the only way to make one from a
+/// message and it guarantees both.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum WhatTheSenderSaid {
+    /// The sender described this file with nothing at all.
+    ///
+    /// The ordinary case by a long way, and the truthful answer for every
+    /// attachment stored before this program read the header.
+    #[default]
+    Nothing,
+    /// The sender wrote something and none of it survived as readable text.
+    ///
+    /// A description of nothing but control characters, which real mail does
+    /// produce: a broken client, a mis-declared character set, or an RFC 2047
+    /// encoded word carrying bytes that are not text. Rare, and worth keeping
+    /// apart from silence.
+    SomethingUnreadable,
+    /// What the sender wrote, as text and nothing else.
+    InWords(String),
+}
+
+impl WhatTheSenderSaid {
+    /// Read a description off a header, as text and never as anything else.
+    ///
+    /// The value is a stranger's, it will be spoken aloud and shown in a list,
+    /// and it arrives here decoded from whatever encoding the sender chose. So
+    /// it is taken apart character by character rather than trusted: anything
+    /// that is not writing becomes a space, runs of spaces become one, and what
+    /// is left is trimmed.
+    ///
+    /// Whitespace on its own is the sender saying nothing, not the sender
+    /// saying a space, so it answers [`Self::Nothing`]. Bytes that are not
+    /// writing are the sender saying something this could not read, which is a
+    /// different fact and answers [`Self::SomethingUnreadable`].
+    pub fn read(raw: Option<&str>) -> Self {
+        let Some(raw) = raw else {
+            return Self::Nothing;
+        };
+        let readable = as_text_and_nothing_else(raw);
+        if !readable.is_empty() {
+            return Self::InWords(readable);
+        }
+        // Whitespace on its own is the sender pressing space, which is
+        // silence. Anything else that left nothing behind was writing this
+        // could not read, and saying the sender was silent would put their
+        // client's fault on them.
+        if raw.trim().is_empty() {
+            Self::Nothing
+        } else {
+            Self::SomethingUnreadable
+        }
+    }
+
+    /// What goes in the database column, and what comes back out of it.
+    ///
+    /// NULL is [`Self::Nothing`], which is what every row written before the
+    /// column existed holds. The empty string is [`Self::SomethingUnreadable`],
+    /// and no [`Self::InWords`] can ever be mistaken for it because
+    /// [`Self::read`] is the only thing that builds one from a message and it
+    /// never builds an empty one. So the three states reach the column without
+    /// a magic word a sender could write for themselves.
+    pub fn as_stored(&self) -> Option<&str> {
+        match self {
+            Self::Nothing => None,
+            Self::SomethingUnreadable => Some(""),
+            Self::InWords(said) => Some(said),
+        }
+    }
+
+    /// The other half of [`Self::as_stored`].
+    pub fn from_stored(column: Option<String>) -> Self {
+        match column {
+            None => Self::Nothing,
+            Some(said) if said.is_empty() => Self::SomethingUnreadable,
+            Some(said) => Self::InWords(said),
+        }
+    }
+}
+
+/// A stranger's text with everything that is not writing taken out of it.
+///
+/// Three things come off. Control characters, because this reaches a list row
+/// and a screen reader, and a carriage return inside a one-line label breaks
+/// the row rather than being read out. The characters that reorder what is
+/// displayed, for the same reason `application::export_tree` already refuses
+/// them in a file name: they make text read as something it is not. And runs of
+/// whitespace, so a description folded across header lines arrives as one
+/// sentence.
+///
+/// Taken out as spaces rather than deleted, so the words either side of one
+/// stay two words rather than being run together into a third.
+fn as_text_and_nothing_else(raw: &str) -> String {
+    raw.chars()
+        .map(|letter| {
+            if letter.is_control()
+                || matches!(letter, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+            {
+                ' '
+            } else {
+                letter
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// One attachment, described without being downloaded twice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentInfo {
@@ -50,6 +168,19 @@ pub struct AttachmentInfo {
     pub filename: Option<String>,
     pub mime_type: String,
     pub size: usize,
+    /// What the sender said this file is, from its `Content-Description`.
+    ///
+    /// The one fact about an attachment that comes from a person rather than
+    /// from a file system, and the only thing that can tell a reader what a
+    /// picture holds. Carried from here to the sentence the attachment row is
+    /// announced with; see [`crate::presentation::reader_text::ReaderAttachment`].
+    pub description: WhatTheSenderSaid,
+    /// The part's `Content-ID`, in the form a `cid:` address uses.
+    ///
+    /// Normalised through [`crate::application::pictures::plain_content_id`],
+    /// the same function the pictures carried into the body are matched with,
+    /// so the two ends of that comparison are made by one rule rather than two.
+    pub content_id: Option<String>,
 }
 
 impl AttachmentInfo {
@@ -113,6 +244,10 @@ fn described(part: &mail_parser::MessagePart<'_>) -> AttachmentInfo {
         filename: part.attachment_name().map(str::to_string),
         mime_type: content_type_of(part),
         size: part.contents().len(),
+        description: WhatTheSenderSaid::read(part.content_description()),
+        content_id: part
+            .content_id()
+            .map(crate::application::pictures::plain_content_id),
     }
 }
 
@@ -126,7 +261,18 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         .parse(raw)
         .ok_or_else(|| Error::Protocol("The message could not be read".into()))?;
 
-    let attachments = attachment_parts(&message).map(described).collect();
+    // The markup as the sender wrote it, before the pictures are written into
+    // it below. Held here rather than read twice, because the two readings
+    // would not be of the same document: `carry_the_pictures` rewrites every
+    // `cid:` address into the picture itself, and the `cid:` is the only thing
+    // tying an `img` to the part it names.
+    let as_it_arrived = first_of_kind(message.html_bodies(), |body| match body {
+        PartType::Html(html) => Some(html.as_ref().to_string()),
+        _ => None,
+    });
+
+    let mut attachments: Vec<AttachmentInfo> = attachment_parts(&message).map(described).collect();
+    borrow_descriptions_from_the_markup(&mut attachments, as_it_arrived.as_deref());
 
     Ok(ParsedMessage {
         subject: message.subject().unwrap_or_default().to_string(),
@@ -150,16 +296,109 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage> {
         // nothing to a browser, so without this a picture the message already
         // holds cannot be drawn at all, while the ones it merely points at
         // would be the only ones that appeared.
-        body_html: first_of_kind(message.html_bodies(), |body| match body {
-            PartType::Html(html) => Some(html.as_ref().to_string()),
-            _ => None,
-        })
-        .map(|html| {
+        body_html: as_it_arrived.map(|html| {
             crate::application::pictures::carry_the_pictures(&html, &pictures_carried(&message))
         }),
         attachments,
         receipt_to: receipt_request(&message),
     })
+}
+
+/// Give every undescribed picture the description on the `img` that names it.
+///
+/// A sender who describes a picture usually does it in the markup rather than
+/// in a `Content-Description` header, because that is where a composer asks
+/// them for it; this program's own composer refuses to insert one without an
+/// answer. So without this, the commoner of the two places a description lives
+/// reaches the attachment list as silence.
+///
+/// **The header wins where there is one**, and the markup is not consulted at
+/// all for that part. A borrowed description is a guess about which picture an
+/// element meant; an explicit one is the sender saying it. That includes the
+/// case where the header arrived as something unreadable, which stays
+/// unreadable rather than being quietly replaced: it names a fault in the
+/// sender's program, and the reader still meets the alt when they read the body.
+///
+/// Called from inside [`parse`], against the markup as it arrived. See the
+/// comment there for why it cannot happen afterwards.
+fn borrow_descriptions_from_the_markup(attachments: &mut [AttachmentInfo], html: Option<&str>) {
+    let wanting = |one: &AttachmentInfo| {
+        one.content_id.is_some() && one.description == WhatTheSenderSaid::Nothing
+    };
+    let Some(html) = html else {
+        return;
+    };
+    // Reading the markup means building a document out of it, which is not free
+    // on a long newsletter and is wasted on every message that has nothing to
+    // gain. Most mail has no attachment at all.
+    if !attachments.iter().any(wanting) {
+        return;
+    }
+
+    let called = what_each_picture_is_called(html);
+    for attachment in attachments.iter_mut().filter(|one| wanting(one)) {
+        let Some(named) = attachment.content_id.as_deref() else {
+            continue;
+        };
+        // Through the same reading as the header, so an alt of nothing but
+        // spaces is silence and an alt carrying control characters is scrubbed,
+        // by one rule rather than two. An empty `alt` is the author marking a
+        // picture decorative, which answers `Nothing` and leaves the row saying
+        // the sender described nothing, which is true.
+        if let Some(alt) = called.get(named) {
+            attachment.description = WhatTheSenderSaid::read(Some(alt));
+        }
+    }
+}
+
+/// What each picture in a body is called by the element that shows it.
+///
+/// Keyed by content id, normalised through
+/// [`crate::application::pictures::plain_content_id`] so both ends of the
+/// comparison are made by one rule: the header writes it in angle brackets and
+/// the address does not, and neither is written by us.
+///
+/// The markup is a stranger's and is read rather than trusted. This asks an
+/// HTML parser for the value of an attribute: nothing is fetched, nothing is
+/// run, and a document too malformed to mean anything comes back as whatever
+/// the parser recovered rather than as an error. A message that will not parse
+/// is a message nobody can read at all, which is a worse failure than a missing
+/// description.
+///
+/// The first `img` naming a content id wins, so a body that names one twice
+/// with two different descriptions gets one answer rather than the last one to
+/// be walked over.
+fn what_each_picture_is_called(html: &str) -> std::collections::HashMap<String, String> {
+    use crate::application::pictures::plain_content_id;
+
+    let mut called = std::collections::HashMap::new();
+    let document = scraper::Html::parse_document(html);
+    let Ok(pictures) = scraper::Selector::parse("img") else {
+        return called;
+    };
+    for picture in document.select(&pictures) {
+        let Some(source) = picture.value().attr("src") else {
+            continue;
+        };
+        let source = source.trim();
+        // Only the addresses that name a part of this message. A `data:` or
+        // `https:` picture is not a part and has nothing here to be tied to.
+        let Some(rest) = source
+            .get(..4)
+            .filter(|scheme| scheme.eq_ignore_ascii_case("cid:"))
+            .and_then(|_| source.get(4..))
+        else {
+            continue;
+        };
+        let named = plain_content_id(rest);
+        if named.is_empty() {
+            continue;
+        }
+        called
+            .entry(named)
+            .or_insert_with(|| picture.value().attr("alt").unwrap_or_default().to_string());
+    }
+    called
 }
 
 /// Where the sender asked a read receipt to go, if anywhere.
@@ -935,6 +1174,342 @@ mod tests {
         assert_eq!(parsed.attachments[0].display_name(), "beach.jpg");
     }
 
+    // ── What the sender said the file is ────────────────────────────────
+
+    /// One attachment part carrying the headers given, put through the whole
+    /// of [`parse`].
+    ///
+    /// Through `parse` rather than through `described` on its own, because
+    /// what a header means depends on the part surviving `attachment_parts`,
+    /// and a helper handed its inputs already separated could not see that.
+    fn only_attachment_of(headers: &str) -> AttachmentInfo {
+        let raw = format!(
+            concat!(
+                "From: a@example.com\r\n",
+                "Subject: Here it is\r\n",
+                "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+                "\r\n",
+                "--b\r\n",
+                "Content-Type: text/plain\r\n",
+                "\r\n",
+                "See attached.\r\n",
+                "--b\r\n",
+                "Content-Type: application/pdf; name=\"report.pdf\"\r\n",
+                "{}",
+                "Content-Disposition: attachment; filename=\"report.pdf\"\r\n",
+                "\r\n",
+                "%PDF-1.4 fake\r\n",
+                "--b--\r\n"
+            ),
+            headers
+        );
+        let parsed = parse(raw.as_bytes()).expect("should parse");
+        assert_eq!(
+            parsed.attachments.len(),
+            1,
+            "the fixture's part did not survive attachment_parts: {:?}",
+            parsed.attachments
+        );
+        parsed.attachments.into_iter().next().expect("the one part")
+    }
+
+    #[test]
+    fn test_what_a_sender_writes_in_content_description_becomes() {
+        // The whole of the boundary this feature rests on. Every one of these
+        // is a real shape mail arrives in, and each was put through
+        // `mail_parser` by hand first to see what reaches this code: a
+        // whitespace-only header is trimmed away before we ever see it, but a
+        // whitespace-only *encoded word* is not, and control characters and
+        // line breaks come through untouched.
+        for (header, expected, why) in [
+            (
+                "",
+                WhatTheSenderSaid::Nothing,
+                "no header at all is the ordinary case and has to read as silence",
+            ),
+            (
+                "Content-Description: Quarterly figures\r\n",
+                WhatTheSenderSaid::InWords("Quarterly figures".to_string()),
+                "the point of the whole feature",
+            ),
+            (
+                // `=?UTF-8?B?ICBwYWRkZWQgIA==?=` is "  padded  ".
+                "Content-Description: =?UTF-8?B?ICBwYWRkZWQgIA==?=\r\n",
+                WhatTheSenderSaid::InWords("padded".to_string()),
+                "padding is not part of what the sender said",
+            ),
+            (
+                // `=?UTF-8?B?ICAg?=` is three spaces. The plain spelling of
+                // this is trimmed away by `mail_parser` before it reaches us;
+                // this spelling is not, so this is the only fixture that can
+                // ask whether the trim here happens.
+                "Content-Description: =?UTF-8?B?ICAg?=\r\n",
+                WhatTheSenderSaid::Nothing,
+                "whitespace is the sender saying nothing, not saying a space",
+            ),
+            (
+                // `=?UTF-8?B?QQdCCUM=?=` is "A\u{7}B\tC".
+                "Content-Description: =?UTF-8?B?QQdCCUM=?=\r\n",
+                WhatTheSenderSaid::InWords("A B C".to_string()),
+                "a bell character reaches a list row and a screen reader",
+            ),
+            (
+                // `=?UTF-8?B?bGluZTENCmxpbmUy?=` is "line1\r\nline2".
+                "Content-Description: =?UTF-8?B?bGluZTENCmxpbmUy?=\r\n",
+                WhatTheSenderSaid::InWords("line1 line2".to_string()),
+                "a line break in a one-line label breaks the row",
+            ),
+            (
+                // `=?UTF-8?B?BwcH?=` is three bell characters and nothing else.
+                "Content-Description: =?UTF-8?B?BwcH?=\r\n",
+                WhatTheSenderSaid::SomethingUnreadable,
+                "the sender said something; saying they said nothing is untrue",
+            ),
+        ] {
+            assert_eq!(
+                only_attachment_of(header).description,
+                expected,
+                "{why}: {header:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_part_carries_its_content_id_in_the_form_a_cid_address_uses() {
+        // Both spellings and both cases, because the header wraps it in angle
+        // brackets and the address in the body does not, and neither end is
+        // written by us. Without one rule for both there is nothing to match
+        // an attachment against the picture that names it.
+        for header in [
+            "Content-ID: <PIC>\r\n",
+            "Content-ID: pic\r\n",
+            "Content-ID: <pic>\r\n",
+        ] {
+            assert_eq!(
+                only_attachment_of(header).content_id.as_deref(),
+                Some("pic"),
+                "{header:?}"
+            );
+        }
+        assert_eq!(
+            only_attachment_of("").content_id,
+            None,
+            "a part with no Content-ID must not be given one"
+        );
+    }
+
+    // ── Borrowing the description off the picture that names the part ───
+
+    /// A `multipart/related` message with the markup given and the picture
+    /// parts given, put through the whole of [`parse`].
+    ///
+    /// Whole raw messages rather than a helper handed the markup and the parts
+    /// already separated: what could go wrong here is the ordering against
+    /// `pictures::carry_the_pictures`, which rewrites every `cid:` in the body
+    /// while `parse` is still running, and a test that skipped `parse` could
+    /// not see it.
+    fn related_message(html: &str, parts: &str) -> ParsedMessage {
+        let raw = format!(
+            concat!(
+                "From: a@example.com\r\n",
+                "Subject: Have a look\r\n",
+                "Content-Type: multipart/related; boundary=\"b\"\r\n",
+                "\r\n",
+                "--b\r\n",
+                "Content-Type: text/html\r\n",
+                "\r\n",
+                "{}\r\n",
+                "{}",
+                "--b--\r\n"
+            ),
+            html, parts
+        );
+        parse(raw.as_bytes()).expect("should parse")
+    }
+
+    /// One picture part carrying the headers given.
+    ///
+    /// Named, which is what makes it survive `attachment_parts`: a part with a
+    /// content id, marked inline and with no filename, is body furniture and
+    /// is filtered out before any of this. A fixture built that way would be
+    /// asserting about a part that is not in the list at all.
+    fn picture_part(name: &str, headers: &str) -> String {
+        format!(
+            concat!(
+                "--b\r\n",
+                "Content-Type: image/jpeg; name=\"{}\"\r\n",
+                "{}",
+                "Content-Disposition: inline; filename=\"{}\"\r\n",
+                "\r\n",
+                "JFIF fake\r\n"
+            ),
+            name, headers, name
+        )
+    }
+
+    #[test]
+    fn test_a_picture_with_no_description_of_its_own_takes_the_alt_that_names_it() {
+        // The second of the two places a sender's description of an image
+        // lives. Most senders who describe a picture at all do it here, in the
+        // markup, because that is what a composer asks them for; this program's
+        // own composer refuses to insert one without it.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:pic\" alt=\"A cat on a wall\"></p>",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+
+        // And the ordering that makes it possible, asserted rather than
+        // assumed. By the time `parse` returns, the `cid:` the lookup matched
+        // on has been rewritten into the picture itself, so anything doing this
+        // after `parse` would have nothing left to match.
+        let body = parsed.body_html.expect("the markup");
+        assert!(
+            !body.contains("cid:") && body.contains("data:image/jpeg;base64,"),
+            "the pictures were not written into the body, so this test is not \
+             asserting about the ordering it names: {body}"
+        );
+    }
+
+    #[test]
+    fn test_the_description_the_sender_wrote_outranks_the_one_on_the_markup() {
+        // A borrowed description is a guess about which picture an element
+        // meant. An explicit `Content-Description` is not a guess, so it wins,
+        // and the markup is not consulted at all.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:pic\" alt=\"A cat on a wall\"></p>",
+            &picture_part(
+                "contract.jpg",
+                "Content-ID: <pic>\r\nContent-Description: The signed contract\r\n",
+            ),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("The signed contract".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_picture_the_markup_describes_with_nothing_stays_undescribed() {
+        // An empty `alt` is the author marking a picture decorative, which is a
+        // statement that there is nothing to say rather than something to say.
+        // A missing one and a blank one are the same silence. None of the three
+        // may become a description, and none of them may become "the sender
+        // wrote something unreadable" either, which is a different sentence
+        // about a different situation.
+        for markup in [
+            "<p><img src=\"cid:pic\" alt=\"\"></p>",
+            "<p><img src=\"cid:pic\"></p>",
+            "<p><img src=\"cid:pic\" alt=\"   \"></p>",
+        ] {
+            let parsed = related_message(markup, &picture_part("cat.jpg", "Content-ID: <pic>\r\n"));
+            assert_eq!(
+                parsed.attachments[0].description,
+                WhatTheSenderSaid::Nothing,
+                "{markup}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_part_no_picture_in_the_markup_names_stays_undescribed() {
+        // The lookup is by content id and not by position. Taking whatever alt
+        // happened to be nearest would put one picture's description on
+        // another, which is worse than no description: it is a wrong one, said
+        // in the sender's voice.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:elsewhere\" alt=\"A cat on a wall\"></p>",
+            &picture_part("orphan.jpg", "Content-ID: <nobody-names-this>\r\n"),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_markup_at_all_still_parses_and_borrows_nothing() {
+        // Plain text mail is most mail. There is nothing to read an alt out of
+        // and that is an ordinary state, not a failure to parse.
+        assert_eq!(
+            only_attachment_of("Content-ID: <pic>\r\n").description,
+            WhatTheSenderSaid::Nothing
+        );
+    }
+
+    #[test]
+    fn test_an_alt_carrying_markup_or_a_quote_arrives_as_characters() {
+        // The alt is a stranger's text inside a stranger's markup, read here
+        // for the first time and on its way to being spoken aloud and shown in
+        // a list. It is an attribute value and it comes back as the characters
+        // it holds; nothing in it is a tag, an entity to follow, or anything to
+        // be run.
+        let parsed = related_message(
+            "<p><img src=\"cid:pic\" alt=\"She said &quot;look&quot; &lt;b&gt;now&lt;/b&gt;\"></p>",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("She said \"look\" <b>now</b>".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_malformed_markup_body_leaves_the_message_readable() {
+        // A message that will not parse is a message nobody can read at all,
+        // which is a worse failure than a missing description. So the reading
+        // recovers rather than refusing, and a description it can still find in
+        // the wreckage is still the sender's.
+        let recoverable = related_message(
+            "<p><b>unclosed <img src=\"cid:pic\" alt=\"A cat on a wall\">",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(recoverable.attachments.len(), 1);
+        assert_eq!(
+            recoverable.attachments[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+    }
+
+    #[test]
+    fn test_markup_too_broken_to_read_leaves_the_part_undescribed_rather_than_guessed_at() {
+        // The other half, and the one worth having. This body's first `src` is
+        // never closed, so the parser welds the two elements into one and hands
+        // back a picture whose content id is `pic alt=unclosed <img src=` with
+        // the second element's alt on it. Measured rather than expected: the
+        // first version of this test asserted the alt was recovered here and
+        // could never have gone green.
+        //
+        // No part has that content id, so the part keeps its silence. That is
+        // the whole value of matching on the id: a lookup that took the nearest
+        // alt, or matched loosely, would put a description on a part it never
+        // really matched, which is worse than none because it is a wrong one
+        // said in the sender's voice.
+        let wreckage = related_message(
+            "<p><div><img src=\"cid:pic alt=unclosed <img src=\"cid:pic\" \
+             alt=\"A cat on a wall\"><<</p",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(wreckage.attachments.len(), 1, "{:?}", wreckage.attachments);
+        assert_eq!(
+            wreckage.attachments[0].description,
+            WhatTheSenderSaid::Nothing,
+            "a description was taken from an element that names a different part"
+        );
+    }
+
     #[test]
     fn test_an_attachment_the_sender_did_not_name_still_has_something_to_read() {
         // Guardrail: say plainly that the sender left it out rather than
@@ -943,6 +1518,8 @@ mod tests {
             filename: None,
             mime_type: "application/pdf".to_string(),
             size: 10,
+            description: WhatTheSenderSaid::Nothing,
+            content_id: None,
         };
         assert_eq!(unnamed.display_name(), "Unnamed application/pdf attachment");
 

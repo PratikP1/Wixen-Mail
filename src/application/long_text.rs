@@ -17,6 +17,14 @@
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::ops::Deref;
 
+/// What is said where a description should have been and was not.
+///
+/// One phrase rather than several, because a reader who meets it on a picture
+/// inside a note and again on an attachment row should hear the same words for
+/// the same fact. Four places compose it: the three below, and
+/// [`crate::presentation::reader_text::ReaderAttachment::label`].
+pub const NO_DESCRIPTION: &str = "no description";
+
 /// A piece of a long field, with whatever structure it carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece {
@@ -233,7 +241,7 @@ pub fn spoken(written: &str) -> String {
                 // and that is worth knowing: it is why the picture cannot be
                 // read out, and it is their omission rather than this
                 // application's.
-                "image with no description".to_string()
+                format!("image with {NO_DESCRIPTION}")
             }
             Piece::Image(described) => format!("image, {described}"),
             Piece::Paragraph(text) => text.clone(),
@@ -465,7 +473,7 @@ mod markup {
                     "br" => out.push(' '),
                     "img" => match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
                         Some(alt) => out.push_str(alt),
-                        None => out.push_str("image with no description"),
+                        None => out.push_str(&format!("image with {}", super::NO_DESCRIPTION)),
                     },
                     "script" | "style" => {}
                     _ => inline(child, out),
@@ -638,7 +646,7 @@ pub fn first_line(written: &str) -> String {
             // showing the row's first words as blank, which reads as a note
             // with nothing in it.
             Piece::Image(described) if described.is_empty() => {
-                "Image with no description".to_string()
+                format!("Image with {NO_DESCRIPTION}")
             }
             Piece::Image(described) => format!("Image: {described}"),
         })

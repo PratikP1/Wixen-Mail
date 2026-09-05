@@ -2295,8 +2295,9 @@ impl MessageCache {
         self.conn
             .execute(
                 "INSERT INTO attachments
-                     (message_id, filename, mime_type, size, content_id, content_digest)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                     (message_id, filename, mime_type, size, content_id, content_digest,
+                      description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     attachment.message_id,
                     attachment.filename,
@@ -2304,6 +2305,7 @@ impl MessageCache {
                     attachment.size,
                     attachment.content_id,
                     content_digest,
+                    attachment.description.as_stored(),
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save attachment: {}", e)))?;
@@ -2348,7 +2350,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, message_id, filename, mime_type, size, content_id
+                "SELECT id, message_id, filename, mime_type, size, content_id, description
                  FROM attachments WHERE message_id = ?1 ORDER BY id",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare attachment query: {}", e)))?;
@@ -2362,6 +2364,7 @@ impl MessageCache {
                     mime_type: row.get(3)?,
                     size: row.get(4)?,
                     content_id: row.get(5)?,
+                    description: crate::service::mime::WhatTheSenderSaid::from_stored(row.get(6)?),
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query attachments: {}", e)))?
@@ -4760,6 +4763,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 10,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             super::CachedAttachment {
                 id: 0,
@@ -4768,6 +4772,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 20,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
 
@@ -4801,6 +4806,7 @@ mod tests {
                     mime_type: "application/pdf".to_string(),
                     size: 10,
                     content_id: None,
+                    description: crate::service::mime::WhatTheSenderSaid::Nothing,
                 }],
             )
             .unwrap();
@@ -5712,6 +5718,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 1024,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             })
             .unwrap();
 

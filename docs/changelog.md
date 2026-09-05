@@ -49,6 +49,56 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **An attachment row now says what the sender said the file is, and says
+  plainly when the sender said nothing.**
+
+  Mail can carry a description of each attachment, written by whoever sent it.
+  Wixen Mail read the name, the type and the size of an attachment and threw
+  that description away at the point the message was decoded, so it never
+  reached you. A photograph and a scan of a contract were announced the same
+  way: a file name, a kind and a size.
+
+  An attachment row now ends with the sender's own words. "Figures.pdf, PDF
+  document, 240 KB, Quarterly figures for the board."
+
+  A picture sent inside a message is described the same way, and it has a
+  second place to look. Most people who describe a picture at all do it in the
+  message itself, on the picture, because that is what their mail program asks
+  them for. So a picture with no description of its own now takes the one
+  written on it in the message. Only that picture's own: the description is
+  matched to the file it belongs to, never to whichever picture happens to be
+  nearest, because a wrong description in the sender's voice is worse than
+  none.
+
+  A description the sender wrote as a description wins. If they wrote one and
+  also described the picture in the message, you get the one they wrote.
+
+  When the sender described nothing, the row says "no description" rather than
+  stopping after the size. That is the half that matters most. A row that just
+  stops is one where you cannot tell an undescribed picture from a description
+  Wixen Mail dropped, and the point of saying it aloud is that you know the gap
+  is the sender's.
+
+  Where a description arrives as something that is not readable text, which
+  happens with a broken sending program, the row says "a description with
+  nothing readable in it". That is a different fact from silence and is not
+  reported as the sender having written nothing.
+
+  A description is a stranger's text and is treated as one. Anything that is not
+  writing is taken out of it before it is spoken or shown, and a very long one
+  is cut at a word so a row cannot read for a minute.
+
+  Known limitations, two worth reading:
+
+  - **Most senders probably supply no description at all**, so most rows will
+    say "no description". No mail account has ever been used with this program,
+    so how common a description really is cannot be measured here. Saying so is
+    still worth doing: before this, a row with no description and a row whose
+    description Wixen Mail had dropped were the same silence.
+  - **Whether the description is heard at the right moment has not been checked
+    with a screen reader.** It is at the end of the row's sentence, which is a
+    judgement about what somebody wants to hear first, not a measurement.
+
 - **When a contact or a calendar item has been changed both here and at your
   provider, Wixen Mail keeps both copies and asks which one you want.**
 

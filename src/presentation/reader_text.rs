@@ -19,6 +19,7 @@ use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
 use crate::application::checking_signatures::SignatureCheck;
 use crate::common::types::MessageBody;
+use crate::service::mime::WhatTheSenderSaid;
 use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
 
@@ -366,6 +367,7 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             name: item.filename.clone(),
             mime_type: item.mime_type.clone(),
             size: item.size,
+            description: item.description.clone(),
         })
         .collect()
 }
@@ -776,25 +778,56 @@ pub struct ReaderAttachment {
     pub name: String,
     pub mime_type: String,
     pub size: usize,
+    /// What the sender said this file is, in their own words.
+    ///
+    /// The end of the road that starts at `Content-Description` in
+    /// [`crate::service::mime::described`]. This is the only fact about an
+    /// attachment that a person wrote, and for a picture it is the only thing
+    /// that can say what is in it.
+    pub description: WhatTheSenderSaid,
 }
 
 impl ReaderAttachment {
     /// The single sentence a screen reader says when this row is reached.
     ///
-    /// Name, kind and size, because that is the whole of what somebody needs
-    /// to decide whether to open it and there is nowhere else for them to
-    /// look.
+    /// Name, kind, size, and then what the sender said it is. The first three
+    /// come from the file and are the same shape they have always been; the
+    /// sender's words go last, so somebody who has heard enough to decide can
+    /// stop listening before they start.
+    ///
+    /// It always ends with something about the description, including when
+    /// there is none. A gap where the sender's words would be is
+    /// indistinguishable from this program having dropped them, and telling
+    /// somebody plainly that a picture came with nothing to say what is in it
+    /// is the accessible half of the feature. The wording is
+    /// [`crate::application::long_text::NO_DESCRIPTION`], which is what this
+    /// program already says about an undescribed picture inside a note.
     pub fn label(&self) -> String {
         let name = match self.name.trim() {
             "" => "Attachment with no name",
             named => named,
         };
         format!(
-            "{}, {}, {}",
+            "{}, {}, {}, {}",
             name,
             describe_kind(&self.mime_type, &self.name),
-            human_size(self.size)
+            human_size(self.size),
+            self.what_the_sender_said()
         )
+    }
+
+    /// The last clause of [`Self::label`].
+    fn what_the_sender_said(&self) -> String {
+        match &self.description {
+            WhatTheSenderSaid::Nothing => crate::application::long_text::NO_DESCRIPTION.to_string(),
+            // Not the same sentence as silence, on purpose. The sender did
+            // write something; it arrived as bytes that are not writing, and
+            // that is their client's fault rather than theirs. Guardrail 9.
+            WhatTheSenderSaid::SomethingUnreadable => {
+                "a description with nothing readable in it".to_string()
+            }
+            WhatTheSenderSaid::InWords(said) => cut_at_a_word(said, LONGEST_DESCRIPTION_SPOKEN),
+        }
     }
 
     /// Whether Windows would run this rather than open it.
@@ -808,6 +841,40 @@ impl ReaderAttachment {
     /// file dialog handed something that looks like a path will use it as one.
     pub fn suggested_file_name(&self) -> String {
         crate::service::attachment_name::safe_file_name(&self.name)
+    }
+}
+
+/// How much of a sender's description an attachment row says.
+///
+/// The description is a stranger's text and there is no length a sender cannot
+/// write. A row is announced every time focus reaches it, so an unbounded one
+/// is a screen reader somebody has to interrupt rather than listen to, and the
+/// row already carries the name, the kind and the size before this starts.
+///
+/// A hundred characters is about a sentence. It is a judgement rather than a
+/// measurement, and the full text is stored, so a surface with room to show all
+/// of it can.
+const LONGEST_DESCRIPTION_SPOKEN: usize = 100;
+
+/// Cut a run of text to a length somebody can listen to, on a word boundary.
+///
+/// Shorter than the limit comes back untouched. Longer is cut back to the last
+/// space, when there is one far enough in that the result is still a phrase
+/// rather than a fragment, and an ellipsis says it was cut. Ending mid-word
+/// gets read as a nonsense syllable, which is worse than the words that were
+/// lost.
+///
+/// One rule with two limits rather than two rules: this is what
+/// `wx_reader::tab_label` already did for a tab's subject, moved here so an
+/// attachment description is cut the same way and neither can drift.
+pub(super) fn cut_at_a_word(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(limit - 1).collect();
+    match kept.rsplit_once(' ') {
+        Some((head, _)) if head.chars().count() >= limit / 2 => format!("{head}\u{2026}"),
+        _ => format!("{}\u{2026}", kept.trim_end()),
     }
 }
 
@@ -1046,17 +1113,120 @@ mod tests {
             name: name.to_string(),
             mime_type: mime_type.to_string(),
             size,
+            description: WhatTheSenderSaid::Nothing,
+        }
+    }
+
+    fn described(name: &str, said: WhatTheSenderSaid) -> ReaderAttachment {
+        ReaderAttachment {
+            description: said,
+            ..attachment(name, "application/pdf", 245_760)
         }
     }
 
     #[test]
-    fn test_an_attachment_reads_as_a_name_a_kind_and_a_size() {
+    fn test_an_attachment_reads_as_a_name_a_kind_a_size_and_what_the_sender_said() {
         // One row, arrowed onto, spoken once. Everything somebody needs to
         // decide whether to open it has to be in that sentence, because there
-        // is nowhere else to look.
+        // is nowhere else to look. The description is the fourth clause and it
+        // is always there, including when the sender wrote nothing: a row that
+        // just stops is one where the reader cannot tell an undescribed file
+        // from a description this program dropped.
         let row = attachment("Report.pdf", "application/pdf", 245_760).label();
 
-        assert_eq!(row, "Report.pdf, PDF document, 240 KB");
+        assert_eq!(row, "Report.pdf, PDF document, 240 KB, no description");
+    }
+
+    // ── What the sender said, and saying so when they said nothing ──────
+
+    #[test]
+    fn test_an_attachment_row_says_the_description_the_sender_gave() {
+        // The point of carrying the header this far. It goes at the end, after
+        // the facts that come from the file itself, so the fixed part of the
+        // sentence keeps the shape it already had and somebody who has heard
+        // enough can stop listening before the sender's words start.
+        let row = described(
+            "Report.pdf",
+            WhatTheSenderSaid::InWords("Quarterly figures for the board".to_string()),
+        )
+        .label();
+
+        assert_eq!(
+            row,
+            "Report.pdf, PDF document, 240 KB, Quarterly figures for the board"
+        );
+    }
+
+    #[test]
+    fn test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words() {
+        // Criterion 4's accessible half. A gap where the description would be
+        // is indistinguishable from this program having dropped it, and it is
+        // the sentence that matters more than the picture does.
+        let row = described("Report.pdf", WhatTheSenderSaid::Nothing).label();
+
+        assert_eq!(row, "Report.pdf, PDF document, 240 KB, no description");
+    }
+
+    #[test]
+    fn test_a_description_that_could_not_be_read_is_not_told_as_no_description() {
+        // Guardrail 9. The sender did write something and it did not survive as
+        // text. Saying they wrote nothing puts their client's fault on them and
+        // hides the fault from everybody.
+        let unreadable = described("Report.pdf", WhatTheSenderSaid::SomethingUnreadable).label();
+        let silent = described("Report.pdf", WhatTheSenderSaid::Nothing).label();
+
+        assert_ne!(unreadable, silent);
+        assert_eq!(
+            unreadable,
+            "Report.pdf, PDF document, 240 KB, a description with nothing readable in it"
+        );
+    }
+
+    #[test]
+    fn test_a_description_too_long_to_sit_through_is_cut_at_a_word() {
+        // The description is a stranger's text and there is no length a sender
+        // cannot write. A row is announced whenever focus reaches it, and a
+        // screen reader part way through ten thousand characters is one
+        // somebody has to interrupt rather than listen to.
+        let said = "wandering ".repeat(60);
+        let row = described("Report.pdf", WhatTheSenderSaid::InWords(said)).label();
+
+        assert!(
+            row.starts_with("Report.pdf, PDF document, 240 KB, wandering wandering"),
+            "the description did not reach the row at all: {row:?}"
+        );
+        assert!(
+            row.chars().count() < 200,
+            "a row of {} characters is one nobody can be read out of: {row:?}",
+            row.chars().count()
+        );
+        assert!(row.ends_with('\u{2026}'), "cut without saying so: {row:?}");
+        assert!(
+            !row.contains("wanderi\u{2026}"),
+            "cut mid-word, which reads as a nonsense syllable: {row:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_description_reaches_the_reader_from_the_row_it_hangs_off() {
+        // The hop between the stored row and the sentence. Without it the
+        // header is read, stored, read back, and then dropped one struct short
+        // of the only place it is ever said out loud.
+        let mut message = message();
+        message.attachments = vec![AttachmentItem {
+            filename: "beach.jpg".to_string(),
+            mime_type: "image/jpeg".to_string(),
+            size: 2048,
+            description: WhatTheSenderSaid::InWords("A cat on a wall".to_string()),
+        }];
+
+        let carried = attachments_of(&message);
+
+        assert_eq!(carried.len(), 1);
+        assert_eq!(
+            carried[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
     }
 
     #[test]
@@ -1519,11 +1689,13 @@ Analytical Engines",
                 filename: "a.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 1,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             AttachmentItem {
                 filename: "b.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 2,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
         let mut second = message();
@@ -1533,6 +1705,7 @@ Analytical Engines",
             filename: "c.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 3,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
 
         let doc = conversation(
@@ -1582,6 +1755,7 @@ Analytical Engines",
             filename: "agenda.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 1,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
         let mut second = message();
         second.message_id = 12;
@@ -1590,6 +1764,7 @@ Analytical Engines",
             filename: "minutes.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 2,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
         let parts = vec![
             ConversationPart {
@@ -1789,11 +1964,13 @@ Analytical Engines",
                 filename: "invoice.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 1024,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             AttachmentItem {
                 filename: "notes.txt".to_string(),
                 mime_type: "text/plain".to_string(),
                 size: 64,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
         let doc = read(&m, "Body");

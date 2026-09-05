@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 03-08-PLAN.md on branch worktree-agent-a70d1d023da01b98b, not merged and not pushed. SCALE-05 is closed structurally; four screen reader questions and one real-network question are ledger 76 to 80, and ledger 81 is the Undo Send hold with no caller, found here and left alone.
-last_updated: "2026-09-05T05:41:59.263Z"
+stopped_at: "Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39."
+last_updated: "2026-09-05T14:12:30.580Z"
 last_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
-state_head: 4cd8e65ad1f8bb5e45a071a7398e31ec7d4b620b
+state_head: e103d2d7dd8c202ab6e2311704701b36a70601b5
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 41
-  completed_plans: 40
+  total_plans: 50
+  completed_plans: 42
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -314,6 +314,8 @@ ahead:
 - [Phase 02]: 02.1-09: the guard record's break is the answer emptied, five tests red, and the record writes down what it does not reach: removing the pre-open refusal instead reddens exactly one, because every path that tells a refusal from an opening ends at `show_modal` and a test that opened the editor would hang the gate rather than fail it.
 - [Phase 03]: 03-08: the network coming back raises an offer, never a send. The decision layer has no member meaning 'send', the offer is a button in the tab order whose label says pressing it sends, it calls the existing online toggle and the existing flush rather than reimplementing either, and a census counts every place that hands mail to a server and names each beside what asked for it. That is the shape 03-09 should copy for waiting flag changes.
 - [Phase 03]: 03-08: a check for a resource going away must not live on the work that uses the resource. Nothing here checks mail on a schedule and every trigger that does stops when the network goes, so a detector at the end of a mail check could see the loss and never the return. It asks on the window's own poll every ten seconds.
+- [Phase 04]: An attachment's description is three states, not an Option: silence, something unreadable, and the sender's words. A broken sending program is not the sender having said nothing, and the row says which.
+- [Phase 04]: A description written on the img in the message is borrowed only when the sender wrote no Content-Description, and is matched by content id rather than by position. An explicit header is the sender saying it; a borrowed one is a guess about which element meant which part.
 
 ### Pending Todos
 
@@ -395,8 +397,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-05T05:41:49.065Z
-Stopped at: Completed 03-08-PLAN.md on branch worktree-agent-a70d1d023da01b98b, not merged and not pushed. SCALE-05 is closed structurally; four screen reader questions and one real-network question are ledger 76 to 80, and ledger 81 is the Undo Send hold with no caller, found here and left alone.
+Last session: 2026-09-05T14:12:22.566Z
+Stopped at: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 
 Earlier: Completed 02.1-09-PLAN.md on branch gsd/plan-02.1-09, not merged. That is the last plan of phase 2.1, so all nine are executed and five of them are sitting on unmerged branches. 02.1-08 is on gsd/plan-02.1-08, 02.1-07 on gsd/plan-02.1-07, 02.1-06 on gsd/plan-02.1-06, none merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
 

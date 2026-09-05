@@ -553,6 +553,7 @@ mod tests {
             filename: filename.to_string(),
             mime_type: "application/octet-stream".to_string(),
             size: 1024,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }
     }
 
