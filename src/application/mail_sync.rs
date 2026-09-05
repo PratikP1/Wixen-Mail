@@ -460,10 +460,13 @@ pub(crate) const fn what_to_ask_for(
     comparison: finding_what_was_deleted::WhetherAFullComparisonIsDue,
     wanted: WhatThisSyncIsFor,
 ) -> WhatToAskFor {
-    // Not read yet. The green half is the arm that answers with the whole
-    // folder for a caller reaching further back; taken and dropped here so the
-    // tests are red on the answer rather than on a build that never happened.
-    let _ = wanted;
+    // Asked first, because it overrules everything below it. A caller reaching
+    // further back is asking about the messages under the highest uid held,
+    // which is the half a resumed listing says nothing about, so a resume would
+    // answer the request with nothing and the command would look broken.
+    if matches!(wanted, WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere) {
+        return WhatToAskFor::EveryUid;
+    }
     if matches!(
         comparison,
         finding_what_was_deleted::WhetherAFullComparisonIsDue::Due
@@ -4462,7 +4465,15 @@ mod tests {
             done.fetched, 3,
             "asking for more of the folder brought nothing down"
         );
-        assert_eq!(cache.stored_uids(id).expect("what is held"), whole);
+        // Sorted before comparing, because `stored_uids` has no ORDER BY and
+        // hands back what the table holds in the order it was written. The
+        // older half arrives second here, so it comes back second, which is a
+        // fact about that query rather than anything this test is about. The
+        // first version of this asserted the sorted order and failed on it
+        // against a fix that had worked.
+        let mut held = cache.stored_uids(id).expect("what is held");
+        held.sort_unstable();
+        assert_eq!(held, whole);
     }
 
     #[test]

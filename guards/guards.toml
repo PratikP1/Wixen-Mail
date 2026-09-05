@@ -570,7 +570,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -4109,7 +4109,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -4146,7 +4146,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -4198,7 +4198,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -4254,7 +4254,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4287,7 +4287,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -13773,7 +13773,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -14070,7 +14070,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 132 },
+    { file = "src/application/mail_sync.rs", tests = 134 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
