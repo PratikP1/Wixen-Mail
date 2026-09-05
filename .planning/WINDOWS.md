@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 80
+open_count: 87
 waived_count: 0
 fixed_count: 13
-total_count: 93
-last_updated: 2026-09-05T14:09:51.446Z
+total_count: 100
+last_updated: 2026-09-05T16:39:54.486Z
 ---
 
 # Broken Windows Ledger
@@ -108,6 +108,13 @@ last_updated: 2026-09-05T14:09:51.446Z
 | 91 | 04 | unrun-verify | src/service/mime.rs |  | Whether real senders supply Content-Description at all, and how often. If they mostly do not, this feature mostly says 'no description' on the header route and leans entirely on the alt borrowed from the markup. No mail account has ever been used with this program, so it cannot be measured here, and the changelog says so rather than implying the feature does more. It decides whether the header route was worth building or whether the markup route is the whole of it. | open |  | 2026-09-05T14:09:39.886Z |  |
 | 92 | 04 | deviation | src/application/pop_sync.rs |  | A POP account records no attachment rows at all, so nothing this plan built reaches one. The plan's premise that the IMAP path and the POP path are two writers of the attachments table is wrong: the only production writer is wx_app::spawn_body_fetch, which returns early when the account has no IMAP server, and pop_sync sets has_attachments and stores nothing else. So a POP message says it carries an attachment and lists none, which predates this plan and is not made worse by it. Left alone rather than half-fixed: adding a writer to the POP sync is a new path through the cache, not a widening of this one. | open |  | 2026-09-05T14:09:51.050Z |  |
 | 93 | 04 | deviation | src/service/mime.rs |  | The record 'a description the sender gave survives the boundary' went stale inside the session that wrote it. Written in the morning naming one test, it named too few by the afternoon, because the alt lookup added later gives a part whose header is dropped somewhere else to fall through to. Corrected by hand and re-measured. Recorded because CLAUDE.md predicts this shape and the only reason it was caught is that the second task re-ran --remeasure rather than trusting the first task's measurement; nothing would have failed if it had not. | open |  | 2026-09-05T14:09:51.446Z |  |
+| 94 | 04 | unrun-verify | src/application/blocking.rs |  | Nobody has heard the mailing-list warning. It is announced at Priority::High before the block is made, and two things about that are judgements rather than measurements: whether it lands before the block rather than reading as a report of one already made, and whether an email address said aloud in the middle of a sentence is understood at speed by somebody arrowing through a mailbox. The sentence is: 'This message came from a mailing list. Blocking files it into Junk and the list carries on sending it. To stop it at the source, unsubscribe by writing to birds-leave@lists.example.' Only a real NVDA or Narrator run settles either. | open |  | 2026-09-05T15:59:50.717Z |  |
+| 95 | 04 | unrun-verify | src/service/mime.rs |  | Whether real mailing lists write List-Unsubscribe in the shape where_to_write_to_leave reads has never been measured. No mail account has ever been used with this program. Sixteen spellings of the header were probed against mail-parser 0.11.5, which settles what the library does with a given header and says nothing about what senders send. If real lists commonly write the header in a shape that carries no angle-bracketed mailto:, the warning fires and always says to look for a link, which is a weaker feature than it reads as here. | open |  | 2026-09-05T15:59:58.905Z |  |
+| 96 | 04 | deviation | src/service/protocols/imap.rs |  | The plan does not mention HEADER_FIELDS, the list of headers an IMAP fetch asks a server for. Without LIST-UNSUBSCRIBE on it, every other hop of this feature is correct and no message on an IMAP account carries the header, which is the whole feature dead on the commonest account type with 6270 tests green. Added, and guarded by a record coupled to tests/the_list_warning_reads_the_message.rs, because the whole library was run against the break and stayed green: nothing in it can see this hop at all. Recorded because a request that names the fields it wants is a silent-drop point invisible to tests on either side of it, and the same shape exists wherever a projection is narrowed. | open |  | 2026-09-05T16:00:07.187Z |  |
+| 97 | 04 | deviation | src/service/outlook_data_file.rs |  | A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it. | open |  | 2026-09-05T16:00:13.954Z |  |
+| 98 | 04 | deviation | src/application/blocking.rs |  | where_to_write_to_leave names whatever sits between <mailto: and > without asking whether it is an address, so a sender can put a web address or any other text there and have the warning say 'unsubscribe by writing to' it. Left alone deliberately, and the reasoning matters more than the decision: validating it would only reject malformed junk, because the real threat is a well-formed address belonging to somebody else, which no validation can tell from a real one. Nothing in this program acts on the value, so nobody is one keystroke from a stranger either way. Recorded so the judgement is visible rather than assumed. | open |  | 2026-09-05T16:00:21.699Z |  |
+| 99 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-02-PLAN.md |  | Two of this plan's premises were wrong in ways that would have shipped a broken feature or a weaker test, and both were found by measuring rather than reading. It says to read the header through header_text as receipt_request does; mail-parser parses List-Unsubscribe with its address parser, which strips the angle brackets where_to_write_to_leave searches for, so that route reports every mailing list as one that gave no way out. And it says the second task's census cannot be red because it must name a construction the first task creates; the construction already existed and only its argument changed, so the census was red before any implementation. Recorded because both are general: an accessor's parsed and raw forms are different values, and 'no red is available' is a claim about the tree that is cheaper to falsify than to work around. | open |  | 2026-09-05T16:00:31.782Z |  |
+| 100 | 04 | deviation | guards/guards.toml |  | Two pre-existing guard records were found wrong, both surfaced by the count check because src/application/mail_sync.rs gained one test. 'a sync writes no attachment for a message nobody has opened' had been UNMEASURABLE since 04-01 landed hours earlier: its recorded break writes a CachedAttachment literal, 04-01 added a description field to that struct, and the break stopped compiling, so the run reported a broken tool rather than a finding. 'a count and the thing it counts agree in number' named 16 tests for a break that reddens 17, missing one in application::contacts_sync, a module nobody working on mailing lists would have filtered for. Both corrected by hand and re-measured. Recorded because neither has anything to do with this feature and neither would have been found by any check this plan ran on purpose. | open |  | 2026-09-05T16:39:54.486Z |  |
 
 ````json
 [
@@ -1225,6 +1232,90 @@ last_updated: 2026-09-05T14:09:51.446Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T14:09:51.446Z",
+    "resolved_at": null
+  },
+  {
+    "id": 94,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/blocking.rs",
+    "line": null,
+    "description": "Nobody has heard the mailing-list warning. It is announced at Priority::High before the block is made, and two things about that are judgements rather than measurements: whether it lands before the block rather than reading as a report of one already made, and whether an email address said aloud in the middle of a sentence is understood at speed by somebody arrowing through a mailbox. The sentence is: 'This message came from a mailing list. Blocking files it into Junk and the list carries on sending it. To stop it at the source, unsubscribe by writing to birds-leave@lists.example.' Only a real NVDA or Narrator run settles either.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T15:59:50.717Z",
+    "resolved_at": null
+  },
+  {
+    "id": 95,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/mime.rs",
+    "line": null,
+    "description": "Whether real mailing lists write List-Unsubscribe in the shape where_to_write_to_leave reads has never been measured. No mail account has ever been used with this program. Sixteen spellings of the header were probed against mail-parser 0.11.5, which settles what the library does with a given header and says nothing about what senders send. If real lists commonly write the header in a shape that carries no angle-bracketed mailto:, the warning fires and always says to look for a link, which is a weaker feature than it reads as here.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T15:59:58.905Z",
+    "resolved_at": null
+  },
+  {
+    "id": 96,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "The plan does not mention HEADER_FIELDS, the list of headers an IMAP fetch asks a server for. Without LIST-UNSUBSCRIBE on it, every other hop of this feature is correct and no message on an IMAP account carries the header, which is the whole feature dead on the commonest account type with 6270 tests green. Added, and guarded by a record coupled to tests/the_list_warning_reads_the_message.rs, because the whole library was run against the break and stayed green: nothing in it can see this hop at all. Recorded because a request that names the fields it wants is a silent-drop point invisible to tests on either side of it, and the same shape exists wherever a projection is narrowed.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T16:00:07.187Z",
+    "resolved_at": null
+  },
+  {
+    "id": 97,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/service/outlook_data_file.rs",
+    "line": null,
+    "description": "A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T16:00:13.954Z",
+    "resolved_at": null
+  },
+  {
+    "id": 98,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/application/blocking.rs",
+    "line": null,
+    "description": "where_to_write_to_leave names whatever sits between <mailto: and > without asking whether it is an address, so a sender can put a web address or any other text there and have the warning say 'unsubscribe by writing to' it. Left alone deliberately, and the reasoning matters more than the decision: validating it would only reject malformed junk, because the real threat is a well-formed address belonging to somebody else, which no validation can tell from a real one. Nothing in this program acts on the value, so nobody is one keystroke from a stranger either way. Recorded so the judgement is visible rather than assumed.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T16:00:21.699Z",
+    "resolved_at": null
+  },
+  {
+    "id": 99,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-02-PLAN.md",
+    "line": null,
+    "description": "Two of this plan's premises were wrong in ways that would have shipped a broken feature or a weaker test, and both were found by measuring rather than reading. It says to read the header through header_text as receipt_request does; mail-parser parses List-Unsubscribe with its address parser, which strips the angle brackets where_to_write_to_leave searches for, so that route reports every mailing list as one that gave no way out. And it says the second task's census cannot be red because it must name a construction the first task creates; the construction already existed and only its argument changed, so the census was red before any implementation. Recorded because both are general: an accessor's parsed and raw forms are different values, and 'no red is available' is a claim about the tree that is cheaper to falsify than to work around.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T16:00:31.782Z",
+    "resolved_at": null
+  },
+  {
+    "id": 100,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "guards/guards.toml",
+    "line": null,
+    "description": "Two pre-existing guard records were found wrong, both surfaced by the count check because src/application/mail_sync.rs gained one test. 'a sync writes no attachment for a message nobody has opened' had been UNMEASURABLE since 04-01 landed hours earlier: its recorded break writes a CachedAttachment literal, 04-01 added a description field to that struct, and the break stopped compiling, so the run reported a broken tool rather than a finding. 'a count and the thing it counts agree in number' named 16 tests for a break that reddens 17, missing one in application::contacts_sync, a module nobody working on mailing lists would have filtered for. Both corrected by hand and re-measured. Recorded because neither has anything to do with this feature and neither would have been found by any check this plan ran on purpose.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T16:39:54.486Z",
     "resolved_at": null
   }
 ]

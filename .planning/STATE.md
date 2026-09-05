@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: "Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39."
-last_updated: "2026-09-05T14:12:30.580Z"
+stopped_at: "Completed 04-02-PLAN.md on branch phase-04-02-list-unsubscribe, not merged and not pushed. Blocking a mailing list now warns first and names where to unsubscribe; MayBlock::YesButFirst has been returned by a shipped build for the first time. Two of the plan's premises were wrong: header_text strips the brackets the consumer parses for, and the census it says cannot be red was red. LIST-UNSUBSCRIBE was also missing from the IMAP header fetch, which the plan does not mention. Ledger 94 to 100. Owed after the merge: scripts/guards.sh --touched-by 976f16c."
+last_updated: "2026-09-05T17:20:00.000Z"
 last_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
-state_head: e103d2d7dd8c202ab6e2311704701b36a70601b5
+state_head: 585b9e9
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 50
-  completed_plans: 42
+  completed_plans: 43
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -316,6 +316,9 @@ ahead:
 - [Phase 03]: 03-08: a check for a resource going away must not live on the work that uses the resource. Nothing here checks mail on a schedule and every trigger that does stops when the network goes, so a detector at the end of a mail check could see the loss and never the return. It asks on the window's own poll every ten seconds.
 - [Phase 04]: An attachment's description is three states, not an Option: silence, something unreadable, and the sender's words. A broken sending program is not the sender having said nothing, and the row says which.
 - [Phase 04]: A description written on the img in the message is borrowed only when the sender wrote no Content-Description, and is matched by content id rather than by position. An explicit header is the sender saying it; a borrowed one is a guess about which element meant which part.
+- [Phase 04]: 04-02: a library's parsed form of a header and its raw form are different values, and which is right is decided by the consumer. mail-parser sends List-Unsubscribe to its address parser, which strips the angle brackets blocking::where_to_write_to_leave searches for. Reusing the accessor the neighbouring field uses would have shipped a feature that reported every mailing list as one that gave no way out, with everything green.
+- [Phase 04]: 04-02: a request that names the fields it wants is a hop no test on either side of it can see. IMAP's HEADER_FIELDS did not name LIST-UNSUBSCRIBE, so the whole feature would have been dead on IMAP with 6270 tests passing. Look for the same shape wherever a projection is narrowed: a SELECT column list, a GraphQL selection set, a fields= parameter.
+- [Phase 04]: 04-02: "this task has no red available" is a claim about the tree, not a property of the task. The plan said its census could not be red because it must name a construction task 1 creates; the construction already existed and only its argument changed, so the census was red before any implementation. Ask what specifically does not exist yet before accepting the claim.
 
 ### Pending Todos
 
@@ -397,8 +400,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-05T14:12:22.566Z
-Stopped at: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
+Last session: 2026-09-05T17:20:00.000Z
+Stopped at: Completed 04-02-PLAN.md on branch phase-04-02-list-unsubscribe, not merged and not pushed. Blocking a mailing list now warns first and names where to unsubscribe; MayBlock::YesButFirst has been returned by a shipped build for the first time. Two of the plan's premises were wrong: header_text strips the brackets the consumer parses for, and the census it says cannot be red was red. LIST-UNSUBSCRIBE was also missing from the IMAP header fetch, which the plan does not mention. Ledger 94 to 100. Owed after the merge: scripts/guards.sh --touched-by 976f16c.
+
+Earlier: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 
 Earlier: Completed 02.1-09-PLAN.md on branch gsd/plan-02.1-09, not merged. That is the last plan of phase 2.1, so all nine are executed and five of them are sitting on unmerged branches. 02.1-08 is on gsd/plan-02.1-08, 02.1-07 on gsd/plan-02.1-07, 02.1-06 on gsd/plan-02.1-06, none merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
 
