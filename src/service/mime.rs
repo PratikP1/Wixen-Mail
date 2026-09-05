@@ -1194,6 +1194,191 @@ mod tests {
         );
     }
 
+    // ── Borrowing the description off the picture that names the part ───
+
+    /// A `multipart/related` message with the markup given and the picture
+    /// parts given, put through the whole of [`parse`].
+    ///
+    /// Whole raw messages rather than a helper handed the markup and the parts
+    /// already separated: what could go wrong here is the ordering against
+    /// `pictures::carry_the_pictures`, which rewrites every `cid:` in the body
+    /// while `parse` is still running, and a test that skipped `parse` could
+    /// not see it.
+    fn related_message(html: &str, parts: &str) -> ParsedMessage {
+        let raw = format!(
+            concat!(
+                "From: a@example.com\r\n",
+                "Subject: Have a look\r\n",
+                "Content-Type: multipart/related; boundary=\"b\"\r\n",
+                "\r\n",
+                "--b\r\n",
+                "Content-Type: text/html\r\n",
+                "\r\n",
+                "{}\r\n",
+                "{}",
+                "--b--\r\n"
+            ),
+            html, parts
+        );
+        parse(raw.as_bytes()).expect("should parse")
+    }
+
+    /// One picture part carrying the headers given.
+    ///
+    /// Named, which is what makes it survive `attachment_parts`: a part with a
+    /// content id, marked inline and with no filename, is body furniture and
+    /// is filtered out before any of this. A fixture built that way would be
+    /// asserting about a part that is not in the list at all.
+    fn picture_part(name: &str, headers: &str) -> String {
+        format!(
+            concat!(
+                "--b\r\n",
+                "Content-Type: image/jpeg; name=\"{}\"\r\n",
+                "{}",
+                "Content-Disposition: inline; filename=\"{}\"\r\n",
+                "\r\n",
+                "JFIF fake\r\n"
+            ),
+            name, headers, name
+        )
+    }
+
+    #[test]
+    fn test_a_picture_with_no_description_of_its_own_takes_the_alt_that_names_it() {
+        // The second of the two places a sender's description of an image
+        // lives. Most senders who describe a picture at all do it here, in the
+        // markup, because that is what a composer asks them for; this program's
+        // own composer refuses to insert one without it.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:pic\" alt=\"A cat on a wall\"></p>",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+
+        // And the ordering that makes it possible, asserted rather than
+        // assumed. By the time `parse` returns, the `cid:` the lookup matched
+        // on has been rewritten into the picture itself, so anything doing this
+        // after `parse` would have nothing left to match.
+        let body = parsed.body_html.expect("the markup");
+        assert!(
+            !body.contains("cid:") && body.contains("data:image/jpeg;base64,"),
+            "the pictures were not written into the body, so this test is not \
+             asserting about the ordering it names: {body}"
+        );
+    }
+
+    #[test]
+    fn test_the_description_the_sender_wrote_outranks_the_one_on_the_markup() {
+        // A borrowed description is a guess about which picture an element
+        // meant. An explicit `Content-Description` is not a guess, so it wins,
+        // and the markup is not consulted at all.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:pic\" alt=\"A cat on a wall\"></p>",
+            &picture_part(
+                "contract.jpg",
+                "Content-ID: <pic>\r\nContent-Description: The signed contract\r\n",
+            ),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("The signed contract".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_picture_the_markup_describes_with_nothing_stays_undescribed() {
+        // An empty `alt` is the author marking a picture decorative, which is a
+        // statement that there is nothing to say rather than something to say.
+        // A missing one and a blank one are the same silence. None of the three
+        // may become a description, and none of them may become "the sender
+        // wrote something unreadable" either, which is a different sentence
+        // about a different situation.
+        for markup in [
+            "<p><img src=\"cid:pic\" alt=\"\"></p>",
+            "<p><img src=\"cid:pic\"></p>",
+            "<p><img src=\"cid:pic\" alt=\"   \"></p>",
+        ] {
+            let parsed = related_message(markup, &picture_part("cat.jpg", "Content-ID: <pic>\r\n"));
+            assert_eq!(
+                parsed.attachments[0].description,
+                WhatTheSenderSaid::Nothing,
+                "{markup}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_part_no_picture_in_the_markup_names_stays_undescribed() {
+        // The lookup is by content id and not by position. Taking whatever alt
+        // happened to be nearest would put one picture's description on
+        // another, which is worse than no description: it is a wrong one, said
+        // in the sender's voice.
+        let parsed = related_message(
+            "<p>Look <img src=\"cid:elsewhere\" alt=\"A cat on a wall\"></p>",
+            &picture_part("orphan.jpg", "Content-ID: <nobody-names-this>\r\n"),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_no_markup_at_all_still_parses_and_borrows_nothing() {
+        // Plain text mail is most mail. There is nothing to read an alt out of
+        // and that is an ordinary state, not a failure to parse.
+        assert_eq!(
+            only_attachment_of("Content-ID: <pic>\r\n").description,
+            WhatTheSenderSaid::Nothing
+        );
+    }
+
+    #[test]
+    fn test_an_alt_carrying_markup_or_a_quote_arrives_as_characters() {
+        // The alt is a stranger's text inside a stranger's markup, read here
+        // for the first time and on its way to being spoken aloud and shown in
+        // a list. It is an attribute value and it comes back as the characters
+        // it holds; nothing in it is a tag, an entity to follow, or anything to
+        // be run.
+        let parsed = related_message(
+            "<p><img src=\"cid:pic\" alt=\"She said &quot;look&quot; &lt;b&gt;now&lt;/b&gt;\"></p>",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("She said \"look\" <b>now</b>".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_malformed_markup_body_leaves_the_message_readable() {
+        // A message that will not parse is a message nobody can read at all,
+        // which is a worse failure than a missing description. So the reading
+        // of the markup recovers rather than refusing, and the description it
+        // finds in the wreckage is still the sender's.
+        let parsed = related_message(
+            "<p><div><img src=\"cid:pic alt=unclosed <img src=\"cid:pic\" \
+             alt=\"A cat on a wall\"><<</p",
+            &picture_part("cat.jpg", "Content-ID: <pic>\r\n"),
+        );
+
+        assert_eq!(parsed.attachments.len(), 1, "{:?}", parsed.attachments);
+        assert_eq!(
+            parsed.attachments[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
+    }
+
     #[test]
     fn test_an_attachment_the_sender_did_not_name_still_has_something_to_read() {
         // Guardrail: say plainly that the sender left it out rather than
