@@ -319,7 +319,31 @@ announcement topic a whole-folder fetch belongs on.
   5. A user reads a PGP-encrypted message they hold the key for, and a message that cannot be decrypted says why instead of reading as empty.
   6. A spam classifier verdict is available to the filter rules that already exist, shown with its source named, never as a silent deletion.
 
-**Plans**: TBD
+**Plans**: 9 plans, one per wave. Three shared files, `guards/guards.toml`,
+`docs/changelog.md` and `Cargo.toml`, are touched by most plans under the
+same-commit rules, and `src/presentation/wx_app.rs` by six of them, so the plans
+are ordered rather than run in parallel. Plans 07, 08 and 09 carry blocking
+checkpoints and are not autonomous.
+
+- [ ] `04-01-PLAN.md` — An attachment's own description arrives and is spoken, and an image with none borrows the alt on the `<img>` that names it
+- [ ] `04-02-PLAN.md` — `List-Unsubscribe` arrives, so the mailing-list warning that ships and has never fired reaches somebody
+- [ ] `04-03-PLAN.md` — The encryption facts computed on every message read stop being thrown away, so armour has an explanation beside it
+- [ ] `04-04-PLAN.md` — A text attachment opens as text and an image attachment is described rather than drawn
+- [ ] `04-05-PLAN.md` — A filter rule may name the safety verdict, and every sentence in the warning bar says who said it
+- [ ] `04-06-PLAN.md` — A key moves between misspellings in both directions without a dialog, and says what a word could be instead
+- [ ] `04-07-PLAN.md` — Several files at once by dropping, pasting or picking, with an honest answer about whether a drop on a web view lands
+- [ ] `04-08-PLAN.md` — The inline picture draft round trip is proved, and whether a picture may be decorative is put to a decision
+- [ ] `04-09-PLAN.md` — An S/MIME encrypted message says why it cannot be read instead of opening blank, and OpenPGP is a decision rather than a guess
+
+Two decisions from `04-RESEARCH.md` are still open and the plans are built round
+them rather than assuming answers. READ-02's scope is decided in `04-09`'s second
+task, which stops before choosing an OpenPGP crate; `04-09`'s first task is the
+S/MIME half and stands whichever way that goes. Whether a picture may be
+decorative is decided in `04-08`'s second task. `04-04` assumes an image preview
+describes rather than decodes, states the whole argument, and says what changes
+if that is overruled. `04-02` assumes `List-Unsubscribe` is in scope and lifts
+out whole if it is not.
+
 **UI hint**: yes
 
 ### Phase 5: The other five modules keep up
