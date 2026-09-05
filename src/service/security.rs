@@ -92,6 +92,21 @@ pub const KEYRING_SERVICE: &str = "wixen-mail";
 /// Account name under [`KEYRING_SERVICE`] for the master key.
 pub const KEYRING_MASTER_KEY: &str = "master-key";
 
+/// The two halves of a message body as the one string a detector reads.
+///
+/// Here rather than written out at each caller, because a message can carry
+/// either half or both, and a detector handed only one of them answers about
+/// half a message. [`SecurityService::analyze_message_security`] and
+/// [`crate::application::body_safety::what_the_form_says`] both read it, and a
+/// second spelling of the join is a second chance for the two to disagree
+/// about a marker sitting across the seam.
+pub(crate) fn both_halves_of_a_body(body_text: &str, body_html: Option<&str>) -> String {
+    match body_html {
+        Some(html) => format!("{body_text}\n{html}"),
+        None => body_text.to_string(),
+    }
+}
+
 pub struct SecurityService {
     /// The key an older version used to encrypt passwords in the database.
     ///
@@ -229,6 +244,10 @@ impl SecurityService {
     }
 
     /// Analyze a message for PGP/S-MIME and phishing signals.
+    ///
+    /// Six of the eight fields it answers have no reader.
+    /// [`crate::application::body_safety::what_the_form_says`] gives two of them
+    /// one, and says beside itself why the other four are left.
     pub fn analyze_message_security(
         &self,
         from: &str,
@@ -236,15 +255,11 @@ impl SecurityService {
         body_text: &str,
         body_html: Option<&str>,
     ) -> Result<MessageSecurityReport> {
-        let combined = if let Some(html) = body_html {
-            format!("{}\n{}", body_text, html)
-        } else {
-            body_text.to_string()
-        };
+        let combined = both_halves_of_a_body(body_text, body_html);
         let lower = combined.to_lowercase();
 
-        let pgp_signed = self.detect_pgp_signed(&combined);
-        let pgp_encrypted = self.detect_pgp_encrypted(&combined);
+        let pgp_signed = Self::detect_pgp_signed(&combined);
+        let pgp_encrypted = Self::detect_pgp_encrypted(&combined);
         let smime_signed = self.detect_smime_signed(&combined);
         let smime_encrypted = self.detect_smime_encrypted(&combined);
 
@@ -266,12 +281,22 @@ impl SecurityService {
         })
     }
 
-    fn detect_pgp_signed(&self, content: &str) -> bool {
+    /// Whether the text carries a PGP signature block.
+    ///
+    /// Takes no `self`, and is reachable from the rest of the crate, because
+    /// [`crate::application::body_safety`] asks the same question to explain an
+    /// armoured message in the reader's warning bar. Two readers of one armour
+    /// format are two chances to disagree about what an armoured block looks
+    /// like, so there is one.
+    pub(crate) fn detect_pgp_signed(content: &str) -> bool {
         content.contains("-----BEGIN PGP SIGNED MESSAGE-----")
             || content.contains("-----BEGIN PGP SIGNATURE-----")
     }
 
-    fn detect_pgp_encrypted(&self, content: &str) -> bool {
+    /// Whether the text carries a PGP armoured message block.
+    ///
+    /// Shared for the reason [`Self::detect_pgp_signed`] gives.
+    pub(crate) fn detect_pgp_encrypted(content: &str) -> bool {
         content.contains("-----BEGIN PGP MESSAGE-----")
     }
 
@@ -568,12 +593,16 @@ mod tests {
             "-----BEGIN PGP SIGNED MESSAGE-----",
             "-----BEGIN PGP SIGNATURE-----",
         ] {
-            assert!(service.detect_pgp_signed(marker), "for {marker}");
+            assert!(SecurityService::detect_pgp_signed(marker), "for {marker}");
         }
-        assert!(!service.detect_pgp_signed("nothing here"));
+        assert!(!SecurityService::detect_pgp_signed("nothing here"));
 
-        assert!(service.detect_pgp_encrypted("-----BEGIN PGP MESSAGE-----"));
-        assert!(!service.detect_pgp_encrypted("-----BEGIN PGP SIGNATURE-----"));
+        assert!(SecurityService::detect_pgp_encrypted(
+            "-----BEGIN PGP MESSAGE-----"
+        ));
+        assert!(!SecurityService::detect_pgp_encrypted(
+            "-----BEGIN PGP SIGNATURE-----"
+        ));
 
         for marker in [
             "Content-Type: application/pkcs7-signature",

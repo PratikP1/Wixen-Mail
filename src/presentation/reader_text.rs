@@ -254,6 +254,17 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
 /// that forgot them would quietly get machine defaults and a date written a way
 /// nobody chose.
 pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -> ReaderDocument {
+    // Asked here rather than left to each caller. There are three surfaces that
+    // open a message and only one of them would have been remembered, and a
+    // fact that reaches one door and not another is one that appears and
+    // disappears depending on which way somebody came in.
+    //
+    // Asked at all, whatever the content-scanning setting says. That setting is
+    // about reading what a message *says*, which is a judgement about a
+    // stranger's writing, and this is about what form the message arrived in.
+    // Somebody who has turned content scanning off still meets the armour.
+    let form =
+        crate::application::body_safety::what_the_form_says(Some(body.as_plain()), body.as_html());
     let title = if message.subject.trim().is_empty() {
         "No subject".to_string()
     } else {
@@ -282,10 +293,17 @@ pub fn single_message(message: &MessageItem, body: &MessageBody, out: Reading) -
         landmarks,
         warning: warning_for(message.safety, &message.safety_reasons),
         // The bar this builds is the safety verdict, so it is there because
-        // something is wrong. A signature folded in later never sets this.
+        // something is wrong. Neither of the two folds below it, a signature
+        // verdict and what the message says about its own form, ever sets this.
         looks_unsafe: warning_for(message.safety, &message.safety_reasons).is_some(),
         attachments: attachments_of(message),
     }
+    // Before a caller folds in a signature verdict, and that ordering is
+    // load-bearing rather than tidy. A signature verdict puts
+    // `HOW_IT_WAS_CHECKED` into the bar, and `said_before_the_message` cuts
+    // there, so anything folded in after one is never spoken by the reader or
+    // by `read_whole`.
+    .with_encryption(form)
 }
 
 /// The whole message as one passage to be read aloud, headings and all.
@@ -402,6 +420,37 @@ const HOW_IT_WAS_CHECKED: &str = "More about this signature:";
 /// every signature ever made, and read straight after the findings it sounds
 /// like something wrong with this certificate.
 const WHAT_A_SIGNATURE_IS_WORTH: &str = "What a signature does and does not show:";
+
+/// What is said above a message this build cannot open.
+///
+/// One voice with [`crate::service::signed_mail::EncryptedMessage::spoken`],
+/// which says "This message is encrypted." about the S/MIME case, and scoped
+/// harder than it on purpose. That sentence goes on to say Wixen Mail cannot
+/// open encrypted mail *at all*, which is a claim about the program rather than
+/// about the message in front of somebody, and it is a claim that stops being
+/// true the moment anything here learns to open one kind. This says only what
+/// is true of this message.
+///
+/// The second half is the load-bearing one. Without it, a body full of armour
+/// reads as the reader having failed, and the commonest response to a program
+/// that looks broken is to try again.
+const ENCRYPTED_AND_NOT_OPENED_HERE: &str = "This message is encrypted. Wixen Mail cannot open it, so what is shown below \
+     is the encrypted form rather than the message.";
+
+/// What is said above a message carrying a signature nothing here has checked.
+///
+/// Worded from [`crate::service::signed_mail::Finding::SignatureKindNotUnderstood`],
+/// which this project already wrote for exactly this situation: a signature of a
+/// kind the program cannot check.
+///
+/// It must not read as good news. "This message is signed" on its own is heard
+/// as "this message is genuine", which is the reading a forger is buying, so the
+/// sentence carries what was not done in the same breath as what was found. That
+/// is the same discipline [`nothing_kept_to_check_bar`] keeps for the S/MIME case
+/// and for the same reason: could not check and checked out fine are opposite
+/// pieces of news.
+const SIGNED_AND_NOT_CHECKED_HERE: &str = "This message carries a PGP signature, which Wixen Mail cannot check, so nothing \
+     here says whether it is genuine.";
 
 /// The bar's whole text once a signature verdict has been folded in.
 ///
@@ -720,6 +769,26 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         text.push('\n');
     }
 
+    // What the message says about its own form, and only when this document is
+    // one message. That is the case that matters most, because it is how a
+    // message opens by default: `show_conversation_as_page` composes one part
+    // when somebody opens a single message formatted.
+    //
+    // A thread of several is left alone, for the reason `with_signature` gives
+    // for staying off one. There is a form per message and one bar over all of
+    // them, so "this message is encrypted" said over a thread of five is heard
+    // as covering all five. What it costs is named in the changelog rather than
+    // left to be discovered: an encrypted message inside a thread read as one
+    // document still shows its armour with nothing said, and opening that
+    // message on its own is where the sentence is.
+    let form = match parts {
+        [only] => crate::application::body_safety::what_the_form_says(
+            Some(only.body.as_plain()),
+            only.body.as_html(),
+        ),
+        _ => crate::application::body_safety::WhatTheFormSays::Nothing,
+    };
+
     // The worst verdict in the conversation. One reply being a phishing
     // attempt makes the whole thread worth a warning, and burying that under
     // "the first message is fine" is how somebody misses it. The worst
@@ -741,8 +810,8 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         //
         // `false` here would only be right if a bar on a conversation could
         // exist for some reason other than something being wrong, and today it
-        // cannot: a signature verdict is folded in afterwards by
-        // `with_signature`, which never sets this.
+        // cannot: the two folds that come afterwards, `with_signature` and
+        // `with_encryption`, never set this.
         looks_unsafe: warning.is_some(),
         landmarks,
         warning,
@@ -754,6 +823,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
             .flat_map(|part| attachments_of(&part.message))
             .collect(),
     }
+    .with_encryption(form)
 }
 
 /// One attachment in the reader, and enough to fetch it again.
@@ -1096,6 +1166,51 @@ impl ReaderDocument {
             // nothing.
             SignatureCheck::NotKept => Some(nothing_kept_to_check_bar(self.warning.as_deref())),
         };
+        self
+    }
+
+    /// Fold what a message says about its own form into the bar.
+    ///
+    /// [`WhatTheFormSays::Nothing`] for nearly all mail, and then nothing
+    /// changes: no bar where there was none, no extra line to listen past. The
+    /// reasoning is [`with_signature`](Self::with_signature)'s, unchanged.
+    ///
+    /// # Why this must be folded in before a signature verdict and not after
+    ///
+    /// [`said_before_the_message`] is what the reader speaks when a message
+    /// opens and what [`read_whole`] speaks before the body, and it is
+    /// everything above [`HOW_IT_WAS_CHECKED`]. A signature verdict puts that
+    /// line into the bar. So a sentence appended after one is present in the
+    /// bar, visible on screen, and never spoken by either surface, on exactly
+    /// the messages with the most going on. Applied first, it lands in the part
+    /// that is read aloud whatever else joins later.
+    ///
+    /// # Why `looks_unsafe` is left alone
+    ///
+    /// The reason [`with_signature`]'s `NotKept` arm gives, unchanged. An
+    /// encrypted message is not an unsafe one, it is a message this build
+    /// cannot open, and sounding the unsafe-message cue on one would teach
+    /// somebody that the cue means nothing. The reader picks the cue from that
+    /// flag and says an ordinary announcement instead, which is what this
+    /// wants.
+    pub fn with_encryption(
+        mut self,
+        says: crate::application::body_safety::WhatTheFormSays,
+    ) -> Self {
+        use crate::application::body_safety::WhatTheFormSays;
+        let sentence = match says {
+            WhatTheFormSays::Nothing => return self,
+            WhatTheFormSays::EncryptedWithPgp => ENCRYPTED_AND_NOT_OPENED_HERE,
+            WhatTheFormSays::SignedWithPgp => SIGNED_AND_NOT_CHECKED_HERE,
+        };
+        self.warning = Some(match self.warning.take() {
+            // Under what the filter said, the way a signature verdict goes
+            // under it: the filter's verdict keeps the top of the bar, and a
+            // bar that reshuffles itself by how bad the news is has to be read
+            // from the top every time to find out what is in it.
+            Some(already) => format!("{already}\n{sentence}"),
+            None => sentence.to_string(),
+        });
         self
     }
 }
@@ -2809,6 +2924,240 @@ mod signature_tests {
 
         for limit in holds.limits() {
             assert!(bar.contains(limit), "the bar left out {limit:?}\n{bar}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod encryption_tests {
+    use super::*;
+    use crate::application::body_safety::WhatTheFormSays;
+    use crate::service::safety::Safety;
+
+    /// A PGP armoured message, as it really sits in a text part.
+    fn an_armoured_message() -> String {
+        "-----BEGIN PGP MESSAGE-----\n\nhQIMA7Nq0000\n=aBcD\n-----END PGP MESSAGE-----\n"
+            .to_string()
+    }
+
+    /// A clearsigned message: signed, and perfectly readable.
+    fn a_clearsigned_message() -> String {
+        "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\nSee you Thursday.\n\
+         -----BEGIN PGP SIGNATURE-----\niQIzBA0000\n-----END PGP SIGNATURE-----\n"
+            .to_string()
+    }
+
+    fn opened(safety: Safety, body: &str) -> ReaderDocument {
+        let mut item = super::tests::message();
+        item.safety = safety;
+        if safety != Safety::Ordinary {
+            item.safety_reasons =
+                vec!["A link says it goes one place and goes somewhere else.".into()];
+        }
+        single_message(
+            &item,
+            &MessageBody::Plain(body.to_string()),
+            super::tests::aloud(),
+        )
+    }
+
+    #[test]
+    fn test_an_encrypted_message_explains_its_armour_instead_of_leaving_it_there() {
+        // The defect this plan exists to close. The program has worked out that
+        // this message is encrypted on every read since the analysis was
+        // written, and told nobody, so opening one gave a screenful of armour
+        // and not a word about why.
+        let bar = opened(Safety::Ordinary, &an_armoured_message())
+            .warning
+            .expect("an encrypted message has something to say");
+
+        assert!(bar.contains("This message is encrypted"), "got {bar}");
+        assert!(bar.contains("cannot open it"), "got {bar}");
+    }
+
+    #[test]
+    fn test_the_sentence_does_not_claim_this_program_can_never_open_encrypted_mail() {
+        // A claim about the program rather than about the message would be
+        // false the moment anything here learns to open one kind of encrypted
+        // mail, and nothing would fail. Scoped to this message, it stays true.
+        assert!(
+            !ENCRYPTED_AND_NOT_OPENED_HERE.contains("cannot open encrypted mail"),
+            "{ENCRYPTED_AND_NOT_OPENED_HERE}"
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_says_so_without_saying_the_signature_was_checked() {
+        // Telling somebody a message is signed changes what they trust, so the
+        // sentence carries what was not done in the same breath as what was
+        // found. "Could not check" must never read as "fine".
+        let bar = opened(Safety::Ordinary, &a_clearsigned_message())
+            .warning
+            .expect("a signed message has something to say");
+
+        assert!(bar.contains("carries a PGP signature"), "got {bar}");
+        assert!(bar.contains("cannot check"), "got {bar}");
+        assert!(
+            bar.contains("nothing here says whether it is genuine"),
+            "got {bar}"
+        );
+    }
+
+    #[test]
+    fn test_the_signed_sentence_makes_no_claim_a_check_would_have_to_earn() {
+        // Written against the wording rather than against a composed bar,
+        // because the risk is that somebody tightening the sentence later
+        // reaches for a shorter one that reads as a verdict.
+        for claim in [
+            "verified",
+            "was made by",
+            "has not been changed",
+            "is valid",
+            "trusted",
+        ] {
+            assert!(
+                !SIGNED_AND_NOT_CHECKED_HERE.contains(claim),
+                "the signed sentence claims {claim}: {SIGNED_AND_NOT_CHECKED_HERE}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ordinary_mail_gains_no_bar() {
+        // The half that decides whether any of this is worth having. A bar on
+        // every message is a bar somebody tabs past on every message, and then
+        // the one that mattered is tabbed past too.
+        let document = opened(Safety::Ordinary, "The numbers are attached.");
+
+        assert_eq!(document.warning, None);
+        assert!(!document.looks_unsafe);
+    }
+
+    #[test]
+    fn test_an_encrypted_message_is_not_reported_as_an_unsafe_one() {
+        // An encrypted message is not an unsafe one, it is one this build
+        // cannot open. The reader picks the unsafe-message cue from this flag,
+        // and sounding that cue on ordinary encrypted mail would teach somebody
+        // the cue means nothing, which is the cue they most need to keep
+        // meaning something.
+        let document = opened(Safety::Ordinary, &an_armoured_message());
+
+        assert!(document.warning.is_some(), "nothing was said at all");
+        assert!(!document.looks_unsafe, "the unsafe cue would sound");
+    }
+
+    #[test]
+    fn test_a_filters_warning_keeps_the_top_of_the_bar_and_the_form_goes_under_it() {
+        // Both, always, in a fixed order. A message can be both a phishing
+        // attempt and encrypted, and a bar that reshuffles itself by how bad
+        // the news is has to be read from the top every time.
+        let document = opened(Safety::Suspicious, &an_armoured_message());
+        let bar = document.warning.clone().expect("both facts");
+
+        let filter = bar
+            .find("goes one place")
+            .expect("the filter's verdict survived");
+        let form = bar
+            .find("This message is encrypted")
+            .expect("the form was said");
+        assert!(filter < form, "the form talked over the filter: {bar}");
+        assert!(
+            document.looks_unsafe,
+            "a phishing verdict stopped sounding the cue"
+        );
+    }
+
+    #[test]
+    fn test_the_form_is_said_before_the_message_even_when_a_signature_verdict_follows() {
+        // The trap this ordering exists for. `said_before_the_message` is
+        // everything above `HOW_IT_WAS_CHECKED`, and a signature verdict puts
+        // that line into the bar. A sentence folded in after one is in the bar,
+        // on the screen, and spoken by nothing.
+        let document = opened(Safety::Ordinary, &an_armoured_message())
+            .with_signature(&crate::application::checking_signatures::SignatureCheck::NotKept);
+        let bar = document.warning.clone().expect("both facts");
+
+        assert!(
+            bar.contains(HOW_IT_WAS_CHECKED),
+            "the fixture did not produce the boundary this is about: {bar}"
+        );
+        assert!(
+            said_before_the_message(&bar).contains("This message is encrypted"),
+            "the encryption sentence is below the boundary, so nothing speaks it: {bar}"
+        );
+        assert!(
+            read_whole(&document).contains("This message is encrypted"),
+            "reading the message aloud never says it is encrypted"
+        );
+    }
+
+    #[test]
+    fn test_opening_one_message_as_a_page_says_it_too() {
+        // The formatted page is the default way a message opens, so a fact that
+        // reached only the text reader would be a fact most people never got.
+        let mut item = super::tests::message();
+        item.safety = Safety::Ordinary;
+        let document = conversation(
+            "Quarterly report",
+            &[ConversationPart {
+                message: item,
+                body: MessageBody::Plain(an_armoured_message()),
+                depth: 0,
+            }],
+        );
+
+        let bar = document.warning.expect("an encrypted message says so");
+        assert!(bar.contains("This message is encrypted"), "got {bar}");
+    }
+
+    #[test]
+    fn test_a_thread_of_several_messages_says_nothing_about_one_of_their_forms() {
+        // The limit, asserted rather than left to be discovered. One bar over
+        // several messages cannot say which of them it is about, and "this
+        // message is encrypted" over a thread of five would be heard as
+        // covering all of them. That is the reason `with_signature` gives for
+        // staying off a thread, and it is the same reason here. Opening the
+        // message on its own is where the sentence is.
+        let mut first = super::tests::message();
+        first.safety = Safety::Ordinary;
+        let second = first.clone();
+        let document = conversation(
+            "Quarterly report",
+            &[
+                ConversationPart {
+                    message: first,
+                    body: MessageBody::Plain(an_armoured_message()),
+                    depth: 0,
+                },
+                ConversationPart {
+                    message: second,
+                    body: MessageBody::Plain("Thanks, got it.".into()),
+                    depth: 1,
+                },
+            ],
+        );
+
+        assert_eq!(document.warning, None);
+    }
+
+    #[test]
+    fn test_nothing_to_say_changes_nothing_at_all() {
+        // The fold itself, driven straight, so the "no bar where there was
+        // none" promise is asserted at the place that makes it rather than only
+        // through a composer.
+        let before = opened(Safety::Ordinary, "The numbers are attached.");
+        let after = before.clone().with_encryption(WhatTheFormSays::Nothing);
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn test_both_sentences_read_as_sentences_rather_than_a_wrapped_literal() {
+        // A wrapped literal that loses its continuations keeps every space of
+        // the indenting, and these are read aloud. Runs of stray spaces are
+        // silences in the middle of a sentence.
+        for sentence in [ENCRYPTED_AND_NOT_OPENED_HERE, SIGNED_AND_NOT_CHECKED_HERE] {
+            assert!(!sentence.contains("  "), "{sentence}");
         }
     }
 }

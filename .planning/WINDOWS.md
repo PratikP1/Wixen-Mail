@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 87
+open_count: 94
 waived_count: 0
 fixed_count: 13
-total_count: 100
-last_updated: 2026-09-05T16:39:54.486Z
+total_count: 107
+last_updated: 2026-09-05T18:22:42.866Z
 ---
 
 # Broken Windows Ledger
@@ -115,6 +115,13 @@ last_updated: 2026-09-05T16:39:54.486Z
 | 98 | 04 | deviation | src/application/blocking.rs |  | where_to_write_to_leave names whatever sits between <mailto: and > without asking whether it is an address, so a sender can put a web address or any other text there and have the warning say 'unsubscribe by writing to' it. Left alone deliberately, and the reasoning matters more than the decision: validating it would only reject malformed junk, because the real threat is a well-formed address belonging to somebody else, which no validation can tell from a real one. Nothing in this program acts on the value, so nobody is one keystroke from a stranger either way. Recorded so the judgement is visible rather than assumed. | open |  | 2026-09-05T16:00:21.699Z |  |
 | 99 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-02-PLAN.md |  | Two of this plan's premises were wrong in ways that would have shipped a broken feature or a weaker test, and both were found by measuring rather than reading. It says to read the header through header_text as receipt_request does; mail-parser parses List-Unsubscribe with its address parser, which strips the angle brackets where_to_write_to_leave searches for, so that route reports every mailing list as one that gave no way out. And it says the second task's census cannot be red because it must name a construction the first task creates; the construction already existed and only its argument changed, so the census was red before any implementation. Recorded because both are general: an accessor's parsed and raw forms are different values, and 'no red is available' is a claim about the tree that is cheaper to falsify than to work around. | open |  | 2026-09-05T16:00:31.782Z |  |
 | 100 | 04 | deviation | guards/guards.toml |  | Two pre-existing guard records were found wrong, both surfaced by the count check because src/application/mail_sync.rs gained one test. 'a sync writes no attachment for a message nobody has opened' had been UNMEASURABLE since 04-01 landed hours earlier: its recorded break writes a CachedAttachment literal, 04-01 added a description field to that struct, and the break stopped compiling, so the run reported a broken tool rather than a finding. 'a count and the thing it counts agree in number' named 16 tests for a break that reddens 17, missing one in application::contacts_sync, a module nobody working on mailing lists would have filtered for. Both corrected by hand and re-measured. Recorded because neither has anything to do with this feature and neither would have been found by any check this plan ran on purpose. | open |  | 2026-09-05T16:39:54.486Z |  |
+| 101 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Nobody has heard the encryption sentence. The reader speaks said_before_the_message when a message opens, so the sentence is spoken before the body, and two things about that are judgements rather than measurements: whether it lands early enough that somebody arrowing into a message meets the explanation before the armour, and whether 'This message is encrypted. Wixen Mail cannot open it, so what is shown below is the encrypted form rather than the message.' is understood at speed. Only a real NVDA or Narrator run settles either. | open |  | 2026-09-05T18:22:00.937Z |  |
+| 102 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Whether a bar carrying a filter's verdict and an encryption sentence together reads as two facts or as one run-on has never been heard. The two are joined with a newline, the filter's verdict keeps the top, and the encryption sentence goes under it. In a text control that is two lines; spoken by a screen reader it may be one breath, and a phishing warning running straight into an explanation of armour is a sentence somebody may hear as one claim about one thing. Only a real NVDA or Narrator run settles whether the join needs more than a line ending. | open |  | 2026-09-05T18:22:16.997Z |  |
+| 103 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Whether the PGP signature sentence is heard as a disclaimer or as reassurance is the one that matters most and is the one tests cannot reach. It reads 'This message carries a PGP signature, which Wixen Mail cannot check, so nothing here says whether it is genuine.' Tests assert the words it does not contain, which is a check on the wording and not on what somebody takes away. Being told a message is signed is easily heard as being told it is genuine, and if the second clause is talked over the first clause is reassurance nothing earned. Only a listener settles it. | open |  | 2026-09-05T18:22:17.388Z |  |
+| 104 | 04 | deviation | src/application/body_safety.rs |  | Whether real PGP mail arrives with its armour in a text part at all has never been measured, and it decides whether this feature fires in practice. The detection reads the two halves of a parsed body for the armour markers, which is how inline PGP arrives. Mail sent as multipart/encrypted carries the armour in an application/pgp-encrypted part, which mime::parse's first_of_kind does not yield as a body, so it never reaches this and would open with nothing said. No mail account has ever been used with this program, so which of the two real senders use cannot be answered here. Said in the changelog as a known limitation rather than implied away. | open |  | 2026-09-05T18:22:28.331Z |  |
+| 105 | 04 | deviation | src/presentation/reader_text.rs |  | A conversation of several messages read as one document says nothing about any one message's form, so an encrypted message inside a thread still shows its armour with nothing said. reader_text::conversation folds the sentence in only when the document holds exactly one part. The reason is the one with_signature already gives for staying off a thread: there is a form per message and one bar over all of them, so 'This message is encrypted' over a thread of five is heard as covering five. Closing it properly means a sentence naming which message, which is its own wording question. Opening that message on its own does say it, and that is how somebody reads a particular message. | open |  | 2026-09-05T18:22:28.728Z |  |
+| 106 | 04 | deviation | tests/an_encrypted_message_is_not_left_unexplained.rs |  | The census written for this plan passed against its own break the first time it was measured, and the fix is worth remembering as a class. It asserted that each composer asks the encryption question. The break took out the fold that puts the answer into the bar and left the question in place, bound to an unused name, so the composer still named the call and nothing reached the reader. A call site has three independent ways to be hollow: the call absent, the result discarded, and the argument a constant that makes the call decide nothing. The census now asserts all three and has a companion per shape. Found only by applying the break by hand; reading the census had already declared it sufficient. | open |  | 2026-09-05T18:22:42.457Z |  |
+| 107 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-03-PLAN.md |  | Three of this plan's premises were wrong. It says to reach the fact from the message-open path outside the look_at_message_contents gate and to write a census anchored on that setting's arm; the gate runs on a worker at body-fetch time and writes a verdict into a column, the bar is built later from the stored row, and nothing on the display path reads the setting, so the prescribed census would have read an unrelated function. It says to fold the sentence in under whatever the bar already says; said_before_the_message cuts at HOW_IT_WAS_CHECKED, which a signature verdict inserts, so an appended sentence is in the bar and spoken by nothing. And its guard-record table says reader_text.rs is fingerprinted by no record and holds 76 tests, where one record names it and it held 81, both figures true before 04-01 landed hours earlier. Third plan running in this phase whose record table expired against a same-day sibling. | open |  | 2026-09-05T18:22:42.866Z |  |
 
 ````json
 [
@@ -1316,6 +1323,90 @@ last_updated: 2026-09-05T16:39:54.486Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T16:39:54.486Z",
+    "resolved_at": null
+  },
+  {
+    "id": 101,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Nobody has heard the encryption sentence. The reader speaks said_before_the_message when a message opens, so the sentence is spoken before the body, and two things about that are judgements rather than measurements: whether it lands early enough that somebody arrowing into a message meets the explanation before the armour, and whether 'This message is encrypted. Wixen Mail cannot open it, so what is shown below is the encrypted form rather than the message.' is understood at speed. Only a real NVDA or Narrator run settles either.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:00.937Z",
+    "resolved_at": null
+  },
+  {
+    "id": 102,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Whether a bar carrying a filter's verdict and an encryption sentence together reads as two facts or as one run-on has never been heard. The two are joined with a newline, the filter's verdict keeps the top, and the encryption sentence goes under it. In a text control that is two lines; spoken by a screen reader it may be one breath, and a phishing warning running straight into an explanation of armour is a sentence somebody may hear as one claim about one thing. Only a real NVDA or Narrator run settles whether the join needs more than a line ending.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:16.997Z",
+    "resolved_at": null
+  },
+  {
+    "id": 103,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Whether the PGP signature sentence is heard as a disclaimer or as reassurance is the one that matters most and is the one tests cannot reach. It reads 'This message carries a PGP signature, which Wixen Mail cannot check, so nothing here says whether it is genuine.' Tests assert the words it does not contain, which is a check on the wording and not on what somebody takes away. Being told a message is signed is easily heard as being told it is genuine, and if the second clause is talked over the first clause is reassurance nothing earned. Only a listener settles it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:17.388Z",
+    "resolved_at": null
+  },
+  {
+    "id": 104,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/application/body_safety.rs",
+    "line": null,
+    "description": "Whether real PGP mail arrives with its armour in a text part at all has never been measured, and it decides whether this feature fires in practice. The detection reads the two halves of a parsed body for the armour markers, which is how inline PGP arrives. Mail sent as multipart/encrypted carries the armour in an application/pgp-encrypted part, which mime::parse's first_of_kind does not yield as a body, so it never reaches this and would open with nothing said. No mail account has ever been used with this program, so which of the two real senders use cannot be answered here. Said in the changelog as a known limitation rather than implied away.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:28.331Z",
+    "resolved_at": null
+  },
+  {
+    "id": 105,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "A conversation of several messages read as one document says nothing about any one message's form, so an encrypted message inside a thread still shows its armour with nothing said. reader_text::conversation folds the sentence in only when the document holds exactly one part. The reason is the one with_signature already gives for staying off a thread: there is a form per message and one bar over all of them, so 'This message is encrypted' over a thread of five is heard as covering five. Closing it properly means a sentence naming which message, which is its own wording question. Opening that message on its own does say it, and that is how somebody reads a particular message.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:28.728Z",
+    "resolved_at": null
+  },
+  {
+    "id": 106,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "tests/an_encrypted_message_is_not_left_unexplained.rs",
+    "line": null,
+    "description": "The census written for this plan passed against its own break the first time it was measured, and the fix is worth remembering as a class. It asserted that each composer asks the encryption question. The break took out the fold that puts the answer into the bar and left the question in place, bound to an unused name, so the composer still named the call and nothing reached the reader. A call site has three independent ways to be hollow: the call absent, the result discarded, and the argument a constant that makes the call decide nothing. The census now asserts all three and has a companion per shape. Found only by applying the break by hand; reading the census had already declared it sufficient.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:42.457Z",
+    "resolved_at": null
+  },
+  {
+    "id": 107,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-03-PLAN.md",
+    "line": null,
+    "description": "Three of this plan's premises were wrong. It says to reach the fact from the message-open path outside the look_at_message_contents gate and to write a census anchored on that setting's arm; the gate runs on a worker at body-fetch time and writes a verdict into a column, the bar is built later from the stored row, and nothing on the display path reads the setting, so the prescribed census would have read an unrelated function. It says to fold the sentence in under whatever the bar already says; said_before_the_message cuts at HOW_IT_WAS_CHECKED, which a signature verdict inserts, so an appended sentence is in the bar and spoken by nothing. And its guard-record table says reader_text.rs is fingerprinted by no record and holds 76 tests, where one record names it and it held 81, both figures true before 04-01 landed hours earlier. Third plan running in this phase whose record table expired against a same-day sibling.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T18:22:42.866Z",
     "resolved_at": null
   }
 ]
