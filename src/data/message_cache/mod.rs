@@ -29,6 +29,7 @@ mod signatures;
 pub mod signed_original;
 mod tags;
 pub mod tasks;
+pub mod waiting_flag_changes;
 
 use crate::common::{Error, Result};
 use crate::service::security::SecurityService;
@@ -1793,6 +1794,50 @@ impl MessageCache {
         // either side is compared by. Who wins is decided from version markers
         // in `application::contacts_sync::whose_copy_wins`, deliberately, and
         // nothing in this table is ever compared with a timestamp.
+        // Flag changes made here that could not go yet, kept until they can.
+        //
+        // Its own table rather than a row in `outbox_queue`, and the reading
+        // behind that is worth writing down because merging the two for
+        // tidiness is the obvious next move.
+        //
+        // `outbox_queue` has `to_addr`, `subject` and `body`, all NOT NULL. A
+        // flag change has none of the three. Reusing that table means either
+        // writing values that are not true into three required columns, which
+        // puts a message that is not a message in front of the sender, or
+        // adding three nullable columns that mean nothing for a message and
+        // then teaching `flush_outbox` to skip rows that are not messages.
+        //
+        // They also mean different things, and that is the half that decides
+        // it. An outbox row is a thing to send once. A waiting flag change is a
+        // state to reconcile: starring a message and un-starring it leaves one
+        // change to send, the later one, while two messages never collapse into
+        // one. The unique constraint below is what makes that fall out of the
+        // schema rather than out of code somebody has to remember to write.
+        //
+        // `changed_to` is what the flag was set to here, not what the server
+        // holds. Replaying it is setting the flag to that value, which is
+        // idempotent, so a change offered twice is not two changes.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS waiting_flag_changes (
+                message_row_id INTEGER NOT NULL,
+                account_id TEXT NOT NULL,
+                folder_path TEXT NOT NULL,
+                uid INTEGER NOT NULL,
+                which_flag TEXT NOT NULL,
+                changed_to INTEGER NOT NULL,
+                changed_at TEXT NOT NULL,
+                PRIMARY KEY (message_row_id, which_flag)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create waiting_flag_changes table: {}",
+                    e
+                ))
+            })?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS held_conflicts (
