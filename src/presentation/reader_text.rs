@@ -3652,18 +3652,47 @@ mod picture_preview_tests {
     }
 
     #[test]
-    fn test_a_picture_preview_says_whether_there_is_a_picture_in_the_tab() {
+    fn test_a_picture_preview_always_says_which_of_three_things_happened() {
         // Otherwise somebody is left believing the tab failed to load one.
-        let document = image_document(
-            &picture("photo.png", "image/png", WhatTheSenderSaid::Nothing),
-            b"",
-        );
+        // Exactly one of the three, never none and never two: a preview saying
+        // both that a picture is shown and that there is none is worse than one
+        // saying neither, because the reader has to guess which is the lie.
+        //
+        // This was written one task earlier asserting only the third sentence,
+        // when nothing decoded and every picture got it. Drawing a PNG made that
+        // assertion false for a real reason, and it was widened here rather than
+        // deleted: the property it was reaching for was always that the preview
+        // says which, not that it says that one.
+        for (name, kind, bytes) in [
+            ("photo.png", "image/png", a_readable_png()),
+            ("photo.png", "image/png", b"not a picture at all".to_vec()),
+            ("animation.gif", "image/gif", b"GIF89a and no more".to_vec()),
+        ] {
+            let document = image_document(&picture(name, kind, WhatTheSenderSaid::Nothing), &bytes);
 
-        assert!(
-            document.text.contains(NO_PICTURE_TO_SHOW),
-            "{}",
-            document.text
-        );
+            let said = [
+                THE_PICTURE_IS_SHOWN,
+                THE_PICTURE_COULD_NOT_BE_READ,
+                NO_PICTURE_TO_SHOW,
+            ]
+            .iter()
+            .filter(|sentence| document.text.contains(*sentence))
+            .count();
+
+            assert_eq!(said, 1, "{name}, {kind}: {}", document.text);
+        }
+    }
+
+    /// A PNG small enough that making one costs nothing.
+    fn a_readable_png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(8, 8))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("a PNG this test made");
+        bytes
     }
 
     #[test]

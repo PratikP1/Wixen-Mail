@@ -8,7 +8,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **An image attachment now opens and says what is known about the picture.**
+- **An image attachment now previews. It is described, and it is shown.**
 
   Choose a PNG, JPEG, GIF or WebP in the attachment list and press Enter, and it
   opens in a tab of its own. The first line is what the sender said the picture
@@ -19,19 +19,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   first, and a gap where those words would be is indistinguishable from this
   program having dropped them.
 
-  After that the tab says whether there is a picture in it to look at, then the
-  kind and the size in the same words the attachment row already uses.
+  Then the picture itself, drawn below those words. A sighted or partly sighted
+  reader sees it; a screen reader reaching it hears the sender's description as
+  its name, or this program's wording for an undescribed picture where there is
+  none, rather than the word "graphic". The words come first in the tab order so
+  nothing about drawing the picture changes what is reached first.
+
+  The tab always says which of three things happened, in three sentences nobody
+  can confuse: the picture is shown, the picture could not be read, or this
+  build does not draw pictures of that kind. A damaged file and an ordinary one
+  do not sound the same.
+
+  **PNG and JPEG are drawn. GIF and WebP are not, in this build.** A GIF or a
+  WebP still opens and is still described, and says plainly that there is no
+  picture in the tab, so a reader can tell that from a file that would not read.
+  Drawing them would mean adding two more image decoders that a stranger's
+  attachment can reach, and PNG and JPEG cover almost every picture that arrives
+  in mail.
 
   Known limitations:
 
-  - **Nothing is drawn yet.** The tab says so plainly rather than leaving a
-    blank space somebody could read as a picture that failed to load.
+  - **Nothing is scaled, rotated or colour-managed.** A picture wider than the
+    tab is fitted to it, keeping its shape, so it cannot push the attachment
+    list out of reach. Nothing else is done to it.
+  - **Very large pictures are refused rather than drawn.** A preview will not
+    spend more than about forty-eight megabytes on one picture, which is a
+    twelve megapixel photograph. Past that the tab says the picture could not be
+    read. That bound is what stops a small file that decodes to something
+    enormous.
   - **The description is the sender's and nothing checks it.** If it does not
-    match the picture, nothing here can tell.
-  - **Whether senders write one at all is unmeasured.** No mail account has ever
-    been used with this program. If most senders write nothing, most previews
-    will say so, which is the honest answer and still better than the silence
-    there is today.
+    match the picture, nothing here can tell. Now that the picture is shown, a
+    sighted reader can see the disagreement and a blind one still cannot, which
+    is the honest limit and is the same limit every mail client has.
+  - **Whether senders write a description at all is unmeasured.** No mail
+    account has ever been used with this program. If most senders write nothing,
+    most previews will say so, which is the honest answer and still better than
+    the silence there is today.
 
 - **A text attachment now opens and can be read here.**
 
