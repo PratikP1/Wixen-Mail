@@ -854,6 +854,7 @@ fn document_that_exercises_every_optional_widget() -> ReaderDocument {
             name: "report.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 1024,
+            description: wixen_mail::service::mime::WhatTheSenderSaid::Nothing,
         }],
     }
 }

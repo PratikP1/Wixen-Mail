@@ -889,6 +889,7 @@ mod tests {
             name: name.to_string(),
             mime_type: "application/pdf".to_string(),
             size: 1024,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }
     }
 

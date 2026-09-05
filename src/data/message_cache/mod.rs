@@ -196,6 +196,12 @@ pub struct CachedAttachment {
     pub mime_type: String,
     pub size: i64,
     pub content_id: Option<String>,
+    /// What the sender said this file is, from its `Content-Description`.
+    ///
+    /// Stored beside the name so a message read once keeps it: the reader is
+    /// composed from these rows and not from the message, which may have been
+    /// evicted from the body cache long since.
+    pub description: crate::service::mime::WhatTheSenderSaid,
 }
 
 /// Cached draft information

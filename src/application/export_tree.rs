@@ -768,6 +768,7 @@ mod tests {
                 mime_type: "application/octet-stream".to_string(),
                 size: file.map_or(4096, <[u8]>::len) as i64,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             content: file.map(<[u8]>::to_vec),
         }

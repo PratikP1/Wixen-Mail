@@ -11380,6 +11380,7 @@ fn attachments_of(cache: &Option<Arc<MessageCache>>, message_id: i64) -> Vec<Att
             filename: record.filename,
             mime_type: record.mime_type,
             size: record.size.max(0) as usize,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         })
         .collect()
 }
@@ -14060,6 +14061,7 @@ fn open_for_scanning(
                         filename: "report.pdf".to_string(),
                         mime_type: "application/pdf".to_string(),
                         size: 1024,
+                        description: crate::service::mime::WhatTheSenderSaid::Nothing,
                     }],
                     thread_depth: 0,
                     is_thread_parent: true,
@@ -19175,6 +19177,7 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
                             mime_type: attachment.mime_type.clone(),
                             size: attachment.size as i64,
                             content_id: None,
+                            description: crate::service::mime::WhatTheSenderSaid::Nothing,
                         },
                         // By position, which both lists are in: the walk that reads
                         // the files and the parse that names them go through the
@@ -25494,6 +25497,7 @@ mod what_an_export_holds {
                             mime_type: "application/pdf".to_string(),
                             size: file.as_ref().map_or(4096, |bytes| bytes.len() as i64),
                             content_id: None,
+                            description: crate::service::mime::WhatTheSenderSaid::Nothing,
                         },
                         content: file.clone(),
                     }],
@@ -25719,6 +25723,7 @@ mod opening_an_attachment_a_second_time {
                             mime_type: "application/pdf".to_string(),
                             size: file.len() as i64,
                             content_id: None,
+                            description: crate::service::mime::WhatTheSenderSaid::Nothing,
                         },
                         content: Some(file.to_vec()),
                     }],
@@ -25736,6 +25741,7 @@ mod opening_an_attachment_a_second_time {
             name: "report.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 0,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }
     }
 

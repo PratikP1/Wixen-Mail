@@ -19,6 +19,7 @@ use super::read_aloud::Reading;
 use super::ui_types::MessageItem;
 use crate::application::checking_signatures::SignatureCheck;
 use crate::common::types::MessageBody;
+use crate::service::mime::WhatTheSenderSaid;
 use crate::service::signed_mail::{Finding, SignatureOutcome, SignatureReport};
 use crate::vendor::paperback::html_to_text::{HtmlSourceMode, HtmlToText};
 
@@ -366,6 +367,7 @@ fn attachments_of(message: &MessageItem) -> Vec<ReaderAttachment> {
             name: item.filename.clone(),
             mime_type: item.mime_type.clone(),
             size: item.size,
+            description: WhatTheSenderSaid::Nothing,
         })
         .collect()
 }
@@ -776,6 +778,13 @@ pub struct ReaderAttachment {
     pub name: String,
     pub mime_type: String,
     pub size: usize,
+    /// What the sender said this file is, in their own words.
+    ///
+    /// The end of the road that starts at `Content-Description` in
+    /// [`crate::service::mime::described`]. This is the only fact about an
+    /// attachment that a person wrote, and for a picture it is the only thing
+    /// that can say what is in it.
+    pub description: WhatTheSenderSaid,
 }
 
 impl ReaderAttachment {
@@ -1046,6 +1055,14 @@ mod tests {
             name: name.to_string(),
             mime_type: mime_type.to_string(),
             size,
+            description: WhatTheSenderSaid::Nothing,
+        }
+    }
+
+    fn described(name: &str, said: WhatTheSenderSaid) -> ReaderAttachment {
+        ReaderAttachment {
+            description: said,
+            ..attachment(name, "application/pdf", 245_760)
         }
     }
 
@@ -1057,6 +1074,98 @@ mod tests {
         let row = attachment("Report.pdf", "application/pdf", 245_760).label();
 
         assert_eq!(row, "Report.pdf, PDF document, 240 KB");
+    }
+
+    // ── What the sender said, and saying so when they said nothing ──────
+
+    #[test]
+    fn test_an_attachment_row_says_the_description_the_sender_gave() {
+        // The point of carrying the header this far. It goes at the end, after
+        // the facts that come from the file itself, so the fixed part of the
+        // sentence keeps the shape it already had and somebody who has heard
+        // enough can stop listening before the sender's words start.
+        let row = described(
+            "Report.pdf",
+            WhatTheSenderSaid::InWords("Quarterly figures for the board".to_string()),
+        )
+        .label();
+
+        assert_eq!(
+            row,
+            "Report.pdf, PDF document, 240 KB, Quarterly figures for the board"
+        );
+    }
+
+    #[test]
+    fn test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words() {
+        // Criterion 4's accessible half. A gap where the description would be
+        // is indistinguishable from this program having dropped it, and it is
+        // the sentence that matters more than the picture does.
+        let row = described("Report.pdf", WhatTheSenderSaid::Nothing).label();
+
+        assert_eq!(row, "Report.pdf, PDF document, 240 KB, no description");
+    }
+
+    #[test]
+    fn test_a_description_that_could_not_be_read_is_not_told_as_no_description() {
+        // Guardrail 9. The sender did write something and it did not survive as
+        // text. Saying they wrote nothing puts their client's fault on them and
+        // hides the fault from everybody.
+        let unreadable = described("Report.pdf", WhatTheSenderSaid::SomethingUnreadable).label();
+        let silent = described("Report.pdf", WhatTheSenderSaid::Nothing).label();
+
+        assert_ne!(unreadable, silent);
+        assert_eq!(
+            unreadable,
+            "Report.pdf, PDF document, 240 KB, a description with nothing readable in it"
+        );
+    }
+
+    #[test]
+    fn test_a_description_too_long_to_sit_through_is_cut_at_a_word() {
+        // The description is a stranger's text and there is no length a sender
+        // cannot write. A row is announced whenever focus reaches it, and a
+        // screen reader part way through ten thousand characters is one
+        // somebody has to interrupt rather than listen to.
+        let said = "wandering ".repeat(60);
+        let row = described("Report.pdf", WhatTheSenderSaid::InWords(said)).label();
+
+        assert!(
+            row.starts_with("Report.pdf, PDF document, 240 KB, wandering wandering"),
+            "the description did not reach the row at all: {row:?}"
+        );
+        assert!(
+            row.chars().count() < 200,
+            "a row of {} characters is one nobody can be read out of: {row:?}",
+            row.chars().count()
+        );
+        assert!(row.ends_with('\u{2026}'), "cut without saying so: {row:?}");
+        assert!(
+            !row.contains("wanderi\u{2026}"),
+            "cut mid-word, which reads as a nonsense syllable: {row:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_description_reaches_the_reader_from_the_row_it_hangs_off() {
+        // The hop between the stored row and the sentence. Without it the
+        // header is read, stored, read back, and then dropped one struct short
+        // of the only place it is ever said out loud.
+        let mut message = message();
+        message.attachments = vec![AttachmentItem {
+            filename: "beach.jpg".to_string(),
+            mime_type: "image/jpeg".to_string(),
+            size: 2048,
+            description: WhatTheSenderSaid::InWords("A cat on a wall".to_string()),
+        }];
+
+        let carried = attachments_of(&message);
+
+        assert_eq!(carried.len(), 1);
+        assert_eq!(
+            carried[0].description,
+            WhatTheSenderSaid::InWords("A cat on a wall".to_string())
+        );
     }
 
     #[test]
@@ -1519,11 +1628,13 @@ Analytical Engines",
                 filename: "a.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 1,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             AttachmentItem {
                 filename: "b.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 2,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
         let mut second = message();
@@ -1533,6 +1644,7 @@ Analytical Engines",
             filename: "c.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 3,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
 
         let doc = conversation(
@@ -1582,6 +1694,7 @@ Analytical Engines",
             filename: "agenda.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 1,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
         let mut second = message();
         second.message_id = 12;
@@ -1590,6 +1703,7 @@ Analytical Engines",
             filename: "minutes.pdf".to_string(),
             mime_type: "application/pdf".to_string(),
             size: 2,
+            description: crate::service::mime::WhatTheSenderSaid::Nothing,
         }];
         let parts = vec![
             ConversationPart {
@@ -1789,11 +1903,13 @@ Analytical Engines",
                 filename: "invoice.pdf".to_string(),
                 mime_type: "application/pdf".to_string(),
                 size: 1024,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             AttachmentItem {
                 filename: "notes.txt".to_string(),
                 mime_type: "text/plain".to_string(),
                 size: 64,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
         let doc = read(&m, "Body");

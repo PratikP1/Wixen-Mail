@@ -2362,6 +2362,7 @@ impl MessageCache {
                     mime_type: row.get(3)?,
                     size: row.get(4)?,
                     content_id: row.get(5)?,
+                    description: crate::service::mime::WhatTheSenderSaid::Nothing,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query attachments: {}", e)))?
@@ -4760,6 +4761,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 10,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
             super::CachedAttachment {
                 id: 0,
@@ -4768,6 +4770,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 20,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             },
         ];
 
@@ -4801,6 +4804,7 @@ mod tests {
                     mime_type: "application/pdf".to_string(),
                     size: 10,
                     content_id: None,
+                    description: crate::service::mime::WhatTheSenderSaid::Nothing,
                 }],
             )
             .unwrap();
@@ -5712,6 +5716,7 @@ mod tests {
                 mime_type: "application/pdf".to_string(),
                 size: 1024,
                 content_id: None,
+                description: crate::service::mime::WhatTheSenderSaid::Nothing,
             })
             .unwrap();
 

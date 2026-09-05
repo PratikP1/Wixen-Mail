@@ -43,6 +43,55 @@ pub struct ParsedMessage {
     pub receipt_to: Option<String>,
 }
 
+/// What the sender said an attachment is, in their own words.
+///
+/// Three states rather than two, and the third is why this is not an
+/// `Option<String>`. A sender who wrote nothing and a sender whose description
+/// arrived as bytes that are not writing are different facts about the message,
+/// and collapsing them tells the reader the sender was silent when the sender
+/// was not. `CLAUDE.md`'s ninth guardrail is about exactly that: where this
+/// papers over a provider's broken MIME, it should say so rather than absorb it.
+///
+/// The text in [`Self::InWords`] is never empty and never carries anything that
+/// is not writing, because [`Self::read`] is the only way to make one from a
+/// message and it guarantees both.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum WhatTheSenderSaid {
+    /// The sender described this file with nothing at all.
+    ///
+    /// The ordinary case by a long way, and the truthful answer for every
+    /// attachment stored before this program read the header.
+    #[default]
+    Nothing,
+    /// The sender wrote something and none of it survived as readable text.
+    ///
+    /// A description of nothing but control characters, which real mail does
+    /// produce: a broken client, a mis-declared character set, or an RFC 2047
+    /// encoded word carrying bytes that are not text. Rare, and worth keeping
+    /// apart from silence.
+    SomethingUnreadable,
+    /// What the sender wrote, as text and nothing else.
+    InWords(String),
+}
+
+impl WhatTheSenderSaid {
+    /// Read a description off a header, as text and never as anything else.
+    ///
+    /// The value is a stranger's, it will be spoken aloud and shown in a list,
+    /// and it arrives here decoded from whatever encoding the sender chose. So
+    /// it is taken apart character by character rather than trusted: anything
+    /// that is not writing becomes a space, runs of spaces become one, and what
+    /// is left is trimmed.
+    ///
+    /// Whitespace on its own is the sender saying nothing, not the sender
+    /// saying a space, so it answers [`Self::Nothing`]. Bytes that are not
+    /// writing are the sender saying something this could not read, which is a
+    /// different fact and answers [`Self::SomethingUnreadable`].
+    pub fn read(_raw: Option<&str>) -> Self {
+        Self::Nothing
+    }
+}
+
 /// One attachment, described without being downloaded twice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentInfo {
@@ -50,6 +99,19 @@ pub struct AttachmentInfo {
     pub filename: Option<String>,
     pub mime_type: String,
     pub size: usize,
+    /// What the sender said this file is, from its `Content-Description`.
+    ///
+    /// The one fact about an attachment that comes from a person rather than
+    /// from a file system, and the only thing that can tell a reader what a
+    /// picture holds. Carried from here to the sentence the attachment row is
+    /// announced with; see [`crate::presentation::reader_text::ReaderAttachment`].
+    pub description: WhatTheSenderSaid,
+    /// The part's `Content-ID`, in the form a `cid:` address uses.
+    ///
+    /// Normalised through [`crate::application::pictures::plain_content_id`],
+    /// the same function the pictures carried into the body are matched with,
+    /// so the two ends of that comparison are made by one rule rather than two.
+    pub content_id: Option<String>,
 }
 
 impl AttachmentInfo {
@@ -113,6 +175,8 @@ fn described(part: &mail_parser::MessagePart<'_>) -> AttachmentInfo {
         filename: part.attachment_name().map(str::to_string),
         mime_type: content_type_of(part),
         size: part.contents().len(),
+        description: WhatTheSenderSaid::read(part.content_description()),
+        content_id: None,
     }
 }
 
@@ -935,6 +999,130 @@ mod tests {
         assert_eq!(parsed.attachments[0].display_name(), "beach.jpg");
     }
 
+    // ── What the sender said the file is ────────────────────────────────
+
+    /// One attachment part carrying the headers given, put through the whole
+    /// of [`parse`].
+    ///
+    /// Through `parse` rather than through `described` on its own, because
+    /// what a header means depends on the part surviving `attachment_parts`,
+    /// and a helper handed its inputs already separated could not see that.
+    fn only_attachment_of(headers: &str) -> AttachmentInfo {
+        let raw = format!(
+            concat!(
+                "From: a@example.com\r\n",
+                "Subject: Here it is\r\n",
+                "Content-Type: multipart/mixed; boundary=\"b\"\r\n",
+                "\r\n",
+                "--b\r\n",
+                "Content-Type: text/plain\r\n",
+                "\r\n",
+                "See attached.\r\n",
+                "--b\r\n",
+                "Content-Type: application/pdf; name=\"report.pdf\"\r\n",
+                "{}",
+                "Content-Disposition: attachment; filename=\"report.pdf\"\r\n",
+                "\r\n",
+                "%PDF-1.4 fake\r\n",
+                "--b--\r\n"
+            ),
+            headers
+        );
+        let parsed = parse(raw.as_bytes()).expect("should parse");
+        assert_eq!(
+            parsed.attachments.len(),
+            1,
+            "the fixture's part did not survive attachment_parts: {:?}",
+            parsed.attachments
+        );
+        parsed.attachments.into_iter().next().expect("the one part")
+    }
+
+    #[test]
+    fn test_what_a_sender_writes_in_content_description_becomes() {
+        // The whole of the boundary this feature rests on. Every one of these
+        // is a real shape mail arrives in, and each was put through
+        // `mail_parser` by hand first to see what reaches this code: a
+        // whitespace-only header is trimmed away before we ever see it, but a
+        // whitespace-only *encoded word* is not, and control characters and
+        // line breaks come through untouched.
+        for (header, expected, why) in [
+            (
+                "",
+                WhatTheSenderSaid::Nothing,
+                "no header at all is the ordinary case and has to read as silence",
+            ),
+            (
+                "Content-Description: Quarterly figures\r\n",
+                WhatTheSenderSaid::InWords("Quarterly figures".to_string()),
+                "the point of the whole feature",
+            ),
+            (
+                // `=?UTF-8?B?ICBwYWRkZWQgIA==?=` is "  padded  ".
+                "Content-Description: =?UTF-8?B?ICBwYWRkZWQgIA==?=\r\n",
+                WhatTheSenderSaid::InWords("padded".to_string()),
+                "padding is not part of what the sender said",
+            ),
+            (
+                // `=?UTF-8?B?ICAg?=` is three spaces. The plain spelling of
+                // this is trimmed away by `mail_parser` before it reaches us;
+                // this spelling is not, so this is the only fixture that can
+                // ask whether the trim here happens.
+                "Content-Description: =?UTF-8?B?ICAg?=\r\n",
+                WhatTheSenderSaid::Nothing,
+                "whitespace is the sender saying nothing, not saying a space",
+            ),
+            (
+                // `=?UTF-8?B?QQdCCUM=?=` is "A\u{7}B\tC".
+                "Content-Description: =?UTF-8?B?QQdCCUM=?=\r\n",
+                WhatTheSenderSaid::InWords("A B C".to_string()),
+                "a bell character reaches a list row and a screen reader",
+            ),
+            (
+                // `=?UTF-8?B?bGluZTENCmxpbmUy?=` is "line1\r\nline2".
+                "Content-Description: =?UTF-8?B?bGluZTENCmxpbmUy?=\r\n",
+                WhatTheSenderSaid::InWords("line1 line2".to_string()),
+                "a line break in a one-line label breaks the row",
+            ),
+            (
+                // `=?UTF-8?B?BwcH?=` is three bell characters and nothing else.
+                "Content-Description: =?UTF-8?B?BwcH?=\r\n",
+                WhatTheSenderSaid::SomethingUnreadable,
+                "the sender said something; saying they said nothing is untrue",
+            ),
+        ] {
+            assert_eq!(
+                only_attachment_of(header).description,
+                expected,
+                "{why}: {header:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_part_carries_its_content_id_in_the_form_a_cid_address_uses() {
+        // Both spellings and both cases, because the header wraps it in angle
+        // brackets and the address in the body does not, and neither end is
+        // written by us. Without one rule for both there is nothing to match
+        // an attachment against the picture that names it.
+        for header in [
+            "Content-ID: <PIC>\r\n",
+            "Content-ID: pic\r\n",
+            "Content-ID: <pic>\r\n",
+        ] {
+            assert_eq!(
+                only_attachment_of(header).content_id.as_deref(),
+                Some("pic"),
+                "{header:?}"
+            );
+        }
+        assert_eq!(
+            only_attachment_of("").content_id,
+            None,
+            "a part with no Content-ID must not be given one"
+        );
+    }
+
     #[test]
     fn test_an_attachment_the_sender_did_not_name_still_has_something_to_read() {
         // Guardrail: say plainly that the sender left it out rather than
@@ -943,6 +1131,8 @@ mod tests {
             filename: None,
             mime_type: "application/pdf".to_string(),
             size: 10,
+            description: WhatTheSenderSaid::Nothing,
+            content_id: None,
         };
         assert_eq!(unnamed.display_name(), "Unnamed application/pdf attachment");
 
