@@ -408,6 +408,13 @@ pub struct ImapMessage {
     /// wants one without opening it. Whether anything is sent is
     /// [`crate::application::receipts`]'s decision, and the default is nothing.
     pub receipt_to: Option<String>,
+    /// What the message said about leaving the mailing list it came from.
+    ///
+    /// Read during the header fetch, like the receipt request above and for the
+    /// same reason: blocking a sender is decided from the list row, without
+    /// opening anything. `HEADER_FIELDS` has to name the header for this to be
+    /// anything but `None`, because the fetch asks for headers by name.
+    pub list_unsubscribe: Option<String>,
 }
 
 impl ImapMessage {
@@ -1841,6 +1848,7 @@ fn message_from_attributes(attributes: &[AttributeValue<'_>]) -> Option<ImapMess
             _ => None,
         }),
         receipt_to: parsed.receipt_to,
+        list_unsubscribe: parsed.list_unsubscribe,
         labels: attributes
             .iter()
             .find_map(|attribute| match attribute {

@@ -588,6 +588,7 @@ impl MessageCache {
                             .map(str::to_string)
                             .collect(),
                         receipt_to: row.get(19)?,
+                        list_unsubscribe: None,
                     })
                 },
             )

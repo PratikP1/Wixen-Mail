@@ -543,6 +543,7 @@ mod tests {
             safety: crate::service::safety::Safety::Ordinary,
             safety_reasons: Vec::new(),
             receipt_to: None,
+            list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
         }

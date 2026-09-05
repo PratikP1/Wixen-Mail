@@ -307,6 +307,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: Some(subject.to_string()),
             })
             .expect("a stored message")

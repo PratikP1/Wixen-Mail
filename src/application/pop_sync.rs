@@ -527,6 +527,7 @@ fn to_incoming(
         gmail_message_id: None,
         labels: None,
         receipt_to: parsed.receipt_to.clone(),
+        list_unsubscribe: parsed.list_unsubscribe.clone(),
         pop_uidl: Some(uidl.to_string()),
     }
 }

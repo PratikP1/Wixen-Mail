@@ -370,6 +370,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
             .map(str::to_string)
             .collect(),
         receipt_to: row.get(20)?,
+        list_unsubscribe: None,
     })
 }
 
@@ -443,6 +444,13 @@ pub struct MessageListRow {
     pub safety_reasons: Vec<String>,
     /// Where the sender asked a read receipt to go, if they asked.
     pub receipt_to: Option<String>,
+    /// What the message said about leaving the mailing list it came from.
+    ///
+    /// The `List-Unsubscribe` header, brackets and all. NULL in the column is a
+    /// message that carried no such header, and the empty string is one that
+    /// carried it with nothing in it; those are different facts, because the
+    /// header being there at all is what says this came from a list.
+    pub list_unsubscribe: Option<String>,
 }
 
 /// A message as a sync knows it: headers and flags, and no body yet.
@@ -486,6 +494,8 @@ pub struct IncomingMessage {
     pub labels: Option<String>,
     /// Where the sender asked a read receipt to go, if they asked.
     pub receipt_to: Option<String>,
+    /// What the message said about leaving the mailing list it came from.
+    pub list_unsubscribe: Option<String>,
     /// The identifier a POP server gave it, when it came from one.
     pub pop_uidl: Option<String>,
 }
@@ -2542,6 +2552,7 @@ mod tests {
             gmail_message_id: None,
             labels: None,
             receipt_to: None,
+            list_unsubscribe: None,
             pop_uidl: None,
         }
     }

@@ -240,6 +240,9 @@ impl MessageCache {
                     safety: crate::service::safety::Safety::Ordinary,
                     safety_reasons: Vec::new(),
                     receipt_to: None,
+                    // A queued message is one this person wrote, so there is
+                    // no list to leave.
+                    list_unsubscribe: None,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query the outbox: {}", e)))?

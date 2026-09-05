@@ -598,6 +598,7 @@ fn to_incoming(message: &ImapMessage, folder_id: i64, in_junk_folder: bool) -> I
         // telling two rows apart, not for handing back to the server.
         labels: Some(message.labels.join(" ")).filter(|labels| !labels.is_empty()),
         receipt_to: message.receipt_to.clone(),
+        list_unsubscribe: message.list_unsubscribe.clone(),
         // IMAP has UIDs of its own; this is the POP identifier and there is none.
         pop_uidl: None,
     }
@@ -2003,6 +2004,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2067,6 +2069,7 @@ mod tests {
             gmail_message_id: None,
             labels: None,
             receipt_to: None,
+            list_unsubscribe: None,
             pop_uidl: None,
         }
     }
@@ -2183,6 +2186,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2267,6 +2271,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("a message");
@@ -2559,6 +2564,7 @@ mod tests {
                     gmail_message_id: None,
                     labels: None,
                     receipt_to: None,
+                    list_unsubscribe: None,
                     pop_uidl: None,
                 })
                 .expect("a message");
@@ -2990,6 +2996,7 @@ mod tests {
                     gmail_message_id: None,
                     labels: None,
                     receipt_to: None,
+                    list_unsubscribe: None,
                     pop_uidl: None,
                 })
                 .expect("a message");
@@ -3910,6 +3917,7 @@ mod tests {
                 gmail_message_id: None,
                 labels: None,
                 receipt_to: None,
+                list_unsubscribe: None,
                 pop_uidl: None,
             })
             .expect("the only copy");
