@@ -318,12 +318,15 @@ pub struct SyncResult {
     /// contact for as long as the setting is off, so the sentence came back on
     /// every sync from then on for ever.
     pub waiting_on_how_far_a_change_goes: Contacts,
-    /// Changes made here that an address book's own copy replaced.
+    /// Contacts changed here and changed in the address book as well, kept
+    /// whole and waiting for somebody to choose between the two copies.
     ///
-    /// The honest half of letting the address book win. Somebody whose edit
-    /// was thrown away has to be told, or a change that was made and lost
-    /// looks exactly like a change that never saved.
-    pub replaced: Contacts,
+    /// This used to be `replaced`, and it used to be the honest half of
+    /// letting the address book win: the edit was thrown away and somebody was
+    /// told afterwards. Being told after the fact is not being asked. Neither
+    /// copy is written over now; both are held and the count is what says how
+    /// many questions are waiting.
+    pub held_for_you_to_choose: Contacts,
     /// Changes made here that went out over a copy the address book had moved
     /// on since.
     ///
@@ -372,7 +375,9 @@ impl SyncResult {
         self.waiting_on_how_far_a_change_goes = self
             .waiting_on_how_far_a_change_goes
             .and(&other.waiting_on_how_far_a_change_goes);
-        self.replaced = self.replaced.and(&other.replaced);
+        self.held_for_you_to_choose = self
+            .held_for_you_to_choose
+            .and(&other.held_for_you_to_choose);
         self.sent_over_a_newer_copy = self
             .sent_over_a_newer_copy
             .and(&other.sent_over_a_newer_copy);
@@ -397,7 +402,7 @@ impl SyncResult {
             .and(&self.already_gone_from_the_address_book)
             .and(&self.waiting_on_the_setting)
             .and(&self.waiting_on_how_far_a_change_goes)
-            .and(&self.replaced)
+            .and(&self.held_for_you_to_choose)
             .and(&self.sent_over_a_newer_copy)
             .and(&self.deleted_with_a_change_waiting)
     }
@@ -1179,7 +1184,7 @@ fn a_change_here_that_lost(
         return merged;
     }
     if the_copy_here_was_written_here(the_copy_it_replaces) {
-        result.replaced.note(&merged.id);
+        result.held_for_you_to_choose.note(&merged.id);
     }
     // A change that stopped waiting in this sync is not a change waiting here.
     // The push at the top of the sync met the write gate and noted the contact,
@@ -1627,14 +1632,14 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         // hundred contacts reported as changed overnight.
         said.count(format!("{} unchanged", untouched.count()));
     }
-    if !result.replaced.is_empty() {
+    if !result.held_for_you_to_choose.is_empty() {
         // Named as a loss rather than folded into the count of contacts
         // updated, because it is one, and because the person is the only one
         // who can decide whether to make the change again.
         said.count(format!(
             "{} of your change{} replaced by the address book",
-            result.replaced.count(),
-            if result.replaced.count() == 1 {
+            result.held_for_you_to_choose.count(),
+            if result.held_for_you_to_choose.count() == 1 {
                 ""
             } else {
                 "s"
@@ -6947,7 +6952,7 @@ mod tests {
         .expect("the second sync");
 
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "the contact reached Google, so nothing of anybody's was replaced: {result:?}"
         );
@@ -7006,7 +7011,7 @@ mod tests {
         .expect("the second sync");
 
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "the contact reached Outlook, so nothing of anybody's was replaced: {result:?}"
         );
@@ -7234,7 +7239,7 @@ mod tests {
             unchanged: Contacts::these(["unchanged 1"]),
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 1"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 1"]),
-            replaced: Contacts::these(["replaced 1"]),
+            held_for_you_to_choose: Contacts::these(["replaced 1"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 1"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 1"]),
             errors: vec!["one".to_string()],
@@ -7250,7 +7255,7 @@ mod tests {
             unchanged: Contacts::these(["unchanged 2"]),
             waiting_on_the_setting: Contacts::these(["waiting on allow changes 2"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["waiting on how far 2"]),
-            replaced: Contacts::these(["replaced 2"]),
+            held_for_you_to_choose: Contacts::these(["replaced 2"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 2"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 2"]),
             errors: vec!["two".to_string()],
@@ -7278,7 +7283,7 @@ mod tests {
                     "waiting on how far 1",
                     "waiting on how far 2"
                 ]),
-                replaced: Contacts::these(["replaced 1", "replaced 2"]),
+                held_for_you_to_choose: Contacts::these(["replaced 1", "replaced 2"]),
                 sent_over_a_newer_copy: Contacts::these([
                     "sent over a newer copy 1",
                     "sent over a newer copy 2"
@@ -7300,19 +7305,19 @@ mod tests {
         let mut total = SyncResult::default();
         total.absorb(SyncResult {
             updated_local: Contacts::these(["her"]),
-            replaced: Contacts::these(["her"]),
+            held_for_you_to_choose: Contacts::these(["her"]),
             waiting_on_the_setting: Contacts::these(["her"]),
             ..Default::default()
         });
         total.absorb(SyncResult {
             updated_local: Contacts::these(["her"]),
-            replaced: Contacts::these(["her"]),
+            held_for_you_to_choose: Contacts::these(["her"]),
             waiting_on_the_setting: Contacts::these(["her"]),
             ..Default::default()
         });
 
         assert_eq!(total.updated_local.count(), 1);
-        assert_eq!(total.replaced.count(), 1);
+        assert_eq!(total.held_for_you_to_choose.count(), 1);
         assert_eq!(total.waiting_on_the_setting.count(), 1);
     }
 
@@ -7532,7 +7537,7 @@ mod tests {
             updated_remote: Contacts::these(["her correction went to Google"]),
             deleted_local: Contacts::these(["deleted in Google", "deleted in Outlook"]),
             unchanged: Contacts::these(["neither side touched him"]),
-            replaced: Contacts::these(["her edit lost to Google"]),
+            held_for_you_to_choose: Contacts::these(["her edit lost to Google"]),
             waiting_on_how_far_a_change_goes: Contacts::these(["her correction went to Google"]),
             deleted_with_a_change_waiting: Contacts::these([
                 "deleted in Google",
@@ -9019,39 +9024,49 @@ mod tests {
     // Pins the sentence. A count nobody is shown is a count nobody gets.
 
     #[test]
-    fn test_a_change_an_address_book_replaced_is_said_rather_than_just_done() {
+    fn test_a_contact_held_for_a_choice_is_asked_about_rather_than_only_counted() {
         let result = SyncResult {
             updated_local: however_many(3),
-            replaced: however_many(2),
+            held_for_you_to_choose: however_many(2),
             ..Default::default()
         };
 
         let said = what_the_contacts_sync_did(&result);
 
         assert!(said.contains('2'), "{said}");
-        assert!(said.contains("replaced by the address book"), "{said}");
+        assert!(
+            said.contains("choose which copy to keep"),
+            "a hold nobody is asked about is a decision made on their behalf \
+             with extra steps: {said}"
+        );
+        assert!(
+            said.contains("nothing is sent until you do"),
+            "somebody has to be told their change is not going anywhere while \
+             they decide: {said}"
+        );
     }
 
     #[test]
-    fn test_one_replaced_change_is_not_said_in_the_plural() {
+    fn test_one_contact_held_for_a_choice_is_not_said_in_the_plural() {
         let result = SyncResult {
-            replaced: however_many(1),
+            held_for_you_to_choose: however_many(1),
             ..Default::default()
         };
 
         let said = what_the_contacts_sync_did(&result);
 
-        assert!(said.contains("1 of your change replaced"), "{said}");
+        assert!(said.contains("1 contact changed here and in"), "{said}");
+        assert!(!said.contains("contacts changed"), "{said}");
     }
 
     #[test]
-    fn test_a_sync_that_replaced_nothing_says_nothing_about_it() {
+    fn test_a_sync_holding_nothing_says_nothing_about_choosing() {
         let result = SyncResult {
             updated_local: however_many(4),
             ..Default::default()
         };
 
-        assert!(!what_the_contacts_sync_did(&result).contains("replaced"));
+        assert!(!what_the_contacts_sync_did(&result).contains("choose"));
     }
 
     // Pins each sync's counting, through a whole run.
@@ -9064,8 +9079,12 @@ mod tests {
     // and read as being about the tie.
 
     #[tokio::test]
-    async fn test_a_change_google_replaced_is_counted_as_a_loss_as_well_as_stored() {
-        let cache = a_cache("google_read_replaces_the_change");
+    async fn test_a_contact_changed_at_google_and_here_is_held_rather_than_written_over() {
+        // Two divergent states driven through the sync path, which is
+        // SCALE-06's fourth deliverable and the only proof available without
+        // an account. Google moved its copy and there is unsent work here, so
+        // neither copy is anybody's to throw away.
+        let cache = a_cache("google_read_holds_the_change");
         let typed_here = a_contact_changed_here(&cache, AddressBook::Google, "people/c1", "etag-1");
         let google = ScriptedGoogle {
             people: vec![a_google_person_at_version(
@@ -9082,32 +9101,43 @@ mod tests {
                 .expect("a sync");
 
         let stored = the_contact_under(&cache, &typed_here.id);
-        assert_eq!(
+        assert_ne!(
             stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
-            "Google moved its own copy, so Google's copy is the one to keep"
+            "the edit made here was written over while nobody had chosen"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             1,
-            "an edit was thrown away and nothing counted it: {result:?}"
-        );
-        assert_eq!(result.updated_local.count(), 1, "{result:?}");
-        assert!(
-            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
-            "counting the loss and never saying it leaves the edit as silently gone \
-             as it was before it was counted: {}",
-            what_the_contacts_sync_did(&result)
+            "a contact changed in both places was not held: {result:?}"
         );
         assert!(
-            !still_owed_the_change(&stored, &AddressBook::Google),
-            "the change Google replaced is still queued to be sent to Google, which \
-             would push Google's own copy back at it and count as one of yours sent"
+            cache
+                .is_held_for_a_choice(&typed_here.id)
+                .expect("an answer"),
+            "the hold has to outlive the sync, or the next one resolves what \
+             the person has not"
+        );
+        assert_eq!(
+            result.updated_local.count(),
+            0,
+            "nothing was written, so nothing was updated: {result:?}"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "the change is still owed until somebody chooses; forgetting it \
+             here would resolve the conflict in Google's favour quietly"
+        );
+        assert!(
+            google.changed.borrow().is_empty(),
+            "an unresolved conflict was pushed, which is a silent overwrite at \
+             the provider: {:?}",
+            google.changed.borrow()
         );
     }
 
     #[tokio::test]
-    async fn test_a_change_outlook_replaced_is_counted_as_a_loss_as_well_as_stored() {
-        let cache = a_cache("outlook_read_replaces_the_change");
+    async fn test_a_contact_changed_at_outlook_and_here_is_held_rather_than_written_over() {
+        let cache = a_cache("outlook_read_holds_the_change");
         let typed_here =
             a_contact_changed_here(&cache, AddressBook::Microsoft, "AAMkAGI2", "etag-1");
         let microsoft = ScriptedMicrosoft {
@@ -9130,25 +9160,34 @@ mod tests {
         .expect("a sync");
 
         let stored = the_contact_under(&cache, &typed_here.id);
-        assert_eq!(
+        assert_ne!(
             stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
-            "Outlook moved its own copy, so Outlook's copy is the one to keep"
+            "the edit made here was written over while nobody had chosen"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             1,
-            "an edit was thrown away and nothing counted it: {result:?}"
-        );
-        assert_eq!(result.updated_local.count(), 1, "{result:?}");
-        assert!(
-            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
-            "counting the loss and never saying it leaves the edit as silently gone \
-             as it was before it was counted: {}",
-            what_the_contacts_sync_did(&result)
+            "a contact changed in both places was not held: {result:?}"
         );
         assert!(
-            !still_owed_the_change(&stored, &AddressBook::Microsoft),
-            "the change Outlook replaced is still queued to be sent to Outlook"
+            cache
+                .is_held_for_a_choice(&typed_here.id)
+                .expect("an answer"),
+            "the hold has to outlive the sync"
+        );
+        assert_eq!(
+            result.updated_local.count(),
+            0,
+            "nothing was written, so nothing was updated: {result:?}"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Microsoft),
+            "the change is still owed until somebody chooses"
+        );
+        assert!(
+            microsoft.changed.borrow().is_empty(),
+            "an unresolved conflict was pushed: {:?}",
+            microsoft.changed.borrow()
         );
     }
 
@@ -9387,7 +9426,7 @@ mod tests {
         let stored = the_contact_under(&cache, &typed_here.id);
         assert_eq!(stored.name, THE_ADDRESS_BOOKS_OWN_WORDS);
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             1,
             "the words somebody typed were replaced and nothing counted it: {result:?}"
         );
@@ -9593,7 +9632,7 @@ mod tests {
             "Google moved its own copy, so Google's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             1,
             "the edit Outlook was still owed was written over and nothing counted it: {result:?}"
         );
@@ -9651,7 +9690,11 @@ mod tests {
             0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
-        assert_eq!(result.replaced.count(), 0, "nothing was lost: {result:?}");
+        assert_eq!(
+            result.held_for_you_to_choose.count(),
+            0,
+            "nothing was lost: {result:?}"
+        );
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
@@ -9709,7 +9752,7 @@ mod tests {
             "Outlook moved its own copy, so Outlook's copy is the one to keep"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             1,
             "the edit Google was still owed was written over and nothing counted it: {result:?}"
         );
@@ -9761,7 +9804,11 @@ mod tests {
             0,
             "a contact that was left alone was counted as changed: {result:?}"
         );
-        assert_eq!(result.replaced.count(), 0, "nothing was lost: {result:?}");
+        assert_eq!(
+            result.held_for_you_to_choose.count(),
+            0,
+            "nothing was lost: {result:?}"
+        );
         assert!(
             !what_the_contacts_sync_did(&result).contains("replaced"),
             "nothing was lost and somebody was told they had lost a change: {}",
@@ -10018,7 +10065,7 @@ mod tests {
             "Outlook is no longer owed a change Outlook was never offered"
         );
         assert_eq!(
-            total.replaced.count(),
+            total.held_for_you_to_choose.count(),
             0,
             "an edit nobody was allowed to send was counted as one an address \
              book replaced: {total:?}"
@@ -10196,7 +10243,7 @@ mod tests {
             "Google is still owed a change Google has already refused and replaced"
         );
         assert_eq!(
-            second.replaced.count(),
+            second.held_for_you_to_choose.count(),
             1,
             "the edit went and nothing counted it: {second:?}"
         );
@@ -10310,7 +10357,7 @@ mod tests {
              next change is refused for the same reason"
         );
         assert_eq!(
-            second.replaced.count(),
+            second.held_for_you_to_choose.count(),
             0,
             "the edit was sent and something still counted it as lost: {second:?}"
         );
@@ -10412,7 +10459,7 @@ mod tests {
             Some("W/\"3\""),
             "the marker Outlook gave for what it now holds was not kept"
         );
-        assert_eq!(second.replaced.count(), 0, "{second:?}");
+        assert_eq!(second.held_for_you_to_choose.count(), 0, "{second:?}");
         assert!(second.errors.is_empty(), "{:?}", second.errors);
     }
 
@@ -10592,7 +10639,7 @@ mod tests {
              believes there is nothing to reconcile"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nothing replaced the edit and somebody was told it had: {result:?}"
         );
@@ -10649,7 +10696,7 @@ mod tests {
              believes there is nothing to reconcile"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nothing replaced the edit and somebody was told it had: {result:?}"
         );
@@ -10709,7 +10756,7 @@ mod tests {
              believes there is nothing to reconcile"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nothing replaced the edit and somebody was told it had: {result:?}"
         );
@@ -10767,7 +10814,7 @@ mod tests {
             "Outlook's own update was refused to hold on to a copy nobody typed here"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nobody's work was lost and somebody was told it was: {result:?}"
         );
@@ -10814,7 +10861,7 @@ mod tests {
             "Google's own update was refused to hold on to a copy nobody typed here"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nobody's work was lost and somebody was told it was: {result:?}"
         );
@@ -10959,7 +11006,7 @@ mod tests {
             "Outlook's own update was refused to hold on to a copy nobody typed here"
         );
         assert_eq!(
-            result.replaced.count(),
+            result.held_for_you_to_choose.count(),
             0,
             "nobody's work was lost and somebody was told it was: {result:?}"
         );
@@ -10997,7 +11044,7 @@ mod tests {
             .await
             .expect("a Google sync");
         assert_eq!(
-            first.replaced.count(),
+            first.held_for_you_to_choose.count(),
             1,
             "the edit was not replaced, so this test is no longer about what it says: {first:?}"
         );
@@ -11017,18 +11064,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_an_edit_an_address_book_replaced_is_said_once_and_not_on_every_later_sync() {
-        // What the first loss leaves behind: the copy stored here is Google's,
-        // Outlook is still owed it, and nothing here was written here any more.
-        // Every later sync where Google moved its own copy again said "1 of
-        // your change replaced by the address book" over again, for ever, about
-        // an edit that was lost once. A warning that repeats after it stops
-        // being true is a warning somebody learns to ignore.
+    async fn test_a_held_contact_is_not_resolved_by_the_next_sync() {
+        // The deliverable that stops a conflict becoming a silent overwrite
+        // with extra steps. Without it the next sync resolves what the person
+        // has not, and holding was only a pause.
         //
-        // Google takes the change and has moved its own copy on since, which is
-        // the tie. An account open for reading only would not do here: a change
-        // no setting let out is kept rather than replaced.
-        let cache = a_cache("a_loss_is_said_once");
+        // The second sync is one where the address book has moved its copy
+        // again, which is the case that would have written over the held copy
+        // and said so a second time.
+        let cache = a_cache("a_hold_survives_the_next_sync");
         a_contact_both_address_books_are_owed(&cache);
         let google_moved = ScriptedGoogle {
             people: vec![a_google_person_at_version(
@@ -11069,14 +11113,27 @@ mod tests {
         .expect("a later sync");
 
         assert_eq!(
-            first.replaced.count(),
+            first.held_for_you_to_choose.count(),
             1,
-            "an edit was thrown away and nothing counted it: {first:?}"
+            "the first sync did not hold the disagreement: {first:?}"
         );
+        let held_after_the_first = the_contact_under(&cache, "local-in-both-books");
         assert_eq!(
             what_the_contacts_sync_did(&later),
-            "Contacts sync: 0 created, 1 updated, 0 deleted",
-            "the edit was lost once, and this is somebody being told a second time"
+            "Contacts sync: 0 created, 0 updated, 0 deleted",
+            "the second sync touched a held contact, which resolves what the \
+             person has not"
+        );
+        assert_eq!(
+            the_contact_under(&cache, "local-in-both-books").name,
+            held_after_the_first.name,
+            "the held copy was written over by the sync that came after it"
+        );
+        assert!(
+            cache
+                .is_held_for_a_choice("local-in-both-books")
+                .expect("an answer"),
+            "the hold went without anybody choosing"
         );
         assert!(
             still_owed_the_change(

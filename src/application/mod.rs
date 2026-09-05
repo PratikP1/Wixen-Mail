@@ -19,6 +19,7 @@ pub mod categories;
 pub mod checking_signatures;
 pub mod closing;
 pub mod collection_sync;
+pub mod conflict_choice;
 pub mod contact_groups;
 pub mod contacts_sync;
 pub mod context_menu;

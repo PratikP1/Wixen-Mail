@@ -12,6 +12,7 @@ mod contacts;
 mod drafts;
 mod filters;
 mod folders;
+pub mod held_conflicts;
 mod messages;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
@@ -1775,6 +1776,38 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create outbox_queue table: {}", e)))?;
+
+        // Both copies of one thing, kept because they disagree and nobody has
+        // chosen yet. One row per thing on this computer, so a second sync
+        // meeting the same disagreement replaces the hold rather than asking
+        // somebody the same question twice.
+        //
+        // Its own table rather than a column on `contacts` or
+        // `calendar_events`, because the provider's copy is a whole second
+        // version of a row and a row cannot hold two of itself. A hold is also
+        // shorter-lived than either: it goes the moment somebody chooses,
+        // and deleting a row is cheaper to reason about than clearing six
+        // columns and hoping nothing reads them half-cleared.
+        //
+        // `held_at` is when the disagreement was noticed here, not a clock
+        // either side is compared by. Who wins is decided from version markers
+        // in `application::contacts_sync::whose_copy_wins`, deliberately, and
+        // nothing in this table is ever compared with a timestamp.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS held_conflicts (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                at_the_provider TEXT NOT NULL,
+                what_it_is_called TEXT NOT NULL,
+                here_json TEXT NOT NULL,
+                theirs_json TEXT NOT NULL,
+                held_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create held_conflicts table: {}", e)))?;
 
         self.conn
             .execute(
