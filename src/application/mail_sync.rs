@@ -6061,6 +6061,32 @@ mod tests {
     }
 
     #[test]
+    fn test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores() {
+        // This conversion is a struct literal with thirty fields in it, and a
+        // field written `None` compiles exactly like a field carried across.
+        // 04-01 found that shape at the one site recording attachments, where
+        // a content id the parse had in hand had been written over for the
+        // whole life of the code. Both halves are here for the reason the Cc
+        // pair above gives: a test for the absent case alone passes against a
+        // conversion that drops the field always.
+        let mut from_a_list = message(1);
+        from_a_list.list_unsubscribe = Some("<mailto:birds-leave@lists.example>".to_string());
+
+        assert_eq!(
+            to_incoming(&from_a_list, 1, false)
+                .list_unsubscribe
+                .as_deref(),
+            Some("<mailto:birds-leave@lists.example>"),
+            "the way out of the list did not reach the row"
+        );
+        assert_eq!(
+            to_incoming(&message(1), 1, false).list_unsubscribe,
+            None,
+            "a message from a person was stored as one from a mailing list"
+        );
+    }
+
+    #[test]
     fn test_a_server_that_keeps_no_subscriptions_is_told_apart_from_one_that_does() {
         // The answer decides whether an unsubscribed folder syncs. Reading a
         // server with no subscription list as "nothing is wanted" would sync

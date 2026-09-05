@@ -1159,6 +1159,35 @@ Subject: Weekly roundup",
     }
 
     #[test]
+    fn test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop() {
+        // The other arrival path, and it needs its own test for the reason
+        // every field on this row does: a fact carried by one writer only is a
+        // fact that depends on which protocol the account happens to speak,
+        // and nothing in the shape of either conversion says the other exists.
+        //
+        // Both halves, as with the copy recipients above. A test for the
+        // absent case alone passes against a conversion that drops the field
+        // always.
+        let from_a_list = crate::service::mime::ParsedMessage {
+            list_unsubscribe: Some("<mailto:birds-leave@lists.example>".to_string()),
+            ..plain()
+        };
+
+        assert_eq!(
+            to_incoming(&from_a_list, &arrival(b""))
+                .list_unsubscribe
+                .as_deref(),
+            Some("<mailto:birds-leave@lists.example>"),
+            "the way out of the list did not reach the row"
+        );
+        assert_eq!(
+            to_incoming(&plain(), &arrival(b"")).list_unsubscribe,
+            None,
+            "a message from a person was stored as one from a mailing list"
+        );
+    }
+
+    #[test]
     fn test_a_downloaded_message_says_whether_it_carries_an_attachment() {
         // Both ways round. A message announced as carrying a file that has
         // none wastes the reader's time; one carrying a file and saying
