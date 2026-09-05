@@ -70,6 +70,22 @@ fn the_item_starting_with(source: &str, starts: &str) -> String {
     format!("{first}\n{}", rest.join("\n"))
 }
 
+/// One arm of the update handler, up to the start of the next one.
+///
+/// Bounded at the next arm rather than at the end of the match, because an arm
+/// read to the end picks up every arm below it and passes on their words. Every
+/// arm in that match starts at the same indentation, which is what this counts
+/// on.
+fn the_arm_for(source: &str, variant: &str) -> String {
+    let opens = format!("        UIUpdate::{variant}");
+    let at = source
+        .find(&opens)
+        .unwrap_or_else(|| panic!("{THE_MAIN_WINDOW} has no arm for UIUpdate::{variant}"));
+    let rest = &source[at + opens.len()..];
+    let ends = rest.find("\n        UIUpdate::").unwrap_or(rest.len());
+    rest[..ends].to_string()
+}
+
 #[test]
 fn test_the_whole_folder_request_moves_the_bound_on_what_is_fetched() {
     // The server side. Without it the request asks the cache to show rows that
@@ -88,12 +104,54 @@ fn test_the_whole_folder_request_moves_the_bound_on_what_the_list_shows() {
     // The view side. Without it the mail arrives and stays hidden behind a
     // limit the list still reads through, which looks exactly like a request
     // that did nothing.
-    let handler = the_item_starting_with(&the_window_itself(), THE_HANDLER);
+    //
+    // Asked of two places rather than one, and that is the shape of the answer
+    // rather than a weakening of the question. The request runs on a worker
+    // thread and the view's limit lives on the interface thread, so the request
+    // cannot move that bound itself: it sends `MoreOfTheFolderArrived` once per
+    // chunk and the arm for that update moves it. Both halves are checked,
+    // because either one alone is a bound that never moves.
+    let source = the_window_itself();
+    let handler = the_item_starting_with(&source, THE_HANDLER);
 
     assert!(
-        handler.contains("FOLDER_LIST_PAGE_SIZE"),
-        "the whole-folder request does not move the bound on what the list \
-         shows, so what it fetches stays hidden"
+        handler.contains("MoreOfTheFolderArrived"),
+        "the whole-folder request tells nobody that another chunk landed, so \
+         nothing moves the bound the list reads through"
+    );
+
+    let arm = the_arm_for(&source, "MoreOfTheFolderArrived");
+    assert!(
+        arm.contains("FOLDER_LIST_PAGE_SIZE"),
+        "the update the request sends does not move the bound on what the list \
+         shows, so what it fetches stays hidden: {arm}"
+    );
+}
+
+#[test]
+fn test_the_command_says_it_is_experimental_where_somebody_choosing_it_reads() {
+    // A warning that only exists in a changelog is a warning nobody gets. A
+    // menu has nowhere to put the line of static text the missing message text
+    // offer carries beside its button, so it goes on the label and in the
+    // description: the description is what Windows shows in the status bar and
+    // hands over as the item's accessible description, and the label is read
+    // whatever anybody's settings say.
+    let source = the_window_itself();
+    // The menu item rather than the identifier's own declaration, which is the
+    // first place the name appears and carries no words at all.
+    let at = source
+        .find("                ID_GET_WHOLE_FOLDER,")
+        .expect("the menu item for the whole-folder command");
+    let item = &source[at..at + 400.min(source.len() - at)];
+
+    assert!(
+        item.contains("(experimental)"),
+        "the label does not say the command is experimental: {item}"
+    );
+    assert!(
+        item.contains("DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL"),
+        "the description is not the warning that says what could go wrong, so \
+         somebody choosing this is told it is experimental and not what of: {item}"
     );
 }
 
@@ -129,22 +187,6 @@ fn test_the_reading_would_see_a_request_that_moved_only_one_bound() {
         !cut.contains("FOLDER_LIST_PAGE_SIZE"),
         "the cut ran past the handler and read the next item's words: {cut}"
     );
-}
-
-/// One arm of the update handler, up to the start of the next one.
-///
-/// Bounded at the next arm rather than at the end of the match, because an arm
-/// read to the end picks up every arm below it and passes on their words. Every
-/// arm in that match starts at the same indentation, which is what this counts
-/// on.
-fn the_arm_for(source: &str, variant: &str) -> String {
-    let opens = format!("        UIUpdate::{variant}");
-    let at = source
-        .find(&opens)
-        .unwrap_or_else(|| panic!("{THE_MAIN_WINDOW} has no arm for UIUpdate::{variant}"));
-    let rest = &source[at + opens.len()..];
-    let ends = rest.find("\n        UIUpdate::").unwrap_or(rest.len());
-    rest[..ends].to_string()
 }
 
 #[test]

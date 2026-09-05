@@ -385,17 +385,16 @@ impl MessageCache {
             .map(str::to_string)
             .or_else(|| body.body_html.as_deref().map(strip_markup));
         let snippet = source.as_deref().map(snippet_from).unwrap_or_default();
+        // Written even when it is empty, and that is the difference between
+        // the two things a blank column used to mean. Null is text nobody has
+        // fetched; an empty string is a message somebody fetched and there was
+        // nothing in it. A calendar invitation and a message that is nothing
+        // but an attachment are the second, and telling somebody to download
+        // text that is not there is the answer the column used to give.
         self.conn
             .execute(
                 "UPDATE messages SET snippet = ?1 WHERE id = ?2",
-                rusqlite::params![
-                    if snippet.is_empty() {
-                        None
-                    } else {
-                        Some(snippet)
-                    },
-                    message_id
-                ],
+                rusqlite::params![snippet, message_id],
             )
             .map_err(|e| Error::Other(format!("Failed to save message snippet: {}", e)))?;
 

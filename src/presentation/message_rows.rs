@@ -40,6 +40,21 @@ pub const NO_MESSAGE_TEXT: &str = "No message text";
 /// appearing blank, which would read as an empty message.
 pub const PLACEHOLDER: &str = "Loading";
 
+/// What the snippet column says, given what is stored.
+///
+/// One function for both row types, because the two views ask the same question
+/// about the same three states and answering it twice is how they come to
+/// disagree. `None` is text nobody has fetched, an empty string is a message
+/// whose text was fetched and holds nothing, and anything else is the line
+/// itself.
+fn the_first_line(stored: Option<&str>) -> String {
+    match stored {
+        None => TEXT_NOT_DOWNLOADED.to_string(),
+        Some(line) if line.trim().is_empty() => NO_MESSAGE_TEXT.to_string(),
+        Some(line) => line.to_string(),
+    }
+}
+
 /// The text for one cell.
 pub fn cell_text(
     message: &MessageItem,
@@ -74,7 +89,7 @@ pub fn cell_text(
         }
         MessageColumn::Correspondent => display_address(&message.from),
         MessageColumn::Received | MessageColumn::Sent => format_for_list(&message.date, now, dates),
-        MessageColumn::Snippet => message.snippet.clone().unwrap_or_default(),
+        MessageColumn::Snippet => the_first_line(message.snippet.as_deref()),
         MessageColumn::Thread => thread_cell(message),
         MessageColumn::Size => message.size_bytes.map(size_cell).unwrap_or_default(),
         MessageColumn::Flagged => if message.starred { "Flagged" } else { "" }.to_string(),
@@ -143,7 +158,7 @@ pub fn conversation_cell_text(
         MessageColumn::Correspondent => everyone_in(&conversation.senders),
         MessageColumn::Received => format_for_list(&conversation.newest_received, now, dates),
         MessageColumn::Sent => format_for_list(&conversation.newest_sent, now, dates),
-        MessageColumn::Snippet => conversation.snippet.clone().unwrap_or_default(),
+        MessageColumn::Snippet => the_first_line(conversation.snippet.as_deref()),
         // D-03. A conversation identifier is a mail server's angle-bracketed
         // nonsense and no use at all to anybody hearing it, and there is no
         // per-item accessible name on this control, so the cell text is exactly
