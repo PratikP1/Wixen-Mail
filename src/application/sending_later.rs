@@ -223,6 +223,85 @@ pub fn readiness(when: &GoAfter, now: DateTime<Local>) -> Readiness {
     }
 }
 
+/// Whether this program is handing anything to a server at the moment.
+///
+/// Offline mode is a switch on the View menu. A bool called `offline` reads as
+/// `when_it_goes(true, ..)` at the call site, which is a line nobody can check
+/// by eye, so the two states are named.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reachability {
+    /// Servers are being talked to as usual.
+    Online,
+    /// Offline mode is on, so nothing is handed to a server.
+    Offline,
+}
+
+/// Whether a message just put in the queue is handed to a server on this pass,
+/// and if not, what it is waiting for.
+///
+/// Two things can hold a message back and they are not the same answer to
+/// somebody who pressed Send. Offline mode is a switch they set and can unset.
+/// A time is something the message carries and only waiting changes. Which one
+/// they are told matters, because the way out of each is different.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhenItGoes {
+    /// Nothing is holding it back.
+    Now,
+    /// Offline mode is on. It stays in the Outbox until somebody goes back
+    /// online.
+    WhenThereIsANetworkAgain,
+    /// Its own time has not come. [`readiness`] says which kind of wait it is.
+    WhenItsTimeComes,
+}
+
+/// Whether a message goes now, taking offline mode into account as well as the
+/// message's own time.
+///
+/// Offline is answered before the time, and that ordering is the whole
+/// sentence somebody hears. A message set for Friday, queued while offline
+/// mode is on, is waiting on two things at once; the one worth saying is the
+/// one they can do something about now.
+///
+/// It reads the schedule and never writes it. Turning offline mode on holds a
+/// message back without touching what it was already waiting for, so turning
+/// offline mode off leaves a scheduled message still scheduled rather than
+/// sending it.
+pub fn when_it_goes(
+    reachability: Reachability,
+    when: &GoAfter,
+    now: DateTime<Local>,
+) -> WhenItGoes {
+    match (reachability, readiness(when, now)) {
+        (Reachability::Offline, _) => WhenItGoes::WhenThereIsANetworkAgain,
+        (Reachability::Online, Readiness::MayGoNow) => WhenItGoes::Now,
+        (Reachability::Online, _) => WhenItGoes::WhenItsTimeComes,
+    }
+}
+
+/// What somebody who pressed Send is told.
+///
+/// Built here rather than at the window, so the words shown and the words
+/// spoken come from one string, and so the three endings can be read beside
+/// each other.
+///
+/// A message that did not go is the case worth wording carefully. Somebody who
+/// pressed Send and heard nothing about the Outbox believes their mail has
+/// gone, which is the defect this whole decision exists to end.
+pub fn what_send_did(goes: WhenItGoes, recipient: &str) -> String {
+    match goes {
+        // Unchanged, because every message sent today gets this and there is
+        // nothing wrong with it.
+        WhenItGoes::Now => format!("Sending to {recipient}..."),
+        WhenItGoes::WhenThereIsANetworkAgain => format!(
+            "Offline mode is on, so the message to {recipient} is waiting in the Outbox. \
+             It goes when you go back online."
+        ),
+        WhenItGoes::WhenItsTimeComes => {
+            format!("The message to {recipient} is waiting in the Outbox until the time set on it.")
+        }
+    }
+}
+
 /// How far past a chosen time still counts as that time.
 ///
 /// The picker chooses a minute, so a minute is the smallest gap it can mean.
@@ -1054,6 +1133,148 @@ mod what_undo_send_is_about {
             what_undo_send_takes_back(&held, now).why_not(),
             None,
             "a message that can be caught should not be explaining itself"
+        );
+    }
+}
+
+#[cfg(test)]
+mod what_offline_mode_holds_back {
+    use super::*;
+
+    /// A moment on this computer's clock, written the way the cache holds one.
+    fn at(text: &str) -> DateTime<Local> {
+        crate::common::moment::read(text)
+            .and_then(crate::common::moment::Moment::on_this_computer)
+            .expect("a real moment")
+    }
+
+    #[test]
+    fn test_a_message_sent_while_offline_mode_is_on_waits_for_the_network() {
+        // The defect this is written against, and it ships today. The View
+        // menu says outgoing mail will be queued, nothing reads the switch,
+        // and the message goes to a server anyway. Somebody who read that
+        // sentence and closed their laptop believes their mail is being held.
+        assert_eq!(
+            when_it_goes(
+                Reachability::Offline,
+                &GoAfter::AsSoonAsPossible,
+                at("2026-08-24 09:00")
+            ),
+            WhenItGoes::WhenThereIsANetworkAgain
+        );
+    }
+
+    #[test]
+    fn test_a_message_sent_online_still_goes_now() {
+        // The other half, and the one that must not change. Every message
+        // sent today takes this path and it has to keep taking it.
+        assert_eq!(
+            when_it_goes(
+                Reachability::Online,
+                &GoAfter::AsSoonAsPossible,
+                at("2026-08-24 09:00")
+            ),
+            WhenItGoes::Now
+        );
+    }
+
+    #[test]
+    fn test_offline_mode_is_answered_before_the_messages_own_time() {
+        // Waiting on two things at once. The one worth saying is the one
+        // somebody can act on now, and the other is still true underneath it,
+        // which the round trip below proves.
+        let friday = GoAfter::Chosen("2026-08-28 09:00".to_string());
+
+        assert_eq!(
+            when_it_goes(Reachability::Offline, &friday, at("2026-08-24 09:00")),
+            WhenItGoes::WhenThereIsANetworkAgain
+        );
+    }
+
+    #[test]
+    fn test_going_offline_holds_a_message_without_changing_what_it_waits_for() {
+        // Turning offline mode on when there are already queued messages must
+        // not touch their schedules. If it did, the way it would show is a
+        // message set for Friday going out the moment somebody went back
+        // online, which is the one act here that cannot be undone.
+        let friday = GoAfter::Chosen("2026-08-28 09:00".to_string());
+        let now = at("2026-08-24 09:00");
+
+        assert_eq!(
+            when_it_goes(Reachability::Offline, &friday, now),
+            WhenItGoes::WhenThereIsANetworkAgain
+        );
+        // Back online, and it is still waiting on Friday rather than going.
+        assert_eq!(
+            when_it_goes(Reachability::Online, &friday, now),
+            WhenItGoes::WhenItsTimeComes
+        );
+        assert_eq!(
+            readiness(&friday, now),
+            Readiness::WaitingUntil(at("2026-08-28 09:00")),
+            "the schedule was rewritten by being asked about"
+        );
+    }
+
+    #[test]
+    fn test_a_scheduled_message_waits_for_its_time_when_the_network_is_there() {
+        let friday = GoAfter::Chosen("2026-08-28 09:00".to_string());
+
+        assert_eq!(
+            when_it_goes(Reachability::Online, &friday, at("2026-08-24 09:00")),
+            WhenItGoes::WhenItsTimeComes
+        );
+    }
+
+    #[test]
+    fn test_a_time_this_build_cannot_read_still_holds_the_message() {
+        // The arm that must not collapse to "goes now". Sending a message set
+        // for next week, now, is the one thing here that cannot be taken back.
+        let unreadable = GoAfter::Chosen("the day after the fair".to_string());
+
+        assert_eq!(
+            when_it_goes(Reachability::Online, &unreadable, at("2026-08-24 09:00")),
+            WhenItGoes::WhenItsTimeComes
+        );
+    }
+
+    #[test]
+    fn test_a_message_held_by_offline_mode_says_so_rather_than_saying_it_is_sending() {
+        // Somebody pressed a key called Send. If the only sentence they get is
+        // the one about sending, they have been told their mail has gone.
+        let said = what_send_did(WhenItGoes::WhenThereIsANetworkAgain, "kim@example.com");
+
+        assert!(
+            said.contains("Outbox"),
+            "the message did not go and nothing said where it is: {said}"
+        );
+        assert!(
+            said.contains("kim@example.com"),
+            "the sentence does not say which message it is about: {said}"
+        );
+        assert_ne!(
+            said,
+            what_send_did(WhenItGoes::Now, "kim@example.com"),
+            "a message that went and one that did not are told the same thing"
+        );
+    }
+
+    #[test]
+    fn test_the_three_endings_of_send_are_three_different_sentences() {
+        // Guardrail 5: feedback has to be distinguishable from its siblings.
+        // Two of these mean the message is in the Outbox and the way out of
+        // each is different, so hearing the wrong one sends somebody looking
+        // in the wrong place.
+        let went = what_send_did(WhenItGoes::Now, "kim@example.com");
+        let offline = what_send_did(WhenItGoes::WhenThereIsANetworkAgain, "kim@example.com");
+        let waiting = what_send_did(WhenItGoes::WhenItsTimeComes, "kim@example.com");
+
+        assert_ne!(went, offline);
+        assert_ne!(went, waiting);
+        assert_ne!(
+            offline, waiting,
+            "offline mode and a time somebody set are the same sentence, so \
+             neither says what to do about it"
         );
     }
 }

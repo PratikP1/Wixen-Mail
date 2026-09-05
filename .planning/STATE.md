@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 02.1-09-PLAN.md on branch gsd/plan-02.1-09, not merged. That is the last plan of phase 2.1, so all nine are executed and five of them are sitting on unmerged branches. 02.1-08 is on gsd/plan-02.1-08, 02.1-07 on gsd/plan-02.1-07, 02.1-06 on gsd/plan-02.1-06, none merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
-last_updated: "2026-09-02T22:45:00.000Z"
-last_activity: 2026-09-02, 02.1-09 done, unmerged. Criterion 10 closed and phase 2.1 executed. Both rule editors now refuse to open a stored rule holding a word this build has never met, and say which word, rather than opening it with nothing chosen and writing the empty string over it when OK is pressed. There are two such editors, not one: the plan said `show_rule_edit` served both managers, and it has one caller, while the filter manager has `show_filter_edit` with the same defect written out again. The reading also already half existed, at the whole-search grain, and now delegates. Reachability is nil in the field and the summary says so plainly: what the criterion cost bought was a second editor nobody had counted, one reading where three were about to grow, and a refusal sentence whose first draft told somebody to open the rule in the version that wrote it when this program is what wrote it.
-state_head: 298072cfd0154d98c934899f014d4dbc43759297
+stopped_at: Completed 03-08-PLAN.md on branch worktree-agent-a70d1d023da01b98b, not merged and not pushed. SCALE-05 is closed structurally; four screen reader questions and one real-network question are ledger 76 to 80, and ledger 81 is the Undo Send hold with no caller, found here and left alone.
+last_updated: "2026-09-05T05:41:59.263Z"
+last_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
+state_head: 4cd8e65ad1f8bb5e45a071a7398e31ec7d4b620b
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 32
-  completed_plans: 31
+  total_plans: 41
+  completed_plans: 40
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -312,6 +312,8 @@ ahead:
 - [Phase 02]: 02.1-09: `what_a_condition_cannot_read` is the one reading and `SavedSearch::what_it_cannot_read` delegates to it, rather than the dialogs growing their own. The coarse-grained caller already existed; the new function is the per-condition grain it was missing.
 - [Phase 02]: 02.1-09: the refusal names a newer version conditionally rather than asserting one. A word this build has never met arrives from a version that has met it or from something that wrote it wrong, and this program is on that second list, so "open it in the version that wrote it" would send somebody back here.
 - [Phase 02]: 02.1-09: the guard record's break is the answer emptied, five tests red, and the record writes down what it does not reach: removing the pre-open refusal instead reddens exactly one, because every path that tells a refusal from an opening ends at `show_modal` and a test that opened the editor would hang the gate rather than fail it.
+- [Phase 03]: 03-08: the network coming back raises an offer, never a send. The decision layer has no member meaning 'send', the offer is a button in the tab order whose label says pressing it sends, it calls the existing online toggle and the existing flush rather than reimplementing either, and a census counts every place that hands mail to a server and names each beside what asked for it. That is the shape 03-09 should copy for waiting flag changes.
+- [Phase 03]: 03-08: a check for a resource going away must not live on the work that uses the resource. Nothing here checks mail on a schedule and every trigger that does stops when the network goes, so a detector at the end of a mail check could see the loss and never the return. It asks on the window's own poll every ten seconds.
 
 ### Pending Todos
 
@@ -393,8 +395,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02
-Stopped at: Completed 02.1-09-PLAN.md on branch gsd/plan-02.1-09, not merged. Criterion 10 is closed and phase 2.1 is executed, nine plans of nine. Both rule editors refuse to open a stored rule holding a word this build has never met and name the word, in the sentence a saved search already says when it cannot run, and refuse again on the way out so nothing is stored that the dialog could not show. The row stays visible and Delete still removes it, asserted against real widgets. Two plan premises came out wrong and are corrected in the summary rather than built on: `show_rule_edit` has one caller, and the filter manager reaches `show_filter_edit`, a separate function carrying the same defect, so the fix is in two places rather than one; and `SavedSearch::what_it_cannot_read` already asked the same question at the whole-search grain, so the new function is the per-condition grain and the old method delegates. Two things were fixed that the plan did not ask for: `NotUnderstood::why` on an empty word read "it asks about the  of a message", and the refusal's first draft told somebody to open the rule in the version that wrote it, which is false when this program's own pre-02-04 read-back is what emptied it. The summary says plainly that the criterion did not earn its cost on its own terms, and that its by-products did. Five records naming `wx_managers.rs`, not the four the plan predicted, plus three naming `saved_searches.rs`; all eight re-measured and all eight still redden exactly the tests they name.
+Last session: 2026-09-05T05:41:49.065Z
+Stopped at: Completed 03-08-PLAN.md on branch worktree-agent-a70d1d023da01b98b, not merged and not pushed. SCALE-05 is closed structurally; four screen reader questions and one real-network question are ledger 76 to 80, and ledger 81 is the Undo Send hold with no caller, found here and left alone.
+
+Earlier: Completed 02.1-09-PLAN.md on branch gsd/plan-02.1-09, not merged. That is the last plan of phase 2.1, so all nine are executed and five of them are sitting on unmerged branches. 02.1-08 is on gsd/plan-02.1-08, 02.1-07 on gsd/plan-02.1-07, 02.1-06 on gsd/plan-02.1-06, none merged. 02.1-05 is merged into main. 02.1-01 is on gsd/plan-02.1-01, unmerged, with a task 4 decision still awaiting Pratik.
 
 Earlier: Completed 02.1-08-PLAN.md on branch gsd/plan-02.1-08, not merged. Criteria 11 and 12 are closed. The folder tree's twelve kinds of row get six menus instead of two, decided by `folder_tree::which_menu_a_row_offers` and asked for by the tree's closure, and no new command was invented: all five new actions raise ids the menu bar already raises. Four rows get no menu at all, which diverges from a sentence of D-2.1-03 and keeps its reasoning, and follows a precedent already in `tests/wired.rs` for the reminders sidebar. Criterion 12's premise was wrong on both halves and the summary says so rather than building on it: `where_a_row_sits` has a production caller two levels up in another file, so "wire it or remove it" would have deleted live code, and two same-named accounts already read differently because `the_accounts_in_the_tree` composed the address in and `email` is UNIQUE. The property was real and unowned; it moved into the tree, and the cost nobody had filed went with it, so an account branch now reads its address only when another shares its name. One guard record fell behind and was corrected: the new same-name test asks `where_a_row_sits` through the same walk, so that break reddens five rather than four.
 

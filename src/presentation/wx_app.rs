@@ -7,6 +7,10 @@ use crate::application::destinations::Deleting;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::ReplyMode;
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
+// Named here rather than written out at each of its two uses, so the label and
+// the accessible name are visibly the same binding rather than two spellings a
+// reader has to compare character by character.
+use crate::application::the_network_coming_and_going::WHAT_THE_OFFER_SAYS;
 use crate::common::Result;
 use crate::common::paths::AppPaths;
 use crate::common::types::MessageBody;
@@ -155,6 +159,13 @@ menu_ids!(
     // accelerator would collide with the menus and would have to be documented
     // in docs/KEYBOARD_SHORTCUTS.md. Tab reaches it.
     ID_FETCH_MISSING_TEXT,
+    // The button above the message list offered when the network comes back.
+    // Beside the offer to fetch missing text and for the same reasons: it
+    // belongs next to the sentence that raised it, Tab reaches it, and a new
+    // accelerator would collide with the menus. There is a second way to the
+    // same end that is on a menu and always there, which is turning offline
+    // mode off, so nobody who misses this is stuck.
+    ID_GO_BACK_ONLINE,
     ID_EDIT_CUT,
     ID_EDIT_COPY,
     ID_EDIT_PASTE,
@@ -945,6 +956,42 @@ impl WxMailApp {
             offer_panel.set_sizer(offer_sizer, true);
             offer_panel.show(false);
             mail_content_sizer.add(&offer_panel, 0, SizerFlag::Expand | SizerFlag::All, 0);
+            // The offer raised when the network comes back, in the same strip
+            // and hidden until there is something to offer.
+            //
+            // Its own panel rather than a second button in the one above,
+            // because the two offers are about different things and appear at
+            // different times, and a strip that sometimes holds one button and
+            // sometimes two is a strip whose shape a person cannot learn.
+            //
+            // A native button, so it is in the tab order, carries the focus
+            // ring Windows draws and is already larger than the twenty-four by
+            // twenty-four target size. Nothing here disappears on its own, so
+            // there is no timing trap: the offer stays until it is taken or
+            // until the mode changes some other way.
+            let back_online_panel = Panel::builder(&mail_content).build();
+            if let Some(palette) = palette {
+                theme::paint(&back_online_panel, palette.main_surface());
+            }
+            let back_online_sizer = BoxSizer::builder(Orientation::Vertical).build();
+            let back_online_button = Button::builder(&back_online_panel)
+                .with_label(WHAT_THE_OFFER_SAYS)
+                .with_id(ID_GO_BACK_ONLINE)
+                .build();
+            // Both channels from one string, as the button above it does. The
+            // label is what Windows falls back to on MSAA, which NVDA reads,
+            // and the accessible name is what a UI Automation scan reports.
+            set_accessible_name(&back_online_button, WHAT_THE_OFFER_SAYS);
+            back_online_sizer.add(&back_online_button, 0, SizerFlag::All, 4);
+            back_online_panel.set_sizer(back_online_sizer, true);
+            back_online_panel.show(false);
+            mail_content_sizer.add(&back_online_panel, 0, SizerFlag::Expand | SizerFlag::All, 0);
+            let back_online_offer = BackOnlineOffer {
+                panel: back_online_panel,
+                button: back_online_button,
+                around_it: mail_content,
+            };
+
             let missing_text_offer = MissingTextOffer {
                 panel: offer_panel,
                 button: offer_button,
@@ -4890,22 +4937,23 @@ impl WxMailApp {
                             reader.repaint(palette);
                         }
                         _ if id == ID_OFFLINE_MODE => {
-                            let new_mode = {
-                                let mut s = lock_state(&state);
-                                s.offline_mode = !s.offline_mode;
-                                s.offline_mode
-                            };
-                            sync_menu_check(&frame, ID_OFFLINE_MODE, new_mode);
-                            let label = if new_mode {
-                                "Offline mode enabled - outgoing mail will be queued"
-                            } else {
-                                "Online mode - outgoing mail will be sent immediately"
-                            };
-                            send_status(&ui_tx, &runtime, label);
-                            // The second status field only changes through
-                            // this update, so without it the window kept
-                            // saying whatever it said before.
-                            let _ = ui_tx.try_send(UIUpdate::OfflineModeChanged(new_mode));
+                            let new_mode = !lock_state(&state).offline_mode;
+                            go_into_offline_mode(app, new_mode);
+                        }
+                        // The offer raised when the network came back. It calls
+                        // the same two things a person would reach for by hand:
+                        // the offline mode switch, and Send Queued Mail. Nothing
+                        // here is a second implementation of either, so the
+                        // offer cannot come to mean something different from
+                        // the menu.
+                        //
+                        // The offer's panel is not hidden here. Going online
+                        // sends OfflineModeChanged, and that arm takes it off
+                        // the screen and moves focus first, so there is one
+                        // place that decides when the offer is over.
+                        _ if id == ID_GO_BACK_ONLINE => {
+                            go_into_offline_mode(app, false);
+                            flush_outbox(app);
                         }
                         _ if id == ID_UNDO_SEND => {
                             undo_send(app, &frame, &message_cache, &a11y);
@@ -5151,6 +5199,15 @@ impl WxMailApp {
                 // is the event loop's business, and counting ticks to a minute
                 // was tried and never got there.
                 let looked_at = std::cell::Cell::new(std::time::Instant::now());
+                // What the program believes about the network, and when it last
+                // asked. The first look is not a change, so a program opened
+                // where there has never been a signal says nothing about the
+                // network having gone.
+                let the_network = RefCell::new(
+                    crate::application::the_network_coming_and_going::WhatTheProgramBelieves::
+                        to_begin_with(crate::service::network::whether_there_is_a_network()),
+                );
+                let asked_the_network_at = std::cell::Cell::new(std::time::Instant::now());
                 let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
                 // The same layout the menu handler and the paint callback hold,
                 // not a copy of it. An arriving conversation listing decides
@@ -5189,6 +5246,7 @@ impl WxMailApp {
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
                                 missing_text_offer: &missing_text_offer,
+                                back_online_offer: &back_online_offer,
                                 reader: &reader,
                                 tx: &ui_tx,
                                 rt: &runtime,
@@ -5231,6 +5289,28 @@ impl WxMailApp {
                         rt: &runtime,
                     };
                     mark_the_open_one_read(app, &a11y, &opened_at, marks_read);
+
+                    // Whether this computer still has a network. On this timer
+                    // and on its own interval, for the same reason the
+                    // reminders are here: a timer event reaches every handler
+                    // on the window it belongs to, so a second timer would run
+                    // this one as well.
+                    //
+                    // It has to be here rather than at the end of a mail check,
+                    // which is where a check of this kind would naturally go.
+                    // Nothing in this program checks mail on a schedule: a sync
+                    // starts because somebody asked for one, or because the
+                    // watch on a folder fired. Both of those stop when the
+                    // network goes, so a check that only ran there would notice
+                    // the network leaving and could never notice it coming
+                    // back.
+                    if asked_the_network_at.get().elapsed() >= HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK {
+                        asked_the_network_at.set(std::time::Instant::now());
+                        let news = the_network
+                            .borrow_mut()
+                            .told(crate::service::network::whether_there_is_a_network());
+                        act_on_what_the_network_did(news, &ui_tx, &runtime);
+                    }
 
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
@@ -9394,6 +9474,92 @@ fn mark_the_open_one_read(
 /// often as the answer can change.
 const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How often this computer is asked whether it still has a network.
+///
+/// Ten seconds, and both ends of that are a choice about somebody's attention
+/// rather than about cost. The call is a local one that reads what Windows
+/// already knows, so asking is nearly free and the number is not a budget.
+///
+/// The short end: this is how long a laptop carried out of range keeps saying
+/// it is online, and how long mail written in that gap keeps saying it has been
+/// sent. Ten seconds is short enough that the sentence arrives while somebody
+/// still connects it to what they just did.
+///
+/// The long end: nothing is announced unless the answer changed, so a flapping
+/// connection cannot flood by being asked more often. What a shorter interval
+/// would really buy is more chances to catch a wifi that drops and returns
+/// inside one interval, and being told about that is worth less than not being
+/// told about it.
+const HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Put the program into offline mode, or take it out, because somebody said so.
+///
+/// One place, because there are two ways somebody can say it now: the View menu
+/// item, and the button offered when the network comes back. Written twice they
+/// would drift, and the way that would show is the offer leaving the mode
+/// indicator or the tick on the View menu saying the opposite of the truth.
+///
+/// This is the path a person takes. The network going sets the same mode
+/// through `act_on_what_the_network_did`, which says something different
+/// because a different thing happened: this sentence is the answer to a key
+/// somebody pressed, and that one is news.
+fn go_into_offline_mode(app: AppHandles<'_>, offline: bool) {
+    let AppHandles { state, tx, rt } = app;
+    lock_state(state).offline_mode = offline;
+    let label = if offline {
+        "Offline mode enabled - outgoing mail will be queued"
+    } else {
+        "Online mode - outgoing mail will be sent immediately"
+    };
+    send_status(tx, rt, label);
+    // The mode indicator and the tick on the View menu only change through this
+    // update, so without it the window kept saying whatever it said before.
+    let _ = tx.try_send(UIUpdate::OfflineModeChanged(offline));
+}
+
+/// Say what the network did, and go offline when it has gone.
+///
+/// The sentence first and the mode second, in that order and never the other
+/// way round. The `OfflineModeChanged` arm is registered as quiet on the
+/// strength of a whole sentence going out ahead of it, so a mode change sent
+/// first would be a mode change nobody was told about.
+///
+/// Nothing here sends mail, and that is the point rather than an omission. The
+/// network coming back is the moment it would be easiest to flush the Outbox
+/// and the moment it would be most wrong to: mail leaving this computer is
+/// publishing, and guardrail 7 says publishing happens because somebody asked.
+/// What the network returning gets is a sentence saying the Outbox is untouched
+/// and, once plan 03-08's third task lands, a button somebody can press.
+fn act_on_what_the_network_did(
+    news: crate::application::the_network_coming_and_going::WhatToDoAboutIt,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::the_network_coming_and_going::{
+        WhatToDoAboutIt, what_to_say_about_the_network,
+    };
+
+    let Some(said) = what_to_say_about_the_network(news) else {
+        return;
+    };
+    let tx = tx.clone();
+    let words = said.to_string();
+    let go_offline = news == WhatToDoAboutIt::SayItWentAndGoOffline;
+    let offer_the_way_back = news == WhatToDoAboutIt::OfferToGoBackOnline;
+    // One task rather than two, so the order really is the order. Two spawned
+    // sends race, and the race this one would lose is the mode arriving first
+    // and changing the indicator with nothing having said why.
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::TheNetworkChanged(words)).await;
+        if go_offline {
+            let _ = tx.send(UIUpdate::OfflineModeChanged(true)).await;
+        }
+        if offer_the_way_back {
+            let _ = tx.send(UIUpdate::TheNetworkIsBack).await;
+        }
+    });
+}
+
 /// Raise anything that has come due, one window at a time.
 ///
 /// Reminders were stored, listed and synced, and nothing ever went off. Setting
@@ -12751,6 +12917,40 @@ pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     });
 }
 
+/// The answer to a key somebody just pressed, shown and said.
+///
+/// The companion to [`send_refusal`]: a refusal says a command did not happen,
+/// and this says what a command did. Above the ordinary run of status and on a
+/// topic of its own, so a sync saying "Checking Sent..." underneath cannot
+/// coalesce it away before anybody hears it.
+pub(crate) fn send_answer(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, said: &str) {
+    let tx = tx.clone();
+    let said = said.to_string();
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::CommandAnswered(said)).await;
+    });
+}
+
+/// What the window believes about handing anything to a server.
+///
+/// One place, because a bool read at the call site is a line nobody can check
+/// by eye and because this is the fact plan 03-08 gave the program a second way
+/// to set: somebody's switch on the View menu, or the network going.
+fn reachability_of(
+    state: &Arc<StdMutex<WxUIState>>,
+) -> crate::application::sending_later::Reachability {
+    use crate::application::sending_later::Reachability;
+    // Read out before the match rather than in its head. A lock held as the
+    // thing being matched on lives until the match ends, and this is called
+    // from the interface thread while a sync on another thread wants the same
+    // lock.
+    let offline = lock_state(state).offline_mode;
+    match offline {
+        true => Reachability::Offline,
+        false => Reachability::Online,
+    }
+}
+
 /// Open a reply to the selected message.
 ///
 /// The three reply keys differ by a modifier, and the cost of the wrong one is
@@ -13179,11 +13379,17 @@ fn open_compose(
         saver,
     ) {
         ComposeResult::Send(data) => {
-            // Queue first, then flush. Nothing used to reach the outbox at all,
-            // so pressing Send only ever produced a status line. Queueing also
-            // means a send that fails is retried rather than lost.
+            // Queue first, then ask whether it goes. Nothing used to reach the
+            // outbox at all, so pressing Send only ever produced a status line.
+            // Queueing also means a send that fails is retried rather than lost.
+            //
+            // That order is the safe one and it is why the decision sits here
+            // rather than in front of the queue: the message is written down
+            // before anything decides whether to hand it to a server, so a
+            // decision to wait leaves a row somebody can see, arrow onto and
+            // act on rather than leaving nothing at all.
             match queue_for_sending(state, cache, &data) {
-                Ok(recipient) => {
+                Ok((recipient, waiting_on)) => {
                     // The draft this was written in is finished with. Nothing
                     // removed one: sending did not, and the Open Draft dialog
                     // only opens, so every draft ever saved stayed in the list
@@ -13199,8 +13405,32 @@ fn open_compose(
                         tracing::warn!("The sent draft {id} could not be removed: {why}");
                     }
                     *draft_id.borrow_mut() = None;
-                    send_status(tx, rt, &format!("Sending to {}...", recipient));
-                    flush_outbox(app);
+                    // The line whose absence was the whole defect. Offline mode
+                    // was declared, initialised, toggled and mirrored, and read
+                    // by nothing that decided anything, so the View menu's
+                    // promise that outgoing mail would be queued was false and
+                    // a message sent with the switch on went to a server like
+                    // any other.
+                    let goes = crate::application::sending_later::when_it_goes(
+                        reachability_of(state),
+                        &waiting_on,
+                        chrono::Local::now(),
+                    );
+                    let said = crate::application::sending_later::what_send_did(goes, &recipient);
+                    match goes {
+                        crate::application::sending_later::WhenItGoes::Now => {
+                            send_status(tx, rt, &said);
+                            flush_outbox(app);
+                        }
+                        // Nothing is handed to a server, and the sentence goes
+                        // out above the ordinary run of status. Somebody who
+                        // pressed a key called Send and heard the steady sync
+                        // line instead believes their mail has gone.
+                        crate::application::sending_later::WhenItGoes::WhenThereIsANetworkAgain
+                        | crate::application::sending_later::WhenItGoes::WhenItsTimeComes => {
+                            send_answer(tx, rt, &said);
+                        }
+                    }
                 }
                 Err(reason) => {
                     let tx = tx.clone();
@@ -13492,11 +13722,20 @@ fn spawn_draft_append(
     });
 }
 
+/// Put a composed message in the queue, and hand back who it is for and what
+/// the row it wrote says it is waiting for.
+///
+/// The second half is returned rather than assumed, because the caller then
+/// decides whether to hand the queue to a server and that decision reads the
+/// row's own schedule. Written as a constant at the call site instead, the two
+/// would drift the first time this queued anything with a time on it, and the
+/// way that would show is a scheduled message going out the moment Send was
+/// pressed.
 fn queue_for_sending(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     data: &wx_compose::ComposeData,
-) -> std::result::Result<String, String> {
+) -> std::result::Result<(String, crate::application::sending_later::GoAfter), String> {
     let Some(cache) = cache.as_ref() else {
         return Err("No message store is available, so the message cannot be queued".to_string());
     };
@@ -13532,10 +13771,15 @@ fn queue_for_sending(
         created_at: chrono::Local::now().to_rfc3339(),
     };
 
+    // What the row is waiting for, named where it is written rather than read
+    // back out of the database a moment later. `queue_outbox_message` is the
+    // shorthand for this one, and it is the only thing the composer's Send has
+    // ever written.
+    let waiting_on = crate::application::sending_later::GoAfter::AsSoonAsPossible;
     cache
         .queue_outbox_message(&queued)
         .map_err(|e| format!("Could not queue the message: {}", e))?;
-    Ok(recipient.to_string())
+    Ok((recipient.to_string(), waiting_on))
 }
 
 /// Open one window so the accessibility scan has something to look at.
@@ -14585,6 +14829,24 @@ struct MissingTextOffer {
     around_it: Panel,
 }
 
+/// The controls carrying the offer to go back online.
+///
+/// Together rather than as three references, for the reason [`MissingTextOffer`]
+/// gives: putting an offer on the screen means the button, its label on both
+/// accessibility channels, and the panel around it being laid out again, and
+/// three separate handles is three chances to move one and leave the others.
+struct BackOnlineOffer {
+    /// The strip above the message list, shown only when the network has come
+    /// back and the program is still offline.
+    panel: Panel,
+    /// The button itself. Pressing it goes online and sends what is waiting,
+    /// which is what its label says it does.
+    button: Button,
+    /// What holds the strip, so a strip that appears or goes makes the list
+    /// below it grow or shrink rather than being drawn over.
+    around_it: Panel,
+}
+
 struct UpdateTargets<'a> {
     state: &'a Arc<StdMutex<WxUIState>>,
     folder_tree: &'a TreeCtrl,
@@ -14603,6 +14865,8 @@ struct UpdateTargets<'a> {
     message_cache: &'a Option<Arc<MessageCache>>,
     /// The offer to fetch the message text a saved search cannot reach.
     missing_text_offer: &'a MissingTextOffer,
+    /// The offer to go back online, raised when the network returns.
+    back_online_offer: &'a BackOnlineOffer,
     /// So a fetched attachment can be opened as a tab. Reading one happens on
     /// a worker and the window it opens into may only be touched here.
     reader: &'a Rc<wx_reader::ReaderWindow>,
@@ -14887,6 +15151,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         pim,
         message_cache,
         missing_text_offer,
+        back_online_offer,
         reader,
         tx,
         rt,
@@ -15279,13 +15544,75 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.signal(FeedbackEvent::SendFailed, err);
             }
         }
+        UIUpdate::TheNetworkChanged(said) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // The same string to the eye and to the ear, which is the whole
+            // point of the sentence being worked out in one place: a deaf user
+            // reading the status bar and a blind user hearing it are told the
+            // same thing about the same event.
+            //
+            // Its own topic rather than "status", and the precedent is
+            // "renumbered" and "message text" above. "status" carries every
+            // steady sync line, the queue keeps only the newest of a topic, and
+            // a network that has gone arrives in the middle of a sync failing
+            // its way through several folders, so announced there it would be
+            // replaced before anybody heard it.
+            //
+            // Normal rather than Low, because this is not progress, and not
+            // High, because nobody pressed anything to cause it. Same reasoning
+            // as FolderWasRenumbered.
+            let _ = a11y.announce_topic(said, Priority::Normal, "network");
+        }
+        UIUpdate::TheNetworkIsBack => {
+            back_online_offer.panel.show(true);
+            // The list below it has changed size.
+            back_online_offer.around_it.layout();
+            // Nothing is said here, and that is on purpose rather than an
+            // oversight, though no check can see it: `what_is_shown_and_never_said`
+            // only reads arms that write to the status bar, and this one does
+            // not. The sentence sent immediately before this one says the
+            // network is back, that nothing has been sent, and that there is a
+            // Go Back Online button above the message list. Announcing again
+            // here would be two announcements a moment apart about one event,
+            // which is the repetition every entry in `quiet_on_purpose` exists
+            // to keep out.
+            //
+            // What that argument does not settle is whether somebody hears the
+            // sentence and then finds the button. That is a screen reader
+            // question and it is in the broken windows ledger rather than
+            // claimed here.
+        }
         UIUpdate::OfflineModeChanged(enabled) => {
             {
                 let mut s = lock_state(state);
                 s.offline_mode = *enabled;
             }
+            // The offer is about a mode, so any change of that mode ends it.
+            // Going online is the offer taken or the menu item used, and either
+            // way there is nothing left to offer. Going offline again makes the
+            // offer wrong rather than stale.
+            //
+            // Focus is moved first and only if the button has it. A control
+            // that loses focus by being hidden leaves focus nowhere, which for
+            // somebody working by ear is a window with no cursor in it and no
+            // way back except tabbing from the top.
+            if back_online_offer.button.has_focus() {
+                msg_list.set_focus();
+            }
+            back_online_offer.panel.show(false);
+            back_online_offer.around_it.layout();
             let msg = if *enabled { "Offline mode" } else { "Online" };
             frame.set_status_text(msg, 1);
+            // The tick on the View menu, here rather than where the change is
+            // decided, because there are two places that decide now: somebody
+            // choosing the menu item, and the network going. A tick set at one
+            // of them and not the other is a menu that disagrees with the
+            // program about which mode it is in.
+            sync_menu_check(frame, ID_OFFLINE_MODE, *enabled);
         }
         UIUpdate::OutboxQueueCount(count) => {
             {
@@ -22617,11 +22944,12 @@ mod what_the_status_line_says {
         &[
             (
                 "OfflineModeChanged",
-                "Keeps the mode indicator, which stays on screen. The one place that \
-                 sends this already sends the whole sentence, offline mode enabled and \
-                 outgoing mail will be queued, and the status arm shows and says that. \
-                 Saying the one word here as well would say the same change twice, a \
-                 moment apart.",
+                "Keeps the mode indicator and the tick on the View menu, both of which \
+                 stay on screen. Both places that send this send a whole sentence first: \
+                 the menu item sends offline mode enabled and outgoing mail will be \
+                 queued, and the network going sends TheNetworkChanged, whose arm shows \
+                 and says the sentence. Saying the one word here as well would say the \
+                 same change twice, a moment apart.",
             ),
             (
                 "OutboxQueueCount",
@@ -22904,15 +23232,29 @@ mod what_the_status_line_says {
         // Offline mode is safe only while the whole sentence goes out ahead of
         // it. A second sender added without one would be silent and nothing
         // else would notice.
+        //
+        // `send(` rather than `try_send(`, and that is not tidying. There are
+        // two senders now: the menu item, which is on the interface thread and
+        // uses `try_send`, and the network going, which is inside a spawned
+        // task and awaits an ordinary `send`. The longer pattern matched only
+        // the first, so the second arrived unwatched, which is exactly the
+        // "a second sender added without one" this paragraph warns about
+        // happening to the check rather than to the code. The shorter pattern
+        // is a substring of the longer one, so it finds both.
         let senders: Vec<_> = source
-            .match_indices("try_send(UIUpdate::OfflineModeChanged(")
+            .match_indices("send(UIUpdate::OfflineModeChanged(")
             .map(|(at, _)| at)
             .collect();
         assert!(!senders.is_empty(), "nothing sends the offline mode update");
         for at in &senders {
             let before = &source[at.saturating_sub(400)..*at];
             assert!(
-                before.contains("send_status("),
+                // Either sentence will do, and both are whole sentences that
+                // are shown and said. `send_status` is the menu item's, and
+                // `TheNetworkChanged` is the one the network going sends,
+                // which carries the words worked out in
+                // `the_network_coming_and_going`.
+                before.contains("send_status(") || before.contains("UIUpdate::TheNetworkChanged("),
                 "the offline mode update is sent with no sentence in front of it, so \
                  the change is now silent"
             );

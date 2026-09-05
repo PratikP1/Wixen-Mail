@@ -8,6 +8,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail notices when the network goes, switches itself to offline mode,
+  and says so once.**
+
+  Pull out the cable, close the laptop and open it somewhere with no signal, or
+  lose the wifi, and Wixen Mail now puts itself into offline mode without you
+  having to find the View menu. It says, in the status bar and out loud: "The
+  network has gone, so Wixen Mail is now offline. Mail you send waits in the
+  Outbox until you go back online." Mail you write after that waits in the
+  Outbox instead of being thrown at a server that is not there.
+
+  It is said once, not once per thing that failed. Losing the network while mail
+  is being checked makes every folder fail and the watch on your inbox fail as
+  well, and each of those could prompt another look. What is spoken is the
+  network changing, so ten failures from one cable are one sentence.
+
+  When the network comes back, Wixen Mail offers to go back online rather than
+  doing it. It says: "The network is back. Wixen Mail is still offline, and
+  nothing in the Outbox has been sent. There is a Go Back Online button above
+  the message list, or you can turn offline mode off from the View menu." A
+  button appears above the message list, in the tab order, labelled "Go back
+  online and send the mail waiting in the Outbox". Press it and that is what
+  happens.
+
+  Nothing is sent until you press it. That is deliberate: mail leaving your
+  computer should happen because you asked, not because a cable went back in.
+  If you ignore the offer, nothing is sent and the button stays where it is
+  until you go back online some other way.
+
+  Known limitations, all three worth reading:
+
+  - This is Windows only. On any other platform Wixen Mail behaves exactly as it
+    did before: offline mode is a switch you set yourself and nothing sets it
+    for you.
+  - It notices a computer with no connection at all. It does not notice a
+    network that is up but cannot reach your mail server, because that is a
+    different question and only asking the server answers it.
+  - No account has ever been used with this program, and no real network has
+    ever gone while it was running. All of this has been driven by tests.
+
 - **You can ask for a whole folder once, instead of pressing Get Older Messages
   eighty times.**
 
@@ -129,6 +168,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   text somewhere nothing would ever look again.
 
 ### Fixed
+
+- **Offline mode now queues your outgoing mail. It said it did, and it did
+  not.**
+
+  Turning offline mode on said, in the status bar and out loud, "Offline mode
+  enabled - outgoing mail will be queued". Nothing was queued. The switch was
+  recorded and nothing read it, so pressing Send with offline mode on handed the
+  message to a mail server exactly as if the switch had been off. Anyone who
+  read that sentence and then wrote mail on a train believed it was being held
+  for them. It was not, and if it went out, it went out.
+
+  Pressing Send with offline mode on now leaves the message in the Outbox and
+  says so: "Offline mode is on, so the message to kim@example.com is waiting in
+  the Outbox. It goes when you go back online." Nothing is handed to a server.
+  Turn offline mode off, then choose Outbox and Send Queued Mail, and it goes.
+
+  That sentence is said as well as shown, and it is said above the run of
+  sync progress rather than among it, because a message that did not go is the
+  answer to a key you just pressed and must not be talked over.
+
+  With offline mode off, Send behaves exactly as it did before.
 
 - **A connection that dropped while a folder was being opened could delete the
   mail Wixen Mail had stored for that folder.**

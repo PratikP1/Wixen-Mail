@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 393 records have arrived since and have not been through it.
+# 396 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2106,7 +2106,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/due.rs", tests = 23 },
     { file = "src/application/repeating.rs", tests = 27 },
-    { file = "src/application/sending_later.rs", tests = 32 },
+    { file = "src/application/sending_later.rs", tests = 40 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
     { file = "src/presentation/date_display.rs", tests = 37 },
@@ -4962,8 +4962,8 @@ tests_last_seen = [
 [[guard]]
 name = "the offline mode change is spoken by the sentence sent ahead of it"
 file = "src/presentation/wx_app.rs"
-before = """                            send_status(&ui_tx, &runtime, label);"""
-after = """                            let _ = label;"""
+before = """    send_status(tx, rt, label);"""
+after = """    let _ = label;"""
 red = [
     "presentation::wx_app::what_the_status_line_says::test_the_quiet_arms_are_each_said_somewhere_else",
 ]
@@ -14393,4 +14393,131 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
+]
+
+# ── The send path reads the switch, rather than only calling the decision ───
+#
+# SCALE-05, and the live defect it starts from. `offline_mode` was declared,
+# initialised, toggled and mirrored on an update, and read by nothing that
+# decided anything. The View menu said "Offline mode enabled - outgoing mail
+# will be queued" and the composer's Send queued the message and handed the
+# whole queue to a server in the next line, whatever the switch said.
+#
+# The break is the half-fix, not the absent one: the decision is called, with a
+# constant instead of what the window believes. The call is there, the promise
+# is still false, and a check that only asked whether `when_it_goes` is named
+# would pass on it. That is why the census asks about `reachability_of` as
+# well.
+#
+# Measured by hand on 2026-09-05, every target with --no-fail-fast: 6,183
+# library tests passed and one test failed in the whole tree.
+#
+# That one test is the finding rather than an aside. Reaching this arm needs a
+# window, a frame and a composer, so nothing in the library reads it, and the
+# whole defence of the switch being read is the single source-reading test
+# named below. The same shape 03-02 found for the sign-in census.
+
+[[guard]]
+name = "the send path reads what the window believes about the network"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_leaves_the_outbox_unasked"
+before = """                        reachability_of(state),"""
+after = """                        crate::application::sending_later::Reachability::Online,"""
+red = [
+    "test_the_send_path_asks_whether_the_message_goes_before_it_flushes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 7 },
+]
+
+# ── A network loss is said once, because it is a change and not an answer ───
+#
+# SCALE-05 and guardrail 5. One unplugged cable is many failures: a sync walks
+# several folders and each one asks a server, and a watch loop is sitting on a
+# connection that has gone. Said per failure, that is a screen reader saying
+# the same sentence eight times over somebody trying to read a message.
+#
+# The break is the shape that gets this wrong, and it is the shape somebody
+# reaches for first: answer from the observation rather than from the change.
+# It is also what the red half of this task was written against.
+#
+# Measured by hand on 2026-09-05, every target with --no-fail-fast, against a
+# tree with nothing else red: 6,189 tests passed and four failed. The counting,
+# the laptop opened where there has never been a signal, the repeat while
+# nothing has changed, and the two round trips.
+#
+# --no-fail-fast matters and is not decoration. Without it the runner stops at
+# the first failing target and the list that comes out is a prefix, which reads
+# exactly like a complete answer and is wrong in the direction this file exists
+# to catch.
+#
+# What this cannot see: whether the sentence is heard once. It says the state
+# hands out one answer, not that the queue speaks it once, and not that a
+# person hears it as a state rather than as an error. That is ledger 78.
+
+[[guard]]
+name = "the network is spoken about when it changes, not when it is asked"
+file = "src/application/the_network_coming_and_going.rs"
+before = """        let was = std::mem::replace(&mut self.there_is_a_network, there_is_a_network);
+        match (was, there_is_a_network) {
+            (true, false) => WhatToDoAboutIt::SayItWentAndGoOffline,
+            (false, true) => WhatToDoAboutIt::OfferToGoBackOnline,
+            _ => WhatToDoAboutIt::Nothing,
+        }"""
+after = """        self.there_is_a_network = there_is_a_network;
+        match there_is_a_network {
+            false => WhatToDoAboutIt::SayItWentAndGoOffline,
+            true => WhatToDoAboutIt::OfferToGoBackOnline,
+        }"""
+red = [
+    "application::the_network_coming_and_going::tests::test_a_network_that_was_already_gone_at_the_start_is_not_a_change",
+    "application::the_network_coming_and_going::tests::test_asking_again_while_the_network_is_still_there_says_nothing",
+    "application::the_network_coming_and_going::tests::test_ten_failures_from_one_loss_are_announced_once",
+    "application::the_network_coming_and_going::tests::test_the_network_coming_back_and_going_again_is_one_of_each_each_time",
+]
+tests_last_seen = [
+    { file = "src/application/the_network_coming_and_going.rs", tests = 10 },
+]
+
+# ── The network coming back is an offer, and an offer sends nothing ────────
+#
+# SCALE-05 and guardrail 7, which exists here because a push to main once cut
+# two releases nobody asked for. Mail leaving this computer is publishing, and
+# the network returning is the moment it is easiest to empty the Outbox and the
+# moment it is most wrong to: nobody asked, and mail that has gone cannot be
+# brought back. Wired straight to the flush, closing a laptop on a train and
+# opening it in an office sends whatever was written in between.
+#
+# Until this branch that rule held by accident. flush_outbox had two callers,
+# both of them a key somebody pressed, so the Outbox was never flushed unasked
+# because nothing automatic flushed it at all.
+#
+# The break is the wiring somebody would write first: the arm that raises the
+# offer sends the mail as well, which makes the offer a description of
+# something that has already happened.
+#
+# Measured by hand on 2026-09-05, every target with --no-fail-fast: two tests
+# went red, the guardrail-7 assertion and the count of places that hand mail to
+# a server, which reads four.
+#
+# What this cannot see: whether a person hears the offer, finds it, and
+# understands that pressing it sends. That is ledger 79 and 80.
+
+[[guard]]
+name = "the network coming back offers rather than sending"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_leaves_the_outbox_unasked"
+before = """            back_online_offer.panel.show(true);
+            // The list below it has changed size."""
+after = """            back_online_offer.panel.show(true);
+            flush_outbox(AppHandles { state, tx, rt });
+            // The list below it has changed size."""
+red = [
+    "test_the_network_coming_back_sends_nothing",
+    "test_the_places_that_hand_mail_to_a_server_are_the_ones_counted",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 7 },
 ]

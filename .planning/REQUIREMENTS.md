@@ -551,7 +551,7 @@ write path added by this milestone passes through that gate.
     something asks for one. A sync writes neither the file nor the description, which is
     more than this line asked for and is all a sync could write either way.
 
-- [ ] **SCALE-05**: Detect network status and offer offline mode rather than only accepting a
+- [x] **SCALE-05**: Detect network status and offer offline mode rather than only accepting a
   manual toggle.
 
   - Evidence: sharpened 2026-09-03. `grep -rni "is_online|network_status|connectivity|
@@ -1694,7 +1694,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-02 | Phase 3 | Pending |
 | SCALE-03 | Phase 3 | Pending |
 | SCALE-04 | Phase 3 | Complete |
-| SCALE-05 | Phase 3 | Pending |
+| SCALE-05 | Phase 3 | Complete |
 | SCALE-06 | Phase 3 | Pending |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Pending |
