@@ -127,9 +127,26 @@ impl BothCopies {
     /// provider's copy names. An order somebody can predict, rather than
     /// whatever a set happened to hand back, because this is read aloud.
     pub fn fields_that_differ(&self) -> Vec<String> {
-        // Stub reproducing today's behaviour: nothing names a differing field
-        // to anybody, because nobody is asked anything.
-        Vec::new()
+        let mut differ: Vec<String> = Vec::new();
+        for field in &self.here {
+            if self.value_of(&field.called, WhichCopy::TheProviders) != Some(&field.value) {
+                differ.push(field.called.clone());
+            }
+        }
+        for field in &self.theirs {
+            if self.here.iter().all(|held| held.called != field.called) {
+                differ.push(field.called.clone());
+            }
+        }
+        differ
+    }
+
+    /// What one copy holds under that name, where it names it at all.
+    fn value_of(&self, called: &str, which: WhichCopy) -> Option<&String> {
+        self.values_in(which)
+            .iter()
+            .find(|field| field.called == called)
+            .map(|field| &field.value)
     }
 
     /// One copy's values.
@@ -146,10 +163,10 @@ impl BothCopies {
     /// unlabelled blocks read out one after the other are two blocks nobody can
     /// tell apart, which is the whole failure this is here to prevent.
     pub fn label_for(&self, which: WhichCopy) -> String {
-        // Stub reproducing the defect: two unlabelled blocks read out one
-        // after the other, which nobody can tell apart.
-        let _ = which;
-        "Contact".to_string()
+        match which {
+            WhichCopy::Here => "What is on this computer".to_string(),
+            WhichCopy::TheProviders => format!("What {} has", self.other_copy.called()),
+        }
     }
 
     /// The one sentence said on arrival: what is being asked, and how much
@@ -160,17 +177,38 @@ impl BothCopies {
     /// count is useful or is a sentence somebody stops hearing is unverified by
     /// ear and is in the ledger.
     pub fn what_is_being_asked(&self) -> String {
-        // Stub reproducing today's sentence: said after the fact, naming no
-        // field and asking nothing.
-        "A change you made was replaced by the address book".to_string()
+        let differ = self.fields_that_differ();
+        let thing = self.other_copy.the_thing();
+        let named = &self.what_it_is_called;
+        let provider = self.other_copy.called();
+        match differ.as_slice() {
+            [only] => format!(
+                "You changed this {thing} here and it changed in {provider} as well. \
+                 1 field is different: {only}. Choose which copy to keep."
+            ),
+            several => format!(
+                "You changed {named} here and it changed in {provider} as well. \
+                 {} fields are different: {}. Choose which copy to keep.",
+                several.len(),
+                several.join(", ")
+            ),
+        }
     }
 
     /// What is said once somebody has chosen.
     pub fn what_was_chosen(&self, which: WhichCopy) -> String {
-        // Stub: one sentence for both endings, which is what having no choice
-        // at all amounts to.
-        let _ = which;
-        "The contact was updated".to_string()
+        match which {
+            WhichCopy::Here => format!(
+                "Kept what is on this computer for {}. It goes to {} on the next sync.",
+                self.what_it_is_called,
+                self.other_copy.called()
+            ),
+            WhichCopy::TheProviders => format!(
+                "Kept what {} has for {}. The change made here is gone.",
+                self.other_copy.called(),
+                self.what_it_is_called
+            ),
+        }
     }
 }
 
@@ -191,10 +229,10 @@ pub enum WhatChoosingCallsFor {
 
 /// What choosing that copy calls for.
 pub fn choosing(which: WhichCopy) -> WhatChoosingCallsFor {
-    // Stub reproducing the arm this plan is about: the provider wins whatever
-    // anybody would have said.
-    let _ = which;
-    WhatChoosingCallsFor::TakeTheirsAndSendNothing
+    match which {
+        WhichCopy::Here => WhatChoosingCallsFor::KeepWhatIsHereAndSendIt,
+        WhichCopy::TheProviders => WhatChoosingCallsFor::TakeTheirsAndSendNothing,
+    }
 }
 
 #[cfg(test)]

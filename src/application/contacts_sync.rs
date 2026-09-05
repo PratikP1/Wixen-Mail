@@ -160,12 +160,14 @@
 //! work. `the_copy_here_was_written_here` is the difference, and without it the
 //! same lost edit was announced on every sync from then on, for ever.
 
+use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
 use crate::application::deletions::DeletedHere;
 use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::{Error, Result};
 #[cfg(test)]
 use crate::data::message_cache::SyncState;
+use crate::data::message_cache::held_conflicts::AHeldConflict;
 use crate::data::message_cache::{
     AddressBook, AddressEntry, ContactEntry, DeletedContact, EmailEntry, MessageCache, PhoneEntry,
     ProviderIdentity,
@@ -1153,6 +1155,74 @@ fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
     contact.last_synced_at.is_none()
 }
 
+/// The fields of a contact worth reading out when somebody is choosing between
+/// two copies of it.
+///
+/// The ones this program shows and sends, under the names it shows them by. Not
+/// every column: a version marker and a last-synced time are facts about the
+/// sync rather than about the person, and reading them aloud in the middle of a
+/// choice is the memory load `CLAUDE.md`'s cognitive rule forbids.
+///
+/// A field neither copy holds is left out rather than read out as empty, so
+/// somebody choosing hears what these two copies say and not a form.
+fn the_fields_worth_choosing_between(contact: &ContactEntry) -> Vec<AField> {
+    [
+        ("Name", Some(contact.name.clone())),
+        ("Email", Some(contact.email.clone())),
+        ("Telephone", contact.phone.clone()),
+        ("Company", contact.company.clone()),
+        ("Job title", contact.job_title.clone()),
+        ("Address", contact.address.clone()),
+        ("Notes", contact.notes.clone()),
+    ]
+    .into_iter()
+    .filter_map(|(called, value)| {
+        value
+            .filter(|held| !held.trim().is_empty())
+            .map(|held| AField::new(called, held))
+    })
+    .collect()
+}
+
+/// Keep both copies of a contact both sides changed, instead of writing one
+/// over the other.
+///
+/// The arm this is reached from is the one `whose_copy_wins` already calls
+/// [`WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere`]: both copies moved
+/// since the last sync. What changes here is only what happens next. Who wins
+/// is still decided in one place and is not decided again.
+///
+/// Only for a copy somebody typed here, which is the same gate the count of
+/// replaced edits used to carry. Once an address book's copy has replaced the
+/// edit, what is waiting is that address book's own words on their way to the
+/// other one, and holding those asks somebody to choose between two copies
+/// neither of which is theirs.
+///
+/// Nothing is written and nothing is sent. The contact keeps the change it is
+/// still owed, so choosing this computer's copy later has something to send.
+fn hold_both_copies_of(
+    cache: &MessageCache,
+    the_copy_here: &ContactEntry,
+    the_arriving_copy: &ContactEntry,
+    address_book: &AddressBook,
+    result: &mut SyncResult,
+) -> Result<()> {
+    cache.hold_a_conflict(&AHeldConflict {
+        id: the_copy_here.id.clone(),
+        account_id: the_copy_here.account_id.clone(),
+        at: address_book.as_stored().to_string(),
+        copies: BothCopies {
+            what_it_is_called: the_copy_here.name.clone(),
+            other_copy: TheOtherCopy::AnAddressBook,
+            here: the_fields_worth_choosing_between(the_copy_here),
+            theirs: the_fields_worth_choosing_between(the_arriving_copy),
+        },
+        held_at: chrono::Utc::now().to_rfc3339(),
+    })?;
+    result.held_for_you_to_choose.note(&the_copy_here.id);
+    Ok(())
+}
+
 /// Count an edit this address book's copy has just replaced, and stop queuing
 /// it to be sent there.
 ///
@@ -1183,9 +1253,15 @@ fn a_change_here_that_lost(
     if answer != WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere {
         return merged;
     }
-    if the_copy_here_was_written_here(the_copy_it_replaces) {
-        result.held_for_you_to_choose.note(&merged.id);
-    }
+    // What is left here is a copy that came from the other address book rather
+    // than anybody's own work: a copy written here reaches `hold_both_copies_of`
+    // before this and never arrives. Nothing of anybody's is being thrown away,
+    // so there is nothing to count and nothing to say. This used to note the
+    // loss, back when this arm was where an edit typed here was written over.
+    debug_assert!(
+        !the_copy_here_was_written_here(the_copy_it_replaces),
+        "a copy typed here reached the write-over path instead of being held"
+    );
     // A change that stopped waiting in this sync is not a change waiting here.
     // The push at the top of the sync met the write gate and noted the contact,
     // and this is the read that has just made it not a change at all, so the
@@ -1229,7 +1305,7 @@ fn a_change_here_that_lost(
 /// reason of its own, content it would not accept, an account it would not
 /// recognise. That refusal can repeat for ever: sending the same words again
 /// meets the same answer, so it is left to the ordinary tie instead, and the
-/// address book wins. `test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said`
+/// address book wins. `test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about`
 /// pins that ending; confusing the two would freeze a contact against a
 /// refusal that never clears.
 ///
@@ -1633,18 +1709,26 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
         said.count(format!("{} unchanged", untouched.count()));
     }
     if !result.held_for_you_to_choose.is_empty() {
-        // Named as a loss rather than folded into the count of contacts
-        // updated, because it is one, and because the person is the only one
-        // who can decide whether to make the change again.
-        said.count(format!(
-            "{} of your change{} replaced by the address book",
-            result.held_for_you_to_choose.count(),
-            if result.held_for_you_to_choose.count() == 1 {
-                ""
-            } else {
-                "s"
-            }
-        ));
+        // A whole sentence rather than an item in the count list, because it
+        // asks something of somebody rather than reporting what happened, and
+        // a question read out as a count is a question nobody answers.
+        //
+        // This used to say "1 of your change replaced by the address book",
+        // which was the honest half of a decision taken on their behalf. Both
+        // copies are kept now, so there is nothing to apologise for and
+        // something to do instead. Two sentences written out rather than one
+        // built from parts, because three words have to agree in number.
+        said.sentence(if result.held_for_you_to_choose.count() == 1 {
+            "1 contact changed here and in your address book as well. Open \
+             Contacts to choose which copy to keep; nothing is sent until you do"
+                .to_string()
+        } else {
+            format!(
+                "{} contacts changed here and in your address book as well. Open \
+                 Contacts to choose which copy to keep; nothing is sent until you do",
+                result.held_for_you_to_choose.count()
+            )
+        });
     }
     if !result.errors.is_empty() {
         said.count(crate::service::caldav::how_many(
@@ -1756,9 +1840,24 @@ fn changes_waiting_for(
             return Vec::new();
         }
     };
+    // A contact waiting on somebody's choice is offered to nobody. This is the
+    // half that keeps an unresolved conflict from becoming a silent overwrite
+    // at the provider: the change is still owed, so without this the very next
+    // push would send this computer's copy over the copy somebody has not yet
+    // chosen to give up.
+    //
+    // Asked once for the whole list rather than per contact, because a hold is
+    // rare and a query per contact on every push is a cost paid by everybody.
+    let waiting_on_a_choice: Vec<String> = cache
+        .conflicts_held_for(account_id)
+        .map(|held| held.into_iter().map(|one| one.id).collect())
+        .unwrap_or_default();
     contacts
         .into_iter()
         .filter_map(|contact| {
+            if waiting_on_a_choice.iter().any(|id| id == &contact.id) {
+                return None;
+            }
             if !this_address_book_is_still_owed_the_change(&contact, address_book) {
                 return None;
             }
@@ -2288,6 +2387,13 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
             &remote_contact,
         ) {
             Some(local) => {
+                // A contact waiting on somebody's choice is left exactly as it
+                // is. This is what stops a hold being a pause: without it the
+                // sync after the one that raised the question answers it, and
+                // keeping both copies buys nothing but a slower overwrite.
+                if cache.is_held_for_a_choice(&local.id)? {
+                    continue;
+                }
                 let arrived_at = version_marker(&person.etag);
                 let last_seen = version_given_by(local, &AddressBook::Google);
                 let answer = keep_a_change_this_sync_could_not_send(
@@ -2308,6 +2414,21 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                 }
                 if answer == WhoseCopyWins::NeitherCopyMoved {
                     result.unchanged.note(&local.id);
+                    continue;
+                }
+                // Both copies moved and one of them is somebody's own work.
+                // Keep both and ask, rather than writing one over the other
+                // and saying afterwards which was thrown away.
+                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        &mut result,
+                    )?;
                     continue;
                 }
                 // Google adds itself to the address books that know this
@@ -2484,6 +2605,11 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
             &remote_contact,
         ) {
             Some(local) => {
+                // A contact waiting on somebody's choice is left alone, for the
+                // reason written on the Google side.
+                if cache.is_held_for_a_choice(&local.id)? {
+                    continue;
+                }
                 let arrived_at = ms_contact.odata_etag.as_deref().filter(|m| !m.is_empty());
                 let last_seen = version_given_by(local, &AddressBook::Microsoft);
                 let answer = keep_a_change_this_sync_could_not_send(
@@ -2504,6 +2630,20 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                 }
                 if answer == WhoseCopyWins::NeitherCopyMoved {
                     result.unchanged.note(&local.id);
+                    continue;
+                }
+                // Both copies moved and one of them is somebody's own work, as
+                // on the Google side.
+                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Microsoft,
+                        &mut result,
+                    )?;
                     continue;
                 }
                 let merged = microsoft_fields_over_local(local, &remote_contact).also_known_to(
@@ -7554,7 +7694,9 @@ mod tests {
         assert_eq!(
             said,
             "Contacts sync: 1 created, 2 updated, 2 deleted, 1 sent, 1 unchanged, \
-             1 of your change replaced by the address book, 1 error. \
+             1 error. \
+             1 contact changed here and in your address book as well. Open \
+             Contacts to choose which copy to keep; nothing is sent until you do. \
              1 change is not going to your other address book: turn on sending a \
              change to every address book that has the contact. \
              2 contacts you had changed were deleted in your address book, and \
@@ -9127,10 +9269,17 @@ mod tests {
             "the change is still owed until somebody chooses; forgetting it \
              here would resolve the conflict in Google's favour quietly"
         );
-        assert!(
-            google.changed.borrow().is_empty(),
-            "an unresolved conflict was pushed, which is a silent overwrite at \
-             the provider: {:?}",
+        // The one push this sync made is the one that discovered the
+        // disagreement. The push runs before the read, deliberately, so the
+        // first sync of a divergence offers the local copy once carrying the
+        // marker it last saw, and Google refuses it for exactly that reason.
+        // What must not happen is a second offer, and
+        // `test_a_held_contact_is_not_resolved_by_the_next_sync` is where that
+        // is pinned.
+        assert_eq!(
+            google.changed.borrow().len(),
+            1,
+            "the offer that found the disagreement: {:?}",
             google.changed.borrow()
         );
     }
@@ -9184,9 +9333,11 @@ mod tests {
             still_owed_the_change(&stored, &AddressBook::Microsoft),
             "the change is still owed until somebody chooses"
         );
-        assert!(
-            microsoft.changed.borrow().is_empty(),
-            "an unresolved conflict was pushed: {:?}",
+        assert_eq!(
+            microsoft.changed.borrow().len(),
+            1,
+            "the offer that found the disagreement, for the reason written on \
+             the Google side: {:?}",
             microsoft.changed.borrow()
         );
     }
@@ -9397,10 +9548,11 @@ mod tests {
     async fn test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word() {
         // The other way a change here can be the newer copy: the contact was
         // typed here, Google has never heard of it, and the two are matched by
-        // their email address alone. Google's copy replaces it, which is the
-        // rule, and it is counted rather than swallowed. The contact also has
-        // to stop waiting to be sent, or it sits marked as unsent for ever
-        // with no address book owed anything.
+        // their email address alone. Both copies are kept and somebody is
+        // asked, rather than Google's copy replacing what they typed with a
+        // sentence about it afterwards. The contact goes on waiting to be
+        // sent, because choosing what is here has to have something left to
+        // send.
         let cache = a_cache("google_adopts_a_change_typed_here");
         let mut typed_here = a_local_contact(THE_WORDS_TYPED_HERE, "alice@example.com");
         typed_here.id = "local-typed-here".to_string();
@@ -9424,22 +9576,26 @@ mod tests {
                 .expect("a sync");
 
         let stored = the_contact_under(&cache, &typed_here.id);
-        assert_eq!(stored.name, THE_ADDRESS_BOOKS_OWN_WORDS);
+        assert_eq!(
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the words somebody typed were written over while nobody had chosen"
+        );
         assert_eq!(
             result.held_for_you_to_choose.count(),
             1,
-            "the words somebody typed were replaced and nothing counted it: {result:?}"
+            "the words somebody typed were not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("1 of your change replaced by the"),
-            "the word this test is named for: a count nobody is shown is a count \
-             nobody gets: {}",
+            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
+            "the word this test is named for: a hold nobody is asked about is a \
+             hold nobody answers: {}",
             what_the_contacts_sync_did(&result)
         );
         assert!(
-            !stored.pending,
-            "the contact is still marked as having a change to send and no address \
-             book is owed one, so nothing will ever send it"
+            cache
+                .is_held_for_a_choice(&typed_here.id)
+                .expect("an answer"),
+            "the hold has to outlive the sync"
         );
     }
 
@@ -9606,6 +9762,10 @@ mod tests {
         // its own flag says nothing is waiting, and the whole stored contact
         // was rewritten with Google's copy while Outlook was still owed the
         // edit. Nothing counted it and the status line called it an update.
+        //
+        // It is held now rather than written over and counted: the edit is
+        // somebody's own work and Google has moved its copy since, which is
+        // the disagreement nobody but them can settle.
         let cache = a_cache("google_read_over_a_change_owed_to_outlook");
         let in_both_books = a_contact_both_address_books_know(&cache, AddressBook::Microsoft);
         let google = ScriptedGoogle {
@@ -9627,17 +9787,17 @@ mod tests {
             "a change Google has already taken was sent to Google again"
         );
         let stored = the_contact_under(&cache, &in_both_books.id);
-        assert_eq!(
+        assert_ne!(
             stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
-            "Google moved its own copy, so Google's copy is the one to keep"
+            "the edit Outlook was still owed was written over while nobody had chosen"
         );
         assert_eq!(
             result.held_for_you_to_choose.count(),
             1,
-            "the edit Outlook was still owed was written over and nothing counted it: {result:?}"
+            "the edit Outlook was still owed was not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("replaced by the address book"),
+            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
             "{}",
             what_the_contacts_sync_did(&result)
         );
@@ -9747,17 +9907,17 @@ mod tests {
             "a change Outlook has already taken was sent to Outlook again"
         );
         let stored = the_contact_under(&cache, &in_both_books.id);
-        assert_eq!(
+        assert_ne!(
             stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
-            "Outlook moved its own copy, so Outlook's copy is the one to keep"
+            "the edit Google was still owed was written over while nobody had chosen"
         );
         assert_eq!(
             result.held_for_you_to_choose.count(),
             1,
-            "the edit Google was still owed was written over and nothing counted it: {result:?}"
+            "the edit Google was still owed was not held: {result:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&result).contains("replaced by the address book"),
+            what_the_contacts_sync_did(&result).contains("choose which copy to keep"),
             "{}",
             what_the_contacts_sync_did(&result)
         );
@@ -9890,11 +10050,16 @@ mod tests {
         // one edit owed to both address books, and every number in the sentence
         // doubled, because each address book counted its own copy of her.
         //
-        // Both address books are offered the change and both turn it down, so
-        // both of them then replace it with their own copy. That is the tie,
-        // and it is the case where the counting can double. The errors really
-        // are two: they count what went wrong, and two address books refusing
-        // the same contact is two things to look at.
+        // Google is offered the change and turns it down, and the read that
+        // follows finds the tie and holds both copies. Outlook is then offered
+        // nothing, because a contact waiting on somebody's choice is offered to
+        // nobody, so there is one refusal to report rather than two. That is
+        // the tie, and it is the case where the counting can double.
+        //
+        // The single error is the change this measurement records: it used to
+        // be two, one refusal per address book, because the same contact was
+        // offered to the second one after the first had already found the
+        // disagreement.
         let cache = a_cache("one_contact_counted_once");
         a_contact_both_address_books_are_owed(&cache);
         let google = ScriptedGoogle {
@@ -9934,8 +10099,9 @@ mod tests {
 
         assert_eq!(
             what_the_contacts_sync_did(&total),
-            "Contacts sync: 0 created, 1 updated, 0 deleted, 1 of your change replaced \
-             by the address book, 2 errors"
+            "Contacts sync: 0 created, 0 updated, 0 deleted, 1 error. \
+             1 contact changed here and in your address book as well. Open \
+             Contacts to choose which copy to keep; nothing is sent until you do."
         );
     }
 
@@ -10168,14 +10334,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said()
+    async fn test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about()
      {
         // The other ending, and the one that says this does not freeze a
-        // contact for ever. A change the address book turns down for a reason
-        // of its own, which is anything but the marker, is not sent, and the
-        // read that follows decides the ordinary tie: the address book wins,
-        // somebody is told, and the marker here is brought up to date so the
-        // next change can go.
+        // contact with nobody able to unfreeze it. A change the address book
+        // turns down for a reason of its own, which is anything but the marker,
+        // is not sent, and the read that follows finds the ordinary tie.
+        //
+        // The tie used to be settled here: the address book won, somebody was
+        // told afterwards, and the marker was brought up to date. It is held
+        // now and somebody is asked. The contact does stay where it is until
+        // they answer, and that is the point rather than a cost: choosing the
+        // address book's copy is the same ending as before and choosing their
+        // own keeps work that used to go.
         //
         // A refusal because the marker is out of date is the other half and is
         // not this. That one has an answer better than losing the edit, and
@@ -10224,32 +10395,28 @@ mod tests {
 
         let stored = the_contact_under(&cache, "local-in-both-books");
         assert_eq!(
-            stored.name, THE_ADDRESS_BOOKS_OWN_WORDS,
-            "the contact is frozen against an address book that will not take the \
-             change, so nothing that arrives there ever reaches this computer"
-        );
-        assert_eq!(
-            stored
-                .known_to
-                .iter()
-                .find(|identity| identity.address_book == AddressBook::Google)
-                .and_then(|identity| identity.provider_version.as_deref()),
-            Some("etag-2"),
-            "the marker here is still the stale one, so every change from now on \
-             is refused for the same reason"
-        );
-        assert!(
-            !still_owed_the_change(&stored, &AddressBook::Google),
-            "Google is still owed a change Google has already refused and replaced"
+            stored.name, THE_WORDS_TYPED_HERE,
+            "the edit was written over by an address book that had refused it, \
+             while nobody had chosen"
         );
         assert_eq!(
             second.held_for_you_to_choose.count(),
             1,
-            "the edit went and nothing counted it: {second:?}"
+            "the edit went and nothing held it: {second:?}"
         );
         assert!(
-            what_the_contacts_sync_did(&second).contains("1 of your change replaced by the"),
-            "the edit went with nobody told: {}",
+            cache
+                .is_held_for_a_choice("local-in-both-books")
+                .expect("an answer"),
+            "the hold has to outlive the sync, or the next one settles the tie"
+        );
+        assert!(
+            still_owed_the_change(&stored, &AddressBook::Google),
+            "choosing what is on this computer has to have something left to send"
+        );
+        assert!(
+            what_the_contacts_sync_did(&second).contains("choose which copy to keep"),
+            "the edit was held with nobody asked: {}",
             what_the_contacts_sync_did(&second)
         );
     }
@@ -11074,22 +11241,32 @@ mod tests {
         // and said so a second time.
         let cache = a_cache("a_hold_survives_the_next_sync");
         a_contact_both_address_books_are_owed(&cache);
+        // This script turns the change down, deliberately, so that Google is
+        // still owed it when the second sync runs. Taking it would clear the
+        // flag, and the second sync would then offer nothing because nothing
+        // was owed rather than because the contact is held: the assertion below
+        // would pass with the hold consulted by nobody.
         let google_moved = ScriptedGoogle {
             people: vec![a_google_person_at_version(
                 GOOGLES_NAME_FOR_HER,
                 THE_ADDRESS_BOOKS_OWN_WORDS,
                 "etag-2",
             )],
-            accepts_a_change: true,
             ..Default::default()
         };
+        // And this one takes a change, also deliberately. With an account open
+        // for reading only, the write gate refuses the push before anything is
+        // offered, so the same assertion would pass whether or not the hold was
+        // consulted. Both halves were measured on 2026-09-05 by taking the
+        // filter out and watching this test stay green each time. A test that
+        // cannot fail proves nothing.
         let google_moved_again = ScriptedGoogle {
             people: vec![a_google_person_at_version(
                 GOOGLES_NAME_FOR_HER,
                 "Alice Smith-Brown",
                 "etag-3",
             )],
-            the_account_is_read_only: true,
+            accepts_a_change: true,
             ..Default::default()
         };
 
@@ -11134,6 +11311,17 @@ mod tests {
                 .is_held_for_a_choice("local-in-both-books")
                 .expect("an answer"),
             "the hold went without anybody choosing"
+        );
+        // The half that keeps an unresolved conflict from becoming a silent
+        // overwrite at the provider. The first sync offers the local copy once,
+        // which is how the disagreement is found at all; every sync after it
+        // must offer nothing until somebody has chosen.
+        assert!(
+            google_moved_again.changed.borrow().is_empty(),
+            "a held contact was offered to the address book again, which would \
+             put this computer's copy over the one nobody has chosen to give \
+             up: {:?}",
+            google_moved_again.changed.borrow()
         );
         assert!(
             still_owed_the_change(

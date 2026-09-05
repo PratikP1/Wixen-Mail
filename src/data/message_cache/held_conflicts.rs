@@ -95,13 +95,24 @@ impl MessageCache {
     /// meets the same disagreement is looking at the same question, and two
     /// rows for it would ask somebody twice.
     pub fn hold_a_conflict(&self, held: &AHeldConflict) -> Result<()> {
-        // Stub reproducing today's behaviour: nothing is held, because nothing
-        // asks. One of the two copies is written over and the other is gone.
-        let _ = (
-            held,
-            stored_kind(TheOtherCopy::AnAddressBook),
-            fields_to_stored(&[])?,
-        );
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO held_conflicts
+                 (id, account_id, kind, at_the_provider, what_it_is_called,
+                  here_json, theirs_json, held_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    held.id,
+                    held.account_id,
+                    stored_kind(held.copies.other_copy),
+                    held.at,
+                    held.copies.what_it_is_called,
+                    fields_to_stored(&held.copies.here)?,
+                    fields_to_stored(&held.copies.theirs)?,
+                    held.held_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("A conflict could not be held: {e}")))?;
         Ok(())
     }
 

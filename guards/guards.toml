@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 396 records have arrived since and have not been through it.
+# 399 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -766,18 +766,146 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
 
+# ── Both copies of a contact both sides changed ─────────────────────────────
+#
+# SCALE-06. A contact changed here and changed in the address book between two
+# syncs has two copies and one of them is about to go. Until 2026-09-05 the
+# address book's copy won, the edit went, and a sentence said so afterwards.
+# Being told is not being asked, and an edit that disappeared with a sentence
+# about it in a summary nobody heard is an edit that disappeared.
+#
+# Who wins is still decided in one place, `whose_copy_wins`, and these records
+# are about what happens in one of its four arms rather than about how the arm
+# is chosen. A second decision about who wins would disagree with the first the
+# moment either changed.
+#
+# The record this pair replaces was "a lost edit is said once, not on every
+# later sync", whose break was the gate on counting a loss. There is no loss to
+# count now, so the code it named is gone rather than moved.
+#
+# Measured by hand on 2026-09-05, the whole library with --no-fail-fast on a
+# quiet machine, each break applied on its own.
+
 [[guard]]
-name = "a lost edit is said once, not on every later sync"
+# The break is the arm falling through to the write, which is exactly what it
+# did before this branch. Seven tests, and the last of them is the one nobody
+# working on this feature would have filtered for: it is about a setting being
+# named while the change is somebody's own work, and it reaches this arm to set
+# that up.
+name = "a contact changed in both places is held rather than written over"
 file = "src/application/contacts_sync.rs"
-before = """    if the_copy_here_was_written_here(the_copy_it_replaces) {
-        result.held_for_you_to_choose.note(&merged.id);
-    }"""
-after = """    result.held_for_you_to_choose.note(&merged.id);"""
+before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,"""
+after = """                if false {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,"""
 red = [
-    "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
+    "application::contacts_sync::tests::test_a_change_only_outlook_still_needs_is_not_written_over_quietly_by_google",
+    "application::contacts_sync::tests::test_a_contact_changed_at_google_and_here_is_held_rather_than_written_over",
+    "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
     "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
+    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# Only somebody's own work is worth asking about. Once an address book's copy
+# has replaced an edit, what is waiting is that address book's own words on
+# their way to the other one, and asking somebody to choose between two copies
+# neither of which is theirs is a question with no right answer.
+#
+# One test, measured rather than expected, and it is the push retry's own test
+# rather than anything named for holding.
+name = "only work typed here is held for a choice"
+file = "src/application/contacts_sync.rs"
+before = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+                    && the_copy_here_was_written_here(local)
+                {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        &mut result,
+                    )?;
+                    continue;
+                }
+                // Google adds itself to the address books that know this"""
+after = """                if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere {
+                    hold_both_copies_of(
+                        cache,
+                        local,
+                        &remote_contact,
+                        &AddressBook::Google,
+                        &mut result,
+                    )?;
+                    continue;
+                }
+                // Google adds itself to the address books that know this"""
+red = [
     "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
-    "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# The half that keeps an unresolved conflict from becoming a silent overwrite
+# at the provider. The change is still owed while somebody decides, so without
+# this the very next push sends this computer's copy over the one they have not
+# chosen to give up.
+#
+# The fixture for the third test had to be fixed before this measurement meant
+# anything, and that is the finding rather than an aside. Written first with an
+# account open for reading only, the write gate refused the push before
+# anything was offered; written next with an address book that took the change,
+# the flag cleared and the second sync owed nothing. Both versions asserted
+# that nothing was offered and both passed with this filter removed. It turns
+# the change down now, so the address book is still owed it and this filter is
+# the only thing that can stop the offer.
+name = "a contact held for a choice is offered to nobody"
+file = "src/application/contacts_sync.rs"
+before = """            if waiting_on_a_choice.iter().any(|id| id == &contact.id) {
+                return None;
+            }"""
+after = """            if false && waiting_on_a_choice.iter().any(|id| id == &contact.id) {
+                return None;
+            }"""
+red = [
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
+    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+]
+
+[[guard]]
+# The other half. A sync that reads over a held contact answers the question
+# the person has not, and holding both copies then buys nothing but a slower
+# overwrite. Broken at the Google read only, because the break has to name one
+# place in the tree and the Outlook one is the same two lines.
+name = "a contact held for a choice is left alone by a later read"
+file = "src/application/contacts_sync.rs"
+before = """                // keeping both copies buys nothing but a slower overwrite.
+                if cache.is_held_for_a_choice(&local.id)? {"""
+after = """                // keeping both copies buys nothing but a slower overwrite.
+                if false && cache.is_held_for_a_choice(&local.id)? {"""
+red = [
+    "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
@@ -810,7 +938,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_a_contact_typed_here_that_google_already_holds_is_not_lost_without_a_word",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
     "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
@@ -895,7 +1023,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
@@ -940,7 +1068,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_outlook_had_moved_past_is_sent_again_rather_than_lost",
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
-    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_replaced_and_said",
+    "application::contacts_sync::tests::test_a_kept_change_an_address_book_turns_down_for_its_own_reasons_is_held_and_asked_about",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
