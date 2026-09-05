@@ -112,6 +112,7 @@ menu_ids!(
     ID_DELETE,
     ID_MARK_READ,
     ID_ACCOUNT_MGR,
+    ID_CHOOSE_WHICH_COPY,
     ID_CONTACT_MGR,
     ID_FILTER_MGR,
     ID_TAG_MGR,
@@ -4794,6 +4795,15 @@ impl WxMailApp {
                         _ if id == ID_SAVE_AS => {
                             send_status(&ui_tx, &runtime, "Save As: no message selected")
                         }
+                        _ if id == ID_CHOOSE_WHICH_COPY => {
+                            choose_which_copy_to_keep(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            );
+                        }
                         _ if id == ID_CONTACT_MGR => {
                             if managers::manage_contacts(
                                 &state,
@@ -6343,6 +6353,22 @@ impl WxMailApp {
                 ID_SYNC_TASKS,
                 "Sync &Tasks",
                 "Bring tasks down from Google Tasks and Microsoft To Do",
+            )
+            .append_separator()
+            // The door the contacts sync's own sentence names. When a contact
+            // has changed here and in an address book as well, both copies are
+            // kept and the sync says to open Contacts and choose; without an
+            // item here that sentence points at nothing.
+            //
+            // No shortcut key. This is pressed once per disagreement, which is
+            // rare, and a key nobody presses twice is a key in the way of one
+            // somebody presses daily. The same reasoning as Add a Calendar by
+            // Address, below.
+            .append_item(
+                ID_CHOOSE_WHICH_COPY,
+                "Choose &Which Copy to Keep...",
+                "Contacts changed both here and in your address book, waiting \
+                 for you to say which copy to keep",
             )
             .append_separator()
             // Four dialogs that were finished and then had no door: no menu
@@ -12907,6 +12933,84 @@ pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) 
     rt.spawn(async move {
         let _ = tx.send(UIUpdate::CommandRefused(why)).await;
     });
+}
+
+/// Work through the contacts waiting on somebody's choice, one window each.
+///
+/// The door the contacts sync's own sentence names. A sync that says "open
+/// Contacts to choose which copy to keep" and has nowhere to send anybody is
+/// the shape of defect this project keeps finding, so this is wired to a menu
+/// item rather than left as a function nothing calls.
+///
+/// Nothing is sent from here. Choosing what is on this computer leaves the
+/// change waiting and the next ordinary sync offers it; choosing the address
+/// book's copy stops the change waiting and the next ordinary sync folds their
+/// copy in. That is guardrail 7: a write at somebody else's server happens
+/// because a sync went there, not because a window closed.
+///
+/// Leaving a window without choosing stops the round. Somebody who wants to
+/// think about one of them should not have to answer nine more first.
+fn choose_which_copy_to_keep(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    let Some(cache) = cache.clone() else {
+        send_refusal(tx, rt, "No message store is available");
+        return;
+    };
+    let account = lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_else(|| crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
+    let waiting = match cache.conflicts_held_for(&account) {
+        Ok(waiting) => waiting,
+        Err(why) => {
+            send_refusal(
+                tx,
+                rt,
+                &format!("The waiting choices could not be read: {why}"),
+            );
+            return;
+        }
+    };
+    if waiting.is_empty() {
+        send_answer(
+            tx,
+            rt,
+            "Nothing is waiting for you to choose. Contacts changed both here \
+             and in your address book are kept whole and asked about here.",
+        );
+        return;
+    }
+    let mut settled = 0usize;
+    for held in &waiting {
+        let Some(chosen) =
+            crate::presentation::wx_conflict_choice::ask_which_copy_to_keep(frame, &held.copies)
+        else {
+            break;
+        };
+        match cache.settle_a_held_conflict(&held.id, chosen) {
+            Ok(()) => {
+                settled += 1;
+                send_answer(tx, rt, &held.copies.what_was_chosen(chosen));
+            }
+            Err(why) => {
+                send_refusal(tx, rt, &format!("That choice could not be saved: {why}"));
+                break;
+            }
+        }
+    }
+    let left = waiting.len() - settled;
+    if left > 0 {
+        send_status(
+            tx,
+            rt,
+            &format!("{left} still waiting for you to choose. Nothing is sent until you do."),
+        );
+    }
 }
 
 pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {

@@ -9,8 +9,10 @@
 //! [`crate::application::conflict_choice`], which has no database in it. This
 //! file is the writing down.
 
-use super::MessageCache;
-use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy, WhichCopy};
+use super::{AddressBook, ContactEntry, MessageCache, ProviderIdentity};
+use crate::application::conflict_choice::{
+    AField, BothCopies, TheOtherCopy, WhatChoosingCallsFor, WhichCopy, choosing,
+};
 use crate::common::{Error, Result};
 use rusqlite::params;
 
@@ -94,6 +96,41 @@ fn fields_from_stored(stored: &str) -> Vec<AField> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The contact with one address book's version marker brought up to date and
+/// its change left waiting.
+///
+/// [`ContactEntry::told`] does the first half and clears the second, which is
+/// right when the address book has taken the change and wrong when somebody has
+/// just decided to send it again. Written out here rather than by adding a
+/// second flag to `told`, because a function that sometimes clears the flag it
+/// is named for is a function nobody can read at its call site.
+fn the_marker_brought_up_to_date(
+    contact: &ContactEntry,
+    address_book: &AddressBook,
+    version: Option<&str>,
+) -> ContactEntry {
+    let known_to: Vec<ProviderIdentity> = contact
+        .known_to
+        .iter()
+        .map(|identity| {
+            if &identity.address_book != address_book {
+                return identity.clone();
+            }
+            ProviderIdentity {
+                provider_version: version
+                    .map(str::to_string)
+                    .or_else(|| identity.provider_version.clone()),
+                ..identity.clone()
+            }
+        })
+        .collect();
+    ContactEntry {
+        pending: known_to.iter().any(|identity| identity.change_is_waiting),
+        known_to,
+        ..contact.clone()
+    }
 }
 
 impl MessageCache {
@@ -219,10 +256,32 @@ impl MessageCache {
     /// unsent work here, answers `TakeTheAddressBooks`, and folds the whole of
     /// the provider's copy in the way it always does.
     pub fn settle_a_held_conflict(&self, id: &str, chosen: WhichCopy) -> Result<()> {
-        // Stub reproducing today's behaviour: nothing can be chosen, so
-        // nothing is settled.
-        let _ = (id, chosen);
-        Ok(())
+        // A hold that is not there is not an error. Two windows, or one left
+        // open while a sync ran, and answering a question already answered is
+        // ordinary rather than wrong.
+        let Some(held) = self.the_conflict_held_for(id)? else {
+            return Ok(());
+        };
+        let at = AddressBook::from_stored(&held.at);
+        let mut contacts = self.get_contacts_for_account(&held.account_id)?;
+        if let Some(position) = contacts.iter().position(|contact| contact.id == id) {
+            let contact = contacts.remove(position);
+            let settled = match choosing(chosen) {
+                // Their copy is given up, so the change stops waiting for them
+                // and the next sync folds their copy in through the decision
+                // that already exists.
+                WhatChoosingCallsFor::TakeTheirsAndSendNothing => {
+                    contact.told(&at, held.their_version.as_deref())
+                }
+                // What is here is kept, so the change goes on waiting and the
+                // push offers it again, now carrying a marker they will take.
+                WhatChoosingCallsFor::KeepWhatIsHereAndSendIt => {
+                    the_marker_brought_up_to_date(&contact, &at, held.their_version.as_deref())
+                }
+            };
+            self.save_contact(&settled)?;
+        }
+        self.let_the_hold_go(id)
     }
 
     /// Let a hold go, because somebody has chosen.
@@ -237,7 +296,6 @@ impl MessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::message_cache::{AddressBook, ContactEntry, ProviderIdentity};
 
     fn a_cache(name: &str) -> MessageCache {
         let dir = tempfile::tempdir().expect("a temporary folder");
@@ -254,7 +312,12 @@ mod tests {
         AHeldConflict {
             id: id.to_string(),
             account_id: "an account".to_string(),
-            at: "google".to_string(),
+            // The word rows carry, taken from the enum rather than written out.
+            // Written out, this said "google" where the enum says "gmail", and
+            // `from_stored` answered `Other("google")`, which matches no
+            // identity: the settling then found nothing to change and both
+            // tests below failed against correct code.
+            at: AddressBook::Google.as_stored().to_string(),
             copies: BothCopies {
                 what_it_is_called: "Ada Lovelace".to_string(),
                 other_copy: TheOtherCopy::AnAddressBook,

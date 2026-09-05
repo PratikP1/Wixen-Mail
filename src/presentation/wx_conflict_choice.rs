@@ -94,19 +94,19 @@ pub fn build_the_choosing_dialog(
     // without a window.
     let asked = copies.what_is_being_asked();
     let question = StaticText::builder(&dialog).with_label(&asked).build();
-    question.set_name(&asked);
+    set_accessible_name(&question, &asked);
     sizer.add(&question, 0, SizerFlag::Expand | SizerFlag::All, 12);
 
     for which in [WhichCopy::Here, WhichCopy::TheProviders] {
         let label = copies.label_for(which);
         let heading = StaticText::builder(&dialog).with_label(&label).build();
-        heading.set_name(&label);
+        set_accessible_name(&heading, &label);
         sizer.add(&heading, 0, SizerFlag::Left | SizerFlag::All, 8);
 
         let values = ListCtrl::builder(&dialog)
             .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
             .build();
-        values.set_name(&label);
+        set_accessible_name(&values, &label);
         values.insert_column(0, THE_FIELDS_COLUMN, ListColumnFormat::Left, 160);
         values.insert_column(1, THE_VALUES_COLUMN, ListColumnFormat::Left, 400);
         for (row, field) in copies.values_in(which).iter().enumerate() {
@@ -121,27 +121,28 @@ pub fn build_the_choosing_dialog(
         .with_label(KEEP_WHAT_IS_HERE)
         .with_id(ID_KEEP_WHAT_IS_HERE)
         .build();
-    keep_here.set_name(KEEP_WHAT_IS_HERE);
+    set_accessible_name(&keep_here, KEEP_WHAT_IS_HERE);
     let theirs_label = KEEP_THEIRS.replace("{}", copies.other_copy.called());
     let keep_theirs = Button::builder(&dialog)
         .with_label(&theirs_label)
         .with_id(ID_KEEP_THEIRS)
         .build();
-    keep_theirs.set_name(&theirs_label);
+    set_accessible_name(&keep_theirs, &theirs_label);
     let leave_it = Button::builder(&dialog)
         .with_label(LEAVE_IT)
         .with_id(ID_LEAVE_IT)
         .build();
-    leave_it.set_name(LEAVE_IT);
+    set_accessible_name(&leave_it, LEAVE_IT);
     buttons.add(&keep_here, 0, SizerFlag::All, 4);
     buttons.add(&keep_theirs, 0, SizerFlag::All, 4);
     buttons.add(&leave_it, 0, SizerFlag::All, 4);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
     dialog.set_sizer(sizer, true);
-    // The question first, so what is being asked is the first thing read, and
-    // so nothing is the default answer.
-    let _ = set_accessible_name;
+    // Nothing is the default answer, so the focus goes to the button that
+    // answers "not yet". A window that opens with a copy-keeping button
+    // focused turns Enter pressed by reflex into a choice, and one of the two
+    // copies goes with it.
     leave_it.set_focus();
     dialog
 }

@@ -249,10 +249,11 @@ pub enum WhatWasPressed {
 /// closed window read as either copy winning is a choice made by whoever wrote
 /// the match rather than by the person.
 pub fn what_that_means(pressed: WhatWasPressed) -> Option<WhichCopy> {
-    // Stub reproducing today's behaviour: the provider's copy wins whatever
-    // anybody did, because nobody was asked.
-    let _ = pressed;
-    Some(WhichCopy::TheProviders)
+    match pressed {
+        WhatWasPressed::KeepWhatIsHere => Some(WhichCopy::Here),
+        WhatWasPressed::KeepTheirs => Some(WhichCopy::TheProviders),
+        WhatWasPressed::LeftWithoutChoosing => None,
+    }
 }
 
 /// What choosing that copy calls for.

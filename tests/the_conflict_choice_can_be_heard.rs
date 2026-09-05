@@ -117,15 +117,34 @@ fn test_leaving_the_window_alone_is_the_answer_it_opens_on() {
 #[test]
 fn test_the_window_can_be_reached_from_the_menu() {
     // Done means it runs. A window nothing opens is a window nobody has.
+    //
+    // This asks about the arm rather than about the file, and the difference
+    // is the whole test. Written as "the file mentions
+    // wx_conflict_choice::ask_which_copy_to_keep", it passed with the menu arm
+    // emptied out, because the mention lives in the function the arm used to
+    // call and that function was still there. Measured on 2026-09-05 by taking
+    // the break by hand and watching all five of these stay green.
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let arm = "_ if id == ID_CHOOSE_WHICH_COPY => {";
+    let at = app.find(arm).unwrap_or_else(|| {
+        panic!(
+            "no menu arm handles ID_CHOOSE_WHICH_COPY, so the sync says \
+             'open Contacts to choose' about a window with no door"
+        )
+    });
+    let body = &app[at + arm.len()..(at + arm.len() + 400).min(app.len())];
     assert!(
-        app.contains("ID_CHOOSE_WHICH_COPY"),
-        "nothing in the main window names the command that opens the choosing \
-         window, so the sync says 'open Contacts to choose' about a window with \
-         no door"
+        body.contains("choose_which_copy_to_keep("),
+        "the menu item is handled by an arm that does not open the choosing \
+         window. What follows the arm:\n{body}"
     );
     assert!(
         app.contains("wx_conflict_choice::ask_which_copy_to_keep"),
-        "the menu item exists and opens nothing"
+        "nothing in the main window opens the choosing window"
+    );
+    assert!(
+        app.contains("cache.settle_a_held_conflict("),
+        "the window asks and the answer reaches nothing, so choosing changes \
+         only what is on the screen"
     );
 }
