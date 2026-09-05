@@ -65,6 +65,68 @@ pub fn from_body(
     crate::service::safety::from_analysis(report.phishing_risk.into(), &report.phishing_indicators)
 }
 
+/// What a message's body says about the form it arrived in.
+///
+/// One answer rather than a pair of flags, so a message carrying both an
+/// armoured block and a signature block is one fact a caller reads rather than
+/// two it has to decide the order of.
+///
+/// This is a different question from [`from_body`] and it is asked differently.
+/// `from_body` reads what a message *says* and is behind a setting somebody can
+/// turn off. This reads what form the message is *in*, which is not an opinion
+/// about its contents, so nothing gates it: somebody who has turned content
+/// scanning off still meets the armour and still deserves the sentence
+/// explaining it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatTheFormSays {
+    /// Nothing about its own form. Ordinary mail, and nothing is added to the
+    /// reader's bar: a line on every message is a line people learn to talk
+    /// past, and then the one that matters is talked past too.
+    Nothing,
+    /// A PGP armoured message block. What somebody is about to meet in the body
+    /// is the armour rather than the message.
+    EncryptedWithPgp,
+    /// A PGP signature block and no armoured message block. The message reads
+    /// normally and nothing on this path has checked the signature, which is
+    /// the whole of what may be said about it here.
+    SignedWithPgp,
+}
+
+/// What the two halves of a body say about the form the message is in.
+///
+/// # Why only these two of the six facts that are worked out and dropped
+///
+/// [`crate::service::security::SecurityService::analyze_message_security`]
+/// answers eight things about every message read and this module used to read
+/// two of them. It now reads four. The other four are deliberately left, and
+/// the reasons are different in each case:
+///
+/// - `smime_signed` and `signature_status` are substring searches over the body
+///   text, and `signature_status` will call a signature good because the words
+///   "good signature" appear somewhere in a stranger's message.
+///   [`crate::application::checking_signatures::for_message`] already answers
+///   both properly, with a DER reader and a real certificate store, and its
+///   answer already reaches the bar. Putting the weak answer beside the strong
+///   one is two answers to one question, and the weak one is the one that can
+///   be written into a message by whoever sent it.
+/// - `smime_encrypted` searches the body text for `application/pkcs7-mime`.
+///   An S/MIME enveloped message has no `text/*` part at all, so `mime::parse`
+///   yields nothing for either half and the detector is handed two empty
+///   strings on precisely the message it exists to detect. It cannot fire
+///   through this path. That case is answered from the message's
+///   `Content-Type`, which is not here.
+/// - `phishing_score` is the number behind `phishing_risk`, which already
+///   reaches the bar. A number as well is a separate decision about what a
+///   score means to somebody reading it.
+///
+/// So the two answered here are the two that can fire through a body and have
+/// no other answer anywhere in the tree.
+pub fn what_the_form_says(body_plain: Option<&str>, body_html: Option<&str>) -> WhatTheFormSays {
+    let _whole =
+        crate::service::security::both_halves_of_a_body(body_plain.unwrap_or_default(), body_html);
+    WhatTheFormSays::Nothing
+}
+
 /// Add what was just found to what the stored message already says.
 ///
 /// Merged rather than replaced, worst winning and every reason kept. A message
@@ -90,7 +152,7 @@ pub fn merge_into(
 
 #[cfg(test)]
 mod tests {
-    use super::{LOOKING_AT_THE_MESSAGE_ITSELF, from_body};
+    use super::{LOOKING_AT_THE_MESSAGE_ITSELF, WhatTheFormSays, from_body, what_the_form_says};
     use crate::common::temp_home::TempHome;
     use crate::service::safety::{Safety, Verdict};
 
@@ -349,6 +411,110 @@ mod tests {
         assert!(
             !LOOKING_AT_THE_MESSAGE_ITSELF.contains("  "),
             "{LOOKING_AT_THE_MESSAGE_ITSELF}"
+        );
+    }
+
+    // ── What a message says about its own form ──────────────────────────────
+
+    /// A PGP armoured message, as it really sits in a text part.
+    fn an_armoured_message() -> &'static str {
+        "-----BEGIN PGP MESSAGE-----\n\nhQIMA7Nq0000\n=aBcD\n-----END PGP MESSAGE-----\n"
+    }
+
+    /// A clearsigned message: signed, and perfectly readable.
+    fn a_clearsigned_message() -> &'static str {
+        "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\nSee you Thursday.\n\
+         -----BEGIN PGP SIGNATURE-----\niQIzBA0000\n-----END PGP SIGNATURE-----\n"
+    }
+
+    #[test]
+    fn test_an_armoured_message_says_it_is_encrypted() {
+        // The defect this is written against. The program has worked this out
+        // on every message it reads since the analysis was written, and told
+        // nobody, so somebody opening one got a screen of armour and no word
+        // about why.
+        assert_eq!(
+            what_the_form_says(Some(an_armoured_message()), None),
+            WhatTheFormSays::EncryptedWithPgp
+        );
+    }
+
+    #[test]
+    fn test_a_signature_block_alone_says_the_message_is_signed() {
+        assert_eq!(
+            what_the_form_says(Some(a_clearsigned_message()), None),
+            WhatTheFormSays::SignedWithPgp
+        );
+    }
+
+    #[test]
+    fn test_ordinary_mail_says_nothing_about_its_form() {
+        // The half that decides whether the sentence is worth having. A line on
+        // every message is a line people learn to talk past.
+        assert_eq!(
+            what_the_form_says(Some("The numbers are attached. See you Thursday."), None),
+            WhatTheFormSays::Nothing
+        );
+        assert_eq!(what_the_form_says(None, None), WhatTheFormSays::Nothing);
+        assert_eq!(
+            what_the_form_says(Some(""), Some("")),
+            WhatTheFormSays::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_message_carrying_both_is_reported_as_the_one_that_cannot_be_read() {
+        // Both blocks in one message is a real shape, and the two facts are not
+        // equally useful: "signed" is a note about a message somebody can read,
+        // and "encrypted" is the reason there is nothing to read. Saying the
+        // note and not the reason leaves the armour unexplained, which is the
+        // whole defect.
+        let both = format!("{}\n{}", a_clearsigned_message(), an_armoured_message());
+
+        assert_eq!(
+            what_the_form_says(Some(&both), None),
+            WhatTheFormSays::EncryptedWithPgp
+        );
+    }
+
+    #[test]
+    fn test_the_formatted_half_alone_is_read_for_armour() {
+        // The half that used to be missed elsewhere in this module: a message
+        // carrying only a formatted part had nothing read at all if only the
+        // plain half was looked at.
+        assert_eq!(
+            what_the_form_says(None, Some(an_armoured_message())),
+            WhatTheFormSays::EncryptedWithPgp
+        );
+        assert_eq!(
+            what_the_form_says(Some(""), Some(a_clearsigned_message())),
+            WhatTheFormSays::SignedWithPgp
+        );
+    }
+
+    #[test]
+    fn test_a_marker_is_not_invented_across_the_seam_between_the_two_halves() {
+        // The two halves are read as one string, so a marker could in principle
+        // be assembled out of the end of one and the start of the other. It
+        // cannot: they are joined with a line ending, and every marker is one
+        // line. Asserted rather than assumed, because the join is shared with
+        // the phishing analysis and a change to it would be made for reasons
+        // that have nothing to do with this.
+        assert_eq!(
+            what_the_form_says(Some("-----BEGIN PGP"), Some(" MESSAGE-----")),
+            WhatTheFormSays::Nothing
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_is_not_mistaken_for_an_encrypted_one() {
+        // "-----BEGIN PGP SIGNED MESSAGE-----" is not the armour marker, and a
+        // reader that matched loosely would tell somebody a message they can
+        // read perfectly well cannot be opened. That is a worse sentence than
+        // saying nothing.
+        assert_eq!(
+            what_the_form_says(Some("-----BEGIN PGP SIGNED MESSAGE-----"), None),
+            WhatTheFormSays::SignedWithPgp
         );
     }
 }
