@@ -10,12 +10,29 @@
 //! is a phishing site means handing that service the links from private
 //! correspondence, which is not a trade to make quietly on somebody's behalf.
 //!
-//! Three sources feed a verdict, and the worst one wins:
+//! Four sources feed a verdict, and the worst one wins. This said three until
+//! link checking was built, and the fourth had been joining the merge for some
+//! time by then:
 //!
-//! 1. The provider's own filter, from the headers here.
+//! 1. The provider's own filter, from the headers here. What the receiving
+//!    server made of the sender's own published anti-forgery rules arrives in
+//!    the same headers and is a different judge reaching a different kind of
+//!    answer, so it says so rather than sounding like the filter.
 //! 2. Which folder the message is in, since junk is a verdict too.
 //! 3. Our own checks, for the things filters do not flag, such as a link whose
 //!    text and target disagree.
+//! 4. Google Safe Browsing, when somebody has switched link checking on. Off
+//!    unless asked for, because it is the one source that sends anything
+//!    anywhere. `service::safebrowsing` says separately what it sends.
+//!
+//! **Every sentence any of them contributes says which of them reached it**,
+//! and no source says its own name twice in one bar. That is what makes a bar
+//! with four sentences in it worth listening to rather than four facts
+//! somebody has to sort out for themselves, and it is guardrail 5: feedback
+//! distinct and bounded, where bounded is the half that is easy to lose. Three
+//! of the four named themselves already, in three different grammatical
+//! places. This program's own reading named nobody at all, so a guess made on
+//! this computer was read out in the same voice as a filter's verdict.
 
 /// How much trouble a message looks like.
 ///
@@ -180,15 +197,54 @@ pub fn from_headers(headers: &str) -> Verdict {
 /// something a phishing attempt on a heuristic score is how a warning becomes
 /// the thing people click past; the provider's filter and DMARC are the two
 /// sources allowed to say that word. Ours says "look at this".
+///
+/// And it says so in this program's name. Never sounding like the provider is
+/// the same argument as never saying "phishing", one step further: a guess
+/// wearing somebody else's authority is the thing being guarded against, and
+/// "A link points at a bare numeric address rather than a name" wore it by
+/// saying nothing at all about where it came from.
+///
+/// One sentence however many things were found, which is the other half and
+/// the half that is easy to lose. Guardrail 5 asks for feedback that is
+/// distinct *and* bounded. Attribution written as a clause on every sentence
+/// would give somebody hearing five findings the same eight words five times,
+/// which is repetition rather than attribution.
 pub fn from_analysis(risk: PhishingRisk, indicators: &[String]) -> Verdict {
     let level = match risk {
         PhishingRisk::High | PhishingRisk::Medium => Safety::Suspicious,
         PhishingRisk::Low | PhishingRisk::None => return Verdict::ordinary(),
     };
+    let found: Vec<String> = indicators.iter().map(|it| as_a_finding(it)).collect();
+    if found.is_empty() {
+        // A risk score with nothing behind it. A sentence saying this program
+        // read the message and found, then stopping, is worse than silence.
+        return Verdict::ordinary();
+    }
 
     Verdict {
         level,
-        reasons: indicators.iter().map(|it| as_sentence(it)).collect(),
+        reasons: vec![format!(
+            "Wixen Mail read this message on your computer and found {}.",
+            one_after_another(&found)
+        )],
+    }
+}
+
+/// The words the settings screen uses for the same reading.
+///
+/// `application::body_safety::LOOKING_AT_THE_MESSAGE_ITSELF` opens "Wixen Mail
+/// reads each message on this computer", and this sentence opens the same way
+/// on purpose: somebody who chose to leave that setting on meets the same words
+/// again when it finds something, so the warning and the setting are one thing
+/// rather than two.
+///
+/// A list read out loud rather than a comma-separated one. "a and b" for two,
+/// "a, b and c" for more, which is how somebody would say it.
+fn one_after_another(found: &[String]) -> String {
+    match found {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
 }
 
@@ -209,26 +265,33 @@ pub enum PhishingRisk {
 /// The analyser writes them as notes to a developer: "Sender/response
 /// instruction mismatch". Read out to somebody deciding whether to trust an
 /// email, that is a phrase to decode rather than a fact to act on.
-fn as_sentence(indicator: &str) -> String {
+///
+/// A thing found rather than a sentence, because these are read out inside one
+/// sentence naming the reading that found them. Written to follow "and found",
+/// so they are noun phrases: "a link pointing at a bare numeric address"
+/// rather than "A link points at a bare numeric address."
+fn as_a_finding(indicator: &str) -> String {
     let plain = match indicator {
         "Sender/response instruction mismatch" => {
-            "A reply to this would go to a different address from the one it claims to be from."
+            "a reply that would go to a different address from the one this claims to be from"
         }
         "Contains URL using raw IP address" => {
-            "A link points at a bare numeric address rather than a name."
+            "a link pointing at a bare numeric address rather than a name"
         }
         "Contains punycode-like domain (possible homograph)" => {
-            "A link uses a domain built to look like a different one."
+            "a link using a domain built to look like a different one"
         }
         "Detected deceptive link text/href mismatch" => {
-            "A link says it goes one place and goes somewhere else."
+            "a link that says it goes one place and goes somewhere else"
         }
         other if other.starts_with("Urgency or account pressure phrase") => {
-            "The wording pushes for an urgent response, which is how these messages work."
+            "wording that pushes for an urgent response, which is how these messages work"
         }
         // Anything added to the analyser later still reaches somebody, as
-        // itself, rather than being dropped for not being on this list.
-        other => return format!("{}.", other.trim_end_matches('.')),
+        // itself, rather than being dropped for not being on this list. It
+        // reads badly in the middle of a sentence, and an awkward warning is
+        // better than a dropped one.
+        other => return other.trim_end_matches('.').to_string(),
     };
     plain.to_string()
 }
@@ -271,27 +334,31 @@ fn spam_status(value: &str) -> Option<Verdict> {
 /// SCL is how sure the filter is that it is spam, on a scale where anything
 /// from 5 up is treated as spam and -1 means it was trusted outright. PCL is
 /// the same idea for phishing.
+///
+/// One sentence when both are set, rather than two opening with the same six
+/// words. This is one filter saying two things about one message, and hearing
+/// "Your mail provider's filter" twice in a row is repetition rather than a
+/// second fact. Guardrail 5 again, and the same reason [`from_analysis`] says
+/// everything it found in one sentence.
 fn microsoft_report(value: &str) -> Option<Verdict> {
-    let mut verdict = Verdict::ordinary();
+    let phishing = tagged_number(value, "PCL").is_some_and(|pcl| pcl >= 4);
+    let spam = tagged_number(value, "SCL").is_some_and(|scl| scl >= 5);
 
-    if let Some(pcl) = tagged_number(value, "PCL")
-        && pcl >= 4
-    {
-        verdict = verdict.and(Verdict::flagged(
+    match (phishing, spam) {
+        (true, true) => Some(Verdict::flagged(
+            Safety::Phishing,
+            "Your mail provider's filter rated it a likely phishing attempt, and as spam.",
+        )),
+        (true, false) => Some(Verdict::flagged(
             Safety::Phishing,
             "Your mail provider's filter rated it a likely phishing attempt.",
-        ));
-    }
-    if let Some(scl) = tagged_number(value, "SCL")
-        && scl >= 5
-    {
-        verdict = verdict.and(Verdict::flagged(
+        )),
+        (false, true) => Some(Verdict::flagged(
             Safety::Spam,
             "Your mail provider's filter rated it as spam.",
-        ));
+        )),
+        (false, false) => None,
     }
-
-    (verdict.level != Safety::Ordinary).then_some(verdict)
 }
 
 /// Pull `NAME:12` out of a semicolon separated report.
@@ -312,19 +379,30 @@ fn tagged_number(value: &str, tag: &str) -> Option<i32> {
 /// says. SPF alone failing is routine: every forwarded message and every
 /// mailing list breaks it, and treating that as an attack would cry wolf on
 /// half an inbox.
+///
+/// Both sentences name the sender's own domain as the thing this message
+/// failed, and that is the attribution rather than a flourish. This is a
+/// different judge from the spam filter above, reaching a different kind of
+/// answer: a filter has an opinion about what a message contains, and these
+/// records are the sender's own domain publishing what its mail looks like, so
+/// failing them is a fact rather than a judgement. Somebody deciding whether to
+/// trust a message is owed that difference, and opening these with the
+/// provider's name would have hidden it behind the same words.
 fn authentication_results(value: &str) -> Option<Verdict> {
     let lower = value.to_lowercase();
 
     if result_is(&lower, "dmarc", "fail") {
         return Some(Verdict::flagged(
             Safety::Phishing,
-            "The address it claims to be from failed that domain's own anti-forgery check.",
+            "The sender's own domain publishes what its mail should look like, and this \
+             message does not match it.",
         ));
     }
     if result_is(&lower, "spf", "fail") && result_is(&lower, "dkim", "fail") {
         return Some(Verdict::flagged(
             Safety::Suspicious,
-            "Neither of the sender's two anti-forgery checks passed.",
+            "The sender's own domain publishes two anti-forgery records, and this message \
+             passed neither.",
         ));
     }
 
@@ -376,7 +454,7 @@ mod tests {
         // act on. The urgency one carries the phrase it found on the end, so
         // it is matched by its beginning, and that was the arm with nothing
         // watching it.
-        let urgent = as_sentence("Urgency or account pressure phrase: 'verify now'");
+        let urgent = as_a_finding("Urgency or account pressure phrase: 'verify now'");
         assert!(
             urgent.contains("pushes for an urgent response"),
             "an urgency reason was read out as its own label: {urgent}"
@@ -385,12 +463,12 @@ mod tests {
         // Anything the analyser learns later still reaches somebody as itself,
         // rather than being dropped for not being on the list.
         assert_eq!(
-            as_sentence("Something nobody has written a sentence for"),
-            "Something nobody has written a sentence for."
+            as_a_finding("Something nobody has written a sentence for"),
+            "Something nobody has written a sentence for"
         );
         assert_eq!(
-            as_sentence("Already ends in a full stop."),
-            "Already ends in a full stop."
+            as_a_finding("Already ends in a full stop."),
+            "Already ends in a full stop"
         );
     }
 
@@ -553,10 +631,18 @@ mod tests {
     #[test]
     fn test_an_indicator_nobody_has_reworded_still_reaches_somebody() {
         // Anything added to the analyser later should read badly rather than
-        // vanish. A dropped warning is worse than an awkward one.
+        // vanish. A dropped warning is worse than an awkward one, and the
+        // developer's own words in the middle of a sentence about what this
+        // program found is exactly the awkward one.
         let verdict = from_analysis(PhishingRisk::High, &["Something new".to_string()]);
 
-        assert_eq!(verdict.reasons, vec!["Something new.".to_string()]);
+        assert_eq!(
+            verdict.reasons,
+            vec![
+                "Wixen Mail read this message on your computer and found Something new."
+                    .to_string()
+            ]
+        );
     }
 
     #[test]

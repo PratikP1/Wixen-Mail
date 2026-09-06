@@ -174,6 +174,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     does not say a message was deleted. That is worth knowing before you write
     one.
 
+### Changed
+
+- **Every sentence in a message's safety warning now says which check reached
+  it.**
+
+  Four things can judge a message here, and the warning bar used to quote them
+  unevenly. Your provider's filter named itself. The junk folder named your
+  provider. Google Safe Browsing named itself, because Google's terms require
+  it. Wixen Mail's own reading of the message named nobody at all, so "A link
+  points at a bare numeric address rather than a name" was a guess made on your
+  computer and it sounded exactly like a verdict your provider had reached.
+  Those are different kinds of fact and you could not tell them apart.
+
+  Now they say so:
+
+  - Your provider's filter still opens with "Your mail provider's filter".
+  - The junk folder still says your provider put it there.
+  - A message that fails the anti-forgery rules its own sender publishes now
+    says that, rather than describing a check without saying whose. This is not
+    your provider having an opinion, it is the sending domain's own published
+    rules saying this message does not look like its mail.
+  - Wixen Mail's own reading opens "Wixen Mail read this message on your
+    computer and found", which is the same wording as the setting that turns it
+    on.
+
+  It is not longer for it. Wixen Mail says everything it found in one sentence
+  however many things it found, and a filter that rated a message both a
+  phishing attempt and spam now says so once instead of twice. A warning bar
+  that repeats the same eight words five times is one people learn to talk past,
+  and then the sentence that mattered is talked past with it.
+
+  What this cannot say: whether four attributed sentences are heard as four
+  facts or as one run-on has not been tested with a screen reader.
+
 ### Fixed
 
 - **Marking a message read, or starring it, while the mail server cannot be

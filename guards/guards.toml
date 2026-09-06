@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 421 records have arrived since and have not been through it.
+# 423 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15340,4 +15340,83 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/filters.rs", tests = 46 },
+]
+
+# ── This program's own reading says it was this program that read it ────────
+#
+# Four things can judge a message here, and until this was written three of
+# them named themselves and one did not. "A link points at a bare numeric
+# address rather than a name" is a guess made on this computer, and it was read
+# out in the same voice as a filter's verdict.
+#
+# `from_analysis`'s own doc has argued since it was written that this program's
+# reading may never say the word phishing, because a heuristic wearing somebody
+# else's authority is how a warning becomes the thing people click past. Not
+# sounding like the provider is the same argument one step further, so this is
+# the guard for it.
+#
+# The break keeps the sentence and takes the name out of it, which is the shape
+# a later reword would take. It is not a removal: the reading still produces a
+# sentence, still bounded to one, and every existing test about what was found
+# goes on passing.
+#
+# Measured by hand 2026-09-06 with `cargo test --all-targets --no-fail-fast`
+# against a tree with no other failure in it. Five tests went red. Two are the
+# attribution assertions, two are the bar and the merge asking every sentence
+# who said it, and the fifth is the whole-sentence assertion about an indicator
+# nobody has reworded, which pins the opening words as a side effect of pinning
+# the whole sentence.
+
+[[guard]]
+name = "this program's own reading names itself in the bar"
+file = "src/service/safety.rs"
+before = """            "Wixen Mail read this message on your computer and found {}.","""
+after = """            "There is something to look at in this message: {}.","""
+red = [
+    "service::safety::tests::test_an_indicator_nobody_has_reworded_still_reaches_somebody",
+    "service::safety::tests::test_every_sentence_in_a_bar_carrying_three_sources_says_which_one_said_it",
+    "service::safety::tests::test_merging_keeps_every_sentence_with_the_one_that_said_it",
+    "service::safety::tests::test_several_things_found_here_are_one_sentence_rather_than_one_each",
+    "service::safety::tests::test_this_programs_own_reading_says_that_it_was_this_program_that_read_it",
+]
+tests_last_seen = [
+    { file = "src/service/safety.rs", tests = 34 },
+]
+
+# ── And says it once, however many things it found ──────────────────────────
+#
+# The other half, and the half that is easy to lose. Guardrail 5 asks for
+# feedback that is distinct and bounded. Attribution written as a clause on
+# every sentence satisfies the first and breaks the second: somebody hearing
+# five findings gets the same eight words five times, which is repetition
+# rather than attribution, and a bar people learn to talk past is a bar that
+# has stopped working.
+#
+# So the break is the version somebody would write while doing this correctly
+# in every other respect: one sentence per finding, each properly attributed.
+# It is a separate record from the one above because the two failures are
+# separate and the pair above cannot see this one.
+#
+# Measured by hand 2026-09-06, same command and same clean tree. One test went
+# red, and only one, which is the finding worth recording: nothing else in the
+# tree asserts that the bar stays short. The four that stayed green are the
+# four the record above names, and they stay green because this break keeps
+# every word of the attribution.
+
+[[guard]]
+name = "what this program found is one sentence rather than one each"
+file = "src/service/safety.rs"
+before = """        reasons: vec![format!(
+            "Wixen Mail read this message on your computer and found {}.",
+            one_after_another(&found)
+        )],"""
+after = """        reasons: found
+            .iter()
+            .map(|one| format!("Wixen Mail read this message on your computer and found {one}."))
+            .collect(),"""
+red = [
+    "service::safety::tests::test_several_things_found_here_are_one_sentence_rather_than_one_each",
+]
+tests_last_seen = [
+    { file = "src/service/safety.rs", tests = 34 },
 ]
