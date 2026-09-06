@@ -86,6 +86,61 @@ impl Chosen {
     }
 }
 
+/// What a handful of paths came to.
+///
+/// A batch is not all or nothing. Somebody who dropped six files and got none
+/// back would have to work out for themselves which one was the problem, so
+/// everything that reads goes on and everything that did not is said once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Batch {
+    /// The files that go on the message, in the order the paths arrived.
+    pub chosen: Vec<Chosen>,
+    /// Everything that did not go on, in one announcement, or `None` when
+    /// everything did.
+    pub refused: Option<String>,
+}
+
+/// Read several paths at once, keeping whatever reads.
+///
+/// The one door every route in. A file picked, a file pasted and a file dropped
+/// are the same file, so the picker, the paste key and the drop target all end
+/// here and here ends at [`Chosen::at`], which is where the refusals and the
+/// name cleaning live. Anything building a [`Chosen`] of its own would be a
+/// second set of rules for a stranger's path.
+pub fn choose_all(_paths: &[PathBuf]) -> Batch {
+    Batch {
+        chosen: Vec::new(),
+        refused: None,
+    }
+}
+
+/// One thing said after a batch, and whether it is trouble.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announcement {
+    /// The words, as they are said and as they are shown.
+    pub words: String,
+    /// Whether this interrupts and is put in front of somebody as well as
+    /// said. A file that did not go on and a message that will not send are
+    /// both cases where hearing it once, quietly, is not enough.
+    pub trouble: bool,
+}
+
+/// Everything said after a batch of paths was handed over, in the order it is
+/// said.
+///
+/// A list rather than a loop that speaks as it goes, because "one announcement
+/// per batch" is a property of the list and a loop cannot have it: six files
+/// each announcing themselves is six interruptions, and six over-the-limit
+/// complaints for one message that is too big is worse than none.
+///
+/// `all` is every file on the message once this batch has gone on, which is
+/// what the running total and the limit are about. Whether anything was
+/// attached before this batch is read from it rather than passed in, so the two
+/// cannot disagree.
+pub fn what_to_say(_batch: &Batch, _all: &[Chosen]) -> Vec<Announcement> {
+    Vec::new()
+}
+
 /// What the line under the message says.
 ///
 /// Said out loud when it changes as well as shown, because somebody who cannot
@@ -472,5 +527,246 @@ mod tests {
         assert_eq!(chosen.name, "report.pdf");
         assert_eq!(chosen.bytes, 2048);
         assert_eq!(chosen.label(), "report.pdf, 2 KB");
+    }
+
+    // ── Several files at once ──────────────────────────────────────────────
+    //
+    // A trap the plan named and it is worth naming again here: `Chosen::at`
+    // already refuses a folder and already refuses a file that will not read,
+    // so a test handing over one bad path and asserting it is refused would be
+    // green against any loop at all and would say nothing. What carries
+    // information is the batch: that the others still go on, that the refusals
+    // arrive as one announcement rather than one each, and that the running
+    // total and the complaint about size are asked once at the end.
+
+    /// A folder with `count` real files in it, named `file-0.txt` upwards.
+    fn some_files(folder: &std::path::Path, count: usize, each: usize) -> Vec<PathBuf> {
+        (0..count)
+            .map(|n| {
+                let path = folder.join(format!("file-{n}.txt"));
+                std::fs::write(&path, vec![0u8; each]).expect("write");
+                path
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_several_files_go_on_in_the_order_the_paths_arrived() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 10);
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(
+            batch
+                .chosen
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["file-0.txt", "file-1.txt", "file-2.txt"]
+        );
+        assert_eq!(batch.refused, None);
+    }
+
+    #[test]
+    fn test_a_folder_among_them_is_refused_by_name_and_the_others_still_go_on() {
+        // The half that matters is "and the others still go on". Somebody who
+        // dropped three files and got none would have to find out for
+        // themselves which one was the problem.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+        let paths = vec![files[0].clone(), inner, files[1].clone()];
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(
+            batch
+                .chosen
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["file-0.txt", "file-1.txt"]
+        );
+        let refusal = batch.refused.expect("the folder to be refused");
+        assert!(refusal.contains("holiday photos"), "{refusal}");
+        assert!(refusal.contains("folder"), "{refusal}");
+    }
+
+    #[test]
+    fn test_a_file_that_cannot_be_read_among_them_does_not_stop_the_others() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let missing = folder.path().join("gone.pdf");
+        let paths = vec![files[0].clone(), missing, files[1].clone()];
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(batch.chosen.len(), 2);
+        let refusal = batch.refused.expect("the missing file to be refused");
+        assert!(refusal.contains("gone.pdf"), "{refusal}");
+    }
+
+    #[test]
+    fn test_two_that_did_not_go_on_are_one_announcement_rather_than_two() {
+        // Six unreadable files should not be six interruptions. The list is
+        // one string for exactly that reason, and both names are in it.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("music");
+        std::fs::create_dir(&inner).expect("a folder");
+        let paths = vec![inner, folder.path().join("gone.pdf")];
+
+        let batch = choose_all(&paths);
+
+        assert!(batch.chosen.is_empty());
+        let refusal = batch.refused.expect("both to be refused");
+        assert!(refusal.contains("music"), "{refusal}");
+        assert!(refusal.contains("gone.pdf"), "{refusal}");
+    }
+
+    #[test]
+    fn test_one_path_is_refused_in_the_same_words_it_was_refused_in_before() {
+        // Picking one file has to behave exactly as it did before this, and
+        // the refusal is the part most easily lost: the full path and the
+        // reason the operating system gave are worth more than a bare name
+        // when there is only one thing to say.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("photos");
+        std::fs::create_dir(&inner).expect("a folder");
+
+        let batch = choose_all(std::slice::from_ref(&inner));
+
+        let alone = format!(
+            "{}",
+            Chosen::at(&inner).expect_err("a folder is not a file")
+        );
+        assert_eq!(batch.refused, Some(alone));
+    }
+
+    #[test]
+    fn test_a_batch_names_the_files_that_went_on_rather_than_only_counting_them() {
+        // A batch that said only "3 attachments" would lose the one thing
+        // somebody who cannot see the window needs: whether the files that
+        // went on are the files they meant.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 1024);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let words = said.first().expect("something said about a batch of three");
+        assert!(words.words.contains("file-0.txt"), "{}", words.words);
+        assert!(words.words.contains("file-1.txt"), "{}", words.words);
+        assert!(words.words.contains("file-2.txt"), "{}", words.words);
+        assert!(!words.trouble, "attaching three files is not trouble");
+    }
+
+    #[test]
+    fn test_how_to_take_one_off_is_said_with_the_first_batch_and_not_again() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 2, 1024);
+
+        let first = choose_all(&paths[..1]);
+        let opening = what_to_say(&first, &first.chosen);
+        assert!(
+            opening
+                .iter()
+                .any(|said| said.words.contains("Press Delete")),
+            "{opening:?}"
+        );
+
+        let second = choose_all(&paths[1..]);
+        let mut everything = first.chosen.clone();
+        everything.extend(second.chosen.clone());
+        let later = what_to_say(&second, &everything);
+        assert!(
+            !later.iter().any(|said| said.words.contains("Press Delete")),
+            "{later:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_batch_says_one_thing_about_being_too_big_rather_than_one_a_file() {
+        // The defect this is written against is a loop that asks
+        // `over_the_limit` after every file: three files that between them go
+        // over would complain three times, and the third complaint says the
+        // same thing as the first.
+        let over = LIMIT_BYTES; // Over once encoded, whatever the base64 does.
+        let batch = Batch {
+            chosen: vec![
+                sized("one.bin", over / 2),
+                sized("two.bin", over / 2),
+                sized("three.bin", over / 2),
+            ],
+            refused: None,
+        };
+
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let complaints: Vec<_> = said
+            .iter()
+            .filter(|words| words.words.contains("providers refuse"))
+            .collect();
+        assert_eq!(complaints.len(), 1, "{said:?}");
+        assert!(
+            complaints[0].trouble,
+            "a message that will not send is trouble"
+        );
+    }
+
+    #[test]
+    fn test_a_batch_too_long_to_sit_through_names_the_first_few_and_counts_the_rest() {
+        // Guardrail 5. Ten names is twenty seconds of speech for a
+        // confirmation, and a screen reader saying it is a screen reader that
+        // cannot be used for twenty seconds.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 10, 16);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let words = &said.first().expect("something said").words;
+        assert!(words.contains("file-5.txt"), "{words}");
+        assert!(!words.contains("file-6.txt"), "{words}");
+        assert!(words.contains("4 others"), "{words}");
+    }
+
+    #[test]
+    fn test_nothing_going_on_says_only_what_did_not() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("photos");
+        std::fs::create_dir(&inner).expect("a folder");
+
+        let batch = choose_all(&[inner]);
+        let said = what_to_say(&batch, &[]);
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].words.contains("folder"), "{said:?}");
+        assert!(said[0].trouble, "a file that did not go on is trouble");
+    }
+
+    #[test]
+    fn test_a_dropped_name_written_backwards_reaches_the_recipient_forwards() {
+        // T-04-27. A path handed over by a drop or a paste was chosen by
+        // whoever did the dragging, and the name on it is written into
+        // somebody else's mailbox. The override is the case that matters most
+        // here: a synthesiser reading the reordered name aloud gives no hint
+        // at all that it was reordered.
+        //
+        // This is the one of the register's two fixtures that can be a real
+        // file on Windows. A path that walks out of its folder never reaches
+        // the cleaner as a path, because `Chosen::at` asks for the last
+        // component; and a file named for a device cannot be created at all,
+        // so no drop can produce one. Both rules are tested where they live,
+        // in service::attachment_name.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let odd = folder.path().join("annexe\u{202E}cod.exe");
+        std::fs::write(&odd, b"nothing much").expect("write");
+
+        let batch = choose_all(&[odd]);
+
+        assert_eq!(batch.chosen.len(), 1);
+        assert_eq!(batch.chosen[0].name, "annexecod.exe");
     }
 }
