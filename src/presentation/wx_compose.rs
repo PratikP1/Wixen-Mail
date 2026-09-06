@@ -2147,6 +2147,28 @@ pub fn show_compose_dialog_full(
                         crate::presentation::accessibility::announcements::Priority::Normal,
                     );
                 }
+                // A file was dropped on the message itself, where the drop
+                // target on this dialog cannot reach it. The page has already
+                // stopped the engine navigating to it, so the message being
+                // written is still here, and this is what says so.
+                //
+                // Not a route by which a file goes on a message: no path
+                // arrives here and nothing is attached. It says where a drop
+                // does land, which is the whole of what it does.
+                Some(editor_document::EditorMessage::FilesDroppedOnTheMessage { count }) => {
+                    let said = crate::application::attaching::dropped_on_the_message(count);
+                    let _ = a11y.announce(
+                        &said.words,
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
+                    if said.trouble {
+                        // Shown as well as said, through the same heading every
+                        // other answer about attaching goes under. Somebody who
+                        // dropped a file with a mouse may not be listening to
+                        // anything.
+                        say_so(&dialog, "Attaching files", &said.words);
+                    }
+                }
                 // The page marked the words and is waiting to hear whether the
                 // address is one this will carry. Either answer says what it
                 // did: a link that quietly failed to become a link is a
