@@ -651,6 +651,207 @@ mod tests {
         assert_eq!(Safety::from_stored(""), Safety::Ordinary);
     }
 
+    /// The openings that say which of the four things judged a message.
+    ///
+    /// Written down here rather than asserted one sentence at a time, because
+    /// the question is about the bar as a whole: somebody hearing four
+    /// sentences has to be able to sort them by who said them, and a sentence
+    /// belonging to none of these is one they cannot place.
+    ///
+    /// Google's is at the end of its sentence rather than the start, because
+    /// their terms fix the wording wherever a warning derived from their data
+    /// is shown. That is the one attribution this project does not get to
+    /// choose, so it is matched anywhere in the sentence.
+    const WHO_A_SENTENCE_MAY_SAY_JUDGED_IT: [&str; 4] = [
+        "Your mail provider's filter",
+        "Your mail provider put it",
+        "The sender's own domain",
+        "Wixen Mail read this message",
+    ];
+
+    /// Whether a sentence says which of them reached it.
+    fn says_who_judged_it(reason: &str) -> bool {
+        WHO_A_SENTENCE_MAY_SAY_JUDGED_IT
+            .iter()
+            .any(|who| reason.starts_with(who))
+            || reason.contains("Google Safe Browsing")
+    }
+
+    #[test]
+    fn test_this_programs_own_reading_says_that_it_was_this_program_that_read_it() {
+        // The whole of the second half of criterion 6, and the repudiation
+        // this is about. `from_analysis`'s own doc already argues that this
+        // program's reading is never allowed to say the word phishing, because
+        // a heuristic wearing the provider's authority is how a warning becomes
+        // the thing people click past. Sounding like the provider is the same
+        // argument one step further: "A link points at a bare numeric address"
+        // named nobody, so a guess and a filter's verdict were read out in the
+        // same voice.
+        let ours = from_analysis(
+            PhishingRisk::High,
+            &["Contains URL using raw IP address".to_string()],
+        );
+
+        assert_eq!(ours.reasons.len(), 1);
+        assert!(
+            ours.reasons[0].starts_with("Wixen Mail read this message"),
+            "this program's own reading does not say it was this program: {:?}",
+            ours.reasons[0]
+        );
+        assert!(
+            !ours.reasons[0].contains("provider"),
+            "this program's own reading reads as though the provider said it: {:?}",
+            ours.reasons[0]
+        );
+    }
+
+    #[test]
+    fn test_several_things_found_here_are_one_sentence_rather_than_one_each() {
+        // Guardrail 5's second half, which is the one that is easy to lose:
+        // feedback must be distinct AND bounded. Attribution added a clause to
+        // every sentence would give somebody hearing five findings the same
+        // eight words five times, which is repetition rather than attribution
+        // and is exactly how a warning bar becomes something people talk past.
+        let ours = from_analysis(
+            PhishingRisk::High,
+            &[
+                "Contains URL using raw IP address".to_string(),
+                "Detected deceptive link text/href mismatch".to_string(),
+                "Urgency or account pressure phrase: 'verify now'".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            ours.reasons.len(),
+            1,
+            "three findings from one source were said as {} sentences: {:?}",
+            ours.reasons.len(),
+            ours.reasons
+        );
+        let said = &ours.reasons[0];
+        for found in [
+            "bare numeric address",
+            "goes one place",
+            "pushes for an urgent response",
+        ] {
+            assert!(
+                said.contains(found),
+                "a finding was dropped on the way into one sentence: {found:?} is not in \
+                 {said:?}"
+            );
+        }
+        assert_eq!(
+            said.matches("Wixen Mail").count(),
+            1,
+            "the source is repeated inside one sentence: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_filter_that_rated_it_both_ways_says_so_in_one_sentence() {
+        // The other place the same repetition was already happening. A
+        // Microsoft report carrying both a phishing and a spam confidence
+        // produced two sentences opening with the same six words.
+        let verdict = from_headers("X-Forefront-Antispam-Report: SCL:9;PCL:6;\r\n");
+
+        assert_eq!(verdict.level, Safety::Phishing);
+        assert_eq!(
+            verdict.reasons.len(),
+            1,
+            "one filter said two things and was quoted twice: {:?}",
+            verdict.reasons
+        );
+    }
+
+    #[test]
+    fn test_the_senders_own_records_are_named_as_what_the_message_failed() {
+        // Not the provider's filter, which is a different judge reaching a
+        // different kind of answer. A filter has an opinion about the contents;
+        // published anti-forgery records are the sender's own domain saying
+        // what its mail looks like, and a message failing them is a fact rather
+        // than a judgement. Somebody deciding whether to trust a message is
+        // owed the difference.
+        let forged = from_headers("Authentication-Results: mx.google.com; dmarc=fail\r\n");
+
+        assert!(
+            forged.reasons[0].starts_with("The sender's own domain"),
+            "a failed anti-forgery check does not say whose records failed: {:?}",
+            forged.reasons[0]
+        );
+        assert!(
+            !forged.reasons[0].contains("filter"),
+            "a failed anti-forgery check reads as the provider's spam filter: {:?}",
+            forged.reasons[0]
+        );
+    }
+
+    #[test]
+    fn test_every_sentence_in_a_bar_carrying_three_sources_says_which_one_said_it() {
+        // The bar as a whole, which is the thing somebody hears. Three sources
+        // at once: a filter's header, the folder it was put in, and this
+        // program's own reading.
+        let bar = from_headers("X-Spam-Flag: YES\r\n")
+            .and(from_folder(true))
+            .and(from_analysis(
+                PhishingRisk::High,
+                &["Detected deceptive link text/href mismatch".to_string()],
+            ));
+
+        assert_eq!(
+            bar.reasons.len(),
+            3,
+            "three sources did not give three sentences: {:?}",
+            bar.reasons
+        );
+        for reason in &bar.reasons {
+            assert!(
+                says_who_judged_it(reason),
+                "a sentence in the bar says nothing about which of them reached it: {reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merging_keeps_every_sentence_with_the_one_that_said_it() {
+        // The worst-wins merge takes two lists and makes one, and the order
+        // they end up in is not the order anything wrote them. A sentence that
+        // carried its source in a field beside it could come away from that
+        // field here; carrying it in the sentence is what makes that
+        // impossible, and this is the assertion that says so.
+        let ours = from_analysis(
+            PhishingRisk::High,
+            &["Contains URL using raw IP address".to_string()],
+        );
+        let theirs = from_headers("X-Spam-Flag: YES\r\n");
+
+        for merged in [ours.clone().and(theirs.clone()), theirs.and(ours)] {
+            assert_eq!(merged.reasons.len(), 2);
+            for reason in &merged.reasons {
+                assert!(
+                    says_who_judged_it(reason),
+                    "a sentence lost its source in the merge: {reason:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_an_ordinary_message_still_says_nothing_at_all() {
+        // The case that covers nearly all mail, restated because this is a
+        // change to what the sentences say and any word added to this one is a
+        // word paid for on every message somebody ever receives.
+        assert_eq!(from_analysis(PhishingRisk::None, &[]).summary(), "");
+        assert_eq!(
+            from_analysis(
+                PhishingRisk::Low,
+                &["Contains URL using raw IP address".to_string()]
+            )
+            .reasons,
+            Vec::<String>::new()
+        );
+        assert_eq!(Verdict::ordinary().summary(), "");
+    }
+
     #[test]
     fn test_the_phishing_summary_leads_with_the_warning() {
         // Somebody may stop listening after the first few words, so the worst
