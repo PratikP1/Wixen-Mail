@@ -35,20 +35,134 @@
 
 use super::{KEYRING_PRIVATE_KEY, KEYRING_SERVICE, WhatImportingAKeyFound, WhatOpeningItFound};
 use crate::service::secret_store;
+use pgp::composed::{Deserializable, Message, SignedPublicKey, SignedSecretKey};
+use pgp::errors::Error as OpenPgpError;
+use pgp::types::Password;
+use std::io::Read;
+
+/// The most of one decrypted message this will hold in memory.
+///
+/// Twenty-five megabytes, the same as the ceilings on a stored attachment and
+/// on a kept signed message, so the three limits on message content are one
+/// number. There is no measurement behind the exact figure and saying so is
+/// more use than a justification that sounds like one.
+///
+/// It is here rather than left to the crate because a compressed OpenPGP
+/// message can name a very large plaintext in very few bytes, and a stranger
+/// chooses those bytes. rPGP's own default buffer is a gigabyte. A message over
+/// this reads as damaged, which is honest: nothing of it was shown.
+const MOST_A_MESSAGE_MAY_COST: u64 = 25 * 1024 * 1024;
 
 /// Take an armoured private key and put it in the credential store.
 pub(super) fn import(armoured: &str) -> WhatImportingAKeyFound {
-    // Insufficient on purpose, and only for the length of one commit. The tests
-    // below name what it has to do and this refuses everything without looking.
-    let _ = armoured;
-    WhatImportingAKeyFound::NotAKey
+    let key = match SignedSecretKey::from_string(armoured) {
+        Ok((key, _)) => key,
+        // Which of the two refusals, decided by asking the crate rather than by
+        // reading the armour header. A header this program read for itself
+        // would be a second opinion about what a key file is, and the crate is
+        // the one that has to agree with it later.
+        Err(_) => {
+            return if SignedPublicKey::from_string(armoured).is_ok() {
+                WhatImportingAKeyFound::NotAPrivateKey
+            } else {
+                WhatImportingAKeyFound::NotAKey
+            };
+        }
+    };
+    if a_passphrase_is_holding_it_shut(&key) {
+        return WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase;
+    }
+    // What arrived, byte for byte, rather than the crate's own re-serialisation
+    // of it. The same reasoning `signed_original` gives about a signed message:
+    // anything that rewrites a cryptographic document, even to tidy it, is a
+    // second chance to change what it says, and the thing coming back out has
+    // to be the thing that went in.
+    match secret_store::write(KEYRING_SERVICE, KEYRING_PRIVATE_KEY, armoured) {
+        Ok(()) => WhatImportingAKeyFound::Imported,
+        // The store's reason, which is about the store. Nothing from the file
+        // travels in it; `secret_store` already holds itself to reasons and
+        // never values.
+        Err(problem) => WhatImportingAKeyFound::CouldNotBeStored {
+            reason: problem.to_string(),
+        },
+    }
+}
+
+/// Whether any part of a key that could decrypt is locked with a passphrase.
+///
+/// The primary key and every secret subkey, because a message is encrypted to
+/// an encryption subkey where a key has one and to the primary where it does
+/// not. Asking only the primary would accept a key whose encryption half is
+/// locked, which opens nothing and reports the wrong reason for ever after.
+fn a_passphrase_is_holding_it_shut(key: &SignedSecretKey) -> bool {
+    key.primary_key.secret_params().is_encrypted()
+        || key
+            .secret_subkeys
+            .iter()
+            .any(|subkey| subkey.secret_params().is_encrypted())
 }
 
 /// Open an armoured message with the private key this computer holds.
 pub(super) fn open(armour: &str) -> WhatOpeningItFound {
-    // Insufficient on purpose, for the length of one commit.
-    let _ = armour;
-    WhatOpeningItFound::Damaged
+    let stored = match secret_store::read(KEYRING_SERVICE, KEYRING_PRIVATE_KEY) {
+        Ok(None) => return WhatOpeningItFound::NoKeyHere,
+        Ok(Some(stored)) => stored,
+        // The reason and never the entry. A locked-down credential store is
+        // worth a log line; what it holds is not.
+        Err(problem) => {
+            tracing::warn!("The credential store would not give up the private key: {problem}");
+            return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
+        }
+    };
+    let Ok((key, _)) = SignedSecretKey::from_string(&stored) else {
+        // Import stores only what has already parsed, so this is the store
+        // handing back something other than what went into it.
+        tracing::warn!("The private key in the credential store no longer reads as a key");
+        return WhatOpeningItFound::TheKeyHereCouldNotBeRead;
+    };
+    open_with(armour, &key)
+}
+
+/// The same, once the key is in hand.
+///
+/// **No error out of the crate is logged or passed on.** Not because the crate
+/// is untrustworthy but because of what its error text can hold: a parser
+/// refusing a message can quote the bytes it choked on, and those bytes are a
+/// stranger's mail. What crosses out of here is one of four words this project
+/// chose.
+fn open_with(armour: &str, key: &SignedSecretKey) -> WhatOpeningItFound {
+    let Ok((message, _)) = Message::from_armor(armour.as_bytes()) else {
+        return WhatOpeningItFound::Damaged;
+    };
+    let opened = match message.decrypt(&Password::empty(), key) {
+        Ok(opened) => opened,
+        // The one error worth telling apart, and it is the one that is not
+        // about the message: nothing in the message names a key this computer
+        // holds, so it was encrypted to somebody else.
+        Err(OpenPgpError::MissingKey) => return WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+        Err(_) => return WhatOpeningItFound::Damaged,
+    };
+    // Safe on a message that was never compressed: the crate hands those back
+    // unchanged. Called unconditionally rather than after a test, because a
+    // test for whether a message is compressed is a second opinion about a
+    // shape the crate already knows.
+    let Ok(mut opened) = opened.decompress() else {
+        return WhatOpeningItFound::Damaged;
+    };
+    let mut words = Vec::new();
+    if opened
+        .by_ref()
+        .take(MOST_A_MESSAGE_MAY_COST)
+        .read_to_end(&mut words)
+        .is_err()
+    {
+        return WhatOpeningItFound::Damaged;
+    }
+    // Lossy rather than refused. A message body is a stranger's, and mail that
+    // is not UTF-8 is ordinary rather than hostile: an old client sending
+    // Latin-1 is common. Refusing it would report a working message as damaged
+    // and say the sender should send it again.
+    WhatOpeningItFound::Opened(String::from_utf8_lossy(&words).into_owned())
 }
 
 /// Whether a private key has been imported on this computer.

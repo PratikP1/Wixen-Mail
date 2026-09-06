@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 437 records have arrived since and have not been through it.
+# 440 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -738,7 +738,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 25 },
+    { file = "src/application/allowed.rs", tests = 26 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
@@ -759,7 +759,7 @@ red = [
     "application::allowed::tests::test_a_removal_held_back_says_the_mail_is_still_on_the_server",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 25 },
+    { file = "src/application/allowed.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -4084,7 +4084,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -4106,7 +4106,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11055,7 +11055,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11071,7 +11071,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11101,7 +11101,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11115,7 +11115,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -12731,7 +12731,7 @@ red = [
     "presentation::first_run::tests::test_the_choice_that_says_read_my_mail_reads_mail",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 25 },
+    { file = "src/application/allowed.rs", tests = 26 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/presentation/command_line.rs", tests = 23 },
     { file = "src/presentation/first_run.rs", tests = 14 },
@@ -12757,7 +12757,7 @@ red = [
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 25 },
+    { file = "src/application/allowed.rs", tests = 26 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/data/config.rs", tests = 53 },
 ]
@@ -13283,7 +13283,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -13767,7 +13767,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 61 },
+    { file = "tests/wired.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -14905,7 +14905,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -15111,8 +15111,24 @@ before = """    if SecurityService::detect_pgp_encrypted(&whole) {
 after = """    let _ = &whole;
     WhatTheFormSays::Nothing"""
 # Measured by hand with --no-fail-fast: 6280 passed, 11 failed, 1 ignored.
+#
+# **Re-measured 2026-09-06 and it had gone short, inside the plan that made it
+# short.** 04-09 taught this build to open a PGP message, and everything on that
+# path asks this one question first: `opening_pgp` asks it to decide whether to
+# offer the armour to a key at all, and the reader's four sentences are only
+# reached through the answer. So a break that answers `Nothing` to everything
+# reddens three more tests than it did, in two modules that did not exist when
+# the record was written.
+#
+# This is the shape 04-08 recorded and it arrived the same way: a later task in
+# the same plan added tests reaching a rule an earlier record was about, and
+# nothing failed. What caught it is the count check flagging the file and the
+# scoped re-measure it printed. 14 tests in 6,488.
 red = [
     "application::body_safety::tests::test_an_armoured_message_says_it_is_encrypted",
+    "application::opening_pgp::tests::test_an_armoured_message_is_handed_to_the_opener",
+    "presentation::reader_text::encryption_tests::test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words",
+    "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
     "application::body_safety::tests::test_a_signature_block_alone_says_the_message_is_signed",
     "application::body_safety::tests::test_a_message_carrying_both_is_reported_as_the_one_that_cannot_be_read",
     "application::body_safety::tests::test_the_formatted_half_alone_is_read_for_armour",
@@ -15126,7 +15142,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/application/opening_pgp.rs", tests = 5 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -15154,7 +15171,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15180,7 +15197,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15211,7 +15228,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -15245,7 +15262,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -15307,7 +15324,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -16023,5 +16040,104 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_same_sentence_is_spoken_as_the_message_opens",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 116 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
+]
+
+# ── A PGP key nobody could import, so no message ever opened ────────────────
+#
+# The decryption path is written, tested against a key and a message GnuPG
+# made, and reachable from nothing unless a person can put their key on this
+# computer. Without the menu item every PGP message goes on saying there is no
+# private key here, for ever, and every test still passes: guardrail 1's exact
+# shape, a feature that compiles and is reached by nothing.
+#
+# The break is the menu item gone. The arm that catches it and the function it
+# calls are left in place, so the code is all still there and the only thing
+# missing is the way in, which is what the defect looks like.
+#
+# **Three go red and the third was not expected.**
+# `test_every_handled_command_has_something_that_raises_it` is an older guard
+# that reads every menu arm and asks whether anything ever raises its id, and it
+# catches this break without being about PGP at all. That is the guard doing
+# what it was written for, and it is written down here because the first draft
+# of this record named two and the run said three.
+#
+# Measured by hand on 2026-09-06 against a green tree, with
+# `cargo test --no-fail-fast --test wired`.
+
+[[guard]]
+name = "a PGP private key somebody can import"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''            .append_item(
+                ID_IMPORT_PGP_KEY,
+                "Import PGP Private &Key... (experimental)",
+                crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
+            )'''
+after = ''''''
+red = [
+    "test_every_handled_command_has_something_that_raises_it",
+    "test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer",
+    "test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 64 },
+]
+
+# ── The armour was never offered to the key on this computer ────────────────
+#
+# The other half of the same wiring. A message can only open where something
+# hands its armour to `service::pgp`, and the reader window is where somebody
+# opens mail. Without this call the whole path is present, tested and never
+# reached from the one surface it exists for.
+#
+# The break leaves the reading aloud path wired, which is what makes it worth
+# recording separately: two surfaces open mail and wiring one is exactly how
+# the two come to disagree about the same message.
+#
+# Measured by hand on 2026-09-06 against a green tree, with
+# `cargo test --no-fail-fast --test wired`.
+
+[[guard]]
+name = "a PGP message the reader window never offers to the key"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''    let opened = crate::application::opening_pgp::for_body(&body);
+    let body = crate::application::opening_pgp::the_body_to_show(body, opened.as_ref());'''
+after = '''    let opened = None;'''
+red = [
+    "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 64 },
+]
+
+# ── The four reasons a PGP message did not open collapsed into one ──────────
+#
+# Four different pieces of news and four different things to do next: set the
+# program up, accept that the message was meant for somebody else, import the
+# key again, or ask the sender to send it again. Collapsed into one sentence
+# they are worth nothing: somebody hearing "this message could not be opened"
+# learns only what they can already see.
+#
+# The break is the wrong-key arm answering with the no-key sentence, which is
+# the way this really goes wrong. Nobody merges four arms; somebody reaches for
+# the sentence next to the one they need.
+#
+# Measured by hand on 2026-09-06 against a green tree of 6,488 tests, with
+# `cargo test --no-fail-fast --lib`.
+
+[[guard]]
+name = "the reasons a PGP message did not open stay four different sentences"
+file = "src/presentation/reader_text.rs"
+before = '''            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,'''
+after = '''            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => NO_PGP_KEY_ON_THIS_COMPUTER,'''
+red = [
+    "presentation::reader_text::encryption_tests::test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words",
+    "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]

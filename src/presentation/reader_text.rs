@@ -1657,7 +1657,7 @@ impl ReaderDocument {
     /// gone by the time the document is built, because
     /// `application::opening_pgp` put the decrypted words in its place, so
     /// `single_message` finds no armour and adds no sentence.
-    pub fn with_pgp(self, found: Option<&crate::service::pgp::WhatOpeningItFound>) -> Self {
+    pub fn with_pgp(mut self, found: Option<&crate::service::pgp::WhatOpeningItFound>) -> Self {
         use crate::service::pgp::WhatOpeningItFound;
 
         // Nothing offered the message to a key, because its body carries no
@@ -1665,7 +1665,7 @@ impl ReaderDocument {
         let Some(found) = found else {
             return self;
         };
-        let _sentence = match found {
+        let sentence = match found {
             // Nothing to narrow: the document was built from the words rather
             // than from the armour.
             WhatOpeningItFound::Opened(_) => return self,
@@ -1674,8 +1674,14 @@ impl ReaderDocument {
             WhatOpeningItFound::TheKeyHereCouldNotBeRead => THE_PGP_KEY_HERE_COULD_NOT_BE_READ,
             WhatOpeningItFound::Damaged => THE_PGP_MESSAGE_IS_DAMAGED,
         };
-        // Insufficient on purpose, and only for the length of one commit. The
-        // tests name what it has to do and this does none of it.
+        self.warning = self.warning.take().map(|bar| {
+            // A replacement rather than an append, so the reader never says
+            // both. If the general sentence is not in the bar, this is a
+            // caller asking about a message whose body carries no armour, and
+            // nothing is invented: a sentence about a message nothing here has
+            // looked at would be a claim on no evidence.
+            bar.replace(ENCRYPTED_AND_NOT_OPENED_HERE, sentence)
+        });
         self
     }
 }

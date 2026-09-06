@@ -8,6 +8,50 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail can read a PGP encrypted message you hold the key for.**
+  Experimental, and the rest of this entry is what that word is standing for.
+
+  File, Import PGP Private Key takes a key file you exported from GnuPG or
+  another mail program. After that, a message encrypted to that key opens as
+  the message rather than as a screenful of armour. A message that does not
+  open says which of four things happened, because they are four different
+  things to do next: there is no key on this computer, the key here is not the
+  one the message was encrypted to, the key could not be read back, or the
+  encrypted part is damaged.
+
+  Your key goes to the Windows Credential Manager under one name and nowhere
+  else. It is never written to the message store, never put in a log, and
+  never quoted back to you in an error. Uninstalling erases it.
+
+  Known limitations, in the order you are likely to meet them:
+
+  - **Nothing here has ever met a real correspondent.** No message from anybody
+    has been through this and no real key has been imported. It may say a
+    message cannot be opened when another mail program opens it. It was tested
+    against a key and a message made by GnuPG rather than by the library Wixen
+    Mail uses, which is better evidence than testing a library against itself
+    and is not the same as working.
+  - **One key at a time, and it must have no passphrase on it.** Nothing here
+    asks you for one yet, so a key with a passphrase is refused at import
+    rather than stored to fail later. Export it without one.
+  - **Inline PGP only.** A message whose armour sits in the text opens. A
+    PGP/MIME message, where the encrypted part is a separate attachment, does
+    not, and is not reported as failing either: nothing sees it. Thunderbird
+    and most modern clients send PGP/MIME, so this is a real gap rather than a
+    corner.
+  - Nothing goes out signed or encrypted. This reads only.
+  - S/MIME encrypted messages still cannot be opened. They say so.
+
+  Two things about the library this uses, said here rather than left in a
+  commit message. It is rPGP, chosen over Sequoia on licence grounds, and the
+  reasoning is in `docs/development/pgp-implementation-choice.md`. It depends
+  on the `rsa` crate, which has an unfixed weakness to the Marvin timing
+  attack, tracked at RustCrypto/RSA issue 19 and named in rPGP's own security
+  notes: that matters to an attacker who can both send you messages and
+  measure how long your computer takes to open them. And rPGP's own testing
+  covers a different Windows build target from the one this ships, so the
+  toolchain you are running is not one its authors test.
+
 - **An S/MIME encrypted message now says why there is nothing to read.**
 
   Until now one opened as a blank message. Not an error, not a warning: an
